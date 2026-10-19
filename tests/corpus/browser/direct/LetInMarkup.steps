@@ -1,5 +1,0 @@
-# The ticks change: "label" again, and not "sorted"; the list's arm shows.
-click #tick
-# Another list: "sorted" once.
-click #add
-click #tick

@@ -1,7 +1,0 @@
-# The fallback shown: its own read written.
-click #status
-click #login
-# The body shown: its own read written.
-click #flip
-click #flip
-click #logout

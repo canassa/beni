@@ -167,8 +167,7 @@ A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
 compile time, so its development build must ship no library interpreter,
 whichever of the runners and `describe` it calls:
 `_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
-runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. A
-`browser/direct/` project's `browser-tea` build is held to it too. The file's
+runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. The file's
 text says why the fixture qualifies. Like `.crash`, it is written by hand and
 never blessed. It costs no build of its own, because it reads the output of the
 development build the case already makes. Conduit's pages and the schema
@@ -369,7 +368,7 @@ the driver takes more turns while a `setImmediate` is pending, or while a
 message the page posted to a `MessagePort` is not yet delivered, which the
 driver counts from the post to the delivery. A step that starts more
 fibers than 64 therefore shows them all run
-(`browser/tea/SettlesManyFibers`, `browser/direct/SettlesManyFibers`).
+(`browser/tea/SettlesManyFibers`).
 
 After 1 000 turns the driver stops waiting and fails the step: `Error: the
 page still had a setImmediate to run after 1 000 turns` (`a message to
@@ -414,7 +413,7 @@ logs `(the host leaves the page for "<url>")`, the address written as the
 fetch log writes one; the address stays, and no event of the page's
 fires — Chrome's Navigation API reports the cancel, `navigateerror` with an
 `AbortError` on `navigation`, which no platform reads
-(`browser/direct/NavigateCommands`). A navigation inside the document (a
+(`browser/tea/NavigateCommandsLeave`). A navigation inside the document (a
 fragment, `pushState`) runs as the host runs it. Chrome would load the new
 document, which the driver cannot follow, and happy-dom, whose window
 loads nothing, would change only the address. The page's history begins
@@ -503,7 +502,7 @@ compares instead of `.expected`. The differences known today:
   colour is `rgb(…)` in Chrome and as the page wrote it in happy-dom
   (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome). A
   number has at most six decimals in happy-dom, as CSSOM says, and six
-  significant digits in Chrome (`browser/direct/Sternhalma`:
+  significant digits in Chrome (`browser/tea/Sternhalma`:
   `275.75128869403574px` is `275.751289px` in happy-dom and `275.751px`
   in Chrome). Chrome writes a large number with an exponent:
   `1234567.5px` is `1.23457e+06px`, and happy-dom keeps it;
@@ -565,24 +564,11 @@ own. The differential oracle against dom-expressions' fixtures is a
 separate, DOM-free comparison of template strings and walks:
 `tests/oracle/`, run by `tests/blackbox/oracle_test.zig`.
 
-**The `direct` lowering's fixtures** (`docs/design/browser-direct.md` §12.3)
-are under `direct/` of three kinds, built with `--platform=browser-direct`:
-`emit/direct/` and `emit/release/direct/` are application builds (rooted
-at `main`, not `--library`), the first goldening the module, the second
-the release file whole; `build/bad/direct/` projects need no `platform/` (one whose golden holds only the ownership checker's codes is also built for `browser-tea`, which must succeed silently: `ownership-checker.md` §28.10)
-of their own; and every `browser/direct/` page is built **for both
-platforms** from its one source — `browser-direct` and `browser-tea`, dev
-and release, four pages — against one golden, since the two platforms are
-each other's oracle. A difference the design specifies is a `<name>.tea-expected` (and `.tea-release-expected` when the release build differs), which the
-`browser-tea` builds read instead and never bless, with its reason in the
-fixture's comment. A difference the design specifies that only Chrome reaches (a blur
-fired by a handler's write, delivered at the write on `browser-direct` and
-last on `browser-tea`) is a `<name>.tea-chrome-expected` beside the
-`.chrome-expected`, which `test-browser` compares for the `browser-tea`
-builds. A `browser/direct/` transcript leaves out comment nodes
-(`--no-comments`): where a platform keeps its place markers is not what
-the program shows, and the two platforms put them differently. Their run hash lines are `dev`, `release`, `tea_dev`
-and `tea_release`.
+**The `direct` lowering was retired on 2026-10-19** (issue #423) with the `browser-direct`
+platform; git history is the reference. Its pages are `browser/tea/` pages, built for
+`browser-tea` alone; its ownership fixtures read on `browser-inline` or
+`browser-tea+everywhere`; its refusals that are not the lowering's are under
+`build/bad/inline/`, `build/bad/everywhere/` and `check/bad/inline/`.
 
 **The `inline` lowering's fixtures** (`docs/design/browser-inline.md`) are
 under `inline/` of four kinds, built with `--platform=browser-inline`, or for
@@ -595,7 +581,7 @@ the lowering refuses, each class of `browser-inline.md` §5; and
 release.
 
 Every enforcing `build/bad/` project is also checked for its release refusal
-— under `direct/`, under `inline/`, on a project's own `platform/`
+— under `inline/`, on a project's own `platform/`
 whose chain edits lists in place, and under `everywhere/`: built again with
 `--release --allow-debug`, it must be refused with the same diagnostics and
 nothing written (`--allow-debug` because `Debug`'s own refusal is
@@ -610,26 +596,22 @@ built without the flag, which must succeed silently (§28.10).
 
 **The page fuzzer** (`docs/design/browser-direct.md` §8.3 and its
 2026-10-09 amendment, `tests/browser/fuzz.mjs`) runs on every
-`browser/direct/` page without a `.tea-expected` — its `browser-tea` build
-against its `browser-direct` build — and on every `browser/tea/` page, its
-development build against its release build: one seed of thirty random
-steps, the two pages compared after each — the body, the properties it
-does not print, the title, the address, the storages, every logged line
-but those the pair may differ on, the errors — in the driver's process
-after the fixture's pages. A difference fails the case with the seed, the
-step, the sequence shrunk, and what differs; a
+`browser/tea/` page, its development build against its release build: one
+seed of thirty random steps, the two pages compared after each — the body,
+the properties it does not print, the title, the address, the storages,
+every logged line but those the pair may differ on, the errors — in the
+driver's process after the fixture's pages. A difference fails the case
+with the seed, the step, the sequence shrunk, and what differs; a
 sequence of view events is printed as a `.steps` script, the red-first
 fixture of the defect. A fuzz that agreed is the `fuzz` line of the
 fixture's run hash. `zig build fuzz` runs fifty seeds of sixty steps.
-A `browser/direct/` page's fuzz is a case of its own, `<page> [value
-fuzz]`, budgeted apart from the page's: it builds the two `--fuzz` builds,
-dumps the message types and fuzzes them, messages as values included, and
-records its line in `<name>.fuzz-run-hash` (`_expected.fuzz-run-hash` in a
-project). A `browser/tea/` page opts into the same value-fuzz case by
-carrying a `.fuzz-run-hash` (create it empty, then `zig build
-test-run-hashes`): its development build against its release build, both
-with `--fuzz`, beside the page case's own fuzz of view events
-(`browser/tea/TypedInput`).
+A `browser/tea/` page that carries a `.fuzz-run-hash` (create it empty,
+then `zig build test-run-hashes`) has a value-fuzz case of its own,
+`<page> [value fuzz]`, budgeted apart from the page's: it builds the two
+`--fuzz` builds, development and release, dumps the message types and
+fuzzes them, messages as values included, and records its line in
+`<name>.fuzz-run-hash` (`_expected.fuzz-run-hash` in a project), beside
+the page case's own fuzz of view events (`browser/tea/TypedInput`).
 
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering
@@ -731,11 +713,17 @@ x86-64 Linux reference: `browser/tea/Sternhalma` 4 723M and its value fuzz 5 072
 and 5 600M (#435); `browser/tea/TodoPage` 4 404M and its value fuzz 4 685M, granted 4 850M and
 5 150M (#361). With their run hashes recorded, all four fit the default.
 
+*Amended 2026-10-19 (#423, the retirement of `browser-direct`):* every grant of a
+`browser/direct/` case went with its page: `HttpJson`, `HttpJsonBody`, `ApiItems`,
+`ApiLogin`, `TodoMVC`, the paired Conduit, Sternhalma, TodoPage and Bike Wars pages and their
+value fuzz, and `ownership/Conduit [browser-direct]`. The grants above that name a
+`browser/tea/` case stand.
+
 A project may also take its modules from outside the corpus: `_expected.sources` holds one
 repo-relative directory per line, whose `.beni` files together are the program, so several
 scripts can drive one application (`examples/conduit/src`), and a program whose modules live in
 two directories — one of them shared with another program through each manifest's `"paths"`,
-`examples/todo` — is one fixture (`run/TodoServer`, `browser/direct/TodoPage`). Every
+`examples/todo` — is one fixture (`run/TodoServer`, `browser/tea/TodoPage`). Every
 directory's subdirectories are walked too, each file copied at its relative path, and the build
 is then given `--root=.`, so `Math/Vector2.beni` is the module `Math.Vector2`
 (`examples/bike-wars/src`). The `ownership/` and `writes/` kinds hand the compiler one path, so
@@ -812,13 +800,6 @@ instruction limit separately when it selects CPU accounting. Owner-granted
 case budgets scale the CPU fallback by that limit, as they do when a running
 instruction counter becomes unavailable. This corrects lost budget provenance
 on hosts without counters; neither the global nor any granted limit changes.
-
-A direct page may carry `.plan` (`_expected.plan` for a project): its complete
-`_direct-plan.json` consumer plan, compared for both development and release.
-It pins parameterised sites, per-call analysis masks and declared value
-fallback reasons. It is captured with the same `BENI_WRITE_EXPECTED=1` /
-`BENI_BLESS_ONLY` discipline as the page transcript; the paired tea build
-still checks the single page golden and has no direct consumer plan.
 
 *Superseded on rebase, 2026-10-15:* the historical CPU-fallback amendment
 above predates master’s reference-build instruction budget. Current `gates`

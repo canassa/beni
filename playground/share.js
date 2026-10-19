@@ -4,7 +4,7 @@
 // compressed with the browser's `CompressionStream("deflate-raw")` and
 // encoded in base64url; `css` is there only when the pane holds text:
 //
-//   #platform=browser-direct&code=<base64url>&css=<base64url>
+//   #platform=browser-tea&code=<base64url>&css=<base64url>
 
 /// The longest source, and the longest CSS, a link opens: a link is typed
 /// by no one, and a few bytes of deflate data can stand for hundreds of

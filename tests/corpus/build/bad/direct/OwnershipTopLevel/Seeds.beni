@@ -1,3 +1,0 @@
--- The top-level list `Main`'s model starts with.
-pub seed : List String
-seed = [ "milk", "eggs" ]

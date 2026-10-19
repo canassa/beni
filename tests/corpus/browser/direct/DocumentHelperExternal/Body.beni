@@ -1,8 +1,0 @@
-import Tea
-
-
-pub page : msg, Int → Tea.Document msg
-page msg n =
-    { title = "count ${String.fromInt n}"
-    , body = <button id="inc" onClick={msg}>{n}</button>
-    }

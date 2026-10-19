@@ -1,5 +1,0 @@
-5350 Owner-delegated grant (2026-10-15; CLAUDE.md, *Every test has a budget*), lowered from 6 400M.
-Cause: a browser/direct/ page is four builds in one case (browser-direct and browser-tea, dev and
-release). Since #181 the page runs compiled schemas (no core/Schema interpreter, #105 closed).
-Size: 4 863M on the x86-64 Linux reference with Node running the pages; the limit adds 10%.
-Remove when the case fits 4 300M without this file (issue #184).

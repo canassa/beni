@@ -1,7 +1,0 @@
-click #quiet
-focus #keyed>li>input
-click #edit
-click #prefix
-click #swap
-click #edit
-click #quiet

@@ -78,7 +78,7 @@
 //!                                 as ReleaseSmall WebAssembly, into
 //!                                 zig-out/playground/
 //!   zig build test-playground     run that compiler under Node on every
-//!                                 run/ and browser/direct/ program and on
+//!                                 run/, browser/tea/ and browser/inline/ program and on
 //!                                 TodoMVC, against the native compiler,
 //!                                 byte for byte
 //!   zig build test-playground-page  drive the site in a headless Chrome
@@ -788,14 +788,14 @@ pub fn build(b: *std.Build) void {
     // TodoMVC is a sample (§4.3), kept once, where its benchmark keeps it.
     playground_step.dependOn(&b.addInstallFileWithDir(
         b.path("bench/todomvc/apps/beni/Sandbox.beni"),
-        .{ .custom = playground_dir ++ "/samples/browser-direct" },
+        .{ .custom = playground_dir ++ "/samples/browser-tea" },
         "TodoMVC.beni",
     ).step);
     // That compiler against the native one, on every `run/` and
-    // `browser/direct/` program and on TodoMVC (§6). Not a gate: the LLVM
+    // `browser/tea/` and `browser/inline/` program and on TodoMVC (§6). Not a gate: the LLVM
     // compile of the `.wasm` is about a minute and a half on one thread.
     // No budget, as for `test-browser`; takes `-Dcorpus`.
-    const test_playground_step = b.step("test-playground", "Run the playground's WebAssembly compiler under Node on every run/ and browser/direct/ program and on TodoMVC, against the native compiler, byte for byte");
+    const test_playground_step = b.step("test-playground", "Run the playground's WebAssembly compiler under Node on every run/, browser/tea/ and browser/inline/ program and on TodoMVC, against the native compiler, byte for byte");
     bb.runSharded(test_playground_step, bb.artifact("tests/blackbox/playground_test.zig"), .{ .root = "tests/corpus", .wasm = .shipped, .budget = false }, playground_shards);
     // The page in a headless Chrome (§6): the samples, the frame, the
     // diagnostics, the tabs and the link. Not a gate: it needs a Chrome
