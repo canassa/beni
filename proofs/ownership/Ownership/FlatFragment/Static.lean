@@ -258,7 +258,7 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     rcases elementFlat with rfl | rfl
     · exact .listBottom _ _
     · exact .listScalar _ _
-  | @push receiver item receiverFlat =>
+  | @push receiver item =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted
     obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
