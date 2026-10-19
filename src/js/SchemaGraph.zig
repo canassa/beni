@@ -302,7 +302,8 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
                 return;
             }
             const op = member.op().?;
-            try out.append(scratch, "pathAt");
+            // A validator builds no path (`SchemaLower`'s `pathArgs`).
+            if (op != .valid) try out.append(scratch, "pathAt");
             // `compiledFail`, for any failure branch: the depth bound and a
             // missing key call it too where the build does not share their
             // helpers (`SchemaShare`), which are roots of their own when it
