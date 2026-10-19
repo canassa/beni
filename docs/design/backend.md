@@ -5082,6 +5082,62 @@ the slice's branch: `run/Dictionaries` 154.66M → 155.19M (+0.34%), `browser/te
 pieces' own printing and the concatenation; the saving is slice 3's, when the embedded modules
 are not lowered at all.
 
+*As built (slice 2, 2026-10-18).* `src/js/Funnel.zig` is the funnel and the record: every read
+`Lower` makes of the build whose answer can reach a printed byte asks the funnel, and the answer
+is the build's own state — a build with no recorder pays one null check per ask. The questions
+are §9's list: the six survivor sets (asked as `decl`, `derived`, `twin`, `ctor`, `schema` and
+`lift`); the dead arms (`arm_dead`, and the `probe` of a `Js.maySuspend` body); `consumed` and
+`wanted`; `nullary`; the three comparator flags (`primitive`); `entry`, `development`,
+`core_private`, `schema_library`, `debug`, `markup` and `direct`; whether a derived row's
+`$$steps` helper was appended (`steps`); every cross-module `needName` (`askNeed`); and the
+runtime exports, which are a module-level or (`orRuntime`). The asks made before the first unit
+— the reach walk, `findDeadArms`, the `wanted`/`consumed` loop, the entry declaration, the head
+imports and a lift — are recorded and belong to no unit, so a build that would answer one
+differently is a unit that falls back, never a refusal.
+
+`src/js/EmitPack.zig` is the row (`Kind.emit`, pack `version` 3, the row format's v1): keyed by
+SipHash-1-3 over `"BENIEMIT"`, the format version, the module key and one byte of
+`--schema-library`, one row per option. A row holds the module's unit text as one blob and, per
+unit, its selector, its run of facts, its range of the text, the marks' identities and the
+identities it introduced, its `Needed` entries in ask order, its runtime bits and the outgoing
+edges the join replays. The head, the tail and the footer are not stored: the join rebuilds
+them.
+
+`src/core_pack_main.zig` makes the rows. After the entry, front-end and edge lists, one pass
+lowers each cacheable embedded module ONCE with canonical facts — a development build,
+`--schema-library` off, an all-live `Reach.Result` (`canonicalLive`), `lifts` empty and no
+direct handle — prints it as head, one piece per unit and tail, joins the pieces back, encodes
+them, and adds the one payload under both option keys; the pack stores the bytes of two rows
+with the same content once, as it does for edge lists. The maker then checks itself: it decodes
+every row, rebuilds the pieces from the row and joins them, requiring the natural join of the
+same lowering byte for byte. A module the maker cannot cache — one that writes markup (a static
+scan of its `.ext_value`s and `.top`s, and `uses_markup`), names a program constructor or a
+placement, declares a `schema`, or owns a codec plan — has NO row at all (§9, *The maker*;
+`fast-compiler.md` §8): the completeness check asks the same `refuses` question of every module
+before it requires both rows, and the exact post-lowering net
+(`Lower.Result.uses_markup_runtime`) fails the maker with the module named, because the check
+cannot see a refusal the static scan cannot. No embedded module is refused today, and every row
+is non-empty. The 126 emit rows are 63 keys — 56 modules, plus seven extra chain instances,
+since a platform module that declares a `foreign` value carries both the lowering of its own
+chain layer and the build's in its key, and the vocabulary module carries the chain's facts
+(`cache/Key.zig`): a module has one row per distinct answer of the chains it can be checked in.
+`Html` is keyed five times (its own chain, `dom`, `direct`, `inline` and `ssr`, with `browser`
+and `browser-tea`'s `dom` one) and `Dom`, `Hosted` and `Browser.Events` twice (`dom` and
+`direct`). Equal bytes are stored once: the 63 keys hold 53 payloads totalling 2 438 238 bytes,
+because a key's two option rows, a module's extra chain instance and the four modules with no
+unit at all (`Js`, `Url/Parser/Internal`, `Ssr` and `browser-inline`'s `Tea`) share their bytes.
+
+No build reads a row, so nothing the gates see moved: a master-against-branch `diff -r` of the
+three evidence trees is empty — 16, 43 and 59 files byte for byte, source maps included — the
+`emit/` goldens are what they were, 0 of the 2610 corpus programs ran under Node for want of a
+run hash, and the determinism test passes. `zig build gates` is green, 237/237 steps. What the
+rows cost is theirs to hold: the pack grows from 3 958 080 to 6 399 846 bytes (2 438 238 of
+payload in the 53 records, plus 3 528 of row table), and the maker's run is 1–2 s in every
+compiler build beside the 8–13 s its one compile adds. Of the medians of `perf stat -e instructions:u`, five runs
+each, `1e0a6cb68` against the slice: `run/Dictionaries` 155.30M → 155.83M (+0.34%),
+`browser/tea/ApiItems` 502.66M → 507.29M (+0.92%) and `bench/corpus` as one `--library` build
+407.69M → 410.93M (+0.80%) — the funnel's asks, on the builds that answer them.
+
 ### The release optimiser — items 1, 2, 3 and 5
 
 **One change, four passes, one flag** (§1). Everything here runs **only under `--release`**; the dev
