@@ -1326,14 +1326,15 @@ and nothing of `core/Schema`'s issue makers ships for it.
   full comparison with them.
 - **Which runs** *(amended 2026-10-18)*. Four, each at an unread call:
   - `Schema.read s v`, as the status below says;
-  - `Schema.parse (S.schema ⊤) text` of a nongeneric declaration: the core-private
-    `Schema.validParse`, which is `JSON.parse` with only its `SyntaxError` caught (CLAUDE.md
-    rule 9), then `S`'s validator worker on `read`'s context. That worker holds for what
+  - `Schema.parse (S.schema ⊤) text` of a nongeneric declaration: `JSON.parse` with only its
+    `SyntaxError` caught (CLAUDE.md rule 9), then `S`'s validator worker on `read`'s context
+    (*amended 2026-10-19*: written where it stands, below; it was the core-private
+    `Schema.validParse`). That worker holds for what
     `JSON.parse` makes as for any host value; it never keeps the parsed array, which no program
     can tell from keeping it. A `parse` of any other schema keeps its issues;
   - `Json.decodeValue v` and `Json.decode text` whose evidence is a nongeneric derived codec of
-    the calling module (§12.10): one call of `Schema.validRun` or `Schema.validParse` with the
-    codec's validator worker, in place of `Json`'s function, so neither `Json` nor the codec's
+    the calling module (§12.10): the codec's validator worker, written where the run stands
+    (below; it was one call of `Schema.validRun` or `Schema.validParse`), in place of `Json`'s function, so neither `Json` nor the codec's
     value ships for the run. A generic codec's keeps its issues.
   A `With` form takes options and is none of them. Each run calls the per-schema validator
   worker above, so a program's validators cost what they cost before, and only runs that were no
@@ -1346,8 +1347,9 @@ and nothing of `core/Schema`'s issue makers ships for it.
 - **Status** *(2026-10-17)*. Built for `read`: a qualifying run calls the core-private
   `Schema.readValid`, which runs the declaration's validator workers (`$$readValid`, the
   reachability member `read_valid`) on `read`'s context and fails with an empty list; one whose
-  schema is `S.schema ⊤` of a nongeneric declaration calls the core-private `Schema.validRun` with
-  `S`'s validator worker, and makes no schema value. Not yet built for `parse` and `decode`, nor for
+  schema is `S.schema ⊤` of a nongeneric declaration calls `S`'s validator worker, and makes no
+  schema value (*amended 2026-10-19*: where it stands, below; it called the core-private
+  `Schema.validRun`). Not yet built for `parse` and `decode`, nor for
   a schema that `Schema.list` or a primitive maker makes at the call, whose core workers keep their
   issues.
 - **One failure, so fewer tests** *(amended 2026-10-17)*. Every failure of a validator is the one
@@ -1362,6 +1364,42 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Object.prototype` holds keeps its `Object.hasOwn` test. Measured (brotli 11):
   `emit/release/inline/PushAndTimer` 670 → 628, `app/ValidatorRun` 685 → 655, before
   `backend.md` §9's *A short `switch` is its `if`s* took the tag's `switch`.
+- **A validator run calls its worker where it stands** *(amended 2026-10-19, the owner's
+  decision)*. A direct run — `read` or `parse` of `S.schema ⊤` of a nongeneric declaration, or a
+  `Json` run of a nongeneric derived codec — calls no shared runner. It is written at its call:
+
+      const c = Schema.validContext()                 // read's context, its fail mark its own
+      const j = Schema.validJson(c, text)             // a parse: JSON.parse, only SyntaxError caught
+      const x = W(c, 0, null, null, null, value)      // a parse: j === c.fail ? j : W(…, j)
+      x === c.fail ? Err [] : Ok x
+
+  `W` is the run's validator worker, `$$readValid`. A `Result.withDefault` or `Result.toMaybe`
+  whose first argument is such a run is written beside it too, and never called:
+  `x === c.fail ? d : x`, or `x === c.fail ? Nothing : Just x`, with `d` evaluated after the
+  run, as the call's arguments are. A `case` on the run reads `x` as it would the `Result`.
+  - *Why.* `validRun`, the runner every direct run shared, held what every worker returns in one
+    variable, and `Result.withDefault`, shared by every run it took, held every one of those
+    and every default in another. `--release`'s points-to analysis (`backend.md` §9,
+    `src/js/Spec.zig`) gives up on a variable that may hold more than 48 object literals
+    (`max_sites`) and treats all it holds as escaped. Past about 20 runs it did, and every field
+    of every record a worker builds was kept, read or not: on the research dashboard at 22 widgets,
+    54 fields became 101, and the 47 extra took two-letter names. Written where it stands, a run's
+    records flow to its own reader alone, whatever the count. The cap is a defect of its own
+    (#442), which any shared function can still meet; this removes the one the validator
+    lowering made.
+  - *What stays shared.* `validContext` and `validJson` return nothing a worker builds, so
+    sharing them costs no precision. `readValid`, a dynamic schema's run, keeps `validRun`.
+  - *Measured* (brotli 11, release). `emit/release/app/ValidatorRunsApart` 1 360 → 1 234;
+    the 22-widget dashboard of the diagnosis 2 874 → 2 436. `unique-components` (`--lists none`,
+    `browser-inline`) at one widget 1 745 / 1 634 / 1 884 → 1 642 / 1 543 / 1 778 for seeds 1–3,
+    every size below T 78 to 175 B smaller, and the shape sizes (64, 256) unchanged: the fit
+    2 422 + 273.9 B/widget → 2 328 + 274.4. `app/ValidatorParse` 575 → 509, `inline/ErrorUnreadWidgets`
+    1 087 → 986. `app/ShapeThresholdBelow` 1 053 → 1 124: 24 runs whose `Ok` and `Err` are
+    `True` and `False` each pay for a context of their own, about 3 B a run. `EmptyElement`,
+    `EmptySandbox` and `PushAndTimer` do not move.
+  - *Fixtures.* `emit/release/app/ValidatorRunsApart` (22 `Json` runs under
+    `Result.withDefault`, each record's unread field gone), and `run/SchemaValidatorOrder`
+    (evaluation order and answers of all four runs under both consumers, in every build).
 
 **A validator run is a shape that one shared validator reads** *(added 2026-10-18, the owner's
 decision)*. A run whose error the program discards is a type test, not a decoder, so it need not

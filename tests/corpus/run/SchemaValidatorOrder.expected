@@ -1,0 +1,31 @@
+read value: ⊤
+read default: ⊤
+parse text: ⊤
+parse default: ⊤
+maybe value: ⊤
+decodeValue value: ⊤
+decodeValue default: ⊤
+decode text: ⊤
+read value: ⊤
+read default: ⊤
+parse text: ⊤
+parse default: ⊤
+maybe value: ⊤
+decodeValue value: ⊤
+decodeValue default: ⊤
+decode text: ⊤
+parse text: ⊤
+parse default: ⊤
+decode text: ⊤
+1,2
+1,2
+1,2
+3/4
+3/4
+0,0
+0,0
+nothing
+0/0
+nothing
+0,0
+nothing
