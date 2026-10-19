@@ -1,0 +1,40 @@
+-- A List Html value keeps helper hole reads, but has no row edit plan.
+import Helpers
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    rows : List Int
+    label : String
+
+
+type Msg
+    = First
+    | Label
+    | Quiet
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        First →
+            { model | rows = List.set model.rows 0 3 }
+        Label →
+            { model | label = model.label ++ "!" }
+        Quiet →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="first" onClick={First}>first</button>
+        <button id="label" onClick={Label}>label</button>
+        <button id="quiet" onClick={Quiet}>quiet</button>
+        {List.map model.rows (Helpers.row model.label _)}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { rows = [ 1, 2 ], label = "a" }, update = update, view = view }

@@ -1,0 +1,29 @@
+-- load
+<body>
+  <main>
+    <p id="text">""</p>
+    <input id="in" .value="">
+  </main>
+</body>
+-- input #in "ok"
+<body>
+  <main>
+    <p id="text">"ok"</p>
+    <input id="in" .value="ok">
+  </main>
+</body>
+-- throws input #in "boom"
+(threw: Error: TODO: payload threw)
+<body>
+  <main>
+    <p id="text">"ok"</p>
+    <input id="in" .value="boom">
+  </main>
+</body>
+-- input #in "after"
+<body>
+  <main>
+    <p id="text">"ok"</p>
+    <input id="in" .value="after">
+  </main>
+</body>

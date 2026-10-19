@@ -1,0 +1,1 @@
+4850 TodoPage on browser-tea, built for development and release over Http, two schema declarations and TodoMVC's view, with Node running both pages: measured 4 404M on the x86-64 Linux reference on 2026-10-19, plus 10%. Re-sized from the paired browser-direct grant (8 900M), delegated. Remove when it fits 4 300M with Node running (#361).

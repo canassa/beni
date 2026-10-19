@@ -4,7 +4,7 @@ module Prepend
   40:23 construction acc: accepted param
   47:32 call Prepend.recurse <literal>: accepted fresh (Prepend.recurse writes π1)
   52:18 update points[*]: rejected later-use: points[*] is read again at 53:24 (List.map writes it) [copy]
-  52:39 update q: pending: List.map hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
+  52:39 update q: accepted callback-param (List.map supplies it owned)
   65:15 construction s: rejected later-use: s is read again at 66:25
   71:18 construction s: rejected later-use: s is read again at 72:25
   78:15 construction top: rejected call: s may hold it through the call at 77:16, and is read at 79:25 (approx)
@@ -13,15 +13,15 @@ module Prepend
   summary suffix: π1 R; res [*] ~fresh2, fresh1
   summary recurse: π1 RAW, π2 R, π2[*] R, π2[*].x R; res π1
   summary suffixRead: π1 R, π1[*] R, π1[*].x R
-  summary mapped: π1 R, π1[*] RW{x}, π2 R
+  summary mapped: π1 R, π1[*] RW{x}, π2 R; rxreq excl π1
   summary stack: π1 R
   summary pushed: π1 RW
   summary between: π2 RW
   summary grownAfter: π2 Rw
   summary grownDead: π2 RAw; res fresh1{excl π2} ~π2
   demands 8: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-  records 2: accepted 0, pending 1, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+  records 2: accepted 1, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
 total 8: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-records 2: accepted 0, pending 1, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+records 2: accepted 1, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
 cause later-use 2
 cause call 1

@@ -1,0 +1,22 @@
+module PolyRecShared
+  25:26 List.push a: rejected call: b⋆ may hold it through the call at 23:10, and is read at 25:43 (approx)
+  48:26 List.push r.u.u: rejected element: r.v holds it and is read at 48:47 (approx)
+  75:26 List.push a: rejected call: b⋆ may hold it through the call at 73:10, and is read at 75:43 (approx)
+  85:26 List.push a: rejected call: b⋆ may hold it through the call at 83:18, and is read at 85:43 (approx)
+  95:26 List.push a: rejected call: b⋆ may hold it through the call at 93:18, and is read at 95:43 (approx)
+  105:26 List.push a: rejected call: b⋆ may hold it through the call at 103:19, and is read at 105:43 (approx)
+  115:26 List.push r.u.u.u: rejected element: r.v holds it and is read at 115:49 (approx)
+  summary wrap: π2 RA; res #Leaf.0 π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.0 π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.0⋆ ~π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.1 π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.1⋆ ~π2{lost}r{lost}
+  summary tup: π1 Rw, π1.0 Rw, π1.1 R
+  summary rwrap: π2 RA; res #RLeaf.0 π2{lost}r{lost}, #RWrap.0⟨R⟩#RLeaf.0 fresh501◦r{lost} fresh502◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.u fresh501◦r{lost} fresh502◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.u⋆ ~fresh501◦r{lost} ~fresh502◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.v fresh501◦r{lost} fresh502◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.v⋆ ~fresh501◦r{lost} ~fresh502◦r{lost}, ⟨R⟩⁺#RLeaf.0.u π2{lost}r{lost}, ⟨R⟩⁺#RLeaf.0.u⋆ ~π2{lost}r{lost}, ⟨R⟩⁺#RLeaf.0.v π2{lost}r{lost}, ⟨R⟩⁺#RLeaf.0.v⋆ ~π2{lost}r{lost}
+  summary rec: π1 Rw, π1.u Rw, π1.v R
+  summary cwrap: π2 RA; res #CLeaf.0 π2{lost}r{lost}, ⟨C⟩⁺#CLeaf.0#B.0 π2{lost}r{lost}, ⟨C⟩⁺#CLeaf.0#B.0⋆ ~π2{lost}r{lost}, ⟨C⟩⁺#CLeaf.0#B.1 π2{lost}r{lost}, ⟨C⟩⁺#CLeaf.0#B.1⋆ ~π2{lost}r{lost}
+  summary cus: π1 Rw, π1#B.0 Rw, π1#B.1 R
+  summary fresh: unused
+  summary fresh3: unused
+  summary freshC: unused
+  summary freshR: unused
+  demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause element 2
+cause call 5

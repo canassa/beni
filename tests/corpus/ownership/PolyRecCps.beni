@@ -1,0 +1,73 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- Continuation-passing recursion grows what a function hands its callback
+-- (`h`, `cps`: `supply 1⟨T⟩⁺#Leaf.0[*]⋆`), and a local group grows through a
+-- let-bound lambda (`local2`). Each stops at `[*]⋆`.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+h : Int, a, (T a → Int) → Int
+h n x f =
+    if n == 0 then
+        f (Leaf x)
+    else
+        h (n - 1) [ x ] λt → f (Wrap t)
+
+
+cps : Int, a, (T a → r) → r
+cps n x k =
+    if n == 0 then
+        k (Leaf x)
+    else
+        cps (n - 1) [ x ] λt → k (Wrap t)
+
+
+pub useCps : List Int → Int
+useCps xs = cps 2 xs λt →
+    case t of
+        Wrap (Wrap (Leaf [ [ ys ] ])) →
+            List.length (List.push ys 1) + List.length xs
+
+        _ →
+            0
+
+
+g2 : Int, a → (Int → Int)
+g2 n x =
+    if n == 0 then
+        λk → k + List.length [ x ]
+    else
+        f = g2 (n - 1) [ x ]
+        λj → f j + 1
+
+
+local : Int, List Int → T (List Int)
+local m xs =
+    lw : Int, a → T a
+    lw n x =
+        if n == 0 then
+            Leaf x
+        else
+            Wrap (lv (n - 1) [ x ])
+    lv : Int, b → T b
+    lv n x =
+        if n == 0 then
+            Leaf x
+        else
+            Wrap (lw (n - 1) [ x ])
+    lw m xs
+
+
+local2 : Int, List Int → T (List Int)
+local2 m xs =
+    lw : Int, a → T a
+    lw n x =
+        if n == 0 then
+            Leaf x
+        else
+            k = λy → lw (n - 1) y
+            Wrap (k [ x ])
+    lw m xs

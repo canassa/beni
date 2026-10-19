@@ -74,3 +74,5 @@ decode label absent: { color = Red, label = Nothing, pos = (3,4), small = -1, ta
 decode label null: { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ }
 decode duplicate key and __proto__: { color = Red, label = Nothing, pos = (3,4), small = 2, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = 2, tags = [], unit = ⊤ }
 decode duplicate key, last bad: invalid | invalid (1)
+host writes after the run: 1 one | 1 one
+extra keys, == at a type variable: equal | equal

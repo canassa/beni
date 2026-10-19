@@ -1,0 +1,8 @@
+-- load
+<body>
+  <button id="go">"go"</button>
+</body>
+-- throws click #go
+console.info: waiter released: Cancelled
+(threw: Error: TODO: waiter defect)
+(the DOM did not change)

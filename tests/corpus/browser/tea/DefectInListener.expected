@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <p id="text">""</p>
+    <input id="in" .value="">
+  </main>
+</body>
+-- input #in "ok"
+<body>
+  <main>
+    <p id="text">"ok"</p>
+    <input id="in" .value="ok">
+  </main>
+</body>
+-- throws input #in "boom"
+(threw: Error: TODO: payload threw)
+<body>
+  <main>
+    <p id="text">"ok"</p>
+    <input id="in" .value="boom">
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: payload threw"</div>
+</body>
+-- input #in "after"
+<body>
+  <main>
+    <p id="text">"ok"</p>
+    <input id="in" .value="after">
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: payload threw"</div>
+</body>

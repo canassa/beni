@@ -1,0 +1,122 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)). A call
+-- inside the recursive group being solved that instantiates a type variable at
+-- a structure (`a` at `List a`) composes the callee's summary path with the
+-- argument's exactly the first time an entry goes below the variable, and marks
+-- it; a later composition goes to `⋆`. So the summaries are finite with no path
+-- cut: `g` grows under a closure with no nested datatype, `wrap` through a
+-- nested datatype, `mwrap` through a `Maybe`, `pwrap` through a mutual pair,
+-- `uwrap` under a field that names no type variable; each stops at `[*]⋆`, its
+-- conditions master's (`{excl π2}`). `pushArg`, which writes the argument it
+-- took back out of `wrap`'s result, is accepted `param` as on master; a fold of
+-- the argument refused it. A capture written while `g`'s closure lives is
+-- still refused (`callG`).
+g : Int, a → (Int → Int)
+g n x =
+    if n == 0 then
+        λk → k + List.length [ x ]
+    else
+        g (n - 1) [ x ]
+
+
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+wrap : Int, a → T a
+wrap n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wrap (n - 1) [ x ])
+
+
+type M a
+    = MLeaf (Maybe a)
+    | MWrap (M (List a))
+
+
+mwrap : Int, a → M a
+mwrap n x =
+    if n == 0 then
+        MLeaf (Just x)
+    else
+        MWrap (mwrap (n - 1) [ x ])
+
+
+type P a
+    = PW (Q (List a))
+    | PLeaf a
+
+
+type Q a
+    = QV (P a)
+
+
+pwrap : Int, a → P a
+pwrap n x =
+    if n == 0 then
+        PLeaf x
+    else
+        PW (QV (pwrap (n - 1) [ x ]))
+
+
+type U a
+    = ULeaf (Int → Int)
+    | UWrap (U (List a))
+
+
+uwrap : Int, a → U a
+uwrap n x =
+    if n == 0 then
+        ULeaf λk → k + List.length [ x ]
+    else
+        UWrap (uwrap (n - 1) [ x ])
+
+
+pub pushInner : List Int → Int
+pushInner xs =
+    case wrap 1 xs of
+        Wrap (Leaf ys) →
+            List.length (List.push ys [])
+
+        _ →
+            0
+
+
+pub pushArg : List Int → Int
+pushArg xs =
+    case wrap 1 xs of
+        Wrap (Leaf ys) →
+            case ys of
+                [ zs ] →
+                    List.length (List.push zs 1)
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub pushFresh : Int → Int
+pushFresh n =
+    case wrap 1 (List.repeat n 0) of
+        Wrap (Leaf ys) →
+            case ys of
+                [ zs ] →
+                    List.length (List.push zs 1)
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub callG : List Int → Int
+callG xs =
+    f = g 3 xs
+    ys = List.push xs 1
+    f 0 + List.length ys

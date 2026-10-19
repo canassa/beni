@@ -1,0 +1,243 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "0"
+    </button>
+    <ul id="branch">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">
+        "2"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li class="odd">
+        <button id="odd3">"3"</button>
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del1">"1"</button>
+      </li>
+      <li>
+        <button id="del2">"2"</button>
+      </li>
+      <li>
+        <button id="del3">"3"</button>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "1"
+    </button>
+    <ul id="branch">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">
+        "2"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li class="odd">
+        <button id="odd3">"3"</button>
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del1">"1"</button>
+      </li>
+      <li>
+        <button id="del2">"2"</button>
+      </li>
+      <li>
+        <button id="del3">"3"</button>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "1"
+    </button>
+    <ul id="branch">
+      <li class="odd">
+        <button id="odd1">"1"</button>
+      </li>
+      <li class="even">
+        "2"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li class="odd">
+        <button id="odd3">"3"</button>
+      </li>
+      <li class="even">
+        "4"
+        " at "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del1">"1"</button>
+      </li>
+      <li>
+        <button id="del2">"2"</button>
+      </li>
+      <li>
+        <button id="del3">"3"</button>
+      </li>
+      <li>
+        <button id="del4">"4"</button>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #odd1
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "1"
+    </button>
+    <ul id="branch">
+      <li class="even">
+        "2"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li class="odd">
+        <button id="odd3">"3"</button>
+      </li>
+      <li class="even">
+        "4"
+        " at "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del2">"2"</button>
+      </li>
+      <li>
+        <button id="del3">"3"</button>
+      </li>
+      <li>
+        <button id="del4">"4"</button>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #del2
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "1"
+    </button>
+    <ul id="branch">
+      <li class="odd">
+        <button id="odd3">"3"</button>
+      </li>
+      <li class="even">
+        "4"
+        " at "
+        "1"
+        <!---->
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del3">"3"</button>
+      </li>
+      <li>
+        <button id="del4">"4"</button>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #clear
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "1"
+    </button>
+    <ul id="branch"></ul>
+    <ol id="fallback">
+      <li>"empty"</li>
+    </ol>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "1"
+    </button>
+    <ul id="branch">
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del5">"5"</button>
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="clear">"clear"</button>
+    <button id="bump">
+      "bump "
+      "2"
+    </button>
+    <ul id="branch">
+      <li class="odd">
+        <button id="odd5">"5"</button>
+      </li>
+    </ul>
+    <ol id="fallback">
+      <li>
+        <button id="del5">"5"</button>
+      </li>
+    </ol>
+  </main>
+</body>

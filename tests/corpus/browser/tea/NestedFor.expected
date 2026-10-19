@@ -1,0 +1,321 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">""</p>
+    <ul>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell2">"second"</b>
+        <ol>
+          <li>
+            <button>"c"</button>
+            " of "
+            "second"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click ul>li:nth-child(1)>ol>li:nth-child(2)>button
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first"</p>
+    <ul>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell2">"second"</b>
+        <ol>
+          <li>
+            <button>"c"</button>
+            " of "
+            "second"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #cell2
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first outer second"</p>
+    <ul>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell2">"second"</b>
+        <ol>
+          <li>
+            <button>"c"</button>
+            " of "
+            "second"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first outer second"</p>
+    <ul>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"new"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell2">"second"</b>
+        <ol>
+          <li>
+            <button>"c"</button>
+            " of "
+            "second"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first outer second"</p>
+    <ul>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"new"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell2">"second"</b>
+        <ol>
+          <li>
+            <button>"c!"</button>
+            " of "
+            "second"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #retitle
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first outer second"</p>
+    <ul>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"new"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell2">"second*"</b>
+        <ol>
+          <li>
+            <button>"c!"</button>
+            " of "
+            "second*"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first outer second"</p>
+    <ul>
+      <li>
+        <b id="cell2">"second*"</b>
+        <ol>
+          <li>
+            <button>"c!"</button>
+            " of "
+            "second*"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"new"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click ul>li:nth-child(1)>ol>li:nth-child(1)>button
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="rename">"rename"</button>
+    <button id="retitle">"retitle"</button>
+    <button id="swap">"swap"</button>
+    <p id="log">" inner b list first outer second inner c! list second*"</p>
+    <ul>
+      <li>
+        <b id="cell2">"second*"</b>
+        <ol>
+          <li>
+            <button>"c!"</button>
+            " of "
+            "second*"
+          </li>
+        </ol>
+      </li>
+      <li>
+        <b id="cell1">"first"</b>
+        <ol>
+          <li>
+            <button>"a"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"b"</button>
+            " of "
+            "first"
+          </li>
+          <li>
+            <button>"new"</button>
+            " of "
+            "first"
+          </li>
+        </ol>
+      </li>
+    </ul>
+  </main>
+</body>

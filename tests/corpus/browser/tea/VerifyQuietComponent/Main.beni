@@ -1,0 +1,44 @@
+-- The development verify mode never makes a component's markup again when
+-- the component's function may print (browser-direct.md §8.3): a component
+-- with children between its tags is a value slot (S4's value path), and its
+-- check mounts its markup afresh, which runs the component's function — a
+-- `Debug.log` in it printed twice per dispatch in development. Its props
+-- reach no `Debug`, so only the function tells. The transcript is
+-- `browser-tea`'s and the release build's, which have no verify mode: the
+-- component logs once per message that writes `n`, and not on `other`.
+import Html exposing (Html)
+import Logged
+import Tea
+
+
+type Msg
+    = Inc
+    | Other
+
+
+type alias Model =
+    n : Int
+    other : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+        Other →
+            { model | other = model.other + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="other" onClick={Other}>other {model.other}</button>
+        <Logged n={model.n}><p>child</p></Logged>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { n = 0, other = 0 }, update = update, view = view }

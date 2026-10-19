@@ -1,0 +1,15 @@
+module RecordContentsEntry
+  33:15 update model: accepted param
+  33:32 List.push model.rows: accepted param
+  36:15 update model: accepted param
+  36:32 update model.rows[*]: accepted param (List.map writes it)
+  36:57 update r: accepted callback-param (List.map supplies it owned)
+  48:5 entry RecordContentsEntry.update model.rows: accepted entry
+  48:5 update entry RecordContentsEntry.update model: accepted entry
+  48:5 update entry RecordContentsEntry.update model.rows[*]: accepted entry
+  summary update: π2 W{rows}, π2.rows RAW, π2.rows[*] W{done}; res .0 π2◦, .0.rows fresh1r{excl π2.rows} π2.rows, .0.rows[*] ~fresh2r{excl π2.rows} ~fresh501◦ ~π2.rows[*] ~π2.rows[*]◦, .1#Cmd.0 shared(Cmd.none)#Cmd.0; rxreq excl π2.rows
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
+  demands 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
+  records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
+records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

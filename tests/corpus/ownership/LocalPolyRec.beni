@@ -1,0 +1,31 @@
+-- ownership: the composed-path fold in a block's local group (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a), and
+-- §18.7). `g` is an annotated `let` function that recurs at `List a`; the fold
+-- applies at its own calls while its group is solved, so `f`'s summary is
+-- finite, `◇ π2, ◇[*] π2, ◇[*]⋆ π2`, where the cut grew it to eight steps.
+-- Writing the list while the closure lives is refused (`live`); after it is
+-- read for the last time it is accepted (`after`).
+pub f : Int, List Int → (Int → Int)
+f m xs =
+    g : Int, a → (Int → Int)
+    g n x =
+        if n == 0 then
+            λk → k + List.length [ x ]
+        else
+            g (n - 1) [ x ]
+    g m xs
+
+
+pub live : List Int → Int
+live xs =
+    h = f 2 xs
+    ys = List.push xs 1
+    h 0 + List.length ys
+
+
+pub after : List Int → Int
+after xs =
+    h = f 2 xs
+    n = h 0
+    ys = List.push xs n
+    List.length ys

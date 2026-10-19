@@ -1,0 +1,101 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- The growth reaches the group through another route than a direct call:
+-- `apply` (a callback outside the group), a pipe, a let-bound lambda, whose
+-- own variable `k [ x ]` grows, a record, a tuple, a `Maybe`, a list, a
+-- record argument and a closure. Every summary stops at `[*]⋆`; at the cut
+-- they grew to eight steps.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+apply : (b → c), b → c
+apply f v = f v
+
+
+viaApply : Int, a → T a
+viaApply n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (apply (viaApply (n - 1) _) [ x ])
+
+
+viaPipe : a, Int → T a
+viaPipe x n =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap ([ x ] ▷ viaPipe (n - 1))
+
+
+viaLambda : Int, a → T a
+viaLambda n x =
+    if n == 0 then
+        Leaf x
+    else
+        k = λy → viaLambda (n - 1) y
+        Wrap (k [ x ])
+
+
+viaRecord : Int, a → T a
+viaRecord n x =
+    if n == 0 then
+        Leaf x
+    else
+        r = { t = viaRecord (n - 1) [ x ] }
+        Wrap r.t
+
+
+viaTuple : Int, a → T a
+viaTuple n x =
+    if n == 0 then
+        Leaf x
+    else
+        ( t, _ ) = ( viaTuple (n - 1) [ x ], 0 )
+        Wrap t
+
+
+viaMaybe : Int, a → T a
+viaMaybe n x =
+    if n == 0 then
+        Leaf x
+    else
+        case Just (viaMaybe (n - 1) [ x ]) of
+            Just t →
+                Wrap t
+
+            Nothing →
+                Leaf x
+
+
+viaList : Int, a → T a
+viaList n x =
+    if n == 0 then
+        Leaf x
+    else
+        case [ viaList (n - 1) [ x ] ] of
+            [ t ] →
+                Wrap t
+
+            _ →
+                Leaf x
+
+
+viaArgRec : Int, { v : a } → T a
+viaArgRec n r =
+    if n == 0 then
+        Leaf r.v
+    else
+        Wrap (viaArgRec (n - 1) { v = [ r.v ] })
+
+
+viaClosure : Int, a → (Int → T a)
+viaClosure n x =
+    if n == 0 then
+        λ_ → Leaf x
+    else
+        g = viaClosure (n - 1) [ x ]
+        λk → Wrap (g k)

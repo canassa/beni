@@ -1,0 +1,18 @@
+module PolyRec
+  82:26 List.push ys: accepted call
+  94:34 List.push zs: accepted param
+  109:34 List.push zs: rejected exclusive: the elements of the list it was taken from may share one list (approx)
+  121:10 List.push xs: rejected call: f◇ may hold it through the call at 120:9, and is read at 122:5 (approx)
+  summary g: π2 RA; res ◇ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} π2, ◇[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} ~π2, ◇[*]⋆ ~fresh1{excl π2}r{excl π2} ~π2
+  summary wrap: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
+  summary mwrap: π2 RA; res #MLeaf.0#Just.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨M⟩⁺#MLeaf.0#Just.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
+  summary pwrap: π2 RA; res #PLeaf.0 π2, ⟨P⟩⁺#PLeaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨P⟩⁺#PLeaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨P⟩⁺#PLeaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
+  summary uwrap: π2 RA; res #ULeaf.0◇ π2, #UWrap.0⟨U⟩#ULeaf.0◇ fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, #UWrap.0⟨U⟩#ULeaf.0◇[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, #UWrap.0⟨U⟩#ULeaf.0◇[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
+  summary pushInner: π1 R
+  summary pushArg: π1 Rw; xreq excl π1
+  summary pushFresh: unused
+  summary callG: π1 RW, π1[*] R
+  demands 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause call 1
+cause exclusive 1

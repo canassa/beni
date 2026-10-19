@@ -881,7 +881,7 @@ const Gen = struct {
             .primitive => return g.core(SchemaGraph.shapeReader(plan, n).?),
             .list, .nullable, .maybe => return g.l.arrayNode(&.{ try g.core(SchemaGraph.shapeReader(plan, n).?), try g.shapeOf(child) }, g.p),
             .check, .annotation => return g.shapeOf(child),
-            .record => return g.shapeRecord(n, null),
+            .record => return g.shapeRecord(n),
             .tuple => {
                 var items: std.ArrayList(Node.Index) = .empty;
                 try items.append(g.l.scratch, try g.core("shapeTuple"));
@@ -899,7 +899,11 @@ const Gen = struct {
                     const name = SchemaGraph.symbol(plan, v.name);
                     try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, v.external)));
                     if (v.payload.unwrap()) |payload| {
-                        try items.append(g.l.scratch, try g.shapeRecord(payload, .{ .info = info, .order = @intCast(order), .name = name }));
+                        // `[tag, record]`: `shapeTagged` makes `{$: tag, a: …}`,
+                        // a payload's variant being padded (`schemaCtorRep`).
+                        const rep = Lowerer.schemaCtorRep(.{ .order = @intCast(order), .count = 0, .arity = 1, .padded = info.padded, .name = name, .schema = g.schema, .module = g.ref.module, .ext = false, .owner = g.ref.decl });
+                        std.debug.assert(rep == .tagged and rep.tagged.fields == 1);
+                        try items.append(g.l.scratch, try g.l.arrayNode(&.{ try g.l.tagLiteral(rep, name, g.p), try g.shapeRecord(payload) }, g.p));
                     } else {
                         try items.append(g.l.scratch, try g.variantValue(info, @intCast(order), name, null));
                     }
@@ -943,36 +947,44 @@ const Gen = struct {
         }
     }
 
-    /// A record's shape: `[shapeRecord, make, entry₁, …]`, the entries
-    /// `[key, shape]`, `[key, shape, 1]` when optional or `[key, shape, 2]`
-    /// for a `Maybe` field in the declaration's order, `make` the arrow
-    /// that builds the record from their values in that order — in its
-    /// variant's constructor, for a payload.
-    fn shapeRecord(g: *Gen, n: PNode, variant: ?struct { info: Variants, order: u32, name: Symbol }) Allocator.Error!Node.Index {
+    /// A record's shape: `[shapeRecord, order, entry₁, …]`, the entries in
+    /// the canonical order of a record literal's keys (`fieldOrder`), each
+    /// `[key, shape]`, `[key, shape, 1]` when optional, `[key, shape, 2]`
+    /// for a `Maybe` field, or `[key, shape, flag, name]` when the field's
+    /// name is not its key; `order` `0` when the declaration lists the fields
+    /// in that order, else their places in the declaration's order. The
+    /// reader copies into a fresh record by the names, which keep their
+    /// source text (`boundary.md` §4, *Types a shape reads keep their
+    /// names*).
+    fn shapeRecord(g: *Gen, n: PNode) Allocator.Error!Node.Index {
         const plan = g.plan;
         const fields = SchemaGraph.fields(plan, n);
         const names = try g.l.scratch.alloc(Symbol, fields.len);
-        const params = try g.l.scratch.alloc(NameIndex, fields.len);
-        const ids = try g.l.scratch.alloc(Node.Index, fields.len);
-        for (fields, names, params, ids) |f, *name, *param, *id_slot| {
-            name.* = SchemaGraph.symbol(plan, f.name);
-            param.* = try g.fresh("$f");
-            id_slot.* = try g.id(param.*);
-        }
-        const built = try g.recordValue(names, ids);
-        const value = if (variant) |v| try g.variantValue(v.info, v.order, v.name, built) else built;
+        for (fields, names) |f, *name| name.* = SchemaGraph.symbol(plan, f.name);
+        const canonical = try g.l.fieldOrder(names);
         var items: std.ArrayList(Node.Index) = .empty;
         try items.append(g.l.scratch, try g.core(SchemaGraph.shapeReader(plan, n).?));
-        try items.append(g.l.scratch, try g.arrowOf(params, value));
-        for (fields) |f| {
-            var entry: std.ArrayList(Node.Index) = .empty;
-            try entry.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, f.external)));
-            try entry.append(g.l.scratch, try g.shapeOf(f.child));
-            if (SchemaGraph.isMaybeField(plan, f)) {
-                try entry.append(g.l.scratch, try g.num(2));
-            } else if (f.optional) {
-                try entry.append(g.l.scratch, try g.num(1));
+        var permuted = false;
+        for (canonical, 0..) |at, k| permuted = permuted or at != k;
+        if (permuted) {
+            // The entries' places, in the declaration's order.
+            var places: std.ArrayList(Node.Index) = .empty;
+            for (0..fields.len) |j| {
+                for (canonical, 0..) |at, k| if (at == j) try places.append(g.l.scratch, try g.num(@intCast(k)));
             }
+            try items.append(g.l.scratch, try g.l.arrayNode(places.items, g.p));
+        } else try items.append(g.l.scratch, try g.num(0));
+        for (canonical) |at| {
+            const f = fields[at];
+            const key = SchemaGraph.literal(plan, f.external);
+            const name = g.l.text(names[at]);
+            var entry: std.ArrayList(Node.Index) = .empty;
+            try entry.append(g.l.scratch, try g.str(key));
+            try entry.append(g.l.scratch, try g.shapeOf(f.child));
+            const flag: u32 = if (SchemaGraph.isMaybeField(plan, f)) 2 else if (f.optional) 1 else 0;
+            const renamed = !std.mem.eql(u8, key, name);
+            if (flag != 0 or renamed) try entry.append(g.l.scratch, try g.num(flag));
+            if (renamed) try entry.append(g.l.scratch, try g.str(name));
             try items.append(g.l.scratch, try g.l.arrayNode(entry.items, g.p));
         }
         return g.l.arrayNode(items.items, g.p);

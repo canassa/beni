@@ -1,0 +1,77 @@
+-- load
+console.log: total: 3
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="tick">
+      "tick "
+      "0"
+    </button>
+    <button id="toggle">"toggle"</button>
+    <p>
+      <b>"3"</b>
+      <i>"4"</i>
+    </p>
+  </main>
+</body>
+-- click #add
+console.log: total: 5
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="tick">
+      "tick "
+      "0"
+    </button>
+    <button id="toggle">"toggle"</button>
+    <p>
+      <b>"5"</b>
+      <i>"6"</i>
+    </p>
+  </main>
+</body>
+-- click #tick
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="tick">
+      "tick "
+      "1"
+    </button>
+    <button id="toggle">"toggle"</button>
+    <p>
+      <b>"5"</b>
+      <i>"6"</i>
+    </p>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="tick">
+      "tick "
+      "1"
+    </button>
+    <button id="toggle">"toggle"</button>
+    <p>"closed"</p>
+  </main>
+</body>
+-- click #add
+(the DOM did not change)
+-- click #toggle
+console.log: total: 8
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <button id="tick">
+      "tick "
+      "1"
+    </button>
+    <button id="toggle">"toggle"</button>
+    <p>
+      <b>"8"</b>
+      <i>"9"</i>
+    </p>
+  </main>
+</body>

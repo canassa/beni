@@ -1,0 +1,76 @@
+-- `browser/dom/ShowAndBranches` on `browser-direct` (§5.5; S4's amendment,
+-- item 3), its `if` in a hole written in place beside the helper's: a keyed
+-- `Show` and branches in a page. The inputs are not controlled, so text a
+-- step types into one shows whether its node survived. A `Show` keyed by
+-- `.id` keeps its body while the shown user's id is the same, even across
+-- an edit of the user's record, and mounts a new one for another id; the
+-- one keyed by identity mounts a new one for the edited record, a new
+-- value. A branch change mounts the other arm, and its input does not
+-- carry the typed text across, however alike the two inputs are; the same
+-- branch keeps its arm. `side` computes its markup, so its call is markup
+-- on the value path, `dom`'s kind, whose branch is the kind's own.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Rename
+    | Next
+    | Flip
+
+
+type alias User =
+    id : Int
+    name : String
+
+
+type alias Model =
+    user : Maybe User
+    left : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rename →
+            { model | user = Maybe.map model.user λu → { u | name = u.name ++ "!" } }
+
+        Next →
+            { model | user = Just { id = 2, name = "Grace" } }
+
+        Flip →
+            { model | left = not model.left }
+
+
+side : Bool → Html msg
+side left =
+    if left then
+        <input id="left" />
+    else
+        <input id="right" />
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="next" onClick={Next}>next</button>
+        <button id="flip" onClick={Flip}>flip</button>
+        <Show when={model.user} keyed={.id} fallback={<p>nobody</p>}>
+            {λu → <label>{u.name}<input id="by-key" /></label>}
+        </Show>
+        <Show when={model.user} keyed>
+            {λu → <label>{u.name}<input id="by-identity" /></label>}
+        </Show>
+        <div>{side model.left}</div>
+        <div>{if model.left then <input id="here-left" /> else <input id="here-right" />}</div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { user = Just { id = 1, name = "Ada" }, left = True }
+        , update = update
+        , view = view
+        }

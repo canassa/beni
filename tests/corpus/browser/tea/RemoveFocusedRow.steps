@@ -1,0 +1,4 @@
+# Row 2's input focused, then its button clicked: the row goes with its
+# focus, and the row's own handler still runs after the button's.
+focus #in2
+click #x2

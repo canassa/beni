@@ -1,0 +1,70 @@
+-- `browser/tea/Counters` on `browser-direct` (browser-direct.md §9.1, as
+-- amended for S3): two instances of one component, nested with `Html.map`,
+-- each sending its own `CounterMsg` wrapped in the page's `Msg`. The maps'
+-- functions are constructors, so each button's message is composed at
+-- compile time and its key's handler called with no dispatcher: `Left ·
+-- Increment` is a nested key, whose handler takes the composed message. The
+-- component is in the page's module here; the original's, in a module of
+-- its own, is markup of another module — a value on this platform, S4's.
+-- `Debug.log` in the view runs where its value's reads were written, once
+-- per message (§4.3: there is no batching).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type CounterMsg
+    = Increment
+    | Decrement
+
+
+type Msg
+    = Left CounterMsg
+    | Right CounterMsg
+
+
+type alias Model =
+    left : Int
+    right : Int
+
+
+step : CounterMsg, Int → Int
+step msg count =
+    case msg of
+        Increment →
+            count + 1
+
+        Decrement →
+            count - 1
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Left m →
+            { model | left = step m model.left }
+
+        Right m →
+            { model | right = step m model.right }
+
+
+counter : String, Int → Html CounterMsg
+counter name count =
+    <div id={name}>
+        <button id={"${name}-dec"} onClick={Decrement}>-</button>
+        <span>{count}</span>
+        <button id={"${name}-inc"} onClick={Increment}>+</button>
+    </div>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>total {Debug.log "view" (model.left + model.right)}</p>
+        {Html.map (counter "left" model.left) Left}
+        {Html.map (counter "right" model.right) Right}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { left = 0, right = 0 }, update = update, view = view }

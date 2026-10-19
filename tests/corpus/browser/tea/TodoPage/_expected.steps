@@ -1,0 +1,26 @@
+# The page loads the list from the API, adds a todo, toggles it, edits it,
+# filters, and deletes it; each change is a request the script answers with
+# the JSON the server prints. A failed request puts its reason under the
+# heading and leaves the list as it was.
+respond 1 200 "[{\"id\":1,\"title\":\"buy milk\",\"done\":false},{\"id\":2,\"title\":\"write beni\",\"done\":true}]" Content-Type: "application/json"
+input #new-todo "  read the spec  "
+key #new-todo Enter
+respond 2 201 "{\"id\":3,\"title\":\"read the spec\",\"done\":false}" Content-Type: "application/json"
+click .todo-list>li:nth-child(3)>.view>.toggle
+respond 3 200 "{\"id\":3,\"title\":\"read the spec\",\"done\":true}" Content-Type: "application/json"
+dblclick .todo-list>li:nth-child(1)>.view>label
+input #edit "buy oat milk"
+key #edit Enter
+respond 4 200 "{\"id\":1,\"title\":\"buy oat milk\",\"done\":false}" Content-Type: "application/json"
+hash "#/completed"
+hash "#/"
+click #toggle-all
+respond 5 200 "{\"id\":1,\"title\":\"buy oat milk\",\"done\":true}" Content-Type: "application/json"
+click .todo-list>li:nth-child(2)>.view>.destroy
+respond 6 204 ""
+click #clear-completed
+respond 7 204 ""
+fail 8
+input #new-todo "offline"
+key #new-todo Enter
+respond 9 500 "down"

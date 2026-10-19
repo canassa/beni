@@ -720,6 +720,17 @@ platform's case fits the default budget; `ownership/Conduit [browser-direct]` is
 at 97.5% of it, and goes with `browser-direct` (#423). A `.budget` beside a fixture with several
 tokens is read by every token's case, so its limit holds for each of them.
 
+*Amended 2026-10-19 (#423, delegated, #433):* the `browser/tea/` Conduit pages (Editor, Reader,
+Tour) carry a value-fuzz case in place of their `browser/direct/` copies', granted 11 300M each
+(measured 10 225–10 237M with the fuzzer running): two `--fuzz` builds of the app, development
+and release, the message types dump and the fuzz.
+
+*Amended 2026-10-19 (#423, delegated):* `browser/direct/` pages with no `browser/tea/` twin moved
+there, built for `browser-tea` alone. Re-measured with Node running (stale run hashes) on the
+x86-64 Linux reference: `browser/tea/Sternhalma` 4 723M and its value fuzz 5 072M, granted 5 200M
+and 5 600M (#435); `browser/tea/TodoPage` 4 404M and its value fuzz 4 685M, granted 4 850M and
+5 150M (#361). With their run hashes recorded, all four fit the default.
+
 A project may also take its modules from outside the corpus: `_expected.sources` holds one
 repo-relative directory per line, whose `.beni` files together are the program, so several
 scripts can drive one application (`examples/conduit/src`), and a program whose modules live in

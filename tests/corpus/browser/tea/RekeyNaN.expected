@@ -1,0 +1,85 @@
+-- load
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="rekey">"rekey"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "nan"
+      </li>
+      <li>
+        <input .value="">
+        "two"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input ul>li:nth-child(1)>input "kept"
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="rekey">"rekey"</button>
+    <ul>
+      <li>
+        <input .value="kept">
+        "nan"
+      </li>
+      <li>
+        <input .value="">
+        "two"
+      </li>
+    </ul>
+  </main>
+</body>
+-- input ul>li:nth-child(2)>input "gone"
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="rekey">"rekey"</button>
+    <ul>
+      <li>
+        <input .value="kept">
+        "nan"
+      </li>
+      <li>
+        <input .value="gone">
+        "two"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="rekey">"rekey"</button>
+    <ul>
+      <li>
+        <input .value="kept">
+        "same key"
+      </li>
+      <li>
+        <input .value="gone">
+        "two"
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #rekey
+<body>
+  <main>
+    <button id="relabel">"relabel"</button>
+    <button id="rekey">"rekey"</button>
+    <ul>
+      <li>
+        <input .value="kept">
+        "same key"
+      </li>
+      <li>
+        <input .value="">
+        "new key"
+      </li>
+    </ul>
+  </main>
+</body>

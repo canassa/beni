@@ -1,7 +1,7 @@
 module CarriedLambda
   14:10 List.push xs: rejected captured: count, a closure holding it, is used at 15:5
   23:10 List.push xs: accepted fresh
-  summary counter: π1 RA; res λ, ◇ π1
+  summary counter: π1 RA; res λr{lost}, ◇ π1
   summary later: unused
   summary before: unused
   demands 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

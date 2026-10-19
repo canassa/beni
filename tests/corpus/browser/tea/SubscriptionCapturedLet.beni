@@ -1,0 +1,47 @@
+-- A let-bound tagger capture must settle when its model field changes,
+-- even when that field is not read by any view hole.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Factor
+    | Tick Int
+
+
+type alias Model =
+    factor : Int
+    count : Int
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update msg model =
+    case msg of
+        Factor →
+            ( { model | factor = model.factor + 1 }, Cmd.none )
+
+        Tick n →
+            ( { model | count = model.count + n }, Cmd.none )
+
+
+subscriptions : Model → Sub.Sub Msg
+subscriptions model =
+    captured = model.factor + 1
+    Time.every (Time.millis 10) λ_ → Tick captured
+
+
+view : Model → Html Msg
+view model = <main><button id="factor" onClick={Factor}>factor</button><p>{model.count}</p></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { factor = 0, count = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

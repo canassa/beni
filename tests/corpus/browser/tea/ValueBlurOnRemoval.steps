@@ -1,0 +1,3 @@
+# The input focused, then the click that takes it away.
+focus #in
+click #hide

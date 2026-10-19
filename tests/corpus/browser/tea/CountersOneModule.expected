@@ -1,0 +1,110 @@
+-- load
+console.log: view: 0
+<body>
+  <main>
+    <p>
+      "total "
+      "0"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"0"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"0"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- click #left-inc
+console.log: view: 1
+<body>
+  <main>
+    <p>
+      "total "
+      "1"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"1"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"0"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- click #left-inc
+console.log: view: 2
+<body>
+  <main>
+    <p>
+      "total "
+      "2"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"2"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"0"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- click #right-dec
+console.log: view: 1
+<body>
+  <main>
+    <p>
+      "total "
+      "1"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"2"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"-1"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>
+-- click #left-dec
+console.log: view: 0
+<body>
+  <main>
+    <p>
+      "total "
+      "0"
+    </p>
+    <div id="left">
+      <button id="left-dec">"-"</button>
+      <span>"1"</span>
+      <button id="left-inc">"+"</button>
+    </div>
+    <!---->
+    <div id="right">
+      <button id="right-dec">"-"</button>
+      <span>"-1"</span>
+      <button id="right-inc">"+"</button>
+    </div>
+    <!---->
+  </main>
+</body>

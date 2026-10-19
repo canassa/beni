@@ -5,8 +5,8 @@ module TaskWords
   58:15 List.push xs: accepted param
   70:5 entry TaskWords.update msg#Raced.0#Ok.0: accepted entry
   70:5 entry TaskWords.update msg#Timed.0#Just.0: accepted entry
-  summary update: π1 R, π1#Raced.0#Ok.0 RAW, π1#Raced.0#Ok.0[*] A, π1#Timed.0#Just.0 RAW, π1#Timed.0#Just.0[*] A, π2 RA; res .0 π1#Raced.0#Ok.0 π1#Timed.0#Just.0 π2, .0[*] ~π1#Raced.0#Ok.0[*] ~π1#Timed.0#Just.0[*], .1#Cmd.0 fresh2{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh1{lost}
-  summary view: π1 R; res ⟨render⟩ fresh1{lost}
+  summary update: π1 R, π1#Raced.0#Ok.0 RAW, π1#Raced.0#Ok.0[*] A, π1#Timed.0#Just.0 RAW, π1#Timed.0#Just.0[*] A, π2 RA; res .0 π1#Raced.0#Ok.0 π1#Timed.0#Just.0 π2, .0[*] ~π1#Raced.0#Ok.0[*] ~π1#Timed.0#Just.0[*], .1#Cmd.0 fresh2{lost}r{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh1{lost}r{lost}
+  summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 6: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 2
 total 6: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 2
 cause need 2
