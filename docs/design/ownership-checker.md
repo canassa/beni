@@ -5268,9 +5268,31 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    - **In a summary** (§18.3, format v18): each `res`, `objs` and supply entry carries its record condition
      `rxc` beside `xc`, and the summary its `rxreq`. A row core asserts states its record conditions by the
      same reasoning as its list ones, about where each element comes from: its `rxc` is the twin of its `xc`
-     (`excl` → `rexcl`, `sep` → `rsep`; a spine has none).
+     (`excl` → `rexcl`, `sep` → `rsep`, `keep` → a record keep, the callback putting back the record it
+     was handed or one it made; a spine has none).
    A list's verdicts read none of it, so none moves, and the 57 pending `List.map rows λr → { r | … }` lines
    are decided.
+
+   *As built (2026-10-19, R2e of #315).* As specified, with three things the specification left open.
+   - **Only a place that may hold a record is one.** A record condition reads the cells whose type may be
+     or hold a record (`holdsRecord`; an unknown type may); two records that share a `List Int` share no
+     record, and `{ a = xs, b = xs }` stored once holds. A type variable may hold one, so core's generic
+     code keeps every atom.
+   - **The model at the entry** keeps its record condition as an invariant, as it keeps a list's (§20.4):
+     its cells start holding, the rounds lower them by what `update` stores, and `update`'s `rxreq` is
+     discharged on its record lines (`ownership/RecordContentsEntry`, `RecordContentsTwice`).
+   - **A caller's failed `rxreq`** is reported on the record demand the call makes of that argument, or on
+     a record line of its own, cause `exclusive`.
+   A summary line prints a record condition after the list one, `r{…}`, nothing when it holds outright.
+   Over the 1 086 programs of the comparison, no list line moves against master, and the 64 pending item 6
+   lines are all decided, accepted: each callback now relies on its list's records, as `rxreq` of its
+   declaration. The record lines go from 2 861 accepted, 70 pending and 95 rejected to 2 898, 6 and 119. The
+   24 new `exclusive` lines, all approximate, are where those `rxreq`s are discharged on a list whose
+   record condition fails: `Schema`'s decoders and printers (13: their issues are a `foreign`'s, `{lost}`
+   as a list's are), Bike Wars' model at the entry (9 over its three builds: `List.append`'s row and
+   `List.filter` lose the condition, as they lose a list's) and KeyedEnds' (2: `CopyLast` stores a row the
+   model already holds). Master accepted those calls without asking. The record domain costs core's whole
+   walk about 110 million instructions (2.7%); the two tests that walk it count 4 237 and 4 252 million.
 
    *Compared (2026-10-19); the owner chose the parallel domain.* The alternative is one lattice whose atoms carry a domain:
    `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
