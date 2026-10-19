@@ -64,7 +64,7 @@ const JsonDerivedDce$$codec1$$read = (c, d, p, k, n, v) => {
   return { rank: $f$5, title: $f$7 };
 };
 const JsonDerivedDce$$codec1$$parseWith = ($o, $t) => Schema$compiledParse($o, null, JsonDerivedDce$$codec1$$read, $t);
-const JsonDerivedDce$$codec1$$parse = ($t) => JsonDerivedDce$$codec1$$parseWith(Schema$defaultOptions, $t);
+const JsonDerivedDce$$codec1$$parse = ($t) => JsonDerivedDce$$codec1$$parseWith(Schema$defaultOptions(), $t);
 const JsonDerivedDce$title = (text$1) => {
   const $t$1 = JsonDerivedDce$$codec1$$parse(text$1);
   if ($t$1.$ === "Ok") {

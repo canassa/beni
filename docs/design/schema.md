@@ -656,7 +656,7 @@ issueAt    : List PathSegment, String -> Issue
 
 recursive  : String, sync (Schema e a -> Schema e a) -> Schema e a
 flip, typeOnly, encodedOnly, describe   -- as listed above
-defaultOptions : Options              maxDepthCeiling : Int
+defaultOptions : ⊤ -> Options         maxDepthCeiling : Int
 decodeWith : Schema e a, Options, e -> Result (List Issue) a       -- and encodeWith, readWith,
                                                                     -- writeWith, parseWith, printWith
 ```
@@ -721,7 +721,9 @@ user =
   there with `InvalidSchema`.
 - **`flip (flip s)` is `s`**, the same schema, so a double flip restores its values, failures and
   description exactly.
-- **Options.** `defaultOptions` is `FirstError`, `Ignore`, `maxDepth = 512`, `reportInput = False`.
+- **Options.** `defaultOptions ⊤` is `FirstError`, `Ignore`, `maxDepth = 512`, `reportInput = False`.
+  *Amended 2026-10-19 (`ownership-checker.md` §31.16):* `defaultOptions` is a function of `⊤`, a new
+  record per call, because a record update writes its base: `{ Schema.defaultOptions ⊤ | maxDepth = d }`.
   A `maxDepth` below 0 or above `maxDepthCeiling` is `InvalidOptions` at the root, before the
   schema is looked at. The ceiling is the measured one of §16's *As built* note.
 - **Issues.** A path segment names a key as the operation's **input** names it: the external key

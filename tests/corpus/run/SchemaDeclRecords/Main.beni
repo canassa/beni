@@ -144,13 +144,18 @@ main =
         , "-- print"
         , printed person
         , printed
-            { person | nickname = Present "", middle = NonNull "M", title = Missing, tags = [] }
-        , printed { person | age = 9007199254740992 }
-        , printed { person | height = 0 / 0 }
-        , printed { person | weight = 1 / 0 }
+            { Record.copy person
+                | nickname = Present ""
+                , middle = NonNull "M"
+                , title = Missing
+                , tags = []
+            }
+        , printed { Record.copy person | age = 9007199254740992 }
+        , printed { Record.copy person | height = 0 / 0 }
+        , printed { Record.copy person | weight = 1 / 0 }
         , Show.result
             (Person.printWith all
-                { person | age = 9007199254740992, height = 1 / 0, weight = 0 / 0 }
+                { Record.copy person | age = 9007199254740992, height = 1 / 0, weight = 0 / 0 }
             )
             λs → s
         , "-- decode, write and read"

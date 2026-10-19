@@ -1037,7 +1037,8 @@ const Gen = struct {
         try root_params.append(g.l.scratch, input);
         var root_args: std.ArrayList(Node.Index) = .empty;
         for (params) |param| try root_args.append(g.l.scratch, try g.id(param));
-        try root_args.append(g.l.scratch, try g.core("defaultOptions"));
+        // `defaultOptions : ⊤ → Options` (§31.16): a new record per run.
+        try root_args.append(g.l.scratch, try g.call(try g.core("defaultOptions"), &.{}));
         try root_args.append(g.l.scratch, try g.id(input));
         try g.constDecl(out, try g.own(root_suffix), try g.arrowOf(root_params.items, try g.call(try g.id(try g.own(with_suffix)), root_args.items)));
     }

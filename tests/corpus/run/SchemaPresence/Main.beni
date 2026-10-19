@@ -132,12 +132,12 @@ main =
         , Show.result (Schema.parse flag "{\"is-on\":false}") showFlag
         , Show.result (Schema.parse flag "{\"on\":true}") showFlag
         , Show.result
-            (Schema.parseWith flag { defaultOptions | unknownKeys = Reject } "{\"on\":true}")
+            (Schema.parseWith flag { defaultOptions ⊤ | unknownKeys = Reject } "{\"on\":true}")
             showFlag
         , Show.result (Schema.print flag { on = Present False }) λs → s
         , Show.result (Schema.print flag { on = Missing }) λs → s
         ]
 
 
-defaultOptions : Schema.Options
-defaultOptions = Schema.defaultOptions
+defaultOptions : ⊤ → Schema.Options
+defaultOptions ⊤ = Schema.defaultOptions ⊤

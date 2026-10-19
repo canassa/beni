@@ -24,7 +24,7 @@ core/Task.beni                  Task.raceOk         201a3bbea63e7566ab2ceabad843
 core/Task.beni                  Task.within         438c12ddfacd783d9da5dfdfc5883883e5f919bd74756e30a68e27c8ea9b16a6
 core/Task.beni                  Task.startIn        f84a81adc193a110a2d4d5a586125b60ac01af56c6680ac3694060c4f6b5b489
 core/Task.beni                  Task.valueOf        e115c506f87ffd748bb62025cf08d53f82ee2b2c1406982a8b8a3e90b1c37b8a
-core/Schema.beni                Schema.print        aa88b5dda46701321f9ccd3b471e7fb2fb5892f2673005aaee0ef4b650bbbec7
+core/Schema.beni                Schema.print        3a80795348d8d28d8d25a8b2d23171e571c557af846f1d8f9edd68af7ebd0dd1
 core/Schema.beni                Schema.printWith    9bcc40b4e9446b99264307c3c3750cdeb7fa03b3f13514fc8f475df9ce2d9a62
 core/Js.js                      Js.args             60918ef47c38583496832acc4a33a2c2c7421ae9ff7d3e1668f6bebfe1632360
 core/Js.js                      Js.from             58f75c4409ebd100b249820fbd069e46ce5f285b91b4f581c8c67a66b44dc204
