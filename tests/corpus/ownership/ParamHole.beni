@@ -1,0 +1,27 @@
+-- ownership: a parameter's folded levels (CK-254, `paramHole`, issue #286).
+-- `hole` takes a tree, pushes onto its root's list and returns its left
+-- subtree beside it. Folding sent a deeper level's list to the root list's
+-- path, so the subtree `param(t, #Node.0)` was not seen to hold any list,
+-- and `shared`, which hands `hole` a tree holding `xs` at two levels, saw
+-- its returned subtree change. The level marker of ownership-checker.md
+-- §16.7 keeps them apart: the root's list is `#Node.1`, the left subtree's
+-- `#Node.0⟨Tree⟩#Node.1`, so `hole` is accepted, writing only the root's
+-- list, and `shared`'s call is refused `disjoint`, because its argument
+-- holds `xs` at both places.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub hole : Tree → List Int × Tree
+hole t =
+    case t of
+        Node l ys _ →
+            ( List.push ys 1, l )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub shared : List Int → List Int × Tree
+shared xs = hole (Node (Node Leaf xs Leaf) xs Leaf)

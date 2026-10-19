@@ -123,11 +123,3 @@ tests/pending/emit/release/inline/ResearchS2 exit=0 js-differs
 tests/pending/emit/release/inline/ResearchS3 exit=0 js-differs
 tests/pending/emit/release/inline/Texts exit=0 js-differs
 tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
-
-# CK-254 (2026-10-18, issue #286): a parameter's folded levels are not checked
-# (`paramHole`, ownership-checker.md §16.7). Red until decision (d), `lvl`.
-tests/pending/ownership/ParamHole.beni exit=0 ownership-differs
-
-# CK-256 (2026-10-18, issue #379): a level reached through a fold is taken for
-# the root's level (ownership-checker.md §16.7). Red until the fold keeps them apart.
-tests/pending/ownership/DeeperLevel.beni exit=0 ownership-differs

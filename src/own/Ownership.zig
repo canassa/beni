@@ -89,6 +89,8 @@ const wide_index: usize = 256;
 const WideIndex = struct {
     roots: std.ArrayList(Entry) = .empty,
     any: std.ArrayList(Entry) = .empty,
+    /// Entries under a marker first (§16.7), kept by `underMarker`.
+    levels: std.ArrayList(Entry) = .empty,
     by: std.AutoHashMapUnmanaged([2]u32, std.ArrayList(Entry)) = .empty,
 };
 
@@ -161,6 +163,9 @@ pub const Input = struct {
     /// with some flipped, to show that the fixture pinning them depends on
     /// them.
     flip: ?Flip = null,
+    /// §16.7, *The canonical form*: false only for the expanded report a
+    /// cross-check compares the canonical one with.
+    canonical: bool = true,
 };
 
 /// §24.6: a declaration's ownership words with some changed, `Module.name`
@@ -635,6 +640,23 @@ recursive_types: std.AutoHashMapUnmanaged(u64, bool) = .empty,
 /// step's own recursive type may sit below it (`levelOf`, §16.7's sound
 /// projection); `.unknown` until asked.
 level_of: std.ArrayList(Level) = .empty,
+/// §16.7's level marker `⟨T⟩`: per marker step argument, its type
+/// `(module, declaration)`, and back.
+marker_types: std.ArrayList(u64) = .empty,
+/// Per marker: where it stands (§16.7, *Where a marker stands*).
+marker_kind: std.ArrayList(MarkerKind) = .empty,
+marker_ids: std.AutoHashMapUnmanaged(struct { u64, MarkerKind }, u32) = .empty,
+/// Per recursive type: its region steps (`regionSteps`).
+region_steps: std.AutoHashMapUnmanaged(u64, []const u32) = .empty,
+/// Per canonical place `(P, T, r, kind)`: the places it stands for.
+member_paths: std.AutoHashMapUnmanaged([4]u64, []const u32) = .empty,
+/// `child`'s answers, by `(parent, kind, arg)`.
+child_memo: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
+/// Per path: `canonicalSplit`'s and `canonicalPlaces`'s answers, as an
+/// index into `canon_splits` plus 2, 1 for none, 0 not yet asked.
+split_of: std.ArrayList(u32) = .empty,
+places_of: std.ArrayList(u32) = .empty,
+canon_splits: std.ArrayList(CanonicalSplit) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
 concat_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 /// Per `(module, type variable)`: whether a value of the type may hold a cell.
@@ -693,6 +715,15 @@ pub fn deinit(o: *Ownership) void {
     o.in.gpa.free(o.schema_ctor_bases);
     o.recursive_types.deinit(o.in.gpa);
     o.level_of.deinit(o.in.gpa);
+    o.marker_types.deinit(o.in.gpa);
+    o.marker_kind.deinit(o.in.gpa);
+    o.marker_ids.deinit(o.in.gpa);
+    o.region_steps.deinit(o.in.gpa);
+    o.member_paths.deinit(o.in.gpa);
+    o.child_memo.deinit(o.in.gpa);
+    o.split_of.deinit(o.in.gpa);
+    o.places_of.deinit(o.in.gpa);
+    o.canon_splits.deinit(o.in.gpa);
     o.concat_memo.deinit(o.in.gpa);
     o.tracked_memo.deinit(o.in.gpa);
     o.names_memo.deinit(o.in.gpa);
@@ -788,7 +819,63 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         }.less);
         r.limits = hits.items;
     }
+    // §16.7, *The canonical form*: under `-Downership-full-cross-check`,
+    // the same report from the expanded form, every site's verdict the same.
+    if (@import("ownership_options").full_cross_check and o.in.canonical) {
+        var in = o.in;
+        in.canonical = false;
+        in.profile = null;
+        var shadow = Ownership.init(in);
+        defer shadow.deinit();
+        const expanded = try shadow.run(targets);
+        for (reports, expanded) |a, b| try crossCheck(o.in.gpa, a, b);
+    }
     return reports;
+}
+
+/// A site's verdict, as the cross-check compares it: the worst of its
+/// lines (a write the canonical form names once may be several lines in
+/// the expanded one) and the causes of its rejections.
+const SiteVerdict = struct { worst: u8 = 0, causes: u64 = 0 };
+
+fn siteVerdicts(gpa: Allocator, r: ModuleReport) Allocator.Error!std.AutoArrayHashMapUnmanaged([3]u64, SiteVerdict) {
+    var out: std.AutoArrayHashMapUnmanaged([3]u64, SiteVerdict) = .empty;
+    for (r.demands) |d| {
+        const key: [3]u64 = .{ d.position.line, d.position.col, std.hash.Wyhash.hash(0, d.op) };
+        const gop = try out.getOrPut(gpa, key);
+        if (!gop.found_existing) gop.value_ptr.* = .{};
+        const v = gop.value_ptr;
+        switch (d.verdict) {
+            .accepted => {},
+            .pending => v.worst = @max(v.worst, 1),
+            .rejected => |c| {
+                v.worst = 2;
+                v.causes |= @as(u64, 1) << @as(u6, @intCast(@as(u32, @backingInt(c)) % 64));
+            },
+        }
+    }
+    return out;
+}
+
+fn crossCheck(gpa: Allocator, a: ModuleReport, b: ModuleReport) Allocator.Error!void {
+    var va = try siteVerdicts(gpa, a);
+    defer va.deinit(gpa);
+    var vb = try siteVerdicts(gpa, b);
+    defer vb.deinit(gpa);
+    var ok = va.count() == vb.count();
+    var it = va.iterator();
+    while (it.next()) |e| {
+        const other = vb.get(e.key_ptr.*) orelse {
+            ok = false;
+            break;
+        };
+        if (!std.meta.eql(other, e.value_ptr.*)) ok = false;
+    }
+    if (!ok) {
+        for (a.demands) |d| std.debug.print("canonical {d}:{d} {s} {s}: {s}\n", .{ d.position.line, d.position.col, d.op, d.base, @tagName(d.verdict) });
+        for (b.demands) |d| std.debug.print("expanded  {d}:{d} {s} {s}: {s}\n", .{ d.position.line, d.position.col, d.op, d.base, @tagName(d.verdict) });
+        @panic("ownership: the canonical form and the expanded one disagree on a verdict (ownership-checker.md §16.7)");
+    }
 }
 
 /// Two lines the walk produced twice — a demand reached through two
@@ -1739,7 +1826,338 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         .slots = s.slots,
         .klasses = s.klasses,
     };
+    if (o.in.canonical) if (try o.canonicalOf(out)) |c| return o.normalizeRaw(c);
     return out;
+}
+
+/// §16.7, *The canonical form*: a fact written at `P r` and at `P s⟨T⟩r` for
+/// every region step `s` of `T` at `P` is written once, as `P⟨T⟩r`. Null
+/// when the summary has no such set. Innermost marker first; the caller
+/// normalizes again, and asks again, until nothing changes.
+fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
+    const uses = try o.canonicalList(UseEntry, s.uses, struct {
+        fn key(e: UseEntry) [4]u32 {
+            return .{ e.param, 0, 0, 0 };
+        }
+        fn path(e: UseEntry) u32 {
+            return e.path;
+        }
+        fn setPath(e: *UseEntry, p: u32) void {
+            e.path = p;
+        }
+        fn same(x: UseEntry, y: UseEntry) bool {
+            return x.bits == y.bits;
+        }
+        fn subsumes(y: UseEntry, x: UseEntry) bool {
+            return x.bits | y.bits == y.bits;
+        }
+    });
+    const res = try o.canonicalList(ResEntry, s.res, struct {
+        fn key(_: ResEntry) [4]u32 {
+            return .{ 0, 0, 0, 0 };
+        }
+        fn path(e: ResEntry) u32 {
+            return e.path;
+        }
+        fn setPath(e: *ResEntry, p: u32) void {
+            e.path = p;
+        }
+        fn same(x: ResEntry, y: ResEntry) bool {
+            return x.prov.eql(y.prov) and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc);
+        }
+        fn subsumes(y: ResEntry, x: ResEntry) bool {
+            return same(y, x);
+        }
+    });
+    // A result path's provenances, the places of a parameter it may hold:
+    // one canonical place for the root and every region.
+    const res_prov = try o.canonicalList(ResEntry, res orelse s.res, struct {
+        fn key(e: ResEntry) [4]u32 {
+            return .{ e.path, @backingInt(e.prov.kind), e.prov.a, e.prov.b };
+        }
+        fn path(e: ResEntry) u32 {
+            return e.prov.path;
+        }
+        fn setPath(e: *ResEntry, p: u32) void {
+            e.prov.path = p;
+        }
+        fn same(x: ResEntry, y: ResEntry) bool {
+            return x.prov.taken == y.prov.taken and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc);
+        }
+        fn subsumes(y: ResEntry, x: ResEntry) bool {
+            return same(y, x);
+        }
+    });
+    const supply = try o.canonicalList(SupplyEntry, s.supply, struct {
+        fn key(e: SupplyEntry) [4]u32 {
+            return .{ e.fun, e.k, 0, 0 };
+        }
+        fn path(e: SupplyEntry) u32 {
+            return e.path;
+        }
+        fn setPath(e: *SupplyEntry, p: u32) void {
+            e.path = p;
+        }
+        fn same(x: SupplyEntry, y: SupplyEntry) bool {
+            return x.prov.eql(y.prov) and x.owned == y.owned and x.approx == y.approx and x.xc.eql(y.xc);
+        }
+        fn subsumes(y: SupplyEntry, x: SupplyEntry) bool {
+            return same(y, x);
+        }
+    });
+    if (uses == null and res == null and res_prov == null and supply == null) return null;
+    var out = s;
+    if (uses) |u| out.uses = u;
+    if (res_prov orelse res) |r| out.res = r;
+    if (supply) |e| out.supply = e;
+    return out;
+}
+
+/// `canonicalOf` for one of a summary's lists: the entries at one key and
+/// path (`F.key`, `F.path`) are the fact there. Any order.
+fn canonicalList(o: *Ownership, comptime E: type, items_in: []const E, comptime F: type) Allocator.Error!?[]const E {
+    const gpa = o.in.gpa;
+    // Only a path with a marker (or `⋆`) can be one of a canonical set.
+    for (items_in) |e| {
+        if (o.paths.any.items[F.path(e)]) break;
+    } else return null;
+    const items = try gpa.dupe(E, items_in);
+    defer gpa.free(items);
+    std.mem.sort(E, items, {}, struct {
+        fn less(_: void, x: E, y: E) bool {
+            const kx = F.key(x);
+            const ky = F.key(y);
+            for (kx, ky) |a, b| if (a != b) return a < b;
+            return F.path(x) < F.path(y);
+        }
+    }.less);
+    const Group = struct { start: u32, end: u32 };
+    var order: std.ArrayList(Group) = .empty;
+    defer order.deinit(gpa);
+    var i: usize = 0;
+    while (i < items.len) {
+        var j = i + 1;
+        const k = F.key(items[i]);
+        while (j < items.len and std.meta.eql(F.key(items[j]), k) and F.path(items[j]) == F.path(items[i])) j += 1;
+        try order.append(gpa, .{ .start = @intCast(i), .end = @intCast(j) });
+        i = j;
+    }
+    const Find = struct {
+        /// The group at `key` and `path`, by binary search: `items` is
+        /// sorted by both.
+        fn find(its: []const E, ord: []const Group, k: [4]u32, path: u32) ?Group {
+            var lo: usize = 0;
+            var hi: usize = ord.len;
+            while (lo < hi) {
+                const mid = (lo + hi) / 2;
+                const e = its[ord[mid].start];
+                const km = F.key(e);
+                const order_ = for (km, k) |a, b| {
+                    if (a != b) break std.math.order(a, b);
+                } else std.math.order(F.path(e), path);
+                switch (order_) {
+                    .eq => return ord[mid],
+                    .lt => lo = mid + 1,
+                    .gt => hi = mid,
+                }
+            }
+            return null;
+        }
+    };
+    // By an entry's index: the group that begins there is dropped.
+    const dropped = try gpa.alloc(bool, items.len);
+    defer gpa.free(dropped);
+    @memset(dropped, false);
+    var added: std.ArrayList(E) = .empty;
+    defer added.deinit(gpa);
+    var targets: std.ArrayList(u32) = .empty;
+    defer targets.deinit(gpa);
+    for (order.items) |grp| {
+        if (dropped[grp.start]) continue;
+        const k = F.key(items[grp.start]);
+        const d = (try o.canonicalSplit(F.path(items[grp.start]))) orelse continue;
+        targets.clearRetainingCapacity();
+        try o.memberPaths(d, .at, &targets);
+        // `targets[0]` is the root's place, the others the regions'.
+        var with_root = true;
+        const all = for (targets.items, 0..) |t, ti| {
+            const other = Find.find(items, order.items, k, t) orelse if (ti == 0) {
+                with_root = false;
+                continue;
+            } else break false;
+            const same = !dropped[other.start] and other.end - other.start == grp.end - grp.start and for (items[grp.start..grp.end], items[other.start..other.end]) |x, y| {
+                if (!F.same(x, y)) break false;
+            } else true;
+            if (same) continue;
+            if (ti == 0) {
+                with_root = false;
+                continue;
+            }
+            break false;
+        } else true;
+        if (!all) continue;
+        // Every region and the root: `P⟨T⟩r`; every region but not the
+        // root: `P⟨T⟩⁺r`, the `T`s strictly below.
+        const members = if (with_root) targets.items else targets.items[1..];
+        if (std.mem.indexOfScalar(u32, members, F.path(items[grp.start])) == null) continue;
+        const canonical = try o.concat(try o.rawChild(d.at, .level, try o.markerId(d.ty, if (with_root) .at else .under)), d.rest);
+        for (members) |t| dropped[Find.find(items, order.items, k, t).?.start] = true;
+        for (items[grp.start..grp.end]) |x| {
+            var y = x;
+            F.setPath(&y, canonical);
+            try added.append(gpa, y);
+        }
+    }
+    // A fact a canonical one already states, at one of its places, is
+    // that fact again: an earlier round's, joined with this one's.
+    var removed = false;
+    for (order.items) |grp| {
+        if (dropped[grp.start]) continue;
+        const k = F.key(items[grp.start]);
+        const d = (try o.canonicalPlaces(F.path(items[grp.start]))) orelse continue;
+        targets.clearRetainingCapacity();
+        try o.memberPaths(d, d.kind, &targets);
+        for (targets.items) |t| {
+            const other = Find.find(items, order.items, k, t) orelse continue;
+            if (dropped[other.start]) continue;
+            const within = for (items[other.start..other.end]) |x| {
+                const found = for (items[grp.start..grp.end]) |y| {
+                    if (F.subsumes(y, x)) break true;
+                } else false;
+                if (!found) break false;
+            } else true;
+            if (!within) continue;
+            dropped[other.start] = true;
+            removed = true;
+        }
+    }
+    if (added.items.len == 0 and !removed) return null;
+    var out: std.ArrayList(E) = .empty;
+    const keep = o.keep.allocator();
+    for (order.items) |grp| {
+        if (dropped[grp.start]) continue;
+        try out.appendSlice(keep, items[grp.start..grp.end]);
+    }
+    try out.appendSlice(keep, added.items);
+    return out.items;
+}
+
+/// `levelOf` of field `k` of constructor `ct` of the type `ty`, typed.
+fn typedLevel(o: *Ownership, m: u32, bir: *const Bir, ct: Bir.Ctor, k: usize, ty: u64) Allocator.Error!Level {
+    const args = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index);
+    var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+    defer seen.deinit(o.in.gpa);
+    return o.exprLevel(m, bir, args[k], ty, &seen, true);
+}
+
+const CanonicalSplit = struct { at: u32, ty: u64, rest: u32, kind: MarkerKind = .at };
+
+/// The places `P⟨T⟩r` is written for: `P r`, and `P s⟨T⟩r` for each
+/// region step `s`; `P⟨T⟩⁺r` (`kind` `under`) the regions' only.
+fn memberPaths(o: *Ownership, d: CanonicalSplit, kind: MarkerKind, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const key: [4]u64 = .{ d.at, d.ty, d.rest, @backingInt(kind) };
+    if (o.member_paths.get(key)) |m| return out.appendSlice(o.in.gpa, m);
+    const start = out.items.len;
+    if (kind == .at) try out.append(o.in.gpa, try o.concat(d.at, d.rest));
+    for (try o.regionSteps(d.ty)) |step| {
+        const into = try o.child(d.at, .ctor, step);
+        const marker = try o.child(into, .level, try o.markerId(d.ty, if (try o.levelOf(step) == .here) .at else .below));
+        try out.append(o.in.gpa, try o.concat(marker, d.rest));
+    }
+    try o.member_paths.put(o.in.gpa, key, try o.keep.allocator().dupe(u32, out.items[start..]));
+}
+
+/// A canonical path `P⟨T⟩r` (§16.7): its marker stands at `P`, a `T` in
+/// no region of `T`, and `r` begins with a constructor step of `T`.
+fn canonicalPlaces(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
+    return o.memoSplit(&o.places_of, p, canonicalPlacesRaw);
+}
+
+fn memoSplit(o: *Ownership, col: *std.ArrayList(u32), p: u32, comptime f: fn (*Ownership, u32) Allocator.Error!?CanonicalSplit) Allocator.Error!?CanonicalSplit {
+    if (p >= col.items.len) try col.appendNTimes(o.in.gpa, 0, p + 1 - col.items.len);
+    switch (col.items[p]) {
+        0 => {},
+        1 => return null,
+        else => |i| return o.canon_splits.items[i - 2],
+    }
+    const d = try f(o, p);
+    if (d) |x| {
+        try o.canon_splits.append(o.in.gpa, x);
+        col.items[p] = @intCast(o.canon_splits.items.len + 1);
+    } else col.items[p] = 1;
+    return d;
+}
+
+fn canonicalPlacesRaw(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
+    var buf: [k_limit + 1]u32 = undefined;
+    const ns = o.pathNodes(p, &buf);
+    var i = ns.len;
+    while (i > 1) {
+        i -= 1;
+        const m = ns[i - 1];
+        if (o.paths.kind.items[m] != .level) continue;
+        const kind = o.markerKind(o.paths.arg.items[m]);
+        if (kind != .at and kind != .under) continue;
+        const ty = o.markerType(o.paths.arg.items[m]);
+        const at = o.paths.parent.items[m];
+        if (at != eps and o.paths.kind.items[at] == .ctor and o.ctorType(o.stepCtor(o.paths.arg.items[at])) == ty) continue;
+        const first = ns[i];
+        if (o.paths.kind.items[first] != .ctor or o.ctorType(o.stepCtor(o.paths.arg.items[first])) != ty) continue;
+        if (try o.regionOf(at, ty) != null) continue;
+        var rest: u32 = eps;
+        for (ns[i..]) |n| rest = try o.child(rest, o.paths.kind.items[n], o.paths.arg.items[n]);
+        return .{ .at = at, .ty = ty, .rest = rest, .kind = kind };
+    }
+    return null;
+}
+
+/// A path `P s⟨T⟩r` whose region is the innermost one that begins at a
+/// position in no region of `T`: `P`, `T` and `r` (as a path of its own).
+fn canonicalSplit(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
+    return o.memoSplit(&o.split_of, p, canonicalSplitRaw);
+}
+
+fn canonicalSplitRaw(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
+    var buf: [k_limit + 1]u32 = undefined;
+    const ns = o.pathNodes(p, &buf);
+    var i = ns.len;
+    while (i > 2) {
+        i -= 1;
+        const m = ns[i - 1];
+        if (o.paths.kind.items[m] != .level) continue;
+        const s = ns[i - 2];
+        if (o.paths.kind.items[s] != .ctor) continue;
+        const ty = o.markerType(o.paths.arg.items[m]);
+        if (o.ctorType(o.stepCtor(o.paths.arg.items[s])) != ty) continue;
+        const first = ns[i];
+        if (o.paths.kind.items[first] != .ctor or o.ctorType(o.stepCtor(o.paths.arg.items[first])) != ty) continue;
+        const at = o.paths.parent.items[s];
+        if (try o.regionOf(at, ty) != null) continue;
+        var rest: u32 = eps;
+        for (ns[i..]) |n| rest = try o.child(rest, o.paths.kind.items[n], o.paths.arg.items[n]);
+        return .{ .at = at, .ty = ty, .rest = rest };
+    }
+    return null;
+}
+
+/// The region steps of a recursive type: every constructor field that can
+/// hold a value of the type, as a constructor step.
+fn regionSteps(o: *Ownership, ty: u64) Allocator.Error![]const u32 {
+    if (o.region_steps.get(ty)) |r| return r;
+    var out: std.ArrayList(u32) = .empty;
+    const m: u32 = @intCast(ty >> 32);
+    const d: u32 = @truncate(ty);
+    const bir = o.in.birs[m];
+    const decl = bir.decls[d];
+    for (bir.declCtors(decl), decl.ctors_start..) |ct, ci| {
+        const n = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index).len;
+        for (0..n) |k| {
+            const step = try o.ctorStep(try o.ctorId(m, @intCast(ci)), @intCast(k));
+            if (try o.typedLevel(m, bir, ct, k, ty) != .none) try out.append(o.keep.allocator(), step);
+        }
+    }
+    try o.region_steps.put(o.in.gpa, ty, out.items);
+    return out.items;
 }
 
 /// The pessimistic summary of §16.2: every parameter written, kept and
@@ -2879,7 +3297,8 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
 // Paths (§4.1)
 // ---------------------------------------------------------------------------
 
-pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event, schema_decoded, schema_encoded };
+/// `level` is §16.7's marker `⟨T⟩`, its argument a `markerId`.
+pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event, schema_decoded, schema_encoded, level };
 
 const Paths = struct {
     parent: std.ArrayList(u32) = .empty,
@@ -2891,9 +3310,13 @@ const Paths = struct {
     /// Whether the path holds a `⋆` step: two paths with none overlap
     /// only when one is the other's ancestor in the trie.
     any: std.ArrayList(bool) = .empty,
+    /// A constructor step whose field can hold a value of its own type
+    /// (`levelOf` here or below): a step a marker of the type may begin with.
+    holds: std.ArrayList(bool) = .empty,
     map: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
 
     fn deinit(p: *Paths, gpa: Allocator) void {
+        p.holds.deinit(gpa);
         p.parent.deinit(gpa);
         p.kind.deinit(gpa);
         p.arg.deinit(gpa);
@@ -2916,23 +3339,60 @@ pub fn seedPaths(o: *Ownership) Allocator.Error!void {
     try o.paths.depth.append(gpa, 0);
     try o.paths.rest.append(gpa, none);
     try o.paths.any.append(gpa, false);
+    try o.paths.holds.append(gpa, false);
 }
 
 fn child(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u32 {
     std.debug.assert(o.paths.parent.items.len != 0);
+    const key: [3]u32 = .{ parent, @backingInt(kind), arg };
+    if (o.child_memo.get(key)) |c| return c;
+    const c = try o.childRaw(parent, kind, arg);
+    try o.child_memo.put(o.in.gpa, key, c);
+    return c;
+}
+
+/// `child`, computed: the fold of §16.7 needs the region the parent is in.
+fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u32 {
     // The cut: a path never grows past k steps; a `⋆` absorbs what is below it.
     if (o.paths.depth.items[parent] >= k_limit) return parent;
     if (parent != eps and o.paths.kind.items[parent] == .any) return parent;
-    // A recursive type is folded (thesis §3.1): a constructor step into a
-    // value of a type the path is already inside goes on from where the
-    // path first entered that type, so `t#.3#.3` is `t#.3`'s twin and a
-    // summary over a tree stays a few paths wide (§16.7).
-    if (kind == .ctor) if (try o.foldAt(parent, arg)) |at| return o.rawChild(at, kind, arg);
+    // A type the path is already inside is folded (thesis §3.1, §16.7's
+    // level marker): a constructor step into it goes on from the region's
+    // first step, under the marker `⟨T⟩`, so `t#Node.0#Node.1` is
+    // `t#Node.0⟨Tree⟩#Node.1`, every list of the left subtree, and stays
+    // apart from `t#Node.1`, the root's own. A marker added inside a region
+    // folds onto the region's.
+    switch (kind) {
+        .ctor => if (o.ctorType(o.stepCtor(arg))) |ty| if (try o.regionOf(parent, ty)) |r| {
+            // A type that does not reach itself has no levels: a path in it
+            // twice was cast through `Js.Value` and read again, and it folds
+            // onto where it first entered the type, with no marker, until
+            // §16.7's decision (a) and the cast marker (F2) replace that fold.
+            // core Dict's tree folds so too: its levels are one place, which
+            // the module never makes share (§20.9), and no code outside it
+            // can name a level.
+            if (!try o.typeRecursive(ty) or try o.dictTree(ty)) return o.rawChild(switch (r) {
+                .first => |f| o.paths.parent.items[f],
+                .marker => |m| m,
+            }, kind, arg);
+            return o.rawChild(try o.markerOf(r, ty), kind, arg);
+        },
+        .level => if (try o.regionOf(parent, o.markerType(arg))) |r| return o.markerOf(r, o.markerType(arg)),
+        else => {},
+    }
     return o.rawChild(parent, kind, arg);
 }
 
-fn foldAt(o: *Ownership, parent: u32, arg: u32) Allocator.Error!?u32 {
-    const ty = o.ctorType(o.stepCtor(arg)) orelse return null;
+/// Where a path is inside a region of a type (§16.7): at its first step
+/// into the type, or at its marker.
+const Region = union(enum) { first: u32, marker: u32 };
+
+/// The region of type `ty` that `parent` is inside, or null. A region ends
+/// at a constructor step of a recursive type whose field holds the type
+/// only through a type parameter (`Dict`'s values): below that is another
+/// value of the type, `Dict String (Dict …)`'s inner dictionaries, not a
+/// level of this one.
+fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
     var chain: [k_limit + 1]u32 = undefined;
     var n: usize = 0;
     var at = parent;
@@ -2940,36 +3400,93 @@ fn foldAt(o: *Ownership, parent: u32, arg: u32) Allocator.Error!?u32 {
         chain[n] = at;
         n += 1;
     }
-    // Root first: `chain[n - 1]` is the first step. A level folds onto the
-    // first step into the type since the path last went through a field
-    // that holds the type only through a type parameter (`Dict`'s values):
-    // below that is another value of the type, `Dict String (Dict …)`'s
-    // inner dictionaries, not a level of this one.
-    var first: ?u32 = null;
+    // Root first: `chain[n - 1]` is the first step.
+    var region: ?Region = null;
     var i = n;
     while (i > 0) {
         i -= 1;
         const node = chain[i];
-        if (o.paths.kind.items[node] != .ctor) continue;
-        const t = o.ctorType(o.stepCtor(o.paths.arg.items[node])) orelse continue;
-        if (t != ty) continue;
-        if (try o.typeRecursive(ty) and try o.levelOf(o.paths.arg.items[node]) == .none) {
-            first = null;
-        } else if (first == null) first = node;
+        switch (o.paths.kind.items[node]) {
+            .ctor => {
+                const t = o.ctorType(o.stepCtor(o.paths.arg.items[node])) orelse continue;
+                if (t != ty) continue;
+                if (try o.typeRecursive(ty) and try o.levelOf(o.paths.arg.items[node]) == .none) {
+                    region = null;
+                } else if (region == null) region = .{ .first = node };
+            },
+            .level => if (o.markerType(o.paths.arg.items[node]) == ty) {
+                region = .{ .marker = node };
+            },
+            else => {},
+        }
     }
-    return if (first) |node| o.paths.parent.items[node] else null;
+    return region;
+}
+
+/// The marker of a region: the one it has, or one under its first step.
+fn markerOf(o: *Ownership, r: Region, ty: u64) Allocator.Error!u32 {
+    return switch (r) {
+        .marker => |m| m,
+        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
+    };
+}
+
+/// Where a marker stands (§16.7): where the value is a `T`, where it is
+/// not (a field whose `T`s are further down), or where a projection took
+/// it and the value may be either; or, `under`, at a `T` and for the
+/// `T`s strictly below it, the canonical form of every region but not the
+/// root (§16.7).
+pub const MarkerKind = enum(u8) { at, below, maybe, under };
+
+/// The step argument of the marker `⟨T⟩` for the type `(module,
+/// declaration)` and where it stands.
+pub fn markerId(o: *Ownership, ty: u64, kind: MarkerKind) Allocator.Error!u32 {
+    const gop = try o.marker_ids.getOrPut(o.in.gpa, .{ ty, kind });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(o.marker_types.items.len);
+        try o.marker_types.append(o.in.gpa, ty);
+        try o.marker_kind.append(o.in.gpa, kind);
+    }
+    return gop.value_ptr.*;
+}
+
+pub fn markerKind(o: *const Ownership, arg: u32) MarkerKind {
+    return o.marker_kind.items[arg];
+}
+
+/// Whether a marker's expansion may begin with any step: it may stand
+/// where the value is not a `T`.
+fn markerAny(o: *const Ownership, arg: u32) bool {
+    return switch (o.marker_kind.items[arg]) {
+        .below, .maybe => true,
+        .at, .under => false,
+    };
+}
+
+/// Whether a marker's expansion may be empty: it may stand at a `T`.
+fn markerEmpty(o: *const Ownership, arg: u32) bool {
+    return switch (o.marker_kind.items[arg]) {
+        .at, .maybe => true,
+        .below, .under => false,
+    };
+}
+
+/// The type a marker step names.
+pub fn markerType(o: *const Ownership, arg: u32) u64 {
+    return o.marker_types.items[arg];
 }
 
 /// Whether `p` names a representative place (thesis §3.1, §3.11): one that
-/// stands for many run-time places — a list's elements, or a level of a
-/// recursive value that folding merged with the others. A demand there, or
-/// a holder there, is an approximate fact.
+/// stands for many run-time places — a list's elements, or the levels a
+/// region's marker merged (§16.7). A demand there, or a holder there, is an
+/// approximate fact. A level's own field (`#Node.1`) is one place.
 fn representative(o: *Ownership, p: u32) Allocator.Error!bool {
     var at = p;
     while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
         switch (o.paths.kind.items[at]) {
-            .elem => return true,
-            .ctor => if (o.ctorType(o.stepCtor(o.paths.arg.items[at]))) |t| if (try o.typeRecursive(t)) return true,
+            .elem, .level => return true,
+            // core Dict's tree folds with no marker: its levels are one place.
+            .ctor => if (o.ctorType(o.stepCtor(o.paths.arg.items[at]))) |t| if (try o.dictTree(t)) return true,
             else => {},
         }
     }
@@ -2982,11 +3499,16 @@ fn dictTreePath(o: *Ownership, p: u32) Allocator.Error!bool {
     while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
         if (o.paths.kind.items[at] != .ctor) continue;
         const t = o.ctorType(o.stepCtor(o.paths.arg.items[at])) orelse continue;
-        const m: u32 = @intCast(t >> 32);
-        if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) continue;
-        if (try o.typeRecursive(t)) return true;
+        if (try o.dictTree(t)) return true;
     }
     return false;
+}
+
+/// Whether `t` is core Dict's recursive tree (§20.8).
+fn dictTree(o: *Ownership, t: u64) Allocator.Error!bool {
+    const m: u32 = @intCast(t >> 32);
+    if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) return false;
+    return o.typeRecursive(t);
 }
 
 /// Whether the type `(module, declaration)` reaches itself through its own
@@ -3077,15 +3599,17 @@ fn levelOf(o: *Ownership, arg: u32) Allocator.Error!Level {
         if (field >= args.len) break :blk .below;
         var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
         defer seen.deinit(o.in.gpa);
-        break :blk try o.exprLevel(key.module, bir, args[field], t, &seen);
+        break :blk try o.exprLevel(key.module, bir, args[field], t, &seen, false);
     };
     if (arg >= o.level_of.items.len) try o.level_of.appendNTimes(o.in.gpa, .unknown, arg + 1 - o.level_of.items.len);
     o.level_of.items[arg] = l;
     return l;
 }
 
-/// `levelOf` for a type written in module `m`'s declarations.
-fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, seen: *std.AutoHashMapUnmanaged(u64, void)) Allocator.Error!Level {
+/// `levelOf` for a type written in module `m`'s declarations. `typed`:
+/// only where the type is written, not through a closure's captures, a
+/// `foreign type` or a schema's slots, which a path reaches only by a cast.
+fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, seen: *std.AutoHashMapUnmanaged(u64, void), typed: bool) Allocator.Error!Level {
     const tag = bir.instTag(inst);
     const data = bir.instData(inst);
     const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
@@ -3095,14 +3619,14 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
         // variable is no level: folding never goes through one (`foldAt`),
         // and one of a body read below is an argument, looked at where it
         // is written.
-        .type_fn => return .below,
+        .type_fn => return if (typed) .none else .below,
         .type_var => return .none,
         .type_tuple => {
-            for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| if (try o.exprLevel(m, bir, el, t, seen) != .none) return .below;
+            for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| if (try o.exprLevel(m, bir, el, t, seen, typed) != .none) return .below;
             return .none;
         },
         .type_record => {
-            for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| if (try o.exprLevel(m, bir, fl.value, t, seen) != .none) return .below;
+            for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| if (try o.exprLevel(m, bir, fl.value, t, seen, typed) != .none) return .below;
             return .none;
         },
         .type_top, .ext_type, .schema_type_top, .ext_schema_type, .type_app => {
@@ -3114,15 +3638,18 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
             const e = o.in.types.entries[id.int()];
             const key = (@as(u64, e.module.int()) << 32) | e.decl.int();
             if (key == t) return .here;
+            // A `foreign type`'s arguments are not where a path goes, but
+            // a `List`'s elements are.
+            if (typed and e.kind == .foreign and id != o.in.types.well_known.list) return .none;
             if (tag == .type_app) {
                 for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| {
-                    if (try o.exprLevel(m, bir, arg, t, seen) != .none) return .below;
+                    if (try o.exprLevel(m, bir, arg, t, seen, typed) != .none) return .below;
                 }
             }
             if (id == o.in.types.well_known.list or o.isPrimitive(id)) return .none;
-            if (e.schema_endpoint) return .below;
+            if (e.schema_endpoint) return if (typed) .none else .below;
             switch (e.kind) {
-                .foreign => return if ((try o.nominalFacts(id)).own) .below else .none,
+                .foreign => return if (!typed and (try o.nominalFacts(id)).own) .below else .none,
                 .alias, .adt => {},
             }
             const gop = try seen.getOrPut(o.in.gpa, key);
@@ -3132,10 +3659,10 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
             const d = dbir.decl(e.decl);
             if (e.kind == .alias) {
                 const body = d.annotation.unwrap() orelse return .below;
-                return o.exprLevel(dm, dbir, body, t, seen);
+                return o.exprLevel(dm, dbir, body, t, seen, typed);
             }
             for (dbir.declCtors(d)) |ct| for (dbir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index)) |arg| {
-                if (try o.exprLevel(dm, dbir, arg, t, seen) != .none) return .below;
+                if (try o.exprLevel(dm, dbir, arg, t, seen, typed) != .none) return .below;
             };
             return .none;
         },
@@ -3160,7 +3687,9 @@ pub fn rawChild(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.
     try o.paths.arg.append(o.in.gpa, arg);
     try o.paths.depth.append(o.in.gpa, o.paths.depth.items[parent] + 1);
     try o.paths.rest.append(o.in.gpa, none);
-    try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any);
+    // A marker is compared step by step (§16.7, *Overlap*).
+    try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any or kind == .level);
+    try o.paths.holds.append(o.in.gpa, kind == .ctor and try o.levelOf(arg) != .none);
     return id;
 }
 
@@ -3215,16 +3744,95 @@ fn overlap(o: *const Ownership, p: u32, q: u32) bool {
 
 /// `overlap`, step by step.
 fn overlapSteps(o: *const Ownership, p: u32, q: u32) bool {
-    var bp: [k_limit + 1]Step = undefined;
-    var bq: [k_limit + 1]Step = undefined;
-    const sp = o.steps(p, &bp);
-    const sq = o.steps(q, &bq);
-    const n = @min(sp.len, sq.len);
-    for (0..n) |i| {
-        if (sp[i].kind == .any or sq[i].kind == .any) return true;
-        if (sp[i].kind != sq[i].kind or sp[i].arg != sq[i].arg) return false;
+    var bp: [k_limit + 1]u32 = undefined;
+    var bq: [k_limit + 1]u32 = undefined;
+    return o.overlapNodes(o.pathNodes(p, &bp), o.pathNodes(q, &bq));
+}
+
+/// The nodes of `p`, root first: `p`'s prefix at each depth.
+fn pathNodes(o: *const Ownership, p: u32, buf: *[k_limit + 1]u32) []const u32 {
+    const n: usize = o.paths.depth.items[p];
+    var at = p;
+    var i = n;
+    while (i > 0) {
+        i -= 1;
+        buf[i] = at;
+        at = o.paths.parent.items[at];
     }
-    return true;
+    return buf[0..n];
+}
+
+fn sameStep(o: *const Ownership, x: u32, y: u32) bool {
+    return o.paths.kind.items[x] == o.paths.kind.items[y] and o.paths.arg.items[x] == o.paths.arg.items[y];
+}
+
+/// §16.7, *Overlap*: two paths' remaining nodes from one position.
+fn overlapNodes(o: *const Ownership, a: []const u32, b: []const u32) bool {
+    return o.match(a, b, .overlap);
+}
+
+/// What `match` asks of two sets of places: that one place of each is a
+/// prefix of the other (`overlap`), or that one of `a`'s is a prefix of one
+/// of `b`'s (`holds`).
+const MatchMode = enum { overlap, holds };
+
+/// §16.7: two paths' remaining nodes, read as the sets of concrete places
+/// they stand for, `⋆` any steps and a marker any steps of its expansion.
+/// Exact for markers: each one is expanded only as far as the other path
+/// asks, one step at a time.
+fn match(o: *const Ownership, a: []const u32, b: []const u32, mode: MatchMode) bool {
+    if (a.len == 0) return true;
+    if (b.len == 0) return mode == .overlap;
+    const x = a[0];
+    const y = b[0];
+    const kx = o.paths.kind.items[x];
+    const ky = o.paths.kind.items[y];
+    if (kx == .any or ky == .any) return true;
+    if (kx == .level and ky == .level) {
+        if (o.markerType(o.paths.arg.items[x]) != o.markerType(o.paths.arg.items[y])) return true;
+        // Both end at a `T`; one expansion may be the other's and more,
+        // and what is more starts at a `T`.
+        return o.expand(.at, x, a[1..], b[1..], mode, true) or o.expand(.at, y, b[1..], a[1..], mode, false);
+    }
+    if (kx == .level) return o.expand(o.markerKind(o.paths.arg.items[x]), x, a[1..], b, mode, true);
+    if (ky == .level) return o.expand(o.markerKind(o.paths.arg.items[y]), y, b[1..], a, mode, false);
+    if (!o.sameStep(x, y)) return false;
+    return o.match(a[1..], b[1..], mode);
+}
+
+/// The marker `m` of kind `kind`, followed by `r`, against `other`, which
+/// is on the left of `match` when `left` is false.
+fn expand(o: *const Ownership, kind: MarkerKind, m: u32, r: []const u32, other: []const u32, mode: MatchMode, left: bool) bool {
+    // The empty expansion: where the marker stands at a `T`.
+    if (kind == .at or kind == .maybe) {
+        if (if (left) o.match(r, other, mode) else o.match(other, r, mode)) return true;
+    }
+    if (other.len == 0) return if (left) mode == .overlap else true;
+    const y = other[0];
+    switch (o.paths.kind.items[y]) {
+        .any => return true,
+        .level => {
+            if (o.markerType(o.paths.arg.items[y]) != o.markerType(o.paths.arg.items[m])) return true;
+            const ky = o.markerKind(o.paths.arg.items[y]);
+            return if (left) o.match(r, other[1..], mode) or o.expand(ky, y, other[1..], r, mode, false) else o.match(other[1..], r, mode) or o.expand(ky, y, other[1..], r, mode, true);
+        },
+        else => {},
+    }
+    const next = o.regionStepKind(kind, o.markerType(o.paths.arg.items[m]), y) orelse return false;
+    return o.expand(next, m, r, other[1..], mode, left);
+}
+
+/// Where a marker of kind `kind` for type `t` stands after `step`, when its
+/// expansion may begin with it: any step where the value may not be a `T`;
+/// where it is, a constructor step of `T` whose field can hold a `T`.
+fn regionStepKind(o: *const Ownership, kind: MarkerKind, t: u64, step: u32) ?MarkerKind {
+    const is_t = o.paths.kind.items[step] == .ctor and o.ctorType(o.stepCtor(o.paths.arg.items[step])) == t;
+    if (is_t) {
+        const strict = kind == .at or kind == .under;
+        if (!o.paths.holds.items[step]) return if (strict) null else .maybe;
+        return if (o.level_of.items[o.paths.arg.items[step]] == .here) .at else .below;
+    }
+    return if (kind == .at or kind == .under) null else .maybe;
 }
 
 /// When `p` is a prefix of `q`, the rest of `q`; else null.
@@ -3252,6 +3860,16 @@ fn ancestor(o: *const Ownership, p: u32, d: u8) u32 {
 fn startsWith(o: *const Ownership, p: u32, q: u32) bool {
     const d = o.paths.depth.items[q];
     return o.paths.depth.items[p] >= d and o.ancestor(p, d) == q;
+}
+
+/// §16.7, *Holding a symbolic cell*: whether one of the places at `p`
+/// may be a prefix of one of the places at `q` through a marker (the
+/// prefix step by step is the exact case of `coversAt`).
+fn levelHoldsPaths(o: *const Ownership, p: u32, q: u32) bool {
+    if (!o.paths.any.items[p] and !o.paths.any.items[q]) return false;
+    var bp: [k_limit + 1]u32 = undefined;
+    var bq: [k_limit + 1]u32 = undefined;
+    return o.match(o.pathNodes(p, &bp), o.pathNodes(q, &bq), .holds);
 }
 
 /// Whether `p` is a prefix of `q`, `⋆` matching anything.
@@ -3306,6 +3924,13 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
             try w.print("#{s}.{d}", .{ name, o.stepField(s.arg) });
         },
         .elem => try w.writeAll("[*]"),
+        .level => {
+            const t = o.markerType(s.arg);
+            const m: u32 = @intCast(t >> 32);
+            const d: u32 = @truncate(t);
+            const name = if (m < o.in.birs.len and d < o.in.birs[m].decls.len) o.in.interner.slice(o.in.birs[m].symbol(o.in.birs[m].decls[d].name)) else "";
+            try w.print("⟨{s}⟩{s}", .{ name, if (o.markerKind(s.arg) == .under) "⁺" else "" });
+        },
         .env => try w.writeAll("◇"),
         .markup_render => try w.writeAll("⟨render⟩"),
         .markup_event => try w.writeAll("⟨events⟩"),
@@ -4936,12 +5561,13 @@ const Walker = struct {
 
     fn proj(w: *Walker, av: AV, s: Step, ty: ?Var) Allocator.Error!AV {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
-        // §16.7: a step into a recursive type keeps what folding put at its
-        // levels below — at the same path when the field is a value of the
-        // type itself, anywhere when it is further down.
-        const level: Level = if (s.kind == .ctor) try w.o.levelOf(s.arg) else .none;
-        const t = if (level != .none) w.o.ctorType(w.o.stepCtor(s.arg)) else null;
-        const any = if (level == .below) try w.o.child(eps, .any, 0) else eps;
+        // A type that folds with no marker (core Dict's tree) keeps what
+        // folding put at its levels below, as #341 did: at the same path
+        // when the field is a value of the type itself, anywhere when it is
+        // further down (§16.7).
+        const unmarked: ?u64 = if (s.kind == .ctor) if (w.o.ctorType(w.o.stepCtor(s.arg))) |t| (if (try w.o.dictTree(t) and try w.o.levelOf(s.arg) != .none) t else null) else null else null;
+        const here = unmarked != null and try w.o.levelOf(s.arg) == .here;
+        const any = if (unmarked != null and !here) try w.o.child(eps, .any, 0) else eps;
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             if (e.path == eps) {
@@ -4956,11 +5582,64 @@ const Walker = struct {
             if (first.kind == s.kind and first.arg == s.arg) {
                 try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx });
             }
-            if (t != null and first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t.?) {
-                try out.append(w.a, .{ .path = if (level == .here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
+            if (unmarked) |t| if (first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t) {
+                try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
+                continue;
+            };
+            if (first.kind == s.kind and first.arg == s.arg) continue;
+            if (first.kind == .level) {
+                try w.underMarker(&out, e, first, s);
+            } else if (s.kind == .level) {
+                try w.alongMarker(&out, e, s.arg);
             }
         }
         return w.norm(out.items);
+    }
+
+    /// §16.7: an entry `⟨T⟩r` stands for the places `r` of every `T` at
+    /// or below the value's root. Along a step `s` it is kept whole when
+    /// the field `s` reaches may hold a `T`, and at the rest of `r` when
+    /// `r` begins with `s` (the root is one of the `T`s); both
+    /// approximately.
+    fn underMarker(w: *Walker, out: *std.ArrayList(Entry), e: Entry, first: Step, s: Step) Allocator.Error!void {
+        const ap = if (e.approx != 0) e.approx else approx_place;
+        const t = w.o.markerType(first.arg);
+        const r = try w.o.dropFirst(e.path);
+        // Kept whole when the step may lead into the region, under a marker
+        // that says where the step went: to a `T`, to a field whose `T`s
+        // are further down, or, for any other step, to either.
+        const t_step = s.kind == .ctor and w.o.ctorType(w.o.stepCtor(s.arg)) == t;
+        const level: Level = if (t_step) try w.o.levelOf(s.arg) else .none;
+        if (w.o.markerAny(first.arg) or level != .none) {
+            const kind: MarkerKind = if (level == .here) .at else if (level == .below) .below else .maybe;
+            const kept = try w.o.concat(try w.o.child(eps, .level, try w.o.markerId(t, kind)), r);
+            try out.append(w.a, .{ .path = kept, .cell = e.cell, .approx = ap });
+        }
+        if (!w.o.markerEmpty(first.arg)) return;
+        if (w.o.firstStep(r)) |rs| if (rs.kind == s.kind and rs.arg == s.arg) {
+            try out.append(w.a, .{ .path = try w.o.dropFirst(r), .cell = e.cell, .approx = ap });
+        };
+    }
+
+    /// §16.7: a value projected along its own marker `⟨T⟩`, the `T`s at or
+    /// below its root: the root may be one of them, so an entry is kept,
+    /// and what a marker of `T` in its path names is at the rest after it;
+    /// both approximately.
+    fn alongMarker(w: *Walker, out: *std.ArrayList(Entry), e: Entry, arg: u32) Allocator.Error!void {
+        const ap = if (e.approx != 0) e.approx else approx_place;
+        // The root's own places, as the expansion that is empty reads them.
+        if (w.o.markerEmpty(arg)) try out.append(w.a, e);
+        // Where the root may not be a `T`, a place inside it may be one, at
+        // a path the entry does not show.
+        if (w.o.markerAny(arg)) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap });
+        var buf: [k_limit + 1]Step = undefined;
+        const st = w.o.steps(e.path, &buf);
+        for (st, 0..) |x, i| if (x.kind == .level and w.o.markerType(x.arg) == w.o.markerType(arg)) {
+            var at: u32 = eps;
+            for (st[i + 1 ..]) |y| at = try w.o.child(at, y.kind, y.arg);
+            try out.append(w.a, .{ .path = at, .cell = e.cell, .approx = e.approx });
+            break;
+        };
     }
 
     /// Every entry of `av` with closures expanded into what they capture,
@@ -5027,7 +5706,7 @@ const Walker = struct {
     /// `proj(av, s)` for a wide value, through an index by first step that
     /// is built once per value: the same answer, without the scan.
     fn projFirst(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
-        if (s.kind == .ctor and try w.o.levelOf(s.arg) != .none) return w.proj(av, s, null);
+        if (s.kind == .level or (s.kind == .ctor and try w.o.levelOf(s.arg) != .none)) return w.proj(av, s, null);
         const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
         const gop = try w.wide.getOrPut(w.a, key);
         if (!gop.found_existing) {
@@ -5040,6 +5719,10 @@ const Walker = struct {
                 const first = w.o.firstStep(e.path).?;
                 if (first.kind == .any) {
                     try idx.any.append(w.a, e);
+                    continue;
+                }
+                if (first.kind == .level) {
+                    try idx.levels.append(w.a, e);
                     continue;
                 }
                 const g = try idx.by.getOrPut(w.a, .{ @backingInt(first.kind), first.arg });
@@ -5055,6 +5738,7 @@ const Walker = struct {
         }
         try out.appendSlice(w.a, idx.any.items);
         if (idx.by.get(.{ @backingInt(s.kind), s.arg })) |list| try out.appendSlice(w.a, list.items);
+        for (idx.levels.items) |e| try w.underMarker(&out, e, w.o.firstStep(e.path).?, s);
         return w.norm(out.items);
     }
 
@@ -5231,7 +5915,7 @@ const Walker = struct {
         for (av) |other| {
             if (other.path == target.path) continue;
             if (other.cell == target.cell) return cond_lost;
-            if (w.o.isPrefix(other.path, target.path) or w.o.isPrefix(target.path, other.path)) continue;
+            if (try w.nested(other, target)) continue;
             k = try w.condAnd(k, try w.sepSpines(target.cell, other.cell, target.approx == 0 and other.approx == 0));
         }
         return k;
@@ -5380,8 +6064,7 @@ const Walker = struct {
         for (others) |other| {
             if (acc.shared) return;
             if (other.path == target.path) continue;
-            // `isPrefix` either way is `overlap`.
-            if (w.o.overlap(other.path, target.path)) continue;
+            if (try w.nested(other, target)) continue;
             const exact = target.approx == 0 and other.approx == 0;
             const oc = w.cells.items[other.cell];
             // Two arrived cells, which `sepCells` relates by `covers` or
@@ -5390,7 +6073,8 @@ const Walker = struct {
             if (t_arrived and (oc.kind == .param or oc.kind == .env or oc.kind == .cbres) and target.cell != other.cell) {
                 // `covers` either way, without building the path between.
                 const related = tc.kind == oc.kind and tc.a == oc.a and tc.b == oc.b and
-                    (w.o.startsWith(tc.path, oc.path) or w.o.startsWith(oc.path, tc.path));
+                    (w.o.startsWith(tc.path, oc.path) or w.o.startsWith(oc.path, tc.path) or
+                        w.o.levelHoldsPaths(tc.path, oc.path) or w.o.levelHoldsPaths(oc.path, tc.path));
                 if (related) {
                     const one = !(try w.o.representative(tc.path)) and !(try w.o.representative(oc.path));
                     if (exact and one) acc.shared = true else acc.lost = true;
@@ -5703,10 +6387,26 @@ const Walker = struct {
         var acc: CondAcc = .{};
         for (ex) |e| try acc.add(w, try w.cellCond(e.cell));
         for (ex, 0..) |e, i| for (ex[i + 1 ..]) |f| {
-            if (w.o.isPrefix(e.path, f.path) or w.o.isPrefix(f.path, e.path)) continue;
+            if (try w.nested(e, f)) continue;
             try acc.add(w, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
         };
         return w.condAndAll(&acc);
+    }
+
+    /// Whether two entries of one value are a container and what it holds,
+    /// which a deep condition does not separate (§18.2): one path a prefix of
+    /// the other step by step. A prefix only through `⋆` or a marker (§16.7)
+    /// is a place that stands for several, which may be the other one or
+    /// beside it, so the two are separated unless their cells are two that
+    /// hold one another. One cell at both is two places that share it, unless
+    /// one entry is only a copy of the other at a place it may stand for (an
+    /// approximate entry: a projection keeps a marked entry whole and at the
+    /// rest of its path).
+    fn nested(w: *Walker, e: Entry, f: Entry) Allocator.Error!bool {
+        if (w.o.startsWith(e.path, f.path) or w.o.startsWith(f.path, e.path)) return true;
+        if (!w.o.overlap(e.path, f.path)) return false;
+        if (e.cell == f.cell) return e.approx != 0 or f.approx != 0;
+        return (try w.covers(e.cell, f.cell)) != null or (try w.covers(f.cell, e.cell)) != null;
     }
 
     /// The condition of stored items, pairwise and against what the list
@@ -11163,19 +11863,28 @@ const Walker = struct {
     /// one to the other: a symbolic cell stands for every cell under it
     /// (§4.3), so `param(x, ε)` holds `param(x, .items)` at `.items`.
     fn covers(w: *Walker, outer: u32, inner: u32) Allocator.Error!?u32 {
-        if (outer == inner) return eps;
+        const c = (try w.coversAt(outer, inner)) orelse return null;
+        return c.rest;
+    }
+
+    const Cover = struct { rest: u32, approx: bool = false };
+
+    /// `covers`, saying whether the hold is approximate: one of the places
+    /// a region's marker stands for (§16.7).
+    fn coversAt(w: *Walker, outer: u32, inner: u32) Allocator.Error!?Cover {
+        if (outer == inner) return .{ .rest = eps };
         const o = w.cells.items[outer];
         const i = w.cells.items[inner];
         // §31.2: the record object written over `o.a`, and the fields it did
         // not write.
         if (o.kind == .except) {
-            if (inner == o.a) return eps;
+            if (inner == o.a) return .{ .rest = eps };
             if (o.b == except_all) return null;
-            const rest = (try w.covers(o.a, inner)) orelse return null;
-            if (w.o.firstStep(rest)) |first| {
+            const c = (try w.coversAt(o.a, inner)) orelse return null;
+            if (w.o.firstStep(c.rest)) |first| {
                 if (first.kind == .field and std.mem.indexOfScalar(u32, w.exsets.items[o.b], first.arg) != null) return null;
             }
-            return rest;
+            return c;
         }
         switch (o.kind) {
             .param, .result, .env, .shared, .cbres, .taken, .payload => {},
@@ -11184,16 +11893,21 @@ const Walker = struct {
         if (o.kind != i.kind or o.a != i.a or o.b != i.b) return null;
         // One place named twice (a definition's made cell, and the same value
         // through another's summary) is one cell.
-        if (o.path == i.path) return eps;
+        if (o.path == i.path) return .{ .rest = eps };
         var bo: [k_limit + 1]Step = undefined;
         var bi: [k_limit + 1]Step = undefined;
         const so = w.o.steps(o.path, &bo);
         const si = w.o.steps(i.path, &bi);
-        if (so.len >= si.len) return null;
-        for (so, si[0..so.len]) |x, y| if (x.kind != y.kind or x.arg != y.arg) return null;
-        var at: u32 = eps;
-        for (si[so.len..]) |s| at = try w.o.child(at, s.kind, s.arg);
-        return at;
+        if (so.len < si.len) exact: {
+            for (so, si[0..so.len]) |x, y| if (x.kind != y.kind or x.arg != y.arg) break :exact;
+            var at: u32 = eps;
+            for (si[so.len..]) |s| at = try w.o.child(at, s.kind, s.arg);
+            return .{ .rest = at };
+        }
+        // §16.7: one of the places a region's marker stands for may be
+        // held, somewhere below it.
+        if (w.o.levelHoldsPaths(o.path, i.path)) return .{ .rest = try w.o.child(eps, .any, 0), .approx = true };
+        return null;
     }
 
     /// Where `av`, closures expanded, holds one of `cells`: the first such
@@ -11204,9 +11918,9 @@ const Walker = struct {
         var found: ?Entry = null;
         for (try w.expand(av)) |e| {
             for (cells) |c| {
-                const rest = (try w.covers(e.cell, c.cell)) orelse
-                    (if (try w.splitBase(c.cell, none)) |b| (try w.covers(e.cell, b)) orelse continue else continue);
-                const hit: Entry = .{ .path = try w.o.concat(e.path, rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else c.approx };
+                const cv = (try w.coversAt(e.cell, c.cell)) orelse
+                    (if (try w.splitBase(c.cell, none)) |b| (try w.coversAt(e.cell, b)) orelse continue else continue);
+                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0 };
                 if (hit.approx == 0) return hit;
                 if (found == null or hit.approx < found.?.approx) found = hit;
             }
@@ -11496,15 +12210,15 @@ const Walker = struct {
                 };
                 for (cells.items) |c| {
                     var split = false;
-                    const rest = (try w.covers(e.cell, c.cell)) orelse blk: {
+                    const cv = (try w.coversAt(e.cell, c.cell)) orelse blk: {
                         const b = (try w.splitBase(c.cell, @intCast(l))) orelse continue;
                         split = true;
-                        break :blk (try w.covers(e.cell, b)) orelse continue;
+                        break :blk (try w.coversAt(e.cell, b)) orelse continue;
                     };
                     try holders.append(w.a, .{
                         .local = @intCast(l),
-                        .path = try w.o.concat(e.path, rest),
-                        .approx = if (e.approx != 0) e.approx else c.approx,
+                        .path = try w.o.concat(e.path, cv.rest),
+                        .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0,
                         .split = split,
                     });
                 }

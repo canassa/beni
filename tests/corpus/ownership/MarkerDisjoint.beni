@@ -1,0 +1,52 @@
+-- ownership: a call's other operand that may hold the written list only
+-- through a level marker (ownership-checker.md §16.7, *Holding a symbolic
+-- cell*). `pick` returns a list of any level of the tree, so its result is
+-- `⟨Tree⟩#Node.1`, every list of every level. `outer` hands `push` the
+-- left subtree and that list: `push` writes its second parameter and reads
+-- its first, so the call is disjoint only if the subtree does not hold the
+-- list, and it may, when the list `pick` chose was one of the subtree's.
+-- The subtree holds it approximately, and the call is rejected, `call`.
+-- Before the marker, the list was the root's `#Node.1`, which the subtree
+-- does not hold, and the call was accepted.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pick : Tree, Int → List Int
+pick t n =
+    case t of
+        Leaf →
+            []
+
+        Node l xs r →
+            if n == 0 then
+                xs
+            else if n > 0 then
+                pick l (n - 1)
+            else
+                pick r (n + 1)
+
+
+size : Tree → Int
+size t =
+    case t of
+        Leaf →
+            0
+
+        Node l xs r →
+            size l + List.length xs + size r
+
+
+push : Tree, List Int → List Int × Int
+push t xs = ( List.push xs 1, size t )
+
+
+pub outer : Tree, Int → List Int × Int
+outer t n =
+    case t of
+        Leaf →
+            ( [], 0 )
+
+        Node l _ _ →
+            push l (pick t n)

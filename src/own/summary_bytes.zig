@@ -23,7 +23,8 @@
 //! strings: u32, then per string: u32 length, bytes        field names
 //! paths: u32, then per path: steps u8, then per step: kind u8 and
 //!        field: string index u32 · tuple: index u32 · ctor: module u32,
-//!        constructor u32, argument u32 · elem, env, any: nothing
+//!        constructor u32, argument u32 · level: module u32, declaration
+//!        u32, where it stands u8 · elem, env, any: nothing
 //! decls: u32, then per declaration: index u32, flags u8 (1: a summary
 //!        follows; 2: a value whose type may hold a list), the summary
 //! ```
@@ -76,7 +77,8 @@ pub const magic = "BENIOWN\x00";
 /// (§23.5, amended 2026-10-17).
 /// 15 writes a constructor step's field as a u32, so a field past 63 is
 /// named exactly (issue #289; it was a byte, and a field past 63 refused).
-pub const version: u32 = 15;
+/// 16 adds the level marker `⟨T⟩`, a step naming its type (§16.7, #379).
+pub const version: u32 = 16;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -160,6 +162,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             for (c.o.steps(p, &buf)) |s| switch (s.kind) {
                 .field => if (!(try c.seen_string.getOrPut(c.arena, s.arg)).found_existing) try c.strings.append(c.arena, s.arg),
                 .ctor => try c.module(c.o.ctorKey(c.o.stepCtor(s.arg)).module),
+                .level => try c.module(@intCast(c.o.markerType(s.arg) >> 32)),
                 else => {},
             };
         }
@@ -301,6 +304,12 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
                 try appendInt(arena, &out, w.module_index.get(key.module).?);
                 try appendInt(arena, &out, key.index);
                 try appendInt(arena, &out, o.stepField(st.arg));
+            },
+            .level => {
+                const t = o.markerType(st.arg);
+                try appendInt(arena, &out, w.module_index.get(@intCast(t >> 32)).?);
+                try appendInt(arena, &out, @truncate(t));
+                try out.append(arena, @backingInt(o.markerKind(st.arg)));
             },
             .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
@@ -595,6 +604,13 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     const arity = (try o.ctorArity(cm, ci)) orelse return error.Bad;
                     if (k >= arity) return error.Bad;
                     break :blk try o.ctorStep(try o.ctorId(cm, ci), k);
+                },
+                .level => blk: {
+                    const tm = try r.module();
+                    const td = try r.int();
+                    if (td >= o.in.birs[tm].decls.len) return error.Bad;
+                    const where = std.enums.fromInt(Ownership.MarkerKind, try r.byte()) orelse return error.Bad;
+                    break :blk try o.markerId((@as(u64, tm) << 32) | td, where);
                 },
                 .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
             };

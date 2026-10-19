@@ -1,0 +1,10 @@
+module DeeperLevel
+  20:23 List.push zs: rejected element: l⟨Tree⟩#Node.1 holds it and is read at 20:21 (approx)
+  48:15 List.push zs: rejected call: l⟨Tree⟩#Node.1 may hold it through the call at 46:10, and is read at 48:13 (approx)
+  summary inner: π1 R, π1#Node.0 RA, π1#Node.0⟨Tree⟩#Node.1 RAW, π1#Node.0⟨Tree⟩#Node.1[*] A; res .0 fresh1 π1#Node.0⟨Tree⟩#Node.1, .0[*] ~π1#Node.0⟨Tree⟩#Node.1[*], .1 π1#Node.0
+  summary pick: π1 R, π1#Node.0 RA, π1#Node.0⟨Tree⟩#Node.1 RA; res .0 fresh1 π1#Node.0⟨Tree⟩#Node.1, .1 π1#Node.0
+  summary outer: π1 R, π1#Node.0 RA, π1#Node.0⟨Tree⟩#Node.1 RAw, π1#Node.0⟨Tree⟩#Node.1[*] A; res .0 ~π1#Node.0⟨Tree⟩#Node.1, .0[*] ~fresh1 ~π1#Node.0⟨Tree⟩#Node.1[*], .1 π1#Node.0
+  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause element 1
+cause call 1

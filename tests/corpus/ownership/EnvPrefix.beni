@@ -1,0 +1,13 @@
+-- ownership: one list in a closure's environment and in the closure that
+-- environment holds (issue #286, the review of F1 in #378). `f` captures `s`,
+-- whose field `a` is a closure that captures `xs` and whose field `b` is `xs`
+-- itself, so the list `mkF` returns holds `xs` at two places of one closure's
+-- environment, and its condition is `{shared}`. A fold of the inner closure's
+-- environment onto the outer one's must not make the two places one path's
+-- container and its contents, or the pair is never compared.
+pub mkF : List Int → List (⊤ → Int)
+mkF xs =
+    g = λ⊤ → List.length xs
+    s = { a = g, b = xs }
+    f = λ⊤ → s.a ⊤ + List.length s.b
+    [ f ]

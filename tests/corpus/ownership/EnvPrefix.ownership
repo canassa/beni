@@ -1,0 +1,4 @@
+module EnvPrefix
+  summary mkF: π1 RA; res [*]◇ π1, [*]◇.a◇ π1, [*]◇.b π1, fresh1{shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
