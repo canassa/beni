@@ -30,12 +30,16 @@ abbrev PCell := Nat × List Step
 structure Summary where
   writes : List PCell := []
   seps : List (PCell × PCell) := []
+  /-- Exclusivity a caller must show: the arrays at any two positions under
+      the parameter path that hold no one another are distinct (`xreq excl`). -/
+  excls : List PCell := []
   result : AVal := []
   deriving DecidableEq, Repr, Inhabited
 
 structure St where
   writes : List PCell := []
   seps : List (PCell × PCell) := []
+  excls : List PCell := []
   next : Nat := 0
   errors : List String := []
   deriving Repr, Inhabited
@@ -45,6 +49,9 @@ def St.addWrite (st : St) (w : PCell) : St :=
 
 def St.addSep (st : St) (a b : PCell) : St :=
   if st.seps.contains (a, b) || st.seps.contains (b, a) then st else { st with seps := st.seps ++ [(a, b)] }
+
+def St.addExcl (st : St) (x : PCell) : St :=
+  if st.excls.contains x then st else { st with excls := st.excls ++ [x] }
 
 def St.fail (st : St) (e : String) : St := { st with errors := st.errors ++ [e] }
 
@@ -126,6 +133,46 @@ def Config.demand (c : Config) (env : List (Var × AVal)) (live : List Var) (ws 
       (cellsOf (lookupA env y)).foldl (fun st h =>
         c.relate st s!"write of {repr w}: variable {y} holds {repr h}" w h) st) st) st
 
+/-- `cellsAt`, keeping which entry each cell came from and whether that entry
+    is the argument's root (an exact parameter subvalue, extended along `q`). -/
+def Config.cellsAtIx (c : Config) (v : AVal) (q : List Step) : List (Nat × Bool × Cell) :=
+  v.zipIdx.flatMap fun ((p, cell), i) =>
+    if p.isEmpty then [(i, true, c.extendCellPath cell q)]
+    else if c.conflict p q then [(i, false, cell)] else []
+
+/-- A callee's condition `sep (j, p) (j', q)` at a call. Two cells that are one
+    are refused, except where both come from the root entry of one argument,
+    a subvalue `param(k, r)` of the caller's parameter: then `p` and `q`,
+    which do not conflict, name disjoint positions under `r`, and the
+    condition holds when the arrays there are pairwise distinct, which the
+    caller requires of its own caller (`xreq excl π(k).r`, #399). -/
+def Config.instSep (c : Config) (vs : List AVal) (why : String) (st : St)
+    (x y : PCell) : St :=
+  let (j, p) := x
+  let (k, q) := y
+  (c.cellsAtIx (vs.getD j []) p).foldl (fun st (ia, ra, a) =>
+    (c.cellsAtIx (vs.getD k []) q).foldl (fun st (ib, rb, b) =>
+      match a, b, c.rel a b with
+      | .param ka _, .param kb _, .conflict =>
+        match (vs.getD j [])[ia]? with
+        | some ([], Cell.param kr r) =>
+          if c.exclReliance && j == k && ia == ib && ra && rb && ka == kb && ka == kr then st.addExcl (kr, r)
+          else st.fail why
+        | _ => st.fail why
+      | _, _, _ => c.relate st why a b) st) st
+
+/-- A callee's requirement `excl (j, q)` at a call: the entries of the
+    argument under `q` must be pairwise apart (or apart on condition), and
+    each parameter cell among them is required exclusive in turn. -/
+def Config.instExcl (c : Config) (vs : List AVal) (why : String) (st : St) (x : PCell) : St :=
+  let (j, q) := x
+  let items := c.cellsAtIx (vs.getD j []) q
+  let st := items.foldl (fun st (_, _, cell) => match cell with
+    | .param k s => st.addExcl (k, s)
+    | _ => st) st
+  items.zipIdx.foldl (fun st ((_, _, a), m) =>
+    (items.drop (m + 1)).foldl (fun st (_, _, b) => c.relate st why a b) st) st
+
 /-- The result of a call: a callee's parameter cell is the argument's cells
     there; a callee's site is a fresh site of this call. -/
 def Config.instResult (c : Config) (args : List AVal) (call : Nat) (r : AVal) : AVal :=
@@ -154,10 +201,10 @@ def Config.checkE (c : Config) (sums : List Summary) :
     let s := sums.getD f {}
     let vs := args.map (lookupA env)
     let st := s.writes.foldl (fun st (j, q) => c.demand env live (c.cellsAt (vs.getD j []) q) st) st
-    let st := s.seps.foldl (fun st ((j, p), (k, q)) =>
-      (c.cellsAt (vs.getD j []) p).foldl (fun st a =>
-        (c.cellsAt (vs.getD k []) q).foldl (fun st b =>
-          c.relate st s!"call of {f}: argument {j} at {repr p} and argument {k} at {repr q} share {repr a}, {repr b}" a b) st) st) st
+    let st := s.seps.foldl (fun st (x, y) =>
+      c.instSep vs s!"call of {f}: its condition {repr x}, {repr y} names one array" st x y) st
+    let st := if !c.checkExcl then st else s.excls.foldl (fun st x =>
+      c.instExcl vs s!"call of {f}: argument {x.1} at {repr x.2} may hold one array twice" st x) st
     (c.instResult vs st.next s.result, { st with next := st.next + 1 })
   | env, live, .letE x rhs rest, st =>
     let (v, st) := c.checkE sums env (union live ((fv rest).filter (· != x))) rhs st
@@ -192,17 +239,18 @@ def canonForm {β : Type} [DecidableEq β] (fs : List (List Step × β)) : List 
     [(P ++ r, b), (P ++ [.n0, .mark] ++ r, b), (P ++ [.n2, .mark] ++ r, b)]
   fs.filter (fun f => !gone.contains f) ++ merged.map fun (P, r, b) => (P ++ .mark :: r, b)
 
-/-- A declaration's summary and the demands that failed in it. The writes and
-    the result's entries are written in the canonical form unless
-    `canonical := false`; the conditions are not (each names two paths, and
-    the amendment's form is for facts stated per path). -/
+/-- A declaration's summary and the demands that failed in it. The writes are
+    written in the canonical form unless `canonical := false`. The result's
+    entries are not: here one entry is one position, and merging three into
+    `P⟨T⟩r` would hide that one array sits at all three, which `instExcl`
+    reads (in `src/own/` sharing is a condition of its own, so the form loses
+    nothing there). The conditions name two paths each and stay as they are. -/
 def Config.checkDecl (c : Config) (sums : List Summary) (d : Decl) : Summary × List String :=
   let env := (List.range d.params.length).map fun j => (j, [([], Cell.param j [])])
   let (v, st) := c.checkE sums env [] d.body {}
   let writes := if c.canonical then (canonForm (st.writes.map fun (j, p) => (p, j))).map fun (p, j) => (j, p)
     else st.writes
-  let result := if c.canonical then canonForm v else v
-  ({ writes := writes, seps := st.seps, result := result }, st.errors)
+  ({ writes := writes, seps := st.seps, excls := st.excls, result := v }, st.errors)
 
 /-- Per declaration, in order, its summary and its failed demands; then the
     failed demands of the main expression. -/

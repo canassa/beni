@@ -211,7 +211,7 @@ def count (cfg : Config) (cs : List Case) : Except String Counts :=
 /-- The holes the enumerator must catch, and why each is one. -/
 def holes : List (String × Config) :=
   [("master", master), ("no-marker", { marker := false }), ("no-level-sep", { levelSep := false }),
-   ("no-approx", { approx := false })]
+   ("no-approx", { approx := false }), ("excl-unchecked", { checkExcl := false })]
 
 /-- Every path a summary of a program writes, conditions or returns, cells
     included, is canonical: `Marker.conflict_complete` covers it. -/
@@ -222,6 +222,7 @@ def canonicalPaths (p : Program) : Bool :=
   (({} : Config).checkProgram p).1.all fun (s, _) =>
     s.writes.all (fun (_, q) => Canon q) &&
     s.seps.all (fun ((_, a), (_, b)) => Canon a && Canon b) &&
+    s.excls.all (fun (_, q) => Canon q) &&
     s.result.all fun (q, c) => Canon q && cellOk c
 
 def run (depth nodes : Nat) : IO Bool := do
@@ -271,6 +272,14 @@ def run (depth nodes : Nat) : IO Bool := do
   match cs.find? (fun c => ({ starOverlap := true } : Config).accepts c.program && !({} : Config).accepts c.program) with
   | some c => IO.println s!"tree FAILED: star overlap accepts what the exact rule refuses: {c.describe}"; ok := false
   | none => pure ()
+  -- Without #399's reliance: sound, and it accepts no more.
+  match count { exclReliance := false } cs with
+  | .error e => IO.println s!"tree FAILED: {e}"; ok := false
+  | .ok r =>
+    IO.println s!"tree no-excl-reliance: {r.accepted} accepted (with it: {exact}), {r.disagree} disagree"
+    if r.disagree != 0 || r.accepted > exact then
+      IO.println s!"tree FAILED: refusing the reliance is unsound or finer: {r.firstDisagreement.getD ""}"
+      ok := false
   -- The fixtures, through the same checker the kernel checked.
   for (name, p, want) in expected do
     let got := ({} : Config).verdicts p

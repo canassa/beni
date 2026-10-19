@@ -124,14 +124,16 @@ theorem deepShare_refused : ({} : Config).verdicts limit = [false] := by
 theorem holeMain_accepted : ({} : Config).accepts holeMain = true ∧ agree holeMain = true := by
   decide +kernel
 
-/-! ## Two levels written, a subtree passed (#393's review)
+/-! ## Two levels written, a subtree passed (#393's review, #399)
 
 `two` writes the root's list and the left child's, two exact places of its
 parameter, and records their separation; `viaLeft` hands it its left
-subtree, where both places are `#Node.0⟨Tree⟩#Node.1`. The condition is
-then between one cell and itself, and the call is refused. `demo` builds a
-tree whose left subtree holds `xs` at two levels: by value it is
-`( [0, 1], [0, 2] )`, in place `( [0, 1, 2], [0, 1, 2] )`. -/
+subtree, where both places are `#Node.0⟨Tree⟩#Node.1`, one cell. The two
+places are still two positions under `#Node.0`, so `viaLeft` is accepted on
+condition that the arrays there are pairwise distinct (`xreq excl
+π1#Node.0`, as `src/own/` records it), and the caller that shares is refused.
+`demo` builds a tree whose left subtree holds `xs` at two levels: by value
+it is `( [0, 1], [0, 2] )`, in place `( [0, 1, 2], [0, 1, 2] )`. -/
 
 def twoLevelsDecl : Decl :=
   { name := "two", params := [.tree], result := .pair .list .list,
@@ -149,11 +151,22 @@ def viaLeftMain : Program :=
       (.letE 104 (.node 103 100 102) (.letE 105 .nil (.letE 106 (.node 104 105 102)
         (.call 1 [106]))))))) }
 
+/-- The same with distinct lists at the two levels. -/
+def viaLeftDistinct : Program :=
+  { decls := [twoLevelsDecl, viaLeft],
+    main := some (.letE 100 (.lit 0) (.letE 101 (.lit 5) (.letE 102 .leaf (.letE 103 (.node 102 100 102)
+      (.letE 104 (.node 103 101 102) (.letE 105 .nil (.letE 106 (.node 104 105 102)
+        (.call 1 [106])))))))) }
+
 /-- `two` accepted on condition that its two places are apart; `viaLeft`
-    refused at its call, which finds them one cell. -/
-theorem viaLeft_verdicts : ({} : Config).verdicts viaLeftMain = [true, false] ∧
+    accepted on condition that its left subtree's arrays are distinct;
+    `demo` refused at its call, `viaLeftDistinct` accepted. -/
+theorem viaLeft_verdicts : ({} : Config).verdicts viaLeftMain = [true, true] ∧
     ((({} : Config).checkProgram viaLeftMain).1.head?.map (·.1.seps)) =
-      some [((0, [.n1]), (0, [.n0, .mark, .n1]))] := by
+      some [((0, [.n1]), (0, [.n0, .mark, .n1]))] ∧
+    ((({} : Config).checkProgram viaLeftMain).1[1]?.map (·.1.excls)) = some [(0, [.n0])] ∧
+    ({} : Config).accepts viaLeftMain = false ∧
+    ({} : Config).accepts viaLeftDistinct = true ∧ agree viaLeftDistinct = true := by
   decide +kernel
 
 /-- The program is unsafe: the interpreters disagree, as #393's review says. -/
@@ -162,9 +175,12 @@ theorem viaLeft_disagrees :
     (runInPlace viaLeftMain).toOption = some (.pair (.list [0, 1, 2]) (.list [0, 1, 2])) := by
   decide +kernel
 
-/-- Without the level condition it is accepted and disagrees. -/
-theorem viaLeft_noLevelSep : ({ levelSep := false } : Config).accepts viaLeftMain = true ∧
-    agree viaLeftMain = false := by
+/-- Without the level condition, or without checking the requirement it
+    becomes, it is accepted and disagrees; without the reliance, `viaLeft`
+    itself is refused (sound, coarser). -/
+theorem viaLeft_holes : ({ levelSep := false } : Config).accepts viaLeftMain = true ∧
+    ({ checkExcl := false } : Config).accepts viaLeftMain = true ∧ agree viaLeftMain = false ∧
+    ({ exclReliance := false } : Config).verdicts viaLeftMain = [true, false] := by
   decide +kernel
 
 /-! ## The holes are real -/
@@ -218,7 +234,7 @@ def expected : List (String × Program × List Bool) :=
   [("DeeperLevel (inner, pick, outer)", deeperLevel, [false, true, false]),
    ("ParamHole (hole, shared)", paramHole, [true, false]),
    ("Limit (deepShare)", limit, [false]),
-   ("ViaLeft (two, viaLeft)", viaLeftMain, [true, false])]
+   ("ViaLeft (two, viaLeft)", viaLeftMain, [true, true])]
 
 theorem expected_verdicts : expected.all (fun (_, p, w) => ({} : Config).verdicts p == w) = true := by
   decide +kernel

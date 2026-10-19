@@ -18,7 +18,10 @@ condition between two paths of one parameter (`paramHole`); `approx := false`
 drops the approximate holding past a marker; `starOverlap := true` keeps
 5120ba491's overlap, where a marker overlaps any step (sound, coarser);
 `canonical := false` writes a summary's facts in the expanded form instead of
-`P⟨T⟩r`. -/
+`P⟨T⟩r`; `exclReliance := false` refuses a call whose condition joins two
+places of one argument subvalue instead of requiring the caller's
+exclusivity (#399); `checkExcl := false` records that requirement and never
+checks it (a hole). -/
 
 namespace Ownership.Tree
 
@@ -28,6 +31,8 @@ structure Config where
   approx : Bool := true
   starOverlap : Bool := false
   canonical : Bool := true
+  exclReliance : Bool := true
+  checkExcl : Bool := true
   deriving DecidableEq, Repr, Inhabited
 
 /-- A step into a value of `Tree`: the subtree fields. -/

@@ -929,3 +929,31 @@ is refused, since both of `two`'s places instantiate to the one cell `π1#Node.0
 have the shape: every declaration wrote one list. The family `levels` adds it, two written list places and a caller that
 passes its left subtree: 15,386 programs at depth 2, none accepted, since every list of the subtree is one cell there
 (the known limit of one region), and `no-level-sep` catches 36 more disagreements among them (1,056 in all).
+
+*Amended 2026-10-19 (#399, #401, #400: the bridge against #393 at 6b83db9a8).*
+
+- **#399, `viaLeft`: the oracle adopts the reliance.** A callee's condition `sep π1.p π1.q` whose two sides, at a
+  call, both come from the root entry of one argument, a subvalue `param(k, r)` of the caller's parameter, is no
+  longer refused when the two cells are one (`#Node.0⟨Tree⟩#Node.1` for `two`'s `#Node.1` and
+  `#Node.0⟨Tree⟩#Node.1` under `#Node.0`). It becomes the requirement `excl π(k).r` on the caller's caller
+  (`Summary.excls`), as `src/own/` records `xreq excl π1#Node.0`. Why it is sound: `p` and `q` do not conflict, so by
+  `conflict_complete` no concrete position one stands for is a prefix of one the other stands for; prefixed by the
+  same `r` they stay so; so the two writes are at two disjoint positions of the subvalue at `r`, and they name
+  distinct arrays whenever the arrays at any two such positions are distinct, which is what `excl` states. At a call
+  the requirement is checked on the argument's entries under the path: any two must be apart (or apart on
+  condition) and each parameter cell among them is required exclusive in turn. One entry is one position: the
+  canonical form is now applied to a summary's writes only, not to its result's entries, since merging three
+  entries into `P⟨T⟩r` would hide that one array sits at three positions. The reliance applies only to the root
+  entry of one argument; one argument passed twice, or two entries that share a cell, are still refused.
+  `viaLeft_verdicts`: `viaLeft` accepted with `excl (0, [#Node.0])`, `demo` refused at its call, the same with distinct
+  lists accepted and agreeing. `exclReliance := false` keeps the refusal (sound, coarser); `checkExcl := false`
+  is a fifth required hole: it accepts `demo` and the runs disagree.
+- **#401, runs that call a refused callee: deliberate.** A demand that fails is reported once, at its site, and
+  puts no condition in the summary: only a demand that passes on condition records one (`Rel.sep`). The program
+  is refused either way (`Config.accepts` needs every declaration). The oracle's caller verdict says only that
+  no demand of the caller fails given the callee's published summary, so a caller of a refused callee can be
+  accepted. `src/own/` instead carries the failed demand's fact into the summary and refuses the caller too. Both are
+  sound, since the program fails in both; the bridge class compares declaration verdicts, not program verdicts.
+- **#400, for information.** A write under a marker while the region holds one list at several levels is refused by
+  `src/own/` and accepted by the oracle, whose runs of them agree, so the oracle does not change; the planned
+  write-many bit is on the Zig side.
