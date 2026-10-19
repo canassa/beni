@@ -1667,6 +1667,84 @@ reached apart from the level it started at, with a step of its own:
   `callSiteDemandDeep`, and remove the obligation's clause above. `ownership/DictValueWritten` pins the
   exemption: a dictionary's value written while the dictionary is still read is refused.
 
+*Amended 2026-10-19 (issue #286): the bound argument — why four sources of growth, and no fifth.* Removing the
+path cut `k` (c) is sound only if every path the checker builds is bounded without it. The paragraph above
+names four sources of unbounded paths. This one argues there is no fifth, and gives each source its fold. It is a
+design text; the polymorphic-recursion entry is pending the owner, and `k` stays until it is decided.
+
+*Where a path grows.* A path is built only by `child`, one step at a time, and a step is added in three ways:
+a projection or a construction mirrors one step of the value (a field, a tuple slot, a constructor field, a
+list's elements, a closure's environment, a markup or schema slot); `shift` places a value one step down; and
+instantiation at a call (§16.4) puts a callee's summary path in front of an argument's path. A `⋆` absorbs every
+step after it (`childRaw`), so a path with `⋆` grows no further. The markup and schema slots are added only at a
+value's root (`⟨render⟩` over `ε` or `⋆`, events at `⋆`, `⟨decoded⟩`/`⟨encoded⟩` at the root), so each adds at
+most one step and none chains.
+
+*A path walks a type.* Every other step is a step into the type of the value at the place it leaves: a field of a
+record type, a slot of a tuple, a field of a constructor, the element of a `List`. So a path is a walk in the type
+graph, from the root's type, with two exceptions where the step is not read off the type: a closure's `◇`, whose
+captures a function type does not write, and a cast through `Js.Value`, after which the path is read at a type
+it was not made at. A walk is finite unless it goes round a cycle of the graph, or the graph it walks is
+infinite. That gives the four sources, and only four:
+
+1. **A cycle: a recursive type.** Folded by the level marker `⟨T⟩` (the amendments above): a constructor step
+   into a type a path is already inside goes under that region's marker, and a marker asked for where there is
+   one folds onto it. A path holds at most one marker per region, and there are finitely many types, so the walk
+   between markers is acyclic and bounded by the type graph. Issue #379 (`#Node.0#Node.1` folded onto
+   `#Node.1`, so a deeper level's list was the root's) is closed by the marker. `ownership/DeeperLevel` pins it.
+   Two exemptions keep the merged fold, each bounded by the same count: core `Dict`'s tree until #294, and a
+   type that does not reach itself until F2.
+2. **A step the type does not write: a closure's environment.** F1, built: a function type is a recursive type of
+   its own whose region step is `◇`, so `◇p◇q` is `◇⟨◇⟩◇q` and a path holds one `◇` and at most one closure
+   marker after it (the F1 amendments, `ownership/Clo`, `ClosureLevels`, `SiblingEnvs`, `DirectCapture`).
+3. **A walk read at another type: a cast.** F2, the cast marker `⟨as T⟩`, which the owner decides (its finding
+   above). Until it lands, a type a path enters twice with no recursion was cast and read again, and it folds
+   onto where it first entered, with no marker: bounded by the number of types, imprecise, sound.
+4. **An infinite graph: polymorphic recursion.** Instantiation composes paths. Outside a recursive group this is
+   finite by induction on the call graph: a callee's summary is settled before any caller instantiates it
+   (§16.9), its paths are finite, and a caller's argument paths are finite. So their concatenation is too, and a
+   recursive type in it folds as in 1. Inside a group, the fixpoint instantiates the group's own summaries
+   repeatedly. When every call in the group instantiates each type variable of its callee at a variable
+   (monomorphic recursion, the common case), an argument's type is the parameter's, the composed path walks the
+   same finite graph, and 1–3 bound it. When a call instantiates a variable at a structure (`a` at `List a`),
+   the types along the composed path are drawn from an infinite family (`List a`, `List (List a)`, …), and no
+   fold of 1–3 sees a repeated region. `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns
+   `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. **Pending the owner.** Two
+   designs, neither accepted:
+   - *The fold at the call* (option 2 of the F3 amendment, the WIP of #286): at a call inside the group being
+     solved, an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
+     first step and go to `⋆` below it). Finite, sound (`⋆` only merges), and every bench verdict unchanged. But
+     it loses a verdict master gives: `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}`
+     for `{excl π2}`). `pushArg xs = case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is
+     refused `exclusive` (approximate), where master accepts it `param`. The cause: the base case's entry
+     (`#Leaf.0⋆`) and the deeper levels' (`⟨T⟩⁺#Leaf.0⋆`) end in one suffix, and a constructor step folds them
+     onto one path, one cell at two places that may both hold it. Master keeps them apart only because the
+     number of `[*]`s follows the number of levels, up to the cut, which a path cannot express once the depth is
+     unbounded. Keeping the first step exact does not help: the argument is always `[x]`, and the growth is in
+     the composition, not in the argument.
+   - *A fold on the composed path* (sketched, neither specified nor measured): the steps an argument contributes
+     below the variable stay exact the first time a summary entry passes through such a call, and go to `⋆`
+     once the entry's path already holds such steps. Then the base case's entry is `⟨T⟩⁺#Leaf.0[*]` (exact) and
+     the deeper ones `⟨T⟩⁺#Leaf.0[*]⋆`. After the constructor step that pair is a prefix, and `nested` takes it
+     for one place, soundly since values are acyclic: a cell is never held at a place and strictly below it at
+     once, so one cell at both is one place. Its open problem is knowing which suffix of a summary path came
+     from a grown call. That needs the callee's result type walked through markers, whose depth under `⟨T⟩⁺` is
+     unknown, or a mark on summary entries, which is a summary-format change.
+
+*Why no fifth.* Every step is one of: a typed step (bounded by 1 on a finite type graph); a root-only slot; `◇`
+(2); a step after a cast (3); or a `⋆`, which ends growth. The type graph is finite except through instantiation
+inside a recursive group at a structure (4), since outside a group instantiation is settled bottom-up, and the
+types a module names are finite. Symbolic cells (`param(x, q)`, `env`, `cbres`) carry paths built by the same
+`child`, so the same argument bounds them. A spine condition (§18.2) names cells, not new paths. A fifth source
+would need a step that is neither typed, root-only, environment, nor cast, or an infinite type family that does
+not come from instantiation inside a group. The checker has no such step (`StepKind` lists them all), and the
+type checker gives no other way to make one.
+
+*What else `k` holds up.* Besides the cut in `childRaw`, `k_limit` sizes the path buffers (`[k_limit + 1]Step`,
+about twenty) and guards `markupEvents`'s walk of a type term. That walk is bounded by the term's size, a finite
+type, so the guard goes with `k`. The order of (c) is unchanged: F1 has landed; 4 waits for the owner's choice
+above, and 3 for F2's; then `k` goes.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
