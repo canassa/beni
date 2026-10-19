@@ -1,0 +1,15 @@
+module RecordOnce
+  16:12 update p: accepted param
+  20:29 update p: accepted once
+  24:29 update p: rejected once: it is handed to List.map, which may call it more than once [copy]
+  29:9 update p: rejected later-use: p is read again at 30:23 [copy]
+  35:9 update p: accepted once
+  summary bump: π1 W{x}, π1.x R; res π1◦
+  summary viaMaybe: π2 RW{x}; res #Just.0 π2◦
+  summary viaList: π1 R, π2 RW{x}; res [*] ~fresh2 ~π2◦, fresh1
+  summary readsWritten: π2 RW{x}, π2.x R; res .0#Just.0 π2◦
+  summary readsOther: π2 RW{x}, π2.y R; res .0#Just.0 π2◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 3, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 3, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

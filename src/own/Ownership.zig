@@ -5449,7 +5449,9 @@ const U32SliceContext = struct {
 
 /// `deep`: in a closure's `env_writes`, a send gives up every cell at or
 /// below the path (§23.2).
-const Capture = struct { local: u32, path: u32, deep: bool = false };
+/// `fields`: a record write of the capture, with the fields it writes
+/// (§31.4 item 4); null for a list's.
+const Capture = struct { local: u32, path: u32, deep: bool = false, fields: ?[]const u32 = null };
 
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
@@ -5812,6 +5814,9 @@ const Walker = struct {
     slot_keys: std.ArrayList([2]u32) = .empty,
     supplies: std.ArrayList(SupplyRec) = .empty,
     probe_ok: std.ArrayList(bool) = .empty,
+    /// Per probe: a record's (§31.4 item 4), which a list's once closure's
+    /// decision does not read.
+    probe_record: std.ArrayList(bool) = .empty,
     /// Per probe: failed for an approximate reason only.
     probe_approx: std.ArrayList(bool) = .empty,
     /// Per probe: its resolved line, for a once closure's report (§18.8).
@@ -8719,15 +8724,16 @@ const Walker = struct {
             try env_escapes.append(w.a, .{ .local = c.a, .path = c.path });
         }
         w.closures.items[ci].env_escapes = try env_escapes.toOwnedSlice(w.a);
-        // §18.8: the captures its own body writes make it once.
+        // §18.8: the captures its own body writes make it once; a record's
+        // write of a capture too, with the fields it writes (§31.4 item 4).
         var env_writes: std.ArrayList(Capture) = .empty;
         for (w.demands.items[demands_from..]) |rec| {
-            if (rec.kind == .probe or rec.kind == .value or rec.frame != id or rec.fields != null) continue;
+            if (rec.kind == .probe or rec.kind == .value or rec.frame != id) continue;
             for (rec.cells) |e| {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 if (c.kind != .env) continue;
                 if (c.a < w.local_frame.len and w.local_av[c.a] != null and w.local_frame[c.a] == id) continue;
-                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep });
+                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep, .fields = if (rec.fields) |fs| try w.a.dupe(u32, fs) else null });
             }
         }
         w.closures.items[ci].env_writes = try env_writes.toOwnedSlice(w.a);
@@ -8765,7 +8771,8 @@ const Walker = struct {
                 (if (w.local_av[cap.local]) |held| try w.projPath(held, cap.path, null) else continue)
             else
                 try w.single(.{ .kind = .env, .a = cap.local, .path = cap.path });
-            const p = try w.onceDemandDeep(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep);
+            // §31.4 item 4: a record's write of the capture, at its fields.
+            const p = try w.onceDemandFields(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep, cap.fields);
             try w.closures.items[ci].once_probes.append(w.a, p);
         }
     }
@@ -9008,6 +9015,7 @@ const Walker = struct {
         w.escaped.shrinkRetainingCapacity(s.escaped);
         w.supplies.shrinkRetainingCapacity(s.supplies);
         w.probe_ok.shrinkRetainingCapacity(s.probes);
+        w.probe_record.shrinkRetainingCapacity(s.probes);
         w.probe_approx.shrinkRetainingCapacity(s.probes);
         w.probe_info.shrinkRetainingCapacity(s.probes);
         w.reqs.shrinkRetainingCapacity(s.reqs);
@@ -11437,8 +11445,14 @@ const Walker = struct {
     }
 
     fn onceDemandDeep(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool) Allocator.Error!u32 {
+        return w.onceDemandFields(kind, tok, base, base_ref, ci, deep, null);
+    }
+
+    /// `onceDemandDeep` with a record write's fields: a record demand.
+    fn onceDemandFields(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool, fields: ?[]const u32) Allocator.Error!u32 {
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
+        try w.probe_record.append(w.a, fields != null);
         try w.probe_approx.append(w.a, false);
         try w.probe_info.append(w.a, null);
         try w.demandOn(.{
@@ -11454,6 +11468,7 @@ const Walker = struct {
             .closures = true,
             .creation_ci = if (kind == .creation) ci else none,
             .deep = deep,
+            .fields = fields,
         });
         return idx;
     }
@@ -11476,6 +11491,7 @@ const Walker = struct {
     fn probeDemand(w: *Walker, inst: Inst.Index, av: AV, others: []const AV) Allocator.Error!u32 {
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
+        try w.probe_record.append(w.a, false);
         try w.probe_approx.append(w.a, false);
         try w.probe_info.append(w.a, null);
         var base: std.ArrayList(Entry) = .empty;
@@ -13046,6 +13062,7 @@ const Walker = struct {
     fn recordProbe(w: *Walker, inst: Inst.Index, av: AV, others: []const AV) Allocator.Error!u32 {
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
+        try w.probe_record.append(w.a, true);
         try w.probe_approx.append(w.a, false);
         try w.probe_info.append(w.a, null);
         var base: std.ArrayList(Entry) = .empty;
@@ -13590,9 +13607,8 @@ const Walker = struct {
                 },
                 // A write of a capture: the closure is once, and its creation
                 // and calls decide the write (§18.8).
-                // A record's capture is not yet read as making the closure once
-                // (§31.4 item 4; #315, R4): a limit, so far.
-                .env => if (spec.kind != .probe and spec.fields == null and w.frameClosure(w.frame) != null) {
+                // A record's too (§31.4 item 4).
+                .env => if (spec.kind != .probe and w.frameClosure(w.frame) != null) {
                     rec.once_ci = w.frameClosure(w.frame).?;
                 } else {
                     cause = .captured_edit;
@@ -14087,7 +14103,10 @@ const Walker = struct {
                     .none => continue,
                     // §31.14: a read of a written field, which the lowering
                     // reads before the write.
-                    .hoist => {
+                    // §31.4 item 4: after a once closure's creation, the write
+                    // happens at a call the lowering cannot place before the
+                    // read, so a read of a written field is a whole use.
+                    .hoist => if (rec.kind != .creation) {
                         try hoisted.append(w.a, ui);
                         continue;
                     },
@@ -14188,6 +14207,8 @@ const Walker = struct {
         // holder; then a place known to call it more than once rejects it,
         // wherever else it goes (a command's body, which may run again).
         for (cl.once_probes.items) |p| {
+            // A record capture's creation decides a record's write alone.
+            if (rec.fields == null and w.probe_record.items[p]) continue;
             const info = w.probe_info.items[p] orelse continue;
             if (info.verdict != .rejected or info.approx) continue;
             d.verdict = info.verdict;
@@ -14221,6 +14242,8 @@ const Walker = struct {
             return d;
         };
         for (cl.once_probes.items) |p| {
+            // A record capture's creation decides a record's write alone.
+            if (rec.fields == null and w.probe_record.items[p]) continue;
             const info = w.probe_info.items[p] orelse continue;
             if (info.verdict == .accepted) continue;
             d.verdict = info.verdict;
