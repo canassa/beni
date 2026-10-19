@@ -1,4 +1,4 @@
--- A program with 25 shape runs, `SchemaValid.shape_threshold`, so every run
+-- A program with 29 shape runs, `SchemaValid.shape_threshold`, so every run
 -- takes its shape (`schema.md` §6, *How a program chooses between shapes and
 -- workers*): `Schema.validShape` with each declaration's `$$shape`, and no
 -- validator worker. `ShapeThresholdBelow` is this program with one fewer.
@@ -381,6 +381,66 @@ yankeeValid v =
             False
 
 
+schema Zulu =
+    zulu : String
+    count : Int
+
+
+zuluValid : Value → Bool
+zuluValid v =
+    case Schema.read (Zulu.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Amber =
+    amber : Bool
+    count : Int
+
+
+amberValid : Value → Bool
+amberValid v =
+    case Schema.read (Amber.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Beige =
+    beige : Float
+    count : Int
+
+
+beigeValid : Value → Bool
+beigeValid v =
+    case Schema.read (Beige.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Cobalt =
+    cobalt : Int
+    count : Int
+
+
+cobaltValid : Value → Bool
+cobaltValid v =
+    case Schema.read (Cobalt.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
 checks : Value → List Bool
 checks v =
     [ alphaValid v
@@ -408,6 +468,10 @@ checks v =
     , whiskeyValid v
     , xrayValid v
     , yankeeValid v
+    , zuluValid v
+    , amberValid v
+    , beigeValid v
+    , cobaltValid v
     ]
 
 

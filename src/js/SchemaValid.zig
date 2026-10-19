@@ -138,7 +138,7 @@ const Run = enum { schema_read, schema_parse, json_read, json_parse };
 /// The program's count of shape runs at and above which every shape run
 /// takes its shape, and below which every one keeps its validator worker
 /// (`schema.md` §6, *How a program chooses between shapes and workers*).
-pub const shape_threshold = 25;
+pub const shape_threshold = 29;
 
 /// The shape runs `sites` finds in one module with shapes on: what a
 /// program's count adds up, module by module.

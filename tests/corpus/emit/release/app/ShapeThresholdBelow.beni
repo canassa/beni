@@ -1,8 +1,8 @@
--- A program with 24 shape runs, one below `SchemaValid.shape_threshold`
--- (25), so every run keeps its compiled validator worker (`schema.md` §6, *How a
+-- A program with 28 shape runs, one below `SchemaValid.shape_threshold`
+-- (29), so every run keeps its compiled validator worker (`schema.md` §6, *How a
 -- program chooses between shapes and workers*): each declaration's
 -- `$$readValid` called where its run stands, and no `validShape`. `ShapeThresholdAt` is this
--- program with a twenty-fifth.
+-- program with a twenty-ninth.
 import Node
 import Schema exposing (Value)
 
@@ -367,6 +367,66 @@ xrayValid v =
             False
 
 
+schema Yankee =
+    yankee : Int
+    count : Int
+
+
+yankeeValid : Value → Bool
+yankeeValid v =
+    case Schema.read (Yankee.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Zulu =
+    zulu : String
+    count : Int
+
+
+zuluValid : Value → Bool
+zuluValid v =
+    case Schema.read (Zulu.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Amber =
+    amber : Bool
+    count : Int
+
+
+amberValid : Value → Bool
+amberValid v =
+    case Schema.read (Amber.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Beige =
+    beige : Float
+    count : Int
+
+
+beigeValid : Value → Bool
+beigeValid v =
+    case Schema.read (Beige.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
 checks : Value → List Bool
 checks v =
     [ alphaValid v
@@ -393,6 +453,10 @@ checks v =
     , victorValid v
     , whiskeyValid v
     , xrayValid v
+    , yankeeValid v
+    , zuluValid v
+    , amberValid v
+    , beigeValid v
     ]
 
 
