@@ -1,0 +1,130 @@
+-- load
+<body>
+  <main>
+    <h1>"Holes"</h1>
+    <p id="fixed">"7"</p>
+    <button id="flip">"flip"</button>
+    <button id="more">"more"</button>
+    <p>
+      "count "
+      "0"
+      <!---->
+      " and "
+      "off"
+      <!---->
+      "!"
+    </p>
+    <p id="scalars">"0"</p>
+    <p id="char">"n"</p>
+    <p id="bool">"false"</p>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+    <div id="lists" class="b" style="color: blue;">"lists"</div>
+    <div id="split" style="width: 0px;">"split"</div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <h1>"Holes"</h1>
+    <p id="fixed">"7"</p>
+    <button id="flip">"flip"</button>
+    <button id="more">"more"</button>
+    <p>
+      "count "
+      "0"
+      <!---->
+      " and "
+      "on"
+      <!---->
+      "!"
+    </p>
+    <p id="scalars">"0"</p>
+    <p id="char">"y"</p>
+    <p id="bool">"true"</p>
+    <input id="field" disabled="" .value="">
+    <a id="link" href="">"link"</a>
+    <my-icon xlink:href="#a"></my-icon>
+    <div id="lists" class="b a" style="color: red;">"lists"</div>
+    <div id="split" style="width: 0px;" class="on">"split"</div>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <h1>"Holes"</h1>
+    <p id="fixed">"7"</p>
+    <button id="flip">"flip"</button>
+    <button id="more">"more"</button>
+    <p>
+      "count "
+      "1"
+      <!---->
+      " and "
+      "on"
+      <!---->
+      "!"
+    </p>
+    <p id="scalars">"1"</p>
+    <p id="char">"y"</p>
+    <p id="bool">"true"</p>
+    <input id="field" disabled="" .value="">
+    <a id="link" href="">"link"</a>
+    <my-icon xlink:href="#a"></my-icon>
+    <div id="lists" class="b a" style="color: red;">"lists"</div>
+    <div id="split" style="width: 1px;" class="on">"split"</div>
+  </main>
+</body>
+-- click #more
+<body>
+  <main>
+    <h1>"Holes"</h1>
+    <p id="fixed">"7"</p>
+    <button id="flip">"flip"</button>
+    <button id="more">"more"</button>
+    <p>
+      "count "
+      "2"
+      <!---->
+      " and "
+      "on"
+      <!---->
+      "!"
+    </p>
+    <p id="scalars">"2"</p>
+    <p id="char">"y"</p>
+    <p id="bool">"true"</p>
+    <input id="field" disabled="" .value="">
+    <a id="link" href="">"link"</a>
+    <my-icon xlink:href="#a"></my-icon>
+    <div id="lists" class="b a" style="color: red;">"lists"</div>
+    <div id="split" style="width: 2px;" class="on big">"split"</div>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <h1>"Holes"</h1>
+    <p id="fixed">"7"</p>
+    <button id="flip">"flip"</button>
+    <button id="more">"more"</button>
+    <p>
+      "count "
+      "2"
+      <!---->
+      " and "
+      "off"
+      <!---->
+      "!"
+    </p>
+    <p id="scalars">"2"</p>
+    <p id="char">"n"</p>
+    <p id="bool">"false"</p>
+    <input id="field" .value="">
+    <a id="link" href="/ok">"link"</a>
+    <my-icon xlink:href="#b"></my-icon>
+    <div id="lists" class="b" style="color: blue;">"lists"</div>
+    <div id="split" style="width: 2px;" class="big">"split"</div>
+  </main>
+</body>

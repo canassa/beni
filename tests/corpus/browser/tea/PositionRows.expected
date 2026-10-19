@@ -1,0 +1,361 @@
+-- load
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="">
+        "b"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="">
+        "c"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- input li:nth-child(1)>input "a's"
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="a's">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="">
+        "b"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="">
+        "c"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- input li:nth-child(2)>input "b's"
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="a's">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="b's">
+        "b"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="">
+        "c"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- input li:nth-child(3)>input "c's"
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="a's">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="b's">
+        "b"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="c's">
+        "c"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #insert
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="a's">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="">
+        "in 4"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="b's">
+        "b"
+        " at "
+        "2"
+        <!---->
+      </li>
+      <li title="3">
+        <input .value="c's">
+        "c"
+        " at "
+        "3"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="a's">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="b's">
+        "b"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="c's">
+        "c"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #prepend
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="">
+        "front 5"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="a's">
+        "a"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="b's">
+        "b"
+        " at "
+        "2"
+        <!---->
+      </li>
+      <li title="3">
+        <input .value="c's">
+        "c"
+        " at "
+        "3"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="b's">
+        "b"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="a's">
+        "a"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="">
+        "front 5"
+        " at "
+        "2"
+        <!---->
+      </li>
+      <li title="3">
+        <input .value="c's">
+        "c"
+        " at "
+        "3"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #dropeven
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="a's">
+        "a"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="">
+        "front 5"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="c's">
+        "c"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove second"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="swap">"swap"</button>
+    <button id="dropeven">"drop even"</button>
+    <button id="reverse">"reverse"</button>
+    <ol>
+      <li title="0">
+        <input .value="c's">
+        "c"
+        " at "
+        "0"
+        <!---->
+      </li>
+      <li title="1">
+        <input .value="">
+        "front 5"
+        " at "
+        "1"
+        <!---->
+      </li>
+      <li title="2">
+        <input .value="a's">
+        "a"
+        " at "
+        "2"
+        <!---->
+      </li>
+    </ol>
+  </main>
+</body>

@@ -1,0 +1,44 @@
+-- load
+<body>
+  <main>
+    <button>"add"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <!---->
+    <ul></ul>
+    <!---->
+  </main>
+</body>
+-- click button
+<body>
+  <main>
+    <button>"add"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <!---->
+    <ul>
+      <li>"10"</li>
+    </ul>
+    <!---->
+  </main>
+</body>
+-- click button
+<body>
+  <main>
+    <button>"add"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <!---->
+    <ul>
+      <li>"10"</li>
+      <li>"11"</li>
+    </ul>
+    <!---->
+  </main>
+</body>

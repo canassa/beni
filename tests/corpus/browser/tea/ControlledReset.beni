@@ -1,0 +1,60 @@
+-- `browser/dom/ControlledReset`, rebuilt for `browser-direct` (its S4
+-- amendment, item 2): a form `reset` changes its controls with no event on
+-- any of them. The capture listener marks the form's controls and holds
+-- them, to be put back to the model in a task after the reset; a dispatch
+-- before then reconciles them too. When the defaults land differs between
+-- the DOMs, and so does what the two platforms show:
+--
+-- - Chrome dispatches `reset` before it resets the controls, so the no-op
+--   send's reconcile runs before the change, and on both platforms the
+--   defaults are on the page until the task puts the model back
+--   (`.chrome-expected`).
+-- - happy-dom resets the controls before it dispatches `reset`. On
+--   `browser-direct` the no-op send (§8.1) reconciles them at once
+--   (`.expected`); `browser-tea` has no no-op send and puts them back in the
+--   task (`.tea-expected`).
+--
+-- The uncontrolled input keeps its default everywhere.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+    | Tick
+
+
+type alias Model =
+    text : String
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Typed s →
+            { m | text = s }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <form id="form">
+            <input id="text" value={m.text} onInput={Typed} />
+            <input id="box" type="checkbox" checked={True} />
+            <select id="sel" value="b">
+                <option value="a">a</option>
+                <option value="b">b</option>
+            </select>
+            <input id="plain" />
+            <button id="reset" type="reset">reset</button>
+        </form>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { text = "ab", n = 0 }, update = update, view = view }

@@ -1,0 +1,62 @@
+-- load
+<body>
+  <main>
+    <button id="first">"first"</button>
+    <button id="label">"label"</button>
+    <button id="quiet">"quiet"</button>
+    <p title="a">
+      <b>"1"</b>
+    </p>
+    <p title="a">
+      <b>"2"</b>
+    </p>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #label
+<body>
+  <main>
+    <button id="first">"first"</button>
+    <button id="label">"label"</button>
+    <button id="quiet">"quiet"</button>
+    <p title="a!">
+      <b>"1"</b>
+    </p>
+    <p title="a!">
+      <b>"2"</b>
+    </p>
+  </main>
+</body>
+-- click #first
+<body>
+  <main>
+    <button id="first">"first"</button>
+    <button id="label">"label"</button>
+    <button id="quiet">"quiet"</button>
+    <p title="a!">
+      <b>"3"</b>
+    </p>
+    <p title="a!">
+      <b>"2"</b>
+    </p>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #first
+(the DOM did not change)
+-- click #label
+<body>
+  <main>
+    <button id="first">"first"</button>
+    <button id="label">"label"</button>
+    <button id="quiet">"quiet"</button>
+    <p title="a!!">
+      <b>"3"</b>
+    </p>
+    <p title="a!!">
+      <b>"2"</b>
+    </p>
+  </main>
+</body>

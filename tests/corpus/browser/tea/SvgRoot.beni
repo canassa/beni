@@ -1,0 +1,40 @@
+-- A `view` whose root is an SVG element other than `<svg>` (S4's
+-- amendment, item 6; boundary.md §9.9 (f)): its template is parsed inside
+-- the `<svg>` wrapper and taken from inside it, as a row's is, and mounted
+-- into the mount node it is given — here an `<svg>` the page holds,
+-- `Browser.mountAt`, where it draws: a `<g>` in the SVG namespace, its
+-- circle's radius a hole and its click a handler.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Grow
+
+
+-- The page's `<svg>`, which the drawing mounts in.
+page : Tea.Program
+page =
+    Tea.sandbox
+        { init = λ⊤ → ⊤
+        , update = λ_ m → m
+        , view = λ_ → <main><svg id="canvas" viewBox="0 0 100 100" /></main>
+        }
+
+
+drawing : Tea.Program
+drawing =
+    Tea.sandbox
+        { init = λ⊤ → 5
+        , update = λGrow r → r + 5
+        , view =
+            λr →
+                <g id="dot">
+                    <circle id="circle" cx="50" cy="50" r={String.fromInt r} onClick={Grow} />
+                </g>
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ page, Browser.mountAt drawing "canvas" ]

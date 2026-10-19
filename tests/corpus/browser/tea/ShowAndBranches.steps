@@ -1,0 +1,15 @@
+input #by-key "typed"
+input #by-identity "typed"
+input #left "typed"
+input #here-left "typed"
+# The same id: the keyed body is kept and keeps its text; the record is a
+# new value, so the body shown by identity is a new one.
+click #rename
+# Another id: a new body.
+click #next
+# The other branch is a new input, empty.
+click #flip
+input #right "kept"
+input #here-right "kept"
+# A message that keeps the branch keeps its arm: the text stays.
+click #rename

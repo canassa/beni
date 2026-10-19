@@ -1,0 +1,5 @@
+# Each instance's buttons send its own message, wrapped by its map.
+click #left-inc
+click #left-inc
+click #right-dec
+click #left-dec

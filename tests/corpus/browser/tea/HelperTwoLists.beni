@@ -1,0 +1,40 @@
+-- K3 (browser-direct.md §6, as amended for S2: a constant list baked into
+-- the page) is decided per copy of a helper written in place (S3: a hole's
+-- facts are per call, write-sets.md, *a hole's facts per call*): `rows`
+-- written once and used on two lists is two copies, the one on the
+-- constant `fixed` baked into the template and the one on `items`, which
+-- `Add` writes, made at mount and appended to. S2 refused the helper as
+-- markup as a value (`build/bad/direct/ForHelperTwoLists`).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+
+
+type alias Model =
+    fixed : List Int
+    items : List Int
+
+
+rows : List Int → Html Msg
+rows xs = <ul><For each={xs} keyed={λk → k}>{λk → <li>{String.fromInt k}</li>}</For></ul>
+
+
+update : Msg, Model → Model
+update Add m = { m | items = List.push m.items (List.length m.items + 10) }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button onClick={Add}>add</button>
+        {rows m.fixed}
+        {rows m.items}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { fixed = [ 1, 2 ], items = [] }, update = update, view = view }

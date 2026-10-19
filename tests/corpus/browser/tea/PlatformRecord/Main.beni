@@ -1,0 +1,11 @@
+-- `browser/inline/PlatformRecord` on `browser-direct`, its program in the project's own
+-- platform layer (paired with `platform-tea`): the write-set pass reads the
+-- layer as the program's own code (docs/design/browser-inline.md §8.3,
+-- amended 2026-10-19), so each key's handler writes what its arm reaches.
+import Browser
+import Demo
+import Tea
+
+
+main : Tea.Program
+main = Browser.mountAt Demo.demo "root"

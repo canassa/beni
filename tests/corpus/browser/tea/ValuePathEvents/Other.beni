@@ -1,0 +1,12 @@
+-- See Main.beni: markup of another module, on the value path.
+import Html exposing (Html)
+import Stop exposing (Event)
+
+
+pub button : String, msg → Html msg
+button id msg = <button id={id} onClick={msg}>{id}</button>
+
+
+pub stopper : String, msg → Html msg
+stopper id msg =
+    <span id={id} onClickStop={msg}><button id="${id}-in" onClick={msg}>in</button></span>

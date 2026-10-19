@@ -1,0 +1,6 @@
+# Every attribute and text flips; the URL is refused.
+click #flip
+click #more
+click #more
+# And back.
+click #flip

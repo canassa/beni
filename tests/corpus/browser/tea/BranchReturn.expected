@@ -1,0 +1,185 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"0"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <i>"same"</i>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"0"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"0"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #unpick
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <span>"none"</span>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"0"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #pick
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"0"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"1"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #article
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <article>"the article"</article>
+  </main>
+</body>
+-- click #home
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"1"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
+-- click #bump
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="pick">"pick"</button>
+    <button id="unpick">"unpick"</button>
+    <button id="home">"home"</button>
+    <button id="article">"article"</button>
+    <div id="ab">
+      <b>"same"</b>
+    </div>
+    <div id="maybe">
+      <em>"kept"</em>
+    </div>
+    <section id="home-page">
+      <h1>"Home"</h1>
+      <p id="count">"2"</p>
+      <button id="bump">"bump"</button>
+    </section>
+  </main>
+</body>
