@@ -3599,52 +3599,49 @@ shapeKey x k =
         Js.get x k
 
 
--- `[shapeRecord, make, entry₁, …]`: a record, its fields read in the
--- declaration's order, each entry `[key, shape]`, `[key, shape, 1]`
--- (optional) or `[key, shape, 2]` (a `Maybe` field), then `make` applied
--- to their values in that order, which builds the record — or the variant
--- whose payload it is.
+-- `[shapeRecord, order, entry₁, …]`: a record. Its entries are in the
+-- canonical order of a record literal's keys, each `[key, shape]`,
+-- `[key, shape, 1]` (optional), `[key, shape, 2]` (a `Maybe` field) or
+-- `[key, shape, flag, name]` (a field whose name is not its key); `order` is
+-- `0`, or the entries' places in the declaration's order. Each key is read
+-- once, in the declaration's order, and the values are copied into a fresh
+-- record by the fields' names in the canonical order: the host object is
+-- never kept.
 shapeRecord : Js.Value, Js.Value, Int → Js.Value
-shapeRecord s x depth = if isObject x then shapeRecordFrom s 2 x depth (Js.array []) else shapeFail
+shapeRecord s x depth = if isObject x then shapeRecordRead False s x depth else shapeFail
 
 
--- The entries from the `i`th on, each read once and pushed onto
--- `values`, then the record; `shapeFail` at the first that fails. A key
--- is present when its read is not `undefined`.
-shapeRecordFrom : Js.Value, Int, Js.Value, Int, Js.Value → Js.Value
-shapeRecordFrom s i x depth values =
-    if i ≥ lengthOf s then
-        Js.call (Js.at s 1) "apply" [ Js.null, values ]
-    else
-        entry = Js.at s i
-        v = Js.get x (stringOf (Js.at entry 0))
-        y = shapeEntry entry (not (Js.isUndefined v)) v depth
-        if Js.same y shapeFail then
-            shapeFail
-        else
-            Js.to (Js.call values "push" [ y ])
-            shapeRecordFrom s (i + 1) x depth values
-
-
--- `[shapeRecordOwn, make, entry₁, …]`: a record one of whose keys is a name
--- `Object.prototype` holds, each key present as `present` tests it and read
--- once.
+-- `[shapeRecordOwn, order, entry₁, …]`: a record one of whose keys is a name
+-- `Object.prototype` holds, each key present as `present` tests it.
 shapeRecordOwn : Js.Value, Js.Value, Int → Js.Value
-shapeRecordOwn s x depth =
-    if isObject x then shapeRecordOwnFrom s 2 x depth (Js.array []) else shapeFail
+shapeRecordOwn s x depth = if isObject x then shapeRecordRead True s x depth else shapeFail
 
 
-shapeRecordOwnFrom : Js.Value, Int, Js.Value, Int, Js.Value → Js.Value
-shapeRecordOwnFrom s i x depth values =
-    if i ≥ lengthOf s then
-        Js.call (Js.at s 1) "apply" [ Js.null, values ]
+shapeRecordRead : Bool, Js.Value, Js.Value, Int → Js.Value
+shapeRecordRead own s x depth =
+    n = lengthOf s - 2
+    order = Js.at s 1
+    values = Js.array []
+    if shapeFieldsFrom own s order 0 n x depth values then
+        shapeFail
     else
-        entry = Js.at s i
+        shapeCopy s values 0 n (Js.object [])
+
+
+-- The `j`th field to read on: entry `order[j]`, or `j` when `order` is
+-- `0`, its value set at its entry's place in `values`. True when one fails.
+shapeFieldsFrom : Bool, Js.Value, Js.Value, Int, Int, Js.Value, Int, Js.Value → Bool
+shapeFieldsFrom own s order j n x depth values =
+    if j ≥ n then
+        False
+    else
+        i = if Js.same order (Js.from 0) then j else intOf (Js.at order j)
+        entry = Js.at s (i + 2)
         k = stringOf (Js.at entry 0)
         -- Each key read once, as the workers read it: a name `prototypeKey`
         -- lists only when it is `x`'s own, any other with `undefined` absent.
         y =
-            if prototypeKey k then
+            if own && prototypeKey k then
                 if hasOwn x k then
                     shapeEntry entry True (Js.get x k) depth
                 else
@@ -3653,10 +3650,23 @@ shapeRecordOwnFrom s i x depth values =
                 v = Js.get x k
                 shapeEntry entry (not (Js.isUndefined v)) v depth
         if Js.same y shapeFail then
-            shapeFail
+            True
         else
-            Js.to (Js.call values "push" [ y ])
-            shapeRecordOwnFrom s (i + 1) x depth values
+            Js.setAt values i y
+            shapeFieldsFrom own s order (j + 1) n x depth values
+
+
+-- The fresh record: each entry's name — its key, or its fourth element —
+-- set to its value, in the entries' order, which is the canonical one.
+shapeCopy : Js.Value, Js.Value, Int, Int, Js.Value → Js.Value
+shapeCopy s values i n out =
+    if i ≥ n then
+        out
+    else
+        entry = Js.at s (i + 2)
+        name = if lengthOf entry > 3 then Js.at entry 3 else Js.at entry 0
+        Js.set out (stringOf name) (Js.at values i)
+        shapeCopy s values (i + 1) n out
 
 
 -- One field: absent, a required one fails, an optional one is `Missing` and
@@ -3792,7 +3802,11 @@ shapeVariant s tag x depth i =
         else if depth ≥ shapeMax then
             shapeFail
         else
-            shapeRun v x (depth + 1)
+            payload = shapeRun (Js.at v 1) x (depth + 1)
+            if Js.same payload shapeFail then
+                shapeFail
+            else
+                Js.object [ ( "$", Js.at v 0 ), ( "a", payload ) ]
     else
         shapeVariant s tag x depth (i + 2)
 
