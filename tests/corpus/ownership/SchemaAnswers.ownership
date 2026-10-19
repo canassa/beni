@@ -23,7 +23,7 @@ module SchemaAnswers
   summary decoded: π1 RA; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .1 π1
   summary encodedKept: π1 RA, π1⋆ RAw; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~π1 ~π1⋆, .0⋆ ~π1 ~π1⋆, .1 π1
   summary encodedAlone: π1 RA, π1⋆ RAw; res [*] ~fresh2{lost}r{lost}, [*]⋆ ~π1 ~π1⋆, fresh1{lost}, ⋆ ~π1 ~π1⋆
-  summary values: π1 RA, π1⋆ RAw, π2 RA; res [*] ~fresh2{lost}r{lost} ~π2, [*]⋆ ~π1 ~π1⋆, fresh1{lost}, ⋆ ~π1 ~π1⋆
+  summary values: π1 RA, π1⋆ RAw, π2 RA; res [*] ~fresh2{lost}r{lost} ~π2, [*]⋆ ~π1 ~π1⋆, fresh1{lost}r{lost}, ⋆ ~π1 ~π1⋆
   summary numbers: π1 RA; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .1 π1
   demands 13: accepted 9 (fresh 0, call 7, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 total 13: accepted 9 (fresh 0, call 7, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4

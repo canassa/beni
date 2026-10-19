@@ -8,7 +8,7 @@ module Main
   summary chained: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(Schemas.kept) ~shared(Schemas.kept)⋆, fresh1{lost}, ⋆ ~shared(Schemas.kept) ~shared(Schemas.kept)⋆
   summary grownShared: res [*]#Leaf.0 shared(Schemas.forest)[*]#Leaf.0 ~fresh501◦, fresh1 shared(Schemas.forest)
   summary grownFresh: res [*]#Leaf.0 ~fresh501◦, fresh1
-  summary view: res ⟨render⟩ fresh1{lost}
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 module Schemas
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -8,8 +8,8 @@ module EntryInvariantCommand
   41:15 call EntryInvariantCommand.grow tree⟨Tree⟩⁺#Tree.0: accepted param (EntryInvariantCommand.grow writes π1⟨Tree⟩⁺#Tree.0)
   52:5 entry EntryInvariantCommand.update model#Tree.0: accepted entry
   52:5 entry EntryInvariantCommand.update model⟨Tree⟩⁺#Tree.0: accepted entry
-  summary grow: π1#Tree.0 RAW, π1⟨Tree⟩⁺#Tree.0 AW; res #Tree.0 fresh2{excl π1#Tree.0} π1#Tree.0, #Tree.0[*] ~fresh3{excl π1#Tree.0}, ⟨Tree⟩⁺#Tree.0 fresh1 ~fresh4{excl π1#Tree.0⟨Tree⟩#Tree.0} ~π1⟨Tree⟩⁺#Tree.0, ⟨Tree⟩⁺#Tree.0[*] ~fresh4{excl π1#Tree.0⟨Tree⟩#Tree.0}; xreq excl π1#Tree.0
-  summary update: π2 RA, π2#Tree.0 RAW, π2⟨Tree⟩⁺#Tree.0 RAW; res .0 π2, .0#Tree.0 ~fresh2{excl π2#Tree.0} ~π2#Tree.0, .0#Tree.0[*] ~fresh3{excl π2#Tree.0}, .0⟨Tree⟩⁺#Tree.0 ~fresh1 ~fresh4{excl π2#Tree.0⟨Tree⟩#Tree.0} ~π2⟨Tree⟩⁺#Tree.0, .0⟨Tree⟩⁺#Tree.0[*] ~fresh4{excl π2#Tree.0⟨Tree⟩#Tree.0}, .1#Cmd.0 fresh5 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λr{lost}, .1#Cmd.0[*]#Perform.0 λr{lost}; xreq excl π2
-  summary view: res ⟨render⟩ fresh1{lost}
+  summary grow: π1#Tree.0 RAW, π1⟨Tree⟩⁺#Tree.0 AW; res #Tree.0 fresh2{excl π1#Tree.0}r{excl π1#Tree.0} π1#Tree.0, #Tree.0[*] ~fresh3{excl π1#Tree.0}r{excl π1#Tree.0}, ⟨Tree⟩⁺#Tree.0 fresh1 ~fresh4{excl π1#Tree.0⟨Tree⟩#Tree.0}r{excl π1#Tree.0⟨Tree⟩#Tree.0} ~π1⟨Tree⟩⁺#Tree.0, ⟨Tree⟩⁺#Tree.0[*] ~fresh4{excl π1#Tree.0⟨Tree⟩#Tree.0}r{excl π1#Tree.0⟨Tree⟩#Tree.0}; xreq excl π1#Tree.0
+  summary update: π2 RA, π2#Tree.0 RAW, π2⟨Tree⟩⁺#Tree.0 RAW; res .0 π2, .0#Tree.0 ~fresh2{excl π2#Tree.0}r{excl π2#Tree.0} ~π2#Tree.0, .0#Tree.0[*] ~fresh3{excl π2#Tree.0}r{excl π2#Tree.0}, .0⟨Tree⟩⁺#Tree.0 ~fresh1 ~fresh4{excl π2#Tree.0⟨Tree⟩#Tree.0}r{excl π2#Tree.0⟨Tree⟩#Tree.0} ~π2⟨Tree⟩⁺#Tree.0, .0⟨Tree⟩⁺#Tree.0[*] ~fresh4{excl π2#Tree.0⟨Tree⟩#Tree.0}r{excl π2#Tree.0⟨Tree⟩#Tree.0}, .1#Cmd.0 fresh5 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λr{lost}, .1#Cmd.0[*]#Perform.0 λr{lost}; xreq excl π2
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
   demands 9: accepted 9 (fresh 0, call 0, param 5, callback-param 2, once 0, entry 2; assumed 0), pending 0, rejected 0
 total 9: accepted 9 (fresh 0, call 0, param 5, callback-param 2, once 0, entry 2; assumed 0), pending 0, rejected 0

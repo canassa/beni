@@ -5,9 +5,9 @@ module RecordContents
   25:14 update tasks[*]: accepted param (List.map writes it)
   25:34 update x: accepted callback-param (List.map supplies it owned)
   29:12 update <literal>[*]: accepted fresh (RecordContents.mark writes it)
-  summary twice: res [*] ~fresh2 ~fresh501◦, fresh1
+  summary twice: res [*] ~fresh2r{shared} ~fresh501◦, fresh1r{shared}
   summary distinct: res [*] ~fresh2 ~fresh501◦ ~fresh502◦, fresh1
-  summary mark: π1 R, π1[*] W{done}; res [*] ~fresh2 ~π1[*]◦, fresh1; rxreq excl π1
+  summary mark: π1 R, π1[*] W{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
   summary marked: res [*] ~fresh2 ~fresh501◦, fresh1
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 6: accepted 5, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

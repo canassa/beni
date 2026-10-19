@@ -1,0 +1,34 @@
+-- ownership: what `List.update`'s callback puts back (`ownership-checker.md`
+-- §31.4 item 6, #421 review). The list keeps no record twice only when the
+-- callback answers the record it was handed or one it made: `k3` and `k4`
+-- are accepted; `k1` puts back a record a pattern bound from the list, and
+-- `k2` one the list already holds, and both are rejected `exclusive`.
+type alias Row =
+    id : Int
+    done : Bool
+
+
+flip : List Row → List Row
+flip rows = List.map rows λr → { r | done = not r.done }
+
+
+k1 : List Row → List Row
+k1 rows =
+    case rows of
+        [ x, …_ ] →
+            flip (List.update rows 1 λr → if r.id == 1 then x else r)
+
+        [] →
+            rows
+
+
+k2 : List Row, Row → List Row
+k2 rows t = flip (List.update (List.push rows t) 0 λ_ → t)
+
+
+k3 : List Row → List Row
+k3 rows = flip (List.update rows 0 λr → r)
+
+
+k4 : List Row → List Row
+k4 rows = flip (List.update rows 0 λr → { r | done = True })

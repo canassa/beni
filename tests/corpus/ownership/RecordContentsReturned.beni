@@ -1,0 +1,77 @@
+-- ownership: lists that hold one record at two positions, through a
+-- callee or a callback (`ownership-checker.md` §31.4 item 6, #421 review):
+-- a recursive helper, a generic one, a callback that answers a record the
+-- list already holds (`e6`, `e7`, `e8`) or one it captured (`e10`, `e11`).
+-- Each is rejected `exclusive`.
+type alias Row =
+    id : Int
+    done : Bool
+
+
+flip : List Row → List Row
+flip rows = List.map rows λr → { r | done = not r.done }
+
+
+dupRec : Int, Row, List Row → List Row
+dupRec n t acc = if n == 0 then acc else dupRec (n - 1) t (List.push acc t)
+
+
+e1 : Row → List Row
+e1 t = flip (dupRec 2 t [])
+
+
+twiceOf : a → List a
+twiceOf x = [ x, x ]
+
+
+e3 : Row → List Row
+e3 t = flip (twiceOf t)
+
+
+pushTwice : List a, a → List a
+pushTwice xs x = List.push (List.push xs x) x
+
+
+e4 : Row → List Row
+e4 t = flip (pushTwice [] t)
+
+
+e6 : Row → List Row
+e6 t = flip (List.map [ t, { id = 1, done = False } ] λr → if r.id == 1 then t else r)
+
+
+e7 : List Row → List Row
+e7 rows =
+    case rows of
+        [ x, …_ ] →
+            flip (List.map rows λr → if r.id == 1 then x else r)
+
+        [] →
+            rows
+
+
+e8 : Row → List Row
+e8 t =
+    xs = [ t ]
+    ys = List.push xs { id = 2, done = False }
+    flip (List.map ys λr → if r.id == 2 then t else r)
+
+
+e9 : Row, Bool → List Row
+e9 t b =
+    xs =
+        case b of
+            True →
+                [ t ]
+
+            False →
+                []
+    flip (List.push xs t)
+
+
+e10 : List Row, Row → List Row
+e10 rows t = flip (List.push (List.map rows λr → t) t)
+
+
+e11 : Row → List Row
+e11 t = flip (List.map [ 1, 2 ] (always t _))

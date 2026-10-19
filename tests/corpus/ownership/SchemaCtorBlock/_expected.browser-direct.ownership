@@ -1,7 +1,7 @@
 module Main
   29:51 call Trees.grow <call>#Branch.0.children: accepted fresh (Trees.grow writes π1#Branch.0.children)
   summary count: π1 R, π1#Branch.0.children R
-  summary view: res ⟨render⟩ fresh1{lost}
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
   demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Trees
   32:13 List.push r.children: accepted param

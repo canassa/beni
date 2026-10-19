@@ -5008,9 +5008,13 @@ fn holdsRecord(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.E
                 }
                 if (o.isPrimitive(a.type)) return false;
                 const nf = try o.nominalFacts(a.type);
-                if (nf.record) return true;
+                // A record, or what the checker cannot see into — a `foreign
+                // type` (`Js.Value`, a program, a host's handle) or a list,
+                // function or foreign type inside the declaration — may hold
+                // one (#421): only a type whose body is seen to hold none
+                // holds none.
+                if (nf.record or nf.own) return true;
                 if (nf.params) for (store.vars(a.args)) |arg| if (try o.holdsRecord(store, arg, depth + 1)) return true;
-                // A `foreign type` other than `List` holds no beni record.
                 return false;
             },
         },
@@ -7286,6 +7290,11 @@ const Walker = struct {
         shared: bool = false,
         lost: bool = false,
         limit: bool = false,
+        /// The one condition added so far, while every condition added is
+        /// that one (the common case: a container's `rexcl`, again and
+        /// again), so that no new condition is made for it.
+        one: u32 = cond_yes,
+        many: bool = false,
         atoms: std.ArrayList(WAtom) = .empty,
 
         fn add(acc: *RAcc, w: *Walker, k: u32) Allocator.Error!void {
@@ -7294,7 +7303,17 @@ const Walker = struct {
                 cond_shared => acc.shared = true,
                 cond_lost => acc.lost = true,
                 cond_limit => acc.limit = true,
-                else => try acc.atoms.appendSlice(w.a, w.rconds.items[k].atoms),
+                else => {
+                    if (!acc.many and (acc.one == cond_yes or acc.one == k)) {
+                        acc.one = k;
+                        return;
+                    }
+                    if (!acc.many) {
+                        acc.many = true;
+                        try acc.atoms.appendSlice(w.a, w.rconds.items[acc.one].atoms);
+                    }
+                    try acc.atoms.appendSlice(w.a, w.rconds.items[k].atoms);
+                },
             }
         }
 
@@ -7302,6 +7321,7 @@ const Walker = struct {
             if (acc.shared) return cond_shared;
             if (acc.limit) return cond_limit;
             if (acc.lost) return cond_lost;
+            if (!acc.many) return acc.one;
             return w.rmkCond(acc.atoms.items);
         }
     };
@@ -7464,7 +7484,56 @@ const Walker = struct {
         if (ex.len == 1) return w.rcellCond(ex[0].cell);
         var acc: RAcc = .{};
         for (ex) |e| try acc.add(w, try w.rcellCond(e.cell));
-        // One cell at two places that do not nest.
+        // One cell at two places that do not nest: pairwise for a few
+        // entries, sorted by cell for more.
+        if (ex.len <= 16) {
+            for (ex, 0..) |e, a| for (ex[a + 1 ..]) |f| {
+                if (e.cell != f.cell or try w.nested(e, f)) continue;
+                const one = !(try w.o.representative(e.path)) and !(try w.o.representative(f.path));
+                try acc.add(w, if (e.approx == 0 and f.approx == 0 and one) cond_shared else cond_lost);
+            };
+        } else try w.rduplicates(ex, &acc);
+        if (acc.shared) return cond_shared;
+        // Two distinct cells: what the body made shares nothing with another
+        // cell but a callback's answer it was handed (`rsepCells`), so only
+        // those pairs and the pairs of arrivals are formed.
+        // A container and what it holds are not two places (`nested`).
+        // A pair of cells is asked once, however many paths hold them: an
+        // expanded value names one parameter at many paths.
+        var seen: std.ArrayList([3]u32) = .empty;
+        for (ex, 0..) |e, a| {
+            const ke = w.cells.items[e.cell].kind;
+            if (!arrived(ke) and ke != .taken and ke != .top and ke != .payload and ke != .except) continue;
+            for (ex[a + 1 ..]) |f| {
+                const kf = w.cells.items[f.cell].kind;
+                // Two arrivals, or a callback's answer and what the body made.
+                const pair = if (madeHere(kf)) ke == .cbres else kf != .site and kf != .shared;
+                if (!pair or e.cell == f.cell) continue;
+                try w.rpairOnce(&seen, e, f, &acc);
+            }
+            // What the body made before it, against a callback's answer.
+            if (ke == .cbres) for (ex[0..a]) |f| {
+                if (!madeHere(w.cells.items[f.cell].kind)) continue;
+                try w.rpairOnce(&seen, e, f, &acc);
+            };
+        }
+        return acc.done(w);
+    }
+
+    /// `rsepCells` of two entries' cells into `acc`, unless the pair was
+    /// asked already, or the entries nest.
+    fn rpairOnce(w: *Walker, seen: *std.ArrayList([3]u32), e: Entry, f: Entry, acc: *RAcc) Allocator.Error!void {
+        const exact: u32 = @intFromBool(e.approx == 0 and f.approx == 0);
+        const key: [3]u32 = if (e.cell < f.cell) .{ e.cell, f.cell, exact } else .{ f.cell, e.cell, exact };
+        for (seen.items) |s| if (s[0] == key[0] and s[1] == key[1] and s[2] == key[2]) return;
+        if (try w.nested(e, f)) return;
+        try seen.append(w.a, key);
+        try acc.add(w, try w.rsepCells(e.cell, f.cell, exact == 1));
+    }
+
+    /// `rdeepCond`'s one cell at two places that do not nest, found by a
+    /// sort.
+    fn rduplicates(w: *Walker, ex: AV, acc: *RAcc) Allocator.Error!void {
         const by_cell = try w.a.dupe(Entry, ex);
         std.mem.sort(Entry, by_cell, {}, struct {
             fn less(_: void, p: Entry, q: Entry) bool {
@@ -7483,38 +7552,31 @@ const Walker = struct {
             };
             i = j;
         }
-        if (acc.shared) return cond_shared;
-        // Two distinct cells: what the body made shares nothing with another
-        // cell but a callback's answer it was handed (`rsepCells`), so only
-        // those pairs and the pairs of arrivals are formed.
-        // A container and what it holds are not two places (`nested`).
-        var arrivals: std.ArrayList(Entry) = .empty;
-        var made: std.ArrayList(Entry) = .empty;
-        for (ex) |e| {
-            const k = w.cells.items[e.cell].kind;
-            if (madeHere(k)) try made.append(w.a, e) else if (k != .site and k != .shared) try arrivals.append(w.a, e);
-        }
-        for (arrivals.items, 0..) |e, a| for (arrivals.items[a + 1 ..]) |f| {
-            if (e.cell == f.cell or try w.nested(e, f)) continue;
-            try acc.add(w, try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
-        };
-        for (arrivals.items) |e| if (w.cells.items[e.cell].kind == .cbres) for (made.items) |f| {
-            if (try w.nested(e, f)) continue;
-            try acc.add(w, try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
-        };
-        return acc.done(w);
     }
 
     /// The record condition of stored items, pairwise and against what the
     /// list already holds.
     fn rstoredCond(w: *Walker, items: []const AV, elements: AV) Allocator.Error!u32 {
         var acc: RAcc = .{};
-        for (items, 0..) |v, i| {
+        // Each value's record cells once, not once per pair.
+        const cells = try w.a.alloc(AV, items.len);
+        for (items, cells) |v, *c| c.* = try w.cellsOf(try w.rcellsOf(v));
+        const ecells = try w.cellsOf(try w.rcellsOf(elements));
+        for (items, cells, 0..) |v, cv, i| {
+            if (cv.len == 0) continue;
             try acc.add(w, try w.rdeepCond(v));
-            try acc.add(w, try w.rsepValues(v, elements));
-            for (items[i + 1 ..]) |u| try acc.add(w, try w.rsepValues(v, u));
+            try w.rsepCellsOf(cv, ecells, &acc);
+            for (cells[i + 1 ..]) |cu| try w.rsepCellsOf(cv, cu, &acc);
+            if (acc.shared) return cond_shared;
         }
         return acc.done(w);
+    }
+
+    /// `rsepValues` over two values' record cells, gathered in `acc`.
+    fn rsepCellsOf(w: *Walker, ex: AV, ey: AV, acc: *RAcc) Allocator.Error!void {
+        for (ex) |a| for (ey) |b| {
+            try acc.add(w, try w.rsepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
+        };
     }
 
     /// Relying on a record condition: its atoms become requirements of
@@ -7717,7 +7779,6 @@ const Walker = struct {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
             if (c.limit != .none) return cond_limit;
             for ([_][]const ResEntry{ c.objs, c.res }) |entries| for (entries) |r| {
-                if (r.path != eps) continue;
                 switch (r.prov.kind) {
                     .fresh, .esc => {},
                     .param => try acc.add(w, try w.rtakenSupply(j, r.prov, ctx)),
@@ -10158,10 +10219,24 @@ const Walker = struct {
             if (std.mem.indexOfScalar(u32, fresh.items, e.cell) != null) continue;
             try fresh.append(w.a, e.cell);
             w.cell_cond.items[e.cell] = cond_yes;
-            // §31.4 item 6: the records of the model, the same invariant.
-            w.cell_rcond.items[w.rbase(e.cell)] = cond_yes;
         }
-        if (fresh.items.len == 0) return;
+        // §31.4 item 6: the records of the model, the same invariant, on the
+        // record cell an update's object was written over too.
+        var rfresh: std.ArrayList(u32) = .empty;
+        for (model) |e| {
+            const b = w.rbase(e.cell);
+            const c = w.cells.items[b];
+            if (c.kind != .result or c.a != inst.int() or c.b == 0 or c.b >= entry_init_ns) continue;
+            if (try w.isEscaped(b) or try w.isEscaped(e.cell) or try w.isEscaped(try w.exceptCell(b, &.{}, true))) continue;
+            const initial_cell = for (made_initially) |i| {
+                if ((try w.covers(i.cell, b)) != null) break true;
+            } else false;
+            if (initial_cell) continue;
+            if (std.mem.indexOfScalar(u32, rfresh.items, b) != null) continue;
+            try rfresh.append(w.a, b);
+            w.cell_rcond.items[b] = cond_yes;
+        }
+        if (fresh.items.len == 0 and rfresh.items.len == 0) return;
         // §20.4, amended 2026-10-16 (#229): the rounds run over a finite
         // domain — every cell is named by where it is made, a carried lambda
         // too — so a round that makes no cell, grows no carried lambda and
@@ -10185,10 +10260,8 @@ const Walker = struct {
         // Never use an unfinished proof, and never lose it silently: the
         // declaration is an error (§16.7).
         try w.o.hitLimit(.fixpoint, round_cap);
-        for (fresh.items) |c| {
-            try w.lowerCond(c, cond_limit);
-            try w.rlowerCond(c, cond_limit);
-        }
+        for (fresh.items) |c| try w.lowerCond(c, cond_limit);
+        for (rfresh.items) |c| try w.rlowerCond(c, cond_limit);
     }
 
     /// Every cell of `av`, closures expanded, at `⋆`: what a value built
@@ -11485,6 +11558,10 @@ const Walker = struct {
         // `several` below reads neighbours: `normalize` sorts `res` by path.
         if (std.debug.runtime_safety and s.res.len > 1) for (s.res[1..], 0..) |r, i| std.debug.assert(s.res[i].path <= r.path);
         var out: std.ArrayList(Entry) = .empty;
+        // §31.4 item 6: each record condition of the summary instantiated
+        // once per call — a condition over what the call is handed, as it
+        // is handed — and read back for each entry that states it.
+        var rmemo: std.ArrayList(RMemo) = .empty;
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
             const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
@@ -11515,7 +11592,7 @@ const Walker = struct {
                 try w.lowerSpine(e.cell, try w.instXSum(r.sc, ctx));
             };
             // §31.4 item 6: and its record condition, as a list's.
-            if (ctx.conds) try w.instRecordCond(r, cells, ctx);
+            if (ctx.conds) try w.instRecordCond(r, cells, ctx, &rmemo);
             var av = try w.under(cells, r.path);
             if (several or r.approx) av = try w.approxAll(av, ctx.inst);
             try out.appendSlice(w.a, av);
@@ -11526,7 +11603,7 @@ const Walker = struct {
             const cells = try w.instProv(r.prov, ctx);
             const own = try w.a.alloc(Entry, cells.len);
             for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx };
-            if (ctx.conds) try w.instRecordCond(r, own, ctx);
+            if (ctx.conds) try w.instRecordCond(r, own, ctx, &rmemo);
             // No list's fact may read what `objs` names.
             if (std.debug.runtime_safety) for (own) |x| std.debug.assert(w.listFacing(x.cell) == null);
             var av = try w.under(own, r.path);
@@ -11538,22 +11615,39 @@ const Walker = struct {
 
     /// §31.4 item 6: a result entry's record condition at a call: a cell
     /// made by the call starts at it, an argument's is lowered by it.
-    fn instRecordCond(w: *Walker, r: ResEntry, cells: AV, ctx: InstCtx) Allocator.Error!void {
+    const RMemo = struct { x: XSum, k: u32 };
+
+    fn instRecordCond(w: *Walker, r: ResEntry, cells: AV, ctx: InstCtx, memo: *std.ArrayList(RMemo)) Allocator.Error!void {
         // A cell that holds no record has no record condition to set.
         for (cells) |e| {
             if (e.path == eps and try w.mayHoldRecord(e.cell)) break;
         } else return;
         switch (r.prov.kind) {
             .fresh, .esc => {
-                const k = try w.rinstXSum(r.rxc, ctx);
+                const k = try w.rinstMemo(r.rxc, ctx, memo);
                 for (cells) |e| if (e.path == eps) try w.rinitCond(e.cell, k);
             },
             .param => if (r.rxc.no != 0 or r.rxc.atoms.len != 0) {
-                const k = try w.rinstXSum(r.rxc, ctx);
+                const k = try w.rinstMemo(r.rxc, ctx, memo);
                 for (cells) |e| if (e.path == eps) try w.rlowerCond(e.cell, k);
             },
             else => {},
         }
+    }
+
+    fn rinstMemo(w: *Walker, x: XSum, ctx: InstCtx, memo: *std.ArrayList(RMemo)) Allocator.Error!u32 {
+        if (x.no == 1) return cond_lost;
+        if (x.no == 2) return cond_shared;
+        if (x.atoms.len == 0) return cond_yes;
+        for (memo.items) |m| {
+            if (m.x.no != x.no or m.x.atoms.len != x.atoms.len) continue;
+            for (m.x.atoms, x.atoms) |a, b| {
+                if (!a.eql(b)) break;
+            } else return m.k;
+        }
+        const k = try w.rinstXSum(x, ctx);
+        try memo.append(w.a, .{ .x = x, .k = k });
+        return k;
     }
 
     fn instProv(w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {

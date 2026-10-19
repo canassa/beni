@@ -44,7 +44,7 @@ module BridgeReturnedParameter
   summary pushFolded: π1 R, π2 RAw, π2[*] A, π3 R; res [*] ~cb3[*]{excl cb3[*]}r{excl cb3[*]} ~π2[*], ~cb3{excl cb3}r{excl cb3} ~π2; π3 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}, supply 2 cb3 owned{excl cb3}r{excl cb3}, supply 2 π2 owned{excl π2}r{excl π2}
   summary foldReturnsAccumulator: res .grown ~fresh1, .old fresh1, fresh501◦
   summary foldReturnsAccumulatorDead: res ~fresh1
-  summary pushFirst: π1 R, π2 R; res [*] ~cb2[*]{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}, fresh1 ~cb2{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}; π2 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}; xreq excl cb2, sep cb2 cb2
+  summary pushFirst: π1 R, π2 R; res [*] ~cb2[*]{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}, fresh1 ~cb2{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}; π2 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}; xreq excl cb2, sep cb2 cb2
   summary mapReturnsElement: res .grown ~fresh1 ~fresh3, .grown[*] ~fresh3, .old fresh2, .old[*] fresh1, fresh501◦
   summary mapReturnsElementDead: res [*] ~fresh2, ~fresh1 ~fresh2
   summary mapReturnsFresh: res .grown ~fresh3 ~fresh4, .grown[*] ~fresh3 ~fresh5, .old fresh2, .old[*] fresh1, fresh501◦

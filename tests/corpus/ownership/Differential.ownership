@@ -51,7 +51,7 @@ module Differential
   summary t33Pushed: π1 RW, π1[*] R
   summary t40: π1 RAW, π1[*] RAW{tags}, π1[*].tags AW; res [*] ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, π1{excl π1[*].tags}r{excl π1[*]}; xreq excl π1; rxreq excl π1
   summary t40Distinct: unused
-  summary t42: π1 R, π1[*] AW{tags}, π1[*].tags AW; res [*] ~fresh2{excl π1} ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, fresh1{excl π1}; xreq excl π1; rxreq excl π1
+  summary t42: π1 R, π1[*] AW{tags}, π1[*].tags AW; res [*] ~fresh2{excl π1}r{excl π1} ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, fresh1{excl π1}r{excl π1}; xreq excl π1; rxreq excl π1
   summary t42Distinct: unused
   summary t42Repeated: unused
   summary t52: π1 RW, π1[*] R
