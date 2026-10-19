@@ -8462,13 +8462,7 @@ const Pts = struct {
         // snapshot on every fixpoint reevaluation (#464).
         const large = if (a.sites.len >= b.sites.len) a.sites else b.sites;
         const small = if (a.sites.len >= b.sites.len) b.sites else a.sites;
-        var matched: usize = 0;
-        for (large) |site| {
-            if (site == small[matched]) {
-                matched += 1;
-                if (matched == small.len) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
-            } else if (site > small[matched]) break;
-        }
+        if (containsSites(large, small)) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
         var out: std.ArrayList(u32) = .empty;
         try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
         var i: usize = 0;
@@ -8487,6 +8481,31 @@ const Pts = struct {
             }
         }
         return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = out.items };
+    }
+
+    /// Both operands are sorted sets. Adjacent matches walk once; gaps
+    /// get an exponential bracket and binary search, so sparse properties
+    /// do not rescan the broad result of a computed read on every union.
+    fn containsSites(large: []const u32, small: []const u32) bool {
+        var at: usize = 0;
+        for (small) |wanted| {
+            if (at == large.len) return false;
+            if (large[at] < wanted) {
+                var lo = at + 1;
+                var hi = lo;
+                var step: usize = 1;
+                while (hi < large.len and large[hi] < wanted) {
+                    lo = hi + 1;
+                    hi += @min(step, large.len - hi);
+                    step = step +| step;
+                }
+                const limit = if (hi < large.len) hi + 1 else large.len;
+                at = lo + std.sort.lowerBound(u32, large[lo..limit], wanted, orderU32);
+            }
+            if (at == large.len or large[at] != wanted) return false;
+            at += 1;
+        }
+        return true;
     }
 
     fn orderU32(a: u32, b: u32) std.math.Order {
@@ -10651,6 +10670,60 @@ test "repeated points-to unions of settled site facts keep bounded space" {
     try testing.expect(reverse.prim and reverse.undef and !reverse.nul);
     try testing.expectEqualSlices(u32, &.{ 1, 3, 5, 7 }, all.sites);
     try testing.expectEqualSlices(u32, &.{ 3, 7 }, contained.sites);
+}
+
+// A computed read repeatedly unions separately stored sparse property values
+// into a broad settled result. Its work must follow the small operand rather
+// than scanning the broad set again for each unchanged read.
+test "points-to sparse subset unions have bounded work" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    var large: [1024]u32 = undefined;
+    for (&large, 0..) |*site, i| site.* = @intCast(i);
+    const sparse = [_]u32{ 100, 200, 400, 600, 800, 1023 };
+    const a: Pts.Val = .{ .sites = &large, .prim = true, .nul = true };
+    const b: Pts.Val = .{ .sites = &sparse, .top = true, .undef = true };
+    var flags: usize = 0;
+    var result: Pts.Val = .{};
+    for (0..131072) |i| {
+        result = if (i % 2 == 0) try s.pts.unionOf(a, b) else try s.pts.unionOf(b, a);
+        flags += @intFromBool(result.top and result.prim and result.nul and result.undef);
+    }
+    try testing.expectEqual(131072, flags);
+    try testing.expectEqualSlices(u32, &large, result.sites);
+}
+
+test "points-to membership search preserves dense sparse and absent sites" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    var equal = [_]u32{ 0, 2, 4, 6 };
+    const cases = [_]struct { a: []const u32, b: []const u32, expected: []const u32 }{
+        .{ .a = &.{ 0, 1, 2, 3, 4, 5, 6, 7 }, .b = &.{ 2, 3, 4 }, .expected = &.{ 0, 1, 2, 3, 4, 5, 6, 7 } },
+        .{ .a = &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }, .b = &.{ 1, 8, 15 }, .expected = &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 } },
+        .{ .a = &.{ 0, 2, 4, 6, 8, 10, 12 }, .b = &.{ 2, 6, 10 }, .expected = &.{ 0, 2, 4, 6, 8, 10, 12 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &equal, .expected = &.{ 0, 2, 4, 6 } },
+        .{ .a = &.{ 2, 4, 6 }, .b = &.{ 1, 4 }, .expected = &.{ 1, 2, 4, 6 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &.{ 2, 3, 4 }, .expected = &.{ 0, 2, 3, 4, 6 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &.{ 2, 4, 7 }, .expected = &.{ 0, 2, 4, 6, 7 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &.{ 8, 9, 10 }, .expected = &.{ 0, 2, 4, 6, 8, 9, 10 } },
+        .{ .a = &.{}, .b = &.{ 2, 4 }, .expected = &.{ 2, 4 } },
+    };
+    for (cases) |case| {
+        const a: Pts.Val = .{ .sites = case.a, .prim = true, .nul = true };
+        const b: Pts.Val = .{ .sites = case.b, .top = true, .undef = true };
+        const forward = try s.pts.unionOf(a, b);
+        const reverse = try s.pts.unionOf(b, a);
+        try testing.expectEqualSlices(u32, case.expected, forward.sites);
+        try testing.expectEqualSlices(u32, case.expected, reverse.sites);
+        try testing.expect(forward.top and forward.prim and forward.nul and forward.undef);
+        try testing.expect(reverse.top and reverse.prim and reverse.nul and reverse.undef);
+    }
 }
 
 // #464: dependency records are abandoned at the next fixpoint, but their
