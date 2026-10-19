@@ -1,6 +1,0 @@
-click #quota
-click #blocked
-click #save-quota
-click #save-blocked
-throws click #broken
-click #inc

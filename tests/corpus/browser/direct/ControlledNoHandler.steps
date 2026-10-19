@@ -1,7 +1,0 @@
-# Typed into a control with no handler: put back at once.
-type #free "zz"
-# A checkbox with no handler, clicked: put back at once.
-click #box
-# A task later, and then a render.
-advance 0
-click #tick

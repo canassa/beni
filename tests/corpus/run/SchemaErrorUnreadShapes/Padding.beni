@@ -1,4 +1,4 @@
---! Fifteen more runs whose error nothing reads, so that the program holds at
+--! Nineteen more runs whose error nothing reads, so that the program holds at
 --! least `SchemaValid.shape_threshold` shape runs and every one of them takes
 --! its shape (`schema.md` §6, *How a program chooses between shapes and
 --! workers*).
@@ -216,7 +216,63 @@ oscarValid v =
             False
 
 
---| How many of the fifteen read `v`.
+schema Papa =
+    papa : Int
+
+
+papaValid : Value → Bool
+papaValid v =
+    case Schema.read (Papa.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Quebec =
+    quebec : Int
+
+
+quebecValid : Value → Bool
+quebecValid v =
+    case Schema.read (Quebec.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Romeo =
+    romeo : Int
+
+
+romeoValid : Value → Bool
+romeoValid v =
+    case Schema.read (Romeo.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+schema Sierra =
+    sierra : Int
+
+
+sierraValid : Value → Bool
+sierraValid v =
+    case Schema.read (Sierra.schema ⊤) v of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+--| How many of the nineteen read `v`.
 pub count : Value → Int
 count v =
     List.length
@@ -236,6 +292,10 @@ count v =
             , mikeValid v
             , novemberValid v
             , oscarValid v
+            , papaValid v
+            , quebecValid v
+            , romeoValid v
+            , sierraValid v
             ]
             λb → b
         )

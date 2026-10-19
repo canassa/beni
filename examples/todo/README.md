@@ -90,7 +90,7 @@ method on a known path is 405 with an `allow` header.
 
 - `tests/corpus/run/TodoServer/` builds the server with a `Config` that listens
   on port 0 and drives the API with `_expected.requests`.
-- `tests/corpus/browser/direct/TodoPage/` builds the page and drives it in a
+- `tests/corpus/browser/tea/TodoPage/` builds the page and drives it in a
   DOM with `_expected.steps`; the script answers each request with the JSON the
   server prints.
 - `tests/blackbox/todo_example_test.zig` builds both programs from their

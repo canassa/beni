@@ -1,7 +1,0 @@
-4870 Owner-delegated grant (2026-10-17; CLAUDE.md, *Every test has a budget*).
-Cause: the release optimiser's work for browser-inline's first slice (another module's function
-taken in where a one-file build calls it once, a case fused across a call, reachability after the
-optimiser) on a case that was already at 4 270M of 4 300M; four builds per case, and the
-specialiser's analysis rounds are ~75% of each release build's specialise phase.
-Size: 4 420M on the x86-64 Linux reference with run hashes valid; the limit adds 10%.
-Remove when the case fits 4 300M without this file (issue #323).

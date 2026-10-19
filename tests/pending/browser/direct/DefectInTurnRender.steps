@@ -1,8 +1,0 @@
-press #inc
-throws press #bad
-# Stopped: nothing is applied or rendered. The development build's crash
-# screen covers the page, so a user's press would land on it, not on a
-# button (Chrome's `press` refuses one); the clicks reach the buttons
-# whatever covers them.
-click #fix
-click #inc

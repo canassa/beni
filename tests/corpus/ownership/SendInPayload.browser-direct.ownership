@@ -1,9 +1,0 @@
-module SendInPayload
-  27:36 List.push xs: accepted param
-  39:5 entry SendInPayload.update msg#Both.1: accepted entry
-  47:25 send <Both …>: rejected alias: xs holds it and is read at 48:38
-  summary update: π1 R, π1#Both.1 RW; res .1#Cmd.0 shared(Cmd.none)#Cmd.0
-  summary view: res ⟨render⟩ fresh1{lost}r{lost}
-  demands 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
-total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
-cause alias 1

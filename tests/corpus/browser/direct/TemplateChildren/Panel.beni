@@ -1,5 +1,0 @@
-import Html exposing (Html)
-
-
-pub view : { title : String, children : Html msg } → Html msg
-view props = <section title={props.title}>{props.children}</section>

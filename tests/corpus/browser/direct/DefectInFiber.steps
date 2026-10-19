@@ -1,6 +1,0 @@
-throws click #go
-# The defect closed the program's scope (boundary.md §9.8.14): the timer
-# the other body waited on was cleared.
-timers
-click #inc
-advance 50

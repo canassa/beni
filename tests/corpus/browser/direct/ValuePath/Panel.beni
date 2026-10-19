@@ -1,6 +1,0 @@
--- See Main.beni: a component whose children are written between its tags.
-import Html exposing (Html)
-
-
-pub view : { title : String, children : Html msg } → Html msg
-view props = <section><h2>{props.title}</h2>{props.children}</section>

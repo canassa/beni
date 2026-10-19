@@ -38,8 +38,6 @@ const parts = 8;
 const Kind = enum {
     /// Built for `node`, in both modes.
     print,
-    /// Built for `browser-direct`, in both modes: the page's own samples.
-    page,
     /// Built for `browser-tea`, in both modes.
     page_tea,
     /// Built for `browser-inline`, in both modes.
@@ -51,7 +49,7 @@ const Kind = enum {
 };
 
 const directories = [_]struct { path: []const u8, kind: Kind }{
-    .{ .path = "playground/samples/browser-direct", .kind = .page },
+    .{ .path = "playground/samples/browser-tea", .kind = .page_tea },
     .{ .path = "playground/samples/node", .kind = .print },
     .{ .path = "tests/corpus/run", .kind = .print },
     .{ .path = "tests/corpus/browser/tea", .kind = .page_tea },
@@ -97,11 +95,6 @@ fn commands(arena: std.mem.Allocator, kind: Kind, name: []const u8) ![]const []c
             &.{ "build", "--platform=node", "--no-cache", "--no-source-maps", "--diagnostics=json" },
             &.{ "build", "--platform=node", "--out=out-maps" },
             &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=out-release" },
-        },
-        .page => &.{
-            &.{ "build", "--platform=browser-direct", "--no-cache", "--no-source-maps", "--diagnostics=json" },
-            &.{ "build", "--platform=browser-direct", "--out=out-maps" },
-            &.{ "build", "--platform=browser-direct", "--release", "--allow-debug", "--out=out-release" },
         },
         .page_tea => &.{
             &.{ "build", "--platform=browser-tea", "--no-cache", "--no-source-maps", "--diagnostics=json" },

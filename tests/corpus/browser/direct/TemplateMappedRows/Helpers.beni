@@ -1,9 +1,0 @@
-import Html exposing (Html)
-
-
-label : String → Html msg
-label text = <b>{text}</b>
-
-
-pub card : String, String → Html msg
-card prefix text = <span title={prefix}>{label text}</span>

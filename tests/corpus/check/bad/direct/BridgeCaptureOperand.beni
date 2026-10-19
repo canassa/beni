@@ -1,8 +1,0 @@
--- a written argument aliases the callee environment.
--- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
-pub run ⊤ =
-    xs = [ 0 ]
-    change ys =
-        replaced = List.set ys 0 2
-        xs
-    change xs

@@ -1170,9 +1170,9 @@ test "ownership words: the node platform's are catalogued" {
     try expectSurface("node", &.{ "dump", "--stage=ownership", "--platform=node", "platforms/node" });
 }
 
-test "ownership words: browser-tea and browser-direct carry none" {
+test "ownership words: browser-tea and browser-inline carry none" {
     try expectSurface("browser-tea", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser-tea" });
-    try expectSurface("browser-direct", &.{ "dump", "--stage=ownership", "--platform=browser-direct", "platforms/browser-direct" });
+    try expectSurface("browser-inline", &.{ "dump", "--stage=ownership", "--platform=browser-inline", "platforms/browser-inline" });
 }
 
 // ---------------------------------------------------------------------------
@@ -1274,10 +1274,6 @@ test "ownership everywhere: the html platform holds no rejected or pending line"
 
 test "ownership everywhere: the browser platform holds no rejected or pending line" {
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser", "platforms/browser" });
-}
-
-test "ownership everywhere: the browser-direct platform holds no rejected or pending line" {
-    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-direct", "platforms/browser-direct" });
 }
 
 test "ownership everywhere: the browser-inline platform holds no rejected or pending line" {

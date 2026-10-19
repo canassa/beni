@@ -1,7 +1,0 @@
-click #add
-click #add
-click #save
-storage local
-click #post
-respond 1 200 "stored 2"
-click #report

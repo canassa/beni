@@ -7,7 +7,7 @@
 //
 //   node scaling-sizes.mjs [--out=results/<date>-scaling-sizes.json]
 //
-// After `node scaling.mjs --build-only --full --subjects=beni,beni-release,beni-direct-release,solid1,vanillajs`;
+// After `node scaling.mjs --build-only --full --subjects=beni,beni-release,solid1,vanillajs`;
 // terser comes from apps/solid2.
 
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";

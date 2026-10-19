@@ -1,7 +1,7 @@
 # Sternhalma, the external port (examples/sternhalma), played by drag and
 # drop on the page driver (tests/corpus/README.md, the `browser/` kind).
-# It runs in the paired direct/tea gates with the owner's explicit page and
-# separate value-fuzz grants (tests/corpus/browser/direct/Sternhalma).
+# It runs in the `browser/tea/` gates with its own page and value-fuzz
+# grants (tests/corpus/browser/tea/Sternhalma).
 # Replay the original tea transcript with
 #
 #     beni build --out=out src
