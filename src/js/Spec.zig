@@ -8018,6 +8018,27 @@ pub const prototype_names = [_][]const u8{
 /// write through one — at the fixpoint such a value is never an object. What
 /// the program does not declare (a hand-written import) is `top` from the
 /// start.
+///
+/// **Values flow along copy edges by their difference** (`backend.md` §9,
+/// *The combined solver*, its `copy`, `spread` and `load`; *As built
+/// 2026-10-19*). A binding, an argument or a `return` whose value is a name
+/// no guard narrows is a copy edge between the two vars (`copy`): what joins
+/// the source later joins the target as it arrives, one batch of new sites
+/// at a time (`joinNow`), on a worklist and never by recursion. A spread of
+/// a name copies through the var's **field summary** (`Summary`): one var
+/// per property, the join of that property over every site the var holds,
+/// fed by copy edges from the sites' own property vars and, for a var that
+/// is a copy of another, by the other's summary — a summary is a
+/// homomorphism of the union, Σ(A ∪ B) = Σ(A) ∪ Σ(B) — so every record
+/// update of one record shares one summary, and a value reaching a field
+/// flows to every spread along the edges without the spread being evaluated
+/// again. A member read is a **load cell** (`Load`): its own var, fed by one
+/// copy edge from the property's var of each site, shared by every read of
+/// one property of one var; a change of a site's property flows to the read
+/// along the edge, and a site's escape reaches the cells that read it
+/// through the site's list of them. The facts are the same least fixpoint
+/// the per-site joins reached: every edge only carries what the join
+/// carried, sooner.
 const Pts = struct {
     s: *Spec,
     vars: std.ArrayList(VSet) = .empty,
@@ -8076,6 +8097,22 @@ const Pts = struct {
     walk: u32 = 0,
     next_walk: u32 = 0,
     deps: std.ArrayList(Dep) = .empty,
+    /// Copy edges between vars and the field summaries of vars (`backend.md`
+    /// §9, *The combined solver*, `copy` and `spread`): `edges` is the pool
+    /// of every var's `succ` list, `edge_set` keeps each edge once, and
+    /// `summaries` is indexed by `VSet.summary`. All of one fixpoint, in
+    /// `tmp`.
+    edges: std.ArrayList(Edge) = .empty,
+    edge_set: KeyMap(EdgeKey, void) = .empty,
+    summaries: std.ArrayList(Summary) = .empty,
+    /// The joins that wait (`join`), and whether `drain` is running.
+    pending: std.ArrayList(Pending) = .empty,
+    draining: bool = false,
+    /// The load cells: those of a var's property by var and property, and
+    /// those of any other object expression's read by its node.
+    loads: std.ArrayList(Load) = .empty,
+    load_cells: KeyMap(LoadKey, u32) = .empty,
+    load_nodes: KeyMap(NodeKey, u32) = .empty,
     /// How many sweeps the fixpoint took.
     sweeps: u32 = 0,
     /// Every site number, so that a value of one site is a slice of it.
@@ -8168,7 +8205,25 @@ const Pts = struct {
         narrow: u32 = none,
         /// Something it read changed after the first walk evaluated it.
         woken: bool = false,
+        /// A member read's load cell (`load`), in `loads`.
+        load: u32 = none,
     };
+
+    /// A load cell: the var a member read gives, fed by a copy edge from
+    /// the property's var of every site the object holds; the object's
+    /// sites linked so far, so the next evaluation links only the
+    /// difference; and whether the read may be anything, which the var
+    /// does not hold, since a var that is `top` escapes its sites and a
+    /// read that may be anything does not. Every read of one property of
+    /// one var shares one cell (`load_cells`), as every spread of a var
+    /// shares its summary; a read of any other object expression has the
+    /// cell of its node (`load_nodes`). A read through an escaped object
+    /// is `top` and still carries the site's property values: `propagate`
+    /// escapes those, so no consumer tells the two apart, and a cell that
+    /// linked them before the site escaped keeps them. The reference sweep
+    /// of a safety build reads through the same cells.
+    const Load = struct { out: VarId, done: []const u32 = &.{} };
+    const LoadKey = struct { v: VarId, id: u32 };
 
     /// A node whose value a constraint reads, and the constraint that made
     /// that value.
@@ -8218,7 +8273,69 @@ const Pts = struct {
         /// added one.
         deps: u32 = none,
         seen: u32 = 0,
+        /// The vars this one flows into (`copy`): the head of its list in
+        /// `edges`. What joins this var joins each of them, as it arrives.
+        succ: u32 = none,
+        /// The vars that flow into this one: the head of its list in
+        /// `edges`, by `next_in`.
+        pred: u32 = none,
+        /// Its field summary (`summaryOf`), once a spread asked for one.
+        summary: u32 = none,
+        /// A read's var (`load`): `top` is one flag beside its sites, as it
+        /// is in the value a read gives (`Val.top_val` beside the sites),
+        /// and never escapes them or clears them, and `max_sites` does not
+        /// apply — a consumer that joins the value into its own var makes
+        /// that var `top`, as the join of the read's value did.
+        uncapped: bool = false,
     };
+
+    const Pending = struct { v: VarId, val: Val, folded: bool };
+
+    /// A copy edge: `to ⊒ from`, kept while the fixpoint runs. A site or a
+    /// flag that joins `from` after the edge was made is joined into `to`
+    /// then — the difference, never the whole set again (`backend.md` §9,
+    /// *The combined solver — The worklist*). `next` is the next edge out of
+    /// `from`.
+    const Edge = struct { from: VarId, to: VarId, next_out: u32, next_in: u32 };
+    const EdgeKey = struct { from: VarId, to: VarId };
+
+    /// The join of each property over every site a var holds, kept as one
+    /// var per property and fed by copy edges from the sites' own property
+    /// vars: what a spread of the var copies. Made the first time a spread
+    /// reads the var whole (`summaryOf`), and kept current as the var gains
+    /// sites (`addSite`), as a site it holds gains a property (`prop`) or
+    /// is written under an unknown key (`markAnyWritten`). So a spread
+    /// records one dependency, on the summary's list of properties, in
+    /// place of one per site and property, and a value that reaches one
+    /// site's property flows to every spread of the var along the edges,
+    /// without the spread being evaluated again.
+    const Summary = struct {
+        /// Per property, sorted by id: the var joining that property of
+        /// every site.
+        props: std.ArrayList(SumProp) = .empty,
+        /// The join of every site's `any`, and whether any site has been
+        /// written under an unknown key.
+        any: VarId,
+        any_written: bool = false,
+        /// Some site is no object: the spread's result may hold anything
+        /// under any key (`writeAnyOne` with `top`).
+        unknown: bool = false,
+        /// The constraints that read the summary (`seeSummary`): woken when
+        /// a property, `any_written` or `unknown` appears.
+        deps: u32 = none,
+        seen: u32 = 0,
+        /// The summaries of the vars this one's var copies into
+        /// (`linkSummaries`): each holds what this one holds.
+        succs: std.ArrayList(u32) = .empty,
+        /// The var is `top`: every site it held escaped, and every site
+        /// that joins it escapes (`makeTop`). A spread of it writes `top`
+        /// under every key, and a read of its result is `top` through
+        /// `any`, so what its properties hold no consumer can see: nothing
+        /// more is folded into it.
+        dead: bool = false,
+    };
+
+    const SumProp = struct { id: u32, vals: VarId };
 
     const Val = struct {
         top: bool = false,
@@ -8286,6 +8403,12 @@ const Pts = struct {
         /// The constraints that read which properties it has (`seeProps`).
         prop_deps: u32 = none,
         prop_seen: u32 = 0,
+        /// The summaries of the vars that hold it (`foldSite`): a property
+        /// or an unknown-key write it gains later is folded into each.
+        summaries: std.ArrayList(u32) = .empty,
+        /// The load cells that read it (`load`): a read through it is
+        /// anything once it escapes.
+        loads: std.ArrayList(u32) = .empty,
     };
 
     fn init(s: *Spec) Pts {
@@ -8391,24 +8514,11 @@ const Pts = struct {
         st.seen = 0;
     }
 
+    /// Site `site` joins var `v`.
     fn addSite(p: *Pts, v: VarId, site: u32) Allocator.Error!void {
-        const set = &p.vars.items[v];
-        if (set.top) {
-            // A var that is `top` holds no list: what joins it escapes.
-            try p.escapeSite(site);
-            return;
-        }
-        const old = set.sites;
-        const at = std.sort.lowerBound(u32, old, site, orderU32);
-        if (at < old.len and old[at] == site) return;
-        // A new set, never the old one grown (`VSet`).
-        const grown = try p.arena().alloc(u32, old.len + 1);
-        @memcpy(grown[0..at], old[0..at]);
-        grown[at] = site;
-        @memcpy(grown[at + 1 ..], old[at..]);
-        p.vars.items[v].sites = grown;
-        p.varChanged(v);
-        if (grown.len > max_sites) try p.makeTop(v);
+        const one = try p.tmp.allocator().alloc(u32, 1);
+        one[0] = site;
+        try p.join(v, .{ .sites = one });
     }
 
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
@@ -8423,27 +8533,312 @@ const Pts = struct {
         const held = set.sites;
         set.sites = &.{};
         for (held) |site| try p.escapeSite(site);
+        if (p.vars.items[v].summary != none) p.summaries.items[p.vars.items[v].summary].dead = true;
+        var e = p.vars.items[v].succ;
+        while (e != none) : (e = p.edges.items[e].next_out) try p.enqueue(p.edges.items[e].to, Val.top_val, true);
+        try p.drain();
     }
 
+    /// `val` joins var `v`. The join is one of a worklist (`pending`): what
+    /// it adds to `v` — the sites `v` lacked, the flags it lacked — is
+    /// queued for every var `v` copies into, as one batch, and the queue is
+    /// drained here unless a drain is in progress. So a value flows along
+    /// a chain of copies by iteration, never by recursion, and each var
+    /// takes each batch of its difference in one new slice.
     fn join(p: *Pts, v: VarId, val: Val) Allocator.Error!void {
-        if (val.top) try p.makeTop(v);
-        if (val.prim and !p.vars.items[v].prim) {
-            p.vars.items[v].prim = true;
-            p.varChanged(v);
+        try p.enqueue(v, val, false);
+        try p.drain();
+    }
+
+    /// A join that waits: `folded` says the sites arrive along a copy edge,
+    /// whose source's summary already feeds `v`'s (`summaryOf`), so they
+    /// are not folded into it again.
+    fn enqueue(p: *Pts, v: VarId, val: Val, folded: bool) Allocator.Error!void {
+        try p.pending.append(p.tmp.allocator(), .{ .v = v, .val = val, .folded = folded });
+    }
+
+    fn drain(p: *Pts) Allocator.Error!void {
+        if (p.draining) return;
+        p.draining = true;
+        defer p.draining = false;
+        while (p.pending.pop()) |next| try p.joinNow(next.v, next.val, next.folded);
+    }
+
+    /// The transfer: `val` into `v`, and the difference on.
+    fn joinNow(p: *Pts, v: VarId, val: Val, folded: bool) Allocator.Error!void {
+        var flags: Val = .{};
+        if (val.top) {
+            if (p.vars.items[v].uncapped) {
+                if (!p.vars.items[v].top) {
+                    p.vars.items[v].top = true;
+                    flags.top = true;
+                    p.varChanged(v);
+                }
+            } else try p.makeTop(v);
         }
-        if (val.nul and !p.vars.items[v].nul) {
-            p.vars.items[v].nul = true;
-            p.varChanged(v);
+        {
+            const set = &p.vars.items[v];
+            if (val.prim and !set.prim) {
+                set.prim = true;
+                flags.prim = true;
+            }
+            if (val.nul and !set.nul) {
+                set.nul = true;
+                flags.nul = true;
+            }
+            if (val.undef and !set.undef) {
+                set.undef = true;
+                flags.undef = true;
+            }
         }
-        if (val.undef and !p.vars.items[v].undef) {
-            p.vars.items[v].undef = true;
-            p.varChanged(v);
+        const new_flags = flags.top or flags.prim or flags.nul or flags.undef;
+        if (new_flags) p.varChanged(v);
+        if (p.vars.items[v].top and !p.vars.items[v].uncapped) {
+            // A var that is `top` holds no list: what joins it escapes, and
+            // what it copies into is `top` already.
+            for (val.sites) |site| try p.escapeSite(site);
+            return;
         }
-        // Flags still wake readers above. A settled, finite destination
-        // needs no per-site insertion searches; genuine growth keeps the
-        // original insertion, threshold, wake and escape order (#464).
-        if (!p.vars.items[v].top and containsSites(p.vars.items[v].sites, val.sites)) return;
-        for (val.sites) |site| try p.addSite(v, site);
+        const old = p.vars.items[v].sites;
+        const added = try p.difference(val.sites, old);
+        if (added.len != 0) {
+            // A new set, never the old one grown (`VSet`).
+            const grown = try p.tmp.allocator().alloc(u32, old.len + added.len);
+            var i: usize = 0;
+            var j: usize = 0;
+            var k: usize = 0;
+            while (i < old.len or j < added.len) : (k += 1) {
+                if (j == added.len or (i < old.len and old[i] < added[j])) {
+                    grown[k] = old[i];
+                    i += 1;
+                } else {
+                    grown[k] = added[j];
+                    j += 1;
+                }
+            }
+            p.vars.items[v].sites = grown;
+            p.varChanged(v);
+            if (grown.len > max_sites and !p.vars.items[v].uncapped) try p.makeTop(v);
+        } else if (!new_flags) return;
+        flags.sites = added;
+        var e = p.vars.items[v].succ;
+        while (e != none) : (e = p.edges.items[e].next_out) try p.enqueue(p.edges.items[e].to, flags, true);
+        if (!folded and p.vars.items[v].summary != none) for (added) |site| try p.foldSite(p.vars.items[v].summary, site);
+    }
+
+    /// The sites of `a` that are not in `b`, both sorted sets: `a` itself
+    /// when `b` is empty, nothing when `b` holds all of `a`, else a new
+    /// slice. Gaps in `b` are galloped over, as `containsSites` does.
+    fn difference(p: *Pts, a: []const u32, b: []const u32) Allocator.Error![]const u32 {
+        if (a.len == 0 or b.len == 0) return a;
+        if (containsSites(b, a)) return &.{};
+        var out: std.ArrayList(u32) = .empty;
+        try out.ensureTotalCapacity(p.tmp.allocator(), a.len);
+        var at: usize = 0;
+        for (a) |wanted| {
+            if (at < b.len and b[at] < wanted) {
+                var lo = at + 1;
+                var hi = lo;
+                var step: usize = 1;
+                while (hi < b.len and b[hi] < wanted) {
+                    lo = hi + 1;
+                    hi += @min(step, b.len - hi);
+                    step = step +| step;
+                }
+                const limit = if (hi < b.len) hi + 1 else b.len;
+                at = lo + std.sort.lowerBound(u32, b[lo..limit], wanted, orderU32);
+            }
+            if (at < b.len and b[at] == wanted) {
+                at += 1;
+                continue;
+            }
+            out.appendAssumeCapacity(wanted);
+        }
+        return out.items;
+    }
+
+    // ---- Copy edges and field summaries ---------------------------------------
+
+    /// `to ⊒ from`, from now on (the combined solver's `copy`): what `from`
+    /// holds joins `to` now, and what joins `from` later joins `to` as it
+    /// arrives (`joinNow`, `makeTop`). An edge is made once. When `to` has
+    /// a field summary, `from`'s feeds it (`linkSummaries`), so the sites
+    /// the edge carries are never folded one by one.
+    fn copy(p: *Pts, from: VarId, to: VarId) Allocator.Error!void {
+        if (from == to or p.hasEdge(from, to)) return;
+        const a = p.tmp.allocator();
+        const at: u32 = @intCast(p.edges.items.len);
+        try p.edges.append(a, .{ .from = from, .to = to, .next_out = p.vars.items[from].succ, .next_in = p.vars.items[to].pred });
+        p.vars.items[from].succ = at;
+        p.vars.items[to].pred = at;
+        try p.edge_set.put(a, .{ .from = from, .to = to }, {});
+        if (p.vars.items[to].summary != none) try p.linkSummaries(try p.summaryOf(from), p.vars.items[to].summary);
+        const set = p.vars.items[from];
+        try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, true);
+        try p.drain();
+    }
+
+    /// Whether the edge `from → to` exists: by the shorter of the two
+    /// lists when one is short — a property's var has one or two sources —
+    /// else by the set of every edge, kept for that case alone.
+    fn hasEdge(p: *Pts, from: VarId, to: VarId) bool {
+        const short = 8;
+        var n: usize = 0;
+        var e = p.vars.items[to].pred;
+        while (e != none and n < short) : (e = p.edges.items[e].next_in) {
+            if (p.edges.items[e].from == from) return true;
+            n += 1;
+        }
+        if (e == none) return false;
+        n = 0;
+        e = p.vars.items[from].succ;
+        while (e != none and n < short) : (e = p.edges.items[e].next_out) {
+            if (p.edges.items[e].to == to) return true;
+            n += 1;
+        }
+        if (e == none) return false;
+        return p.edge_set.get(.{ .from = from, .to = to }) != null;
+    }
+
+    /// The field summary of var `v`, made when it has none yet: the summary
+    /// of every var that copies into it feeds it, and the sites no copy
+    /// edge brought are folded one by one. A summary is a homomorphism of
+    /// the union — Σ(A ∪ B) = Σ(A) ∪ Σ(B) — so a var that is a copy of
+    /// another costs one edge per property, not one per site and property.
+    fn summaryOf(p: *Pts, v: VarId) Allocator.Error!u32 {
+        if (p.vars.items[v].summary != none) return p.vars.items[v].summary;
+        const id: u32 = @intCast(p.summaries.items.len);
+        try p.summaries.append(p.tmp.allocator(), .{ .any = try p.newVar(), .dead = p.vars.items[v].top });
+        p.vars.items[v].summary = id;
+        if (p.vars.items[v].top) return id;
+        var e = p.vars.items[v].pred;
+        while (e != none) : (e = p.edges.items[e].next_in) try p.linkSummaries(try p.summaryOf(p.edges.items[e].from), id);
+        for (p.vars.items[v].sites) |site| {
+            var covered = false;
+            var f = p.vars.items[v].pred;
+            while (f != none and !covered) : (f = p.edges.items[f].next_in) {
+                const from = p.vars.items[p.edges.items[f].from].sites;
+                covered = std.sort.binarySearch(u32, from, site, orderU32) != null;
+            }
+            if (!covered) try p.foldSite(id, site);
+        }
+        return id;
+    }
+
+    /// Summary `dst` holds what summary `src` holds, now and later.
+    fn linkSummaries(p: *Pts, src: u32, dst: u32) Allocator.Error!void {
+        if (src == dst or p.summaries.items[dst].dead) return;
+        for (p.summaries.items[src].succs.items) |s| if (s == dst) return;
+        try p.summaries.items[src].succs.append(p.tmp.allocator(), dst);
+        var k: usize = 0;
+        while (k < p.summaries.items[src].props.items.len) : (k += 1) {
+            const sp = p.summaries.items[src].props.items[k];
+            try p.copy(sp.vals, try p.summaryProp(dst, sp.id));
+        }
+        try p.copy(p.summaries.items[src].any, p.summaries.items[dst].any);
+        if (p.summaries.items[src].unknown) p.setUnknown(dst);
+        if (p.summaries.items[src].any_written) p.setAnyWritten(dst);
+    }
+
+    /// Site `site`, now held by the var of summary `sum`: read whole, its
+    /// properties and `any` copying into the summary's.
+    fn foldSite(p: *Pts, sum: u32, site: u32) Allocator.Error!void {
+        if (p.summaries.items[sum].dead) return;
+        const a = p.tmp.allocator();
+        const st = &p.sites.items[site];
+        for (st.summaries.items) |s| if (s == sum) return;
+        try st.summaries.append(a, sum);
+        // Read whole, as `readAll` marks: a function has no properties to
+        // read, and an escaped site is marked by `propagate`.
+        if (!st.all_read and st.kind != .func and !st.escaped) {
+            st.all_read = true;
+            p.changed = true;
+        }
+        if (st.kind != .object) {
+            p.setUnknown(sum);
+            return;
+        }
+        var k: usize = 0;
+        while (k < p.sites.items[site].props.items.len) : (k += 1) {
+            const pr = p.sites.items[site].props.items[k];
+            try p.copy(pr.vals, try p.summaryProp(sum, pr.id));
+        }
+        try p.copy(p.sites.items[site].any, p.summaries.items[sum].any);
+        if (p.sites.items[site].any_written) p.setAnyWritten(sum);
+    }
+
+    /// The summary's var for property `id`, made when it is new: what read
+    /// the summary reads the new property too, and the summaries this one
+    /// feeds get the property as well.
+    fn summaryProp(p: *Pts, sum: u32, id: u32) Allocator.Error!VarId {
+        const props = &p.summaries.items[sum].props;
+        const at = std.sort.lowerBound(SumProp, props.items, id, orderSumProp);
+        if (at < props.items.len and props.items[at].id == id) return props.items[at].vals;
+        const v = try p.newVar();
+        try p.summaries.items[sum].props.insert(p.tmp.allocator(), at, .{ .id = id, .vals = v });
+        p.summaryChanged(sum);
+        var k: usize = 0;
+        while (k < p.summaries.items[sum].succs.items.len) : (k += 1) {
+            const succ = p.summaries.items[sum].succs.items[k];
+            try p.copy(v, try p.summaryProp(succ, id));
+        }
+        return v;
+    }
+
+    fn orderSumProp(id: u32, pr: SumProp) std.math.Order {
+        return std.math.order(id, pr.id);
+    }
+
+    fn setUnknown(p: *Pts, sum: u32) void {
+        if (p.summaries.items[sum].unknown) return;
+        p.summaries.items[sum].unknown = true;
+        p.summaryChanged(sum);
+        for (p.summaries.items[sum].succs.items) |succ| p.setUnknown(succ);
+    }
+
+    fn setAnyWritten(p: *Pts, sum: u32) void {
+        if (p.summaries.items[sum].any_written) return;
+        p.summaries.items[sum].any_written = true;
+        p.summaryChanged(sum);
+        for (p.summaries.items[sum].succs.items) |succ| p.setAnyWritten(succ);
+    }
+
+    /// The constraint being evaluated depends on summary `sum`'s properties,
+    /// `any_written` and `unknown`.
+    fn seeSummary(p: *Pts, sum: u32) Allocator.Error!void {
+        const sm = &p.summaries.items[sum];
+        if (p.cur == none or sm.seen == p.walk) return;
+        sm.seen = p.walk;
+        sm.deps = try p.addDep(sm.deps);
+    }
+
+    fn summaryChanged(p: *Pts, sum: u32) void {
+        const sm = &p.summaries.items[sum];
+        p.changed = true;
+        p.wake(sm.deps);
+        sm.deps = none;
+        sm.seen = 0;
+    }
+
+    /// Site `site` has been written under a key the pass does not know.
+    fn markAnyWritten(p: *Pts, site: u32) void {
+        const st = &p.sites.items[site];
+        if (st.any_written) return;
+        st.any_written = true;
+        p.siteChanged(site);
+        for (p.sites.items[site].summaries.items) |sum| p.setAnyWritten(sum);
+    }
+
+    /// Whether a guard may narrow what ident node `node` reads (`narrowed`):
+    /// a copy of it is not a copy of its var then.
+    fn maybeNarrowed(p: *Pts, mi: u32, node: Index) bool {
+        if (p.recording or p.evaluating) {
+            const c = p.lastOf(mi, node);
+            return c == none or p.cons.items[c].narrow != none;
+        }
+        const ir = p.s.mods[mi].ir;
+        for (p.guards.items[p.guard_base..]) |g| if (g.module == mi and sameChain(ir, g.chain, node)) return true;
+        return false;
     }
 
     fn escapeSite(p: *Pts, site: u32) Allocator.Error!void {
@@ -8451,6 +8846,8 @@ const Pts = struct {
         if (st.escaped) return;
         st.escaped = true;
         p.siteChanged(site);
+        var k: usize = 0;
+        while (k < p.sites.items[site].loads.items.len) : (k += 1) try p.join(p.loads.items[p.sites.items[site].loads.items[k]].out, Val.top_val);
     }
 
     fn escape(p: *Pts, val: Val) Allocator.Error!void {
@@ -8626,22 +9023,34 @@ const Pts = struct {
         return site;
     }
 
+    /// Property `id` of site `site`, made when it is new. The properties are
+    /// sorted by id: a wide record is found by binary search, not a scan.
     fn prop(p: *Pts, site: u32, id: u32) Allocator.Error!*Prop {
-        const st = &p.sites.items[site];
-        for (st.props.items) |*pr| if (pr.id == id) return pr;
+        const at = std.sort.lowerBound(Prop, p.sites.items[site].props.items, id, orderProp);
+        if (at < p.sites.items[site].props.items.len and p.sites.items[site].props.items[at].id == id) return &p.sites.items[site].props.items[at];
         const v = try p.newVar();
-        const st2 = &p.sites.items[site];
-        try st2.props.append(p.arena(), .{ .id = id, .vals = v });
+        const st = &p.sites.items[site];
+        try st.props.insert(p.arena(), at, .{ .id = id, .vals = v });
         // A new property: what read the site whole reads it too.
-        p.wake(st2.prop_deps);
-        st2.prop_deps = none;
-        st2.prop_seen = 0;
-        return &st2.props.items[st2.props.items.len - 1];
+        p.wake(st.prop_deps);
+        st.prop_deps = none;
+        st.prop_seen = 0;
+        // Into the summary of every var that holds the site.
+        for (p.sites.items[site].summaries.items) |sum| if (!p.summaries.items[sum].dead) {
+            try p.copy(v, try p.summaryProp(sum, id));
+        };
+        if (std.debug.runtime_safety) std.debug.assert(p.sites.items[site].props.items[at].id == id);
+        return &p.sites.items[site].props.items[at];
     }
 
     fn findProp(p: *const Pts, site: u32, id: u32) ?*const Prop {
-        for (p.sites.items[site].props.items) |*pr| if (pr.id == id) return pr;
-        return null;
+        const props = p.sites.items[site].props.items;
+        const at = std.sort.lowerBound(Prop, props, id, orderProp);
+        return if (at < props.len and props[at].id == id) &props[at] else null;
+    }
+
+    fn orderProp(id: u32, pr: Prop) std.math.Order {
+        return std.math.order(id, pr.id);
     }
 
     // ---- Reads and writes ----------------------------------------------------
@@ -8676,6 +9085,63 @@ const Pts = struct {
             out = try p.unionOf(out, try p.view(p.sites.items[site].any));
         }
         return out;
+    }
+
+    /// `read`, for the constraint being evaluated (the combined solver's
+    /// `load`): what it gives is the constraint's own var, fed by a copy
+    /// edge from property `id`'s var, and from `any`, of every object site
+    /// `obj` holds — each linked once, as the sites arrive (`Cons.done`) —
+    /// so that a value reaching one site's property flows to the read
+    /// along the edge, and the read is evaluated again only when its own
+    /// var, the object or a site changes, never for each of the sites'
+    /// properties. A site that may make the read anything (no object,
+    /// escaped, an unknown key) is noted apart from the var (`out_top`).
+    fn load(p: *Pts, mi: u32, node: Index, object: Index, obj: Val, id: u32) Allocator.Error!Val {
+        const ir = p.s.mods[mi].ir;
+        var li: u32 = if (p.cur != none) p.cons.items[p.cur].load else none;
+        if (li == none) {
+            if (ir.tag(object) == .ident) {
+                const v = try p.nodeVar(mi, object, @fromBackingInt(@intCast(ir.data(object).lhs)));
+                const gop = try p.load_cells.getOrPut(p.tmp.allocator(), .{ .v = v, .id = id });
+                if (!gop.found_existing) gop.value_ptr.* = try p.newLoad();
+                li = gop.value_ptr.*;
+            } else {
+                const gop = try p.load_nodes.getOrPut(p.tmp.allocator(), .{ .module = mi, .node = node.int() });
+                if (!gop.found_existing) gop.value_ptr.* = try p.newLoad();
+                li = gop.value_ptr.*;
+            }
+            if (p.cur != none) p.cons.items[p.cur].load = li;
+        }
+        const out = p.loads.items[li].out;
+        if (obj.top or obj.prim or id == none) try p.join(out, Val.top_val);
+        const fresh = try p.difference(obj.sites, p.loads.items[li].done);
+        p.loads.items[li].done = obj.sites;
+        for (fresh) |site| {
+            try p.sites.items[site].loads.append(p.tmp.allocator(), li);
+            const st = &p.sites.items[site];
+            if (st.kind != .object or id == none) {
+                try p.join(out, Val.top_val);
+                continue;
+            }
+            if (st.escaped) try p.join(out, Val.top_val);
+            const pr = try p.prop(site, id);
+            if (!pr.read) {
+                pr.read = true;
+                p.changed = true;
+            }
+            if (!pr.init) try p.join(out, Val.undef_val);
+            try p.copy(pr.vals, out);
+            try p.copy(p.sites.items[site].any, out);
+        }
+        return p.view(out);
+    }
+
+    fn newLoad(p: *Pts) Allocator.Error!u32 {
+        const id: u32 = @intCast(p.loads.items.len);
+        const out = try p.newVar();
+        p.vars.items[out].uncapped = true;
+        try p.loads.append(p.tmp.allocator(), .{ .out = out });
+        return id;
     }
 
     /// Every property of every object `obj` may be, read.
@@ -8755,12 +9221,8 @@ const Pts = struct {
 
     fn writeAnyOne(p: *Pts, site: u32, value: Val) Allocator.Error!void {
         try p.seeSite(site);
-        const st = &p.sites.items[site];
-        if (!st.any_written) {
-            st.any_written = true;
-            p.siteChanged(site);
-        }
-        try p.join(st.any, value);
+        p.markAnyWritten(site);
+        try p.join(p.sites.items[site].any, value);
         if (p.sites.items[site].escaped) try p.escape(value);
     }
 
@@ -8868,8 +9330,25 @@ const Pts = struct {
                 for (a) |site| if (std.sort.binarySearch(u32, b, c.map[site], orderU32) == null) return false;
                 return true;
             }
+            /// A value that is `top` is compared on its live sites alone: a
+            /// read's cell keeps the sites it linked through an object that
+            /// later escaped or went `top`, where a walk from scratch never
+            /// sees them, and every such site is escaped — what it holds is
+            /// no fact (*an escaped site is ⊤*). That the extra sites are
+            /// indeed escaped is what the comparison then checks.
             fn sameVal(c: @This(), a: Val, b: Val) bool {
-                return a.top == b.top and a.prim == b.prim and a.nul == b.nul and a.undef == b.undef and c.sameSites(a.sites, b.sites);
+                if (a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
+                if (!a.top) return c.sameSites(a.sites, b.sites);
+                var i: usize = 0;
+                var j: usize = 0;
+                while (true) {
+                    while (i < a.sites.len and c.x.sites.items[a.sites[i]].escaped) i += 1;
+                    while (j < b.sites.len and c.y.sites.items[b.sites[j]].escaped) j += 1;
+                    if (i == a.sites.len or j == b.sites.len) return i == a.sites.len and j == b.sites.len;
+                    if (c.map[a.sites[i]] != b.sites[j]) return false;
+                    i += 1;
+                    j += 1;
+                }
             }
             fn sameVar(c: @This(), a: VarId, b: VarId) bool {
                 const va = c.x.vars.items[a];
@@ -8984,6 +9463,14 @@ const Pts = struct {
         p.ones = try p.arena().alloc(u32, nodes);
         for (p.ones, 0..) |*o, i| o.* = @intCast(i);
         p.deps = .empty;
+        p.edges = .empty;
+        p.edge_set = .empty;
+        p.summaries = .empty;
+        p.pending = .empty;
+        p.draining = false;
+        p.loads = .empty;
+        p.load_cells = .empty;
+        p.load_nodes = .empty;
         p.walk = 0;
         p.next_walk = 0;
         p.guards.clearRetainingCapacity();
@@ -9073,6 +9560,7 @@ const Pts = struct {
                 p.evaluating = true;
                 p.waiting = try a.alloc(u64, std.math.divCeil(usize, p.cons.items.len, 64) catch unreachable);
                 @memset(p.waiting, 0);
+
                 for (p.cons.items, 0..) |c, i| if (c.woken) p.reevaluate(@intCast(i));
             } else try p.evaluateWaiting();
             // A change the constraints made woke what reads it, so it is in
@@ -9205,9 +9693,19 @@ const Pts = struct {
         const vals = p.vals[mi];
         switch (ir.tag(node)) {
             .const_decl, .let_decl => {
+                const target = try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs)));
                 const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
-                const val = if (v.unwrap()) |value| vals[value.int()] else Val.undef_val;
-                try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), val);
+                const value = v.unwrap() orelse return p.join(target, Val.undef_val);
+                // A binding to a name, when no guard narrows the read, is a
+                // copy of its var (the combined solver's `copy`): the
+                // binding's set is the var's as it grows, and a spread of
+                // the binding shares the var's field summary.
+                if (ir.tag(value) == .ident) {
+                    if (!p.maybeNarrowed(mi, value)) {
+                        return p.copy(try p.nodeVar(mi, value, @fromBackingInt(@intCast(ir.data(value).lhs))), target);
+                    }
+                }
+                try p.join(target, vals[value.int()]);
             },
             .assign_stmt => {
                 const value = vals[d.rhs];
@@ -9223,7 +9721,11 @@ const Pts = struct {
             .return_stmt => {
                 const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
                 const val = if (value) |v| vals[v.int()] else Val.undef_val;
-                if (func) |site| try p.join(p.sites.items[site].ret, val) else try p.escape(val);
+                const site = func orelse return p.escape(val);
+                if (value) |v| if (ir.tag(v) == .ident and !p.maybeNarrowed(mi, v)) {
+                    return p.copy(try p.nodeVar(mi, v, @fromBackingInt(@intCast(ir.data(v).lhs))), p.sites.items[site].ret);
+                };
+                try p.join(p.sites.items[site].ret, val);
             },
             .for_of => {
                 const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
@@ -9266,10 +9768,7 @@ const Pts = struct {
             // constraints that saw it unset are evaluated again, as `writeAnyOne`
             // wakes them: setting it here alone left a constraint evaluated earlier
             // in the sweep the site escaped in never to see it.
-            if (!st.any_written) {
-                st.any_written = true;
-                p.siteChanged(@intCast(i));
-            }
+            p.markAnyWritten(@intCast(i));
             for (p.sites.items[i].props.items) |pr| try p.escape(try p.view(pr.vals));
             try p.escape(try p.view(p.sites.items[i].any));
             if (p.sites.items[i].kind == .func) {
@@ -9677,7 +10176,10 @@ const Pts = struct {
             .global_this, .this_lit => Val.top_val,
             .ident => try p.narrowed(mi, node, try p.view(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))))),
             .member => blk: {
-                const v = try p.narrowed(mi, node, try p.read(vals[d.lhs], p.propId(mi, @fromBackingInt(@intCast(d.rhs))), true));
+                const obj = vals[d.lhs];
+                const id = p.propId(mi, @fromBackingInt(@intCast(d.rhs)));
+                const raw = try p.load(mi, node, @fromBackingInt(@intCast(d.lhs)), obj, id);
+                const v = try p.narrowed(mi, node, raw);
                 // A read through a host value may run a getter.
                 try p.killRead(mi, @fromBackingInt(@intCast(d.lhs)));
                 break :blk v;
@@ -9718,26 +10220,64 @@ const Pts = struct {
                         // `{...x}` copies what `x` holds, reading all of it.
                         else => {
                             const from = vals[cd.lhs];
-                            _ = try p.readAll(from);
                             if (from.top or from.prim) try p.writeAnyOne(site, Val.top_val);
-                            for (from.sites) |other| {
-                                try p.seeSite(other);
-                                try p.seeProps(other);
-                                if (p.sites.items[other].kind != .object) {
-                                    try p.writeAnyOne(site, Val.top_val);
-                                    continue;
-                                }
+                            const operand: Index = @fromBackingInt(@intCast(cd.lhs));
+                            if (ir.tag(operand) == .ident) {
+                                // A spread of a name copies through the
+                                // var's field summary: one copy edge per
+                                // property of any site the var holds, and
+                                // one dependency, on the summary. A record
+                                // update spreads the record it updates, so
+                                // every update of one record type shares
+                                // one summary, and a value that reaches a
+                                // field of one of them flows along the
+                                // edges to every other (#464).
+                                const v = try p.nodeVar(mi, operand, @fromBackingInt(@intCast(ir.data(operand).lhs)));
+                                const sum = try p.summaryOf(v);
+                                try p.seeSummary(sum);
+                                if (p.summaries.items[sum].unknown) try p.writeAnyOne(site, Val.top_val);
                                 var k: usize = 0;
-                                while (k < p.sites.items[other].props.items.len) : (k += 1) {
-                                    const src = p.sites.items[other].props.items[k];
-                                    const pr = try p.prop(site, src.id);
+                                while (!p.summaries.items[sum].dead and k < p.summaries.items[sum].props.items.len) : (k += 1) {
+                                    const sp = p.summaries.items[sum].props.items[k];
+                                    const pr = try p.prop(site, sp.id);
                                     if (!pr.written) {
                                         pr.written = true;
                                         p.changed = true;
                                     }
-                                    try p.join(pr.vals, try p.view(src.vals));
+                                    try p.copy(sp.vals, pr.vals);
                                 }
-                                if (p.sites.items[other].any_written) try p.writeAnyOne(site, try p.view(p.sites.items[other].any));
+                                if (p.summaries.items[sum].any_written) {
+                                    try p.seeSite(site);
+                                    p.markAnyWritten(site);
+                                    try p.copy(p.summaries.items[sum].any, p.sites.items[site].any);
+                                }
+                            } else {
+                                // Any other operand: copied site by site,
+                                // and evaluated again when one changes.
+                                for (from.sites) |other| {
+                                    try p.seeSite(other);
+                                    try p.seeProps(other);
+                                    const st = &p.sites.items[other];
+                                    if (!st.all_read and st.kind != .func and !st.escaped) {
+                                        st.all_read = true;
+                                        p.changed = true;
+                                    }
+                                    if (st.kind != .object) {
+                                        try p.writeAnyOne(site, Val.top_val);
+                                        continue;
+                                    }
+                                    var k: usize = 0;
+                                    while (k < p.sites.items[other].props.items.len) : (k += 1) {
+                                        const src = p.sites.items[other].props.items[k];
+                                        const pr = try p.prop(site, src.id);
+                                        if (!pr.written) {
+                                            pr.written = true;
+                                            p.changed = true;
+                                        }
+                                        try p.join(pr.vals, try p.view(src.vals));
+                                    }
+                                    if (p.sites.items[other].any_written) try p.writeAnyOne(site, try p.view(p.sites.items[other].any));
+                                }
                             }
                         },
                     }
@@ -9821,7 +10361,15 @@ const Pts = struct {
                 continue;
             }
             const params = p.sites.items[site].params;
-            for (params, 0..) |v, i| try p.join(v, if (i < args.len) vals[args[i].int()] else Val.undef_val);
+            for (params, 0..) |v, i| {
+                if (i >= args.len) {
+                    try p.join(v, Val.undef_val);
+                } else if (ir.tag(args[i]) == .ident and !p.maybeNarrowed(mi, args[i])) {
+                    // An argument that is a name is a copy of its var
+                    // (`effect`'s binding rule).
+                    try p.copy(try p.nodeVar(mi, args[i], @fromBackingInt(@intCast(ir.data(args[i]).lhs))), v);
+                } else try p.join(v, vals[args[i].int()]);
+            }
             out = try p.unionOf(out, try p.view(p.sites.items[site].ret));
             const key: NodeKey = .{ .module = mi, .node = node.int() };
             const callers = &p.sites.items[site].callers;
@@ -11256,4 +11804,88 @@ test "points-to joins preserve top escape and threshold wake order" {
     try testing.expect((try p.view(other)).top);
     try testing.expect(p.sites.items[fresh].escaped);
     try testing.expectEqualSlices(u32, &.{fresh}, &snapshot);
+}
+
+// #464: a copy edge carries what joins its source to its target as it
+// arrives — the difference, in one batch — and a value read before the join
+// keeps the set it was read as (`VSet`). Flags and `top` follow the edge too,
+// and an edge is made once.
+test "a copy edge carries the difference, and a value read before keeps its sites" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    // Ten sites, so that `makeTop` has sites to escape.
+    var i: u32 = 0;
+    while (i < 10) : (i += 1) try p.sites.append(arena_state.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+    const a = try p.newVar();
+    const b = try p.newVar();
+    const c = try p.newVar();
+    try p.addSite(a, 5);
+    try p.copy(a, b);
+    try p.copy(b, c);
+    try p.copy(a, b);
+    try testing.expectEqual(@as(usize, 2), p.edges.items.len);
+    try testing.expectEqualSlices(u32, &.{5}, (try p.view(c)).sites);
+    const before = try p.view(c);
+    try p.join(a, .{ .prim = true, .sites = &.{ 2, 9 } });
+    try testing.expectEqualSlices(u32, &.{5}, before.sites);
+    try testing.expectEqualSlices(u32, &.{ 2, 5, 9 }, (try p.view(b)).sites);
+    try testing.expectEqualSlices(u32, &.{ 2, 5, 9 }, (try p.view(c)).sites);
+    try testing.expect((try p.view(c)).prim and !(try p.view(c)).nul);
+    // A site already there costs no new set.
+    const settled = (try p.view(c)).sites;
+    try p.addSite(a, 9);
+    try testing.expectEqual(settled.ptr, (try p.view(c)).sites.ptr);
+    try p.makeTop(a);
+    try testing.expect((try p.view(c)).top);
+    try testing.expect(p.sites.items[5].escaped and !p.sites.items[0].escaped);
+}
+
+// #464: a spread of a var copies through its field summary, and a var that
+// is a copy of another shares the other's summary through one edge per
+// property, not one per site and property. A site joining the source later,
+// and a property a site gains later, reach the copy's summary through the
+// edges.
+test "a field summary composes along a copy edge" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const arena = arena_state.allocator();
+    // Three object sites with properties 1 and 2, holding sites 100 + i.
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        try p.addSite((try p.prop(i, 1)).vals, 100 + i);
+        try p.addSite((try p.prop(i, 2)).vals, 200 + i);
+    }
+    const u = try p.newVar();
+    const v = try p.newVar();
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.copy(u, v);
+    const sum_v = try p.summaryOf(v);
+    const sum_u = p.vars.items[u].summary;
+    try testing.expect(sum_u != none and sum_u != sum_v);
+    // `u`'s summary folds two sites of two properties (plus `any`), each
+    // once; `v`'s takes `u`'s through one edge per property (plus `any`).
+    try testing.expectEqual(@as(usize, 1 + 2 * 3 + 3), p.edges.items.len);
+    const prop1 = p.summaries.items[sum_v].props.items[0];
+    try testing.expectEqual(@as(u32, 1), prop1.id);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(prop1.vals)).sites);
+    // A site joining `u` later reaches `v`'s summary; so does a property a
+    // held site gains later.
+    try p.addSite(u, 2);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(prop1.vals)).sites);
+    try p.addSite((try p.prop(1, 3)).vals, 300);
+    const prop3 = p.summaries.items[sum_v].props.items[2];
+    try testing.expectEqual(@as(u32, 3), prop3.id);
+    try testing.expectEqualSlices(u32, &.{300}, (try p.view(prop3.vals)).sites);
+    // A var that goes `top` has a dead summary: nothing more is folded.
+    try p.makeTop(v);
+    try testing.expect(p.summaries.items[sum_v].dead);
 }
