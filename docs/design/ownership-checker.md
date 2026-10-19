@@ -5236,10 +5236,13 @@ keeps nothing across renders.
    `[hoisted n]`, and each module and the run end in a `records` line: demands, accepted, pending,
    rejected by fix, the lines with hoists, and the eager reads of captured field paths (§31.6), counted
    once per lambda, local and path. The mutation controls are `-Downership-record-mutation=` (hidden),
-   run by `zig build test-record-mutations` outside the gates: `hoist-whole`, `no-held-operand` and
-   `no-disjoint`, each caught by `ownership/RecordDemands` (and `RecordCopy`); the control of a hoist's
-   placement waits for the hoist table (R5). Left to R2c, with `W{F}` in summaries: a write through a
-   callee, the entry's checks (§31.8; #315's three cases are `tests/pending/ownership/Record*`,
+   run by `zig build test-record-mutations` outside the gates, which refuse the option: `hoist-whole`,
+   `no-held-operand`, `no-disjoint` and `call-as-hoist` (a callee's read of a written field taken for a
+   hoist), each caught by `ownership/RecordDemands`; the control of a hoist's placement waits for the
+   hoist table (R5). A cell's key holds `nonlist`, so a top-level record's object is never the cell a
+   summary's result makes at the same place (`ownership/RecordTopOrder`, checked reversed by
+   `ordering_test`), and a hoist is counted once per use. Left to R2c, with `W{F}` in summaries: a
+   write through a callee, the entry's checks (§31.8; #315's three cases are `tests/pending/ownership/Record*`,
    CK-260–262), a callback's supply of a record (§31.5), records' exclusive contents (§31.4 item 6), and
    a captured record's write making its closure once (§31.4 item 4; reported `captured-edit` until then).
    Over the 1 043 programs of the comparison, 271 have record updates: 1 741 demands, 4 accepted (local
