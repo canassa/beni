@@ -729,6 +729,16 @@ pub fn build(b: *std.Build) void {
     mutations.has_side_effects = true;
     mutations_step.dependOn(&mutations.step);
 
+    // §31.4 item 6: no list verdict reads a record condition. Every program
+    // of the corpus checked twice, the second time with every record
+    // condition failing, and its list lines compared byte for byte. Not a
+    // gate: two ownership runs over a thousand programs.
+    const lost_step = b.step("test-records-lost", "Check every corpus program with every record condition failing, and compare its list lines with the ordinary run's (ownership-checker.md §31.4 item 6); not a gate");
+    const lost = b.addSystemCommand(&.{ "node", "tests/records-lost.mjs" });
+    lost.addArtifactArg(safe.exe);
+    lost.has_side_effects = true;
+    lost_step.dependOn(&lost.step);
+
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast, .budget = false }).step);
 

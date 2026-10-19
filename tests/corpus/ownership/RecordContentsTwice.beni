@@ -1,0 +1,58 @@
+-- ownership: `RecordContentsEntry` with `Copy`, which stores a row the list
+-- already holds (`ownership-checker.md` §31.4 item 6, §31.8): the model no
+-- longer keeps the invariant, so `Done`'s write is refused.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Row =
+    id : Int
+    done : Bool
+
+
+type alias Model =
+    rows : List Row
+
+
+type Msg
+    = Add Int
+    | Done
+    | Copy
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Add n →
+            ( { model | rows = List.push model.rows { id = n, done = False } }, Cmd.none )
+
+        Done →
+            ( { model | rows = List.map model.rows λr → { r | done = True } }, Cmd.none )
+
+        Copy →
+            case List.head model.rows of
+                Just first →
+                    ( { model | rows = List.push model.rows first }, Cmd.none )
+
+                Nothing →
+                    ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Done}>done</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { rows = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

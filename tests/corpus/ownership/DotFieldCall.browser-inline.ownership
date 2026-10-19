@@ -11,8 +11,8 @@ module DotFieldCall
   summary parensLater: π1.items RAW, π1.items[*] RA, π1.load R; res .0 π1.items, .0[*] ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1
   summary dottedCaptured: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
   summary parensCaptured: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
-  summary extDotted: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
-  summary extParens: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
+  summary extDotted: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}r{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
+  summary extParens: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}r{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
   summary extDottedFresh: res [*] ~fresh2, fresh1
   summary extParensFresh: res [*] ~fresh2, fresh1
   summary extDottedShared: res [*] ~shared(DotFieldCall.shared)[*], shared(DotFieldCall.shared)

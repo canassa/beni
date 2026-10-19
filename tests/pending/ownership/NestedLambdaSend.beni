@@ -1,4 +1,4 @@
--- CK-263: on browser-inline the send's demand is lost (#426); golden: the browser-direct verdict.
+-- CK-263: on browser-inline the send's demand is lost (#426); golden: browser-direct's report.
 -- ownership (§30.9): a call of the declaration's function parameter inside
 -- a lambda nested in another is the outer lambda's call, made wherever that
 -- one is handed on (§18.9), with the probes of every lambda on the way.

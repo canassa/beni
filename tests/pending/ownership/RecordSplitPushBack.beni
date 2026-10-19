@@ -1,0 +1,23 @@
+-- CK-264: #419, for records (`ownership-checker.md` §18.4 item 4, §31.4 item 6): an
+-- element a list pattern binds is still in the list it was matched against,
+-- so pushed back onto that list it is there twice, and `mark`'s write of
+-- each row is rejected `exclusive`. Red: a taken element is taken to be apart
+-- from its container's elements, as the list domain takes it, so `dupRow`'s
+-- answer keeps `rexcl`, and the write is accepted.
+type alias Row =
+    id : Int
+    done : Bool
+
+
+dupRow : List Row → List Row
+dupRow rows =
+    case rows of
+        [ first, …_ ] →
+            List.push rows first
+
+        [] →
+            rows
+
+
+pub mark : List Row → List Row
+mark rows = List.map (dupRow rows) λr → { r | done = True }

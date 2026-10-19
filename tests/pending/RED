@@ -90,7 +90,9 @@
 # CK-221 (2026-10-10), from the review of browser-direct's slice S2: a keyed
 # `For` whose key repeats matches rows by rank on browser-tea and by index
 # under S2's exact scripts on browser-direct. Written and checked on S2's
-# branch; S3's reconciler owns the fix (browser-direct.md, S3 blocker).
+# branch; S3's reconciler owned the fix (browser-direct.md, S3 blocker). Retired
+# 2026-10-19 (#423) with browser-direct, whose index matching it was; a repeated key
+# on browser-tea is browser/tea/DuplicateKeys, green in the corpus.
 
 # Direct effects: safe wrappers and views whose ownership summaries remain too coarse.
 # O1 (2026-10-16, ownership-checker.md §30.9) cleared every ownership line of
@@ -126,9 +128,13 @@ tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
 # CK-260, CK-261, CK-262 (2026-10-19, issue #315): the three record demands of
 # #315 checked at the entry (ownership-checker.md §31.6, §31.8). Red until R2c
 # reads a record update's W{F} off a summary.
-tests/pending/ownership/RecordForItem.beni exit=0 browser-direct.ownership-differs
-tests/pending/ownership/RecordForItem.beni#browser-inline exit=0 browser-inline.ownership-differs
+tests/pending/ownership/RecordForItem.beni exit=0 browser-inline.ownership-differs
 # #426 (CK-263): on browser-inline the ownership checker loses a send's
-# demand, so a shared send builds. Golden: the browser-direct verdict.
+# demand, so a shared send builds. Golden: the report browser-direct printed,
+# copied when that platform went: its demand lines are what #426 wants; its
+# command summaries are that platform's shape, which #441 replaces.
 tests/pending/ownership/NestedLambdaSend.beni exit=0 browser-inline.ownership-differs
 tests/pending/ownership/SendInPayload.beni exit=0 browser-inline.ownership-differs
+# #419 (CK-264): a split element stored back into its own list is taken
+# as apart from it, for records as for lists. Golden: the verdict with the fix.
+tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs

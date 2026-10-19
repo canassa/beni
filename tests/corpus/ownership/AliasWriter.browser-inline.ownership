@@ -6,8 +6,8 @@ module AliasWriter
   summary writer: π1 RAW, π1[*] A; res [*] ~π1[*], π1
   summary one: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
   summary seven: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
-  summary eight: π1 RA; res .0 ⊤call{lost}, .0⋆ ~π1, .1 π1
-  summary nine: π1 RA; res .0 ⊤call{lost}, .0⋆ ~π1, .1 π1
+  summary eight: π1 RA; res .0 ⊤call{lost}r{lost}, .0⋆ ~π1, .1 π1
+  summary nine: π1 RA; res .0 ⊤call{lost}r{lost}, .0⋆ ~π1, .1 π1
   demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2
 total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 2
 cause later-use 2

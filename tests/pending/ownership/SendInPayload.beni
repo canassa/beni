@@ -1,4 +1,4 @@
--- CK-263: on browser-inline the send's demand is lost (#426); golden: the browser-direct verdict.
+-- CK-263: on browser-inline the send's demand is lost (#426); golden: browser-direct's report.
 -- ownership (§30.9): a send value is the runtime's function, never a list,
 -- and holds nothing of the program's, so a send whose payload carries the
 -- send itself gives up no cell of it — `ReentrantSend`'s shape. Before, the

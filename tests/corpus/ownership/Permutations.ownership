@@ -32,7 +32,7 @@ module Permutations
   summary insertThenEdit: π1 RAW, π1[*] AW, π1[*][*] A; res [*] ~fresh1 ~π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq excl π1
   summary insertTwiceThenEdit: π1 RAW, π1[*] AW, π1[*][*] A, π2 RAw, π2[*] A; res [*] ~π1[*] ~π2, [*][*] ~π1[*][*] ~π2[*], π1{lost}
   summary distinct: res [*] fresh1, fresh2
-  summary shared: res [*] fresh1, fresh2{shared}
+  summary shared: res [*] fresh1, fresh2{shared}r{shared}
   demands 26: accepted 24 (fresh 3, call 0, param 17, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 26: accepted 24 (fresh 3, call 0, param 17, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause exclusive 2

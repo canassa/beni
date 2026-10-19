@@ -369,6 +369,9 @@ pub const Options = struct {
     /// O0): every chain enforces as an in-place one does, and every platform
     /// module is in place for the entry rows. Hidden and test-only.
     ownership_everywhere: bool = false,
+    /// `--ownership-records-lost` (`Cli.Common`, `ownership-checker.md`
+    /// §31.4 item 6): every record condition fails. Hidden and test-only.
+    ownership_records_lost: bool = false,
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
