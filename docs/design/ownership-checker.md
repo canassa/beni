@@ -5276,6 +5276,37 @@ and their later additions. No cause is new: a record demand is rejected for the 
 - **The model's exclusivity invariant** (§28's dated amendment) covers record cells as it covers list cells. An
   arm that stores one record at two model paths refutes it.
 
+*As built (2026-10-19, slice R2c of #315), §31.7 and this section.* A summary carries a record's facts in
+bits no list's fact reads: `bit_f`, the write, with its field set (`W{f, g}`; `W{}` read back from a block
+that cannot say which); `bit_q`, a read of a record's field, printed `R`; and `bit_k`, the escape of a
+record's object, printed `E`. What the result holds of records — a record's object alone (`◦`), or a record of
+numbers whole — is `objs`, kept apart from `res`, so that no list's fact sees it; instantiated, its cells are
+copies that no list's fact reads and that escape with the cells they copy. A call applies the callee's `bit_f`
+as a call-site `update` demand on the argument's objects at the path, with the fields written (§16.4 item 3);
+the callee's own reads at the call are its body's, not a later use. A parameter's write is `accepted param`
+in the body and decided at each call; a call's answer is `call`, decided by the callee's `objs`. At the entry,
+each path `update` writes is an `update entry …` line: its object escapes where a command, a subscription or
+`update` keeps it (only the object, so that no list below it moves), and a message's record a view event
+builds is `payload` (the view's record objects reach the record lines only). A callback's write of a record
+its callee supplies needs the supply owned (`supply`), and a closure that writes only a record is decided by
+its consumers, `pending` where it leaves sight, as a list's write is. `{ Record.copy r | … }` gives the copy a
+new object, its fields split from `r`'s when the record type is closed. A base no provenance names is
+`pending`. A callback's write of a record a destructive read hands it (`List.map rows λr → { r | … }`) writes
+the callee's parameter's elements, and so the caller's argument, at the call (`π1[*] W{F}`); it relies on the
+list holding no record at two positions (§31.4 item 6), which a list's conditions cannot say (they read no
+record object), so the callback's line is `pending` until that is built. Over the 1 071 programs of the
+comparison (master after #393), 276 have record updates: 2 832 demands (1 775 in bodies, 666 at calls, 391 at
+entries), 2 577 accepted, 66 pending — 57 of them §31.4 item 6, 4 stored in a record, 3 returned, 1 out of
+sight, 1 with no provenance — and 189 rejected, in 51 programs: 75 `top-level`, 36 `later-use`, 22 `payload`,
+10 `captured-edit`, 9 `alias`, 9 `unknown`, 9 `escaped`, 7 `element`, 5 `call`, 3 `disjoint`, 2
+`held-operand` and 2 `supply`; 12 lines with hoists and 296 eager reads. No list line moves against master.
+CK-260 and CK-261 are green (`ownership/RecordPayload`, `RecordCapture`, `RecordCaptureField`). Left: a `For`
+row callback's write of its item is `pending`, for a list and a record alike, so CK-262 stays red (#402);
+records' exclusive contents (§31.4 item 6); a captured record's write making its closure once (§31.4 item 4,
+the 10 `captured-edit` lines); a summary that reads an update's base whole, which refuses the TodoMVCs'
+`changed model (List.map model.todos …)` (#405); and a base use under a marker (#404). The summary block is
+version 17.
+
 ### 31.9 The errors
 
 Lines with the same position, verdict, cause and detail are one diagnostic (§28.5). The codes follow §28.6's
@@ -5476,6 +5507,23 @@ keeps nothing across renders.
    `emit/release/inline/` golden and a page that behaves as the spread version did (#315, *Done when*).
 
 ### 31.13 Measured (2026-10-17): a static approximation, not the checker
+
+**The checker's count (2026-10-19, R2c of #315), which replaces the approximation below.** Over the same set,
+1 071 programs now, 276 have record updates and the checker makes 2 832 record demands: 1 775 updates in
+bodies, 666 call-site lines (§31.7) and 391 entry lines (§31.8). 189 are rejected, in 51 programs, and 66 are
+`pending`, 57 of them because records' exclusive contents are not built (§31.8's *As built*):
+
+| Rejected | Lines | Where | Fix |
+|---|---|---|---|
+| `top-level` | 75 | a top-level base in a function, or in a `main` that names it twice: `run/Schema*`'s `defaultOptions`, `note`, `person` and `sample` (and more `run/` programs), Bike Wars' `initModel` and `initBikes` at the entry, `run/ListPersistence`'s `empty` (19) | `restructure` (§31.16: `Schema.defaultOptions ⊤`; `initModel ⊤`) |
+| `later-use`, `alias`, `held-operand` | 47 | `core/Schema`'s `Context` handed whole to the next `run` (13), the seven TodoMVCs' `changed model (List.map model.todos …)` (14, an over-refusal, #405), Bike Wars, `run/ListPersistence`, `run/Records`, `run/MarkupFieldIdentity`, `TypedKeys` ×2, `PrettyPrinter` (`bench/corpus`), `browser/direct/RecordUpdateCompare` | `copy` |
+| `payload` | 22 | the three Conduit pages and `examples/conduit` (P6: the entry does not tell `update`'s arms apart), `StoredBranchPlacement` | — (the list's rule, §23.6) |
+| `captured-edit` | 10 | Bike Wars' `handleInput` writes a captured model (§31.4 item 4, not built), `run/ListPersistence` | — |
+| `unknown`, `escaped` | 18 | a record from JavaScript (`core/Schema.beni:1231`'s `{ last \| … }`, `browser-direct`'s `Tea.beni` at `Tea.commands` and `Tea.subscriptions`, `run/ReleaseFieldsAcrossJs`) or from a schema the checker does not follow (`run/SchemaDepth`, 5); Conduit's `ChangedUrl` address, kept by the runtime (7); both `Tea.beni` platforms' `perform` state, kept by `List.foldl` | `copy` (R3) |
+| `element`, `call`, `disjoint`, `supply` | 17 | the TodoMVCs' edit of one todo, Sternhalma's `board.cells[*]`, `KeyedEnds`, `run/ListPersistence`'s `walk`, `BranchReturn`'s entry, the `List.foldl` accumulator of both `Tea.beni` platforms | — |
+
+The approximation's 9 certain programs are all among them, as are `run/Records` and `core/Schema`'s contexts,
+which it counted as possible.
 
 **Why an approximation.** The checker gives a record no cell (§31.2), so it cannot count record rejections. A
 faithful count needs the checker change of §31.12's first slice, and this slice changes no `src/`. The numbers
