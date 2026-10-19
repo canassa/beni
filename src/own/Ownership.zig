@@ -527,6 +527,10 @@ pub const FunFacts = struct {
     param: u32,
     calls: Calls = .zero,
     need: bool = false,
+    /// §31.5: what this parameter returns is a record the callee writes, so
+    /// it must be one the caller owns (`need`'s record twin, printed
+    /// `need owned record`).
+    rneed: bool = false,
     seen: bool = true,
     /// §23.3: the callee hands this parameter, as its parameter `send`, a
     /// function that sends what it is given to `update`; `none` otherwise.
@@ -621,6 +625,10 @@ pub const Summary = struct {
     /// fact reads, so that none of them sees it. Sorted as `res` is.
     objs: []const ResEntry = &.{},
     supply: []const SupplyEntry = &.{},
+    /// §31.5: what a callee hands its function parameters of records — an
+    /// object alone, or a record of numbers whole — apart from `supply`, which
+    /// every list's fact reads, as `objs` is apart from `res`.
+    rsupply: []const SupplyEntry = &.{},
     /// One per function-typed parameter, by parameter index.
     funs: []const FunFacts = &.{},
     limit: Limit = .none,
@@ -1606,6 +1614,11 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
             a.approx != b.approx or !a.xc.eql(b.xc)) return false;
     }
+    if (x.rsupply.len != y.rsupply.len) return false;
+    for (x.rsupply, y.rsupply) |a, b| {
+        if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
+            a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+    }
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     for (x.slots, y.slots) |a, b| if (a[0] != b[0] or a[1] != b[1]) return false;
@@ -1840,6 +1853,13 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
         d.* = e;
         d.xc = try xsum(keep, e.xc);
     }
+    const objs = try keep.alloc(ResEntry, s.objs.len);
+    for (objs, s.objs) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc) };
+    const rsupply = try keep.alloc(SupplyEntry, s.rsupply.len);
+    for (rsupply, s.rsupply) |*d, e| {
+        d.* = e;
+        d.xc = try xsum(keep, e.xc);
+    }
     const klasses = try keep.alloc(Carried, s.klasses.len);
     for (klasses, s.klasses) |*d, k| {
         const binds = try keep.alloc(Carried.Bind, k.binds.len);
@@ -1851,6 +1871,8 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.uses = try keep.dupe(UseEntry, s.uses);
     out.res = res;
     out.supply = supply;
+    out.objs = objs;
+    out.rsupply = rsupply;
     out.funs = try keep.dupe(FunFacts, s.funs);
     out.xreq = try keep.dupe(XAtom, s.xreq);
     out.slots = try keep.dupe([2]u32, s.slots);
@@ -1866,6 +1888,8 @@ fn summaryEql(x: Summary, y: Summary) bool {
     if (x.objs.len != y.objs.len) return false;
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
     for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+    if (x.rsupply.len != y.rsupply.len) return false;
+    for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
@@ -1995,6 +2019,14 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     var supply: std.ArrayList(SupplyEntry) = .empty;
     try supply.appendSlice(keep, x.supply);
     try supply.appendSlice(keep, y.supply);
+    // §31.7: the records the result holds and the callbacks are handed,
+    // joined as `res` and `supply` are.
+    var objs: std.ArrayList(ResEntry) = .empty;
+    try objs.appendSlice(keep, x.objs);
+    try objs.appendSlice(keep, y.objs);
+    var rsupply: std.ArrayList(SupplyEntry) = .empty;
+    try rsupply.appendSlice(keep, x.rsupply);
+    try rsupply.appendSlice(keep, y.rsupply);
     var funs: std.ArrayList(FunFacts) = .empty;
     try funs.appendSlice(keep, x.funs);
     try funs.appendSlice(keep, y.funs);
@@ -2005,7 +2037,9 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
         .params = @max(x.params, y.params),
         .uses = uses.items,
         .res = res.items,
+        .objs = objs.items,
         .supply = supply.items,
+        .rsupply = rsupply.items,
         .funs = funs.items,
         .xreq = xreq.items,
         .once = x.once or y.once,
@@ -2027,7 +2061,7 @@ const Over = struct { limit: Limit, at: u32 };
 /// The first of §16.7's limits a normalized summary is past, with what it
 /// measured: its entries in all, then its entries at one path.
 fn overLimit(s: Summary) ?Over {
-    const total = s.uses.len + s.res.len + s.objs.len + s.supply.len;
+    const total = s.uses.len + s.res.len + s.objs.len + s.supply.len + s.rsupply.len;
     if (total > entry_cap) return .{ .limit = .entries, .at = @intCast(@min(total, std.math.maxInt(u32))) };
     var most: usize = 0;
     var streak: usize = 0;
@@ -2138,30 +2172,10 @@ fn sortedRes(keep: Allocator, entries: []const ResEntry) Allocator.Error![]const
     return res[0..nr];
 }
 
-fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
-    const keep = o.keep.allocator();
-    const uses = try keep.dupe(UseEntry, s.uses);
-    std.mem.sort(UseEntry, uses, {}, struct {
-        fn less(_: void, x: UseEntry, y: UseEntry) bool {
-            if (x.param != y.param) return x.param < y.param;
-            return x.path < y.path;
-        }
-    }.less);
-    var nu: usize = 0;
-    for (uses) |u| {
-        if (u.bits == 0) continue;
-        if (nu > 0 and uses[nu - 1].param == u.param and uses[nu - 1].path == u.path) {
-            uses[nu - 1].bits |= u.bits;
-            // §31.7: the fields two record writes write, together.
-            if (u.fields.len != 0) uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
-            continue;
-        }
-        uses[nu] = u;
-        nu += 1;
-    }
-    const res = try sortedRes(keep, s.res);
-    const objs = try sortedRes(keep, s.objs);
-    const supply = try keep.dupe(SupplyEntry, s.supply);
+/// `entries` sorted by function, parameter, path and provenance, each pair
+/// that agrees on all four merged.
+fn sortedSupply(keep: Allocator, entries: []const SupplyEntry) Allocator.Error![]const SupplyEntry {
+    const supply = try keep.dupe(SupplyEntry, entries);
     std.mem.sort(SupplyEntry, supply, {}, struct {
         fn less(_: void, x: SupplyEntry, y: SupplyEntry) bool {
             if (x.fun != y.fun) return x.fun < y.fun;
@@ -2186,6 +2200,34 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         supply[ns] = e;
         ns += 1;
     }
+    return supply[0..ns];
+}
+
+fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
+    const keep = o.keep.allocator();
+    const uses = try keep.dupe(UseEntry, s.uses);
+    std.mem.sort(UseEntry, uses, {}, struct {
+        fn less(_: void, x: UseEntry, y: UseEntry) bool {
+            if (x.param != y.param) return x.param < y.param;
+            return x.path < y.path;
+        }
+    }.less);
+    var nu: usize = 0;
+    for (uses) |u| {
+        if (u.bits == 0) continue;
+        if (nu > 0 and uses[nu - 1].param == u.param and uses[nu - 1].path == u.path) {
+            uses[nu - 1].bits |= u.bits;
+            // §31.7: the fields two record writes write, together.
+            if (u.fields.len != 0) uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
+            continue;
+        }
+        uses[nu] = u;
+        nu += 1;
+    }
+    const res = try sortedRes(keep, s.res);
+    const objs = try sortedRes(keep, s.objs);
+    const supply = try sortedSupply(keep, s.supply);
+    const rsupply = try sortedSupply(keep, s.rsupply);
     const funs = try keep.dupe(FunFacts, s.funs);
     std.mem.sort(FunFacts, funs, {}, struct {
         fn less(_: void, x: FunFacts, y: FunFacts) bool {
@@ -2211,7 +2253,8 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         .uses = uses[0..nu],
         .res = res,
         .objs = objs,
-        .supply = supply[0..ns],
+        .supply = supply,
+        .rsupply = rsupply,
         .funs = funs[0..nf],
         .limit = s.limit,
         .limit_at = s.limit_at,
@@ -2580,7 +2623,7 @@ fn pessimistic(o: *Ownership, s: Summary, why: Limit, at: u32) Allocator.Error!S
     for (uses, 0..) |*u, i| u.* = .{ .param = @intCast(i), .path = eps, .bits = bit_r | bit_a | bit_e | bit_w };
     const res = try keep.dupe(ResEntry, &.{.{ .path = eps, .prov = .{ .kind = .top, .a = 0 }, .approx = true, .xc = .{ .no = 1 } }});
     const funs = try keep.alloc(FunFacts, s.funs.len);
-    for (funs, s.funs) |*f, g| f.* = .{ .param = g.param, .calls = .many, .need = true, .seen = false };
+    for (funs, s.funs) |*f, g| f.* = .{ .param = g.param, .calls = .many, .need = true, .rneed = true, .seen = false };
     return .{ .params = s.params, .uses = uses, .res = res, .funs = funs, .limit = why, .limit_at = at, .asserted = s.asserted, .once = s.once };
 }
 
@@ -3620,14 +3663,15 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
             .many => "many",
         } }) catch return error.OutOfMemory;
         if (f.need) wr.writeAll(", need owned") catch return error.OutOfMemory;
+        if (f.rneed) wr.writeAll(", need owned record") catch return error.OutOfMemory;
         if (!f.seen) wr.writeAll(", unseen") catch return error.OutOfMemory;
         if (f.send != none) wr.print(", sends π{d}", .{f.send + 1}) catch return error.OutOfMemory;
         var sup: std.ArrayList([]const u8) = .empty;
-        for (s.supply) |e| {
+        for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
             if (e.fun != f.param) continue;
             const pt = try o.pathText(e.path);
             try sup.append(arena, try std.fmt.allocPrint(arena, "supply {d}{s} {s} {s}{s}{s}", .{ e.k + 1, pt, try o.provText(e.prov), if (e.owned) "owned" else "borrowed", if (e.prov.taken) " taken" else "", try o.xsumText(e.xc) }));
-        }
+        };
         sortText(sup.items);
         for (sup.items) |t| wr.print(", {s}", .{t}) catch return error.OutOfMemory;
         try parts.append(arena, try buf.toOwnedSlice());
@@ -5576,6 +5620,8 @@ const FnState = struct {
     is_fn: bool = false,
     calls: Calls = .zero,
     need: bool = false,
+    /// §31.5: what it returns is a record something writes (`FunFacts.rneed`).
+    rneed: bool = false,
     seen: bool = true,
     /// §23.3: handed on to a send position.
     send: u32 = none,
@@ -5604,6 +5650,10 @@ const SupplyRec = struct {
     /// §30.9: a call inside a lambda nested in others, the probes where
     /// each enclosing lambda was handed on, outermost last.
     more: []const u32 = &.{},
+    /// §31.5: the probe of the records it supplies (`recordProbe`), which
+    /// `probe`, a list's, does not read; none when a record supply is not
+    /// owned or there is none.
+    rprobe: u32 = none,
 };
 
 /// §18.9: a call of the declaration's function parameter made inside a
@@ -10136,7 +10186,7 @@ const Walker = struct {
             var others: std.ArrayList(AV) = .empty;
             for (avs, 0..) |x, i| if (i != k) try others.append(w.a, x);
             const probe = try w.probeDemand(inst, av, others.items);
-            try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = probe, .cond = try w.deepCond(av) });
+            try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = probe, .cond = try w.deepCond(av), .rprobe = try w.recordProbe(inst, av, others.items) });
         }
         if (!try w.isTracked(inst)) return &.{};
         return w.single(.{ .kind = .cbres, .a = j, .b = inst.int(), .ty = w.instTypeOpt(inst) });
@@ -10241,7 +10291,8 @@ const Walker = struct {
                     takens[k] = taken;
                     continue;
                 }
-                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .taken = taken });
+                const rprobe2 = if (owned and cells.len > 0) try w.recordProbe(ctx.inst, cells, others.items) else none;
+                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .taken = taken, .rprobe = rprobe2 });
             }
             if (outer) |oc| {
                 try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .many = many });
@@ -11796,9 +11847,24 @@ const Walker = struct {
                 }
             }
             st.need = st.need or ff.need;
+            st.rneed = st.rneed or ff.rneed;
             if (ff.need and !ff.sends) st.need_edit = true;
             st.seen = st.seen and ff.seen;
             const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
+            // §31.5: what the callee hands it of records, handed on as the
+            // callee hands it — owned only where the records are this
+            // body's to give at the call (`recordProbe`).
+            for (s.rsupply) |e| {
+                if (e.fun != j) continue;
+                const raw = try w.instProv(e.prov, ictx);
+                const cells = try w.a.alloc(Entry, raw.len);
+                for (raw, cells) |x, *y| y.* = .{ .path = x.path, .cell = try w.nonlistOf(x.cell), .approx = x.approx };
+                const from: u32 = if (e.prov.kind == .param) e.prov.a else none;
+                var others: std.ArrayList(AV) = .empty;
+                for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
+                const rprobe = if (e.owned and cells.len > 0) try w.recordProbe(inst, cells, others.items) else none;
+                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = none, .owned = e.owned, .approx = e.approx, .taken = e.prov.taken, .rprobe = rprobe });
+            }
             for (s.supply) |e| {
                 if (e.fun != j) continue;
                 // In a lambda, a capture of the declaration's own frame is
@@ -11807,13 +11873,29 @@ const Walker = struct {
                 // still read them, which a probe here cannot see.
                 var own: std.ArrayList(Entry) = .empty;
                 var captured: std.ArrayList(Entry) = .empty;
+                // §31.5: the records a row or summary hands, handed on to the
+                // record supply: not a list's.
+                var rcells: std.ArrayList(Entry) = .empty;
+                var rcaptured = false;
                 for (try w.instProv(e.prov, ictx)) |x_in| {
-                    // §31.2: a record's object is supplied to the record
-                    // demand, not to a list's (§31.5).
-                    const x = Entry{ .path = x_in.path, .cell = w.listFacing(x_in.cell) orelse continue, .approx = x_in.approx };
+                    const facing = w.listFacing(x_in.cell) orelse {
+                        const rc = w.cells.items[x_in.cell];
+                        if (w.frame != 0 and rc.kind == .env and rc.a < w.local_frame.len and w.local_frame[rc.a] == 0 and w.local_av[rc.a] != null) rcaptured = true;
+                        try rcells.append(w.a, .{ .path = x_in.path, .cell = x_in.cell, .approx = x_in.approx });
+                        continue;
+                    };
+                    const x = Entry{ .path = x_in.path, .cell = facing, .approx = x_in.approx };
                     const xc = w.cells.items[x.cell];
                     const of_decl = w.frame != 0 and xc.kind == .env and xc.a < w.local_frame.len and w.local_frame[xc.a] == 0 and w.local_av[xc.a] != null;
                     try (if (of_decl) &captured else &own).append(w.a, x);
+                }
+                if (rcells.items.len != 0) {
+                    const from: u32 = if (e.prov.kind == .param) e.prov.a else none;
+                    var rothers: std.ArrayList(AV) = .empty;
+                    for (avs, 0..) |x, i| if (i != j and i != from) try rothers.append(w.a, x);
+                    const rowned = e.owned and !rcaptured;
+                    const rprobe = if (rowned) try w.recordProbe(inst, rcells.items, rothers.items) else none;
+                    try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = rcells.items, .probe = none, .owned = rowned, .approx = e.approx or rcaptured, .taken = e.prov.taken, .rprobe = rprobe });
                 }
                 if (captured.items.len != 0) {
                     const named = try w.declView(captured.items);
@@ -11893,14 +11975,29 @@ const Walker = struct {
             } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
             return;
         } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name, ff.sends);
+        // §31.5: a callee that writes a record πⱼ returns needs one it may
+        // write; a value the checker cannot place may return any.
+        const record_unknown = try std.fmt.allocPrint(arena, "{s} writes a record that {s} returns, and the checker cannot see which function it is, so not that the record is one it owns", .{ callee.name, try w.baseText(args[j]) });
+        if (ff.rneed and classes.len == 0) try w.recordNeedLine(tok, try w.baseText(args[j]), record_unknown, true, null);
         var reported = false;
+        var rreported = false;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse {
                 // One line per call, however many classes it cannot place.
                 if (ff.need and !reported) try w.needUnknown(inst, try w.baseText(args[j]), callee.name, ff.sends);
                 reported = true;
+                if (ff.rneed and !rreported) try w.recordNeedLine(tok, try w.baseText(args[j]), record_unknown, true, cls);
+                rreported = true;
                 continue;
             };
+            if (ff.rneed) {
+                if (try w.returnsOwnedRecord(c, s, avs, ictx, j, 0)) {
+                    try w.recordLoanDemands(inst, callee, args, avs, c, j, 0);
+                } else {
+                    const why = try std.fmt.allocPrint(arena, "{s} writes a record that {s} returns, and it may return one it does not own", .{ callee.name, try w.baseText(args[j]) });
+                    try w.recordNeedLine(tok, try w.baseText(args[j]), why, false, cls);
+                }
+            }
             const name: []const u8 = switch (cls) {
                 .closure => "<lambda>",
                 .func => |t| try w.qualified(t),
@@ -11986,14 +12083,23 @@ const Walker = struct {
             @memset(rbad_cause, .supply);
             for (c.uses) |u| {
                 if (u.bits & bit_f == 0 or u.param >= c.params or rbad[u.param] != null) continue;
-                for (s.supply) |e| {
+                var found = false;
+                supplies: for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
-                    const written = (try w.o.suffix(e.path, u.path)) orelse eps;
-                    if (!e.owned or !try w.provOwned(e.prov, s, avs, ictx, none, 0, written)) {
+                    found = true;
+                    if (!e.owned or !try w.recordProvOwned(e.prov, s, avs, ictx, none, 0)) {
                         rbad[u.param] = try std.fmt.allocPrint(arena, "{s} supplies its parameter {d} borrowed ({s})", .{ callee.name, u.param + 1, try w.o.provText(e.prov) });
                         rbad_approx[u.param] = !e.owned and e.approx;
-                        break;
+                        break :supplies;
                     }
+                    // §29 for records: what the callback returned before, a
+                    // loan of the record its callee handed it.
+                    if (e.prov.kind == .cb) if (try w.actualOf(s, avs, e.prov.a)) |prev| {
+                        for (try w.classesOf(prev)) |pcls| {
+                            const pc = (try w.classSummary(pcls)) orelse continue;
+                            try w.recordLoanDemands(inst, callee, args, avs, pc, e.prov.a, 0);
+                        }
+                    };
                     // §31.4 item 6: a record a destructive read hands out is
                     // its container's position, so the container's contents
                     // must be exclusive: no record object at two positions.
@@ -12009,6 +12115,12 @@ const Walker = struct {
                         if (try w.o.suffix(e.path, u.path)) |rest| path = try w.o.concat(path, rest);
                         try w.callSiteRecordDemand(inst, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, path, u.fields, if (s.limit != .none or c.limit != .none) .limit else .exact);
                     }
+                };
+                // A record the callback writes that the callee is not seen
+                // to hand it: the checker cannot say it is owned.
+                if (!found and ff.calls != .zero) {
+                    rbad[u.param] = try std.fmt.allocPrint(arena, "{s} calls it, and the checker does not see what it hands its parameter {d}", .{ callee.name, u.param + 1 });
+                    rbad_approx[u.param] = true;
                 }
             }
             for (c.uses) |u| {
@@ -12155,6 +12267,51 @@ const Walker = struct {
                         } else {
                             try w.valueLine(tok, name, .{ .accepted = .callback_param }, "", try std.fmt.allocPrint(arena, "{s} supplies it owned", .{callee.name}), false);
                         }
+                    }
+                    // §31.5: a function that writes a record it is handed,
+                    // where the callee hands one it does not own: a record
+                    // line of its own, beside the list's.
+                    if (c.writesRecord()) {
+                        for (rbad, 0..) |x, k| if (x) |why| {
+                            try w.demands.append(w.a, .{
+                                .kind = .value,
+                                .token = tok,
+                                .op = "update",
+                                .base = name,
+                                .base_local = none,
+                                .base_path = eps,
+                                .point = w.point,
+                                .frame = w.frame,
+                                .ctx = w.ctx,
+                                .element = false,
+                                .accept = .callback_param,
+                                .holders = &.{},
+                                .fixed = .{ .verdict = .{ .rejected = rbad_cause[k] }, .detail = why },
+                                .prelim = .{ .cause = rbad_cause[k], .detail = why, .approx = rbad_approx[k] },
+                                .fields = &.{},
+                            });
+                            break;
+                        };
+                        for (rpending, 0..) |x, k| if (x) |why| {
+                            if (rbad[k] != null) continue;
+                            try w.demands.append(w.a, .{
+                                .kind = .value,
+                                .token = tok,
+                                .op = "update",
+                                .base = name,
+                                .base_local = none,
+                                .base_path = eps,
+                                .point = w.point,
+                                .frame = w.frame,
+                                .ctx = w.ctx,
+                                .element = false,
+                                .accept = .callback_param,
+                                .holders = &.{},
+                                .fixed = .{ .verdict = .pending, .detail = why },
+                                .fields = &.{},
+                            });
+                            break;
+                        };
                     }
                 },
             }
@@ -12611,6 +12768,143 @@ const Walker = struct {
         var conditional = c.*;
         conditional.res = res.items;
         return w.returnsOwned(&conditional, s, avs, ictx, j, 0, none);
+    }
+
+    /// §31.5: whether what class `c` returns of records is owned by the
+    /// call that gets it — `returnsOwned` over `objs`, where a record's
+    /// object is: one it made, or the record a callee handed it at `j`,
+    /// supplied owned (a loan, `recordLoanDemands`).
+    fn returnsOwnedRecord(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32) Allocator.Error!bool {
+        if (c.limit != .none or s.limit != .none) return false;
+        for (c.objs) |r| {
+            switch (r.prov.kind) {
+                .fresh => {},
+                .param => {
+                    // Kept, the record is not the caller's to write.
+                    for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j | bit_k) != 0 and w.o.overlap(u.path, r.prov.path)) return false;
+                    var found = false;
+                    for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
+                        if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
+                        found = true;
+                        if (!e.owned) return false;
+                        // A position a destructive read hands out waits for
+                        // §31.4 item 6.
+                        if (e.prov.taken) return false;
+                        if (!try w.recordProvOwned(e.prov, s, avs, ictx, j, depth)) return false;
+                    };
+                    if (!found) return false;
+                },
+                else => return false,
+            }
+            // One record at two of the result's paths is not owned.
+            for (c.objs) |x| if (x.path != r.path and x.prov.eql(r.prov)) return false;
+        }
+        return true;
+    }
+
+    /// `provOwned` for a record supply: a callback's earlier answer is owned
+    /// when every class of the actual returns owned records.
+    fn recordProvOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32) Allocator.Error!bool {
+        if (p.kind != .cb) return true;
+        if (p.a == guard) return true;
+        if (depth >= inst_depth) {
+            try w.o.hitLimit(.callbacks, depth + 1);
+            return false;
+        }
+        const actual = (try w.actualOf(s, avs, p.a)) orelse return false;
+        // The declaration's own function parameter: its callers decide.
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
+            w.fn_state.items[jj].rneed = true;
+            return true;
+        }
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) return false;
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return false;
+            if (!try w.returnsOwnedRecord(c, s, avs, ictx, p.a, depth + 1)) return false;
+        }
+        return true;
+    }
+
+    /// §29 for records: a callback that returns the record a callee handed
+    /// it from the callee's own parameter hands that loan back, so the
+    /// caller's argument is written at the call, every field of it.
+    fn recordLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, depth: u32) Allocator.Error!void {
+        if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
+        const s = callee.sum;
+        for (c.objs) |r| {
+            if (r.prov.kind != .param) continue;
+            for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
+                if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
+                if (!e.owned) continue;
+                switch (e.prov.kind) {
+                    .cb => if (e.prov.a != j) if (try w.actualOf(s, avs, e.prov.a)) |actual| {
+                        for (try w.classesOf(actual)) |cls| {
+                            const cc = (try w.classSummary(cls)) orelse continue;
+                            try w.recordLoanDemands(inst, callee, args, avs, cc, e.prov.a, depth + 1);
+                        }
+                    },
+                    .param => if (e.prov.a < args.len) {
+                        const origin: Origin = if (s.limit != .none or c.limit != .none) .limit else if (e.approx or r.approx) .approx else .exact;
+                        try w.callSiteRecordDemand(inst, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, e.prov.path, &.{}, origin);
+                    },
+                    else => {},
+                }
+            };
+        }
+    }
+
+    /// §31.5: a callee writes what a function value returns, and the value
+    /// may return a record it does not own. A record line.
+    fn recordNeedLine(w: *Walker, tok: u32, name: []const u8, detail: []const u8, approx: bool, cls: ?Class) Allocator.Error!void {
+        try w.demands.append(w.a, .{
+            .kind = .value,
+            .token = tok,
+            .via = w.classToken(cls),
+            .op = "update",
+            .base = name,
+            .base_local = none,
+            .base_path = eps,
+            .point = w.point,
+            .frame = w.frame,
+            .ctx = w.ctx,
+            .element = false,
+            .accept = .callback_param,
+            .holders = &.{},
+            .fixed = .{ .verdict = .{ .rejected = if (w.limit_callee) .limit else .need }, .detail = detail },
+            .prelim = .{ .cause = if (w.limit_callee) .limit else .need, .detail = detail, .approx = approx or w.limit_callee },
+            .fields = &.{},
+        });
+    }
+
+    /// §31.5: whether the records of `av` are the caller's to hand over at
+    /// this point — a probe on their objects, every field written.
+    fn recordProbe(w: *Walker, inst: Inst.Index, av: AV, others: []const AV) Allocator.Error!u32 {
+        const idx: u32 = @intCast(w.probe_ok.items.len);
+        try w.probe_ok.append(w.a, false);
+        try w.probe_approx.append(w.a, false);
+        try w.probe_info.append(w.a, null);
+        var base: std.ArrayList(Entry) = .empty;
+        for (try w.expand(av)) |e| {
+            if (e.path != eps) continue;
+            const k = w.cells.items[e.cell].kind;
+            if (k == .closure or k == .func) continue;
+            if (w.isSend(w.cells.items[e.cell])) continue;
+            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
+        }
+        try w.demandOn(.{
+            .kind = .probe,
+            .token = w.token(inst),
+            .op = "",
+            .base_text = "",
+            .base_ref = null,
+            .base_ty = null,
+            .base = base.items,
+            .others = others,
+            .probe = idx,
+            .fields = &.{},
+        });
+        return idx;
     }
 
     /// §16.4 item 5: whether class `c`, called by `s` as its parameter `j`,
@@ -13911,7 +14205,9 @@ const Walker = struct {
         const sq = w.o.steps(q, &bq);
         const next = su[sq.len];
         if (next.kind != .field) return .whole;
-        if (std.mem.indexOfScalar(u32, fields, next.arg) == null) return .none;
+        // No field named is every field: a write a block could not name, an
+        // open type's `allFields`, a probe of the record whole.
+        if (fields.len != 0 and std.mem.indexOfScalar(u32, fields, next.arg) == null) return .none;
         // The step into the written field is the caller's own read when it is
         // part of the argument's path: `List.length r.items` reads `r.items`
         // here, a read its evaluation recorded (`recordRead`), and hands the
@@ -14157,6 +14453,7 @@ const Walker = struct {
         // Function parameters.
         var funs: std.ArrayList(FunFacts) = .empty;
         var supply: std.ArrayList(SupplyEntry) = .empty;
+        var rsupply: std.ArrayList(SupplyEntry) = .empty;
         // The `returns owned` atoms the owned bits rest on (§16.7).
         var atoms: std.ArrayList([2]u32) = .empty;
         if (frame == 0) {
@@ -14164,8 +14461,18 @@ const Walker = struct {
                 if (!st.is_fn) continue;
                 var need = st.need;
                 var edit = st.need_edit;
+                var rneed = st.rneed;
                 for (w.demands.items) |rec| {
-                    if (rec.kind == .probe or rec.kind == .value or rec.fields != null) continue;
+                    if (rec.kind == .probe or rec.kind == .value) continue;
+                    // §31.5: a record written that πⱼ returned must be one
+                    // the caller owns, as a list must (`need`).
+                    if (rec.fields != null) {
+                        for (rec.cells) |e| {
+                            const c = w.cells.items[try w.takenBase(e.cell)];
+                            if (c.kind == .cbres and c.a == j) rneed = true;
+                        }
+                        continue;
+                    }
                     for (rec.cells) |e| {
                         // A taken element stands for the cell it was taken
                         // from (§18.5), which may be what πⱼ returned.
@@ -14176,7 +14483,7 @@ const Walker = struct {
                         }
                     }
                 }
-                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .seen = st.seen, .send = st.send, .sends = need and !edit });
+                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
             }
             for (w.supplies.items) |sr| {
                 var more_ok = true;
@@ -14213,6 +14520,32 @@ const Walker = struct {
                     };
                     try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .xc = xc });
                 }
+                // §31.5: the records it supplies, which no list's fact reads:
+                // as `objs` names a result's, by the provenance of the record
+                // each object was written over, owned where the record probe
+                // held.
+                const rowned_probe = sr.owned and more_ok and sr.rprobe != none and w.probe_ok.items[sr.rprobe];
+                for (try w.expand(sr.av)) |e| {
+                    if (w.listFacing(e.cell) != null) continue;
+                    const x = w.cells.items[e.cell];
+                    const base_cell = if (x.kind == .except) x.a else e.cell;
+                    const bx = w.cells.items[base_cell];
+                    switch (bx.kind) {
+                        .closure, .func => continue,
+                        else => {},
+                    }
+                    var prov = (try w.provOf(base_cell, frame, params, fresh)) orelse continue;
+                    if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
+                    if (sr.taken and prov.kind == .param) prov.taken = true;
+                    prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
+                    const owned = rowned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
+                    const approx = !owned and switch (prov.kind) {
+                        .shared => false,
+                        .top, .esc, .env => true,
+                        else => (sr.rprobe != none and w.probe_approx.items[sr.rprobe]) or e.approx != 0,
+                    };
+                    try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx });
+                }
             }
         } else {
             // A lambda's own function parameters: its class does not follow
@@ -14235,6 +14568,7 @@ const Walker = struct {
             .res = res.items,
             .objs = objs.items,
             .supply = supply.items,
+            .rsupply = rsupply.items,
             .funs = funs.items,
             .xreq = xreq.items,
             .slots = if (frame == 0) try keep.dupe([2]u32, w.slot_keys.items) else &.{},

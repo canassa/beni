@@ -42,7 +42,7 @@ module RecordDemands
   summary throughCallee: π1 W{x}, π1.tags R, π1.x R
   summary getY: π1.y R
   summary throughCalleeY: π1 W{x}, π1.tags R, π1.x R, π1.y R
-  summary viaCallback: π1 R, π2 R; res .tags cb1.tags{excl cb1.tags}, cb1◦; π1 calls ≤1, supply 1 π2 owned{excl π2}
+  summary viaCallback: π1 R, π2 R; res .tags cb1.tags{excl cb1.tags}, cb1◦; π1 calls ≤1, need owned record, supply 1 π2 owned{excl π2}
   summary countItems: π1.items R
   summary nestedCallee: π1 W{a}, π1.a.b R, π1.a.b.items R, π1.z R
   summary nestedList: π1 W{a}, π1.a.b.items R, π1.z R

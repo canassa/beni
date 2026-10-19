@@ -202,11 +202,11 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             }
             for (s.res) |r| try c.res(r);
             for (s.objs) |r| try c.res(r);
-            for (s.supply) |e| {
+            for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                 try c.path(e.path);
                 try c.prov(e.prov);
                 try c.xsum(e.xc);
-            }
+            };
             for (s.xreq) |a| {
                 try c.prov(a.a);
                 try c.prov(a.b);
@@ -395,6 +395,31 @@ fn writeXSum(w: *Writer, arena: Allocator, x: XSum) Allocator.Error!void {
     try writeAtoms(w, arena, x.atoms);
 }
 
+fn writeSupply(w: *Writer, arena: Allocator, items: []const SupplyEntry) Allocator.Error!void {
+    const supply = try arena.dupe(SupplyEntry, items);
+    const SupCx = struct {
+        w: *const Writer,
+        fn less(cx: @This(), x: SupplyEntry, y: SupplyEntry) bool {
+            if (x.fun != y.fun) return x.fun < y.fun;
+            if (x.k != y.k) return x.k < y.k;
+            const px = cx.w.path_index.get(x.path).?;
+            const py = cx.w.path_index.get(y.path).?;
+            if (px != py) return px < py;
+            return provKey(cx.w, x.prov).less(provKey(cx.w, y.prov));
+        }
+    };
+    std.mem.sort(SupplyEntry, supply, SupCx{ .w = w }, SupCx.less);
+    try w.int(@intCast(supply.len));
+    for (supply) |e| {
+        try w.int(e.fun);
+        try w.int(e.k);
+        try w.int(w.path_index.get(e.path).?);
+        try writeProv(w, e.prov);
+        try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
+        try writeXSum(w, arena, e.xc);
+    }
+}
+
 fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) Allocator.Error!void {
     const list = try arena.dupe(ResEntry, items);
     if (sort) {
@@ -452,28 +477,9 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     // §31.7: the records the result holds, after it.
     try writeRes(w, arena, s.objs, true);
 
-    const supply = try arena.dupe(SupplyEntry, s.supply);
-    const SupCx = struct {
-        w: *const Writer,
-        fn less(cx: @This(), x: SupplyEntry, y: SupplyEntry) bool {
-            if (x.fun != y.fun) return x.fun < y.fun;
-            if (x.k != y.k) return x.k < y.k;
-            const px = cx.w.path_index.get(x.path).?;
-            const py = cx.w.path_index.get(y.path).?;
-            if (px != py) return px < py;
-            return provKey(cx.w, x.prov).less(provKey(cx.w, y.prov));
-        }
-    };
-    std.mem.sort(SupplyEntry, supply, SupCx{ .w = w }, SupCx.less);
-    try w.int(@intCast(supply.len));
-    for (supply) |e| {
-        try w.int(e.fun);
-        try w.int(e.k);
-        try w.int(w.path_index.get(e.path).?);
-        try writeProv(w, e.prov);
-        try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
-        try writeXSum(w, arena, e.xc);
-    }
+    try writeSupply(w, arena, s.supply);
+    // §31.5: what the callbacks are handed of records, after it.
+    try writeSupply(w, arena, s.rsupply);
 
     const funs = try arena.dupe(FunFacts, s.funs);
     std.mem.sort(FunFacts, funs, {}, struct {
@@ -485,7 +491,7 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     for (funs) |f| {
         try w.int(f.param);
         try w.byte(@backingInt(f.calls));
-        try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1 | @as(u8, @intFromBool(f.sends)) << 2);
+        try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1 | @as(u8, @intFromBool(f.sends)) << 2 | @as(u8, @intFromBool(f.rneed)) << 3);
         try w.int(f.send);
     }
 
@@ -695,6 +701,20 @@ fn readXSum(r: *Reader) Error!XSum {
     return .{ .no = no, .atoms = try readAtoms(r) };
 }
 
+fn readSupply(r: *Reader) Error![]const SupplyEntry {
+    const supply = try r.arena.alloc(SupplyEntry, try r.count(12 + 14 + 1 + 5));
+    for (supply) |*e| {
+        const fun = try r.int();
+        const k = try r.int();
+        const path = try r.path();
+        const prov = try readProv(r);
+        const bits = try r.byte();
+        if (bits > 3) return error.Bad;
+        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r) };
+    }
+    return supply;
+}
+
 fn readRes(r: *Reader) Error![]const ResEntry {
     const n = try r.count(4 + 14 + 1 + 10);
     const out = try r.arena.alloc(ResEntry, n);
@@ -738,24 +758,16 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     const res = try readRes(r);
     const objs = try readRes(r);
 
-    const supply = try r.arena.alloc(SupplyEntry, try r.count(12 + 14 + 1 + 5));
-    for (supply) |*e| {
-        const fun = try r.int();
-        const k = try r.int();
-        const path = try r.path();
-        const prov = try readProv(r);
-        const bits = try r.byte();
-        if (bits > 3) return error.Bad;
-        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r) };
-    }
+    const supply = try readSupply(r);
+    const rsupply = try readSupply(r);
 
     const funs = try r.arena.alloc(FunFacts, try r.count(10));
     for (funs) |*f| {
         const param = try r.int();
         const calls = try r.enumOf(Ownership.Calls);
         const bits = try r.byte();
-        if (bits > 7) return error.Bad;
-        f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .sends = bits & 4 != 0, .send = try r.int() };
+        if (bits > 15) return error.Bad;
+        f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .sends = bits & 4 != 0, .rneed = bits & 8 != 0, .send = try r.int() };
     }
 
     const xreq = try readAtoms(r);
@@ -780,6 +792,7 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         .res = res,
         .objs = objs,
         .supply = supply,
+        .rsupply = rsupply,
         .funs = funs,
         .limit = limit,
         .limit_at = limit_at,

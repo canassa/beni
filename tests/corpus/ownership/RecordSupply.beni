@@ -1,0 +1,76 @@
+-- ownership: a record a callee hands its callback (`ownership-checker.md`
+-- §31.5). `applyTo`, `twice`, `both` and `mapBoth` hand `f` their own
+-- parameter, so a callback that writes it writes the caller's argument at
+-- the call: `e1`, `e2`, `e3`, `e5` and `e7` read the record after, and are
+-- rejected; `e6` passes its own parameter on, and states the write for its
+-- callers; `e4` keeps the record in a closure, `captured`. A record supply
+-- is kept apart from a list's (`rsupply`), as the result's records are
+-- (`objs`).
+type alias P =
+    x : Int
+    y : Int
+
+
+shift : P → P
+shift p = { p | x = p.x + 1 }
+
+
+applyTo : (P → P), P → P
+applyTo f p = f p
+
+
+twice : (P → P), P → P
+twice f p = f (f p)
+
+
+both : (P → P), P → P × P
+both f p = ( f p, p )
+
+
+keepIt : P → (⊤ → P)
+keepIt p = λ⊤ → p
+
+
+mapBoth : (P → P), List P → List P
+mapBoth f ps = List.map ps f
+
+
+pub e1 : ⊤ → P × P
+e1 ⊤ =
+    r = { x = 0, y = 0 }
+    ( applyTo shift r, r )
+
+
+pub e2 : ⊤ → P × P
+e2 ⊤ =
+    r = { x = 0, y = 0 }
+    ( applyTo (λq → { q | y = 1 }) r, r )
+
+
+pub e3 : ⊤ → P × P
+e3 ⊤ =
+    r = { x = 0, y = 0 }
+    both shift r
+
+
+pub e4 : ⊤ → P × P
+e4 ⊤ =
+    r = { x = 0, y = 0 }
+    k = keepIt r
+    ( shift r, k ⊤ )
+
+
+pub e5 : ⊤ → List P × List P
+e5 ⊤ =
+    ps = [ { x = 0, y = 0 } ]
+    ( mapBoth shift ps, ps )
+
+
+pub e6 : P → P
+e6 r = twice shift r
+
+
+pub e7 : ⊤ → P × P
+e7 ⊤ =
+    r = { x = 0, y = 0 }
+    ( e6 r, r )
