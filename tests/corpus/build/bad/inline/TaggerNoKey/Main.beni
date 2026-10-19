@@ -7,13 +7,12 @@ import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Push
-import Schema exposing (Value)
 import Sub exposing (Sub)
 import Tea
 
 
 type Box
-    = Box Value
+    = Box Int
 
 
 type Msg
