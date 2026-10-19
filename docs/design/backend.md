@@ -5093,7 +5093,10 @@ are §9's list: the six survivor sets (asked as `decl`, `derived`, `twin`, `ctor
 runtime exports, which are a module-level or (`orRuntime`). The asks made before the first unit
 — the reach walk, `findDeadArms`, the `wanted`/`consumed` loop, the entry declaration, the head
 imports and a lift — are recorded and belong to no unit, so a build that would answer one
-differently is a unit that falls back, never a refusal.
+differently is a unit that falls back, never a refusal. One read escapes the list today: the
+shapes fork landed in `Lower` after the list was written, and its `schema_shapes` (`schema.md`
+§6) decides whether a module takes shape runs or workers; issue #432 carries its question, the
+maker's canonical answer and the fixture that proves the boundary.
 
 `src/js/EmitPack.zig` is the row (`Kind.emit`, pack `version` 3, the row format's v1): keyed by
 SipHash-1-3 over `"BENIEMIT"`, the format version, the module key and one byte of
@@ -5117,26 +5120,27 @@ placement, declares a `schema`, or owns a codec plan — has NO row at all (§9,
 before it requires both rows, and the exact post-lowering net
 (`Lower.Result.uses_markup_runtime`) fails the maker with the module named, because the check
 cannot see a refusal the static scan cannot. No embedded module is refused today, and every row
-is non-empty. The 126 emit rows are 63 keys — 56 modules, plus seven extra chain instances,
+is non-empty. The 128 emit rows are 64 keys — 57 modules, plus seven extra chain instances,
 since a platform module that declares a `foreign` value carries both the lowering of its own
 chain layer and the build's in its key, and the vocabulary module carries the chain's facts
 (`cache/Key.zig`): a module has one row per distinct answer of the chains it can be checked in.
 `Html` is keyed five times (its own chain, `dom`, `direct`, `inline` and `ssr`, with `browser`
 and `browser-tea`'s `dom` one) and `Dom`, `Hosted` and `Browser.Events` twice (`dom` and
-`direct`). Equal bytes are stored once: the 63 keys hold 53 payloads totalling 2 438 238 bytes,
-because a key's two option rows, a module's extra chain instance and the four modules with no
-unit at all (`Js`, `Url/Parser/Internal`, `Ssr` and `browser-inline`'s `Tea`) share their bytes.
+`direct`). Equal bytes are stored once: the 64 keys hold 53 payloads totalling 2 486 126 bytes,
+because a key's two option rows, a module's extra chain instance and the five modules with no
+unit at all (`Js`, `Record`, `Url/Parser/Internal`, `Ssr` and `browser-inline`'s `Tea`) share
+their bytes.
 
 No build reads a row, so nothing the gates see moved: a master-against-branch `diff -r` of the
-three evidence trees is empty — 16, 43 and 59 files byte for byte, source maps included — the
-`emit/` goldens are what they were, 0 of the 2610 corpus programs ran under Node for want of a
-run hash, and the determinism test passes. `zig build gates` is green, 237/237 steps. What the
-rows cost is theirs to hold: the pack grows from 3 958 080 to 6 399 846 bytes (2 438 238 of
-payload in the 53 records, plus 3 528 of row table), and the maker's run is 1–2 s in every
-compiler build beside the 8–13 s its one compile adds. Of the medians of `perf stat -e instructions:u`, five runs
-each, `1e0a6cb68` against the slice: `run/Dictionaries` 155.30M → 155.83M (+0.34%),
-`browser/tea/ApiItems` 502.66M → 507.29M (+0.92%) and `bench/corpus` as one `--library` build
-407.69M → 410.93M (+0.80%) — the funnel's asks, on the builds that answer them.
+three evidence trees is empty — 16, 43 and 62 files byte for byte, source maps included — the
+`emit/` goldens are what they were, no program ran under Node for want of a run hash, and the
+determinism test passes. `zig build gates` is green, 239/239 steps. What the
+rows cost is theirs to hold: the pack grows from 4 182 851 to 6 672 561 bytes (2 486 126 of
+payload in the 53 records, plus 3 584 of row table), and the maker's run is 1 s in every
+compiler build beside the 9 s its one compile adds. Of the medians of `perf stat -e instructions:u`, five runs
+each, `acccea6a3` against the slice: `run/Dictionaries` 158.81M → 159.34M (+0.33%),
+`browser/tea/ApiItems` 531.97M → 536.51M (+0.85%) and `bench/corpus` as one `--library` build
+421.97M → 425.21M (+0.77%) — the funnel's asks, on the builds that answer them.
 
 ### The release optimiser — items 1, 2, 3 and 5
 
