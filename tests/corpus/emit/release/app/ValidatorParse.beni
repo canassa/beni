@@ -1,9 +1,9 @@
 -- A `parse` and a `Json.decode` whose error nothing reads are validators
 -- (`schema.md` §6, *A run whose failure is never read is a validator*):
 -- `Schema.parse (Event.schema ⊤)` in a `case` with `Err _`, and
--- `Json.decode` under `Result.toMaybe`, each one call of the core-private
--- `Schema.validParse` with the schema's validator worker — `JSON.parse`, its
--- `SyntaxError` alone caught, then the worker. No issue is made, no message
+-- `Json.decode` under `Result.toMaybe`, each written where it stands: the
+-- core-private `Schema.validJson` — `JSON.parse`, its `SyntaxError` alone
+-- caught — then the schema's validator worker. No issue is made, no message
 -- is written, and neither `Json` nor a schema value ships for them.
 -- `run/SchemaErrorUnreadEvents` proves the answers.
 import Json

@@ -1,0 +1,412 @@
+-- 22 validator runs, below `SchemaValid.shape_threshold` (25), so each keeps
+-- its codec's validator worker, and each is written where it stands
+-- (`schema.md` §6, *A validator run calls its worker where it stands*): its
+-- own context, its worker called, and `Result.withDefault`'s answer beside
+-- it. Each reads its record's `…Keep` and never its `…Drop`, so no worker
+-- builds a `…Drop`: every record a worker returns has one field. Through one
+-- shared runner every worker's record met every default in one variable,
+-- which past 48 records (`Spec.zig`'s `max_sites`) escaped, and then every
+-- worker built both fields.
+import Json
+import Node
+import Schema exposing (Value)
+
+
+type alias Alpha =
+    alphaKeep : Int
+    alphaDrop : Int
+
+
+alpha : Value, Bool → Int
+alpha v fresh =
+    model : Alpha
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { alphaKeep = 0, alphaDrop = 0 } else { alphaKeep = 1, alphaDrop = 1 })
+    model.alphaKeep
+
+
+type alias Bravo =
+    bravoKeep : Int
+    bravoDrop : Int
+
+
+bravo : Value, Bool → Int
+bravo v fresh =
+    model : Bravo
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { bravoKeep = 0, bravoDrop = 0 } else { bravoKeep = 1, bravoDrop = 1 })
+    model.bravoKeep
+
+
+type alias Charlie =
+    charlieKeep : Int
+    charlieDrop : Int
+
+
+charlie : Value, Bool → Int
+charlie v fresh =
+    model : Charlie
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { charlieKeep = 0, charlieDrop = 0 }
+             else
+                { charlieKeep = 1, charlieDrop = 1 }
+            )
+    model.charlieKeep
+
+
+type alias Delta =
+    deltaKeep : Int
+    deltaDrop : Int
+
+
+delta : Value, Bool → Int
+delta v fresh =
+    model : Delta
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { deltaKeep = 0, deltaDrop = 0 } else { deltaKeep = 1, deltaDrop = 1 })
+    model.deltaKeep
+
+
+type alias Echo =
+    echoKeep : Int
+    echoDrop : Int
+
+
+echo : Value, Bool → Int
+echo v fresh =
+    model : Echo
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { echoKeep = 0, echoDrop = 0 } else { echoKeep = 1, echoDrop = 1 })
+    model.echoKeep
+
+
+type alias Foxtrot =
+    foxtrotKeep : Int
+    foxtrotDrop : Int
+
+
+foxtrot : Value, Bool → Int
+foxtrot v fresh =
+    model : Foxtrot
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { foxtrotKeep = 0, foxtrotDrop = 0 }
+             else
+                { foxtrotKeep = 1, foxtrotDrop = 1 }
+            )
+    model.foxtrotKeep
+
+
+type alias Golf =
+    golfKeep : Int
+    golfDrop : Int
+
+
+golf : Value, Bool → Int
+golf v fresh =
+    model : Golf
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { golfKeep = 0, golfDrop = 0 } else { golfKeep = 1, golfDrop = 1 })
+    model.golfKeep
+
+
+type alias Hotel =
+    hotelKeep : Int
+    hotelDrop : Int
+
+
+hotel : Value, Bool → Int
+hotel v fresh =
+    model : Hotel
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { hotelKeep = 0, hotelDrop = 0 } else { hotelKeep = 1, hotelDrop = 1 })
+    model.hotelKeep
+
+
+type alias India =
+    indiaKeep : Int
+    indiaDrop : Int
+
+
+india : Value, Bool → Int
+india v fresh =
+    model : India
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { indiaKeep = 0, indiaDrop = 0 } else { indiaKeep = 1, indiaDrop = 1 })
+    model.indiaKeep
+
+
+type alias Juliet =
+    julietKeep : Int
+    julietDrop : Int
+
+
+juliet : Value, Bool → Int
+juliet v fresh =
+    model : Juliet
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { julietKeep = 0, julietDrop = 0 }
+             else
+                { julietKeep = 1, julietDrop = 1 }
+            )
+    model.julietKeep
+
+
+type alias Kilo =
+    kiloKeep : Int
+    kiloDrop : Int
+
+
+kilo : Value, Bool → Int
+kilo v fresh =
+    model : Kilo
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { kiloKeep = 0, kiloDrop = 0 } else { kiloKeep = 1, kiloDrop = 1 })
+    model.kiloKeep
+
+
+type alias Lima =
+    limaKeep : Int
+    limaDrop : Int
+
+
+lima : Value, Bool → Int
+lima v fresh =
+    model : Lima
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { limaKeep = 0, limaDrop = 0 } else { limaKeep = 1, limaDrop = 1 })
+    model.limaKeep
+
+
+type alias Mike =
+    mikeKeep : Int
+    mikeDrop : Int
+
+
+mike : Value, Bool → Int
+mike v fresh =
+    model : Mike
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { mikeKeep = 0, mikeDrop = 0 } else { mikeKeep = 1, mikeDrop = 1 })
+    model.mikeKeep
+
+
+type alias November =
+    novemberKeep : Int
+    novemberDrop : Int
+
+
+november : Value, Bool → Int
+november v fresh =
+    model : November
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { novemberKeep = 0, novemberDrop = 0 }
+             else
+                { novemberKeep = 1, novemberDrop = 1 }
+            )
+    model.novemberKeep
+
+
+type alias Oscar =
+    oscarKeep : Int
+    oscarDrop : Int
+
+
+oscar : Value, Bool → Int
+oscar v fresh =
+    model : Oscar
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { oscarKeep = 0, oscarDrop = 0 } else { oscarKeep = 1, oscarDrop = 1 })
+    model.oscarKeep
+
+
+type alias Papa =
+    papaKeep : Int
+    papaDrop : Int
+
+
+papa : Value, Bool → Int
+papa v fresh =
+    model : Papa
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { papaKeep = 0, papaDrop = 0 } else { papaKeep = 1, papaDrop = 1 })
+    model.papaKeep
+
+
+type alias Quebec =
+    quebecKeep : Int
+    quebecDrop : Int
+
+
+quebec : Value, Bool → Int
+quebec v fresh =
+    model : Quebec
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { quebecKeep = 0, quebecDrop = 0 }
+             else
+                { quebecKeep = 1, quebecDrop = 1 }
+            )
+    model.quebecKeep
+
+
+type alias Romeo =
+    romeoKeep : Int
+    romeoDrop : Int
+
+
+romeo : Value, Bool → Int
+romeo v fresh =
+    model : Romeo
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { romeoKeep = 0, romeoDrop = 0 } else { romeoKeep = 1, romeoDrop = 1 })
+    model.romeoKeep
+
+
+type alias Sierra =
+    sierraKeep : Int
+    sierraDrop : Int
+
+
+sierra : Value, Bool → Int
+sierra v fresh =
+    model : Sierra
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { sierraKeep = 0, sierraDrop = 0 }
+             else
+                { sierraKeep = 1, sierraDrop = 1 }
+            )
+    model.sierraKeep
+
+
+type alias Tango =
+    tangoKeep : Int
+    tangoDrop : Int
+
+
+tango : Value, Bool → Int
+tango v fresh =
+    model : Tango
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then { tangoKeep = 0, tangoDrop = 0 } else { tangoKeep = 1, tangoDrop = 1 })
+    model.tangoKeep
+
+
+type alias Uniform =
+    uniformKeep : Int
+    uniformDrop : Int
+
+
+uniform : Value, Bool → Int
+uniform v fresh =
+    model : Uniform
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { uniformKeep = 0, uniformDrop = 0 }
+             else
+                { uniformKeep = 1, uniformDrop = 1 }
+            )
+    model.uniformKeep
+
+
+type alias Victor =
+    victorKeep : Int
+    victorDrop : Int
+
+
+victor : Value, Bool → Int
+victor v fresh =
+    model : Victor
+    model =
+        Result.withDefault
+            (Json.decodeValue v)
+            (if fresh then
+                { victorKeep = 0, victorDrop = 0 }
+             else
+                { victorKeep = 1, victorDrop = 1 }
+            )
+    model.victorKeep
+
+
+sum : Value, Bool → Int
+sum v fresh =
+    List.sum
+        [ alpha v fresh
+        , bravo v fresh
+        , charlie v fresh
+        , delta v fresh
+        , echo v fresh
+        , foxtrot v fresh
+        , golf v fresh
+        , hotel v fresh
+        , india v fresh
+        , juliet v fresh
+        , kilo v fresh
+        , lima v fresh
+        , mike v fresh
+        , november v fresh
+        , oscar v fresh
+        , papa v fresh
+        , quebec v fresh
+        , romeo v fresh
+        , sierra v fresh
+        , tango v fresh
+        , uniform v fresh
+        , victor v fresh
+        ]
+
+
+main : Node.Program
+main =
+    case Schema.parse Schema.value "{}" of
+        Ok v →
+            Node.print (String.fromInt (sum v (List.length (String.split "," "a,b") > 1)))
+
+        Err _ →
+            Node.print "not JSON"
