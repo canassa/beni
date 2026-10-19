@@ -1,0 +1,41 @@
+module RecordFoldBelow
+  27:9 update c: accepted param
+  28:5 update acc: accepted param
+  28:29 List.push acc.hist: accepted param
+  32:17 call List.foldl <record>.hist: accepted fresh (<lambda> writes what List.foldl supplies it)
+  32:17 update <record>: accepted fresh (List.foldl writes it)
+  32:17 update <record>.cur: accepted param (List.foldl writes it)
+  32:61 call RecordFoldBelow.bumpKeep a.hist: accepted callback-param (List.foldl supplies it owned)
+  32:61 update a: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  32:61 update a.cur: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  37:9 update d: accepted param
+  38:10 List.push hist: accepted param
+  42:18 call List.foldl <tuple>.1: accepted fresh (<lambda> writes what List.foldl supplies it)
+  42:18 update <tuple>.0: accepted param (List.foldl writes it)
+  42:49 call RecordFoldBelow.step t.1: accepted callback-param (List.foldl supplies it owned)
+  42:49 update t.0: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  48:11 update x: accepted param
+  52:17 update w: accepted param (List.foldl writes it)
+  52:17 update w.a: accepted param (List.foldl writes it)
+  52:40 update v.a: accepted callback-param (List.foldl supplies it owned)
+  61:12 update d: accepted param
+  65:15 update w: accepted param (List.foldl writes it)
+  65:15 update w.a: accepted param (List.foldl writes it)
+  65:44 update v.a: accepted callback-param (List.foldl supplies it owned)
+  70:9 update v.a: accepted param (RecordFoldBelow.bump writes it)
+  75:17 update t.a: accepted param (List.foldl writes it)
+  75:40 update v.a: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  summary bumpKeep: π2 W{cur, hist}, π2.cur RW{count}, π2.cur.count R, π2.hist RAW; res .cur π2.cur◦, .hist π2.hist, .hist[*] ~π2.cur◦ ~π2.hist[*], π2◦
+  summary histFold: π1 R, π2 RW{count}; res .cur ~π2 ~π2◦, .hist ~fresh1, .hist[*] ~π2◦, ~fresh501◦
+  summary step: π2.0 RW{count}, π2.0.count R, π2.1 RAW; res .0 π2.0◦, .1 π2.1, .1[*] ~π2.0◦ ~π2.1[*]
+  summary tupleFold: π1 R, π2 RW{count}; res .0 ~π2 ~π2◦, .1 ~fresh1, .1[*] ~π2◦
+  summary wrapped: π2.a RW{count}, π2.a.count R; res .a π2.a◦, fresh501◦
+  summary wrapFold: π1 R, π2 RW{a}, π2.a W{count}; res .a ~π2.a◦, ~fresh501◦ ~π2
+  summary bump: π2 W{count}, π2.count R; res π2◦
+  summary rewrap: π1 R, π2 RW{a}, π2.a W{count}; res .a ~π2.a◦, ~fresh501◦ ~π2
+  summary twin: π2.a RW{count}, π2.a.count R; res .a π2.a◦, .b π2.a◦, fresh501◦
+  summary twinFold: π1 R, π2 R, π2.a W{count}; res .a ~π2.a◦, .b ~π2.a◦, ~fresh501◦ ~π2
+  demands 6: accepted 6 (fresh 2, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 20: accepted 16, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0
+total 6: accepted 6 (fresh 2, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 20: accepted 16, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0

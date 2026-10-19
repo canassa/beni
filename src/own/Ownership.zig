@@ -12153,7 +12153,7 @@ const Walker = struct {
                 continue;
             };
             if (ff.rneed) {
-                if (try w.returnsOwnedRecord(c, s, avs, ictx, j, 0)) {
+                if (try w.returnsOwnedRecord(c, s, avs, ictx, j, 0, null)) {
                     try w.recordLoanDemands(inst, callee, args, avs, c, j, 0);
                 } else {
                     const why = try std.fmt.allocPrint(arena, "{s} writes a record that {s} returns, and it may return one it does not own", .{ callee.name, try w.baseText(args[j]) });
@@ -12252,7 +12252,11 @@ const Walker = struct {
                 supplies: for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     found = true;
-                    if (!e.owned or !try w.recordProvOwned(e.prov, s, avs, ictx, none, 0)) {
+                    // The answer's object the callback writes: at the path
+                    // below the supply it writes; none of it when the write
+                    // is above the supply; any when the two only overlap.
+                    const written: ?u32 = if (try w.o.suffix(e.path, u.path)) |rest| rest else if (try w.o.suffix(u.path, e.path) != null) none else null;
+                    if (!e.owned or !try w.recordProvOwned(e.prov, s, avs, ictx, none, 0, written)) {
                         rbad[u.param] = try std.fmt.allocPrint(arena, "{s} supplies its parameter {d} borrowed ({s})", .{ callee.name, u.param + 1, try w.o.provText(e.prov) });
                         rbad_approx[u.param] = !e.owned and e.approx;
                         break :supplies;
@@ -12940,23 +12944,28 @@ const Walker = struct {
     /// §31.5: whether what class `c` returns of records is owned by the
     /// call that gets it — `returnsOwned` over `objs`, where a record's
     /// object is: one it made, or the record a callee handed it at `j`,
-    /// supplied owned (a loan, `recordLoanDemands`).
-    fn returnsOwnedRecord(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32) Allocator.Error!bool {
+    /// supplied owned (a loan, `recordLoanDemands`). `written` is the
+    /// answer's path whose object is written, null when any may be.
+    fn returnsOwnedRecord(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32, written: ?u32) Allocator.Error!bool {
         if (c.limit != .none or s.limit != .none) return false;
-        // The answer's own object, at ε, is what the callee writes — an
-        // accumulator's update, a `need` — not the records inside it. A record
-        // that may hold lists (an open row, a type parameter) is named whole
-        // in `res`, its object with it.
+        // Every record object of the answer, and a record that may hold
+        // lists (an open row, a type parameter), named whole in `res` at ε,
+        // its object with it.
         var at_root: std.ArrayList(ResEntry) = .empty;
-        for (c.objs) |r| if (r.path == eps) try at_root.append(w.a, r);
         for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
-        for (at_root.items) |r| {
+        for ([_][]const ResEntry{ c.objs, at_root.items }) |entries| for (entries) |r| {
+            // The objects the caller writes: the answer's own, at ε, and the
+            // one at the path written. A record below the one written is
+            // not written, wherever it came from (an accumulator's update,
+            // whose state holds what the host keeps).
+            if (r.path != eps) if (written) |p| if (p != r.path) continue;
             switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
-                    // Kept, the record is not the caller's to write: kept at its
-                    // own path or above it. A field kept below it (a scope
-                    // a runtime holds) keeps the field, not the object.
+                    // Kept, the record is not the caller's to write: kept at
+                    // its own path or above it. A field kept below it (a
+                    // scope a runtime holds) keeps the field, not the object,
+                    // whose fields the caller still writes.
                     for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j | bit_k) != 0 and w.o.isPrefix(u.path, r.prov.path)) return false;
                     var found = false;
                     for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |sup| for (sup) |e| {
@@ -12966,7 +12975,7 @@ const Walker = struct {
                         // A position a destructive read hands out waits for
                         // §31.4 item 6.
                         if (e.prov.taken) return false;
-                        if (!try w.recordProvOwned(e.prov, s, avs, ictx, j, depth)) return false;
+                        if (!try w.recordProvOwned(e.prov, s, avs, ictx, j, depth, null)) return false;
                     };
                     if (!found) return false;
                 },
@@ -12974,13 +12983,13 @@ const Walker = struct {
             }
             // One record at two of the result's paths is not owned.
             for (c.objs) |x| if (x.path != r.path and x.prov.eql(r.prov)) return false;
-        }
+        };
         return true;
     }
 
     /// `provOwned` for a record supply: a callback's earlier answer is owned
     /// when every class of the actual returns owned records.
-    fn recordProvOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32) Allocator.Error!bool {
+    fn recordProvOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: ?u32) Allocator.Error!bool {
         if (p.kind != .cb) return true;
         if (p.a == guard) return true;
         if (depth >= inst_depth) {
@@ -12997,7 +13006,7 @@ const Walker = struct {
         if (classes.len == 0) return false;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return false;
-            if (!try w.returnsOwnedRecord(c, s, avs, ictx, p.a, depth + 1)) return false;
+            if (!try w.returnsOwnedRecord(c, s, avs, ictx, p.a, depth + 1, written)) return false;
         }
         return true;
     }
@@ -13008,11 +13017,10 @@ const Walker = struct {
     fn recordLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, depth: u32) Allocator.Error!void {
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const s = callee.sum;
-        // As `returnsOwnedRecord` reads them: the answer's own object, at ε.
+        // As `returnsOwnedRecord` reads them: `objs`, and `res` at ε.
         var at_root: std.ArrayList(ResEntry) = .empty;
-        for (c.objs) |r| if (r.path == eps) try at_root.append(w.a, r);
         for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
-        for (at_root.items) |r| {
+        for ([_][]const ResEntry{ c.objs, at_root.items }) |answers| for (answers) |r| {
             if (r.prov.kind != .param) continue;
             for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                 if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
@@ -13031,7 +13039,7 @@ const Walker = struct {
                     else => {},
                 }
             };
-        }
+        };
     }
 
     /// §31.5: a callee writes what a function value returns, and the value
