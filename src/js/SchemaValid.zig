@@ -58,8 +58,8 @@ pub const Sites = struct {
     maybes: []const u32 = &.{},
     consumer_callees: []const u32 = &.{},
     /// A `Json` validator run's call, written as a direct run of its
-    /// codec's validator worker, its codec's index in this module's plan, and of those
-    /// calls the `decode` ones, which parse.
+    /// codec's validator worker, its codec's index in this module's plan,
+    /// and of those calls the `decode` ones, which parse.
     json_calls: []const u32 = &.{},
     json_codecs: []const u32 = &.{},
     json_parses: []const u32 = &.{},
