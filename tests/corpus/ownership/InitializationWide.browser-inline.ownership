@@ -1,0 +1,4 @@
+module InitializationWide
+  77:8 List.push InitializationWide.seed.f00: accepted call
+  demands 1: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 1: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

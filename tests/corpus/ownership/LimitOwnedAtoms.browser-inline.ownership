@@ -1,0 +1,18 @@
+module LimitOwnedAtoms
+  55:7 call LimitOwnedAtoms.hand9 <lambda>: accepted fresh (LimitOwnedAtoms.hand9 writes π9)
+  55:7 call LimitOwnedAtoms.hand9 LimitOwnedAtoms.fresh: accepted fresh (LimitOwnedAtoms.hand9 writes π1)
+  55:7 update <lambda>: rejected limit: LimitOwnedAtoms.hand9 writes a record that <lambda> returns, and it may return one it does not own (approx) [copy]
+  55:7 update LimitOwnedAtoms.fresh: rejected limit: LimitOwnedAtoms.hand9 writes a record that LimitOwnedAtoms.fresh returns, and it may return one it does not own (approx) [copy]
+  55:7 value <lambda>: rejected limit: LimitOwnedAtoms.hand9 edits what it returns, which may be a list it does not own (approx)
+  55:7 value LimitOwnedAtoms.fresh: rejected limit: LimitOwnedAtoms.hand9 edits what it returns, which may be a list it does not own (approx)
+  summary hand8: π1 R, π2 R, π3 R, π4 R, π5 R, π6 R, π7 R, π8 R, π9 R; res cb9{excl cb9}; π1 calls ≤1; π2 calls ≤1; π3 calls ≤1; π4 calls ≤1; π5 calls ≤1; π6 calls ≤1; π7 calls ≤1; π8 calls ≤1; π9 calls ≤1, supply 1 cb1 owned{excl cb1}, supply 2 cb2 owned{excl cb2}, supply 3 cb3 owned{excl cb3}, supply 4 cb4 owned{excl cb4}, supply 5 cb5 owned{excl cb5}, supply 6 cb6 owned{excl cb6}, supply 7 cb7 owned{excl cb7}, supply 8 cb8 owned{excl cb8}
+  summary hand9: π1 RAEwW{}, π10 RAEwW{}, π2 RAEwW{}, π3 RAEwW{}, π4 RAEwW{}, π5 RAEwW{}, π6 RAEwW{}, π7 RAEwW{}, π8 RAEwW{}, π9 RAEwW{}; res ~⊤{lost}; π1 calls many, need owned, need owned record, unseen; π2 calls many, need owned, need owned record, unseen; π3 calls many, need owned, need owned record, unseen; π4 calls many, need owned, need owned record, unseen; π5 calls many, need owned, need owned record, unseen; π6 calls many, need owned, need owned record, unseen; π7 calls many, need owned, need owned record, unseen; π8 calls many, need owned, need owned record, unseen; π9 calls many, need owned, need owned record, unseen; π10 calls many, need owned, need owned record, unseen; limit owned-atoms 9
+  summary fresh: res fresh1
+  summary callsNine: π1 RAE; res .0 ~⊤limit{lost}, .1 π1; xreq sep π1 π1
+  limit hand9: owned-atoms 9, over 8
+  demands 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+  records 2: accepted 0, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+records 2: accepted 0, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+limits 1
+cause limit 2
