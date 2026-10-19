@@ -716,7 +716,9 @@ the grant adds 10%. Remove it when the dump installs the checked core's summarie
 *Amended 2026-10-19 (#423):* an ownership fixture beside a `.platform` file is now a case per
 platform it names, each budgeted on its own. `ownership/EntryValueCommand`'s grant (4 730M, #220,
 for its two platforms in one case) and `ownership/Conduit`'s (4 750M, #206) are withdrawn: each
-platform's case fits the default budget.
+platform's case fits the default budget; `ownership/Conduit [browser-direct]` is the closest,
+at 97.5% of it, and goes with `browser-direct` (#423). A `.budget` beside a fixture with several
+tokens is read by every token's case, so its limit holds for each of them.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds one
 repo-relative directory per line, whose `.beni` files together are the program, so several

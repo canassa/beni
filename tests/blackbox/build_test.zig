@@ -602,7 +602,7 @@ test "a --fuzz build of a browser-direct page registers its dispatcher, in devel
     try testing.expect(std.mem.indexOf(u8, shipped, "$dispatch") == null);
 }
 
-test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps string tags in release" {
+test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps string tags and unbuilt arms in release" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -610,7 +610,8 @@ test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps stri
     // fuzzer, `tests/browser/fuzz.mjs`): the hidden flag is accepted with
     // and without `--release`, both builds install the hook the fuzzer
     // sends messages through, and the release build keeps the message
-    // type's string tags, which the fuzzer's values are written in. A
+    // type's string tags, which the fuzzer's values are written in, and
+    // the arm of `Unbuilt`, which nothing builds but the fuzzer sends. A
     // build without the flag ships none of this.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -670,6 +671,12 @@ test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps stri
     const shipped = try w.read("plain-rel/_main.mjs");
     try testing.expect(std.mem.indexOf(u8, shipped, "__beniFuzz") == null);
     try testing.expect(std.mem.indexOf(u8, shipped, "\"Inc\"") == null);
+    // `update` keeps both arms: the test of `Inc` and, after it, the
+    // `Unbuilt` arm that returns the payload (`… === "Inc" ? n + 1 : msg.a`).
+    const test_at = std.mem.indexOf(u8, released, "===\"Inc\"?") orelse return error.NoIncTest;
+    const rest = released[test_at..];
+    const arm_end = std.mem.indexOfAny(u8, rest, ",;") orelse rest.len;
+    try testing.expect(std.mem.indexOfScalar(u8, rest[0..arm_end], ':') != null);
 }
 
 test "a view formatted renders the page the view rendered" {

@@ -843,13 +843,16 @@ const Walker = struct {
             // fixture costs.
             const spent_start = meter.read();
             const timed: ?[2]std.Io.Timestamp = if (world.timing.enabled()) .{ world.timing.now(), world.timing.threadCpu() } else null;
-            world.timing.current_fixture = path;
+            // Keyed by case, not by fixture: a page's value fuzz and an ownership
+            // fixture's token cases each have a record of their own.
+            const case_name = try std.fmt.allocPrint(arena, "{s}{s}", .{ path, fixture.suffix() });
+            world.timing.current_fixture = case_name;
             defer {
                 world.timing.current_fixture = "";
                 if (timed) |t| world.timing.write(.{ .fixture = .{
                     .@"test" = world.timing.current_test,
                     .kind = @tagName(wk.kind),
-                    .path = path,
+                    .path = case_name,
                     .wall_us = world.timing.sinceUs(t[0]),
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
                     .spent = if (world.timing.budget_unit == .instructions) meter.read() -% spent_start else 0,

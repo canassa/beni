@@ -944,7 +944,10 @@ test "browser-inline named by its directory keeps a program's keys apart" {
     // └─────────────────────────────────────────┘
     // The review of #390: with every platform module read from disk taken
     // for the program's own code, `browser-direct` by directory found no
-    // program, and the keys' handlers merged. `FormLocal` has six keys.
+    // program, and the keys' handlers merged. That was red on
+    // `browser-direct` alone: on `browser-inline` the platform by directory
+    // already built the same page (the test above), and this one only
+    // keeps the claim for a program of several keys (`FormLocal`'s six).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
