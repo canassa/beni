@@ -244,6 +244,12 @@ pub fn build(b: *std.Build) void {
     const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (safety builds; slow, so give it -Dtest-budget=0)") orelse false;
     const own_opts = b.addOptions();
     own_opts.addOption(bool, "full_cross_check", own_full_check);
+    // §31.12's mutation controls for the record demand: a checker broken one
+    // way on purpose, which `test-record-mutations` runs against the record
+    // fixtures and which must fail at least one. Hidden from usage; never
+    // given to the gates.
+    const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint)") orelse "none";
+    own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     ownership_options = own_opts.createModule();
     // The budget of one test or corpus case (`tests/test_runner.zig`), on
     // every run of a binary the gates run; the random sweeps of `fuzz`, the
@@ -713,6 +719,14 @@ pub fn build(b: *std.Build) void {
     pending_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/pending", .mode = "pending", .budget = false }).step);
     const pending_test = bb.artifact("tests/blackbox/pending_test.zig");
     pending_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "fast", .budget = false }).step);
+
+    // §31.12's mutation controls: each breaks the record demand one way and
+    // must fail at least one `ownership/Record*` fixture. Not a gate: each
+    // builds the compiler again with its mutation, so it runs child builds.
+    const mutations_step = b.step("test-record-mutations", "Build beni with each record-demand mutation (ownership-checker.md §31.12) and check that the record fixtures catch it; not a gate");
+    const mutations = b.addSystemCommand(&.{ "node", "tests/record-mutations.mjs", b.graph.zig_exe });
+    mutations.has_side_effects = true;
+    mutations_step.dependOn(&mutations.step);
 
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast, .budget = false }).step);

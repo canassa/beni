@@ -1,0 +1,107 @@
+-- ownership: a record update is a demand on its base's object, checked in
+-- report mode (`ownership-checker.md` §31.3, §31.4). Each line names its fix
+-- class (§31.12): `copy` where `{ Record.copy r | … }` answers it,
+-- `restructure` where the base is a top-level value.
+--
+-- Dead, per field (§31.4 item 5): `untouched` reads a field the update did
+-- not write, and `hoisted` reads a written one, which the lowering reads
+-- first; both are accepted. `whole` returns the old record beside the new,
+-- `bound` names it before the update and returns that name, and `rebased`
+-- updates the old record again (`browser/tea/TypedKeys`'s shape): each is a
+-- use of the record whole, rejected. `nested` writes a field of a field:
+-- the outer update's base use reads every field but the one it replaces,
+-- so both are accepted.
+--
+-- Held operand: `twice` writes `item` again while the first result waits
+-- in the list (`bench/corpus/PrettyPrinter.beni`'s shape). Disjoint: `loop`
+-- stores the record in its own field, through a constructor. A top-level
+-- base is `top-level` when the value is read elsewhere too (`originX`), and
+-- a record a fiber's closure keeps is `escaped`.
+import Task
+
+
+type alias Point =
+    x : Int
+    y : Int
+    tags : List String
+
+
+type alias Link =
+    label : String
+    next : Maybe Node
+
+
+type Node
+    = Node Link
+
+
+type alias Form =
+    name : String
+    count : Int
+
+
+type alias Model =
+    form : Form
+    count : Int
+    heard : List String
+
+
+origin : Point
+origin = { x = 0, y = 0, tags = [] }
+
+
+pub untouched : Point → Int
+untouched p =
+    q = { p | x = 1 }
+    q.x + p.y
+
+
+pub hoisted : Point → Int
+hoisted p =
+    q = { p | x = 1 }
+    q.x + p.x
+
+
+pub whole : Point → Point × Point
+whole p = ( { p | x = 1 }, p )
+
+
+pub bound : Point → Point
+bound p =
+    old = p
+    _ = { p | x = 1 }
+    old
+
+
+pub rebased : Model, Int → Model
+rebased model n =
+    next = { model | count = n }
+    if n > 0 then next else { model | heard = [] }
+
+
+pub nested : Model, String → Model
+nested model n =
+    form = model.form
+    { model | form = { form | name = n } }
+
+
+pub twice : Point → List Point
+twice item = [ { item | x = 1 }, { item | x = 2 } ]
+
+
+pub loop : Link → Link
+loop link = { link | next = Just (Node link) }
+
+
+pub moved : ⊤ → Point
+moved ⊤ = { origin | x = 1 }
+
+
+pub kept : Point → Point
+kept p =
+    _ = Task.spawn λ⊤ → p
+    { p | x = 1 }
+
+
+pub originX : ⊤ → Int
+originX ⊤ = origin.x

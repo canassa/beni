@@ -1,0 +1,13 @@
+module RecordCapture
+  46:15 update model: accepted param
+  46:32 update form: accepted param
+  49:15 update model: accepted param
+  70:5 entry RecordCapture.update model: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx) [copy]
+  70:5 entry RecordCapture.update model.form: accepted entry
+  summary update: π2 RAW{form, total}, π2.form RW{name}; res .0 π2, .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ λ, .1#Cmd.0[*]#Perform.0 λ λ
+  summary size: π1 R
+  summary view: res ⟨render⟩ fresh1{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 5: accepted 4 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 5: accepted 4 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 1

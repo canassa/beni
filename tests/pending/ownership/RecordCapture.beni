@@ -1,0 +1,75 @@
+-- CK-261: a closure a command keeps captures a record (issue #315;
+-- `ownership-checker.md` §31.6). `Save`'s command captures the field path
+-- `model.form`, which it reads when it is made (§31.6), so it keeps the
+-- form's value and not the record: `Type`'s later write of `model.form` is
+-- accepted at the entry, and the capture is one eager read. `Snapshot`'s
+-- command captures `model` whole, so the model record escapes, and
+-- `Bump`'s write of it is rejected `escaped`, approximately. Red until R2c
+-- reads a record update's `W{F}` off `update`'s summary at the entry
+-- (§31.7, §31.8); today every update line is the body's `accepted param`.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Form =
+    name : String
+    count : Int
+
+
+type alias Model =
+    form : Form
+    total : Int
+
+
+type Msg
+    = Save
+    | Snapshot
+    | Type String
+    | Bump
+    | Saved String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Save →
+            ( model, Cmd.perform λsend → send (Saved model.form.name) )
+
+        Snapshot →
+            ( model, Cmd.perform λsend → send (Saved (String.fromInt (size model))) )
+
+        Type n →
+            form = model.form
+            ( { model | form = { form | name = n } }, Cmd.none )
+
+        Bump →
+            ( { model | total = model.total + 1 }, Cmd.none )
+
+        Saved _ →
+            ( model, Cmd.none )
+
+
+size : Model → Int
+size model = model.total + model.form.count
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Save}>save</button>
+        <button onClick={Snapshot}>snapshot</button>
+        <button onClick={Bump}>bump</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { form = { name = "", count = 0 }, total = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
