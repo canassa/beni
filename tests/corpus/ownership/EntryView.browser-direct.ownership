@@ -1,5 +1,5 @@
 module EntryView
-  20:18 update model: accepted param
+  20:18 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   29:15 construction model.pinned: accepted param
   40:12 entry EntryView.extends model.pinned: rejected read-only: the runtime hands view the model to read only (§20.3)
   summary update: π2.pinned RA; res .pinned π2.pinned, .recent fresh1
@@ -7,7 +7,7 @@ module EntryView
   summary extends: π1.pinned RW, π1.recent R, π1.recent[*] R; res ⟨events⟩⋆ ~fresh2{lost}, ⟨render⟩ fresh3{lost}, ⟨render⟩⋆ ~fresh1{lost}
   summary concatenates: π1.pinned R, π1.pinned[*] R, π1.recent R, π1.recent[*] R; res ⟨events⟩⋆ ~fresh2{lost}, ⟨render⟩ fresh3{lost}, ⟨render⟩⋆ ~fresh1{lost}
   demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-  records 1: accepted 1 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+  records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-records 1: accepted 1 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause read-only 1

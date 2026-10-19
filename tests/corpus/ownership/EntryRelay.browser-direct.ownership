@@ -1,10 +1,10 @@
 module EntryRelay
-  37:13 update m: accepted param
-  51:13 update m: accepted param
+  37:13 update m: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  51:13 update m: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   51:23 List.set m.b: accepted param
   56:5 entry EntryRelay.update model.b: accepted entry
   summary update: π2.a0 RA, π2.a1 RA, π2.a2 RA, π2.a3 RA, π2.a4 RA, π2.a5 RA, π2.a6 RA, π2.a7 RA, π2.a8 RA, π2.a9 RA, π2.b RAW, π2.b[*] A; res .a0 fresh1 π2.a0, .a1 π2.a0 π2.a1, .a2 π2.a1 π2.a2, .a3 π2.a2 π2.a3, .a4 π2.a3 π2.a4, .a5 π2.a4 π2.a5, .a6 π2.a5 π2.a6, .a7 π2.a6 π2.a7, .a8 π2.a7 π2.a8, .a9 π2.a8 π2.a9, .b π2.b, .b[*] ~π2.b[*]
   demands 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
-  records 2: accepted 2 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+  records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
-records 2: accepted 2 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

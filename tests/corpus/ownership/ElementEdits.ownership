@@ -1,7 +1,7 @@
 module ElementEdits
   20:19 List.update groups: accepted param
   20:19 List.update groups[*].kids: accepted param (<lambda> writes what List.update supplies it)
-  20:45 update g: accepted callback-param (List.update supplies it owned)
+  20:45 update g: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
   20:58 List.push g.kids: accepted callback-param (List.update supplies it owned)
   24:15 call List.map rows[*]: accepted param (<lambda> writes what List.map supplies it)
   24:36 construction r: accepted callback-param (List.map supplies it owned)
@@ -20,9 +20,9 @@ module ElementEdits
   summary repeated: unused
   summary heldOutside: unused
   demands 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
-  records 1: accepted 1 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+  records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
-records 1: accepted 1 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause later-use 1
 cause alias 1
 cause exclusive 1

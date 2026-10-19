@@ -5213,10 +5213,28 @@ keeps nothing across renders.
    callee makes it in its own body, which is a whole use. Each evaluation of a field path is a use of its
    own (`Use.record_read`) that only a record demand reads, so that a read of a number field is a hoist
    like any other; the step into a written field is the caller's own read when it is part of the
-   argument's path (`List.length r.items`). A call with no summary reads the record whole, `call`. A
-   rejection's line ends in its fix class, `[copy]` or `[restructure]` (a top-level base), an accepted one
-   with hoists in `[hoisted n]`, and each module and the run end in a `records` line: demands, accepted
-   and hoisted, pending, rejected by fix, and the eager reads of captured field paths (§31.6), counted
+   argument's path (`List.length r.items`). A call with no summary reads the record whole, `call`, and
+   so does a call the checker cannot see into (a `foreign` without a summary, a `Js` call): each operand
+   it is handed is a use at its own path. A record pattern (`{ x } = p`, a one-arm `case`) reads the
+   fields it binds, not the record (`Use.destructure`). A closure made after the update reads each
+   field path it captures when it is made (§31.6), so such a read of a written field is a hoist where
+   the closure is built, a number's and a list's alike; each read is counted once, at the use that
+   makes it. A read through a wrapper of the old record (`case Just p of Just r → r.x`, a tuple
+   pattern) is still a whole use, #394.
+
+   *Pending, not accepted, until R2c.* What decides an update the walk cannot see is a summary that does
+   not name a record's object yet (`Prov.obj`, §31.7), so these lines print `pending`, never
+   `accepted`: a base that is a parameter or what a callee hands a callback; a base that is what a
+   call returns; a base with no cell at all, as a summary's results leave a record of numbers, or a
+   top-level value read once at initialisation and handed over; and a base handed to a callee whose
+   summary does not yet say which of a record's fields it reads. A rejection is kept: the uses it
+   rests on are the walk's own. `{ Record.copy r | … }` demands the copy's new object, which nobody
+   holds (§31.15), while `Record.copy`'s row still aliases π₁ for the fields it shares. In
+   `browser-direct`'s corpus check, which fails `check` exactly when a report has a rejected or
+   pending line, a record line does not count until R4 enforces it. A rejection's line ends in its
+   fix class, `[copy]` or `[restructure]` (a top-level base), an accepted or pending one with hoists in
+   `[hoisted n]`, and each module and the run end in a `records` line: demands, accepted, pending,
+   rejected by fix, the lines with hoists, and the eager reads of captured field paths (§31.6), counted
    once per lambda, local and path. The mutation controls are `-Downership-record-mutation=` (hidden),
    run by `zig build test-record-mutations` outside the gates: `hoist-whole`, `no-held-operand` and
    `no-disjoint`, each caught by `ownership/RecordDemands` (and `RecordCopy`); the control of a hoist's
@@ -5224,9 +5242,12 @@ keeps nothing across renders.
    callee, the entry's checks (§31.8; #315's three cases are `tests/pending/ownership/Record*`,
    CK-260–262), a callback's supply of a record (§31.5), records' exclusive contents (§31.4 item 6), and
    a captured record's write making its closure once (§31.4 item 4; reported `captured-edit` until then).
-   Over the 1 042 programs of the comparison, 270 have record updates: 1 739 demands, 1 688 accepted (9
-   with hoists), 51 rejected — 40 `top-level`, 5 `later-use`, 2 `held-operand`, 2 `element` and 2
-   `unknown`, approximately — with 296 eager reads; no list line moves.
+   Over the 1 043 programs of the comparison, 271 have record updates: 1 741 demands, 4 accepted (local
+   literals and `Record.copy`), 1 685 pending — 1 489 parameter bases, 176 callback parameters, 14
+   handed to a callee, 5 with no cell, 1 a call's answer — and 52 rejected: 40 `top-level`, 6
+   `later-use`, 2 `held-operand`, 2 `element` and 2 `unknown`, approximately; 9 lines with hoists and
+   296 eager reads. No list line moves but `ownership/RecordCells`' `open`, which R2a's cells made
+   precise.
 2. **Enforcement**: §31.9's codes; the corpus rewritten only where the rule still refuses (§31.0 item 4); `core/`
    and the platforms clean (§31.16).
 3. **The lowering** (§31.10, §31.14): the stores and the hoists, with the identity skips removed (§31.11).

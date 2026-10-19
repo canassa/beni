@@ -1,12 +1,12 @@
 module ResultDefault
-  22:18 update model: accepted param
+  22:18 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   22:36 List.push model.items: accepted param
   28:23 call ResultDefault.handle model.items: accepted once
   33:60 call ResultDefault.handle model.items: accepted once
   40:13 call ResultDefault.handle model.items: accepted param (ResultDefault.handle writes π1.items)
   48:46 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 49:30
   54:39 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 54:56
-  54:56 update model: accepted param
+  54:56 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   61:22 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 59:5
   74:22 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 72:5
   84:68 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 84:17
@@ -20,7 +20,7 @@ module ResultDefault
   summary maybeAndThen: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
   summary mixed: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
   demands 9: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 5
-  records 2: accepted 2 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+  records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 9: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 5
-records 2: accepted 2 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause later-use 5

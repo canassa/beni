@@ -82,7 +82,10 @@ const RecordCounts = struct {
                 c.accepted += 1;
                 if (d.hoists > 0) c.hoisted += 1;
             },
-            .pending => c.pending += 1,
+            .pending => {
+                c.pending += 1;
+                if (d.hoists > 0) c.hoisted += 1;
+            },
             .rejected => c.rejected += 1,
         }
         switch (d.fix) {
@@ -105,7 +108,7 @@ const RecordCounts = struct {
 
     fn write(c: RecordCounts, w: *std.Io.Writer, label: []const u8) Error!void {
         if (c.demands == 0 and c.eager == 0) return;
-        try w.print("{s} {d}: accepted {d} (hoisted {d}), pending {d}, rejected {d} (copy {d}, restructure {d}); eager reads {d}\n", .{ label, c.demands, c.accepted, c.hoisted, c.pending, c.rejected, c.copy, c.restructure, c.eager });
+        try w.print("{s} {d}: accepted {d}, pending {d}, rejected {d} (copy {d}, restructure {d}); hoisted {d}, eager reads {d}\n", .{ label, c.demands, c.accepted, c.pending, c.rejected, c.copy, c.restructure, c.hoisted, c.eager });
     }
 };
 
