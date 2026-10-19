@@ -105,3 +105,77 @@ kept p =
 
 pub originX : ⊤ → Int
 originX ⊤ = origin.x
+
+
+-- A closure made after the update reads a written field when it is made
+-- (§31.6), so the read is a hoist — a number's and a list's alike.
+pub closureAfter : Point → Int
+closureAfter p =
+    q = { p | x = 1 }
+    g = λ⊤ → p.x
+    q.x + g ⊤
+
+
+pub closureAfterList : Point → Int
+closureAfterList p =
+    q = { p | tags = [] }
+    g = λ⊤ → List.length p.tags
+    List.length q.tags + g ⊤
+
+
+-- One read, one hoist: `p.x` in a tuple is read once.
+pub readOnce : Point → Point × Int
+readOnce p =
+    q = { p | x = 1 }
+    ( q, p.x )
+
+
+-- A record pattern reads the old record field by field.
+pub destructure : Point → Int
+destructure p =
+    q = { p | x = 1 }
+    { x } = p
+    q.x + x
+
+
+-- A callee that reads the written field in its own body reads the old
+-- value where no temporary stands in: the record is used whole (§31.4
+-- item 5).
+getX : Point → Int
+getX r = r.x
+
+
+pub throughCallee : Point → Int
+throughCallee p =
+    q = { p | x = 1 }
+    q.x + getX p
+
+
+-- Handed to a callee whose summary does not yet say which of a record's
+-- fields it reads (§31.7): pending, not a verdict.
+getY : Point → Int
+getY r = r.y
+
+
+pub throughCalleeY : Point → Int
+throughCalleeY p =
+    q = { p | x = 1 }
+    q.x + getY p
+
+
+-- A base no cell names is not yet a verdict either: `originAlias` is read
+-- once, at initialisation, so it is handed over — but what it holds is
+-- `origin`, and no summary's result names a record's object until §31.7's.
+-- A callback's answer may be its own argument.
+originAlias : Point
+originAlias = origin
+
+
+pub fromAlias : Point
+fromAlias = { originAlias | x = 1 }
+
+
+pub viaCallback : (Point → Point), Point → Point
+viaCallback f p =
+    answer = f p
+    { answer | x = 1 }

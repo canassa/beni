@@ -15,7 +15,7 @@ module RecordUpdateUse
   summary inBranch: res .p fresh1 fresh2, .q fresh1
   summary replaced: res .p fresh2, .q fresh1
   demands 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
-  records 5: accepted 5 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+  records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
-records 5: accepted 5 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
+records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause alias 4

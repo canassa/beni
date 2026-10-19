@@ -14,12 +14,12 @@ module Differential
   87:14 construction copied: accepted call
   92:16 List.update rows: accepted param
   92:16 List.update rows[*].tags: accepted param (<lambda> writes what List.update supplies it)
-  92:40 update r: accepted callback-param (List.update supplies it owned)
+  92:40 update r: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
   92:55 construction r.tags: accepted callback-param (List.update supplies it owned)
   96:30 call Differential.t40 <literal>: accepted fresh (Differential.t40 writes π1)
   96:30 call Differential.t40 <literal>[*].tags: accepted fresh (Differential.t40 writes π1[*].tags)
   100:18 call List.map cards[*].tags: accepted param (<lambda> writes what List.map supplies it)
-  102:9 update c: accepted callback-param (List.map supplies it owned)
+  102:9 update c: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
   102:24 construction c.tags: accepted callback-param (List.map supplies it owned)
   108:30 call Differential.t42 <literal>[*].tags: accepted fresh (Differential.t42 writes π1[*].tags)
   114:18 call Differential.t42 <literal>[*].tags: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t42 writes π1[*].tags)
@@ -55,9 +55,9 @@ module Differential
   summary t57Repeated: unused
   summary t57RepeatedRows: unused
   demands 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
-  records 3: accepted 2 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
+  records 3: accepted 0, pending 2, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
 total 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
-records 3: accepted 2 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
+records 3: accepted 0, pending 2, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
 cause top-level 2
 cause disjoint 2
 cause alias 1

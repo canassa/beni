@@ -1839,6 +1839,22 @@ const Case = struct {
         }
     }
 
+    /// Whether an ownership report has a rejected or pending line for a
+    /// list. A record update's line (`L:C update …`, `ownership-checker.md`
+    /// §31.12) is reported and not yet enforced, so it never makes `check`
+    /// fail.
+    fn listRefusal(report: []const u8) bool {
+        var lines = std.mem.splitScalar(u8, report, '\n');
+        while (lines.next()) |line| {
+            if (std.mem.indexOf(u8, line, ": rejected ") == null and std.mem.indexOf(u8, line, ": pending") == null) continue;
+            const t = std.mem.trimStart(u8, line, " ");
+            const sp = std.mem.indexOfScalar(u8, t, ' ') orelse continue;
+            if (std.mem.startsWith(u8, t[sp + 1 ..], "update ")) continue;
+            return true;
+        }
+        return false;
+    }
+
     /// Whether a JSON diagnostic list names the ownership checker's codes
     /// and no others (`ownership-checker.md` §28.6).
     fn ownershipOnly(stderr: []const u8) bool {
@@ -2982,12 +2998,12 @@ const Case = struct {
                 try c.ownershipCached(flag, path, checked);
                 // `ownership-checker.md` §28.10, the dump against the build:
                 // on a platform that edits lists in place `check` fails
-                // exactly when the report has a rejected or pending line,
+                // exactly when the report has a rejected or pending list line,
                 // with the ownership checker's codes and no others, and
                 // elsewhere it is silent whatever the report says.
                 const enforces = std.mem.eql(u8, name, "browser-direct");
                 // A limit the checker reached is an error too (§16.7).
-                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
+                const refused = enforces and (listRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
                 if (refused) {
                     try expectExit(1, checked);
                     if (!ownershipOnly(checked.stderr)) {
