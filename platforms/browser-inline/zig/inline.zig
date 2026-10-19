@@ -1270,7 +1270,9 @@ const Page = struct {
 
     /// Enter context `ctx` for evaluation, outermost first: the `view` with
     /// the model, then each eager arm. Returns how many arms were entered.
-    fn enter(pg: *Page, blk: m.Block, ctx: u32) m.Error!u32 {
+    const CallArgs = struct { ctx: u32, args: []const m.Expr };
+
+    fn enter(pg: *Page, blk: m.Block, ctx: u32, saved: ?*std.ArrayList(CallArgs)) m.Error!u32 {
         var chain: std.ArrayList(u32) = .empty;
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) try chain.insert(pg.a(), 0, c);
@@ -1284,13 +1286,37 @@ const Page = struct {
             switch (x.kind) {
                 .arm => try pg.cx.programBranchEager(x.node, x.arm),
                 .call => {
-                    // The call's arguments are values of the enclosing root.
-                    if (pg.tree.hole(x.node).call) |call| {
-                        const vs = try pg.a().alloc(m.Value.Index, call.args.len);
-                        for (vs, 0..) |*v, i| v.* = call.args.at(@intCast(i));
-                        try pg.cx.rootValues(blk, pg.ctxs.items[x.parent.?].root, vs);
-                    }
-                    const args = try pg.cx.programInlineArgs(blk, x.node);
+                    // A binding function may enter a helper again through a
+                    // nested arm. Rebind its parameters each time, but evaluate
+                    // effectful arguments only at the first entry of this call
+                    // context. Sibling calls have distinct context IDs.
+                    const cached: ?[]const m.Expr = if (saved) |entries| for (entries.items) |entry| {
+                        if (entry.ctx == c) break entry.args;
+                    } else null else null;
+                    const args = cached orelse args: {
+                        var unsafe = false;
+                        // The call's arguments are values of the enclosing root.
+                        if (pg.tree.hole(x.node).call) |call| {
+                            const vs = try pg.a().alloc(m.Value.Index, call.args.len);
+                            for (vs, 0..) |*v, i| {
+                                v.* = call.args.at(@intCast(i));
+                                unsafe = unsafe or !pg.cx.valueSafe(v.*);
+                            }
+                            try pg.cx.rootValues(blk, pg.ctxs.items[x.parent.?].root, vs);
+                        }
+                        const evaluated = try pg.cx.programInlineArgs(blk, x.node);
+                        if (saved) |entries| if (unsafe) {
+                            const bound = try pg.a().alloc(m.Expr, evaluated.len);
+                            for (evaluated, bound) |value, *name| {
+                                const n = try pg.cx.fresh("arg");
+                                try pg.cx.js.constant(blk, n, value);
+                                name.* = try pg.cx.js.name(n);
+                            }
+                            try entries.append(pg.a(), .{ .ctx = c, .args = bound });
+                            break :args bound;
+                        };
+                        break :args evaluated;
+                    };
                     try pg.cx.programInlineEnter(blk, x.node, args, false);
                 },
             }
@@ -1323,7 +1349,7 @@ const Page = struct {
         const at = f.piece orelse return js.expression(blk, try js.call(try js.name(f.name), &.{}));
         const u = pg.pieces.items[at.use];
         const inner = try js.block();
-        const arms = try pg.enter(inner, 0);
+        const arms = try pg.enter(inner, 0, null);
         const args = try cx.programPieceArgs(inner, u.node);
         // The wrapper takes the table and the root's function's parameters.
         std.debug.assert(args.len == u.data.arity);
@@ -1463,11 +1489,12 @@ const Page = struct {
         // A piece's binding is the program site's wrapper's call (`page`).
         std.debug.assert(f.piece == null);
         var done: std.ArrayList(u32) = .empty;
+        var call_args: std.ArrayList(CallArgs) = .empty;
         for (f.writes.items) |first| {
             const ctx = pg.writes.items[first].ctx;
             if (std.mem.indexOfScalar(u32, done.items, ctx) != null) continue;
             try done.append(pg.a(), ctx);
-            const arms = try pg.enter(blk, ctx);
+            const arms = try pg.enter(blk, ctx, &call_args);
             var takens: std.ArrayList(struct { node: m.Node.Index, name: m.Name }) = .empty;
             var values: std.ArrayList(m.Value.Index) = .empty;
             const reads = try pg.functionReads(f, ctx, &values);
@@ -1592,7 +1619,7 @@ const Page = struct {
                 payload = try js.name(p);
             } else payload = try js.name(e);
         }
-        const arms = try pg.enter(blk, ev.ctx);
+        const arms = try pg.enter(blk, ev.ctx, null);
         const message = try cx.programMessageFields(blk, v, payload);
         pg.leave(arms);
         return switch (message) {

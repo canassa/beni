@@ -458,7 +458,10 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   `CaseValueArm`). *Amended the same day (#436's review):* each binding function that writes into
   a helper's markup enters the call, its arguments evaluated again; an argument that may have an
   effect (`valueSafe`) must therefore be entered by exactly one function, or it is S3's memo node
-  and refused (`HelperArgTwice`), as a `let` read by several functions is. Two calls of one helper
+  and refused (`HelperArgTwice`), as a `let` read by several functions is. Within one binding
+  function, a helper's effectful arguments are bound once at their first entry and reused when
+  a nested context enters that same call again (`browser/inline/HelperArgOnce`); distinct sibling
+  call sites bind their own arguments. This is local evaluation, not a memo shared between passes. Two calls of one helper
   share its root, so a `let` of the helper read by both, in two functions, is refused the same
   way: conservative, never unsound.
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
