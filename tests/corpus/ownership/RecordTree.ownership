@@ -1,6 +1,5 @@
 module RecordTree
   23:18 update n: accepted param
-  23:44 update RecordTree.relabel: pending: List.map hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
   23:44 update n.kids[*]⟨Tree⟩#Tree.0: accepted param (List.map writes it)
   32:26 update n: accepted param
   32:41 update k#Tree.0: rejected alias: n⟨Tree⟩#Tree.0 holds it and is read at 32:26 (RecordTree.deepest writes it) [copy]
@@ -11,12 +10,12 @@ module RecordTree
   43:16 update t⟨Tree⟩⁺#Tree.0: rejected later-use: t⟨Tree⟩⁺#Tree.0 is read again at 43:14 (RecordTree.deepest writes it) [copy]
   47:11 update <Tree …>#Tree.0: accepted fresh (RecordTree.deepest writes it)
   47:11 update <Tree …>⟨Tree⟩⁺#Tree.0: accepted fresh (RecordTree.deepest writes it)
-  summary relabel: π1 R, π1#Tree.0.kids R, π1⟨Tree⟩#Tree.0 W{kids, label}; res #Tree.0 π1#Tree.0◦, #Tree.0.kids fresh1, #Tree.0.kids[*] ~fresh2, #Tree.0⟨Tree⟩#Tree.0 ~π1#Tree.0⟨Tree⟩#Tree.0◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh3, ⟨Tree⟩⁺#Tree.0.kids[*] ~fresh4
-  summary deepest: π1 R, π1#Tree.0 W{kids, label}, π1⟨Tree⟩#Tree.0.kids RA, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}; res #Tree.0 π1#Tree.0◦, #Tree.0.kids fresh1 fresh2{excl π1#Tree.0.kids} π1#Tree.0.kids, #Tree.0⟨Tree⟩#Tree.0 π1#Tree.0⟨Tree⟩#Tree.0◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh1{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}
-  summary keep: π1 RA, π1#Tree.0.kids R, π1⟨Tree⟩#Tree.0 RW{kids, label}; res .0#Tree.0 π1#Tree.0◦, .0#Tree.0.kids fresh1, .0#Tree.0.kids[*] ~fresh2, .0#Tree.0⟨Tree⟩#Tree.0 ~π1#Tree.0⟨Tree⟩#Tree.0◦, .0⟨Tree⟩⁺#Tree.0.kids ~fresh3, .0⟨Tree⟩⁺#Tree.0.kids[*] ~fresh4, .1 π1
-  summary keepDeep: π1 RA, π1#Tree.0 RW{kids, label}, π1#Tree.0.kids A, π1⟨Tree⟩#Tree.0.kids R, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}, π1⟨Tree⟩⁺#Tree.0.kids A; res .0#Tree.0 π1#Tree.0◦, .0#Tree.0.kids ~fresh1{excl π1#Tree.0.kids} ~fresh2{excl π1#Tree.0.kids} ~π1#Tree.0.kids, .0#Tree.0⟨Tree⟩#Tree.0 π1#Tree.0⟨Tree⟩#Tree.0◦, .0⟨Tree⟩⁺#Tree.0.kids ~fresh1{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}, .1 π1
+  summary relabel: π1 R, π1#Tree.0.kids R, π1⟨Tree⟩#Tree.0 W{kids, label}; res #Tree.0 π1#Tree.0◦, #Tree.0.kids fresh1, #Tree.0.kids[*] ~fresh2, #Tree.0⟨Tree⟩#Tree.0 ~π1#Tree.0⟨Tree⟩#Tree.0◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh3, ⟨Tree⟩⁺#Tree.0.kids[*] ~fresh4; rxreq excl π1#Tree.0.kids
+  summary deepest: π1 R, π1#Tree.0 W{kids, label}, π1⟨Tree⟩#Tree.0.kids RA, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}; res #Tree.0 π1#Tree.0◦, #Tree.0.kids fresh1 fresh2{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} π1#Tree.0.kids, #Tree.0⟨Tree⟩#Tree.0 π1#Tree.0⟨Tree⟩#Tree.0◦r{excl π1#Tree.0.kids}, ⟨Tree⟩⁺#Tree.0.kids ~fresh1{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids}
+  summary keep: π1 RA, π1#Tree.0.kids R, π1⟨Tree⟩#Tree.0 RW{kids, label}; res .0#Tree.0 π1#Tree.0◦, .0#Tree.0.kids fresh1, .0#Tree.0.kids[*] ~fresh2, .0#Tree.0⟨Tree⟩#Tree.0 ~π1#Tree.0⟨Tree⟩#Tree.0◦, .0⟨Tree⟩⁺#Tree.0.kids ~fresh3, .0⟨Tree⟩⁺#Tree.0.kids[*] ~fresh4, .1 π1; rxreq excl π1#Tree.0.kids
+  summary keepDeep: π1 RA, π1#Tree.0 RW{kids, label}, π1#Tree.0.kids A, π1⟨Tree⟩#Tree.0.kids R, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}, π1⟨Tree⟩⁺#Tree.0.kids A; res .0#Tree.0 π1#Tree.0◦, .0#Tree.0.kids ~fresh1{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~fresh2{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~π1#Tree.0.kids, .0#Tree.0⟨Tree⟩#Tree.0 π1#Tree.0⟨Tree⟩#Tree.0◦r{excl π1#Tree.0.kids}, .0⟨Tree⟩⁺#Tree.0.kids ~fresh1{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids}, .1 π1
   summary fresh: res #Tree.0 fresh501◦, #Tree.0.kids ~fresh2 ~fresh3, #Tree.0⟨Tree⟩#Tree.0 fresh502◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh1 ~fresh3
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 12: accepted 6, pending 1, rejected 5 (copy 5, restructure 0); hoisted 0, eager reads 0
+  records 11: accepted 6, pending 0, rejected 5 (copy 5, restructure 0); hoisted 0, eager reads 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 12: accepted 6, pending 1, rejected 5 (copy 5, restructure 0); hoisted 0, eager reads 0
+records 11: accepted 6, pending 0, rejected 5 (copy 5, restructure 0); hoisted 0, eager reads 0

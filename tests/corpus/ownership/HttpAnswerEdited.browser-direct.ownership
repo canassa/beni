@@ -7,8 +7,8 @@ module HttpAnswerEdited
   92:5 entry HttpAnswerEdited.update msg#Fetched.0#Ok.0: accepted entry
   92:5 update entry HttpAnswerEdited.update model: accepted entry
   summary words: res fresh1
-  summary expecting: π1 RA; res #Expect.1 λ, #Expect.1◇ π1; π1 calls 0, unseen
-  summary fetch: π2 R; res #Err.0#BadRequest.0 fresh1{lost}, #Ok.0 cb2{excl cb2}; π2 calls 0, unseen
+  summary expecting: π1 RA; res #Expect.1 λr{lost}, #Expect.1◇ π1; π1 calls 0, unseen
+  summary fetch: π2 R; res #Err.0#BadRequest.0 fresh1{lost}r{lost}, #Ok.0 cb2{excl cb2}r{excl cb2}; π2 calls 0, unseen
   summary update: π1 R, π1#Fetched.0#Ok.0 RAW, π1#Fetched.0#Ok.0[*] A, π2 RAW{errors, words}, π2.errors RAW, π2.errors[*] A, π2.words RA; res .0 π2 π2◦, .0.errors π2.errors, .0.errors[*] ~π2.errors[*], .0.words π1#Fetched.0#Ok.0 π2.words, .0.words[*] ~π1#Fetched.0#Ok.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
   summary view: π1.words R; res ⟨render⟩ fresh1{lost}
   demands 4: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 0

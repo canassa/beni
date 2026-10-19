@@ -5,16 +5,15 @@ module RecordSupply
   47:21 update q: accepted callback-param (RecordSupply.applyTo supplies it owned)
   53:5 update RecordSupply.shift: rejected supply: RecordSupply.both supplies its parameter 1 borrowed (π2) [copy]
   60:7 update r: rejected captured: k, a closure holding it, is used at 60:16 (RecordSupply.shift writes it) [copy]
-  66:7 update RecordSupply.shift: pending: RecordSupply.mapBoth hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
   66:7 update ps[*]: rejected later-use: ps[*] is read again at 66:5 (RecordSupply.mapBoth writes it) [copy]
   70:8 update r: accepted param (RecordSupply.twice writes it)
   76:7 update r: rejected later-use: r is read again at 76:5 (RecordSupply.e6 writes it) [copy]
   summary shift: π1 W{x}, π1.x R; res π1◦
-  summary applyTo: π1 R, π2 R; res cb1; π1 calls ≤1, supply 1 π2 owned
-  summary twice: π1 R, π2 R; res cb1; π1 calls many, supply 1 cb1 owned, supply 1 π2 owned
-  summary both: π1 R, π2 R; res .0 cb1, .1 π2; π1 calls ≤1, supply 1 π2 borrowed
-  summary keepIt: π1 R; res λ, ◇ π1
-  summary mapBoth: π1 R, π2 R; res [*] ~cb1{excl cb1} ~fresh2{excl cb1, sep cb1 cb1}, fresh1{excl cb1, sep cb1 cb1}; π1 calls many, supply 1 π2[*] owned taken
+  summary applyTo: π1 R, π2 R; res cb1r{excl cb1}; π1 calls ≤1, supply 1 π2 ownedr{excl π2}
+  summary twice: π1 R, π2 R; res cb1r{excl cb1}; π1 calls many, supply 1 cb1 ownedr{excl cb1}, supply 1 π2 ownedr{excl π2}
+  summary both: π1 R, π2 R; res .0 cb1r{excl cb1}, .1 π2; π1 calls ≤1, supply 1 π2 borrowedr{excl π2}
+  summary keepIt: π1 R; res λr{lost}, ◇ π1
+  summary mapBoth: π1 R, π2 R; res [*] ~cb1{excl cb1}r{excl cb1} ~fresh2{excl cb1, sep cb1 cb1}, fresh1{excl cb1, sep cb1 cb1}; π1 calls many, supply 1 π2[*] owned takenr{excl π2}
   summary e1: res .1 fresh501◦
   summary e2: res .1 fresh501◦
   summary e3: res .1 fresh501◦
@@ -23,6 +22,6 @@ module RecordSupply
   summary e6: π1 RW{x, y}
   summary e7: res .1 fresh501◦
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 10: accepted 3, pending 1, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
+  records 9: accepted 3, pending 0, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 10: accepted 3, pending 1, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
+records 9: accepted 3, pending 0, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0

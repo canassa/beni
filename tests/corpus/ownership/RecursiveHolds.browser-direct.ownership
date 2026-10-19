@@ -3,11 +3,11 @@ module RecursiveHolds
   33:20 List.push <call List.copy>: accepted call
   39:9 call RecursiveHolds.pushed <literal>: accepted fresh (RecursiveHolds.pushed writes π2)
   43:12 call RecursiveHolds.pushed <literal>: accepted fresh (RecursiveHolds.pushed writes π2)
-  summary pushed: π1 R, π1[*] RA, π2 RAW, π2[*] A; res [*].0 ⊤call{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2{lost}, [*].1 π2{lost}, [*].1[*] ~π2[*] ~⊤call{lost}, [*].1[*]⋆ ~π1[*]{excl π1} ~π2{lost}, fresh1{lost}
-  summary copied: π1 R, π1[*] RA, π2 RA, π2[*] RA; res [*].0 ⊤call{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2, [*].1 fresh1{lost}, [*].1[*] ~fresh2{lost} ~⊤call{lost} π2[*], [*].1[*]⋆ ~π1[*]{excl π1} ~π2, fresh3{lost}
-  summary run: res [*].0 ⊤call{lost}, [*].0⋆ ~fresh1{lost} ~λ, [*].1 fresh1{lost}, [*].1[*] ~⊤call{lost}, [*].1[*]⋆ ~fresh1{lost} ~λ, fresh2{lost}
-  summary runOne: res [*].0 ⊤call{lost}, [*].0⋆ ~fresh1{lost} ~λ, [*].1 fresh1{lost}, [*].1[*] ~⊤call{lost}, [*].1[*]⋆ ~fresh1{lost} ~λ, fresh2{lost}
-  summary runCopied: res [*].0 ⊤call{lost}, [*].0⋆ ~fresh1 ~λ, [*].1 fresh2{lost}, [*].1[*] ~fresh3{lost} ~⊤call{lost}, [*].1[*]⋆ ~fresh1 ~λ, fresh4{lost}
+  summary pushed: π1 R, π1[*] RA, π2 RAW, π2[*] A; res [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, [*].1 π2{lost}r{lost}, [*].1[*] ~π2[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, fresh1{lost}r{lost}
+  summary copied: π1 R, π1[*] RA, π2 RA, π2[*] RA; res [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2, [*].1 fresh1{lost}r{lost}, [*].1[*] ~fresh2{lost}r{lost} ~⊤call{lost}r{lost} π2[*], [*].1[*]⋆ ~π1[*]{excl π1} ~π2, fresh3{lost}r{lost}
+  summary run: res [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1{lost} ~λr{lost}, [*].1 fresh1{lost}, [*].1[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1{lost} ~λr{lost}, fresh2{lost}
+  summary runOne: res [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1{lost} ~λr{lost}, [*].1 fresh1{lost}, [*].1[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1{lost} ~λr{lost}, fresh2{lost}
+  summary runCopied: res [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1 ~λr{lost}, [*].1 fresh2{lost}, [*].1[*] ~fresh3{lost} ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1 ~λr{lost}, fresh4{lost}
   demands 4: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 4: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause call 1

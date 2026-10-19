@@ -28,7 +28,7 @@ module MaybeDefault
   summary stepLambda: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   summary stepCase: π2 RAW{items}, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2 π2◦
   summary readAfter: π2 RW{items}, π2.items RW, π2.items[*] R
-  summary eagerHandler: π2 RAW{items, other}, π2.items RAW, π2.items[*] RA, π2.other RA; res ~π2 ~⊤call{lost}, ⋆ ~π2.items ~π2.items[*] ~π2.other ~π2◦
+  summary eagerHandler: π2 RAW{items, other}, π2.items RAW, π2.items[*] RA, π2.other RA; res ~π2 ~⊤call{lost}r{lost}, ⋆ ~π2.items ~π2.items[*] ~π2.other ~π2◦
   summary defaultReads: π2 RW{items, other}, π2.items RAW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other, ~π2◦
   summary editInMaybe: π1 RAW{items}, π1.items RAW, π1.items[*] A, π1.other A; res .items ~π1.items, .items[*] ~π1.items[*], .other ~π1.other, ~π1 ~π1◦
   summary andThen: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦

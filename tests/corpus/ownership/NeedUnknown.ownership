@@ -3,8 +3,8 @@ module NeedUnknown
   24:12 List.push <call>: accepted call
   31:10 value <function value>: rejected need: NeedUnknown.build edits what it returns, and the checker does not know which function it is, so not that it returns a list it owns (approx)
   39:10 value <call Ref.get>: rejected need: NeedUnknown.build2 edits what it returns, and the checker does not know which function it is, so not that it returns a list it owns (approx)
-  summary build: π1 R, π1#Mk.0 R; res [*] ~cb(π1#Mk.0)[*]{excl cb(π1#Mk.0)[*]}, cb(π1#Mk.0){excl cb(π1#Mk.0)}; π1#Mk.0 calls ≤1, need owned
-  summary build2: π1 R; res [*] ~cb1[*]{excl cb1[*]}, cb1{excl cb1}; π1 calls ≤1, need owned
+  summary build: π1 R, π1#Mk.0 R; res [*] ~cb(π1#Mk.0)[*]{excl cb(π1#Mk.0)[*]}r{excl cb(π1#Mk.0)[*]}, cb(π1#Mk.0){excl cb(π1#Mk.0)}; π1#Mk.0 calls ≤1, need owned
+  summary build2: π1 R; res [*] ~cb1[*]{excl cb1[*]}r{excl cb1[*]}, cb1{excl cb1}; π1 calls ≤1, need owned
   summary fromSlot: unused
   summary fromParam: unused
   demands 4: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
