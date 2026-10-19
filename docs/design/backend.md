@@ -8222,6 +8222,53 @@ the compiler before over every `run/` and `browser/` fixture and the `bench/todo
 8. **Calls with known results** (8a, above, approved); **cloning** (8b) is **dropped** (the owner,
    2026-10-04): no mainstream JavaScript compiler clones, and the engine specialises hot code itself.
 
+**As built 2026-10-19 — copy edges, field summaries and load cells inside `Pts`** (issue #464; a
+step toward slice 5, not slice 5). A release build of the research dashboard with 64 widgets
+allocated tens of GiB and never finished: `Pts` evaluated a spread `{...model, w: v}` as one
+constraint that re-walked every source site and every property on every change, found a property
+by a linear scan, and built a union it then discarded; a member read `x.p` likewise re-unioned the
+property of every site whenever any one of them changed; and `browser-inline` emits one handler
+per widget message, each with its own `const $before = $model` copy of the whole model and one
+spread of it, so the work was (sites × properties × spreads) and the sites, properties and spreads
+all grow with the program. What `Pts` now does, with the facts the same least fixpoint — every
+`emit/release/` golden and release run hash byte for byte, the safety build's shuffled-order check
+on every program of the corpus — is *The worklist*'s difference propagation, built on the existing
+constraint walk:
+
+- **Copy edges** (`Pts.copy`, the `copy` constraint): a binding, a call argument or a `return`
+  whose value is a name no guard narrows is an edge between the two vars, and what joins the
+  source later joins the target as it arrives — one batch of new sites at a time, on a worklist,
+  never by recursion (`joinNow`); a var's set is still an immutable sorted slice, now one new slice
+  per batch in the fixpoint's arena, not one per site in the compilation's.
+- **Field summaries** (`Pts.Summary`, the `spread` constraint): a spread of a name copies through
+  the var's summary, one var per property fed by copy edges from the sites' property vars; a var
+  that is a copy of another takes the other's summary through one edge per property, since a
+  summary is a homomorphism of the union. Every record update of one record shares one summary. A
+  var that is `top` has a dead summary: its sites are escaped, nothing more is folded.
+- **Load cells** (`Pts.Load`, the `load` constraint): a member read's value is its own var, fed by
+  one copy edge from the property's var of each site, shared by every read of one property of
+  one var (by node for any other object expression) and read by the reference sweep too. The var
+  is never `top` by `max_sites` and keeps its sites beside `top`, as the value a read gives does.
+  The sites it linked through an object that later escaped are kept and are escaped, so the
+  order check compares a `top` value on its live sites alone.
+- Properties are sorted by id and found by binary search (`Pts.prop`).
+
+Measured, ReleaseFast, `--release --no-cache --jobs=1`, the research `unique-components`
+dashboard and its standalone spread reduction, dagon: N=16 0.55 → **0.12 s**; the reduction at
+N=64 1.35 → **0.09 s**; N=64 itself, which no compiler had finished (killed at 21 GiB, then at
+3.3 GiB under a 6 GiB guard), **6.5 s at 1.1 GiB**. The corpus case
+`emit/release/inline/SpreadWide` (48 children) cost 32 070M instructions before and 2 051M after.
+**What is left is the degenerate case, not this machinery**: in that program `Result.withDefault`
+is called with every widget's model and is not inlined (its first argument is a call, not an
+atom), so every widget model flows into one var; the host JSON value then makes every one of them
+escape, yet before they escape 448 arm parameters each hold the merged set of 270 sites with 78
+property names, and summaries of them are folded one by one. Under this section's cap of 48 sites
+(`max_sites`, today the interim 1 000 that #442 tracks) the same build takes **0.49 s at 219 MiB**
+with byte-identical output, and `specialise` is then the structural passes (`pushChildren`,
+`srList`, `placeExpr`, `inlineScan`), not fact 3. The cap, context sensitivity for small pure
+helpers, or binding a non-atom argument to a local so the inliner may inline, are the owner's
+decisions (#464).
+
 ### Compact statements
 
 ### Compact statements
