@@ -1385,6 +1385,9 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Schema.validRun`). Not yet built for `parse` and `decode`, nor for
   a schema that `Schema.list` or a primitive maker makes at the call, whose core workers keep their
   issues.
+- **No path** *(amended 2026-10-19)*. A validator's workers build no path: a path exists only to
+  name where an issue is, and a validator makes none. Each child worker and each conversion is
+  handed none, and `Schema.pathAt` ships for no validator (`emit/release/app/ValidatorNoPath`).
 - **One failure, so fewer tests** *(amended 2026-10-17)*. Every failure of a validator is the one
   mark `c.fail`, so tests that only told failures apart merge. A required field whose value is a
   `String`, `Bool`, `Float`, `Int` or finite `Float` is read once and tested once — the key's read,

@@ -1,0 +1,43 @@
+-- A validator makes no issue, so it builds no path (`schema.md` §6, *A run whose
+-- failure is never read is a validator*): the union's worker calls the payload's
+-- `Snapshot` worker with no path, and no `Schema.pathAt` ships.
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Tick as "tick"
+    Snapshot as "snapshot"
+        state : Snapshot
+
+
+schema Snapshot =
+    count : Int
+    label : String
+
+
+classify : Value → String
+classify v =
+    case Schema.read (Event.schema ⊤) v of
+        Ok Event.Tick →
+            "tick"
+
+        Ok (Event.Snapshot s) →
+            "snapshot ${s.state.label}"
+
+        Err _ →
+            "invalid"
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            classify v
+
+        Err _ →
+            "not JSON"
+
+
+main : Node.Program
+main = Node.print (line "{\"type\": \"snapshot\", \"state\": {\"count\": 1, \"label\": \"a\"}}")
