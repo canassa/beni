@@ -1,6 +1,6 @@
 import Ownership.FlatFragment.Fields
 
-/-! The first flat fragment: operand lists, the list receiver, and the heap frame of the relation. -/
+/-! The first flat fragment: operand lists and the heap frame of the relation. -/
 
 /-! operand facts for the flat primitive cases.
 Each operand list fact follows from the actual per-atom runs and the real
@@ -64,64 +64,6 @@ theorem flat_atoms_integers {args : List Atom} {types : List Ty} {tenv : Env Ty}
     · exact except_mapM_cons valueHead valueRest
     · exact except_mapM_cons heapHead heapRest
     · exact except_mapM_cons abstractHead abstractRest
-
-/-- A flat list-typed operand is a variable whose binding is an allocated
-integer array. The live use supplies the exact observation. The prefix
-relation supplies the named root and the flat abstract shape. -/
-theorem flat_atom_list {tenv : Env Ty} {atom : Atom} {declarations : List Decl}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (flat : FlatAtom atom)
-    (typed : atomType tenv atom = .ok (.list .int))
-    (covered : ∀ use ∈ atomUses atom, use ∈ live) :
-    ∃ (key root : Nat) (integers : List Int) (roots : List Origin) (element : Abstract)
-      (certificate : Certificate),
-      atom = .var key ∧
-      env.lookup key = some (.list (valueInts integers), .ref root) ∧
-      aenv.lookup key = some (.list roots element certificate) ∧
-      tenv.lookup key = some (.list .int) ∧
-      hs.heap[root]? = some (heapInts integers) ∧
-      named gamma roots root ∧
-      (element = .bottom ∨ element = .scalar) ∧
-      ValueSemantics.atom (valueEnv env) atom = .ok (.list (valueInts integers)) ∧
-      InPlaceSemantics.atom (heapEnv env) atom = .ok (.ref root) ∧
-      abstractAtom aenv atom = .ok (.list roots element certificate) := by
-  cases flat with
-  | int integer =>
-    change Except.ok Ty.int = Except.ok (Ty.list .int) at typed
-    cases Except.ok.inj typed
-  | var key =>
-    have typeRun : lookup tenv key = .ok (.list .int) := by simpa only [atomType] using typed
-    have declared := lookup_option_of_success typeRun
-    obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env tenv inv.typeKeys declared
-    rcases pair with ⟨observation, actual⟩
-    obtain ⟨abstract, abstractBinding⟩ :=
-      lookup_exists_of_same_keys aenv env inv.abstractKeys.symm binding
-    have shape := inv.abstractShapes key (.list .int) abstract declared abstractBinding
-    obtain ⟨type, actualDeclared, _, actualTyped⟩ :=
-      inv.bindingsTyped key observation actual binding
-    have sameType : type = .list .int := Option.some.inj (actualDeclared.symm.trans declared)
-    subst type
-    cases allocated_shape_of_typed FlatType.listInt actualTyped with
-    | list root allocated =>
-      have lookupRoot : hs.heap[root]? = some hs.heap[root] := by simp [allocated]
-      obtain ⟨integers, payload⟩ := integers_of_flat_values hs.heap[root] (inv.heapInts root _ lookupRoot)
-      rw [payload] at lookupRoot
-      have use : (key, []) ∈ live := covered (key, []) (by simp [atomUses])
-      have paired := (live_variable_result inv use binding abstractBinding).1
-      have observed := observation_of_integer_ref lookupRoot paired
-      subst observed
-      obtain ⟨valueAtom, heapAtom⟩ := variable_atoms_run binding
-      cases shape with
-      | listBottom roots certificate =>
-        refine ⟨key, root, integers, roots, .bottom, certificate, rfl, binding, abstractBinding,
-          declared, lookupRoot, named_root_from_invariant inv binding abstractBinding, Or.inl rfl,
-          valueAtom, heapAtom, ?_⟩
-        simp [abstractAtom, lookup, abstractBinding]
-      | listScalar roots certificate =>
-        refine ⟨key, root, integers, roots, .scalar, certificate, rfl, binding, abstractBinding,
-          declared, lookupRoot, named_root_from_invariant inv binding abstractBinding, Or.inr rfl,
-          valueAtom, heapAtom, ?_⟩
-        simp [abstractAtom, lookup, abstractBinding]
 
 end Ownership.FlatFragment.Atoms
 

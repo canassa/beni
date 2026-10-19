@@ -315,11 +315,12 @@ They establish no `CallSound.noNewHolders` clause or complete expression-evaluat
 All three general proof obligations remain open.
 
 [FlatFragment/Trace.lean](Ownership/FlatFragment/Trace.lean) proves `accepted_flat_anf_traces_agree`: the main theorem's conclusion for every accepted program whose main expression is in the first flat fragment.
-`FlatANF0` contains atoms (an integer, a variable, or a variable under a field path), `let`, integer list literals, `push` of an integer onto a variable, `length`, `shared`, the integer primitives `add`, `sub`, `eq` and `lt` on two atoms, which typing fixes to `Int` (`ScalarOp`), and, since 2026-10-18 (#165), the record constructor.
-A binding holds an integer, an integer list, or a record of such values, nested (`FlatType`); the atoms read records through field paths.
+`FlatANF0` contains atoms, `let`, integer list literals, `push`, `length`, `shared`, the integer primitives `add`, `sub`, `eq` and `lt` on two atoms (`ScalarOp`), and, since 2026-10-18 (#165), the record constructor.
+`FlatANF0` puts no condition on an atom: the theorem also needs `check`, and typing fixes every atom to an integer, a variable or a variable under a field path, the literal elements and the push item to `Int`, and the `length` and `push` receivers to `List Int` (a variable, or since 2026-10-19 a variable under a field path).
+A binding holds an integer, an integer list, or a record of such values, nested (`FlatType`); the atoms read records through field paths, and a push writes through one.
 The proof uses no `sorry` and none of the three pinned obligations.
 The generic theorem `flat_preserved` carries the strengthened relation `FlatInvariant` through every fragment expression, in both runtime directions, from the actual acceptance, typing, and shadow runs.
-The fragment excludes writes through a field (the push receiver is a variable), lists of lists, calls, closures, views, constructions, branches, cases, and scopes. The three general obligations remain open.
+The fragment excludes lists of lists, calls, closures, views, constructions, branches, cases, and scopes. The three general obligations remain open.
 
 `Invariant` carries two link clauses since 2026-10-16 (#169, owner decisions q1 and q4): every stored link is valid (`LinksValid`, with the view's contents since 2026-10-17), and linked storage that a live path or an observer protects is named as one array (`LinkNamed`).
 [ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, that the same witness in allocation order fails `LinkNamed` alone, and checks that a builder's `put` leaves a garbage view stale, which is why the contents clause needs #284's hand-over, and that the program whose garbage view went stale that way is refused since `close` hands the builder over.
