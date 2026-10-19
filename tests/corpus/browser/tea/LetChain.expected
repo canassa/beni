@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <p>"1"</p>
+  </main>
+</body>

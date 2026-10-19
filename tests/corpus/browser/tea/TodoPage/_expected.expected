@@ -1,0 +1,976 @@
+-- load
+(fetch 1: GET /api/todos {"accept":"application/json"})
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="" :focus>
+    </header>
+    <p class="loading" id="loading">"Loading…"</p>
+    <section class="main" hidden="">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list"></ul>
+    </section>
+    <footer class="footer" hidden="">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed" hidden="">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- respond 1 200 "[{\"id\":1,\"title\":\"buy milk\",\"done\":false},{\"id\":2,\"title\":\"write beni\",\"done\":true}]" Content-Type: "application/json"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="" :focus>
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- input #new-todo "  read the spec  "
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="  read the spec  " :focus>
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- key #new-todo Enter
+(keydown's default prevented)
+(fetch 2: POST /api/todos {"accept":"application/json","content-type":"application/json"} "{\"title\":\"read the spec\",\"done\":false}")
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="" :focus>
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- respond 2 201 "{\"id\":3,\"title\":\"read the spec\",\"done\":false}" Content-Type: "application/json"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="" :focus>
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"2"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click .todo-list>li:nth-child(3)>.view>.toggle
+(fetch 3: PUT /api/todos/3 {"accept":"application/json","content-type":"application/json"} "{\"title\":\"read the spec\",\"done\":true}")
+(the DOM did not change)
+-- respond 3 200 "{\"id\":3,\"title\":\"read the spec\",\"done\":true}" Content-Type: "application/json"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="" :focus>
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- dblclick .todo-list>li:nth-child(1)>.view>label
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="editing">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <input id="edit" class="edit" .value="buy milk" :focus>
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- input #edit "buy oat milk"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="editing">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <input id="edit" class="edit" .value="buy oat milk" :focus>
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- key #edit Enter
+(fetch 4: PUT /api/todos/1 {"accept":"application/json","content-type":"application/json"} "{\"title\":\"buy oat milk\",\"done\":false}")
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- respond 4 200 "{\"id\":1,\"title\":\"buy oat milk\",\"done\":false}" Content-Type: "application/json"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy oat milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- hash "#/completed"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="selected">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- hash "#/"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=false>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li>
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=false>
+            <label>"buy oat milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"1"</strong>
+        " item left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click #toggle-all
+(fetch 5: PUT /api/todos/1 {"accept":"application/json","content-type":"application/json"} "{\"title\":\"buy oat milk\",\"done\":true}")
+(the DOM did not change)
+-- respond 5 200 "{\"id\":1,\"title\":\"buy oat milk\",\"done\":true}" Content-Type: "application/json"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"buy oat milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"write beni"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click .todo-list>li:nth-child(2)>.view>.destroy
+(fetch 6: DELETE /api/todos/2 {})
+(the DOM did not change)
+-- respond 6 204 ""
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"buy oat milk"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- click #clear-completed
+(fetch 7: DELETE /api/todos/1 {})
+(fetch 8: DELETE /api/todos/3 {})
+(the DOM did not change)
+-- respond 7 204 ""
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <!---->
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- fail 8
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <p class="error" id="error">"the server cannot be reached"</p>
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- input #new-todo "offline"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="offline">
+    </header>
+    <p class="error" id="error">"the server cannot be reached"</p>
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- key #new-todo Enter
+(keydown's default prevented)
+(fetch 9: POST /api/todos {"accept":"application/json","content-type":"application/json"} "{\"title\":\"offline\",\"done\":false}")
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <p class="error" id="error">"the server cannot be reached"</p>
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>
+-- respond 9 500 "down"
+<body>
+  <section class="todoapp">
+    <header class="header">
+      <h1>"todos"</h1>
+      <input id="new-todo" class="new-todo" placeholder="What needs to be done?" autofocus="" .value="">
+    </header>
+    <p class="error" id="error">"the server answered 500"</p>
+    <section class="main">
+      <input id="toggle-all" class="toggle-all" type="checkbox" .value="on" .checked=true>
+      <label for="toggle-all">"Mark all as complete"</label>
+      <ul class="todo-list">
+        <li class="completed">
+          <div class="view">
+            <input class="toggle" type="checkbox" .value="on" .checked=true>
+            <label>"read the spec"</label>
+            <button class="destroy"></button>
+          </div>
+          <!---->
+        </li>
+      </ul>
+    </section>
+    <footer class="footer">
+      <span class="todo-count">
+        <strong>"0"</strong>
+        " items left"
+      </span>
+      <ul class="filters">
+        <li>
+          <a href="#/" class="selected">"All"</a>
+        </li>
+        <li>
+          <a href="#/active">"Active"</a>
+        </li>
+        <li>
+          <a href="#/completed" class="">"Completed"</a>
+        </li>
+      </ul>
+      <button id="clear-completed" class="clear-completed">"Clear completed"</button>
+    </footer>
+  </section>
+</body>

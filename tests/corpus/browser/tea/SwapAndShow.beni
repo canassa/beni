@@ -1,0 +1,82 @@
+-- An arm mounted in a dispatch is not visited again in it
+-- (docs/design/browser-direct.md §4.1 step 3 (b)): one message makes a
+-- hidden `Show` visible and exchanges the first two rows of the list
+-- inside it, so the arm is made from the model after the message, its rows
+-- already in the new order, and the list's script does not run on them a
+-- second time — the rows appear once, in the new order. While the `Show`
+-- is hidden, an exchange writes nothing of it.
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    panel : Maybe String
+    rows : List Row
+
+
+type Msg
+    = OpenSwapped
+    | Swap
+    | Close
+
+
+exchange : List Row → List Row
+exchange rows =
+    case rows of
+        [ a, b, …rest ] →
+            [ b, a, …rest ]
+
+        _ →
+            rows
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        OpenSwapped →
+            { model | panel = Just "rows", rows = exchange model.rows }
+
+        Swap →
+            { model | rows = exchange model.rows }
+
+        Close →
+            { model | panel = Nothing }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="open" onClick={OpenSwapped}>open</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="close" onClick={Close}>close</button>
+        <Show when={model.panel} keyed>
+            {λtitle →
+                <section>
+                    <h2>{title}</h2>
+                    <ul><For each={model.rows} keyed={.id}>{λr → <li>{r.label}</li>}</For></ul>
+                </section>
+            }
+        </Show>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { panel = Nothing
+                , rows =
+                    [ { id = 1, label = "one" }
+                    , { id = 2, label = "two" }
+                    , { id = 3, label = "three" }
+                    ]
+                }
+        , update = update
+        , view = view
+        }

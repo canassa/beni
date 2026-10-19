@@ -1,0 +1,112 @@
+-- load
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"0"</p>
+      <p id="count">"0"</p>
+      <input id="text" .value="start">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"0"</p>
+      <p id="count">"1"</p>
+      <input id="text" .value="start">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- input #text "typed"
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"0"</p>
+      <p id="count">"1"</p>
+      <input id="text" .value="typed">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- click #rebuild
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"1"</p>
+      <p id="count">"1"</p>
+      <input id="text" .value="rebuilt">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"1"</p>
+      <p id="count">"2"</p>
+      <input id="text" .value="rebuilt">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- input #text "current"
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"1"</p>
+      <p id="count">"2"</p>
+      <input id="text" .value="current">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- click #leave
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <p id="closed">"1"</p>
+  </main>
+</body>
+-- click #rebuild
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"2"</p>
+      <p id="count">"0"</p>
+      <input id="text" .value="back">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="rebuild">"rebuild"</button>
+    <button id="leave">"leave"</button>
+    <section>
+      <p id="serial">"2"</p>
+      <p id="count">"1"</p>
+      <input id="text" .value="back">
+      <button id="add">"add"</button>
+    </section>
+  </main>
+</body>

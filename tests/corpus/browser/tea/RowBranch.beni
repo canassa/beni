@@ -1,0 +1,67 @@
+-- A branch inside a `For` row (docs/design/browser-direct.md §5.5; S4's
+-- amendment, item 3: a branch inside a row element is a field of the
+-- row's instance), as TodoMVC's editing row: a row shows its label, or an
+-- input while it is being edited. A message for one row switches that row's
+-- arm and no other's; a message that renames every row patches the arm
+-- each row shows; a row patched whole by a reordering shows its new item's
+-- arm. The arm's handler reads its row's item.
+import Html exposing (Html)
+import Tea
+
+
+type alias Item =
+    id : Int
+    label : String
+    editing : Bool
+
+
+type Msg
+    = Edit Int
+    | Rename
+    | Reverse
+
+
+update : Msg, List Item → List Item
+update msg items =
+    case msg of
+        Edit id →
+            List.map items λi → if i.id == id then { i | editing = not i.editing } else i
+
+        Rename →
+            List.map items λi → { i | label = i.label ++ "!" }
+
+        Reverse →
+            List.reverse items
+
+
+view : List Item → Html Msg
+view items =
+    <main>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+        <ul>
+            <For each={items} keyed={False}>
+                {λi →
+                    <li>
+                        {if i.editing then <strong>{i.label}</strong> else <span>{i.label}</span>}
+                        <button id={"toggle-${String.fromInt i.id}"} onClick={Edit i.id}>
+                            edit
+                        </button>
+                    </li>
+                }
+            </For>
+        </ul>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                [ { id = 1, label = "one", editing = False }
+                , { id = 2, label = "two", editing = False }
+                ]
+        , update = update
+        , view = view
+        }

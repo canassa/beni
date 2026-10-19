@@ -1,0 +1,29 @@
+-- A handler on the value path that throws stops the page (§8.2; S4's
+-- amendment, item 6): the button is markup in a `Maybe Html` hole, `dom`'s
+-- kind, listening on its own node, and its message is made inside the
+-- guard, so the throw stops the page and no later click applies a message.
+-- The development build's crash screen carries the error; the release
+-- build adds nothing (`.release-expected`).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+boom : Html Msg
+boom = <button id="boom" onClick={λ_ → Debug.todo "value handler threw"}>boom</button>
+
+
+view : Int → Html Msg
+view count =
+    <main>
+        <p id="count">{String.fromInt count}</p>
+        {Just boom}
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λInc count → count + 1, view = view }

@@ -1,0 +1,13 @@
+module NeedLabels
+  14:10 List.push <call>: accepted call
+  22:17 value <lambda>: rejected need: NeedLabels.edit edits what it returns, which may be a list it does not own
+  26:17 value <lambda>: rejected need: NeedLabels.edit edits what it returns, which may be a list it does not own (approx)
+  33:13 value f: rejected need: NeedLabels.edit edits what it returns, and the checker does not know which function it is, so not that it returns a list it owns (approx)
+  summary edit: π1 R; res [*] ~cb1[*]{excl cb1[*]}r{excl cb1[*]}, cb1{excl cb1}; π1 calls ≤1, need owned
+  summary pick: π2 RA; res fresh1 π2
+  summary exactShared: res [*] ~shared(NeedLabels.shared)[*], shared(NeedLabels.shared)
+  summary approxEntry: res [*] ~fresh2 ~shared(NeedLabels.shared)[*], ~fresh1 ~shared(NeedLabels.shared)
+  summary approxElement: π1 R, π1[*] RA; res [*] ~⊤call{lost}r{lost}, [*]⋆ ~π1[*]{excl π1}, fresh1 ⊤call{lost}r{lost}, ⋆ ~π1[*]{excl π1}
+  demands 4: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 4: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause need 3

@@ -1,0 +1,15 @@
+# Mark every row of both lists, and focus row b in `#only`.
+input #only>li:nth-child(1)>input "1"
+input #only>li:nth-child(2)>input "2"
+input #only>li:nth-child(3)>input "3"
+input #framed>li:nth-child(3)>input "2"
+focus #only>li:nth-child(2)>input
+# The first and the last change places; b, between them, is not moved and keeps the focus.
+click #ends
+# b goes first and the rest are replaced; b is not moved and keeps the focus.
+click #promote
+# Every row is new: nothing typed survives, `#framed` keeps its first and last child.
+click #all
+# One row stays, typed into first; the other two are new.
+input #only>li:nth-child(2)>input "kept"
+click #keep

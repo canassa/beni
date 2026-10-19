@@ -1,7 +1,7 @@
--- `run/SchemaErrorUnreadOrders`, `…Events` and `…Items` in one program, with
--- fifteen more shape runs (`Padding`), so that every run takes its shape
--- (`schema.md` §6, *How a program chooses between shapes and workers*): the
--- three, each under the threshold, read the same inputs through workers. A run whose error
+-- `run/SchemaErrorUnreadOrders`, `…Events`, `…Items` and `…Copies` in one
+-- program, with fifteen more shape runs (`Padding`), so that every run takes its
+-- shape (`schema.md` §6, *How a program chooses between shapes and workers*):
+-- the four, each under the threshold, read the same inputs through workers. A run whose error
 -- nothing reads is a validator (*A run whose failure is never read is a
 -- validator*): read, parse, `Json.decodeValue` and
 -- `Json.decode`, in a `case` whose `Err` arms are `Err _` or under
@@ -450,6 +450,78 @@ padding ⊤ =
     "padding: ${String.fromInt (Padding.count v)}"
 
 
+schema Pair =
+    count : Int
+    label : String as "the-label"
+
+
+pairText : Pair.Type → String
+pairText p = "${String.fromInt p.count} ${p.label}"
+
+
+-- The host writes the object after the run.
+mutation : String
+mutation =
+    v = Hosts.parse "{\"count\":1,\"the-label\":\"one\"}"
+    valid = Result.toMaybe (Schema.read (Pair.schema ⊤) v)
+    read = Schema.read (Pair.schema ⊤) v
+    Hosts.set v "count" (Hosts.parse "99")
+    Hosts.set v "the-label" (Hosts.parse "\"changed\"")
+    shown =
+        case valid of
+            Just p →
+                pairText p
+
+            Nothing →
+                "invalid"
+    readShown =
+        case read of
+            Ok p →
+                pairText p
+
+            Err issues →
+                "invalid (${String.fromInt (List.length issues)})"
+    "host writes after the run: ${shown} | ${readShown}"
+
+
+-- `==` at a type variable.
+sameAt : a, a → Bool
+    where a.eq : a, a → Bool
+sameAt x y = x == y
+
+
+-- A run that reads its error, keeping its issues: the specialised path.
+readKept : Value → Maybe Pair.Type
+readKept v =
+    case Schema.read (Pair.schema ⊤) v of
+        Ok p →
+            Just p
+
+        Err issues →
+            if List.isEmpty issues then Nothing else Nothing
+
+
+extraKeys : String
+extraKeys =
+    plain = Hosts.parse "{\"count\":2,\"the-label\":\"two\"}"
+    extra = Hosts.with (Hosts.with plain "more" (Hosts.parse "1")) "label" (Hosts.parse "\"x\"")
+    valid =
+        if
+            sameAt
+                (Result.toMaybe (Schema.read (Pair.schema ⊤) plain))
+                (Result.toMaybe (Schema.read (Pair.schema ⊤) extra))
+        then
+            "equal"
+        else
+            "unequal"
+    read =
+        if sameAt (readKept plain) (readKept extra) then
+            "equal"
+        else
+            "unequal"
+    "extra keys, == at a type variable: ${valid} | ${read}"
+
+
 main : Node.Program
 main =
     Node.printLines
@@ -555,4 +627,6 @@ main =
         , itemJson
             "decode duplicate key, last bad"
             "{\"pos\":[3,4],\"color\":\"Red\",\"small\":2,\"small\":1.5,\"tags\":[],\"unit\":[]}"
+        , mutation
+        , extraKeys
         ]

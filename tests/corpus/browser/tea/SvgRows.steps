@@ -1,0 +1,7 @@
+# A click on a row's `<rect>` writes its `height` again.
+click #bar2
+# A row made from the wrapped template, and the `viewBox` hole.
+click #add
+# The rows moved by key, each still an SVG element.
+click #reverse
+click #bar3

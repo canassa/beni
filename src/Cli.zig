@@ -181,6 +181,12 @@ pub const Common = struct {
     /// same rows. Absent from `usage`, for `--allow-debug`'s reason. It is
     /// deleted when enforcement becomes the language's (§30.7, O4).
     ownership_everywhere: bool = false,
+    /// `--ownership-records-lost` — **hidden** and test-only
+    /// (`ownership-checker.md` §31.4 item 6): every record condition fails
+    /// approximately, so that a test can show no list's verdict reads one —
+    /// its list lines byte for byte those of the ordinary run. On `Common`
+    /// for `--ownership-everywhere`'s reason; absent from `usage`.
+    ownership_records_lost: bool = false,
 };
 
 /// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
@@ -318,6 +324,14 @@ pub const Build = struct {
     /// (`schema.md` §10). It changes no answer — that is what the corpus
     /// asserts — and no user has a reason to reach for it.
     schema_library: bool = false,
+    /// `--schema-shapes=always|never` — **hidden**, for `--allow-debug`'s
+    /// reason: every validator run with a shape takes it, or none does,
+    /// whatever the program's count of them against
+    /// `SchemaValid.shape_threshold` (`schema.md` §6, *How a program chooses
+    /// between shapes and workers*). `zig build test-shape-threshold` builds
+    /// a program both ways to check that T is still the crossover. Null: the
+    /// count decides.
+    schema_shapes: ?bool = null,
     /// `--fuzz` — **hidden**, for `--allow-debug`'s reason: a test-only
     /// build for differential fuzzing (`browser-direct.md` §8.3's contract),
     /// on every platform and with `--release`: every constructor is kept
@@ -640,6 +654,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
         common.ownership_everywhere = true;
         return null;
     }
+    // Hidden and test-only (see `Common.ownership_records_lost`).
+    if (std.mem.eql(u8, name, "--ownership-records-lost")) {
+        if (value != null) return noValue(name);
+        common.ownership_records_lost = true;
+        return null;
+    }
     if (std.mem.eql(u8, name, "--core-root")) {
         const v = value orelse return needsValue(name, "<dir>");
         if (v.len == 0) return needsValue(name, "<dir>");
@@ -775,6 +795,7 @@ const BuildSpecific = struct {
     library: bool = false,
     allow_debug: bool = false,
     schema_library: bool = false,
+    schema_shapes: ?bool = null,
     fuzz: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
@@ -814,6 +835,15 @@ const BuildSpecific = struct {
             // The fourth hidden flag (see `Build.schema_library`).
             if (value != null) return noValue(name);
             self.schema_library = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--schema-shapes")) {
+            // A hidden flag (see `Build.schema_shapes`).
+            const v = value orelse return needsValue(name, "always|never");
+            if (std.mem.eql(u8, v, "always")) {
+                self.schema_shapes = true;
+            } else if (std.mem.eql(u8, v, "never")) {
+                self.schema_shapes = false;
+            } else return needsValue(name, "always|never");
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--fuzz")) {
             // The fifth hidden flag (see `Build.fuzz`).
@@ -879,6 +909,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
         .schema_library = s.specific.schema_library,
+        .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,

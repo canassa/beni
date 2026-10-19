@@ -1,0 +1,29 @@
+import Html exposing (Html)
+
+
+label : String → Html msg
+label text = <b>{text}</b>
+
+
+card : String, String → Html msg
+card prefix text = <span title={prefix}>{label text}</span>
+
+
+pub page : msg, msg, msg, msg, List { id : Int, label : String }, String → Html msg
+page edit swap prefixMsg quiet rows prefix =
+    <main>
+        <button id="edit" onClick={edit}>edit</button>
+        <button id="swap" onClick={swap}>swap</button>
+        <button id="prefix" onClick={prefixMsg}>prefix</button>
+        <button id="quiet" onClick={quiet}>quiet</button>
+        <ul id="keyed">
+            <For each={rows} keyed={.id}>
+                {λrow → <li><input />{card prefix row.label}</li>}
+            </For>
+        </ul>
+        <ul id="positional">
+            <For each={rows} keyed={False}>
+                {λrow → <li>{card prefix row.label}</li>}
+            </For>
+        </ul>
+    </main>

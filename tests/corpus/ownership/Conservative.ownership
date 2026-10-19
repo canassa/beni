@@ -6,6 +6,6 @@ module Conservative
   summary filtered: π1 R, π1[*] R
   summary mapped: π1 R
   summary counted: π1 RAW; res π1
-  summary mirrored: π1 RAW, π1[*] RA; res [*] fresh1{lost} ~fresh2{lost} ~π1[*], π1{lost}
+  summary mirrored: π1 RAW, π1[*] RA; res [*] fresh1{lost} ~fresh2{lost} ~π1[*], π1{lost}r{lost}
   demands 4: accepted 4 (fresh 0, call 2, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 4: accepted 4 (fresh 0, call 2, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

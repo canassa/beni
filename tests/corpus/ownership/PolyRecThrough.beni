@@ -1,0 +1,68 @@
+-- ownership: a marked value through a call outside the group (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)). The
+-- composed-path fold marks an entry the first time it goes below a variable a
+-- call inside the group grows; the caller's own mark rides through any call,
+-- here `idT`'s and `pick`'s, which are outside the group. Were it cleared there,
+-- `wrap2`'s and `wrap3`'s paths would grow to the cut; they stop at `[*]⋆`, and
+-- `push2` is accepted `param`, as `PolyRec`'s `pushArg` is.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+idT : T a → T a
+idT t = t
+
+
+pick : Bool, T a, T a → T a
+pick b s t =
+    if b then
+        s
+    else
+        t
+
+
+wrap2 : Int, a → T a
+wrap2 n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (idT (wrap2 (n - 1) [ x ]))
+
+
+wrap3 : Int, a → T a
+wrap3 n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (pick (n > 5) (wrap3 (n - 1) [ x ]) (Leaf [ x ]))
+
+
+pub push2 : List Int → Int
+push2 xs =
+    case wrap2 1 xs of
+        Wrap (Leaf ys) →
+            case ys of
+                [ zs ] →
+                    List.length (List.push zs 1)
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub push3 : List Int → Int
+push3 xs =
+    case wrap3 1 xs of
+        Wrap (Leaf ys) →
+            case ys of
+                [ zs ] →
+                    List.length (List.push zs 1)
+
+                _ →
+                    0
+
+        _ →
+            0

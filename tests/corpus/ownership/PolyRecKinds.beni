@@ -1,0 +1,71 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- Growth through a function type, a `Dict`, a `Maybe`, a record (whose
+-- objects the result holds, `fresh501◦`) and a tuple of lists.
+import Dict exposing (Dict)
+
+
+type T a
+    = Leaf a
+    | Wrap (T (Int → a))
+
+
+wf : Int, a → T a
+wf n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wf (n - 1) λ_ → x)
+
+
+type D a
+    = DLeaf a
+    | DWrap (D (Dict String a))
+
+
+wd : Int, a → D a
+wd n x =
+    if n == 0 then
+        DLeaf x
+    else
+        DWrap (wd (n - 1) (Dict.singleton "k" x))
+
+
+type M a
+    = MLeaf a
+    | MWrap (M (Maybe (List a)))
+
+
+wm : Int, a → M a
+wm n x =
+    if n == 0 then
+        MLeaf x
+    else
+        MWrap (wm (n - 1) (Just [ x ]))
+
+
+type R a
+    = RLeaf a
+    | RWrap (R { v : List a, w : Int })
+
+
+wr : Int, a → R a
+wr n x =
+    if n == 0 then
+        RLeaf x
+    else
+        RWrap (wr (n - 1) { v = [ x ], w = 0 })
+
+
+type U a
+    = ULeaf a
+    | UWrap (U (List a × List a))
+
+
+wu : Int, a, a → U a
+wu n x y =
+    if n == 0 then
+        ULeaf x
+    else
+        UWrap (wu (n - 1) ( [ x ], [ y ] ) ( [ y ], [ x ] ))

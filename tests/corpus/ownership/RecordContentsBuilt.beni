@@ -1,0 +1,121 @@
+-- ownership: lists that hold one record at two positions, built in the body
+-- (`ownership-checker.md` §31.4 item 6, #421 review). `flip` writes each
+-- record of its list in place, so it relies on the list holding no record
+-- twice (`rxreq`), and every caller here hands it one that may: pushed,
+-- concatenated, repeated, spread, appended, built by a helper, reversed,
+-- filtered, mapped by identity. Each call is rejected `exclusive`. A record
+-- shared by two records the callback does not write (`a12`) is refused too:
+-- the list holds that record at two positions.
+import Dict exposing (Dict)
+
+
+type alias Row =
+    id : Int
+    done : Bool
+
+
+type alias Outer =
+    inner : Row
+    n : Int
+
+
+flip : List Row → List Row
+flip rows = List.map rows λr → { r | done = not r.done }
+
+
+a1 : Row → List Row
+a1 t = flip (List.push [ t ] t)
+
+
+a2 : Row → List Row
+a2 t = flip (List.concat [ [ t ], [ t ] ])
+
+
+a3 : Row → List Row
+a3 t = flip (List.repeat t 2)
+
+
+a4 : Row → List Row
+a4 t = flip [ …[ t ], …[ t ] ]
+
+
+a5 : List Row → List Row
+a5 rows =
+    case rows of
+        [ x, …rest ] →
+            flip (List.push rest x ▷ List.push x)
+
+        [] →
+            rows
+
+
+a6 : Row → List Row
+a6 t = flip (List.append [ t ] [ t ])
+
+
+mk : Row → List Row
+mk t = [ t, t ]
+
+
+a7 : Row → List Row
+a7 t = flip (mk t)
+
+
+mk2 : Row → List Row
+mk2 t = List.push [ t ] t
+
+
+a8 : Row → List Row
+a8 t = flip (mk2 t)
+
+
+a9 : Row → List Row
+a9 t =
+    xs = [ t ]
+    flip (List.push xs t)
+
+
+a10 : Row → Dict Int Row
+a10 t = Dict.map (Dict.insert (Dict.insert Dict.empty 1 t) 2 t) λ_ r → { r | done = not r.done }
+
+
+a11 : Outer → List Outer
+a11 o = List.map [ o, { o | n = 1 } ] λx → { x | inner = { id = 0, done = True } }
+
+
+flipInner : List Outer → List Outer
+flipInner os = List.map os λo → { o | inner = { done = not o.inner.done, id = o.inner.id } }
+
+
+a12 : Row → List Outer
+a12 t = List.map [ { inner = t, n = 1 }, { inner = t, n = 2 } ] λo → { o | n = 3 }
+
+
+a13 : Row → List Row
+a13 t = flip (List.reverse [ t, t ])
+
+
+a14 : Row → List Row
+a14 t = flip (List.filter [ t, t ] λ_ → True)
+
+
+a15 : Row, Bool → List Row
+a15 t b =
+    xs = if b then [ t, t ] else [ t ]
+    flip xs
+
+
+a16 : List Row → List Row
+a16 rows = flip (List.append rows rows)
+
+
+a17 : List Row → List Row × List Row
+a17 rows = ( flip rows, rows )
+
+
+a18 : List Row → List Row
+a18 rows = flip (List.concat [ rows, rows ])
+
+
+a19 : Row → List Row
+a19 t = flip (List.indexedMap [ t, t ] λ_ r → r)

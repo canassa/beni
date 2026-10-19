@@ -1,0 +1,101 @@
+-- load
+<body>
+  <main>
+    <ul>
+      <li id="row1">
+        <span id="stop1">
+          <button id="button1">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link1">"link"</a>
+      </li>
+      <li id="row2">
+        <span id="stop2">
+          <button id="button2">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link2">"link"</a>
+      </li>
+    </ul>
+    <p id="log">""</p>
+  </main>
+</body>
+-- click #button1
+<body>
+  <main>
+    <ul>
+      <li id="row1">
+        <span id="stop1">
+          <button id="button1">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link1">"link"</a>
+      </li>
+      <li id="row2">
+        <span id="stop2">
+          <button id="button2">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link2">"link"</a>
+      </li>
+    </ul>
+    <p id="log">"button 1, stopper 1"</p>
+  </main>
+</body>
+-- click #stop2
+<body>
+  <main>
+    <ul>
+      <li id="row1">
+        <span id="stop1">
+          <button id="button1">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link1">"link"</a>
+      </li>
+      <li id="row2">
+        <span id="stop2">
+          <button id="button2">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link2">"link"</a>
+      </li>
+    </ul>
+    <p id="log">"button 1, stopper 1, stopper 2"</p>
+  </main>
+</body>
+-- click #row1
+<body>
+  <main>
+    <ul>
+      <li id="row1">
+        <span id="stop1">
+          <button id="button1">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link1">"link"</a>
+      </li>
+      <li id="row2">
+        <span id="stop2">
+          <button id="button2">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link2">"link"</a>
+      </li>
+    </ul>
+    <p id="log">"button 1, stopper 1, stopper 2, row 1, main"</p>
+  </main>
+</body>
+-- click #link2
+(click's default prevented)
+<body>
+  <main>
+    <ul>
+      <li id="row1">
+        <span id="stop1">
+          <button id="button1">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link1">"link"</a>
+      </li>
+      <li id="row2">
+        <span id="stop2">
+          <button id="button2">"go"</button>
+        </span>
+        <a href="#elsewhere" id="link2">"link"</a>
+      </li>
+    </ul>
+    <p id="log">"button 1, stopper 1, stopper 2, row 1, main, link 2, row 2, main"</p>
+  </main>
+</body>

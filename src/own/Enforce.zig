@@ -66,6 +66,7 @@ pub const Inputs = struct {
             .in_place = i.in_place,
             .blocks = i.blocks,
             .entry_everywhere = session.options.ownership_everywhere,
+            .records_lost = session.options.ownership_records_lost,
             .profile = &session.profile,
         };
     }

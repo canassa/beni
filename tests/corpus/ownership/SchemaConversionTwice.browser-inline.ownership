@@ -1,0 +1,31 @@
+module SchemaConversionTwice
+  56:33 List.push <call SchemaConversionTwice.range>: accepted call
+  127:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  136:15 List.push p.items.all: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  146:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  155:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  165:13 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  175:15 List.push a: accepted call
+  185:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  195:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  204:13 List.push p.other: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  213:13 List.push p.items: accepted call
+  223:15 List.push a: accepted call
+  233:15 List.push a: rejected unknown: it came from a call of a function value that may be one of several functions, and the checker does not join what each returns (approx)
+  summary dupHelper: π1 RA; res .0 π1, .1 π1
+  summary range: res [*] ~fresh2 ~fresh3, fresh1 ~fresh2
+  summary tuple: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .0[*]⋆ ~⊤twice{lost}r{lost}, .0⋆ ~⊤twice{lost}r{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}r{lost}
+  summary record: res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~⊤twice{lost}r{lost}, .0⋆ ~⊤twice{lost}r{lost}, .1 fresh3{lost}, .1⋆ ~⊤twice{lost}r{lost}
+  summary nested: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .0[*]⋆ ~⊤twice{lost}r{lost}, .0⋆ ~⊤twice{lost}r{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}r{lost}
+  summary library: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .0[*]⋆ ~⊤twice{lost}r{lost}, .0⋆ ~⊤twice{lost}r{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}r{lost}
+  summary single: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~⊤twice{lost}r{lost}, fresh1{lost}, ⋆ ~⊤twice{lost}r{lost}
+  summary once: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .1 fresh2{lost}
+  summary made: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .0[*]⋆ ~⊤twice{lost}r{lost}, .0⋆ ~⊤twice{lost}r{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}r{lost}
+  summary copied: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .0[*]⋆ ~⊤twice{lost}r{lost}, .0⋆ ~⊤twice{lost}r{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}r{lost}
+  summary sibling: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~⊤twice{lost}r{lost}, fresh1{lost}, ⋆ ~⊤twice{lost}r{lost}
+  summary ranged: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
+  summary rangedPair: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .1 fresh2{lost}
+  summary dict: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .0[*]⋆ ~⊤call{lost}r{lost}, .0⋆ ~⊤call{lost}r{lost}, .1 fresh2{lost}, .1⋆ ~⊤call{lost}r{lost}
+  demands 13: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 13: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause unknown 9

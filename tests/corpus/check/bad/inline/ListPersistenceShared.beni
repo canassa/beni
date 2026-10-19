@@ -1,0 +1,13 @@
+-- `run/ListPersistence` without its copy: a version kept in a `Dict` is
+-- read back and pushed onto while the `Dict` still holds it, and the
+-- `Dict` is read again after. Lists are edited in place, so the push
+-- would change the kept version (`ownership-checker.md` §30); the checker
+-- refuses it, and `run/ListPersistence` writes `List.copy v` instead.
+import Dict exposing (Dict)
+
+
+pub run : Dict Int (List Int) → List Int × Maybe (List Int)
+run versions =
+    v = Dict.get versions 0 ▷ Maybe.withDefault []
+    newer = List.push v 3
+    ( newer, Dict.get versions 0 )

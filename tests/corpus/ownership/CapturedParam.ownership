@@ -4,10 +4,10 @@ module CapturedParam
   21:17 call Set.foldl <literal>: accepted fresh (<lambda> writes what Set.foldl supplies it)
   21:59 construction acc: accepted callback-param (Set.foldl supplies it owned)
   29:34 construction acc: pending: CapturedParam.stored loses sight of what calls it
-  summary sumBy: π1 R, π2 RA, π3 R; res ~cb3{excl cb3} ~π2; π3 calls many, supply 2 cb3 owned{excl cb3, excl π2}, supply 2 π2 owned{excl cb3, excl π2}
+  summary sumBy: π1 R, π2 RA, π3 R; res ~cb3{excl cb3}r{excl cb3} ~π2; π3 calls many, supply 2 cb3 owned{excl cb3, excl π2}r{excl cb3}, supply 2 π2 owned{excl cb3, excl π2}r{excl cb3}
   summary collect: π1 R; res ~fresh1
   summary collectSet: π1 R, π1[*] R; res ~fresh1
-  summary stored: π1 RA; res .run λ, .run◇ π1, fresh501◦; π1 calls 0, unseen
+  summary stored: π1 RA; res .run λr{lost}, .run◇ π1, fresh501◦; π1 calls 0, unseen
   summary usesStored: res fresh501◦
   demands 5: accepted 4 (fresh 2, call 0, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 1, rejected 0
 total 5: accepted 4 (fresh 2, call 0, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 1, rejected 0

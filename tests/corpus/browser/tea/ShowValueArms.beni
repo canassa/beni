@@ -1,0 +1,61 @@
+-- A `Show` whose body or fallback is a markup value, not markup written in
+-- place (§5.5; S4's amendment, item 3): each is a value arm, one value slot,
+-- and what it reads is not the `Show`'s `when`. A body that is a lambda
+-- computing its markup reads `model.flag`; a fallback that is
+-- `Html.text model.status` reads `model.status`. A message that writes only
+-- those must redraw the arm shown, though `when` is unchanged (the S4
+-- review: the arms were redrawn only where `when`'s reads conflicted, and
+-- went stale).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Flip
+    | Status String
+    | Login
+    | Logout
+
+
+type alias Model =
+    user : Maybe String
+    flag : Bool
+    status : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Flip →
+            { model | flag = not model.flag }
+
+        Status s →
+            { model | status = s }
+
+        Login →
+            { model | user = Just "ann" }
+
+        Logout →
+            { model | user = Nothing }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <button id="status" onClick={Status "busy"}>status</button>
+        <button id="login" onClick={Login}>login</button>
+        <button id="logout" onClick={Logout}>logout</button>
+        <Show when={model.user} keyed fallback={Html.text model.status}>
+            {λu → if model.flag then <b>{u}</b> else <i>{u}</i>}
+        </Show>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { user = Nothing, flag = False, status = "idle" }
+        , update = update
+        , view = view
+        }

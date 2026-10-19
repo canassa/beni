@@ -1,0 +1,290 @@
+-- load
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "b"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(1)>input "1's"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="1's">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "b"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(2)>input "2's"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="1's">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+      <li>
+        <input .value="2's">
+        "2"
+        ": "
+        "b"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- input li:nth-child(3)>input "3's"
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="1's">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+      <li>
+        <input .value="2's">
+        "2"
+        ": "
+        "b"
+        <!---->
+      </li>
+      <li>
+        <input .value="3's">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="3's">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+      <li>
+        <input .value="2's">
+        "2"
+        ": "
+        "b"
+        <!---->
+      </li>
+      <li>
+        <input .value="1's">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #twice
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="1's">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+      <li>
+        <input .value="3's">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "1"
+        ": "
+        "a again"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #new
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "7"
+        ": "
+        "g"
+        <!---->
+      </li>
+      <li>
+        <input .value="3's">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "8"
+        ": "
+        "h"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #keep
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="3's">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "8"
+        ": "
+        "h"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #back
+<body>
+  <main>
+    <button id="reverse">"reverse"</button>
+    <button id="twice">"twice"</button>
+    <button id="new">"new"</button>
+    <button id="keep">"keep"</button>
+    <button id="back">"back"</button>
+    <ul>
+      <li>
+        <input .value="">
+        "1"
+        ": "
+        "a"
+        <!---->
+      </li>
+      <li>
+        <input .value="">
+        "2"
+        ": "
+        "b"
+        <!---->
+      </li>
+      <li>
+        <input .value="3's">
+        "3"
+        ": "
+        "c"
+        <!---->
+      </li>
+    </ul>
+  </main>
+</body>

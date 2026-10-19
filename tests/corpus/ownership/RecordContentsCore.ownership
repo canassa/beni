@@ -1,0 +1,50 @@
+module RecordContentsCore
+  23:13 update rows[*]: accepted param (List.map writes it)
+  23:32 update r: accepted callback-param (List.map supplies it owned)
+  27:8 update <call List.map>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  31:8 update <call List.indexedMap>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  35:8 update <call List.filterMap>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  39:8 update <call List.concatMap>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  43:8 update <call List.initialize>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  47:8 update <call List.take>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  51:8 update <call List.drop>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) [copy]
+  55:8 update <call List.sortBy>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  59:8 update <call Dict.values>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  63:9 update <call List.foldl>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  63:15 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  63:47 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  68:5 update m#Just.0: rejected exclusive: Dict.update hands its parameter 1 a position of a list that may hold one record at two positions (approx) [copy]
+  68:22 update r: accepted callback-param (Maybe.map supplies it owned)
+  72:9 List.update <literal>: accepted fresh
+  72:37 update r: rejected exclusive: List.update hands its parameter 1 a position of a list that may hold one record at two positions [copy]
+  76:9 update <expression>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  80:9 update <call List.map>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) [copy]
+  84:12 update os[*]: accepted param (List.map writes it)
+  84:29 update o: accepted callback-param (List.map supplies it owned)
+  88:9 update <literal>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flipO writes it) [copy]
+  92:17 update os[*]: accepted param (List.map writes it)
+  92:34 update o: accepted callback-param (List.map supplies it owned)
+  96:9 update <call List.repeat>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.writeInner writes it) (approx) [copy]
+  summary flip: π1 R, π1[*] W{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary c1: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary c2: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary c3: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary c4: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{excl π1} ~fresh503◦r{lost} ~π1◦, fresh1r{lost}
+  summary c5: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary c6: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦, fresh1r{lost}
+  summary c7: π1 RW{done}; res [*] ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
+  summary c8: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary c9: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦r{lost}, fresh1r{lost}
+  summary c10: π1 RW{done}; res [*] ~fresh2r{lost} ~π1◦, fresh1r{lost}
+  summary c11: π1 R; res #Dict.0#Node.2 ~π1r{lost} ~π1◦r{lost}
+  summary c12: π1 R; res [*] ~π1◦ π1, fresh1{shared}r{shared}
+  summary c13: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary c14: π1 RW{done}; res [*] ~fresh2r{shared} ~fresh501◦r{shared} ~fresh502◦r{shared} ~π1◦, fresh1r{shared}
+  summary flipO: π1 R, π1[*] W{inner}; res [*] ~fresh2r{excl π1} ~π1[*]◦, [*].inner ~fresh501◦, fresh1r{excl π1}; rxreq excl π1
+  summary c15: π1 R; res [*] ~fresh2r{shared} ~fresh501◦ ~fresh502◦, [*].inner ~fresh503◦, fresh1r{shared}
+  summary writeInner: π1 R, π1[*] W{n}; res [*] ~fresh2r{excl π1} ~π1[*]◦, [*].inner ~π1[*].inner, fresh1r{excl π1}; rxreq excl π1
+  summary c16: π1 RW{n}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, [*].inner ~fresh503◦r{lost} ~fresh504◦r{lost} ~π1.inner, fresh1r{lost}
+  demands 3: accepted 3 (fresh 2, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 23: accepted 7, pending 0, rejected 16 (copy 16, restructure 0); hoisted 0, eager reads 0
+total 3: accepted 3 (fresh 2, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 23: accepted 7, pending 0, rejected 16 (copy 16, restructure 0); hoisted 0, eager reads 0

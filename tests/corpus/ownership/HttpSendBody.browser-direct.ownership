@@ -5,8 +5,8 @@ module HttpSendBody
   66:47 List.push issues: accepted param
   80:5 entry HttpSendBody.update model: accepted entry
   80:5 entry HttpSendBody.update msg#Answered.0#Err.0#BadRequest.0#UnprintableBody.0: accepted entry
-  summary update: π1 R, π1#Answered.0#Err.0#BadRequest.0#UnprintableBody.0 RW, π2 RAW, π2[*] A; res .0 π2, .0[*] ~π2[*], .1#Cmd.0 fresh2{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~fresh501◦ ~fresh502◦, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇.body ~fresh3{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇.headers ~fresh1
-  summary view: π1 R; res ⟨render⟩ fresh1{lost}
+  summary update: π1 R, π1#Answered.0#Err.0#BadRequest.0#UnprintableBody.0 RW, π2 RAW, π2[*] A; res .0 π2, .0[*] ~π2[*], .1#Cmd.0 fresh2{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~fresh501◦ ~fresh502◦, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇.body ~fresh3{lost}r{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇.headers ~fresh1
+  summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 6: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 1
 total 6: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 1
 cause need 1

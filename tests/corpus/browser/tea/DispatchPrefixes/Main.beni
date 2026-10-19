@@ -1,0 +1,61 @@
+-- Shared constructor prefixes must retain leaf/default priority. The tuple
+-- update cannot specialise an arm: its body is shared rather than copied.
+import Html exposing (Html)
+import Tea
+
+
+type Inner
+    = Add Int
+    | Sub Int
+    | Clear
+
+
+type Msg
+    = Left Inner
+    | Right Inner
+    | Quiet
+
+
+type alias Model =
+    left : Int
+    right : Int
+
+
+apply : Inner, Int → Int
+apply msg n =
+    case msg of
+        Add x →
+            n + x
+        Sub x →
+            n - x
+        Clear →
+            0
+
+
+update : Msg, Model → Model
+update msg model =
+    case ( msg, model.left ) of
+        ( Left inner, _ ) →
+            { model | left = apply inner model.left }
+        ( Right inner, _ ) →
+            { model | right = apply inner model.right }
+        _ →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="la" onClick={Left (Add 2)}>left add</button>
+        <button id="ls" onClick={Left (Sub 1)}>left sub</button>
+        <button id="lc" onClick={Left Clear}>left clear</button>
+        <button id="ra" onClick={Right (Add 3)}>right add</button>
+        <button id="rs" onClick={Right (Sub 2)}>right sub</button>
+        <button id="rc" onClick={Right Clear}>right clear</button>
+        <button id="q" onClick={Quiet}>quiet</button>
+        <p>{model.left}:{model.right}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { left = 0, right = 0 }, update = update, view = view }

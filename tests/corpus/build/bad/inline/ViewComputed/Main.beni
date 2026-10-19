@@ -1,0 +1,20 @@
+-- `view_not_compiled`: a `view` a call computes when the page runs is no
+-- function whose body the compiler can reach as markup, and
+-- `browser-inline` has no renderer to hand it to, so the build refuses it
+-- at the field (docs/design/browser-inline.md §5, class 3). Ported from
+-- `build/bad/direct/`. `plain`'s markup is refused too, as markup no program
+-- compiles as its `view` (§5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+plain : {} → Html {}
+plain _ = <p>plain</p>
+
+
+pick : Bool → ({} → Html {})
+pick _ = plain
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = pick True }

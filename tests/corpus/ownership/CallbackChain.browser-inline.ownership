@@ -1,0 +1,22 @@
+module CallbackChain
+  22:26 List.push <call>: accepted call
+  33:29 List.push <call>: accepted call
+  58:13 call CallbackChain.pushed4 xs: rejected later-use: xs is read again at 58:11 (CallbackChain.pushed4 writes what its callback returns, and the callback returns this argument)
+  68:7 List.push xs: rejected alias: r holds it and is read at 68:5
+  74:7 List.push xs: accepted param
+  summary id: π1 RA; res π1
+  summary pushed4: π1 R, π2 R, π3 R, π4 R, π5 R; res [*] ~cb4[*]{excl cb4[*]}r{excl cb4[*]}, cb4{excl cb4}; π1 calls ≤1, supply 1 π5 owned{excl π5}; π2 calls ≤1, supply 1 cb1 owned{excl cb1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}; π4 calls ≤1, need owned, supply 1 cb3 owned{excl cb3}
+  summary pushed5: π1 R, π2 R, π3 R, π4 R, π5 R, π6 R; res [*] ~cb5[*]{excl cb5[*]}r{excl cb5[*]}, cb5{excl cb5}; π1 calls ≤1, supply 1 π6 owned{excl π6}; π2 calls ≤1, supply 1 cb1 owned{excl cb1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}; π4 calls ≤1, supply 1 cb3 owned{excl cb3}; π5 calls ≤1, need owned, supply 1 cb4 owned{excl cb4}
+  summary returned4: π1 R, π2 R, π3 R, π4 R, π5 R; res cb4{excl cb4}; π1 calls ≤1, supply 1 π5 owned{excl π5}; π2 calls ≤1, supply 1 cb1 owned{excl cb1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}; π4 calls ≤1, supply 1 cb3 owned{excl cb3}
+  summary returned5: π1 R, π2 R, π3 R, π4 R, π5 R, π6 R; res cb5{excl cb5}; π1 calls ≤1, supply 1 π6 owned{excl π6}; π2 calls ≤1, supply 1 cb1 owned{excl cb1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}; π4 calls ≤1, supply 1 cb3 owned{excl cb3}; π5 calls ≤1, supply 1 cb4 owned{excl cb4}
+  summary four: π1 RAS, π1[*] A; res .0 π1, .0[*] ~π1[*], .1 π1
+  summary five: π1 RAEwW{}; res ~⊤{lost}r{lost}; limit callbacks 5
+  summary kept4: π1 RAW, π1[*] A; res .0 π1, .0[*] ~π1[*], .1 π1
+  summary kept5: π1 RAEwW{}; res ~⊤{lost}r{lost}; limit callbacks 5
+  limit five: callbacks 5, over 4
+  limit kept5: callbacks 5, over 4
+  demands 5: accepted 3 (fresh 0, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 5: accepted 3 (fresh 0, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+limits 2
+cause later-use 1
+cause alias 1

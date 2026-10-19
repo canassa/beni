@@ -25,10 +25,10 @@ module CallbackKeeps
   161:13 List.push xs: rejected alias: kept.0 holds it and is read at 161:5
   169:23 List.push b: rejected alias: kept.0 holds it and is read at 169:13
   summary kParam: π1 R, π2 RAW, π2[*] A; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*]; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
-  summary kTree: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}, .1 π2{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
-  summary kOne: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}, .1 π2{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary kTree: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1}, .1 π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary kOne: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1}, .1 π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
   summary kFresh: π1 R; res .0 cb1{excl cb1}, .1 fresh1; π1 calls ≤1, supply 1 fresh1 borrowed
-  summary wrap: π1 R; res .0 cb1{excl cb1}, .1 fresh1; π1 calls ≤1, need owned, supply 1 fresh1 borrowed
+  summary wrap: π1 R; res .0 cb1{excl cb1}r{excl cb1}, .1 fresh1; π1 calls ≤1, need owned, supply 1 fresh1 borrowed
   summary keepParam: res .0.0 fresh1, .1 fresh1
   summary dropParam: res .0.0 fresh2, .1 fresh1
   summary keepCtor: res .0#Node.0 fresh1, .1 fresh1
@@ -42,7 +42,7 @@ module CallbackKeeps
   summary handDrop: res .0.0 fresh2, .1 fresh1
   summary returnKeep: res .0.0 fresh1, .1 fresh1, .1[*] ~fresh2
   summary returnDrop: res [*] ~fresh2, fresh1
-  summary kBefore: π1 R, π2 RAW, π2[*] RA; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*]; π1 calls ≤1, supply 1 π2 borrowed{excl π2}, supply 1[*] π2[*] borrowed{excl π2}
+  summary kBefore: π1 R, π2 RAW, π2[*] RA; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*]; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2[*]}, supply 1[*] π2[*] borrowed{excl π2}r{excl π2[*]}
   summary writeFirst: res .0.0 fresh1, .1 fresh1
   summary pickSecond: π2 R; res .0 cb2{excl cb2}, .1 fresh1; π2 calls ≤1, supply 1 fresh1 borrowed
   summary inList: π1 R; res .0 cb1{excl cb1}, .1 fresh2, .1[*] fresh1; π1 calls ≤1, supply 1 fresh1 borrowed

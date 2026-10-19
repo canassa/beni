@@ -1,0 +1,57 @@
+-- A keyed list replaced by a list a message carries (browser-direct.md §6.3,
+-- as amended for S3): the reconciler matches the new rows to the old by key
+-- and rank, whatever the new list is. The page's buttons send a few lists —
+-- the rows reversed, a subsequence, one key twice, keys the list does not
+-- have — and the value fuzzer sends lists of the ids the page shows, in
+-- another order, filtered or repeated. Each row shows its id, so the fuzzer
+-- sees it; its input is not controlled, so typed text shows which node
+-- shows which item.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Replace (List Row)
+    | Keep (List Int)
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+update : Msg, List Row → List Row
+update msg rows =
+    case msg of
+        Replace next →
+            next
+
+        Keep ids →
+            List.filter rows λr → List.member ids r.id
+
+
+row : Int, String → Row
+row id label = { id = id, label = label }
+
+
+view : List Row → Html Msg
+view rows =
+    <main>
+        <button id="reverse" onClick={Replace [ row 3 "c", row 2 "b", row 1 "a" ]}>reverse</button>
+        <button id="twice" onClick={Replace [ row 1 "a", row 3 "c", row 1 "a again" ]}>
+            twice
+        </button>
+        <button id="new" onClick={Replace [ row 7 "g", row 3 "c", row 8 "h" ]}>new</button>
+        <button id="keep" onClick={Keep [ 3, 8 ]}>keep</button>
+        <button id="back" onClick={Replace [ row 1 "a", row 2 "b", row 3 "c" ]}>back</button>
+        <ul>
+            <For each={rows} keyed={.id}>
+                {λr → <li><input />{r.id}: {r.label}</li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → [ row 1 "a", row 2 "b", row 3 "c" ], update = update, view = view }

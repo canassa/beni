@@ -756,6 +756,34 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.release = true;
         }
     }
+    // An ownership fixture beside a `.platform` file is a case per platform
+    // it names (`Fixture.token`), each budgeted on its own: every dump
+    // re-checks core from source (`ownership-checker.md` §16.9), so a
+    // fixture's cost grows with the platforms it is read on.
+    if (kind == .ownership) {
+        var expanded: std.ArrayList(Fixture) = .empty;
+        for (fixtures.items) |fixture| {
+            const text = Io.Dir.cwd().readFileAlloc(testing.io, try fixtureGoldenPath(arena, fixture, "platform"), arena, .limited(4096)) catch |err| switch (err) {
+                error.FileNotFound => {
+                    try expanded.append(arena, fixture);
+                    continue;
+                },
+                else => return err,
+            };
+            var names = std.mem.tokenizeAny(u8, text, " \t\r\n");
+            var any = false;
+            while (names.next()) |name| {
+                any = true;
+                var one = fixture;
+                one.token = name;
+                one.label = try std.fmt.allocPrint(arena, " [{s}]", .{name});
+                try expanded.append(arena, one);
+            }
+            // An empty `.platform` is one case, which reports it.
+            if (!any) try expanded.append(arena, fixture);
+        }
+        return expanded.items;
+    }
     return fixtures.items;
 }
 
@@ -815,13 +843,16 @@ const Walker = struct {
             // fixture costs.
             const spent_start = meter.read();
             const timed: ?[2]std.Io.Timestamp = if (world.timing.enabled()) .{ world.timing.now(), world.timing.threadCpu() } else null;
-            world.timing.current_fixture = path;
+            // Keyed by case, not by fixture: a page's value fuzz and an ownership
+            // fixture's token cases each have a record of their own.
+            const case_name = try std.fmt.allocPrint(arena, "{s}{s}", .{ path, fixture.suffix() });
+            world.timing.current_fixture = case_name;
             defer {
                 world.timing.current_fixture = "";
                 if (timed) |t| world.timing.write(.{ .fixture = .{
                     .@"test" = world.timing.current_test,
                     .kind = @tagName(wk.kind),
-                    .path = path,
+                    .path = case_name,
                     .wall_us = world.timing.sinceUs(t[0]),
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
                     .spent = if (world.timing.budget_unit == .instructions) meter.read() -% spent_start else 0,
@@ -1276,11 +1307,16 @@ const Fixture = struct {
     /// `--ownership-everywhere`, so the ownership checker enforces on a
     /// platform that edits no list in place (`ownership-checker.md` §30.7).
     everywhere: bool = false,
+    /// An ownership fixture's case for one token of its `.platform` file,
+    /// which alone it checks and dumps; null for a fixture without one.
+    token: ?[]const u8 = null,
+    /// What a report adds after the path for a token's case: ` [<token>]`.
+    label: []const u8 = "",
 
     /// What a report names the case by after its path: which of a page's
-    /// two cases failed.
+    /// two cases failed, or which platform an ownership case read.
     fn suffix(fixture: Fixture) []const u8 {
-        return if (fixture.values) " [value fuzz]" else "";
+        return if (fixture.values) " [value fuzz]" else fixture.label;
     }
 
     /// Whether `text` is in the fixture's repo-relative path, the path
@@ -1362,7 +1398,12 @@ const Case = struct {
         // Rule (d)'s record: the signature `tests/pending/RED` holds for this
         // fixture, so a change cannot drift it from "red for the bug" to "red
         // for a typo" unseen.
-        const recorded = c.cfg.redSignature(repo_path);
+        // An ownership case for one platform token is recorded as
+        // `<path>#<token>` when its line differs from the fixture's.
+        const recorded = if (c.fixture.token) |token|
+            c.cfg.redSignature(try std.fmt.allocPrint(c.arena, "{s}#{s}", .{ repo_path, token })) orelse c.cfg.redSignature(repo_path)
+        else
+            c.cfg.redSignature(repo_path);
 
         reason_len = 0;
         class_len = 0;
@@ -3077,6 +3118,7 @@ const Case = struct {
             var names = std.mem.tokenizeAny(u8, text, " \t\r\n");
             var any = false;
             while (names.next()) |name| {
+                if (c.fixture.token) |only| if (!std.mem.eql(u8, name, only)) continue;
                 any = true;
                 // `<platform>+everywhere`: that platform with the hidden
                 // `--ownership-everywhere` (`ownership-checker.md` §30.7),

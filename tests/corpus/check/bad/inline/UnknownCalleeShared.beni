@@ -1,0 +1,28 @@
+-- a function read out of a Dict returns a top-level list, which is pushed onto in place (issue #216).
+-- ownership (§30.11): the call's result is `⊤call`, so the write is refused,
+-- approximately: `f` may be the Dict's lambda or the default, which the
+-- checker does not join (#278); `fromList`'s function it cannot identify.
+import Dict exposing (Dict)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+handlers : Dict Int (⊤ → List Int)
+handlers = Dict.fromList [ ( 0, λ⊤ → shared ) ]
+
+
+pub grow : ⊤ → List Int
+grow ⊤ =
+    f = Dict.get handlers 0 ▷ Maybe.withDefault λ⊤ → []
+    List.push (f ⊤) 3
+
+
+pub fromList : List (⊤ → List Int) → List Int
+fromList fs =
+    case fs of
+        [ f, …_ ] →
+            List.push (f ⊤) 3
+        [] →
+            []

@@ -1,0 +1,32 @@
+-- A document helper that waits violates the existing sync view boundary.
+-- The refusal is transitive through the view's helper call, before lowering.
+import Cmd exposing (Cmd)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Inc
+
+
+page : Int → Tea.Document Msg
+page n =
+    Time.sleep (Time.millis 1)
+    { title = "count ${String.fromInt n}"
+    , body = <button onClick={Inc}>{n}</button>
+    }
+
+
+view : Int → Tea.Document Msg
+view n = page n
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = λInc n → ( n + 1, Cmd.none )
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,8 @@
+-- See Main.beni: a component with a handler of its own, its children
+-- written between its tags.
+import Html exposing (Html)
+import Stop exposing (Event)
+
+
+pub view : { msg : msg, children : Html msg } → Html msg
+view props = <section id="box" onClick={props.msg}>{props.children}</section>
