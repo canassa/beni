@@ -1,0 +1,110 @@
+-- run: a validator run is written where it stands, and so is the
+-- `Result.withDefault` or `Result.toMaybe` it is the first argument of
+-- (`schema.md` §6, *A validator run calls its worker where it stands*). The
+-- call's arguments are still evaluated in order and each once — the run's
+-- value, then the default, whether the run succeeds or not — and every run,
+-- `read`, `parse`, `Json.decodeValue` and `Json.decode`, answers as the call
+-- it replaces would. A `Debug.log` in each argument is the order.
+import Json
+import Node
+import Schema exposing (Value)
+
+
+schema Point =
+    x : Int
+    y : Int
+
+
+type alias Pair =
+    left : Int
+    right : Int
+
+
+tap : String, a → a
+tap label v =
+    Debug.log label ⊤
+    v
+
+
+pointText : Point.Type → String
+pointText p = "${String.fromInt p.x},${String.fromInt p.y}"
+
+
+pairText : Pair → String
+pairText p = "${String.fromInt p.left}/${String.fromInt p.right}"
+
+
+origin : Point.Type
+origin = { x = 0, y = 0 }
+
+
+nothing : Pair
+nothing = { left = 0, right = 0 }
+
+
+readOr : Value → String
+readOr v =
+    pointText
+        (Result.withDefault
+            (Schema.read (Point.schema ⊤) (tap "read value" v))
+            (tap "read default" origin)
+        )
+
+
+parseOr : String → String
+parseOr text =
+    pointText
+        (Result.withDefault
+            (Schema.parse (Point.schema ⊤) (tap "parse text" text))
+            (tap "parse default" origin)
+        )
+
+
+readMaybe : Value → String
+readMaybe v =
+    case Result.toMaybe (Schema.read (Point.schema ⊤) (tap "maybe value" v)) of
+        Just p →
+            pointText p
+
+        Nothing →
+            "nothing"
+
+
+decodeValueOr : Value → String
+decodeValueOr v =
+    pairText
+        (Result.withDefault
+            (Json.decodeValue (tap "decodeValue value" v))
+            (tap "decodeValue default" nothing)
+        )
+
+
+decodeMaybe : String → String
+decodeMaybe text =
+    case Result.toMaybe (Json.decode (tap "decode text" text)) of
+        Just p →
+            pairText p
+
+        Nothing →
+            "nothing"
+
+
+lines : String, String → List String
+lines point pair =
+    case ( Schema.parse Schema.value point, Schema.parse Schema.value pair ) of
+        ( Ok p, Ok q ) →
+            [ readOr p, parseOr point, readMaybe p, decodeValueOr q, decodeMaybe pair ]
+
+        _ →
+            [ parseOr point, decodeMaybe pair ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.concat
+            [ lines "{\"x\": 1, \"y\": 2}" "{\"left\": 3, \"right\": 4}"
+            , lines "{\"x\": 1}" "{\"left\": 3}"
+            , lines "{" "["
+            ]
+        )

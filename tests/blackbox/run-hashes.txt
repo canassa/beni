@@ -93,8 +93,8 @@ cache_test.test.a moved derived context rebuilds evidence as a cold build: a pay
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 b2798c9ff302c30d4b4719e90967bc5a4c70d8d4be28967123958de28cd33bdc
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 83fd6a41d8f7dec9ee13e22b28555e7b65a44dc5dfea42cb6707418058ae7dbf
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 a5a1c46beb44bb94060eecae96b3ab41f429fda266f0eb31e9d3ce0c305b3331
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 3ac1c3778d0f73a42153aa193f22027c62cf83bfc386fe974e4a37843d717339
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 e45ce6278ca2383672505fa1c84abb5da5a6822b330239cf4e456b4fedbb8ab8
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 3b44a39ad530e8a287fc9ccf58c7691ab26c409b2876d2f835d54e28cff6eb8b
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 1ceaf4126741fd5101b9b3934f3bbaf42d6d36afe2fc40c3f712503ed6048438
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 5b9a520193e4195cbb2ed7f0e5ebe57d1fdb8fea726867d9563525f28d5f5b39
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 cf135f9ef9cbe847f57f757e042a9d6acb5f04e5d254820d593158f71b57db2d
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 b42a548e41bbaaf812def46b1202bf0c77a8a2e6abb24a50b91f10174356cca2
@@ -122,9 +122,9 @@ devloop_test.test.build --watch rebuilds after an edit, reports a failed build, 
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 82a5938b767f983bc3f3455cc4b414534c1e68af203b5bcf77ccba18cfeb6050
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
-iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 42467ea9cc06d68dfd978f1014b53454d46c604b9dc694db5ea0a3a7b8e7a27e
+iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 a54c63188ba6253f0d95291edff02fab225bacb9db998e290db7076dee7185fe
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 9b05879acd3b1f79fa41d27961a862ec9d6c6229614be52abe9c14cce07ab7f3
-ordering_test.test.Json.decode inferred from use prints the same reversed #0 4895a264832a1627e312f529a660dd379fd0df099c522d94480c6191e6d8e5be
+ordering_test.test.Json.decode inferred from use prints the same reversed #0 820863dbc822783870a45d614b3a441eff09d3bf4735ec0a68c46e03d004bec7
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 cbc5d59ec352a57e3641057730527789fa37d425420444092aa0dfa2a94bb308
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 ffe1b90cfc0f55f95a1469b85bbf68db796c990b2b4bd0ef222901cc8eded280
 ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 9d7fc588798c54a7f0d939055ddde1e948a6d3fec702c83981b811ae0f4c36df

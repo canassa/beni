@@ -208,7 +208,7 @@ pub const compiled_values = [_][]const u8{
     "describedMaybe",  "describedMaybeField", "derivedChar",     "derivedInt32",      "derivedNever",
     "hostWorker",
     // `read` as a validator (schema.md §6).
-         "readValid",           "readValidSlot",   "validRun",          "validParse",
+         "readValid",           "readValidSlot",   "validContext",      "validJson",
     // A shape run's validator and the readers a shape names (schema.md §6,
     // *A validator run is a shape that one shared validator reads*).
     "validShape",      "shapeParse",          "shapeString",     "shapeBool",         "shapeInt",
