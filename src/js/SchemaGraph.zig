@@ -213,9 +213,9 @@ pub const compiled_values = [_][]const u8{
     // *A validator run is a shape that one shared validator reads*).
     "validShape",      "shapeParse",          "shapeString",     "shapeBool",         "shapeInt",
     "shapeFloat",      "shapeFinite",         "shapeNull",       "shapeValue",        "shapeChar",
-    "shapeInt32",      "shapeNever",          "shapeRecord",     "shapeList",         "shapeNullable",
-    "shapeMaybe",      "shapeJust",           "shapeLater",      "shapeTuple",        "shapeTagged",
-    "shapeCtors",      "shapeRecordOwn",      "shapeTaggedOwn",
+    "oneScalar",       "shapeInt32",          "shapeNever",      "shapeRecord",       "shapeList",
+    "shapeNullable",   "shapeMaybe",          "shapeJust",       "shapeLater",        "shapeTuple",
+    "shapeTagged",     "shapeCtors",          "shapeRecordOwn",  "shapeTaggedOwn",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -319,7 +319,13 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
                 } else {
                     try out.appendSlice(scratch, &.{ "compiledBackward", "belowBackward" });
                 },
-                .primitive => if (op == .print and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
+                .primitive => {
+                    if (op == .print and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin");
+                    // Generated readers call `oneScalar`. That call is not in
+                    // this module, so reachability keeps the value only when
+                    // it is named here.
+                    if (op.hostIn() and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.char)) try out.append(scratch, "oneScalar");
+                },
                 // A module's `codec` runs through its own workers.
                 .codec_value => try out.append(scratch, op.slot()),
                 else => {},

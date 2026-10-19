@@ -1,0 +1,1 @@
+Json.decode of Char is a derived codec fixed at compile time (schema.md §6, §12.10), so the development build ships no library interpreter.

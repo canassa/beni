@@ -1485,7 +1485,7 @@ each widget's reader cost about 118 B brotli and the cap leaves about 15 B per w
     argument array one more. Recursion through references is bounded by the depth, as on the
     specialised path;
   - an `Int` is `Number.isSafeInteger`, a finite `Float` `Number.isFinite`, a `Float` any number
-    (NaN and the infinities too), a `Char` one code point, an `Int32` a number `x` with
+    (NaN and the infinities too), a `Char` one scalar value, an `Int32` a number `x` with
     `(x | 0) === x`, `null` only `null`, a `Value` anything, and ⊥ nothing;
   - a tag and a constructor's name match by `===` against the strings the shape holds, so a
     non-string tag matches none;
