@@ -2,9 +2,9 @@
 -- whose failure is never read is a validator*): each widget's module reads
 -- the state the host pushes with `Json.decodeValue`, whose error it discards
 -- — `W1` and `W2` in a `case` with `Err _`, `W3` with
--- `Result.withDefault`. Each is a validator run: one call of
--- `Schema.validRun` with the widget's derived codec's validator worker, which
--- makes no issue and writes no message.
+-- `Result.withDefault`. Each is a validator run: the widget's derived
+-- codec's validator worker called where the run stands, which makes no issue
+-- and writes no message.
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)
