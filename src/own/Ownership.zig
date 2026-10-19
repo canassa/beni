@@ -651,7 +651,7 @@ region_steps: std.AutoHashMapUnmanaged(u64, []const u32) = .empty,
 /// Per canonical place `(P, T, r, kind)`: the places it stands for.
 member_paths: std.AutoHashMapUnmanaged([4]u64, []const u32) = .empty,
 /// `child`'s answers, by `(parent, kind, arg)`.
-child_memo: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
+child_memo: std.HashMapUnmanaged([3]u32, u32, StepKey, std.hash_map.default_max_load_percentage) = .empty,
 /// Per path: `canonicalSplit`'s and `canonicalPlaces`'s answers, as an
 /// index into `canon_splits` plus 2, 1 for none, 0 not yet asked.
 split_of: std.ArrayList(u32) = .empty,
@@ -835,7 +835,8 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
 
 /// A site's verdict, as the cross-check compares it: the worst of its
 /// lines (a write the canonical form names once may be several lines in
-/// the expanded one) and the causes of its rejections.
+/// the expanded one). The causes are kept for the message; they may
+/// differ, one form seeing two places where the other sees one.
 const SiteVerdict = struct { worst: u8 = 0, causes: u64 = 0 };
 
 fn siteVerdicts(gpa: Allocator, r: ModuleReport) Allocator.Error!std.AutoArrayHashMapUnmanaged([3]u64, SiteVerdict) {
@@ -869,7 +870,7 @@ fn crossCheck(gpa: Allocator, a: ModuleReport, b: ModuleReport) Allocator.Error!
             ok = false;
             break;
         };
-        if (!std.meta.eql(other, e.value_ptr.*)) ok = false;
+        if (other.worst != e.value_ptr.worst) ok = false;
     }
     if (!ok) {
         for (a.demands) |d| std.debug.print("canonical {d}:{d} {s} {s}: {s}\n", .{ d.position.line, d.position.col, d.op, d.base, @tagName(d.verdict) });
@@ -3313,7 +3314,7 @@ const Paths = struct {
     /// A constructor step whose field can hold a value of its own type
     /// (`levelOf` here or below): a step a marker of the type may begin with.
     holds: std.ArrayList(bool) = .empty,
-    map: std.AutoHashMapUnmanaged([3]u32, u32) = .empty,
+    map: std.HashMapUnmanaged([3]u32, u32, StepKey, std.hash_map.default_max_load_percentage) = .empty,
 
     fn deinit(p: *Paths, gpa: Allocator) void {
         p.holds.deinit(gpa);
@@ -3324,6 +3325,21 @@ const Paths = struct {
         p.rest.deinit(gpa);
         p.any.deinit(gpa);
         p.map.deinit(gpa);
+    }
+};
+
+/// A path step `(parent, kind, arg)` as a hash key: three words mixed by
+/// multiplication, which the path trie looks up on every step it takes.
+const StepKey = struct {
+    pub fn hash(_: StepKey, k: [3]u32) u64 {
+        var h: u64 = @as(u64, k[0]) *% 0x9E3779B97F4A7C15;
+        h ^= (@as(u64, k[1]) << 32 | k[2]) *% 0xC2B2AE3D27D4EB4F;
+        h ^= h >> 29;
+        h *%= 0x165667B19E3779F9;
+        return h ^ (h >> 32);
+    }
+    pub fn eql(_: StepKey, a: [3]u32, b: [3]u32) bool {
+        return a[0] == b[0] and a[1] == b[1] and a[2] == b[2];
     }
 };
 
@@ -5263,6 +5279,9 @@ const Walker = struct {
     /// rejects follows from the limit, so it takes the `limit` cause and is
     /// not a second error beside the limit's (#272).
     limit_callee: bool = false,
+    /// The uses of the summary whose call-site demands `applySummary` is
+    /// making (§16.7): the callee's other places of a written argument.
+    call_uses: []const UseEntry = &.{},
     /// §18.4 item 4: per list-pattern element, its pattern — the scope of
     /// the split's taken cells.
     split_list: []u32 = &.{},
@@ -5509,7 +5528,50 @@ const Walker = struct {
     fn shift(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
         const out = try w.a.alloc(Entry, av.len);
         for (av, out) |e, *x| x.* = .{ .path = try w.o.prepend(s, e.path), .cell = e.cell, .approx = e.approx };
+        try w.foldedBeside(av, out);
         return w.norm(out);
+    }
+
+    /// §16.7: a value placed one step down, where a fold put two of its
+    /// places at one marked path: the path stands for both, and no later
+    /// deep condition sees them apart. So their cells' conditions say it
+    /// now, as `storedBeside` does for a construction's arguments: two
+    /// cells there are separate, and one cell at both is one list at two
+    /// places, exactly when both entries are, else approximately.
+    fn foldedBeside(w: *Walker, before: AV, after: []const Entry) Allocator.Error!void {
+        // Two places become one only where the fold shortened a path: a
+        // step prepended adds one to every path it does not fold.
+        const folded = for (before, after) |b, x| {
+            if (w.o.paths.depth.items[x.path] != w.o.paths.depth.items[b.path] + 1) break true;
+        } else false;
+        if (!folded) return;
+        for (after, 0..) |e, i| {
+            if (!w.o.paths.any.items[e.path]) continue;
+            for (after[i + 1 ..], i + 1..) |f, j| {
+                if (f.path != e.path or before[i].path == before[j].path) continue;
+                // What the value's deep condition says of the pair before the
+                // fold, which no deep condition can say after it.
+                if (try w.nested(before[i], before[j])) continue;
+                const ke = w.cells.items[e.cell].kind;
+                const kf = w.cells.items[f.cell].kind;
+                if (ke == .closure or ke == .func or kf == .closure or kf == .func) continue;
+                if (e.cell == f.cell) {
+                    // A symbolic cell that stands for several places is two
+                    // of them when its argument is exclusive there; any other
+                    // cell at both is one list at two places.
+                    const k: u32 = (try w.apartCond(e.cell)) orelse try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                    try w.lowerCond(e.cell, k);
+                    try w.lowerSpine(e.cell, k);
+                    continue;
+                }
+                const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                try w.lowerCond(e.cell, k);
+                try w.lowerCond(f.cell, k);
+                const sk = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                try w.lowerSpine(e.cell, sk);
+                try w.lowerSpine(f.cell, sk);
+            }
+        }
     }
 
     /// `av` placed under the path `p`.
@@ -9598,6 +9660,9 @@ const Walker = struct {
             xfail[i] = Rely.worse(xfail[i], r);
         }
         // 3. W: the caller's side of a written parameter.
+        const saved_uses = w.call_uses;
+        w.call_uses = s.uses;
+        defer w.call_uses = saved_uses;
         for (s.uses) |u| {
             if (u.bits & bit_w == 0 or u.param >= args.len) continue;
             // A named writer's line keeps its slice-1 form; any other call
@@ -10184,8 +10249,16 @@ const Walker = struct {
 
     /// `deep`: a send's demand (§23.2), on every cell at or below `q`; one
     /// on no cell gives nothing up and is no line.
-    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely, deep: bool) Allocator.Error!void {
+    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail_in: ?Rely, deep: bool) Allocator.Error!void {
         const at = try w.projPath(avs[i], q, null);
+        // §16.7: a written place under a marker is the lists of every level
+        // it stands for, written one by one; they are distinct lists only
+        // if the argument is exclusive where the marker's region begins.
+        var xfail = xfail_in;
+        if (try w.markerAnchor(q)) |anchor| {
+            const r = try w.rely(try w.deepCond(try w.projPath(avs[i], anchor, null)), w.frame);
+            if (r != .ok) xfail = Rely.worse(xfail, r);
+        }
         // §31.2: a send gives up its payload's record objects to the record
         // demand; a list's reads the rest (`listView`).
         const base = if (deep) try w.listView(try w.flat(at)) else at;
@@ -10194,8 +10267,33 @@ const Walker = struct {
         try others.append(w.a, callee_av);
         for (avs, 0..) |av, x| if (x != i) try others.append(w.a, av);
         var rest: std.ArrayList(Entry) = .empty;
-        for (avs[i]) |e| if (!w.o.overlap(e.path, q)) try rest.append(w.a, e);
+        // The entries that do overlap `q`: what the callee's other places
+        // can reach that `rest` does not.
+        var over: std.ArrayList(Entry) = .empty;
+        for (avs[i]) |e| if (!w.o.overlap(e.path, q)) try rest.append(w.a, e) else try over.append(w.a, e);
         try others.append(w.a, rest.items);
+        // §16.7: the callee's other places of this argument, which it took
+        // for places apart from `q`. One that is the written cell here is a
+        // cell that stands for several (a level's, an element's): they are
+        // apart only if the argument is exclusive where that cell begins to
+        // stand for several, and the demand relies on it; any other is
+        // another holder of the cell, approximately.
+        // core Dict's tree keeps the merged fold, its levels trusted apart
+        // (§20.9): its places are not compared so.
+        const in_dict = try w.o.dictTreePath(q);
+        for (w.call_uses) |u| {
+            if (in_dict or over.items.len == 0 or u.param != i or noUse(u.bits) or w.o.overlap(u.path, q)) continue;
+            if (try w.o.dictTreePath(u.path)) continue;
+            var there: std.ArrayList(Entry) = .empty;
+            for (try w.projPath(over.items, u.path, null)) |e| {
+                const same = for (base) |b| {
+                    if ((try w.covers(e.cell, b.cell)) != null) break true;
+                } else false;
+                if (same and try w.reliesApart(e.cell)) continue;
+                try there.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
+            }
+            try others.append(w.a, there.items);
+        }
         const arena = w.o.out.allocator();
         const text = if (w.mode == .report) try w.baseText(args[i]) else "";
         const base_text = if (q == eps or w.mode != .report) text else try std.fmt.allocPrint(arena, "{s}{s}", .{ text, try w.o.pathText(q) });
@@ -10215,6 +10313,48 @@ const Walker = struct {
             .deep = deep,
             .base_inst = if (q == eps) args[i] else null,
         });
+    }
+
+    /// The prefix of `p` before its first marker, when it has one.
+    fn markerAnchor(w: *Walker, p: u32) Allocator.Error!?u32 {
+        if (!w.o.paths.any.items[p]) return null;
+        var buf: [k_limit + 1]u32 = undefined;
+        const ns = w.o.pathNodes(p, &buf);
+        for (ns, 0..) |n, k| if (w.o.paths.kind.items[n] == .level) return if (k == 0) eps else ns[k - 1];
+        return null;
+    }
+
+    /// §16.7: a symbolic cell that stands for several places — under `[*]`
+    /// or a marker — names two of a callee's places apart when the argument
+    /// is exclusive at the place before the step that makes it stand for
+    /// several; true when this frame can rely on that (§18.4).
+    fn reliesApart(w: *Walker, c: u32) Allocator.Error!bool {
+        const k = (try w.apartCond(c)) orelse return false;
+        return try w.rely(k, w.frame) == .ok;
+    }
+
+    /// The condition under which the places a symbolic cell stands for
+    /// (under `[*]` or a marker) hold distinct lists: the cell before the
+    /// step that makes it stand for several is exclusive. Null for a cell
+    /// that is not symbolic or stands for one place.
+    fn apartCond(w: *Walker, c: u32) Allocator.Error!?u32 {
+        const x = w.cells.items[c];
+        switch (x.kind) {
+            .param, .env, .cbres => {},
+            else => return null,
+        }
+        var buf: [k_limit + 1]u32 = undefined;
+        const ns = w.o.pathNodes(x.path, &buf);
+        const cut = for (ns, 0..) |n, k| {
+            switch (w.o.paths.kind.items[n]) {
+                .elem, .level => break k,
+                else => {},
+            }
+        } else return null;
+        var y = x;
+        y.path = if (cut == 0) eps else ns[cut - 1];
+        y.ty = .none;
+        return try w.atomCond(.{ .kind = .excl, .a = try w.cell(y) });
     }
 
     /// A probe (§16.4 item 4): whether `av`'s cells pass the four conditions

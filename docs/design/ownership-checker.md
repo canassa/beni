@@ -1497,8 +1497,9 @@ reached apart from the level it started at, with a step of its own:
   wrote 2 393 of their 4 238 use entries under a marker, 443 facts each repeated over the 4 regions of `Made` or
   the 7 of `Node`; with the canonical form its summaries are 128 KB of text (293 KB expanded, 70 KB on `master`,
   before the marker). Under `-Downership-full-cross-check`, every report is computed again with the expanded form,
-  and each site's verdict (the worst of its lines, and the causes of its rejections, since one canonical write may
-  be several expanded lines) must be the same, or the build panics.
+  and each site's verdict — the worst of its lines, accepted, pending or rejected, since one canonical write may be
+  several expanded lines — must be the same, or the build panics. A rejection's cause may differ: the expanded
+  form sees two places where the canonical one sees one written under a marker (`disjoint` against `exclusive`).
 - **What a call instantiates.** A callee's cell `πᵢ.p` is the caller's argument projected along `p` (§16.4): the
   entries whose paths overlap `p` under the rule above, each at the rest of its path or kept whole, approximately,
   under a marker (*Projection*, below). The Lean oracle (#386) matches every entry whose path conflicts with `p`,
@@ -1535,6 +1536,28 @@ reached apart from the level it started at, with a step of its own:
   unbounded, so a finite summary cannot name them; `master` refused the same programs, since all of a tree's lists
   were one cell there. This is (e)'s limit, wider than (e) says: (e) is the case where the sharing is real. It
   is a stated limit, not a design to come (the owner, 2026-10-18).
+- **A callee's places that are one cell at its caller** *(amended 2026-10-19, the review of #393)*. A callee takes
+  two of its parameter's places that neither holds nor overlaps the other for two places, and at its caller they
+  may be one cell: `two t` pushes `t#Node.1` and `t#Node.0⟨Tree⟩#Node.1`, and a caller that hands it a subtree
+  `l = param(t, #Node.0)` reads both as `param(t, #Node.0⟨Tree⟩#Node.1)`, every list of that subtree. So a
+  call-site demand on the written place `q` also compares, with the cell it writes, the argument's cells at each of
+  the callee's other places of that argument (`call_uses`). A cell that is not the written one is another holder,
+  approximately, like the argument's other paths. The written cell itself, when it is a symbolic cell that stands
+  for several places (under `[*]` or a marker), is two of them only if the argument is exclusive at the place
+  before the step that makes it stand for several, and the demand relies on that (§18.4): `viaLeft` records
+  `xreq excl π1#Node.0`, and a caller whose subtree holds one list at two levels is refused there. Any other cell
+  there is one list at two places. core `Dict`'s tree, under its exemption, is not compared so.
+- **A write under a marker.** A callee that writes a place under a marker writes the lists of every place the
+  marker stands for, one by one, and they are distinct lists only if the argument is exclusive where the marker's
+  region begins: the call-site demand relies on the argument's deep condition at the path before the marker. A
+  recursive update of every level of a tree (`incAll`) is refused on a tree that holds one list at two levels.
+- **What a fold hides.** A value placed one step down (a constructor's argument) may have two of its places fold
+  onto one marked path, and no later deep condition can see them apart. So the fold lowers their cells'
+  conditions as the value's deep condition would have said of the pair: `sep` of two cells, and for one cell at
+  both, `excl` of the place before it stands for several when it is a symbolic cell that does, else the pair's
+  `sepCells` (`shared` for one list at two places, exactly). A pair the deep condition does not compare
+  (§16.7, *Pairs a deep condition compares*) is left alone. `ownership/LevelPlacesCall`, `LevelPlacesKinds` and
+  `LevelRecursiveUpdates` pin the three: each refused call was accepted before.
 - **Pairs a deep condition compares.** A deep condition (§18.2) and a spine condition (§20.4) do not separate
   two entries of a value when one path is a prefix of the other, since that is a container and what it holds.
   That holds for a prefix step by step. A prefix only through `⋆` or a marker is a place that stands for several,

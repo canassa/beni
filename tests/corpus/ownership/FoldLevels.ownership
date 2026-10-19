@@ -6,9 +6,9 @@ module FoldLevels
   summary sub: π1 RAw, π1[*] A; res .0 fresh1 ~π1, .0[*] ~π1[*], .1 π1
   summary rose: π1 RAw, π1[*] A; res .0 fresh2 ~π1, .0[*] ~π1[*], .0[*]⟨Rose⟩#Rose.0 ~π1, .0[*]⟨Rose⟩#Rose.1 ~fresh1, .0⟨Rose⟩#Rose.0 ~π1, .0⟨Rose⟩#Rose.1 ~fresh1, .1 π1
   summary fresh: res fresh2 ~fresh1
-  summary build: res #Node.0⟨Tree⟩#Node.1 fresh1, #Node.1 fresh1 fresh2, #Node.2⟨Tree⟩#Node.1 fresh3
+  summary build: res #Node.0⟨Tree⟩#Node.1 fresh1{shared}, #Node.1 fresh1 fresh2, #Node.2⟨Tree⟩#Node.1 fresh3{shared}
   summary size: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
-  summary pushRoot: res .0#Node.0⟨Tree⟩#Node.1 fresh1, .0#Node.1[*] ~fresh2, .0#Node.2⟨Tree⟩#Node.1 fresh3
+  summary pushRoot: res .0#Node.0⟨Tree⟩#Node.1 fresh1{shared}, .0#Node.1[*] ~fresh2{shared}, .0#Node.2⟨Tree⟩#Node.1 fresh3{shared}
   demands 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause element 2

@@ -1,0 +1,44 @@
+-- ownership: two places of a callee that are one cell at its caller (the
+-- review of #393; ownership-checker.md §16.7). `two` pushes its root's list
+-- and its left child's list, two places. `viaLeft` hands it a subtree, and
+-- there both are `t#Node.0⟨Tree⟩#Node.1`, one cell for every list of that
+-- subtree, so the call could not see that the two lists may be one. The call
+-- now relies on the subtree being exclusive, `xreq excl π1#Node.0`, and
+-- `demo`, whose subtree holds `xs` at two levels, is refused: in place it
+-- would give `( [ 0, 1, 2 ], [ 0, 1, 2 ] )` for `( [ 0, 1 ], [ 0, 2 ] )`.
+-- `demoDirect` hands `two` such a tree itself, refused `disjoint`.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+two : Tree → List Int × List Int
+two t =
+    case t of
+        Node (Node _ a _) xs _ →
+            ( List.push xs 1, List.push a 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub viaLeft : Tree → List Int × List Int
+viaLeft t =
+    case t of
+        Node l _ _ →
+            two l
+
+        Leaf →
+            ( [], [] )
+
+
+pub demo : List Int × List Int
+demo =
+    xs = [ 0 ]
+    viaLeft (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub demoDirect : List Int × List Int
+demoDirect =
+    xs = [ 0 ]
+    two (Node (Node Leaf xs Leaf) xs Leaf)
