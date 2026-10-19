@@ -1,0 +1,25 @@
+## 2026-10-19 16:37 UTC — Shared propagation spike owner question
+
+**What I did**
+
+The owner made compiler latency the priority. New retirement and direct-event implementation remain paused. The release-optimizer defect is #464; no language, precision, budget, limit or size bar has changed. The two exact optimizations are partial corrections, not a resolution.
+
+#478 removes an unused union from object-spread read marking. Its full hashes, reference gates and pending tests pass; GitHub review found no defect. The next correction uses sorted containment to skip settled joins while retaining flags, top escaping and the original insertion path for genuine growth. Its full hashes, reference gates, pending tests and LLVM gates all pass. Root reviewed the guard and boundary tests; no implementation was written by the manager. Both corrections preserve emitted output.
+
+For the second correction, the self-hosted Safe N16 instruction count falls 35,349,291,215 to 14,226,891,531. The corrected direct Fast observations are N1 30.894→24.170ms, N4 35.131→35.741ms, N16 474.139→379.054ms, on the same sources/flags with complete byte-identical output and maps. These are single quiet observations, not a robust claim for the small differences. Memory is unchanged. Candidate N64 still hits an external 4GiB guard without output after about 27s; no completed timing or fit is claimed.
+
+Root caught a measurement harness bug before accepting the original Fast figures: the elapsed timestamp followed artifact hashing after child exit. Those figures are withdrawn and preserved as superseded evidence. The corrected harness captures the clock inside the child-close callback before provenance work. Six small measurements were repeated for that concrete defect; the expensive N64 diagnostic was not repeated. Safe instruction counts were valid throughout; Safe perf-wrapper wall observations include startup/teardown and are not pure compiler wall time.
+
+Diagnostics separate final logical set storage from cumulative immutable snapshot allocation: N16 genuine insertions and 9.05MiB snapshot payload are unchanged by the join optimization. The more serious structural finding is cubic distinct propagation edges. A nested-record reduction grows 16,992→133,312 edges from N16→N32. Exact source groups could theoretically represent those as 1,120→4,288 source/destination edges. The actual unique-components N16 app corroborates it: six analyses each have 115,013 distinct edges and a theoretical 3,312 shared edges; the seventh has 115,107 and 3,328. Exact source contents and all flags, including undefined, are retained. These are topology opportunity counts, not a solver implementation or a speed/correctness proof.
+
+**Owner question — #479**
+
+I recommend an isolated design spike to share equivalent field propagation through one exact source-group/descriptor representation. It changes the optimizer graph architecture, so implementation is held for the owner. The current evaluator consumes reader lists and uses bounded sweeps: merely reaching the same eventual least fixpoint is not sufficient. The spike must preserve active readers and waiting bits at every original value-change point, first-walk state, facts after every constraint, and original source-major writes, including self-spreads, cycles, property birth, guard death, escaping, unknown fields and top transitions. It must measure actual-app instructions/memory and full-corpus unchanged output before any production implementation. No new cap, budget raise, changed language guarantee, copying or lost-precision workaround is authorized; Lean stays paused. Does the owner approve this isolated spike? The question is pending in the conversation and #479; there is no answer yet. Production remains a separate decision after the proposal and measured costs.
+
+The analysis-only proposal and pinned evidence are on dagon under `/home/canassa/.cache/beni-codex-dataflow-growth/shared-projection-proposal.md`, `/home/canassa/.cache/beni-codex-projection-opportunity/`, `/home/canassa/.cache/beni-codex-final-fast/` and `/home/canassa/.cache/beni-codex-growth/`. Implementer agents run here as Codex and edit on dagon; no remote Claude session was launched. GitHub @claude remains the reviewer.
+
+S1 fits remain blocked. The last completed unique-components figure is 2,328 + 274.4 B/widget versus tea 2,025 + 146.1; big-component is 2,068 + 92.7 versus 1,552 + 71.8. There is no new full-grid fit or compiler-constant-stub validation line. Handler lifetime/guarding byte identity on both full scenarios is still owed. The frozen bars remain unchanged.
+
+**What I learned**
+
+A faster transfer does not fix a cubic dependency graph. Measure distinct graph edges and actual retained storage before choosing a representation change. Validate the clock boundary as carefully as the compiler change; artifact hashing belongs outside application compile time. Await explicit approval for architecture work while finishing already authorized qualification.
