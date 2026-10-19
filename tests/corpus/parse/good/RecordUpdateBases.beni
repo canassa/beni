@@ -14,7 +14,7 @@ named model = { model | count = 1 }
 qualifiedCall model = { Record.copy model | count = 1 }
 
 
-qualifiedValue = { Schema.defaultOptions | maxDepth = 4 }
+qualifiedValue = { Schema.defaultOptions ⊤ | maxDepth = 4 }
 
 
 localCall defaults = { defaults ⊤ | count = 1, name = "n" }

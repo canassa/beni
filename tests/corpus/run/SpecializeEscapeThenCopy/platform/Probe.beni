@@ -1,0 +1,30 @@
+--! `SpecializeEscapeThenSpread`'s probe, with `update` handed a copy of the
+--! leaked record: `base` is a top-level value the host holds, and the copy
+--! keeps the key the host added (`ownership-checker.md` §31.15).
+
+import Js
+
+
+type alias R =
+    a : String
+    b : String
+
+
+leak : R → ⊤
+leak r = Js.set (Js.global "globalThis") "leaked" (Js.from r)
+
+
+update : R → R
+update r = { r | a = "updated" }
+
+
+base : R
+base = { a = "a", b = "b" }
+
+
+pub demo : ⊤ → List String
+demo ⊤ =
+    leak base
+    Js.set (Js.get (Js.global "globalThis") "leaked") "extra" (Js.from "added")
+    u = update (Record.copy base)
+    [ u.a, u.b, Js.to (Js.get (Js.from u) "extra") ]

@@ -96,7 +96,7 @@ issues r =
         Err found →
             String.join
                 (List.map found λi →
-                    Show.issue { Record.copy i | path = [] }
+                    Show.issue { i | path = [] }
                         ++ " at depth "
                         ++ String.fromInt (List.length i.path)
                 )

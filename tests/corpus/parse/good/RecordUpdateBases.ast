@@ -20,7 +20,10 @@
       (field count
         (int 1))))
   (definition qualifiedValue
-    (record_update Schema.defaultOptions
+    (record_update
+      (apply
+        (ident Schema.defaultOptions)
+        (unit))
       (field maxDepth
         (int 4))))
   (definition localCall

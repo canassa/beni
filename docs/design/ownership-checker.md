@@ -5754,25 +5754,31 @@ checked by the report-mode slice before enforcement.
 
 *As built (2026-10-19, slice R3 of #315), the table and §31.13's programs.* `Schema.defaultOptions` is
 `⊤ → Options`; core's readers and a compiled schema's root wrappers call it (`defaultOptions()`, one record
-per run). The engine's child contexts — `hostEnds`, `belowBackward` and `run`'s `NConverted`, `NFlipped` and
-`NProjected` — are `{ Record.copy c | … }`, and `:1231`'s `{ last | … }`, a record read back from the
-engine's array, is a copy: `core/` holds no rejected record line. The programs, each with the fix its line
-named and no checker change: PrettyPrinter's `Concat` and `Group` (a copy, and `{ flat | mode = Break }`), and
-its `fits`, which only looks and so copies; both TypedKeys, which update in the arms that need it; Bike Wars'
-`initBikes`, `initModel` and `init` as functions of `⊤`, and a copy of the red bike for `Bike.shoot` and
-`Bike.update`; Sternhalma's `setOccupant`; Conduit's `Route.fromUrl`; `KeyedInPlace`'s `rows ⊤`;
-`BranchReturn`'s page and `home` as two records; `run/ListPersistence`'s model functions; `run/Records`,
-`run/MarkupFieldIdentity`, `run/TeaLoop`, and the `run/` programs whose top-level test value an update
-used (`Record.copy`). Every `run/`, `browser/` and `emit/` golden prints what it did; the emit goldens change
-only by `Schema$defaultOptions()`. With R2c's review fixed (record supplies, a record `need`, a recursive
-group's `objs`), the checker showed three more: NotesApp's `editNote` hands its callback a note the history
-keeps, KeyedInPlaceMap's rows came from a top-level list, and Conduit's Editor and Settings saves kept the
-model's form in a command that runs later; each now copies. Over the 1 082 programs, 92 record lines stay
-rejected, none of them a program's to fix: the TodoMVCs' `changed model (List.map model.todos …)` and their
-edit of one todo (#405, 19), `KeyedEnds`' callback that reads `List.length rows` (a read at ε, the same
-summary limit, 4), Conduit's Editor `status` at the entry, one form at two variants of one field (#410, 28),
-Conduit's and `StoredBranchPlacement`'s `payload` (P6, 29), Bike Wars' `handleInput model _` (§31.4 item 4,
-6), and the two `Tea.beni` platforms (6): `Direct.beni`'s state read back from JavaScript
-(`Tea.commands (Js.to self)`) and `perform`'s `List.foldl` accumulator, whose record supply the checker does
-not yet follow through the callback's loans. Those wait for the checker (R2d) or a decision on the driver's
-state; none was rewritten to pass.
+per run), and the bound it holds is named once, `defaultMaxDepth`, which `shapeMax` reads. The engine's child
+contexts — `hostEnds`, `belowBackward` and `run`'s `NConverted`, `NFlipped` and `NProjected` — are
+`{ Record.copy c | … }`, and `:1231`'s `{ last | … }`, a record read back from the engine's array, is a
+copy: `core/` holds no rejected record line. The programs, each with the fix its line named and no checker
+change: PrettyPrinter's `Concat` and `Group` (a copy, and `{ flat | mode = Break }`), and its `fits`, which
+only looks and so copies; both TypedKeys, which update in the arms that need it; Bike Wars' `initBikes`,
+`initModel` and `init` as functions of `⊤`, and a copy of the red bike for `Bike.shoot` and `Bike.update`;
+Sternhalma's `setOccupant`; `KeyedInPlace`'s and `KeyedInPlaceMap`'s `rows ⊤`; `BranchReturn`'s page and
+`home` as two records, an alias the rule refuses (one record at two model paths, §31.8) rather than sharing
+anything observes; `run/ListPersistence`'s model functions; NotesApp's `editNote`, whose callback is handed a
+note the history keeps; Conduit's Editor and Settings saves, whose commands kept the model's form (`escaped`,
+§31.6), though a command's fiber starts in the microtask drain (`core/Task.beni`), before further input, so
+no save could read a later form; `run/Records`, `run/MarkupFieldIdentity`, `run/TeaLoop`, and the `run/`
+programs whose top-level test value an update used (`Record.copy`). `run/ReleaseFieldsAcrossJs`' test
+platform declares its `origin` `fresh`, which its sibling makes, and needs no copy. Three copies that only
+answered an over-refusal were taken back (rule 10): Conduit's `Route.fromUrl` (#412), `run/SchemaDepth`'s
+issues (#413), and `run/SpecializeEscapeThenSpread`, which keeps its escaped record reaching a spread, a
+refusal from R4 on, beside `run/SpecializeEscapeThenCopy`, the program that passes. Every `run/`, `browser/`
+and `emit/` golden prints what it did; the emit goldens change only by `Schema$defaultOptions()`. Over the
+1 083 programs, 105 record lines stay rejected, none of them a program's to fix: the TodoMVCs'
+`changed model (List.map model.todos …)` and their edit of one todo (#405, 19), `KeyedEnds`' callback that
+reads `List.length rows` (a read at ε, the same summary limit, 4), Conduit's Editor `status` at the entry,
+one form at two variants of one field (#410, 28), its `ChangedUrl` address (#412, 7), Conduit's and
+`StoredBranchPlacement`'s `payload` (P6, 29), `run/SchemaDepth`'s issues (#413, 5), Bike Wars'
+`handleInput model _` (§31.4 item 4, 6), `run/SpecializeEscapeThenSpread` (1), and the two `Tea.beni`
+platforms (6): `Direct.beni`'s state read back from JavaScript (`Tea.commands (Js.to self)`) and `perform`'s
+`List.foldl` accumulator, whose record supply the checker does not yet follow through the callback's loans.
+Those wait for the checker (R2d) or a decision on the driver's state; none was rewritten to pass.
