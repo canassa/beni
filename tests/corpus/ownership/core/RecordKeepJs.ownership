@@ -1,0 +1,39 @@
+module RecordKeepJs
+  27:9 update d: accepted param
+  35:9 update d: accepted param
+  43:5 update d: accepted param
+  48:9 update d: accepted param (RecordKeepJs.keepAfter writes it)
+  49:5 update x: rejected escaped: it was given to JavaScript, or kept by a callee (RecordKeepJs.keepAfter writes it) (approx) [copy]
+  53:15 update d: rejected escaped: it was given to JavaScript, or kept by a callee (List.foldl writes it) (approx) [copy]
+  53:38 update x: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  57:20 update d: rejected escaped: it was given to JavaScript, or kept by a callee (List.foldl writes it) (approx) [copy]
+  57:43 update x: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  61:15 update d: accepted param (List.foldl writes it)
+  61:38 update x: accepted callback-param (List.foldl supplies it owned)
+  67:5 update o: accepted param
+  71:18 update o: accepted param (List.foldl writes it)
+  71:41 update x: accepted callback-param (List.foldl supplies it owned)
+  76:9 update o: accepted param (RecordKeepJs.foldInner writes it)
+  78:5 update i: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  93:5 update q: accepted param
+  97:18 update q: accepted param (List.foldl writes it)
+  97:41 update x: accepted callback-param (List.foldl supplies it owned)
+  102:9 update q: accepted param (RecordKeepJs.foldCount writes it)
+  104:5 update i: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  summary keepAfter: π2 REW{count}, π2.count R, π2.scope RAE; res .scope π2.scope, π2◦
+  summary keepBoth: π2 REW{count}, π2.count R, π2.scope RAE; res .scope π2.scope, π2◦
+  summary keepScope: π2 W{count}, π2.count R, π2.scope RAE; res .scope π2.scope, π2◦
+  summary twice: π1 REW{count}, π1.count R, π1.scope RAE; res .scope π1.scope, π1◦
+  summary folded: π1 R, π2 RAEW{count}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
+  summary foldedField: π1 R, π2 RAEW{count}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
+  summary scoped: π1 R, π2 RAEW{count, scope}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
+  summary keepInner: π2 W{n}, π2.inner RAE, π2.n R; res .inner π2.inner, π2◦
+  summary foldInner: π1 R, π2 RAEW{inner, n}, π2.inner AE; res .inner ~π2.inner, ~π2 ~π2◦
+  summary afterInner: π1 REW{inner, n}, π1.inner REW{count}, π1.inner.scope RA; res .scope ~π1.inner.scope, ~π1.inner◦
+  summary keepCount: π2 W{n}, π2.inner RE, π2.n R; res .inner π2.inner, π2◦
+  summary foldCount: π1 R, π2 RW{inner, n}, π2.inner E; res .inner ~π2.inner, ~π2 ~π2◦
+  summary afterCount: π1 RW{inner, n}, π1.inner REW{count}; res ~π1.inner◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 21: accepted 14, pending 0, rejected 7 (copy 7, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 21: accepted 14, pending 0, rejected 7 (copy 7, restructure 0); hoisted 0, eager reads 0
