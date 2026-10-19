@@ -213,6 +213,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     pg.piece_args = params_all[1..];
     try pg.group();
     try pg.letsOnce();
+    try pg.argsOnce();
     const a = req.arena;
     const binds = try a.alloc(PieceBind, pg.functions.items.len);
     for (pg.functions.items, binds, 0..) |*f, *b, j| {
@@ -871,6 +872,7 @@ const Page = struct {
         // The binding functions, each written once and called once now.
         try pg.group();
         try pg.letsOnce();
+        try pg.argsOnce();
         for (pg.pieces.items, 0..) |*u, ui| {
             u.first = @intCast(pg.functions.items.len);
             for (u.data.binds, 0..) |b, bi| try pg.functions.append(pg.a(), .{ .groups = b.groups, .piece = .{ .use = @intCast(ui), .bind = @intCast(bi) } });
@@ -1397,6 +1399,35 @@ const Page = struct {
     /// reads it, directly or through another `let`, so one that two
     /// functions read would run twice in a pass that calls both — a
     /// `Debug.log` in it would log twice. That is a memo node, S3's (§8.2).
+    /// A view helper's argument that may have an effect (`valueSafe`) is
+    /// evaluated by each binding function that enters the call's context,
+    /// and by none when no write is in it: it must be exactly one, as a
+    /// `let` must (`letsOnce`), or the effect runs another number of times
+    /// than a pass of the program runs it (#436's review).
+    fn argsOnce(pg: *Page) m.Error!void {
+        for (pg.ctxs.items, 0..) |x, ci| {
+            if (x.kind != .call) continue;
+            const call = pg.tree.hole(x.node).call orelse continue;
+            const safe = for (0..call.args.len) |i| {
+                if (!pg.cx.valueSafe(call.args.at(@intCast(i)))) break false;
+            } else true;
+            if (safe) continue;
+            var entering: u32 = 0;
+            for (pg.functions.items) |*f| {
+                if (f.piece != null) continue;
+                var enters = false;
+                for (f.writes.items) |wi| {
+                    var at: ?u32 = pg.writes.items[wi].ctx;
+                    while (at) |c| : (at = pg.ctxs.items[c].parent) {
+                        if (c == ci) enters = true;
+                    }
+                }
+                if (enters) entering += 1;
+            }
+            if (entering != 1) return limit(pg.cx, x.node, "an argument of this function call may have an effect, and `browser-inline` evaluates a call written in place in each binding function that reads it (§8.4); one that several functions read, or none, is a memo node, which slice S3 brings");
+        }
+    }
+
     fn letsOnce(pg: *Page) m.Error!void {
         var seen: std.AutoHashMapUnmanaged(u64, u32) = .empty;
         for (pg.functions.items, 0..) |*f, fi| {

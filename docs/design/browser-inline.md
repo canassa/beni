@@ -453,8 +453,14 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   context. A helper's fragment's children are spliced where the hole is. It is lifted as a piece
   is, in its own module — the program's, or the piece's owner (`browser/inline/ViewHelper`,
   `emit/release/inline/ViewHelper`; big-component's `part1 model`). A function that calls itself,
-  one under `Html.map`, one with `let`s, and markup held in data or chosen at run time stay class 1
-  (`build/bad/inline/MarkupInModel`).
+  one under `Html.map`, one with `let`s no hole reads, and markup held in data or chosen at run time
+  stay class 1 (`build/bad/inline/MarkupInModel`, `HelperNamedElsewhere`, `HelperMarkupArg`,
+  `CaseValueArm`). *Amended the same day (#436's review):* each binding function that writes into
+  a helper's markup enters the call, its arguments evaluated again; an argument that may have an
+  effect (`valueSafe`) must therefore be entered by exactly one function, or it is S3's memo node
+  and refused (`HelperArgTwice`), as a `let` read by several functions is. Two calls of one helper
+  share its root, so a `let` of the helper read by both, in two functions, is refused the same
+  way: conservative, never unsound.
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).

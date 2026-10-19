@@ -1,0 +1,51 @@
+-- A view helper that other code names as a value: `header` is `counts`'s
+-- markup held in a top-level value, so `counts` is written as a function
+-- after all, and its markup is a markup value, refused (class 1,
+-- docs/design/browser-inline.md §5, as amended 2026-10-19).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+counts : String, Int → Html Msg
+counts label n = <p>{label} {n}</p>
+
+
+header : Html Msg
+header = counts "head" 1
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {header}
+        {counts "cups" model.cups}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"
