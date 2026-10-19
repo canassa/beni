@@ -1,0 +1,29 @@
+import Html exposing (Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub type Msg
+    = Inc
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+boom : Int → String
+boom n = if n > 1 then Debug.todo "boom" else String.fromInt n
+
+
+pub view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <button data-role="inc" onClick={Inc}>+</button>
+        <span>{model.n}</span>
+        <em>{boom model.n}</em>
+    </div>

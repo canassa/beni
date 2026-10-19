@@ -1358,7 +1358,9 @@ const Page = struct {
     }
 
     /// A binding function's body: per context its writes are in, the
-    /// context entered, its values evaluated and each write made.
+    /// context entered, the `let`s it reads and every value that may throw
+    /// evaluated first, then each write made with its other values
+    /// evaluated just before it (§8.2, *Evaluation order*).
     fn writeFunction(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
@@ -1380,18 +1382,35 @@ const Page = struct {
             if (ctx != 0) std.debug.assert(pg.ctxs.items[ctx].root != pg.ctxs.items[0].root);
             try pg.bindLets(blk, pg.ctxs.items[0].root, reads);
             if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root, reads);
-            // Each write's values evaluated just before it, in document
-            // order, so a value is written where it is made.
+            // A value that may throw (`cx.valueSafe`: a call other than a basic
+            // operator) is evaluated before the function's first write, so a
+            // throw leaves the page as it was (§8.2, *Evaluation order*); each
+            // other value is evaluated just before its write, where release
+            // writes it in place.
+            var unsafe: std.ArrayList(m.Value.Index) = .empty;
+            for (values.items) |v| if (!cx.valueSafe(v)) try unsafe.append(pg.a(), v);
+            try cx.rootValues(blk, pg.ctxs.items[ctx].root, unsafe.items);
+            // So is the arm a `when` takes, when its value may throw.
+            var early: std.ArrayList(struct { node: m.Node.Index, name: m.Name }) = .empty;
+            for (f.writes.items) |wi| {
+                const w = pg.writes.items[wi];
+                if (w.ctx != ctx or w.what != .when) continue;
+                const hn = w.what.when.node;
+                if (cx.valueSafe(pg.tree.hole(hn).value)) continue;
+                const t = try cx.fresh("arm");
+                try js.constant(blk, t, try cx.programBranchArm(blk, hn));
+                try early.append(pg.a(), .{ .node = hn, .name = t });
+            }
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];
                 if (w.ctx != ctx) continue;
                 var own: std.ArrayList(m.Value.Index) = .empty;
                 switch (w.what) {
                     .text => |parts| for (parts) |part| switch (part) {
-                        .value => |v| try own.append(pg.a(), v),
+                        .value => |v| if (cx.valueSafe(v)) try own.append(pg.a(), v),
                         else => {},
                     },
-                    .prop => |x| try own.append(pg.a(), x.value),
+                    .prop => |x| if (cx.valueSafe(x.value)) try own.append(pg.a(), x.value),
                     .when => {},
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
@@ -1420,7 +1439,9 @@ const Page = struct {
                         } else try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value }));
                     },
                     .when => |x| {
-                        const taken = try cx.programBranchArm(blk, x.node);
+                        const taken = for (early.items) |e| {
+                            if (e.node == x.node) break try js.name(e.name);
+                        } else try cx.programBranchArm(blk, x.node);
                         // The arm taken is a number of two: hidden while it is not
                         // the shown one — itself when that is the first, else its
                         // negation.

@@ -13517,6 +13517,30 @@ pub const Lowerer = struct {
         }
     }
 
+    /// `cx.valueSafe`: whether evaluating `inst` cannot throw — literals,
+    /// locals, field and tuple reads, `if`s and `case`s, interpolation and
+    /// calls of the basic operators (`Operator.of`) of such.
+    fn instSafe(l: *Lowerer, inst: Inst.Index) bool {
+        var stack: std.ArrayList(Inst.Index) = .empty;
+        stack.append(l.scratch, inst) catch return false;
+        var budget: u32 = 4096;
+        while (stack.pop()) |at| {
+            if (budget == 0) return false;
+            budget -= 1;
+            const d = l.bir.instData(at);
+            switch (l.bir.instTag(at)) {
+                .local, .int, .float, .char, .string => {},
+                .field_access, .tuple_index, .case, .interp => l.instChildren(at, &stack) catch return false,
+                .call => {
+                    if (l.operatorOf(@fromBackingInt(@intCast(d.lhs))) == null) return false;
+                    stack.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) catch return false;
+                },
+                else => return false,
+            }
+        }
+        return true;
+    }
+
     /// Whether `inst`'s value reads local `local`, in any function it
     /// makes too.
     fn subtreeReadsLocal(l: *Lowerer, inst: Inst.Index, local: u32) bool {
@@ -16312,6 +16336,17 @@ const markup_vtable: beni_markup.VTable = struct {
         return l.subtreeReadsLocal(i, local);
     }
 
+    fn valueSafe(impl: *anyopaque, v: M.Value.Index) bool {
+        const l = lowerer(impl);
+        const st = l.mk orelse return false;
+        const i: Inst.Index = switch (st.built.values[@backingInt(v)]) {
+            .inst => |x| x,
+            .let_value => |lv| lv.inst,
+            else => return false,
+        };
+        return l.instSafe(i);
+    }
+
     fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {
         return lowerer(impl).pieceEventCtor(v, payload);
     }
@@ -16651,6 +16686,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .piece_event_ctor = pieceEventCtor,
         .root_let_readers = rootLetReaders,
         .value_reads_let = valueReadsLet,
+        .value_safe = valueSafe,
         .piece_export = pieceExport,
         .program_piece = programPiece,
         .program_piece_name = programPieceName,

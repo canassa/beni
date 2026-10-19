@@ -1,0 +1,40 @@
+-- A binding function whose second write's value throws (`Debug.todo`) on
+-- the second click: the throwing value is evaluated before the function
+-- writes anything, so the page stays as the last pass left it, `1` and
+-- `1`, as on `browser-tea` (docs/design/browser-inline.md §8.2,
+-- *Evaluation order*, the review of #398). Before, the first write ran:
+-- `2` beside `1`.
+-- A release build stops the program with no screen (`.release-expected`).
+import Browser
+import Html exposing (Html)
+import Tea
+import W
+
+
+type alias Model =
+    w : W.Model
+
+
+type Msg
+    = WMsg W.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        WMsg sub →
+            { model | w = W.update sub model.w }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="top">
+        {Html.map (W.view model.w) WMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { w = { n = 0 } }, update = update, view = view })
+        "root"
