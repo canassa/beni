@@ -1488,7 +1488,7 @@ same values, so the choice changes only bytes and speed. The shapes' readers are
 paid once, and a shape is cheaper than a worker only once enough runs share them. The compiler
 chooses **per program, by one rule**: it counts the program's *shape runs*, the runs whose error
 is unread (§6, *A run whose failure is never read is a validator*) and whose schema has a shape,
-and compares the count with a threshold **T = 4**. At T or more, every shape run takes its
+and compares the count with a threshold **T = 25**. At T or more, every shape run takes its
 shape. Below T, every one keeps its validator worker, exactly as a run whose schema has no shape
 does. The rule is never an estimate of bytes.
 
@@ -1500,8 +1500,39 @@ does. The rule is never an estimate of bytes.
   does not count. Under `--schema-library` the count is 0. The choice therefore depends on the
   sources alone, never on threads or timing (CLAUDE.md rule 5): `Reach.Input.schema_shapes` for
   every edge list, and each module's `Lower.Input.schema_shapes`, carry the one answer.
-- **T was measured** *(2026-10-18, brotli 11, release; re-measured the same day after the leaner
-  readers below, which moved it from 19 to 4)*. The table gives each build's total bytes with
+- **T is 25** *(2026-10-19, the owner's decision, measured after the copy above; brotli 11,
+  release)*. Copying by kept names made each shape cheaper per run and the shape path dearer
+  once: the copy reader and the pinned names are a fixed overhead, which the large programs
+  repay (the n = 64 and 256 rows) and the small ones would not. The per-program choice keeps
+  that overhead off small programs, which is what the two lowerings are for. Shapes minus
+  workers, every run forced each way:
+
+  | runs | generated, derived records | generated, declared records | `unique-components`, seeds 1 / 2 / 3 |
+  |---|---|---|---|
+  | 2 | +197 | +215 | +155 / +156 / +141 (n = 1) |
+  | 5 | +77 | +85 | +119 / +114 / +119 (n = 4) |
+  | 6 | −35 | −23 | +116 / +102 / +105 (n = 5) |
+  | 9 | — | — | +74 / +43 / +53 (n = 8) |
+  | 13 | — | — | +104 / +58 / +49 (n = 12) |
+  | 16 | −251 | −119 | — |
+  | 17 | — | — | +55 / +48 / +81 (n = 16) |
+  | 21 | — | — | +42 / +10 / −25 (n = 20) |
+  | 25 | — | — | −30 / −54 / −2 (n = 24) |
+  | 32 | −535 | −244 | — |
+  | 33 | — | — | −298 / −280 / −316 (n = 32) |
+  | 65 | — | — | −1 818 / −1 903 / −1 784 (n = 64) |
+
+  Shapes win the research app for every seed from 24 widgets, 25 runs, so T = 25. The generated
+  programs cross at 6: a program of 6 to 24 such records pays up to about 250 B for its workers,
+  which is the price of one count over field kinds that matter (a record of primitives makes a
+  small worker, one of lists and `Maybe`s a large one). The research fit at T = 25 is 2 438 B +
+  275.1 B/widget, its validation line 704 + 18.9 against the stub's 1 734 + 256.2; at one widget
+  it builds master's bytes exactly (1 746 / 1 638 / 1 893). A model of the choice was measured and
+  refused (2026-10-19): fitted freely to these programs it picked the larger lowering for 8 of
+  57 research apps (T = 25: 4), and assembled from costs measured piece by piece it picked
+  workers at every size, because brotli's cost for a piece measured alone does not carry into a
+  large program. `zig build test-shape-threshold` re-measures the crossover (*Fixtures*, below).
+- **T was measured** *(2026-10-18, before the copy; superseded by the item above)*. The table gives each build's total bytes, with
   its runs kept as workers (W) and taken as shapes (S):
 
   | runs | generated, derived records (W / S) | generated, declared records (W / S) | `unique-components`, seeds 1 / 2 / 3, S − W |
@@ -1540,11 +1571,12 @@ does. The rule is never an estimate of bytes.
     the `make` arrow. It saved 23 B at P32 but cost 33 at P1 and 26 at P2, and in the research
     app it lost at every size measured (n = 1 to 8, by 15 to 26 B a seed), which would have put
     T at 6.
-- **Fixtures.** `emit/release/app/ShapeThresholdBelow` (3 runs) keeps its workers and
-  `ShapeThresholdAt` (4) takes its shapes. `run/SchemaErrorUnreadOrders`, `…Events` and `…Items`
-  (each under T) and `run/SchemaErrorUnreadShapes` (the three in one program, over T) print one
-  set of answers, so the differential inputs pass through both lowerings, each also through the
-  library.
+- **Fixtures.** `emit/release/app/ShapeThresholdBelow` (24 runs) keeps its workers and
+  `ShapeThresholdAt` (25) takes its shapes. `run/SchemaErrorUnreadOrders`, `…Events`, `…Items`
+  and `…Copies` (each under T) and `run/SchemaErrorUnreadShapes` (the four in one program, over
+  T) print one set of answers, so the differential inputs pass through both lowerings, each also
+  through the library. `zig build test-shape-threshold`, a step outside the gates that CI runs,
+  builds a fixed set of programs both ways and fails when T has stopped being their crossover.
 
 ## 7. Effects
 
