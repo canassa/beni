@@ -400,7 +400,7 @@ pub const bit_q: u16 = 512;
 /// `E`. No list fact reads it.
 pub const bit_k: u16 = 1024;
 /// What the entry escapes for a use's bits: a list's facts. A record
-/// object's (`bit_k`) is `entryEscapeObjects`', which escapes the object
+/// object's (`bit_k`) is `escapeObjects`', which escapes the object
 /// alone, so that no list below it moves.
 fn entryBits(bits: u16) u8 {
     return @truncate(bits & list_bits);
@@ -9805,7 +9805,7 @@ const Walker = struct {
             if (u.param == 1) {
                 const at = try w.projPath(model, u.path, null);
                 try w.entryEscape(inst, at, entryBits(u.bits));
-                if (u.bits & bit_k != 0) try w.entryEscapeObjects(at);
+                if (u.bits & bit_k != 0) try w.escapeObjects(at, w.point);
             }
         };
         if (!whole) {
@@ -9816,7 +9816,7 @@ const Walker = struct {
             if (u.param == 0) {
                 const at = try w.projPath(model, u.path, null);
                 try w.entryEscape(inst, at, entryBits(u.bits));
-                if (u.bits & bit_k != 0) try w.entryEscapeObjects(at);
+                if (u.bits & bit_k != 0) try w.escapeObjects(at, w.point);
             }
         };
         try w.escape(try w.entryRes(inst, subs, &.{model}, entry_subs_ns), w.point);
@@ -9970,11 +9970,11 @@ const Walker = struct {
         return true;
     }
 
-    /// What a function the runtime calls escapes of the model: `E`, or `J`
-    /// alone, §18.6's conservative escape, which the line names (§20.4).
-    /// §31.4 item 2: the record objects at the root of `av` escape, and
-    /// nothing below them: a record's object holds no list.
-    fn entryEscapeObjects(w: *Walker, av: AV) Allocator.Error!void {
+    /// §31.4 item 2: the record objects at the root of `av` escape at `at`,
+    /// and nothing below them: a record's object holds no list. What a
+    /// summary's `bit_k` keeps, at a call, at the entry, and through a
+    /// callback.
+    fn escapeObjects(w: *Walker, av: AV, at: u32) Allocator.Error!void {
         for (av) |e| {
             if (e.path != eps) continue;
             const x = w.cells.items[e.cell];
@@ -9983,7 +9983,7 @@ const Walker = struct {
                 .site => if (!x.nonlist) continue,
                 .param, .result, .env, .shared, .cbres, .taken, .payload, .except => {},
             }
-            try w.noteEscape(try w.exceptCell(e.cell, &.{}, true), w.point, 0);
+            try w.noteEscape(try w.exceptCell(e.cell, &.{}, true), at, 0);
         }
     }
 
@@ -10648,6 +10648,12 @@ const Walker = struct {
             // the escape says so.
             if (u.bits & bit_e == 0) try w.escapeWhy(at, w.point, inst) else try w.escape(at, w.point);
         }
+        // §31.4 item 2: the record objects the callee keeps, after the
+        // writes it makes of them: a write after the call sees the escape.
+        for (s.uses) |u| {
+            if (u.bits & bit_k == 0 or u.param >= args.len) continue;
+            try w.escapeObjects(try w.projPath(avs[u.param], u.path, null), w.point);
+        }
         // Callbacks.
         for (s.funs) |f| {
             if (!hasActual(s, args.len, f.param)) continue;
@@ -10695,6 +10701,16 @@ const Walker = struct {
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse continue;
             for (c.uses) |u| {
+                // §31.4 item 2: the record objects the callback keeps escape,
+                // at the path it keeps: a record kept whole (`bit_k`, or a
+                // list's `E` at its path) is kept whole, written before or
+                // after; a field kept keeps the field's, not the record's.
+                if (u.bits & (bit_k | bit_e | bit_j) != 0) for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
+                    if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
+                    const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
+                    const at = if (try w.o.suffix(e.path, u.path)) |rest| try w.projPath(cells, rest, null) else cells;
+                    try w.escapeObjects(at, w.point - 1);
+                };
                 if (u.bits & (bit_e | bit_j) == 0) continue;
                 for (s.supply) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
