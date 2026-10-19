@@ -5397,6 +5397,18 @@ the 10 `captured-edit` lines); a summary that reads an update's base whole, whic
 `changed model (List.map model.todos …)` (#405); and a base use under a marker (#404). The summary block is
 version 17.
 
+*Revised 2026-10-19 (R2d of #315, from its review).* A callee's `bit_k` is an escape at the call: the record
+objects at the path escape, alone, after the callee's writes, so `twice d = keep 2 (keep 1 d)`, whose `keep`
+writes its record and then hands it to JavaScript, refuses the second write (`escaped`). A callback's keep of
+a record it is handed escapes that record's objects through the callee's supplies, list and record ones: a
+`bit_k`, or a list's `E`, at the path it keeps, whole; a field kept keeps the field's objects and not the
+record's (`ownership/core/RecordKeepJs`). And a callback's write of the answer an earlier call of it returned
+(a fold's accumulator) reads two of that answer's objects: its own, at ε, and the one at the path the write
+writes. Each must be the caller's — one it made, or one the callee supplied it owned — not kept at its own
+path or above it, and at no other path of the answer. A record held below the one written is not written, so
+what the host keeps of a driver's state (its fibers, its scope) does not refuse the state's update, while
+`( r, List.push hist r )` refuses the next step's write of `r` (`ownership/RecordFoldBelow`).
+
 ### 31.9 The errors
 
 Lines with the same position, verdict, cause and detail are one diagnostic (§28.5). The codes follow §28.6's
