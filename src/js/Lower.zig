@@ -655,7 +655,10 @@ pub fn lower(
     try l.findInlines();
     try l.findPrograms();
     l.directHasPieces();
-    // `schema.md` §6: the runs that compile to a validator.
+    // `schema.md` §6: the runs that compile to a validator. The shape
+    // choice (`l.in.schema_shapes`) reaches a shape run's printed bytes and
+    // has no funnel fact yet (issue #432), so the maker's canonical lowering
+    // takes its default; it must become a fact before a build reads rows.
     l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
     // Reachability found the module's validator runs from its own dispatch
     // table (`Reach.Result.dispatch`); the runs this lowering writes must be
