@@ -159,12 +159,12 @@ pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
         try names.append(l.scratch, try schemaName(l, ref, "description"));
     }
     // The shape, which another module's shape and shape runs name.
-    if (!l.in.schema_library and l.liveSchema(ref, .shape)) {
+    if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
         try names.append(l.scratch, try schemaName(l, ref, "shape"));
     }
     // The workers too, which another module's workers call; the forced
     // library path writes none. Then the root wrappers.
-    const workers = !l.in.schema_library;
+    const workers = !l.schemaLibrary();
     const sg = l.in.schemas.?;
     for (all_ops) |op| {
         // A derived codec's `decode` and `encode` are its `read` and
@@ -213,7 +213,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
         l.restartNames();
         try g.description(out);
     }
-    if (!l.in.schema_library and l.liveSchema(ref, .shape)) {
+    if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
         l.restartNames();
         try g.constDecl(out, try g.own("shape"), try g.shapeOf(g.def.root));
     }
@@ -221,7 +221,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
     // wrappers after it, in one naming scope.
     for (all_ops) |op| {
         const own_set = sg.hostAliased(ref, Member.worker(op)) == null;
-        const worker = !l.in.schema_library and own_set and l.liveSchema(ref, Member.worker(op));
+        const worker = !l.schemaLibrary() and own_set and l.liveSchema(ref, Member.worker(op));
         const wrapper = switch (op) {
             .parse => l.liveSchema(ref, .parse),
             .print => l.liveSchema(ref, .print),
@@ -506,7 +506,7 @@ const Gen = struct {
     fn root(g: *Gen, out: *Stmts) !void {
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
-        if (g.l.in.schema_library) {
+        if (g.l.schemaLibrary()) {
             const boxed = try g.call(try g.core("box"), &.{try g.described(params)});
             if (params.len == 0) {
                 const constant = try g.own("declared");
@@ -1011,7 +1011,7 @@ const Gen = struct {
         try with_params.appendSlice(g.l.scratch, params);
         try with_params.append(g.l.scratch, options);
         try with_params.append(g.l.scratch, input);
-        const with_body = if (g.l.in.schema_library) blk: {
+        const with_body = if (g.l.schemaLibrary()) blk: {
             // The whole root through the interpreter (`schema.md` §10's
             // forced library path): `S.schema`, which is the boxed
             // description there.

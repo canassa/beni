@@ -4479,7 +4479,7 @@ const Emitter = struct {
             const token = e.session.profile.begin();
             defer e.session.profile.end(w.tid, token, .emit_module, file.int(), 0);
             const scratch = w.module.allocator();
-            slot.lowered = try Lower.lower(e.gpa, scratch, &slot.overlay, .{
+            slot.lowered = Lower.lower(e.gpa, scratch, &slot.overlay, .{
                 .bir = e.bir(m),
                 .token_starts = e.session.artifacts.spans(file).starts,
                 .module = m,
@@ -4503,7 +4503,13 @@ const Emitter = struct {
                 .schema_shapes = e.reach.schema_shapes and m.int() < e.edges_read.len and !e.edges_read[m.int()],
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,
-            });
+            }) catch |err| switch (err) {
+                // No recorder is set here, so no ask can overflow one
+                // (`Funnel.Recorder`); the pack maker, the only caller that
+                // records, reads this error and fails its build.
+                error.UnitRecordOverflow => unreachable,
+                else => |other| return other,
+            };
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;
             slot.uses_runtime = lowered.uses_runtime;
