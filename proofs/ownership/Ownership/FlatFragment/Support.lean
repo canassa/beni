@@ -16,10 +16,6 @@ namespace Ownership.FlatFragment.Support
 
 open InPlaceSemantics HeapProof Soundness
 
-inductive FlatAtom : Atom → Prop where
-  | int (n : Int) : FlatAtom (.int n)
-  | var (v : Var) : FlatAtom (.var v)
-
 /-- The integer primitives of the fragment: two atoms, which typing fixes to
 `Int`, an integer result, no heap effect and no recorded read. -/
 inductive ScalarOp : Prim → Prop where
@@ -42,15 +38,16 @@ theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (si
     (primitive ctx site op [x, y] later).run before = .ok (.scalar, before) := by
   cases sop <;> (unfold primitive; rfl)
 
-/-- The expression fragment. An atom is an integer, a variable or a variable
-under a field path; accepted typing fixes the literal elements and the push
-item to `Int`, the length and push receivers to `List Int`. The push receiver
-is a variable: a write through a field is not in the fragment. -/
+/-- The expression fragment. Every operand is any atom; accepted typing fixes
+each to an integer, a variable or a variable under a field path, the literal
+elements and the push item to `Int`, the length and push receivers to
+`List Int`. The push receiver may be a field path: a write through a field is
+in the fragment. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
   | literal : FlatANF0 (.prim (.literal .int) args)
-  | push : FlatAtom receiver → FlatANF0 (.prim .push [receiver, item])
+  | push : FlatANF0 (.prim .push [receiver, item])
   | length : FlatANF0 (.prim .length [receiver])
   | shared : FlatANF0 (.prim .shared [value])
   | scalar : ScalarOp op → FlatANF0 (.prim op [a, b])
@@ -873,7 +870,7 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | atom => simp_all [usesWith, uses, usesArms, Config.has]
   | letE _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
   | literal => simp_all [usesWith, uses, usesArms, Config.has]
-  | push _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | push => simp_all [usesWith, uses, usesArms, Config.has]
   | length => simp_all [usesWith, uses, usesArms, Config.has]
   | shared => simp_all [usesWith, uses, usesArms, Config.has]
   | record => simp_all [usesWith, uses, usesArms, Config.has]

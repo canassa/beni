@@ -1202,7 +1202,6 @@ theorem push_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs 
 
 theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {receiver : Atom} {item : Atom} {self : Decl} {type : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
-    (flatR : FlatAtom receiver)
     (typed : exprType declarations self tenv (.prim .push [receiver, item]) = .ok type)
     (coveredR : ∀ use ∈ atomUses receiver, use ∈ live)
     (coveredI : ∀ use ∈ atomUses item, use ∈ live)
@@ -1229,8 +1228,8 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           (.prim .push [receiver, item])).run hs = .error actualMessage) := by
   obtain ⟨receiverTyped, itemTyped, listType⟩ := exprType_push_success inv typed
   subst listType
-  obtain ⟨key, root, xs, roots, element, certificate, _, _, _, _, lookup, receiverNamed, elementFlat,
-    valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list inv flatR receiverTyped coveredR
+  obtain ⟨root, xs, roots, element, certificate, lookup, receiverNamed, elementFlat,
+    valueReceiver, heapReceiver, abstractReceiver⟩ := flat_atom_list_path inv receiverTyped coveredR
   obtain ⟨n, valueItem, heapItem, abstractItem⟩ := flat_atom_integer inv itemTyped coveredI
   have abstractAtoms : [receiver, item].mapM (m := Except String) (abstractAtom aenv) =
       .ok [.list roots element certificate, .scalar] :=
