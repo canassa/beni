@@ -13,7 +13,7 @@
 import { spawnSync } from "node:child_process";
 
 const zig = process.argv[2] ?? "zig";
-const mutations = ["hoist-whole", "no-held-operand", "no-disjoint"];
+const mutations = ["hoist-whole", "no-held-operand", "no-disjoint", "call-as-hoist"];
 let missed = 0;
 for (const m of mutations) {
   const r = spawnSync(zig, ["build", "test-blackbox", "-Dcorpus=ownership/Record", `-Downership-record-mutation=${m}`], {

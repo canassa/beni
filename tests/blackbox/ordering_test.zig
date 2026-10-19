@@ -336,6 +336,56 @@ fn withoutHolePositions(a: std.mem.Allocator, dump: []const u8) ![]const u8 {
     return out.items;
 }
 
+// `ownership-checker.md` §31.2: a top-level record's object cell and the
+// cell a summary's result makes at the same place are two cells, so which
+// declaration the walk reads first decides nothing. The fixture's record
+// lines and summaries, positions dropped and sorted, are the same reversed.
+test "a top-level record's update lines and summaries are the same reversed" {
+    var s = try Scenario.init("a top-level record's ownership report, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const path = "tests/corpus/ownership/RecordTopOrder.beni";
+    var reports: [2][]const u8 = undefined;
+    inline for (.{ .written, .reversed }, 0..) |order, i| {
+        try s.w.write("Main.beni", try source(a, path, order));
+        const run = try s.w.runWith(&.{ "dump", "--stage=ownership", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        reports[i] = try recordLines(a, run.stdout);
+    }
+    try s.finish(.{
+        .green = reports[0].len != 0 and std.mem.eql(u8, reports[0], reports[1]),
+        .signature = if (reports[0].len == 0) "no-record-lines" else "exit=0 ownership-differs",
+        .detail = try std.fmt.allocPrint(a, "--- written ---\n{s}--- reversed ---\n{s}", .{ reports[0], reports[1] }),
+    });
+}
+
+/// An ownership report's `update` lines without their positions, and its
+/// summaries, sorted.
+fn recordLines(a: std.mem.Allocator, report: []const u8) ![]const u8 {
+    var kept: std.ArrayList([]const u8) = .empty;
+    var it = std.mem.splitScalar(u8, report, '\n');
+    while (it.next()) |line| {
+        const t = std.mem.trimStart(u8, line, " ");
+        if (std.mem.startsWith(u8, t, "summary ")) {
+            try kept.append(a, t);
+            continue;
+        }
+        const sp = std.mem.indexOfScalar(u8, t, ' ') orelse continue;
+        if (std.mem.startsWith(u8, t[sp + 1 ..], "update ")) try kept.append(a, t[sp + 1 ..]);
+    }
+    std.mem.sort([]const u8, kept.items, {}, struct {
+        fn lessThan(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.order(u8, x, y) == .lt;
+        }
+    }.lessThan);
+    var out: std.ArrayList(u8) = .empty;
+    for (kept.items) |l| {
+        try out.appendSlice(a, l);
+        try out.append(a, '\n');
+    }
+    return out.items;
+}
+
 /// `path`'s program with its declarations reversed builds, and prints
 /// exactly `twin`.
 fn expectReversedPrints(comptime path: []const u8, twin: []const u8) !void {

@@ -243,7 +243,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
 /// Two lines of one root cause (§28.5): the same place, verdict, cause and
 /// reason.
 fn sameCause(a: Ownership.Demand, b: Ownership.Demand) bool {
-    return a.position.line == b.position.line and a.position.col == b.position.col and
+    // `.record` too: a list writer may be named `update` as well.
+    return a.record == b.record and a.position.line == b.position.line and a.position.col == b.position.col and
         std.mem.eql(u8, a.op, b.op) and std.meta.eql(a.verdict, b.verdict) and a.approx == b.approx and
         std.mem.eql(u8, a.detail, b.detail);
 }

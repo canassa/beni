@@ -1,0 +1,29 @@
+-- ownership: a top-level record read by several declarations, as its
+-- object (`moved`'s update, rejected `top-level`), whole (`whole`) and
+-- through its list (`tagged`). Its object's cell is one the read makes on
+-- purpose and its list's one the summary's result makes; neither depends on
+-- which declaration the walk reads first (`ownership-checker.md` §31.2).
+-- `tests/blackbox/ordering_test.zig` checks the report reversed.
+type alias Point =
+    x : Int
+    tags : List String
+
+
+origin : Point
+origin = { x = 0, tags = [] }
+
+
+pub moved : ⊤ → Point
+moved ⊤ = { origin | x = 1 }
+
+
+pub tagged : ⊤ → List String
+tagged ⊤ = [ …origin.tags, "a" ]
+
+
+pub whole : ⊤ → Point
+whole ⊤ = origin
+
+
+pub kept : ⊤ → Point × Int
+kept ⊤ = ( { origin | tags = [] }, List.length origin.tags )
