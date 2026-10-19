@@ -957,3 +957,8 @@ passes its left subtree: 15,386 programs at depth 2, none accepted, since every 
 - **#400, for information.** A write under a marker while the region holds one list at several levels is refused by
   `src/own/` and accepted by the oracle, whose runs of them agree, so the oracle does not change; the planned
   write-many bit is on the Zig side.
+
+`ownership tree` with the reliance (depth 2, 3 nodes): 142,870 programs, 70,248 accepted (62,628 without it, all of
+the 7,620 more in `levels`), 9,516 of them show a write, 0 disagree. Holes: master 2,010, no-marker 2,010,
+no-level-sep 1,056, no-approx 684, excl-unchecked 36 (each a `levels` caller that shares a list at two levels of the
+subtree it passes). Star overlap and no-excl-reliance are sound: 70,248 and 62,628 accepted, 0 disagree.
