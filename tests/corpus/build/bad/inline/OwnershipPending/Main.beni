@@ -1,0 +1,19 @@
+-- `list_may_be_shared` for a pending line (ownership-checker.md §16.5,
+-- §28.5): `pusher acc` returns a function that adds to the end of `acc`
+-- itself, and once returned the checker cannot see every call of it — a
+-- caller could hand it a list something else reads. A build cannot leave
+-- that obligation open, so it is an error, and the message says why.
+import Html exposing (Html)
+import Tea
+
+
+pusher : List Int → (Int → List Int)
+pusher acc = λx → [ …acc, x ]
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → List.length ((pusher [ 1 ]) 2), update = λ_ m → m, view = view }

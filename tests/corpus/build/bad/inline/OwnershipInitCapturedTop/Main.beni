@@ -1,0 +1,17 @@
+-- An init capture also retained by view is shared (§22.2's capture amendment).
+import Html exposing (Html)
+import Tea
+
+
+initial : { items : List Int }
+initial = { items = [ 7 ] }
+
+
+main : Tea.Program
+main =
+    m = initial
+    Tea.sandbox
+        { init = λ⊤ → m
+        , update = λ_ model → { model | items = List.push model.items 8 }
+        , view = λ_ → <button onClick={⊤}>{List.length m.items}</button>
+        }

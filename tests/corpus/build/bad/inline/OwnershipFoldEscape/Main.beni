@@ -1,0 +1,16 @@
+-- A fiber keeps the accumulator while the fold attempts to grow it.
+import Task
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                List.foldl [ 1, 2 ] [] λx acc →
+                    _ = Task.spawn λ⊤ → List.length acc
+                    [ …acc, x ]
+        , update = λ_ model → model
+        , view = λmodel → <p>{List.length model}</p>
+        }
