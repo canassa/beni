@@ -3,37 +3,37 @@ module MaybeDefault
   21:36 List.push model.items: accepted param
   26:14 update model: accepted param
   26:32 List.push model.items: accepted param
-  27:10 update edited: rejected captured-edit: edited is captured, and how often the closure runs is not known (approx) [copy]
+  27:10 update edited: pending: it is returned
   33:22 call MaybeDefault.handle model.items: accepted once
-  33:22 update model: rejected captured-edit: model is captured, and how often the closure runs is not known (MaybeDefault.handle writes it) (approx) [copy]
+  33:22 update model: accepted once
   38:58 call MaybeDefault.handle model.items: accepted once
-  38:58 update model: rejected captured-edit: model is captured, and how often the closure runs is not known (MaybeDefault.handle writes it) (approx) [copy]
+  38:58 update model: accepted once
   45:13 call MaybeDefault.handle model.items: accepted param (MaybeDefault.handle writes π1.items)
   45:13 update model: accepted param (MaybeDefault.handle writes it)
   53:44 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 54:30
-  53:44 update model: rejected captured-edit: model is captured, and how often the closure runs is not known (MaybeDefault.handle writes it) (approx) [copy]
+  53:44 update model: rejected later-use: model is read again at 54:47 [copy]
   58:56 call MaybeDefault.handler model.items: rejected later-use: model.items is read again at 58:24 (MaybeDefault.handler writes π1.items)
   58:56 update model: rejected later-use: model is read again at 58:24 (MaybeDefault.handler writes it) [copy]
   63:37 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 63:54
-  63:37 update model: rejected captured-edit: model is captured, and how often the closure runs is not known (MaybeDefault.handle writes it) (approx) [copy]
+  63:37 update model: rejected later-use: model is read again at 63:77 [copy]
   63:54 update model: rejected held-operand: the value at 63:24, evaluated before it, holds it until its consumer runs [copy]
   68:46 List.push model.items: rejected later-use: model.items is read again at 68:73
   68:73 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 68:5
-  68:73 update model: rejected captured-edit: model is captured, and how often the closure runs is not known (MaybeDefault.handle writes it) (approx) [copy]
+  68:73 update model: rejected later-use: model is read again at 68:5 [copy]
   72:65 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 72:19
-  72:65 update model: rejected captured-edit: model is captured, and how often the closure runs is not known (MaybeDefault.handle writes it) (approx) [copy]
+  72:65 update model: rejected later-use: model is read again at 72:19 [copy]
   summary handle: π1 W{items}, π1.items RAW, π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other, π1◦
-  summary handler: π1 RW{items}, π1.items RAW, π1.items[*] RA, π1.other RA; res λ, ◇ π1◦, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
+  summary handler: π1 RW{items, other}, π1.items RAW, π1.items[*] RA, π1.other RA; res ◇ π1◦, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
   summary step: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   summary stepLambda: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   summary stepCase: π2 RAW{items}, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2 π2◦
   summary readAfter: π2 RW{items}, π2.items RW, π2.items[*] R
-  summary eagerHandler: π2 RAW{items}, π2.items RAW, π2.items[*] RA, π2.other R; res .items ~π2.items, .items[*] ~π2.items[*], .other ~fresh1, ~π2
+  summary eagerHandler: π2 RAW{items, other}, π2.items RAW, π2.items[*] RA, π2.other RA; res ~π2 ~⊤call{lost}, ⋆ ~π2.items ~π2.items[*] ~π2.other ~π2◦
   summary defaultReads: π2 RW{items, other}, π2.items RAW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other, ~π2◦
   summary editInMaybe: π1 RAW{items}, π1.items RAW, π1.items[*] A, π1.other A; res .items ~π1.items, .items[*] ~π1.items[*], .other ~π1.other, ~π1 ~π1◦
   summary andThen: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   demands 11: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 6
-  records 12: accepted 3, pending 0, rejected 9 (copy 9, restructure 0); hoisted 0, eager reads 0
+  records 12: accepted 5, pending 1, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
 total 11: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 6
-records 12: accepted 3, pending 0, rejected 9 (copy 9, restructure 0); hoisted 0, eager reads 0
+records 12: accepted 5, pending 1, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
 cause later-use 6
