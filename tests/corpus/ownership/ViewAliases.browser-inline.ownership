@@ -1,0 +1,14 @@
+module ViewAliases
+  20:18 List.push xs: rejected alias: rest holds it and is read at 21:13
+  32:18 List.set rest: rejected alias: xs holds it and is read at 33:13
+  44:21 List.push xs: rejected alias: init holds it and is read at 44:13
+  54:15 List.set rest: rejected alias: xs holds it and is read at 54:13
+  65:13 List.push rest: accepted fresh
+  summary pushWhileRest: res .a fresh1 fresh2, .b fresh1 fresh3, fresh501◦ fresh502◦
+  summary setRestWhileWhole: res .a fresh1 fresh2, .b fresh1 fresh3, fresh501◦ fresh502◦
+  summary pushWhileInit: res .0 fresh1 fresh2, .1 fresh1 fresh3
+  summary setRestOfParam: π1 RAW, π1[*] A; res .0 fresh1 π1, .0[*] ~π1[*], .1 fresh2 π1
+  summary restDead: res fresh1
+  demands 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause alias 4

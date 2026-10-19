@@ -128,3 +128,4 @@ tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
 # #315 checked at the entry (ownership-checker.md §31.6, §31.8). Red until R2c
 # reads a record update's W{F} off a summary.
 tests/pending/ownership/RecordForItem.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/RecordForItem.beni#browser-inline exit=0 browser-inline.ownership-differs

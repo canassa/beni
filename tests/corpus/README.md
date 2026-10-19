@@ -17,7 +17,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `writes/` | `check`, then `dump --stage=writes`, both `--platform=browser-tea` | `<name>.writes` | the write-set pass (`write-sets.md` §8.1): per message key its write set and class, per view hole its class and reads; a project may name its sources elsewhere (`_expected.sources`), carry the hidden `--writes-work` cap (`.writes-work`), and be the gate of §8.2 (`.gate`: its `keys` lines must show two thirds bounded) |
-| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file, one platform per line, the fixture is checked and dumped under each, with one golden per platform (`<name>.<platform>.ownership`, the last part of a path); a token `<platform>+everywhere` is that platform with the hidden `--ownership-everywhere`. Where the chain edits lists in place (its first `"lists"`, read from the manifests) or the token says `+everywhere`, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line, and elsewhere it must pass (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4) |
+| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file, one platform per line, the fixture is a case per platform (`<name> [<platform>]`), checked and dumped under it, with one golden per platform (`<name>.<platform>.ownership`, the last part of a path); a token `<platform>+everywhere` is that platform with the hidden `--ownership-everywhere`. Where the chain edits lists in place (its first `"lists"`, read from the manifests) or the token says `+everywhere`, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line, and elsewhere it must pass (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4) |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
@@ -690,8 +690,8 @@ paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
 (measured 9 031M), and Sternhalma's separate value fuzz 12 600M (measured 11 387M).
 The paired Bike Wars page is granted 8 600M (measured 7 784M). TodoMVC's
 and Bike Wars' value fuzz retain the default budget (Bike Wars measured 4 225M). `browser/direct/ApiItems`
-is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page. `ownership/EntryValueCommand`
-is granted 4 730M (measured 4 301M; 2026-10-16, delegated, #220), until the ownership dump stops re-checking core (#214). `browser/direct/ApiLogin`
+is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page.
+`browser/direct/ApiLogin`
 is granted 4 870M (measured 4 420M; 2026-10-17, delegated, #323), until the specialiser's analysis
 rounds cost less. Outside the
 corpus, the two `.wasm` tests of `tests/blackbox/wasm_test.zig` have a grant of their own,
@@ -712,6 +712,11 @@ the three value-fuzz cases 6 088–6 089M; they are re-granted 21 700M and 6 700
 report, is granted 4 750M. `dump --stage=ownership` re-checks all of core from source, so the
 case grew with derived codecs' engine code in `core/Schema`: 4 248M on master, 4 317M after, and
 the grant adds 10%. Remove it when the dump installs the checked core's summaries (#214).
+
+*Amended 2026-10-19 (#423):* an ownership fixture beside a `.platform` file is now a case per
+platform it names, each budgeted on its own. `ownership/EntryValueCommand`'s grant (4 730M, #220,
+for its two platforms in one case) and `ownership/Conduit`'s (4 750M, #206) are withdrawn: each
+platform's case fits the default budget.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds one
 repo-relative directory per line, whose `.beni` files together are the program, so several
