@@ -473,7 +473,9 @@ pub const Program = struct {
         statements: bool = false,
         /// 1.15: `what` is `markup` whose root reads no variable the
         /// branch binds — no pattern variable, no `let` of the arm — so its
-        /// values can be evaluated whichever arm the value takes
+        /// values can be bound without branch variables. Eager evaluation
+        /// additionally requires `valuePureTotal`; effects and possible
+        /// failures execute only in the selected arm
         /// (`programBranchEager`).
         eager: bool = false,
 
@@ -1337,6 +1339,12 @@ pub const Context = struct {
         return cx.vtable.value_safe(cx.impl, v);
     }
 
+    /// Proven pure and total: safe to evaluate in an unselected eager arm.
+    /// Unknown calls, effects and partial operations return false.
+    pub fn valuePureTotal(cx: *Context, v: Value.Index) bool {
+        return cx.vtable.value_pure_total(cx.impl, v);
+    }
+
     /// 1.15, inside `Lowering.piece` only: a top-level constant of the
     /// module named `<Module>$<base>`, exported, of `value`.
     pub fn pieceExport(cx: *Context, base: []const u8, init: Expr) Error!void {
@@ -1790,6 +1798,7 @@ pub const VTable = struct {
     root_let_readers: *const fn (impl: *anyopaque, r: Root.Index, k: u32) u32,
     value_reads_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32, v: Value.Index) bool,
     value_safe: *const fn (impl: *anyopaque, v: Value.Index) bool,
+    value_pure_total: *const fn (impl: *anyopaque, v: Value.Index) bool,
     piece_export: *const fn (impl: *anyopaque, base: []const u8, value: Expr) Error!void,
     program_piece: *const fn (impl: *anyopaque, node: Node.Index) Error!?*const PieceFacts,
     program_piece_name: *const fn (impl: *anyopaque, node: Node.Index, base: []const u8) Error!Name,

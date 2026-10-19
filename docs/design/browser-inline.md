@@ -290,8 +290,12 @@ beni over `Js` in `Inline.beni`:
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
-  and its holes are bindings like any other, evaluated whichever arm the value takes; `when` hides it
-  while the value takes the other arm. A branch of any other shape is S4's (§5, class 1).
+  and its holes are bindings like any other; `when` hides it while the value takes the other arm.
+  *Corrected 2026-10-19 (the owner, #459):* eager evaluation is valid only for expressions proven pure
+  and total. Every other value, including an effect, a potentially throwing call, a foreign call or an
+  operation whose totality is unknown, executes only in the selected arm, as in an ordinary `if` or
+  `case`. A hidden arm does not log or throw. Entering it computes current values; no value persists
+  as a memo while it is hidden. A branch of any other shape is S4's (§5, class 1).
   *Amended 2026-10-19 (the owner): a `case` in markup.* A hole whose value is a `case` (or an `if`
   of `else if`s) of any number of arms, each one element written in place or `<></>`, each element
   arm eager, is one eager `when` per element arm: every arm's element is in the markup, in
@@ -303,7 +307,8 @@ beni over `Js` in `Inline.beni`:
   distinct set of groups among the bindings of a unit — a mixed text whose holes read two sets is in
   both — in document order of its first binding. A `when`'s group is its hole's, which is the read set
   of the whole value, arm included: the `when` runs again on a write its arm's text reads, and writes
-  nothing then.
+  nothing then. A guarded arm shares that whole-branch group, including its selector, so a reveal
+  after hidden data updates prepares current values and its visibility together.
 - **A `view` `let`** read by one hole is that hole's value, substituted (D-d); one read by several
   holes is a memo node, S3's, and refused as a limit of the compiler until then.
   *As built 2026-10-18 (S1, #351 and its correction):* the `let` is evaluated in the binding function
@@ -322,6 +327,11 @@ beni over `Js` in `Inline.beni`:
   anything, and the page stays as the last pass left it, as on master and `browser-tea`
   (`browser/inline/ThrowBeforeWrite`); a safe value is still written at its write, where release
   writes it in place (#365's rule, `backend.md` §9 item 1, is the same set of values).
+  *Corrected 2026-10-19 (#459):* guarded arms and functions whose later context may fail prepare
+  their selected values and helper arguments in source order before any DOM write of that function.
+  An argument is evaluated once per call site, before that helper's body; sibling calls keep separate
+  bindings. Only invocation-local temporaries cross the preparation and write phases. Functions whose
+  work is all proven pure and total keep their existing eager code.
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as

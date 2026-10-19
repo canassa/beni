@@ -1,0 +1,72 @@
+-- A native operator must inspect its operands through case/let and string
+-- interpolation. A custom comparison is not a proven native operator:
+-- all these effects stay inside the selected arm (#459).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    shown : Bool
+
+
+type Msg
+    = Cup
+    | Toggle
+
+
+type Box
+    = Box Int
+
+
+pub compare : Box, Box → Order
+compare (Box a) (Box b) =
+    _ = Debug.log "compare" ( a, b )
+    if a < b then LT else if a > b then GT else EQ
+
+
+trace : String
+trace = "interpolation"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Cup →
+            { model | cups = model.cups + 1 }
+
+        Toggle →
+            { model | shown = not model.shown }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {if model.shown then
+            <section>
+                <p>
+                    {(case model.cups of
+                         _ →
+                             n = Debug.log "let" model.cups
+                             n
+                     )
+                        + 1
+                    }
+                </p>
+                <p>{"n=${Debug.log trace model.cups}"}</p>
+                <p>{if Box model.cups < Box 2 then "low" else "high"}</p>
+            </section>
+         else
+            <></>
+        }
+        <button data-role="cup" onClick={Cup}>Cup</button>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, shown = False }, update = update, view = view })
+        "root"

@@ -13541,6 +13541,10 @@ pub const Lowerer = struct {
     /// locals, field and tuple reads, `if`s and `case`s, interpolation and
     /// calls of the basic operators (`Operator.of`) of such.
     fn instSafe(l: *Lowerer, inst: Inst.Index) bool {
+        return l.instSafeMode(inst, false);
+    }
+
+    fn instSafeMode(l: *Lowerer, inst: Inst.Index, total: bool) bool {
         var stack: std.ArrayList(Inst.Index) = .empty;
         stack.append(l.scratch, inst) catch return false;
         var budget: u32 = 4096;
@@ -13554,7 +13558,14 @@ pub const Lowerer = struct {
                 .markup => {},
                 .field_access, .tuple_index, .case, .interp => l.instChildren(at, &stack) catch return false,
                 .call => {
-                    if (l.operatorOf(@fromBackingInt(@intCast(d.lhs))) == null) return false;
+                    const op = l.operatorOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
+                    if (total) {
+                        if (!l.callsOperator(at)) return false;
+                        switch (op) {
+                            .list_put, .list_at, .list_traverseAt => return false,
+                            else => {},
+                        }
+                    }
                     stack.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) catch return false;
                 },
                 else => return false,
@@ -16369,6 +16380,20 @@ const markup_vtable: beni_markup.VTable = struct {
         return l.instSafe(i);
     }
 
+    /// An eager arm may evaluate only a proven pure, total expression.
+    /// Ordinary calls (including foreign and recursive calls) are unknown;
+    /// native operators exclude writes and unchecked indexed reads.
+    fn valuePureTotal(impl: *anyopaque, v: M.Value.Index) bool {
+        const l = lowerer(impl);
+        const st = l.mk orelse return false;
+        return switch (st.built.values[@backingInt(v)]) {
+            .inst => |i| l.instSafeMode(i, true),
+            .let_value => |lv| l.instSafeMode(lv.inst, true),
+            .capture, .read, .input, .probe, .string, .true, .callee => true,
+            else => false,
+        };
+    }
+
     fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {
         return lowerer(impl).pieceEventCtor(v, payload);
     }
@@ -16709,6 +16734,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .root_let_readers = rootLetReaders,
         .value_reads_let = valueReadsLet,
         .value_safe = valueSafe,
+        .value_pure_total = valuePureTotal,
         .piece_export = pieceExport,
         .program_piece = programPiece,
         .program_piece_name = programPieceName,

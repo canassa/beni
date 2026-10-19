@@ -211,6 +211,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     params_all[0] = pg.elements.?;
     for (params_all[1..]) |*x| x.* = try cx.fresh("model");
     pg.piece_args = params_all[1..];
+    try pg.guardGroups();
     try pg.group();
     try pg.letsOnce();
     try pg.argsOnce();
@@ -347,7 +348,10 @@ const Ctx = struct {
     /// The branch's hole, or the helper call's; `none` for the `view`.
     node: m.Node.Index,
     arm: u32,
+    arms: u32 = 2,
     root: m.Root.Index,
+    /// The selector read group of an arm.
+    group: ?u32 = null,
     /// An eager arm of a branch (§8.2), or the markup of a function of the
     /// program's own module the hole calls, written in place (§8.4,
     /// amended 2026-10-19): entered with its arguments evaluated in the
@@ -422,6 +426,8 @@ const Page = struct {
     count: u32 = 0,
     ctxs: std.ArrayList(Ctx) = .empty,
     writes: std.ArrayList(Write) = .empty,
+    guarded_ctx: []bool = &.{},
+    unsafe_ctx: []bool = &.{},
     events: std.ArrayList(Event) = .empty,
     functions: std.ArrayList(Function) = .empty,
     /// The mount's body, the model's name, the top node and its
@@ -680,7 +686,7 @@ const Page = struct {
         const facts = try pg.known(n, cx.programHole(.{ .node = n }));
         for (shown.items) |s| {
             const armRoot = br.arms[s].what.markup;
-            try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = s, .root = armRoot });
+            try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = s, .arms = @intCast(br.arms.len), .root = armRoot, .group = facts.group });
             const inner: u32 = @intCast(pg.ctxs.items.len - 1);
             // The `when` before the arm's own writes: document order.
             try pg.writes.append(pg.a(), .{ .target = pg.count, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .when = .{ .node = n, .shown = s, .arms = @intCast(br.arms.len) } } });
@@ -870,6 +876,7 @@ const Page = struct {
             try js.constant(body, u.elements, try js.call(try js.name(try cx.runtime("part")), &.{try pg.ref(u.target)}));
         }
         // The binding functions, each written once and called once now.
+        try pg.guardGroups();
         try pg.group();
         try pg.letsOnce();
         try pg.argsOnce();
@@ -1252,6 +1259,98 @@ const Page = struct {
 
     // ---- Binding functions --------------------------------------------
 
+    fn writeReads(pg: *Page, w: Write, out: *std.ArrayList(m.Value.Index)) m.Error!void {
+        switch (w.what) {
+            .text => |parts| for (parts) |part| switch (part) {
+                .value => |v| try out.append(pg.a(), v),
+                else => {},
+            },
+            .prop => |x| try out.append(pg.a(), x.value),
+            .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
+        }
+    }
+
+    fn unsafeLets(pg: *Page, ctx: u32, values: []const m.Value.Index) m.Error!void {
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            const r = pg.ctxs.items[c].root;
+            const lets = pg.tree.root(r).lets;
+            for (try pg.neededLets(r, values), 0..) |needed, k| {
+                if (needed and !pg.cx.valuePureTotal(lets.at(@intCast(k)))) pg.unsafe_ctx[c] = true;
+            }
+        }
+    }
+
+    /// Only pure, total work may be eager. A guarded arm's bindings also
+    /// read its selector: a reveal must compute current values even when
+    /// only the selector changed since the last hidden data update.
+    fn guardGroups(pg: *Page) m.Error!void {
+        pg.unsafe_ctx = try pg.a().alloc(bool, pg.ctxs.items.len);
+        pg.guarded_ctx = try pg.a().alloc(bool, pg.ctxs.items.len);
+        @memset(pg.unsafe_ctx, false);
+        @memset(pg.guarded_ctx, false);
+        for (pg.writes.items) |w| {
+            var reads: std.ArrayList(m.Value.Index) = .empty;
+            try pg.writeReads(w, &reads);
+            for (reads.items) |v| if (!pg.cx.valuePureTotal(v)) {
+                pg.unsafe_ctx[w.ctx] = true;
+            };
+            try pg.unsafeLets(w.ctx, reads.items);
+        }
+        for (pg.ctxs.items, 0..) |c, ci| {
+            if (c.kind != .call) continue;
+            const call = pg.tree.hole(c.node).call orelse continue;
+            var args: std.ArrayList(m.Value.Index) = .empty;
+            for (0..call.args.len) |i| {
+                const v = call.args.at(@intCast(i));
+                try args.append(pg.a(), v);
+                if (!pg.cx.valuePureTotal(v)) pg.unsafe_ctx[ci] = true;
+            }
+            try pg.unsafeLets(c.parent.?, args.items);
+        }
+        const below = try pg.a().dupe(bool, pg.unsafe_ctx);
+        var ci = pg.ctxs.items.len;
+        while (ci > 0) {
+            ci -= 1;
+            const c = pg.ctxs.items[ci];
+            if (c.parent) |parent| {
+                if (below[ci]) {
+                    below[parent] = true;
+                    if (c.kind == .arm) pg.guarded_ctx[ci] = true;
+                }
+            }
+        }
+        for (pg.writes.items) |*w| {
+            var at: ?u32 = w.ctx;
+            var selector_group: ?u32 = null;
+            while (at) |c| : (at = pg.ctxs.items[c].parent) {
+                if (pg.guarded_ctx[c]) selector_group = pg.ctxs.items[c].group;
+            }
+            // A branch's group includes its selector and all arm reads.
+            // Keep its guarded effects and visibility in one preparation,
+            // so a later throw cannot follow an earlier visibility write.
+            if (selector_group) |g| w.groups = try sorted(pg.a(), &.{g});
+        }
+    }
+
+    fn prepares(pg: *Page, f: *const Function) bool {
+        if (f.writes.items.len == 0) return false;
+        const first = pg.writes.items[f.writes.items[0]].ctx;
+        for (f.writes.items) |wi| {
+            var at: ?u32 = pg.writes.items[wi].ctx;
+            while (at) |c| : (at = pg.ctxs.items[c].parent) {
+                if (pg.guarded_ctx[c]) return true;
+                if (!pg.unsafe_ctx[c]) continue;
+                var before: ?u32 = first;
+                const earlier = while (before) |b| : (before = pg.ctxs.items[b].parent) {
+                    if (b == c) break true;
+                } else false;
+                if (!earlier) return true;
+            }
+        }
+        return false;
+    }
+
     /// The writes grouped by their sets of read sets, one function each, in
     /// the order of their first write: the page's document order.
     fn group(pg: *Page) m.Error!void {
@@ -1479,6 +1578,169 @@ const Page = struct {
         }
     }
 
+    const PreparedWrite = struct { value: m.Expr, selected: ?m.Name };
+    const PreparedBranch = struct { ctx: u32, node: m.Node.Index, name: m.Name };
+
+    /// Invocation-local preparation, before any DOM write. Contexts are
+    /// entered once, in document order; a selected arm owns its effects.
+    /// Only temporary names escape a guarded block, never memo state.
+    const Preparation = struct {
+        pg: *Page,
+        f: *const Function,
+        declarations: m.Block,
+        first: []u32,
+        writes: []?PreparedWrite,
+        branches: std.ArrayList(PreparedBranch) = .empty,
+        reads: std.ArrayList(m.Value.Index) = .empty,
+
+        fn temporary(p: *Preparation, hint: []const u8) m.Error!m.Name {
+            const n = try p.pg.cx.fresh(hint);
+            try p.pg.cx.js.let(p.declarations, n, null);
+            return n;
+        }
+
+        fn branch(p: *Preparation, into: m.Block, ctx: u32, node: m.Node.Index) m.Error!m.Expr {
+            const pg = p.pg;
+            for (p.branches.items) |b| if (b.ctx == ctx and b.node == node) return pg.cx.js.name(b.name);
+            const n = try p.temporary("arm");
+            const value = try pg.cx.programBranchArm(into, node);
+            try pg.cx.js.assign(into, try pg.cx.js.name(n), value);
+            try p.branches.append(pg.a(), .{ .ctx = ctx, .node = node, .name = n });
+            return pg.cx.js.name(n);
+        }
+
+        fn context(p: *Preparation, ctx: u32, into: m.Block, selected: ?m.Name) m.Error!void {
+            const pg = p.pg;
+            const cx = pg.cx;
+            const js = cx.js;
+            const r = pg.ctxs.items[ctx].root;
+            try pg.bindLets(into, r, p.reads.items);
+            // A context and a child can interleave in the document. Prepare
+            // each write and each child's first write at its original place.
+            for (p.f.writes.items) |wi| {
+                for (pg.ctxs.items, 0..) |child, ci| {
+                    if (child.parent != ctx or p.first[ci] != wi) continue;
+                    switch (child.kind) {
+                        .arm => {
+                            var body = into;
+                            var active = selected;
+                            if (pg.guarded_ctx[ci]) {
+                                const taken = try p.branch(into, ctx, child.node);
+                                const n = try p.temporary("selected");
+                                const chosen = if (child.arms > 2) try js.binary(.strict_eq, taken, try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{child.arm}))) else if (child.arm == 0) try js.unary(.not, taken) else taken;
+                                try js.assign(into, try js.name(n), chosen);
+                                body = try js.block();
+                                active = n;
+                            }
+                            try cx.programBranchEager(child.node, child.arm);
+                            defer cx.programInlineLeave();
+                            try p.context(@intCast(ci), body, active);
+                            if (pg.guarded_ctx[ci]) try js.@"if"(into, try js.name(active.?), body, null);
+                        },
+                        .call => {
+                            if (pg.tree.hole(child.node).call) |call| {
+                                const args = try pg.a().alloc(m.Value.Index, call.args.len);
+                                for (args, 0..) |*v, i| v.* = call.args.at(@intCast(i));
+                                try cx.rootValues(into, r, args);
+                            }
+                            const args = try cx.programInlineArgs(into, child.node);
+                            try cx.programInlineEnter(into, child.node, args, false);
+                            defer cx.programInlineLeave();
+                            try p.context(@intCast(ci), into, selected);
+                        },
+                    }
+                }
+                const w = pg.writes.items[wi];
+                if (w.ctx != ctx) continue;
+                const value = switch (w.what) {
+                    .text => |parts| value: {
+                        var values: std.ArrayList(m.Value.Index) = .empty;
+                        for (parts) |part| switch (part) {
+                            .value => |v| try values.append(pg.a(), v),
+                            else => {},
+                        };
+                        try cx.rootValues(into, r, values.items);
+                        const text = if (parts.len == 1 and parts[0] == .value)
+                            try cx.value(parts[0].value)
+                        else text: {
+                            const tp = try pg.a().alloc(m.TemplatePart, parts.len);
+                            for (tp, parts) |*t, part| t.* = switch (part) {
+                                .text => |s| .{ .text = s },
+                                .value => |v| .{ .expr = try cx.value(v) },
+                            };
+                            break :text try js.template(tp);
+                        };
+                        break :value if (w.string) text else try js.template(&.{.{ .expr = text }});
+                    },
+                    .prop => |x| value: {
+                        try cx.rootValues(into, r, &.{x.value});
+                        break :value try cx.value(x.value);
+                    },
+                    .when => |x| value: {
+                        const taken = try p.branch(into, ctx, x.node);
+                        break :value if (x.arms > 2)
+                            try js.binary(.strict_ne, taken, try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{x.shown})))
+                        else if (x.shown == 0) taken else try js.unary(.not, taken);
+                    },
+                };
+                const n = try p.temporary("value");
+                try js.assign(into, try js.name(n), value);
+                p.writes[wi] = .{ .value = try js.name(n), .selected = selected };
+            }
+        }
+    };
+
+    fn writePrepared(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const first = try pg.a().alloc(u32, pg.ctxs.items.len);
+        @memset(first, std.math.maxInt(u32));
+        const prepared = try pg.a().alloc(?PreparedWrite, pg.writes.items.len);
+        @memset(prepared, null);
+        var p: Preparation = .{ .pg = pg, .f = f, .declarations = blk, .first = first, .writes = prepared };
+        for (f.writes.items) |wi| {
+            const w = pg.writes.items[wi];
+            first[w.ctx] = @min(first[w.ctx], wi);
+            try pg.writeReads(w, &p.reads);
+        }
+        var ci = pg.ctxs.items.len;
+        while (ci > 0) {
+            ci -= 1;
+            if (pg.ctxs.items[ci].parent) |parent| first[parent] = @min(first[parent], first[ci]);
+            if (first[ci] == std.math.maxInt(u32) or pg.ctxs.items[ci].kind != .call) continue;
+            if (pg.tree.hole(pg.ctxs.items[ci].node).call) |call| {
+                for (0..call.args.len) |i| try p.reads.append(pg.a(), call.args.at(@intCast(i)));
+            }
+        }
+        const body = try js.block();
+        if (pg.piece) {
+            const args = try pg.a().alloc(m.Expr, pg.piece_args.len);
+            for (args, pg.piece_args) |*x, n| x.* = try js.name(n);
+            try cx.pieceViewEnter(body, args);
+        } else try cx.programViewEnter(body, try js.name(pg.model));
+        try p.context(0, body, null);
+        cx.programViewLeave();
+        try js.nested(blk, body);
+        // All selected values succeeded. Only now may visibility or text
+        // change, including writes in earlier sibling contexts.
+        for (f.writes.items) |wi| {
+            const w = pg.writes.items[wi];
+            const ready = prepared[wi].?;
+            const into = if (ready.selected != null) try js.block() else blk;
+            const node = try pg.ref(w.target);
+            switch (w.what) {
+                .text => try js.expression(into, try js.call(try js.name(try cx.runtime("text")), &.{ node, ready.value })),
+                .prop => |x| if (x.key) |key| {
+                    try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value, try js.string(key) }));
+                } else {
+                    try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
+                },
+                .when => try js.expression(into, try js.call(try js.name(try cx.runtime("when")), &.{ node, ready.value })),
+            }
+            if (ready.selected) |n| try js.@"if"(blk, try js.name(n), into, null);
+        }
+    }
+
     /// A binding function's body: per context its writes are in, the
     /// context entered, the `let`s it reads and every value that may throw
     /// evaluated first, then each write made with its other values
@@ -1488,6 +1750,7 @@ const Page = struct {
         const js = cx.js;
         // A piece's binding is the program site's wrapper's call (`page`).
         std.debug.assert(f.piece == null);
+        if (pg.prepares(f)) return pg.writePrepared(blk, f);
         var done: std.ArrayList(u32) = .empty;
         var call_args: std.ArrayList(CallArgs) = .empty;
         for (f.writes.items) |first| {
