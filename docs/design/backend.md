@@ -414,6 +414,34 @@ use-count walk over `JsIr` after lowering and removes bindings *inside* a declar
 emitted. Two passes, two IRs, and neither is a fallback for the other. `Lower.Input` gains one more
 field for it (§9).
 
+*Amended 2026-10-20 (the owner's decision D1, issue #488; `plans/type-directed-points-to.md` §3):*
+**the backend receives one artifact of types, and lowering does not read it.** Beside the dispatch
+table, `Lower.Input` carries per module a **type-key artifact**: a key for every Bir local and for
+every allocating instruction (a record literal or update, a constructor application, a tuple, a list
+literal, a lambda), and the closed types the module adds to fact 3's wild set (§9). A key is the
+canonical form of a closed type: a nominal type's `TypeId` with its arguments' keys, a record as its
+fields' (symbol, key) pairs sorted by symbol, a tuple as its arity and elements' keys, a function as
+its parameters' keys and its result's. An alias is the type it names, so an alias and its structure
+have one key. A key is **wild** when the type holds a type variable or a row variable, a `foreign
+type` (`Js.Value` and `Js.Ref` among them), or the schema `Value` (`schema.md` A.6), and anything
+the compiler makes with no Bir local or instruction of its own has no key and is wild. The checker
+computes the keys in `Module.check` while the module's store and `local_type` still exist, before
+the store is freed (`checker-v2.md` §5), in every build, so that a cache entry written by a
+development build serves a release one. The keys are written into the cache entry as a sixth
+section, `type_keys`, holding each key as a canonical term; `entry_bytes`' format goes from 11 to 12
+(`checker-v2.md` §14.3, `schema.md` A.6). **The artifact never decides what lowering emits**:
+`Lower` maps each type key to a representation key and writes it into two columns beside the nodes,
+`JsIr.name_key` and `JsIr.node_key`, and the one reader of those columns is fact 3's declared-type
+filter (§9, *Declared-type filtering of fact 3*). A module's keys are the same whether it was
+checked in this build or read from the cache, so the output never depends on a warm cache, and the
+warm/cold pair that tests it is one of the slice's fixtures. Key ids are assigned at the merge in
+module order from the canonical terms, never by a worker (rule 5). **In the first version every key
+of a `core` module and of a platform module is wild**: the checked core shipped in the binary is
+never checked again. Their interfaces still carry the one bit §9 asks of every module, whether a
+quantifier crosses into JavaScript. This is the one place the backend sees a type; §9's
+field-interference artifact (*Item 4 — field ambiguation, specified and then declined*) stays
+declined.
+
 ## 4. Codegen, construct by construct
 
 Representation decisions are §9.4's and are not reopened here. What this section fixes is the
@@ -8268,6 +8296,143 @@ with byte-identical output, and `specialise` is then the structural passes (`pus
 `srList`, `placeExpr`, `inlineScan`), not fact 3. The cap, context sensitivity for small pure
 helpers, or binding a non-atom argument to a local so the inliner may inline, are the owner's
 decisions (#464).
+
+#### Declared-type filtering of fact 3
+
+*Specified 2026-10-20 (issue #488, part of #464; the owner's decisions D1 and D2 in its safe form,
+`plans/type-directed-points-to.md` §2–§3). Normative for that plan's slices 2–4; nothing here is
+built. It extends `Pts` as the* As built 2026-10-19 *note describes it (copy edges, field summaries,
+load cells, `Pts.joinNow`), and carries over unchanged into the cells of* Building it*'s slice 5.*
+Fact 3 is context-insensitive, so a helper every widget calls with its own model
+(`Result.withDefault`) holds every model in one parameter and one return, and the merged set travels
+from there into every caller's bindings, arms and record updates: the work grows as (callers ×
+sites) at every consumer. The type system already says which of those flows can happen. **A var
+whose declared type is closed holds only the sites of that type**, and the filter that says so is
+one intersection at the one place sites join a var.
+
+**The representation key.** `Lower` maps each type key of the artifact (§3) to the key of what the
+value is at run time in a release build. A type of one constructor with one field is its field's
+key, with the type's arguments substituted (*A type of one constructor with one field is its field*,
+`CtorRep.unboxed`), so a site of `R` held at `Wrap` is held at `R`. `Bool`, the primitives, `Int32`,
+strings and a type all of whose constructors are nullary make no site and need no key. Lowering
+writes the result into `JsIr.name_key`, filled where a Bir local becomes a name (`Lower.localName`;
+`Lift` gives a lifted arm's parameter its local's key), and `JsIr.node_key`, on object, array and
+arrow nodes; an arrow's key is its function type's, whose result key is its return's filter. In
+`Spec`, `Mod.setNode`, `copyNode` and `foldTo` clear a node's key, `addName` and `freshLocal` make
+wild names, and `Copy` keeps the keys of a body only when its declaration's type holds no type
+variable. A safety build asserts that a keyed node is still an object, array or arrow when the
+filter reads it.
+
+**The wild set** is assembled at the merge, in module order, from every module's artifact, and a key
+in it is wild wherever it occurs, as a site's key or as a var's filter:
+
+- **unboxing's boundary set** (*A type of one constructor with one field is its field*): every type
+  a live `foreign`'s annotation names, and every closed type a `Js.from` or a `Js.to` is
+  instantiated at, transitively through fields, payloads and arguments;
+- **every type that crosses into JavaScript at a `Js.from`**, followed through quantifiers: a
+  quantifier of a declaration *crosses* when its body instantiates `Js.from` at a type that mentions
+  it, or instantiates a crossing quantifier of a callee at one. The checker computes the bit per
+  declaration to a fixpoint over the module's own calls and publishes it as a flag of
+  `Interface.Quantified` (an `iface_bytes` format bump; dependants see it through the interface
+  firewall like any change of a scheme). A module that instantiates a crossing quantifier at a
+  closed type lists that type, and the types it holds transitively, in its artifact. `core` and the
+  platforms compute and publish the bit although their own keys are wild;
+- **the subject type of every `?`** (§4, *`?` is a test and a `return`*), whose failure is returned
+  unchanged at the enclosing function's result type;
+- and, as sites rather than keys, **the one constant object of a nullary constructor of a type with
+  parameters** (§4, *A nullary constructor is one object*), which is the same object at every
+  instantiation.
+
+**The rule.** Every var of `Pts` has a filter, `allow`. A local's and a parameter's is its name's
+`name_key`; a function's return var's is the result key of its arrow's `node_key`; every other var
+is wild: a site's property vars, `any`, summaries, load cells, the globals and every name the
+compiler made. Every site takes its `node_key` at `siteOf`, and a site of a node with no key is
+wild. A var with a closed filter `K` holds only sites whose key is `K` or wild; a wild var holds
+everything it did before. **Only the site set is filtered**: `top`, `prim`, `nul` and `undef` pass
+unchanged, so a host value is a host value at every type and a var that holds one still turns `top`.
+`max_sites` counts what is left after the filter, and a var that goes `top` escapes the sites it
+holds, which are all the sites it can hold.
+
+**Where it applies.** In `Pts.joinNow`, where every join, copy and drain lands: the batch of new
+sites is intersected with the var's filter before its difference with what the var holds. That is
+the whole mechanism. No transfer function, no consumer of a value and no rewrite changes, and no
+call needs to know an instantiation.
+
+**Why it keeps the least fixpoint.** A var's filter is fixed before the solve, since keys are
+inputs. Intersection with a fixed set is monotone and distributes over union, so every transfer
+function followed by it is still monotone and the system has one least fixpoint, which no order of
+the worklist changes. Since (S ∪ Δ) ∩ A = (S ∩ A) ∪ (Δ ∩ A), *The worklist*'s difference propagation
+is unchanged: filtering each batch is filtering the set. The safety build's shuffled-order check
+needs no change, and *Building it*'s slice 5 applies the same intersection to the local and return
+cells' site sets.
+
+**Summaries across a filter.** A field summary is linked along a copy edge because Σ(A ∪ B) = Σ(A) ∪
+Σ(B), which holds when the target holds every site of the source. Across a filter it does not. **A
+copy edge from `u` to `v` links `v`'s summary to `u`'s only when `allow[v]` is wild or equal to
+`allow[u]`**; otherwise `v`'s summary is folded from the sites `v` holds, one by one. Linking past a
+stricter filter would be sound, since it over-approximates, but it would carry every filtered-out
+site's properties into `v`'s summary and undo the filter; folding costs work, not soundness.
+
+**Why it is sound.** Without the filter, fact 3 is a may-analysis of the JavaScript and reads no
+type. The filter removes a site `s` from a var `v` only when both keys are closed and differ. That
+is sound when no execution puts an object made at `s` in `v`, and beni's type system says so for
+checked code. It has no subtyping, a value has one closed type up to aliases, and a value held by a
+name of closed type `T` is a `T`. The key is canonical, with aliases expanded and records by their
+fields, so equal types have equal keys, and it is a representation key, so it follows unboxing. A
+poisoned type (`<error>`) is wild. What remains are the places
+where the JavaScript does not follow the types, and each is made wild:
+
+| Where the JavaScript is not the type | What keeps the filter sound |
+|---|---|
+| `Js.to` and `Js.from`, unchecked and compiled to nothing (`boundary.md` §4.2) | the boundary set, plus every type that crosses at a `Js.from` through quantifiers. A `Js.to` needs no rule of its own: it yields either a value JavaScript made, which is `top` and no site, or an object that went in at a `Js.from`, whose key is wild. Nothing relies on "the caller answers for the type" |
+| a hand-written sibling, a host call, an escaped function | a host call's arguments escape and its result is `top`; an escaped function's parameters are `top`; a host value is `top`, which is no site and passes every filter. The types a `foreign` names are in the boundary set |
+| `Js.Value`, `Js.Ref`, every `foreign type`, the schema `Value` | wild keys |
+| type variables and row variables: generic code, extensible records, a polymorphic `let` | wild keys |
+| `?` returns its subject at another type | the subject's type is in the wild set |
+| a nullary constructor of a parameterised type is one object | its site is wild |
+| a type of one constructor with one field is its field | the representation key |
+| records are structural and aliases transparent | the canonical key |
+| evidence parameters, derived `eq` and `compare`, compiled schema parsers and printers, port codecs, markup lowerings, the entry's call, constructor and placeholder wrappers, tail-call accumulators and scalar views | no Bir local or instruction, so no key: wild |
+| `Spec`'s own rewrites: inlined copies, folds, new names | keys cleared on every mutated node, wild new names, `Copy`'s rule |
+| `core` and the platforms (`List.js`, `Record.copy`, the fiber runtime) | wild in the first version; what their hand-written files return is `top` |
+| `Debug` | refused under `--release`; under the corpus's `--allow-debug` it is `core`, wild |
+
+A source of objects that is not in this table is a defect of this subsection. A wrong key is a
+silent miscompile, not a failed check, which is why the table is generous and the fixtures run.
+
+**Fixtures.** `run/` programs, built in both builds and compared with one golden, each of which
+miscompiles in the release build if a live flow is filtered away (fact 3 then drops a key it
+believes unread or folds a read to `undefined`): `run/UnboxedTypes` extended with an unboxed type
+through a generic function; a model taken through `Js.from` and `Js.to` at a type variable in
+`tests/platforms/toy` and read back at another closed type; an extensible-record function updating
+two record types; a `where a.compare` helper over two records; `Debug.log` of a model under
+`--allow-debug`; an alias and its structure on the two sides of a binding; a `?` returning an `Err`
+built at `Result E A` from a function answering `Result E B`, whose caller reads the error; a
+nullary constructor of a parameterised type of the program at two instantiations; a generic body the
+inliner copies into concrete code; and the dashboard's `withDefault (Json.decodeValue s) m` with two
+models, one field of which only the host's JSON supplies. Precision:
+`emit/release/inline/TypedMerge`, two models through one helper that is not inlined, a field read
+only on the first, which the filter lets the second's literal drop; red before, green after. Every
+`emit/release/` golden that moves is listed in the PR, and each is smaller or the same size.
+
+**What it does not do.** Records of the same shape share a key, so two widgets whose models have the
+same fields still merge. A generic function's own vars still merge: `withDefault`'s parameter and
+return hold every caller's model and its host result still makes them escape; what changes is that
+the merge stops at the first binder of a closed type, so `replace`'s return holds its own model and
+nothing past it sees the others. There is no context sensitivity, no filter at a member read's or a
+call's node and none at a site's property var (the plan's slice 5), and `top` keeps its meaning (D4
+is not taken). Neither `max_sites` (#442) nor the inliner changes: the owner declined a cap and the
+inliner shortcut on 2026-10-20. `core` and the platforms are wild until a later version keys them.
+
+**In a `browser-tea` page the filter changes nothing, in either direction.** The hosted runtime
+keeps the program's model in a `Js.ref` and reads it back with `Js.to`
+(`platforms/browser/Browser.beni`, `model = Js.ref (Js.to Js.null)` and `Js.write model (p.update
+self (Js.to msg) (Js.read model))`), so the model is already `top` at every `update` call. The
+message types cross at a `Js.from` in both platforms (`Js.from msg` in
+`platforms/browser-inline/Inline.beni`'s `commands`, `Js.from apply` in `Browser.beni`) and are
+wild. The `browser-inline` lowering keeps the model in a JavaScript binding, which is why the filter
+applies to the dashboard. Lifting the TEA model out of the `Js.ref` is separate work and not part of
+this subsection.
 
 ### Compact statements
 
