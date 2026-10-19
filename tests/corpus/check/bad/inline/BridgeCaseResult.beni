@@ -1,0 +1,6 @@
+-- a case arm returns the old version after an eager write.
+-- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
+pub run ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    if True then xs else grown

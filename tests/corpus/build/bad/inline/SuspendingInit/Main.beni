@@ -1,0 +1,29 @@
+-- An `init` that may suspend, in a program built by a function: the
+-- `inline` lowering calls `init` inside a mount that cannot wait, so such
+-- a program must be refused, never miscompiled into a mount that returns a
+-- suspension in place of a model. It is, by the checker, before any
+-- lowering runs: `init` is a `sync` function of `⊤` (boundary.md
+-- §9.8.16), so a lambda that may suspend handed to it is `sync_boundary`.
+-- Ported from `build/bad/direct/`, with `Task.yieldNow` for `Time.sleep`
+-- and one program, since `browser-inline` has no `Browser.programs`.
+import Html exposing (Html)
+import Task
+import Tea
+
+
+view : Int → Html {}
+view _ = <p>slow</p>
+
+
+slow : Int → Int
+slow n =
+    Task.yieldNow ⊤
+    n
+
+
+counter : Int → Tea.Program
+counter n = Tea.sandbox { init = λ⊤ → slow n, update = λ_ m → m, view = view }
+
+
+main : Tea.Program
+main = counter 5

@@ -95,6 +95,7 @@ const Reach = @import("Reach.zig");
 const EdgePack = @import("EdgePack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaValid = @import("SchemaValid.zig");
+const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaShare = @import("SchemaShare.zig");
 const Spec = @import("Spec.zig");
 const Sibling = @import("Sibling.zig");
@@ -269,6 +270,9 @@ pub const Options = struct {
     /// the library interpreter, and no worker is written — the forced
     /// library path of `schema.md` §10, which changes no answer.
     schema_library: bool = false,
+    /// `--schema-shapes`: shapes for every validator run with one (true),
+    /// or for none (false), whatever the count; null, the count decides.
+    schema_shapes: ?bool = null,
     /// `--fuzz`, the hidden test-only flag (`src/Cli.zig`;
     /// `browser-direct.md` §8.3): a program lowering makes each mounted
     /// program's messages reachable as values from outside the page
@@ -3647,6 +3651,34 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .seeds = e.fuzz_seeds,
         });
+        if (e.boundary) |*b| try e.pinShapeFields(b);
+    }
+
+    /// `boundary.md` §4, *Types a shape reads keep their names*: every field
+    /// of every record a live shape reads, through references and variants'
+    /// payloads, keeps its source text, because the one generic reader
+    /// copies a validated object into a record by those names. Walked in
+    /// module and declaration order, keyed by text (CLAUDE.md rule 5).
+    fn pinShapeFields(e: *Emitter, b: *Fields.Boundary) Allocator.Error!void {
+        const sg = &(e.schema_graph orelse return);
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
+            for (0..e.reach.schemaSlots(m)) |decl| {
+                if (!e.live.schema(m, decl, .shape)) continue;
+                const d = sg.definition(m, @intCast(decl)) orelse continue;
+                const plan = sg.planOf(m);
+                var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+                try SchemaGraph.subtree(plan, e.scratch, d.root, &nodes);
+                for (nodes.items) |n| {
+                    if (SchemaGraph.tag(plan, n) != .record) continue;
+                    for (SchemaGraph.fields(plan, n)) |f| {
+                        const text = e.session.interner.slice(SchemaGraph.symbol(plan, f.name));
+                        const gop = try b.pinned.getOrPut(e.scratch, text);
+                        if (!gop.found_existing) gop.key_ptr.* = try e.scratch.dupe(u8, text);
+                    }
+                }
+            }
+        }
     }
 
     /// §4, *`Debug.toString` reads the argument's type*: every module's
@@ -3802,7 +3834,7 @@ const Emitter = struct {
                 const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, false, true);
                 runs += SchemaValid.shapeRunCount(s);
             }
-            in.schema_shapes = runs >= SchemaValid.shape_threshold;
+            in.schema_shapes = e.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
         }
         // Every module's edges on the workers, each into its own slot and
         // its worker's `edges` arena — read from its row, or built — then
@@ -5104,6 +5136,7 @@ const Emitter = struct {
             .seeds = e.fuzz_seeds,
         }) orelse return;
         boundary.pinned = refined.pinned;
+        try e.pinShapeFields(boundary);
     }
 
     /// §9 item 2's whole-program namespace, numbered serially and in module

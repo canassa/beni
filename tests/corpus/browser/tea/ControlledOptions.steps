@@ -1,0 +1,5 @@
+# An option added and chosen in one message.
+click #add
+# Chosen by the user.
+input #sel "a"
+click #tick

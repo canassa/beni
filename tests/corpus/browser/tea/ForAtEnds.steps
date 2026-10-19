@@ -1,0 +1,8 @@
+# A row at the end, then one at the front, of every list.
+click #grow
+click #front
+# Emptied: each list is its marker or nothing, its neighbours kept.
+click #empty
+# Grown again from nothing, at each end.
+click #grow
+click #front

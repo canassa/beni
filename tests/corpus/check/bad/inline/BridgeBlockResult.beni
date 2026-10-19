@@ -1,0 +1,8 @@
+-- a function block returns its old parameter after a write.
+-- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
+change xs =
+    grown = List.push xs 2
+    xs
+
+
+pub run ⊤ = change [ 1 ]

@@ -68,6 +68,24 @@ theorem representsMany_length
     cases represented with
     | cons first rest => simpa using congrArg Nat.succ (ih rest)
 
+theorem representsMany_index {heap : Heap} {w : Value} {o : Observation} {i : Nat} (values : List Value)
+    (represented : RepresentsMany heap depth values observations footprint)
+    (valueAt : values[i]? = some w) (observationAt : observations[i]? = some o) :
+    ∃ cells, Represents heap depth w o cells := by
+  induction values generalizing observations footprint i with
+  | nil => simp at valueAt
+  | cons head tail ih =>
+    cases represented with
+    | cons first rest =>
+      cases i with
+      | zero =>
+        simp only [List.getElem?_cons_zero, Option.some.injEq] at valueAt observationAt
+        subst valueAt
+        subst observationAt
+        exact ⟨_, first⟩
+      | succ i =>
+        exact ih rest (by simpa using valueAt) (by simpa using observationAt)
+
 theorem represented_observers_observable
     (represented : RepresentsMany heap observationDepth values observations footprint) :
     observations.forM (m := Except String) ValueSemantics.observable = .ok () := by
@@ -569,48 +587,15 @@ theorem allocated_integer_list_typed {heap : Heap} {root : Nat} {integers : List
     integer_list_observation_typed declarations integers⟩
   exact .ref allocated (integers_represented integers (observationDepth - 2))
 
+/-- The runtime shape of a flat binding: an integer, an allocated array, or a
+record of such values. -/
 inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
   | int (integer : Int) : AllocatedFlatValue heap (.int integer) .int
   | list (root : Nat) : root < heap.size → AllocatedFlatValue heap (.ref root) (.list .int)
-
-/-- Finite typed expansions establish the exact runtime shape and exclude
-dangling roots even when the binding has no future live use. -/
-theorem allocated_shape_of_typed {heap : Heap} (flatType : FlatType type)
-    (typed : ValueTyped declarations heap actual type) :
-    AllocatedFlatValue heap actual type := by
-  obtain ⟨depth, observation, footprint, represented, observedType⟩ := typed
-  cases flatType with
-  | int =>
-    cases represented with
-    | int => exact .int _
-    | record _ => simp [obsTyped] at observedType
-    | closure _ => simp [obsTyped] at observedType
-    | ref _ _ => simp [obsTyped] at observedType
-  | listInt =>
-    cases represented with
-    | int => simp [obsTyped] at observedType
-    | record _ => simp [obsTyped] at observedType
-    | closure _ => simp [obsTyped] at observedType
-    | ref allocated _ =>
-      exact .list _ (Array.getElem?_eq_some_iff.mp allocated).1
-
-/-- Any flat heap with enough allocated addresses preserves all flat
-binding types. This includes aliases of the address whose contents changed.
-The statement retains no correspondence claim for a dead observation. -/
-theorem valueTyped_after_flat_heap {heap : Heap} {nextHeap : Heap}
-    (flatType : FlatType type) (typed : ValueTyped declarations heap actual type)
-    (nextFlat : FlatHeap nextHeap) (size : heap.size ≤ nextHeap.size) :
-    ValueTyped declarations nextHeap actual type := by
-  cases allocated_shape_of_typed flatType typed with
-  | int integer =>
-    exact ⟨1, .int integer, [], .int, by simp [obsTyped]⟩
-  | list root allocated =>
-    have nextAllocated : root < nextHeap.size := Nat.lt_of_lt_of_le allocated size
-    have lookup : nextHeap[root]? = some nextHeap[root] := by simp [nextAllocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values nextHeap[root]
-      (nextFlat root _ lookup)
-    rw [payload] at lookup
-    exact allocated_integer_list_typed declarations lookup
+  | record (ws : List Value) (ts : List Ty) : ws.length = ts.length →
+      (∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → ts[i]? = some t →
+        AllocatedFlatValue heap w t) →
+      AllocatedFlatValue heap (.record ws) (.record ts)
 
 theorem flatHeap_after_write {heap : Heap} {root : Nat} (flat : FlatHeap heap) (allocated : root < heap.size)
     (integers : List Int) : FlatHeap (heap.set! root (heapInts integers)) := by
@@ -641,61 +626,5 @@ theorem flatHeap_after_allocation {heap : Heap} (flat : FlatHeap heap) (integers
       obtain ⟨integer, _, equal⟩ := List.mem_map.mp member
       exact ⟨integer, equal.symm⟩
     · simp [Array.getElem?_push, old, last] at lookup
-
-/-- The complete all-binding typing field survives integer allocation and
-integer writes. The caller still proves live correspondence from its demand.
--/
-theorem bindingsTyped_after_flat_heap {nextHeap : Heap}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (nextFlat : FlatHeap nextHeap) (size : hs.heap.size ≤ nextHeap.size) :
-    ∀ x observation actual,
-      env.lookup x = some (observation, actual) →
-      ∃ type, tenv.lookup x = some type ∧
-        obsTyped declarations observation type = true ∧
-        ValueTyped declarations nextHeap actual type := by
-  intro x observation actual present
-  obtain ⟨type, declared, observedType, actualType⟩ :=
-    inv.bindingsTyped x observation actual present
-  exact ⟨type, declared, observedType,
-    valueTyped_after_flat_heap (inv.types x type declared) actualType nextFlat size⟩
-
-/-- A real counted write retains every binding's current runtime type,
-including every dead alias of the written root. Observer and live-value
-frames still require the separate permission facts from the actual demand.
--/
-theorem counted_write_preserves_binding_types {root : Nat}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (allocated : hs.heap[root]? = some previous) (integers : List Int) :
-    ∃ post,
-      (writeCounted root (heapInts integers)).run hs = .ok (.ref root, post) ∧
-      FlatHeap post.heap ∧
-      (∀ x observation actual, env.lookup x = some (observation, actual) →
-        ∃ type, tenv.lookup x = some type ∧
-          obsTyped declarations observation type = true ∧
-          ValueTyped declarations post.heap actual type) := by
-  let post := {hs with heap := hs.heap.set! root (heapInts integers), writes := if previous == heapInts integers then hs.writes else hs.writes + 1}
-  have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp allocated).1
-  have nextFlat := flatHeap_after_write inv.heapInts valid integers
-  refine ⟨post, writeCounted_empty_run hs allocated inv.links, nextFlat, ?_⟩
-  exact bindingsTyped_after_flat_heap inv nextFlat (by simp [post])
-
-/-- Real integer literal allocation also preserves every old binding's
-type. Its new result binding and constructed naming enter the expression
-preservation case separately. -/
-theorem literal_preserves_binding_types
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (integers : List Int) :
-    ∃ post,
-      (prim (.literal .int) (heapInts integers)).run hs =
-        .ok (.ref hs.heap.size, post) ∧
-      FlatHeap post.heap ∧
-      (∀ x observation actual, env.lookup x = some (observation, actual) →
-        ∃ type, tenv.lookup x = some type ∧
-          obsTyped declarations observation type = true ∧
-          ValueTyped declarations post.heap actual type) := by
-  let post := {hs with heap := hs.heap.push (heapInts integers)}
-  have nextFlat := flatHeap_after_allocation inv.heapInts integers
-  refine ⟨post, rfl, nextFlat, ?_⟩
-  exact bindingsTyped_after_flat_heap inv nextFlat (by simp [post])
 
 end Ownership.FlatFragment.HeapPreservation

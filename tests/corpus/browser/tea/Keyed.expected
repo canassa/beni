@@ -1,0 +1,337 @@
+-- load
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k1" .value="">
+        "one"
+      </li>
+      <li>
+        <input id="k2" .value="">
+        "2"
+      </li>
+      <li>
+        <input id="k3" .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- input #k2 "typed"
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k1" .value="">
+        "one"
+      </li>
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+      <li>
+        <input id="k3" .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- input #position>li:nth-child(2)>input "typed"
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k1" .value="">
+        "one"
+      </li>
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+      <li>
+        <input id="k3" .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="typed">
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- focus #k3
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k1" .value="">
+        "one"
+      </li>
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+      <li>
+        <input id="k3" .value="" :focus>
+        "three"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "one"
+      </li>
+      <li>
+        <input .value="typed">
+        "2"
+      </li>
+      <li>
+        <input .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+      <li>
+        <input id="k1" .value="">
+        "one"
+      </li>
+      <li>
+        <input id="k3" .value="" :focus>
+        "three"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "2"
+      </li>
+      <li>
+        <input .value="typed">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "three"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- click #ends
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k3" .value="">
+        "three"
+      </li>
+      <li>
+        <input id="k1" .value="">
+        "one"
+      </li>
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "three"
+      </li>
+      <li>
+        <input .value="typed">
+        "one"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- click #relabel
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k3" .value="">
+        "three"
+      </li>
+      <li>
+        <input id="k1" .value="">
+        "two"
+      </li>
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "three"
+      </li>
+      <li>
+        <input .value="typed">
+        "two"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>
+-- click #duplicate
+<body>
+  <main>
+    <button id="swap">"swap"</button>
+    <button id="ends">"ends"</button>
+    <button id="relabel">"relabel"</button>
+    <button id="duplicate">"duplicate"</button>
+    <ul id="keyed">
+      <li>
+        <input id="k3" .value="">
+        "three"
+      </li>
+      <li>
+        <input id="k1" .value="">
+        "two"
+      </li>
+      <li>
+        <input id="k2" .value="typed">
+        "2"
+      </li>
+    </ul>
+    <ul id="position">
+      <li>
+        <input .value="">
+        "three"
+      </li>
+      <li>
+        <input .value="typed">
+        "two"
+      </li>
+      <li>
+        <input .value="">
+        "2"
+      </li>
+    </ul>
+    <ul id="tags">
+      <li>"a"</li>
+      <li>"a"</li>
+      <li>"b"</li>
+      <li>"a"</li>
+    </ul>
+  </main>
+</body>

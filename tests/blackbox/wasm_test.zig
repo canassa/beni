@@ -182,7 +182,7 @@ fn expectBuilds(builds: []const []const []const u8) !void {
     const other: wasm.Other = .{ .native = try single(&w) };
     try wasm.writeProject(&w, project[0..4]);
     try wasm.writeRepoFile(&w, "tests/corpus/run/Adt.beni");
-    try wasm.writeRepoFile(&w, "tests/corpus/browser/direct/Counters.beni");
+    try wasm.writeRepoFile(&w, "tests/corpus/browser/inline/FormLocal.beni");
     try wasm.writeRepoFile(&w, "bench/todomvc/apps/beni/Sandbox.beni");
     for (builds) |args| {
         const built = try wasm.expectSame(&w, args, other);
@@ -190,9 +190,10 @@ fn expectBuilds(builds: []const []const []const u8) !void {
     }
 }
 
-// A project, a printing program, a `browser-direct` page and TodoMVC, in
+// A project, a printing program, a `browser-inline` page and TodoMVC, in
 // both modes: emit's pool and the writes, and the ownership pass of an
-// in-place platform. Three tests, each under the budget.
+// in-place platform and under `--ownership-everywhere`. Three tests, each
+// under the budget.
 
 test "a build with no threads builds a project and a printing program as the threaded build does" {
     try expectBuilds(&.{
@@ -202,16 +203,16 @@ test "a build with no threads builds a project and a printing program as the thr
     });
 }
 
-test "a build with no threads builds browser-direct pages as the threaded build does" {
+test "a build with no threads builds browser pages as the threaded build does" {
     try expectBuilds(&.{
-        &.{ "build", "--jobs=8", "--platform=browser-direct", "--out=counters", "Counters.beni" },
-        &.{ "build", "--jobs=8", "--platform=browser-direct", "--out=todo", "Sandbox.beni" },
+        &.{ "build", "--jobs=8", "--platform=browser-inline", "--out=form", "FormLocal.beni" },
+        &.{ "build", "--jobs=8", "--platform=browser-tea", "--ownership-everywhere", "--out=todo", "Sandbox.beni" },
     });
 }
 
 test "a build with no threads builds TodoMVC with --release as the threaded build does" {
     try expectBuilds(&.{
-        &.{ "build", "--jobs=8", "--platform=browser-direct", "--release", "--out=todo-release", "Sandbox.beni" },
+        &.{ "build", "--jobs=8", "--platform=browser-tea", "--ownership-everywhere", "--release", "--out=todo-release", "Sandbox.beni" },
     });
 }
 

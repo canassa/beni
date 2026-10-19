@@ -1,0 +1,8 @@
+click #quiet
+click #inc
+click #text
+click #inc
+click #show
+click #text
+click #show
+click #quiet

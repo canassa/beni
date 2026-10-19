@@ -1393,6 +1393,135 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
 - *Delta: none*, on the bench and in `tests/corpus/ownership/`: no golden changes. Only irregular types pay, and
   the corpus has none but the probe. So there is no evidence of soundness beyond the argument: when F3 is built,
   `Leaf (Maybe a)` and the mutual pair `T`/`U` each need a fixture beside `wrap`'s.
+- *Amended 2026-10-19 (the owner's option 2): F3 is replaced by a fold at a polymorphic-recursive call.* The rule
+  above is read off types, and types are not where the growth is: `g : Int, a → (Int → Int)`, `g n x = if n == 0
+  then λk → k + List.length [ x ] else g (n - 1) [ x ]` has no nested datatype and grows `res ◇[*][*]…`, and
+  `type U a = ULeaf (Int → Int) | UWrap (U (List a))` grows under a field that mentions no type variable. What
+  every one of them has is a call, inside the recursive group being solved, that instantiates a type variable of
+  the callee at a type that is not a variable: `a` at `List a`. That call is the fold point.
+  - *The rule.* At a call of a member of the recursive group being solved — a top-level group (§16.6), or a block's
+    local functions (§18.7), whose annotated members may recur at other types too — each argument's declared
+    parameter type, the member's own (its rigid variables, as its body was checked), is walked beside the
+    argument's type at the call along every entry's path. Where the declared type is a variable and the argument's
+    type there is not, the entry's path from the step after that position on is `⋆`: the entry stands for every
+    place below the variable's value. A step under `◇` into a function type, or into a `foreign type`'s
+    arguments, where the declared type and the argument's differ at a variable, is a place below the variable too,
+    since what is there is not written in the type; there the rest is `⋆` from that step. Every other path stays
+    exact: what the declared type writes above the variable, and everything of an argument whose type is the
+    declared one.
+  - *Soundness.* `⋆` stands for every place at or below it and overlaps every path; the fold only merges places
+    of one argument, as F1's and a recursive type's do, and it changes nothing a call outside the group sees, since
+    those instantiate the settled summary.
+  - *Finite.* A path a group member's summary names is a path of its declared types: through a call inside the
+    group it can grow only below a variable the call instantiates at a structure, and there it is `⋆`. `g` is
+    `res ◇ π2, ◇⋆ π2`; `wrap` is `res #Leaf.0 π2, #Leaf.0⋆ π2`; `U`'s `uwrap` is `res #ULeaf.0◇ π2,
+    #ULeaf.0◇⋆ π2`.
+  - *What it costs.* An argument whose type at a group-internal call instantiates a variable at a structure loses
+    the paths below that variable, and only in the group's own fixpoint: a function that recurs at `List a` on a
+    list of lists keeps its lists' elements at `⋆`.
+  - Fixtures: `ownership/PolyRec` (`g`, `wrap`, `Leaf (Maybe a)`, the mutual pair `T`/`U`, `uwrap`) and
+    `ownership/LocalPolyRec` (`g` as an annotated `let` function).
+- *Amended 2026-10-19 (the owner's choice (a)): the fold is on the composed path, not on the argument.* The fold at
+  the call above loses a verdict master gives, and a build error that never goes away is a precision loss. Measured:
+  `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}` for `{excl π2}`), and `pushArg xs =
+  case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is refused `exclusive` where master accepts
+  it `param`. Keeping the argument's first step exact does not help. The recursive call's argument is always `[ x ]`,
+  `{ε fresh, [*] π2}`, and the growth is not in it but in instantiation (§16.4), which puts the callee's summary
+  path in front of the argument's (`instRes`: `⟨T⟩⁺#Leaf.0[*]` and `[*]` make `⟨T⟩⁺#Leaf.0[*][*]`). A fold of
+  the argument makes the base case's entry and the deeper levels' end in one suffix. A constructor step then puts
+  them at one path, one cell at two places that may both hold it, which is honestly `lost`.
+  - *The rule.* Arguments are not folded. At a call of a member of the group being solved, top-level (§16.6) or
+    local (§18.7), each argument entry `(q, c)` has a *boundary* `b`: the number of steps of `q` above the first
+    variable of the member's declared parameter type that the call instantiates at a structure (the walk of the
+    rule above). The entry is *below* when `q` has more than `b` steps. Instantiating a summary entry `r` at path
+    `P` whose provenance is parameter `i` at `p` composes `P` with the rest of `q` after `p`, whose boundary is
+    `b − |p|` (at least 0):
+    - when `r` and the argument entry are both unmarked, the composed entry is `P ++ rest`, exact as before,
+      and it is *marked* when the entry is below;
+    - when either is marked and the entry is below, the composed entry is `P ++ rest[0 .. b − |p|] ++ ⋆`,
+      approximate (`approx_place`), and marked.
+    The mark rides on every entry made from a marked entry: a projection, a placement (`shift`, `under`), a join
+    of branches, a binding, a call. It reaches the summary as a mark on the result entry. A callee's marks ride
+    only at a call inside the group being solved: an instantiation outside it clears the callee's marks, since
+    only a group's own fixpoint composes its summary with itself. The caller's own marks, on what it passes,
+    ride through any call, a function outside the group included (`ownership/PolyRecThrough`). So the first
+    composition of an entry below a grown variable stays exact, and every later one is `⋆`.
+  - *Why a mark, and not the result type.* Walking the member's declared result type along `P` cannot tell
+    whether `P` already went below a grown variable. Under a marker the level is unknown: in `T a`, the places
+    `⟨T⟩⁺#Leaf.0` are `T (List a)`'s, `T (List (List a))`'s, and so on. So `⟨T⟩⁺#Leaf.0[*]` is a typed place
+    (level 1's `a`) and the composition of one too. The mark records what the type cannot. It is kept in memory
+    while a group is solved and is not written to the summary block: a settled summary is instantiated only
+    outside its group, where the mark is cleared, so the block's format does not change. A mark that a
+    transformation dropped costs termination, not soundness: the entry grows one composition more per round. So
+    each fixture checks that no summary path reaches the cut.
+  - *Soundness.* An exact composition is today's instantiation. A `⋆` stands for every place at or below it and
+    only merges. The places this keeps apart are the ones master kept apart: the base case's `π2` at
+    `#Leaf.0[*]`, which a constructor step places at `⟨T⟩⁺#Leaf.0[*]`, and the deeper levels' at
+    `⟨T⟩⁺#Leaf.0[*]⋆`. That pair is now a container and what it may hold, a prefix step by step, so a deep
+    condition takes it for one place (`nested`), and a fold that put the two at one path (`foldedBeside`) does
+    not arise. *Why `nested` may take it for one place.* Values are acyclic: a cell is never held both at a place
+    and strictly below it in one value, so when one cell is at `X` and at `X⋆`, one run holds it at `X`, or the
+    two describe different runs. `⋆` also stands for `X` itself. Either way it is one list at one place, never
+    two places in one value. For two different cells at `X` and `X⋆`, `nested`'s rule is §18.2's container and
+    contents, unchanged.
+  - *Finite.* An entry's path takes at most one exact composition below a grown variable. The next adds `⋆`,
+    after which `child` absorbs every step, and the steps above the variable (`rest[0 .. b − |p|]`) walk the
+    finite type graph, where 1–3 of the bound argument fold them. `wrap` is `res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh,
+    ⟨T⟩⁺#Leaf.0[*] π2 fresh, ⟨T⟩⁺#Leaf.0[*]⋆ π2 fresh`; `g` is `res ◇ π2 fresh, ◇[*] π2 fresh, ◇[*]⋆ π2
+    fresh`; `PolyRecThrough`'s `wrap2` is `wrap`'s.
+  - *What it still costs.* Below a grown variable, a value's places past the first composition are one place:
+    two lists that a program puts at the second and third level of `List (List (List a))` inside one nested
+    value are separated only by their cells. The differential measurement against master with `k` counts every
+    verdict and condition that differs, in each direction, before this is built beyond a spike.
+  - *Amended 2026-10-19 (the reviews of #429): every route of the growth, and the pairs the fold merges.* As
+    first built, the fold fired only at a direct call of a member with a variable as its declared parameter. The
+    growth has other routes, and the path cut still bounded each of them:
+    - a function outside the group that calls back into it: `apply (g (n - 1) _) [ x ]`;
+    - a let-bound lambda: `k = λy → g (n - 1) y`, then `k [ x ]`. A let-bound lambda is generalised, so the call
+      inside it grows nothing, and the call `k [ x ]` grows `k`'s own variable;
+    - continuation-passing: `h (n - 1) [ x ] (λt → f (Wrap t))` grows what `h` hands its callback, its supply;
+    - a destructured parameter: `wt n ( x, k )`.
+    So the rule holds at every instantiation, not at the call alone.
+    - *The mark is a pair:* "marked", and a *pending boundary*. At a call inside the group that grows a
+      variable, a symbolic cell (a parameter, a capture, a callback's result) that reaches the variable without
+      passing below it has places that are below it, which a later instantiation supplies. Its entry takes the
+      boundary, how many more steps of that cell are above the variable. A summary entry that carries a pending
+      boundary composes, wherever it is instantiated, as at the grown call. The pending boundary takes a step
+      off along a projection.
+    - *Where the boundary is read:*
+      - the call's own types: the member's declared parameter types, a destructured parameter's from the
+        declaration's own type, and the types of the arguments;
+      - a closure's parameters' types, at a call of the closure while a recursive group is being solved, since
+        a let-bound lambda may grow its own variable;
+      - otherwise, the summary entry's pending boundary.
+      The composition is the same for a result (`instRes`) and for a supply, both a callback's parameter
+      (`instCbOnce`) and a lambda's (`fromLambda`). Supply entries carry the mark as result entries do.
+    - *A callee's marks ride everywhere*, and a group clears its members' marks when it settles. Only a group's
+      own fixpoint composes its summaries with themselves. A settled summary carries none, so nothing leaks into
+      a caller outside the group, and a summary made in this run equals one read back from the summary block.
+    - *Merged pairs.* A cut can put two places at one path: `( x, y )` and `( y, y )` grown through a tuple put
+      two lists at `⋆`. As first built, the instantiation then lost what the deep condition said of the pair.
+      The pairs the fold merges are judged as `shift` judges a fold's, by `foldedBeside`'s rule: one cell at
+      both is one list at two places, two cells are `sep`. So no condition becomes weaker than what the
+      unfolded composition would give. `ownership/PolyRecTuples` keeps `{sep π2 π3}`.
+    - *Why `nested` may take one cell at `X` and at `X⋆` for one place* (asked of an abstract cell that stands
+      for many lists, one per level). The pair is skipped only for the condition "the list at `X` is the list
+      below `X`". For a run-time list that is impossible, since values are acyclic, whichever run-time lists
+      the cell stands for. Two of them at `X` and below `X` are two lists, which no sharing condition concerns.
+      Sharing inside the `⋆` region, one list at two places below `X`, is what the merged-pair rule above
+      states when the fold makes it. `ownership/PolyRecLevels` writes a list the recursion made while the list
+      that holds it is read, refused.
+    - *Measured.* Every probe of the reviews is finite, and no summary path reaches the cut. Verdicts against
+      master: every verdict of the corpus, the bench and core is the same. In the probes, three lines differ:
+      - `cwrap`'s `cus` and `freshC` (`ownership/PolyRecShared`) put one list at both fields of `B`. The cut
+        accepted writing one while the other is read, and the fold refuses it. That is a master defect this
+        fixes.
+      - `once` (`ownership/PolyRecTwice`) writes the one list `wm` placed. The cut merged its levels into
+        `{shared}` and refused it; it is accepted `param`, and its callers that read the list after it are
+        refused. Where the list is placed twice (`wm2`), the write is refused on both.
+      - Rows the cut invented and that name no list are gone: a write of `π1[*]` of a `List Int`.
+      Conditions: where master has `{shared}` from levels the cut merged, the fold has `{lost}` or the condition
+      of the one placement (`{excl π2}`). Where it has `{sep π2 π3}`, the fold keeps it.
 
 **(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
 cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
@@ -3836,6 +3965,27 @@ of the module's source and its imports' blocks; the determinism test runs `check
 - **Determinism**: `blackbox_test.zig`'s ownership errors at `--jobs=1` and `--jobs=8`, twice each.
 - **The checked core**: its refusal is a core or platform module with an error, which the maker already refuses
   with the diagnostics; core and `browser-direct`'s chain have no rejected line to refuse today.
+
+*Amended 2026-10-19 (issue #423, the retirement of `browser-direct`):* the harness no longer names
+`browser-direct`. **Whether a build enforces is the chain's**: its first `"lists"` down the chain (§28.2), read
+from the shipped manifests under `platforms/` or a test platform's own, or the hidden `--ownership-everywhere`
+(§30.7). The whole-program lowerings, `browser-direct` and `browser-inline`, are the platforms whose chains say
+`"in-place"`. Hence:
+
+- **The dump against the build** holds for every `.platform` token whose chain enforces. A token
+  `<platform>+everywhere` is that platform with `--ownership-everywhere`, its golden
+  `X.<platform>+everywhere.ownership`; `browser-tea+everywhere` is the enforcing build of a program written for
+  `browser-tea` (`ownership/LaterUseEnforced`).
+- **`build/bad/everywhere/`** projects are built for `browser-tea` with `--ownership-everywhere`: the checker's
+  refusals, apart from any lowering's. **`check/bad/inline/`** fixtures are checked with
+  `--platform=browser-inline`, as `check/bad/direct/`'s are with `browser-direct`.
+- **The `browser-tea` cross-build** of the first bullet is made for every enforcing `build/bad/` project whose
+  golden holds only the codes of §28.6: under `build/bad/direct/`, `build/bad/inline/` or a project's own
+  `platform/` on an in-place chain, and under `build/bad/everywhere/`, where it is the same build without the
+  flag.
+- **The release refusal**: every enforcing `build/bad/` project is built again with `--release --allow-debug`
+  and must be refused with the same diagnostics and nothing written. `--allow-debug` is there because `Debug`'s
+  own refusal is `build/bad-release/`'s claim.
 
 ### 28.11 Open questions
 

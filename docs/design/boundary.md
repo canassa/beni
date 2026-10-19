@@ -418,6 +418,16 @@ retains the types its module annotations expose. Backend §9's forwarding proof 
 not these boundary representations: visible tags still use `$` and source strings
 in release; record fields carry no constructor tag.
 
+**Types a shape reads keep their names** *(added 2026-10-19, the owner's decision;
+`schema.md` §6, *A validator run is a shape that one shared validator reads*)*. A shape
+names a record's fields by text, and its one generic reader copies a validated host object into
+a fresh record by those names, so every field of every record a live shape reads keeps its source
+name in every build: the record types of the shape's definition, of every definition it reaches
+through references, and of each variant's payload, transitively. They are pinned by text as the
+fields above are (`Fields`), so a field of that name keeps its name wherever the program names
+it. What JavaScript may read of these values is unchanged: the reader writes them, nothing
+outside beni reads them.
+
 **A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
 Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may
 store it, return it, compare it with `===`, and walk it reflectively — `Basics.eq`'s

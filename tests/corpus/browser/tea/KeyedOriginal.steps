@@ -1,0 +1,13 @@
+# Mark the second row's node in both lists, and focus the third keyed one.
+input #k2 "typed"
+input #position>li:nth-child(2)>input "typed"
+focus #k3
+# By key the text moves with row 2 and row 3's input keeps the focus: the
+# rotation moves rows 1 and 2 and leaves row 3's nodes where they are. By
+# position the text stays second, beside another item.
+click #rotate
+# Reversed, the first and last rows trade places, each with its own nodes.
+click #reverse
+# Row 2's text changes in place: its input is the same node.
+click #relabel
+click #duplicate

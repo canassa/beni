@@ -1,0 +1,1001 @@
+-- load
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"0"</li>
+      <li class="">"1"</li>
+    </ol>
+    <ol id="position">
+      <li>"0"</li>
+      <li>"1"</li>
+    </ol>
+    <ol id="tail-rows"></ol>
+  </main>
+</body>
+-- click #tail
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"0"</li>
+      <li class="">"1"</li>
+    </ol>
+    <ol id="position">
+      <li>"0"</li>
+      <li>"1"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"1"</li>
+    </ol>
+  </main>
+</body>
+-- click #push 34
+(the step's task ended)
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"0"</li>
+      <li class="">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"31"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"1"</li>
+    </ol>
+  </main>
+</body>
+-- click #front 2
+(the step's task ended)
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"136"</li>
+      <li class="">"0"</li>
+      <li class="">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"31"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"1"</li>
+    </ol>
+  </main>
+</body>
+-- click #tail
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"136"</li>
+      <li class="">"0"</li>
+      <li class="">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"31"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"31"</li>
+      <li class="">"0"</li>
+      <li class="">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"136"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"31"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"136"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+  </main>
+</body>
+-- click #edit
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"31"</li>
+      <li class="">"1000"</li>
+      <li class="">"1"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"136"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"31"</li>
+      <li>"1000"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"136"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"31"</li>
+      <li class="">"1000"</li>
+      <li class="">"2"</li>
+      <li class="">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"136"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"31"</li>
+      <li>"1000"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"136"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+  </main>
+</body>
+-- click #keyed>li:nth-child(5)
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"31"</li>
+      <li class="">"1000"</li>
+      <li class="">"2"</li>
+      <li class="on">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"136"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"31"</li>
+      <li>"1000"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"136"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"136"</li>
+      <li>"0"</li>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"31"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+  </main>
+</body>
+-- click #tail
+<body>
+  <main>
+    <button id="push">"push"</button>
+    <button id="front">"front"</button>
+    <button id="swap">"swap"</button>
+    <button id="edit">"edit"</button>
+    <button id="remove">"remove"</button>
+    <button id="tail">"tail"</button>
+    <ol id="keyed">
+      <li class="">"137"</li>
+      <li class="">"31"</li>
+      <li class="">"1000"</li>
+      <li class="">"2"</li>
+      <li class="on">"3"</li>
+      <li class="">"4"</li>
+      <li class="">"5"</li>
+      <li class="">"6"</li>
+      <li class="">"7"</li>
+      <li class="">"8"</li>
+      <li class="">"9"</li>
+      <li class="">"10"</li>
+      <li class="">"11"</li>
+      <li class="">"12"</li>
+      <li class="">"13"</li>
+      <li class="">"14"</li>
+      <li class="">"15"</li>
+      <li class="">"16"</li>
+      <li class="">"17"</li>
+      <li class="">"18"</li>
+      <li class="">"19"</li>
+      <li class="">"20"</li>
+      <li class="">"21"</li>
+      <li class="">"22"</li>
+      <li class="">"23"</li>
+      <li class="">"24"</li>
+      <li class="">"25"</li>
+      <li class="">"26"</li>
+      <li class="">"27"</li>
+      <li class="">"28"</li>
+      <li class="">"29"</li>
+      <li class="">"30"</li>
+      <li class="">"136"</li>
+      <li class="">"32"</li>
+      <li class="">"33"</li>
+      <li class="">"34"</li>
+      <li class="">"35"</li>
+    </ol>
+    <ol id="position">
+      <li>"137"</li>
+      <li>"31"</li>
+      <li>"1000"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"136"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+    <ol id="tail-rows">
+      <li>"31"</li>
+      <li>"1000"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+      <li>"4"</li>
+      <li>"5"</li>
+      <li>"6"</li>
+      <li>"7"</li>
+      <li>"8"</li>
+      <li>"9"</li>
+      <li>"10"</li>
+      <li>"11"</li>
+      <li>"12"</li>
+      <li>"13"</li>
+      <li>"14"</li>
+      <li>"15"</li>
+      <li>"16"</li>
+      <li>"17"</li>
+      <li>"18"</li>
+      <li>"19"</li>
+      <li>"20"</li>
+      <li>"21"</li>
+      <li>"22"</li>
+      <li>"23"</li>
+      <li>"24"</li>
+      <li>"25"</li>
+      <li>"26"</li>
+      <li>"27"</li>
+      <li>"28"</li>
+      <li>"29"</li>
+      <li>"30"</li>
+      <li>"136"</li>
+      <li>"32"</li>
+      <li>"33"</li>
+      <li>"34"</li>
+      <li>"35"</li>
+    </ol>
+  </main>
+</body>

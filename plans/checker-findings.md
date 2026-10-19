@@ -6216,6 +6216,19 @@ call, but the write is the row callback's own, and a `For` hands its callback
 where the checker cannot see its calls: `pending`, as a list's is in the same
 place. #402 tracks the markup's supply.
 
+## CK-263 — on `browser-inline` a send's demand is lost (2026-10-19)
+
+Ownership, issue #426 (`ownership-checker.md` §20.2, §23.2), enforced. A
+`send` whose payload the program keeps reading is `rejected` on
+`browser-direct` and under `--ownership-everywhere`: `SendInPayload`'s
+`send <Both …>` (`alias`) and `NestedLambdaSend`'s `send leak` (`supply`). On
+`browser-inline` the demand is missing from the report, and `check` and
+`build` pass, so `update`'s in-place push of the delivered list can change
+what the command reads next. `tests/pending/ownership/SendInPayload.beni` and
+`NestedLambdaSend.beni`, each with a `browser-inline` token and the
+`browser-direct` verdict as its golden, are red until `browser-inline`'s
+`Cmd.perform` callback gets the direct row for its `send`.
+
 ## CK-263 — a split element stored back into its own list, for records (2026-10-19)
 
 Ownership, issues #419 and #421 (`ownership-checker.md` §18.4 item 4, §31.4

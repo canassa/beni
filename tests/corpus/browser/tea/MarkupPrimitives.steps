@@ -1,0 +1,2 @@
+# The mapped button sends its message through `Html.map`.
+click #leaf

@@ -1,0 +1,118 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- `cwrap` puts one list at both fields of `B`, so `a` and `b` in `cus` and
+-- `freshC` are the same list: writing `a` while `b` is read is refused. The
+-- path cut accepted both (a master defect this fold fixes); `tup`, `rec`,
+-- `fresh`, `fresh3` and `freshR` stay refused.
+type T a
+    = Leaf a
+    | Wrap (T (a × a))
+
+
+wrap : Int, a → T a
+wrap n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wrap (n - 1) ( x, x ))
+
+
+pub tup : List Int → Int
+tup xs =
+    case wrap 2 xs of
+        Wrap (Wrap (Leaf ( ( a, b ), _ ))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+type R a
+    = RLeaf a
+    | RWrap (R { u : a, v : a })
+
+
+rwrap : Int, a → R a
+rwrap n x =
+    if n == 0 then
+        RLeaf x
+    else
+        RWrap (rwrap (n - 1) { u = x, v = x })
+
+
+pub rec : List Int → Int
+rec xs =
+    case rwrap 2 xs of
+        RWrap (RWrap (RLeaf r)) →
+            List.length (List.push r.u.u 1) + List.length r.v.v
+
+        _ →
+            0
+
+
+type B a
+    = B a a
+
+
+type C a
+    = CLeaf a
+    | CWrap (C (B a))
+
+
+cwrap : Int, a → C a
+cwrap n x =
+    if n == 0 then
+        CLeaf x
+    else
+        CWrap (cwrap (n - 1) (B x x))
+
+
+pub cus : List Int → Int
+cus xs =
+    case cwrap 2 xs of
+        CWrap (CWrap (CLeaf (B (B a _) (B _ b)))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub fresh : Int → Int
+fresh n =
+    case wrap 2 (List.repeat n 0) of
+        Wrap (Wrap (Leaf ( ( a, b ), _ ))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub fresh3 : Int → Int
+fresh3 n =
+    case wrap 3 (List.repeat n 0) of
+        Wrap (Wrap (Wrap (Leaf ( ( ( a, _ ), _ ), ( ( _, b ), _ ) )))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub freshC : Int → Int
+freshC n =
+    case cwrap 3 (List.repeat n 0) of
+        CWrap (CWrap (CWrap (CLeaf (B (B (B a _) _) (B (B _ b) _))))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub freshR : Int → Int
+freshR n =
+    case rwrap 3 (List.repeat n 0) of
+        RWrap (RWrap (RWrap (RLeaf r))) →
+            List.length (List.push r.u.u.u 1) + List.length r.v.v.v
+
+        _ →
+            0

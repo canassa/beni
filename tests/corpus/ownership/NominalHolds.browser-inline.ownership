@@ -1,0 +1,20 @@
+module NominalHolds
+  37:27 ++ left: accepted param
+  67:11 call NominalHolds.andMap <Valid …>#Invalid.0: accepted fresh (NominalHolds.andMap writes π1#Invalid.0)
+  68:11 call NominalHolds.andMap <call NominalHolds.andMap>#Invalid.0: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (NominalHolds.andMap writes π1#Invalid.0) (approx)
+  69:11 call NominalHolds.andMap <call NominalHolds.andMap>#Invalid.0: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (NominalHolds.andMap writes π1#Invalid.0) (approx)
+  75:5 call NominalHolds.andMap <Invalid …>#Invalid.0: rejected disjoint: another operand of the same operation reaches it (NominalHolds.andMap writes π1#Invalid.0)
+  82:7 List.push validators: accepted fresh
+  90:15 List.push xs: rejected call: result⋆ may hold it through the call at 89:22, and is read at 90:13 (approx)
+  summary andMap: π1 R, π1#Invalid.0 RAW, π1#Valid.0 R, π2 R, π2#Invalid.0 RA, π2#Invalid.0[*] A, π2#Valid.0 R; res #Invalid.0 π1#Invalid.0{lost}r{lost} π2#Invalid.0, #Invalid.0[*] π2#Invalid.0[*], #Valid.0 cb(π1#Valid.0){excl cb(π1#Valid.0)}r{excl cb(π1#Valid.0)}; π1#Valid.0 calls ≤1, supply 1 π2#Valid.0 owned{excl π2#Valid.0}r{excl π2#Valid.0}
+  summary required: res #Invalid.0 fresh1
+  summary firstOf: π1 RA; res ◇ π1
+  summary check: res #Invalid.0 ~⊤call{lost}r{lost}, #Invalid.0[*] ⊤call{lost}r{lost}, #Valid.0 ⊤call{lost}r{lost}, #Valid.0⋆ ~⊤call{lost}r{lost}
+  summary twice: res #Invalid.0 ~fresh1{lost}, #Valid.0 ⊤call{lost}r{lost}
+  summary held: res .0 fresh1, .1 ⊤call{lost}r{lost}
+  summary heldLists: π1 R, π1[*] RA, π2 RAW, π2[*] A; res .0 π2, .0[*] ~π2[*], .1 π2 ⊤call{lost}r{lost}, .1⋆ ~π1[*]{excl π1} ~π2
+  demands 7: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 7: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause unknown 2
+cause disjoint 1
+cause call 1

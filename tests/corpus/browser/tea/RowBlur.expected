@@ -1,0 +1,81 @@
+-- load
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="log">""</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <input id="in2" .value="">
+      </li>
+    </ul>
+  </main>
+</body>
+-- focus #in1
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="log">" focus 1"</p>
+    <ul>
+      <li>
+        <input id="in1" .value="" :focus>
+      </li>
+      <li>
+        <input id="in2" .value="">
+      </li>
+    </ul>
+  </main>
+</body>
+-- focus #in2
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="log">" focus 1 blur 1 focus 2"</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <input id="in2" .value="" :focus>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #add
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="log">" focus 1 blur 1 focus 2"</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <input id="in2" .value="" :focus>
+      </li>
+      <li>
+        <input id="in3" .value="">
+      </li>
+    </ul>
+  </main>
+</body>
+-- focus #in3
+<body>
+  <main>
+    <button id="add">"add"</button>
+    <p id="log">" focus 1 blur 1 focus 2 blur 2 focus 3"</p>
+    <ul>
+      <li>
+        <input id="in1" .value="">
+      </li>
+      <li>
+        <input id="in2" .value="">
+      </li>
+      <li>
+        <input id="in3" .value="" :focus>
+      </li>
+    </ul>
+  </main>
+</body>

@@ -94,6 +94,12 @@ flaky v keys =
     Js.to out
 
 
+--| Writes key `k` of object `v` to `x`: the host changing an object it
+--| handed to a run, after the run.
+pub set : Value, String, Value → ⊤
+set v k x = Js.set (Js.from v) k (Js.from x)
+
+
 pub reads : ⊤ → String
 reads ⊤ =
     log = logOf ⊤

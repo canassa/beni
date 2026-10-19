@@ -1503,7 +1503,7 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     defer w.deinit();
     try w.write("src/Lib.beni", own_lib_copies);
     try w.write("src/App.beni", own_app);
-    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--cache-dir=cache", "src" };
     const cold = try runCounted(&w, arena, &args, "own-cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
 
@@ -1512,7 +1512,7 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     // └─────────────────────────────────────────┘
     try w.write("src/Lib.beni", own_lib_writes);
     const warm = try runCounted(&w, arena, &args, "own-warm.json");
-    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1549,16 +1549,16 @@ test "an in-place build after a build elsewhere reads no entry that lacks a summ
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const direct = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--cache-dir=cache", "src" }, "own-direct.json");
-    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-direct", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const in_place = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--cache-dir=cache", "src" }, "own-in-place.json");
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 1), plain.exit_code);
-    try testing.expectEqual(@as(u8, 1), direct.result.exit_code);
-    try testing.expectEqualStrings(plain.stderr, direct.result.stderr);
-    try testing.expectEqual(@as(u64, 2), direct.counters.checked);
+    try testing.expectEqual(@as(u8, 1), in_place.result.exit_code);
+    try testing.expectEqualStrings(plain.stderr, in_place.result.stderr);
+    try testing.expectEqual(@as(u64, 2), in_place.counters.checked);
 }
 
 test "a dependency that comes to suspend makes its importer's sync error appear warm, and go again" {

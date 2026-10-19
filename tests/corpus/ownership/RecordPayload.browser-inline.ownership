@@ -1,0 +1,15 @@
+module RecordPayload
+  36:13 update model: accepted param
+  40:13 update model: accepted param
+  40:31 update saved: accepted param
+  43:13 update model: accepted param
+  43:30 update t: accepted param
+  57:5 update entry RecordPayload.update model: accepted entry
+  57:5 update entry RecordPayload.update model.saved: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx) [copy]
+  57:5 update entry RecordPayload.update msg#Edit.0: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx) [copy]
+  summary update: π1 R, π1#Edit.0 W{count}, π1#Edit.0.count R, π1#Saved.0 R, π2 W{form, saved}, π2.form R, π2.saved RW{name}; res .form π1#Edit.0◦ π2.form, .saved π1#Saved.0 π2.saved π2.saved◦, π2◦
+  summary view: π1.form R; res ⟨events⟩⋆ ~π1.form, ⟨render⟩ fresh1{lost}r{lost}, ⟨render⟩⋆ ~π1.form
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 8: accepted 6, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 8: accepted 6, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

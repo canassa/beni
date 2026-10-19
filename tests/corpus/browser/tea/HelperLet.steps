@@ -1,0 +1,2 @@
+# The let is computed again from the new count.
+click #inc

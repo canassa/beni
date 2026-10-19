@@ -1,0 +1,1 @@
+5150 TodoPage value fuzz on browser-tea: two --fuzz builds and the fuzzer, measured 4 685M on the x86-64 Linux reference on 2026-10-19 with the fuzzer running, plus 10%. Delegated. Remove when it fits 4 300M with the fuzzer running (#361).

@@ -1018,11 +1018,11 @@ test "ownership words: flipping Debug's words is noticed" {
 }
 
 test "ownership words: flipping the browser platforms' words is noticed" {
-    try expectFlips("ownership/WordsBrowser.beni", &.{"--platform=browser-direct"});
+    try expectFlips("ownership/WordsBrowser.beni", &.{ "--platform=browser-tea", "--ownership-everywhere" });
 }
 
 test "ownership words: flipping Task's words is noticed" {
-    try expectFlips("ownership/TaskWords.beni", &.{"--platform=browser-direct"});
+    try expectFlips("ownership/TaskWords.beni", &.{ "--platform=browser-tea", "--ownership-everywhere" });
 }
 
 // ---------------------------------------------------------------------------
@@ -1278,6 +1278,10 @@ test "ownership everywhere: the browser platform holds no rejected or pending li
 
 test "ownership everywhere: the browser-direct platform holds no rejected or pending line" {
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-direct", "platforms/browser-direct" });
+}
+
+test "ownership everywhere: the browser-inline platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-inline", "platforms/browser-inline" });
 }
 
 test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {

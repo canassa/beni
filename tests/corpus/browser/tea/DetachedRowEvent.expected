@@ -1,0 +1,42 @@
+-- load
+<body>
+  <main>
+    <p id="log">""</p>
+    <ul>
+      <li>
+        <button>"10"</button>
+      </li>
+      <li>
+        <button>"20"</button>
+      </li>
+      <li>
+        <button>"30"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click ul>li:nth-child(1)>button
+<body>
+  <main>
+    <p id="log">" removed clicked 10"</p>
+    <ul>
+      <li>
+        <button>"20"</button>
+      </li>
+      <li>
+        <button>"30"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click ul>li:nth-child(1)>button
+<body>
+  <main>
+    <p id="log">" removed clicked 10 removed clicked 20"</p>
+    <ul>
+      <li>
+        <button>"30"</button>
+      </li>
+    </ul>
+  </main>
+</body>

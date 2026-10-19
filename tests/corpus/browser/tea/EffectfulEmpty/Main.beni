@@ -1,0 +1,19 @@
+-- An effectful empty page builds and mounts on both platforms.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+view : {} → Html {}
+view _ = <p>effects</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( {}, Cmd.none )
+        , update = λ_ m → ( m, Cmd.none )
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

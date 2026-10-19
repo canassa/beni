@@ -117,7 +117,9 @@ test "pending: RED names fixtures and scenarios that exist" {
     const red = try world.pending.readRed(arena, testing.io, pending_root);
     var stale: usize = 0;
     for (red) |line| {
-        if (!exists(line.path)) {
+        // `<path>#<token>`: an ownership case for one `.platform` token.
+        const path = line.path[0 .. std.mem.indexOfScalar(u8, line.path, '#') orelse line.path.len];
+        if (!exists(path)) {
             std.debug.print("PENDING  STALE  RED names {s}, which is neither a pending fixture nor a scenario\n", .{line.path});
             stale += 1;
         }

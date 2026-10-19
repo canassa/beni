@@ -1,0 +1,43 @@
+-- A derived value that throws stops the page (§5.4, §8.2; S4's amendment,
+-- item 6): `label` is a `let` of `view` only markup reads, computed again
+-- in step 2 of the handler of a message that writes what it reads, inside
+-- the guard. `Bad` makes it throw, the page stops, and no later click
+-- applies a message. The development build's crash screen carries the
+-- error; the release build adds nothing (`.release-expected`).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Bad
+
+
+type alias Model =
+    count : Int
+    bad : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Bad →
+            { model | bad = True }
+
+
+view : Model → Html Msg
+view model =
+    label = if model.bad then Debug.todo "derived threw" else "count ${String.fromInt model.count}"
+
+    <main>
+        <p id="label">{label}</p>
+        <button id="bad" onClick={Bad}>bad</button>
+        <button id="inc" onClick={Inc}>inc</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { count = 0, bad = False }, update = update, view = view }

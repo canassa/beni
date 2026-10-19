@@ -1,0 +1,23 @@
+-- An `init` that may suspend, named rather than written as a lambda: the
+-- `inline` lowering calls a named `init` in the mount without looking into
+-- it (boundary.md §9.8.16), so it relies on the checker refusing one that
+-- may suspend. It does, where the function is handed over: `init` is a
+-- `sync` field (`sync_boundary`), exactly as `SuspendingInit`'s lambda is.
+-- Ported from `build/bad/direct/`, with `Task.yieldNow` for `Time.sleep`.
+import Html exposing (Html)
+import Task
+import Tea
+
+
+view : Int → Html {}
+view _ = <p>slow</p>
+
+
+slowInit : ⊤ → Int
+slowInit ⊤ =
+    Task.yieldNow ⊤
+    0
+
+
+main : Tea.Program
+main = Tea.sandbox { init = slowInit, update = λ_ m → m, view = view }
