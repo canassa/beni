@@ -8439,6 +8439,10 @@ const Pts = struct {
             p.vars.items[v].undef = true;
             p.varChanged(v);
         }
+        // Flags still wake readers above. A settled, finite destination
+        // needs no per-site insertion searches; genuine growth keeps the
+        // original insertion, threshold, wake and escape order (#464).
+        if (!p.vars.items[v].top and containsSites(p.vars.items[v].sites, val.sites)) return;
         for (val.sites) |site| try p.addSite(v, site);
     }
 
@@ -8462,13 +8466,7 @@ const Pts = struct {
         // snapshot on every fixpoint reevaluation (#464).
         const large = if (a.sites.len >= b.sites.len) a.sites else b.sites;
         const small = if (a.sites.len >= b.sites.len) b.sites else a.sites;
-        var matched: usize = 0;
-        for (large) |site| {
-            if (site == small[matched]) {
-                matched += 1;
-                if (matched == small.len) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
-            } else if (site > small[matched]) break;
-        }
+        if (containsSites(large, small)) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
         var out: std.ArrayList(u32) = .empty;
         try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
         var i: usize = 0;
@@ -8487,6 +8485,31 @@ const Pts = struct {
             }
         }
         return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = out.items };
+    }
+
+    /// Both operands are sorted sets. Adjacent matches walk once; gaps
+    /// get an exponential bracket and binary search, so sparse properties
+    /// do not rescan the broad result of a computed read on every union.
+    fn containsSites(large: []const u32, small: []const u32) bool {
+        var at: usize = 0;
+        for (small) |wanted| {
+            if (at == large.len) return false;
+            if (large[at] < wanted) {
+                var lo = at + 1;
+                var hi = lo;
+                var step: usize = 1;
+                while (hi < large.len and large[hi] < wanted) {
+                    lo = hi + 1;
+                    hi += @min(step, large.len - hi);
+                    step = step +| step;
+                }
+                const limit = if (hi < large.len) hi + 1 else large.len;
+                at = lo + std.sort.lowerBound(u32, large[lo..limit], wanted, orderU32);
+            }
+            if (at == large.len or large[at] != wanted) return false;
+            at += 1;
+        }
+        return true;
     }
 
     fn orderU32(a: u32, b: u32) std.math.Order {
@@ -10653,6 +10676,60 @@ test "repeated points-to unions of settled site facts keep bounded space" {
     try testing.expectEqualSlices(u32, &.{ 3, 7 }, contained.sites);
 }
 
+// A computed read repeatedly unions separately stored sparse property values
+// into a broad settled result. Its work must follow the small operand rather
+// than scanning the broad set again for each unchanged read.
+test "points-to sparse subset unions have bounded work" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    var large: [1024]u32 = undefined;
+    for (&large, 0..) |*site, i| site.* = @intCast(i);
+    const sparse = [_]u32{ 100, 200, 400, 600, 800, 1023 };
+    const a: Pts.Val = .{ .sites = &large, .prim = true, .nul = true };
+    const b: Pts.Val = .{ .sites = &sparse, .top = true, .undef = true };
+    var flags: usize = 0;
+    var result: Pts.Val = .{};
+    for (0..131072) |i| {
+        result = if (i % 2 == 0) try s.pts.unionOf(a, b) else try s.pts.unionOf(b, a);
+        flags += @intFromBool(result.top and result.prim and result.nul and result.undef);
+    }
+    try testing.expectEqual(131072, flags);
+    try testing.expectEqualSlices(u32, &large, result.sites);
+}
+
+test "points-to membership search preserves dense sparse and absent sites" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    var equal = [_]u32{ 0, 2, 4, 6 };
+    const cases = [_]struct { a: []const u32, b: []const u32, expected: []const u32 }{
+        .{ .a = &.{ 0, 1, 2, 3, 4, 5, 6, 7 }, .b = &.{ 2, 3, 4 }, .expected = &.{ 0, 1, 2, 3, 4, 5, 6, 7 } },
+        .{ .a = &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 }, .b = &.{ 1, 8, 15 }, .expected = &.{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15 } },
+        .{ .a = &.{ 0, 2, 4, 6, 8, 10, 12 }, .b = &.{ 2, 6, 10 }, .expected = &.{ 0, 2, 4, 6, 8, 10, 12 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &equal, .expected = &.{ 0, 2, 4, 6 } },
+        .{ .a = &.{ 2, 4, 6 }, .b = &.{ 1, 4 }, .expected = &.{ 1, 2, 4, 6 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &.{ 2, 3, 4 }, .expected = &.{ 0, 2, 3, 4, 6 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &.{ 2, 4, 7 }, .expected = &.{ 0, 2, 4, 6, 7 } },
+        .{ .a = &.{ 0, 2, 4, 6 }, .b = &.{ 8, 9, 10 }, .expected = &.{ 0, 2, 4, 6, 8, 9, 10 } },
+        .{ .a = &.{}, .b = &.{ 2, 4 }, .expected = &.{ 2, 4 } },
+    };
+    for (cases) |case| {
+        const a: Pts.Val = .{ .sites = case.a, .prim = true, .nul = true };
+        const b: Pts.Val = .{ .sites = case.b, .top = true, .undef = true };
+        const forward = try s.pts.unionOf(a, b);
+        const reverse = try s.pts.unionOf(b, a);
+        try testing.expectEqualSlices(u32, case.expected, forward.sites);
+        try testing.expectEqualSlices(u32, case.expected, reverse.sites);
+        try testing.expect(forward.top and forward.prim and forward.nul and forward.undef);
+        try testing.expect(reverse.top and reverse.prim and reverse.nul and reverse.undef);
+    }
+}
+
 // #464: dependency records are abandoned at the next fixpoint, but their
 // backing arrays used to remain in the whole-compilation arena. Repeat a
 // tiny fixpoint's dependency pool in bounded outer storage: earlier pools
@@ -11075,4 +11152,108 @@ fn copyTail(c: anytype, m: *Mod, stmts: []const Index, depth: u32) Allocator.Err
         }
     }
     return out.items;
+}
+
+// Record copies keep joining independently stored snapshots after their
+// destination has settled. Rechecking every site by binary search made
+// this repeated source-to-field propagation cost most of the analysis.
+test "settled points-to joins have bounded work" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const v = try p.newVar();
+    var held: [64]u32 = undefined;
+    for (&held, 0..) |*site, i| site.* = @intCast(i);
+    var incoming: [64]u32 = undefined;
+    @memcpy(&incoming, &held);
+    p.vars.items[v].sites = &held;
+    for (0..131072) |_| try p.join(v, .{ .sites = &incoming });
+    try testing.expectEqualSlices(u32, &held, (try p.view(v)).sites);
+}
+
+// Different snapshots may already be contained, or add interleaved sites.
+// Primitive/null/undefined facts must still wake readers before returning.
+test "points-to joins preserve flags and finite snapshot growth" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const v = try p.newVar();
+    const held = [_]u32{ 0, 2, 4, 6 };
+    const equal = [_]u32{ 0, 2, 4, 6 };
+    p.vars.items[v].sites = &held;
+    p.waiting = try arena_state.allocator().alloc(u64, 1);
+    p.waiting[0] = 0;
+    p.walk = 1;
+    p.cur = 7;
+    _ = try p.view(v);
+    try p.join(v, .{ .sites = &equal });
+    try p.join(v, .{ .sites = &.{ 2, 6 } });
+    try testing.expectEqual(@as(u32, 0), p.waiting_count);
+    try p.join(v, .{ .sites = &.{ 2, 6 }, .prim = true, .nul = true, .undef = true });
+    try testing.expectEqual(@as(u64, 1) << 7, p.waiting[0]);
+    try testing.expectEqual(@as(u32, 1), p.waiting_count);
+    try p.join(v, .{ .sites = &.{ 1, 3, 5 } });
+    const result = try p.view(v);
+    try testing.expect(result.prim and result.nul and result.undef and !result.top);
+    try testing.expectEqualSlices(u32, &.{ 0, 1, 2, 3, 4, 5, 6 }, result.sites);
+    try testing.expectEqualSlices(u32, &.{ 0, 2, 4, 6 }, &held);
+}
+
+// Crossing the existing limit must escape every old and subsequent site;
+// top inputs must also escape sites, even when the destination is top.
+test "points-to joins preserve top escape and threshold wake order" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const v = try p.newVar();
+    for (0..Pts.max_sites + 3) |_| {
+        const any = try p.newVar();
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = any });
+    }
+    const held = try arena.alloc(u32, Pts.max_sites - 1);
+    for (held, 0..) |*site, i| site.* = @intCast(i);
+    p.vars.items[v].sites = held;
+    p.waiting = try arena.alloc(u64, 1);
+    p.waiting[0] = 0;
+    p.walk = 1;
+    p.cur = 1;
+    _ = try p.view(v);
+    for ([_]u32{ 0, Pts.max_sites, Pts.max_sites + 1, Pts.max_sites + 2 }, 2..) |site, reader| {
+        p.cur = @intCast(reader);
+        try p.seeSite(site);
+    }
+    try p.join(v, .{ .sites = &.{ 0, Pts.max_sites - 1, Pts.max_sites, Pts.max_sites + 1 } });
+    const result = try p.view(v);
+    try testing.expect(result.top and result.prim and result.nul and result.undef);
+    try testing.expectEqual(@as(usize, 0), result.sites.len);
+    try testing.expectEqual(@as(u64, 0b11110), p.waiting[0]);
+    try testing.expectEqual(@as(u32, 4), p.waiting_count);
+    for (0..Pts.max_sites + 2) |site| try testing.expect(p.sites.items[site].escaped);
+    try testing.expect(!p.sites.items[Pts.max_sites + 2].escaped);
+    for (held, 0..) |site, i| try testing.expectEqual(@as(u32, @intCast(i)), site);
+    // An already-top destination still has to escape incoming sites.
+    try p.join(v, .{ .sites = &.{Pts.max_sites + 2} });
+    try testing.expect(p.sites.items[Pts.max_sites + 2].escaped);
+    try testing.expectEqual(@as(u32, 5), p.waiting_count);
+    // Incoming top escapes a finite destination's borrowed snapshot.
+    const other = try p.newVar();
+    const fresh: u32 = @intCast(p.sites.items.len);
+    const any = try p.newVar();
+    try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = any });
+    const snapshot = [_]u32{fresh};
+    p.vars.items[other].sites = &snapshot;
+    try p.join(other, .{ .top = true, .sites = &snapshot });
+    try testing.expect((try p.view(other)).top);
+    try testing.expect(p.sites.items[fresh].escaped);
+    try testing.expectEqualSlices(u32, &.{fresh}, &snapshot);
 }
