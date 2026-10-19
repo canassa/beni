@@ -5193,6 +5193,15 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
 4. **Captured** is not a condition of its own. A write of a captured record inside a lambda makes the lambda
    **once** (§18.8): its creation is a demand on the capture, at the written fields, and each call of it a
    demand on the closure. `captured-edit` stays for a capture the walk cannot place in a closure.
+   *Specified 2026-10-19 (R2d of #315).* The captures a lambda's body writes (`env_writes`) include its record
+   writes, each with the fields it writes, so the lambda is once by a record write as by a list's. Its creation
+   is a record demand on the capture, in the enclosing body, at the written fields: Known, Unescaped and
+   Disjoint as at any update, and Dead per field (item 5) with one difference — a read of a written field
+   after the creation is a whole use, not a hoist, because the write happens at a call of the closure, which
+   the lowering cannot place before the read; a read of an untouched field stays untouched. Each call of the
+   closure is §18.8's demand on its own cell, and handing it to a callee is accepted where the callee calls it
+   at most once (`seen`, `calls ≤1`); `Maybe.map (handleInput model _)` is such a call. The write inside the
+   lambda is then accepted `once`, or rejected with the creation demand's cause, or `once`.
 5. **Dead, per field** (*revised the same day*, §31.14): no pending operand holds `c` (`held-operand`), and no
    local holder of `c` is used **whole** after the demand, in a compatible branch (§7.2). A holder `h` that holds
    `c` at path `q` and is used after the demand at `u`:
@@ -5232,6 +5241,20 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    handed by a destructive read (`List.map rows (λr → { r | done = True })`, `List.update`, `Dict.update`) relies
    on its container's exclusivity: no record object at two positions. Since a record has a cell, `[ r, r ]` now
    fails exactly, and a list of records built by `List.repeat n r` fails as `[ cell, cell ]` does (T59).
+   *Proposed 2026-10-19 (R2d of #315), for review before it is built.* A list's conditions (§18.2) read no
+   record object: `mkCond` drops an atom over one (§31.2). So records get a condition of their own, beside a
+   list's and in the same lattice: every cell has a *record condition* that holds on atoms, fails exactly or
+   fails approximately. Its atoms are a list's, over record objects: `rexcl c` (no record object reachable from
+   two positions of `c`, nor at two paths of one position) and `rsep c d` (`c` and `d` share no record object).
+   It is computed where a list's is (§18.2's table): a literal `[ v₁, …, vₙ ]` is every item's deep record
+   condition and `rsep` between every two items' objects (`[ r, r ]` fails exactly); a construction is the
+   base's lowered by what it stores; a call through a summary is its `res` or `objs` entry's record condition,
+   instantiated; a conservative call, `⊤`, `List.repeat` of one record, fails as §18.2 says of lists. It is
+   relied on (§18.4) where a callback writes a record a destructive read hands it, and stated for callers as
+   `rxreq`. A list's verdicts read none of it, so none moves. It costs a second condition per cell, a record
+   condition per `res`, `objs` and supply entry and an `rxreq` in a summary (format v18), and the lines of
+   §18.2–§18.4 that compute and rely on conditions, each twice; the 57 pending `List.map rows λr → { r | … }`
+   lines are then decided.
 
 The verdicts are §8.2's (`fresh`, `call`, `param`, `callback-param`, `once`, `entry`), and the causes are §8.3's
 and their later additions. No cause is new: a record demand is rejected for the reasons a list demand is.
