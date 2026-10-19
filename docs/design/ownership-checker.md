@@ -1297,13 +1297,27 @@ amendment does for a field that is the type itself ("here").
   representative. The marker stands where the value is not a closure (an environment), so its expansion begins
   with any step and is never empty. The fold now keeps a mark wherever it merged places, and the soundness
   argument is the marker's: a place the fold merged is one the marker stands for, so containment through it is
-  approximate, never lost, and no pair a deep condition must compare is taken for a container and its contents.
+  approximate, never lost. (This paragraph ended "and no pair a deep condition must compare is taken for a
+  container and its contents"; as built that was false, and the next amendment corrects it.)
   *Finite*: a path holds one `◇` and at most one closure marker after it. `mk`'s summary is `res ◇ π2, ◇⟨◇⟩◇ π2`.
   *Built 2026-10-19.* The bench is unchanged; in `tests/corpus/ownership/` sixteen goldens change, in summary lines
   only (`◇◇` and `◇.a◇` become `◇⟨◇⟩◇`). `ownership/Clo` pins `mk`, `EnvPrefix` stays `{shared}`, and
   `ownership/ClosureLevels` pins a capture written while a closure that holds it is held through a record field,
   through a closure in a closure in a record, and through a call. The summary block's marker step names no
   module for this type. Core's check costs 3 324M instructions, less than before F1.
+- *Amended 2026-10-19 (the review of #403): two environments the fold merges are still compared.* The marker
+  keeps containment, but it also puts two *sibling* environments at one place: `g1` and `g2` both capture `xs`,
+  `s = { a = g1, c = g2 }` and `f = λ⊤ → s.a ⊤ + s.c ⊤` hold `xs` at `◇.a◇` and `◇.c◇`, which fold to the one
+  path `◇⟨◇⟩◇`. A deep condition compares entries at two paths, and here both entries sat at one, so `[ f ]` was
+  `{excl π1}` where it is `{shared}`; the same loss dropped `sep π1 π2` (one list per closure) and
+  `sep π1#Node.0 π1#Node.1` (two parts of one tree). So the deep condition also judges the pairs the closure
+  expansion brings to one place. Each (closure, capture) the expansion enters is a frame of its own, and two
+  entries at one path from different frames are compared as two paths are. One cell is `{shared}`, unless both
+  entries are approximate (a merge the fold made, which already stands for the same cell twice). Two cells are
+  `sep`, unless one covers the other. Every deep condition is then the one the unfolded checker gives, or
+  `lost`. `ownership/SiblingEnvs` pins the record, tuple, nested record and constructor shapes (`{shared}`), two
+  lists (`sep π1 π2`) and two parts of a tree (`sep π1#Node.0 π1#Node.1`): each is master's condition, and each
+  was wrong before this amendment.
 
 **F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
 answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new
