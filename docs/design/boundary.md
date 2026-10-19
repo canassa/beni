@@ -500,6 +500,18 @@ ships only for a declaration passed as a value. **`import Js` outside core and a
 is `js_outside_platform`**, for the wall's own reason: `Js.to` is an unchecked cast. A module named
 `Js` in the root package is an ordinary module.
 
+*Amended 2026-10-20 (the owner's decision D2, in its safe form; issue #488):* **the release
+optimiser relies on nothing of `Js.to`'s contract.** "The caller answers for the type" stays what
+it was, a duty of the core or platform code that writes the `Js.to`, and a wrong one may still
+mistype a value. It may not also make a `--release` build drop a flow the types did not
+predict. Fact 3's declared-type filter (`backend.md` §9, *Declared-type filtering of fact 3*)
+treats as wild every type that crosses the wall here: every type a `Js.from` or a `Js.to` is
+instantiated at and every type a live `foreign` names, transitively, as unboxing's boundary set
+already is, and every type a `Js.from` reaches through a type variable, followed through the
+callers that instantiate it. A value a `Js.to` yields is therefore either one JavaScript made,
+which the optimiser already treats as unknown, or one that went in at a `Js.from` and is wild. This
+changes nothing that privileged code may write or must check.
+
 **A mutable local is a `Js.Ref`** (R47-2; there is no `let mut`):
 
 | declaration | rung | written as |
