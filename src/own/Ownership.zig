@@ -3799,8 +3799,10 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
 fn markerOf(o: *Ownership, r: Region, ty: u64) Allocator.Error!u32 {
     return switch (r) {
         .marker => |m| m,
-        // An environment is not a closure: the closures are further down.
-        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (ty == fn_type or try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
+        // An environment may be a closure (one captured directly: `◇◇q`)
+        // or hold closures further down (`◇p◇q`), so F1's marker stands
+        // where the value may be either.
+        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (ty == fn_type) .maybe else if (try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
     };
 }
 
@@ -4205,11 +4207,8 @@ fn expand(o: *const Ownership, kind: MarkerKind, m: u32, r: []const u32, other: 
 /// where it is, a constructor step of `T` whose field can hold a `T`.
 fn regionStepKind(o: *const Ownership, kind: MarkerKind, t: u64, step: u32) ?MarkerKind {
     // A closure's environment: its `◇` is the region step, and below it are
-    // the captures, not a closure.
-    if (t == fn_type) {
-        if (o.paths.kind.items[step] == .env) return .below;
-        return if (kind == .at or kind == .under) null else .maybe;
-    }
+    // the captures, any of which may be a closure itself.
+    if (t == fn_type) return .maybe;
     const is_t = o.paths.kind.items[step] == .ctor and o.ctorType(o.stepCtor(o.paths.arg.items[step])) == t;
     if (is_t) {
         const strict = kind == .at or kind == .under;
@@ -6079,9 +6078,10 @@ const Walker = struct {
         // that says where the step went: to a `T`, to a field whose `T`s
         // are further down, or, for any other step, to either.
         const t_step = if (t == fn_type) s.kind == .env else s.kind == .ctor and w.o.ctorType(w.o.stepCtor(s.arg)) == t;
-        const level: Level = if (!t_step) .none else if (t == fn_type) .below else try w.o.levelOf(s.arg);
+        const level: Level = if (!t_step or t == fn_type) .none else try w.o.levelOf(s.arg);
         if (w.o.markerAny(first.arg) or level != .none) {
-            const kind: MarkerKind = if (level == .here) .at else if (level == .below) .below else .maybe;
+            // F1's marker is always `.maybe`: below an `◇` may be a closure.
+            const kind: MarkerKind = if (t == fn_type) .maybe else if (level == .here) .at else if (level == .below) .below else .maybe;
             const kept = try w.o.concat(try w.o.child(eps, .level, try w.o.markerId(t, kind)), r);
             try out.append(w.a, .{ .path = kept, .cell = e.cell, .approx = ap });
         }

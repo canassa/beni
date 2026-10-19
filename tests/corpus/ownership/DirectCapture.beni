@@ -1,0 +1,72 @@
+-- ownership: a closure captured directly by another, `◇◇` (the review of #403;
+-- ownership-checker.md §16.7, F1). F1's marker `⟨◇⟩` stands for every
+-- environment at or below the first, including the first itself when it holds
+-- a closure: `◇◇q` is `◇⟨◇⟩◇q` with `p` empty, so the marker's expansion may be
+-- empty and it is `.maybe`. `inner` returns a closure whose environment holds
+-- `g`, which holds `xs`; the callers read it, write it while the closure is
+-- live, write it after, store it twice, and pass it through `wrap`, whose
+-- summary projects its argument's environment.
+inner : List Int → (⊤ → Int)
+inner xs =
+    g = λ⊤ → List.length xs
+    λ⊤ → g ⊤
+
+
+wrap : (⊤ → Int) → (⊤ → Int)
+wrap f = λ⊤ → f ⊤
+
+
+pub reads : List Int → Int
+reads xs =
+    f = inner xs
+    f ⊤ + List.length xs
+
+
+pub writesLive : List Int → Int
+writesLive xs =
+    f = inner xs
+    ys = List.push xs 1
+    f ⊤ + List.length ys
+
+
+pub writesAfter : List Int → Int
+writesAfter xs =
+    f = inner xs
+    n = f ⊤
+    ys = List.push xs n
+    List.length ys
+
+
+pub writesWrapped : List Int → Int
+writesWrapped xs =
+    f = wrap (inner xs)
+    ys = List.push xs 1
+    f ⊤ + List.length ys
+
+
+pub stores : List Int → List (⊤ → Int)
+stores xs = [ inner xs, wrap (inner xs) ]
+
+
+pub fresh : Int → Int
+fresh n =
+    xs = List.repeat n 0
+    f = wrap (inner xs)
+    m = f ⊤
+    ys = List.push xs m
+    List.length ys
+
+
+pub writesInside : List Int → Int
+writesInside xs =
+    g = λ⊤ → List.length (List.push xs 1)
+    f = λ⊤ → g ⊤
+    f ⊤
+
+
+pub writesInsideFresh : Int → Int
+writesInsideFresh n =
+    xs = List.repeat n 0
+    g = λ⊤ → List.length (List.push xs 1)
+    f = λ⊤ → g ⊤
+    f ⊤ + f ⊤

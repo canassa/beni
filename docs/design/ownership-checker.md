@@ -1265,19 +1265,21 @@ rejection delta, measured separately on `master` (`2cabeed03`) with an experimen
 over `bench/ownership-everywhere.mjs` (873 programs, every platform's modules and core, browser-inline's pages,
 goldens and modules included) and the verdict lines of `tests/corpus/ownership/`.
 
-**F1. Closures fold at their environment step.** A function type is taken to be recursive: a `◇` step on a
+**F1. Closures fold at their environment step.** *The first form below, its three bullets and its delta are
+superseded by the amendments after them (the fold under the marker); they are kept as the record of what was
+measured.* A function type is taken to be recursive: a `◇` step on a
 path that already has one goes on from where the first entered, so `◇p◇q` is `◇q`, and a projection along `◇`
 keeps every entry whose first step is `◇` at its own path, approximately (`approx_place`), as §16.7's
 amendment does for a field that is the type itself ("here").
-- *Soundness.* Folding merges places: the environments of a closure and of every closure it captured share one
+- *Soundness (superseded: unsound, see the amendment).* Folding merges places: the environments of a closure and of every closure it captured share one
   place, so every cell any of them captured is held at `◇q`, and a demand on one of them sees every holder of
   any. A projection along `◇` keeps the folded entries, so nothing merged is dropped when a closure's
   environment is taken apart (`instProv`'s `◇x.q`, `expandInto`). Folding `◇p◇q` into `◇q` also merges every
   place at `p`, the steps between the two `◇`s, into the place at `◇q`; that too is only more aliasing. The fold
   only adds aliasing, so it stays sound.
-- *Finite.* A path holds at most one `◇`. `mk n xs = if n == 0 then λx → x + List.length xs else (g = mk (n -
+- *Finite (superseded).* A path holds at most one `◇`. `mk n xs = if n == 0 then λx → x + List.length xs else (g = mk (n -
   1) xs; λx → g x)`, whose summary is `res ◇ π2, ◇◇ π2, …` cut at eight today, is `res ◇ π2`.
-- *Delta: none.* The bench is unchanged, browser-inline's pages, goldens and modules included; in
+- *Delta: none (superseded: measured for the first form).* The bench is unchanged, browser-inline's pages, goldens and modules included; in
   `tests/corpus/ownership/` fifteen goldens change, only in summary lines (`◇◇…` merged), and no verdict line.
   The owner's concern — that closures capturing closures become one place, so higher-order code and
   browser-inline's generated handlers pick up refusals — does not show: a closure's demand is on the cells its
@@ -1294,8 +1296,12 @@ amendment does for a field that is the type itself ("here").
   a path that has one already goes under the marker of that region, `◇p◇q` is `◇⟨◇⟩◇q` (the places `q` of the
   environment of every closure at or below the first environment), and everything the marker's text above says
   applies — overlap and holding through the marker, projection keeping a marked entry whole, a marker's place a
-  representative. The marker stands where the value is not a closure (an environment), so its expansion begins
-  with any step and is never empty. The fold now keeps a mark wherever it merged places, and the soundness
+  representative. The marker stands where the value may be a closure or not (`.maybe`): an environment holds
+  closures further down (`◇p◇q`, `p` not empty) or is one, a closure captured directly (`◇◇q`, the empty
+  expansion), so its expansion may begin with any step and may be empty. (As first built the marker was
+  `.below`, never empty, and the place `p = ∅` was reached only through the empty path's overlap with every
+  path; the review of #403 found it, and `ownership/DirectCapture` pins the direct capture read, written live,
+  written after, written inside, stored and passed through a summary, each verdict master's.) The fold now keeps a mark wherever it merged places, and the soundness
   argument is the marker's: a place the fold merged is one the marker stands for, so containment through it is
   approximate, never lost. (This paragraph ended "and no pair a deep condition must compare is taken for a
   container and its contents"; as built that was false, and the next amendment corrects it.)
