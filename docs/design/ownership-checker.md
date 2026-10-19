@@ -1473,6 +1473,55 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
     two lists that a program puts at the second and third level of `List (List (List a))` inside one nested
     value are separated only by their cells. The differential measurement against master with `k` counts every
     verdict and condition that differs, in each direction, before this is built beyond a spike.
+  - *Amended 2026-10-19 (the reviews of #429): every route of the growth, and the pairs the fold merges.* As
+    first built, the fold fired only at a direct call of a member with a variable as its declared parameter. The
+    growth has other routes, and the path cut still bounded each of them:
+    - a function outside the group that calls back into it: `apply (g (n - 1) _) [ x ]`;
+    - a let-bound lambda: `k = λy → g (n - 1) y`, then `k [ x ]`. A let-bound lambda is generalised, so the call
+      inside it grows nothing, and the call `k [ x ]` grows `k`'s own variable;
+    - continuation-passing: `h (n - 1) [ x ] (λt → f (Wrap t))` grows what `h` hands its callback, its supply;
+    - a destructured parameter: `wt n ( x, k )`.
+    So the rule holds at every instantiation, not at the call alone.
+    - *The mark is a pair:* "marked", and a *pending boundary*. At a call inside the group that grows a
+      variable, a symbolic cell (a parameter, a capture, a callback's result) that reaches the variable without
+      passing below it has places that are below it, which a later instantiation supplies. Its entry takes the
+      boundary, how many more steps of that cell are above the variable. A summary entry that carries a pending
+      boundary composes, wherever it is instantiated, as at the grown call. The pending boundary takes a step
+      off along a projection.
+    - *Where the boundary is read:*
+      - the call's own types: the member's declared parameter types, a destructured parameter's from the
+        declaration's own type, and the types of the arguments;
+      - a closure's parameters' types, at a call of the closure while a recursive group is being solved, since
+        a let-bound lambda may grow its own variable;
+      - otherwise, the summary entry's pending boundary.
+      The composition is the same for a result (`instRes`) and for a supply, both a callback's parameter
+      (`instCbOnce`) and a lambda's (`fromLambda`). Supply entries carry the mark as result entries do.
+    - *A callee's marks ride everywhere*, and a group clears its members' marks when it settles. Only a group's
+      own fixpoint composes its summaries with themselves. A settled summary carries none, so nothing leaks into
+      a caller outside the group, and a summary made in this run equals one read back from the summary block.
+    - *Merged pairs.* A cut can put two places at one path: `( x, y )` and `( y, y )` grown through a tuple put
+      two lists at `⋆`. As first built, the instantiation then lost what the deep condition said of the pair.
+      The pairs the fold merges are judged as `shift` judges a fold's, by `foldedBeside`'s rule: one cell at
+      both is one list at two places, two cells are `sep`. So no condition becomes weaker than what the
+      unfolded composition would give. `ownership/PolyRecTuples` keeps `{sep π2 π3}`.
+    - *Why `nested` may take one cell at `X` and at `X⋆` for one place* (asked of an abstract cell that stands
+      for many lists, one per level). The pair is skipped only for the condition "the list at `X` is the list
+      below `X`". For a run-time list that is impossible, since values are acyclic, whichever run-time lists
+      the cell stands for. Two of them at `X` and below `X` are two lists, which no sharing condition concerns.
+      Sharing inside the `⋆` region, one list at two places below `X`, is what the merged-pair rule above
+      states when the fold makes it. `ownership/PolyRecLevels` writes a list the recursion made while the list
+      that holds it is read, refused.
+    - *Measured.* Every probe of the reviews is finite, and no summary path reaches the cut. Verdicts against
+      master: every verdict of the corpus, the bench and core is the same. In the probes, three lines differ:
+      - `cwrap`'s `cus` and `freshC` (`ownership/PolyRecShared`) put one list at both fields of `B`. The cut
+        accepted writing one while the other is read, and the fold refuses it. That is a master defect this
+        fixes.
+      - `once` (`ownership/PolyRecTwice`) writes the one list `wm` placed. The cut merged its levels into
+        `{shared}` and refused it; it is accepted `param`, and its callers that read the list after it are
+        refused. Where the list is placed twice (`wm2`), the write is refused on both.
+      - Rows the cut invented and that name no list are gone: a write of `π1[*]` of a `List Int`.
+      Conditions: where master has `{shared}` from levels the cut merged, the fold has `{lost}` or the condition
+      of the one placement (`{excl π2}`). Where it has `{sep π2 π3}`, the fold keeps it.
 
 **(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
 cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
