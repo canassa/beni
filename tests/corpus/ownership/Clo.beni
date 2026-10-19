@@ -1,0 +1,40 @@
+-- ownership: closures fold at their environment step (issue #286, F1 of
+-- `ownership-checker.md` §16.7). A function type is taken to be
+-- recursive, whose one region step is `◇`: a `◇` on a path that has one
+-- already goes under that region's marker, so `◇p◇q` is `◇⟨◇⟩◇q` (as amended
+-- after the review of #378; `◇q` was unsound). `mk` nests closures as deep as
+-- `n`, and its result held `xs` at `◇`, `◇◇`, … up to the path cut at eight
+-- steps; it now holds it at `◇` and `◇⟨◇⟩◇`. `wrapped` captures `mk`'s closure
+-- inside a tuple, and the tuple's closure folds there too. Folding only merges
+-- places under a marker, so a capture
+-- of a capture written while the outer closure lives is still rejected
+-- (`late`), and a list the closures never captured is still accepted
+-- (`apart`).
+mk : Int, List Int → (Int → Int)
+mk n xs =
+    if n == 0 then
+        λx → x + List.length xs
+    else
+        g = mk (n - 1) xs
+        λx → g x
+
+
+pub wrapped : List Int → (Int → Int)
+wrapped xs =
+    pair = ( mk 3 xs, 0 )
+    λx →
+        case pair of
+            ( f, k ) →
+                f x + k
+
+
+pub late : List Int → List Int × Int
+late xs =
+    f = wrapped xs
+    ( List.push xs 1, f 0 )
+
+
+pub apart : List Int, List Int → List Int × Int
+apart xs ys =
+    f = wrapped xs
+    ( List.push ys 1, f 0 )

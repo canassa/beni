@@ -3903,6 +3903,13 @@ fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Erro
             return o.rawChild(try o.markerOf(r, ty), kind, arg);
         },
         .level => if (try o.regionOf(parent, o.markerType(arg))) |r| return o.markerOf(r, o.markerType(arg)),
+        // F1 (§16.7, as amended): a function type is a recursive type whose one
+        // region step is `◇`, so a closure's environment inside another's
+        // goes under the marker of the first: `◇p◇q` is `◇⟨◇⟩◇q`.
+        .env => {
+            std.debug.assert(arg == 0);
+            if (try o.regionOf(parent, fn_type)) |r| return o.rawChild(try o.markerOf(r, fn_type), kind, arg);
+        },
         else => {},
     }
     return o.rawChild(parent, kind, arg);
@@ -3942,6 +3949,9 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
             .level => if (o.markerType(o.paths.arg.items[node]) == ty) {
                 region = .{ .marker = node };
             },
+            .env => if (ty == fn_type and region == null) {
+                region = .{ .first = node };
+            },
             else => {},
         }
     }
@@ -3955,9 +3965,15 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
 fn markerOf(o: *Ownership, r: Region, ty: u64) Allocator.Error!u32 {
     return switch (r) {
         .marker => |m| m,
-        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
+        // An environment may be a closure (one captured directly: `◇◇q`)
+        // or hold closures further down (`◇p◇q`), so F1's marker stands
+        // where the value may be either.
+        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (ty == fn_type) .maybe else if (try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
     };
 }
+
+/// F1's recursive type: every function type, whose one region step is `◇`.
+pub const fn_type: u64 = std.math.maxInt(u64);
 
 /// Where a marker stands (§16.7): where the value is a `T`, where it is
 /// not (a field whose `T`s are further down), or where a projection took
@@ -4356,6 +4372,9 @@ fn expand(o: *const Ownership, kind: MarkerKind, m: u32, r: []const u32, other: 
 /// expansion may begin with it: any step where the value may not be a `T`;
 /// where it is, a constructor step of `T` whose field can hold a `T`.
 fn regionStepKind(o: *const Ownership, kind: MarkerKind, t: u64, step: u32) ?MarkerKind {
+    // A closure's environment: its `◇` is the region step, and below it are
+    // the captures, any of which may be a closure itself.
+    if (t == fn_type) return .maybe;
     const is_t = o.paths.kind.items[step] == .ctor and o.ctorType(o.stepCtor(o.paths.arg.items[step])) == t;
     if (is_t) {
         const strict = kind == .at or kind == .under;
@@ -4458,6 +4477,10 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
         .elem => try w.writeAll("[*]"),
         .level => {
             const t = o.markerType(s.arg);
+            if (t == fn_type) {
+                try w.writeAll("⟨◇⟩");
+                continue;
+            }
             const m: u32 = @intCast(t >> 32);
             const d: u32 = @truncate(t);
             const name = if (m < o.in.birs.len and d < o.in.birs[m].decls.len) o.in.interner.slice(o.in.birs[m].symbol(o.in.birs[m].decls[d].name)) else "";
@@ -6235,10 +6258,11 @@ const Walker = struct {
         // Kept whole when the step may lead into the region, under a marker
         // that says where the step went: to a `T`, to a field whose `T`s
         // are further down, or, for any other step, to either.
-        const t_step = s.kind == .ctor and w.o.ctorType(w.o.stepCtor(s.arg)) == t;
-        const level: Level = if (t_step) try w.o.levelOf(s.arg) else .none;
+        const t_step = if (t == fn_type) s.kind == .env else s.kind == .ctor and w.o.ctorType(w.o.stepCtor(s.arg)) == t;
+        const level: Level = if (!t_step or t == fn_type) .none else try w.o.levelOf(s.arg);
         if (w.o.markerAny(first.arg) or level != .none) {
-            const kind: MarkerKind = if (level == .here) .at else if (level == .below) .below else .maybe;
+            // F1's marker is always `.maybe`: below an `◇` may be a closure.
+            const kind: MarkerKind = if (t == fn_type) .maybe else if (level == .here) .at else if (level == .below) .below else .maybe;
             const kept = try w.o.concat(try w.o.child(eps, .level, try w.o.markerId(t, kind)), r);
             try out.append(w.a, .{ .path = kept, .cell = e.cell, .approx = ap });
         }
@@ -6272,21 +6296,73 @@ const Walker = struct {
     /// Every entry of `av` with closures expanded into what they capture,
     /// under `◇` (§4.2).
     fn expand(w: *Walker, av: AV) Allocator.Error!AV {
+        return (try w.expandCond(av, false)).av;
+    }
+
+    const Expanded = struct { av: AV, k: u32 = cond_yes };
+
+    /// `expand`, and with `judge`, the condition of what the expansion
+    /// merged (§16.7, F1): the environments of closures inside closures fold
+    /// onto one marked place, so two captures from two environments can land
+    /// at one path, where no deep condition sees them as two. Their pair is
+    /// judged here, as the deep condition would have judged it before the
+    /// fold: two cells are separate, and one cell captured twice is one list
+    /// at two places (or, a symbolic cell that stands for several, two of
+    /// them when its argument is exclusive).
+    fn expandCond(w: *Walker, av: AV, judge: bool) Allocator.Error!Expanded {
         // A value that holds no closure is its own expansion.
         for (av) |e| {
             if (w.cells.items[e.cell].kind == .closure) break;
-        } else return av;
+        } else return .{ .av = av };
         var out: std.ArrayList(Entry) = .empty;
+        var frames: std.ArrayList(u32) = .empty;
         var seen: std.ArrayList(u32) = .empty;
-        try w.expandInto(av, eps, 0, &out, &seen);
-        return w.norm(out.items);
+        var next_frame: u32 = 1;
+        try w.expandInto(av, eps, 0, &out, &seen, if (judge) &frames else null, 0, &next_frame);
+        if (!judge) return .{ .av = try w.norm(out.items) };
+        // `norm` sorts in place, and `frames` follows `out`'s order.
+        const normed = try w.norm(try w.a.dupe(Entry, out.items));
+        // A value wider than the deep condition's cap is judged pessimistic
+        // there; its pairs are not looked at.
+        if (normed.len > deep_cap) return .{ .av = normed };
+        // Only entries at one path can be a merged pair: sort by path and
+        // look within each run.
+        const order = try w.a.alloc(u32, out.items.len);
+        for (order, 0..) |*o, i| o.* = @intCast(i);
+        std.mem.sort(u32, order, out.items, struct {
+            fn lt(items: []const Entry, x: u32, y: u32) bool {
+                return items[x].path < items[y].path or (items[x].path == items[y].path and x < y);
+            }
+        }.lt);
+        var acc: CondAcc = .{};
+        for (order, 0..) |i, oi| {
+            const e = out.items[i];
+            if (!w.o.paths.any.items[e.path]) continue;
+            for (order[oi + 1 ..]) |j| {
+                const f = out.items[j];
+                if (f.path != e.path) break;
+                const ke = w.cells.items[e.cell].kind;
+                const kf = w.cells.items[f.cell].kind;
+                if (ke == .closure or ke == .func or kf == .closure or kf == .func) continue;
+                if (e.cell == f.cell) {
+                    if (frames.items[i] == frames.items[j]) continue;
+                    if (e.approx != 0 and f.approx != 0) continue;
+                    try acc.add(w, (try w.apartCond(e.cell)) orelse try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+                    continue;
+                }
+                if ((try w.covers(e.cell, f.cell)) != null or (try w.covers(f.cell, e.cell)) != null) continue;
+                try acc.add(w, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+            }
+        }
+        return .{ .av = normed, .k = try w.condAndAll(&acc) };
     }
 
-    fn expandInto(w: *Walker, av: AV, prefix: u32, approx: u32, out: *std.ArrayList(Entry), seen: *std.ArrayList(u32)) Allocator.Error!void {
+    fn expandInto(w: *Walker, av: AV, prefix: u32, approx: u32, out: *std.ArrayList(Entry), seen: *std.ArrayList(u32), frames: ?*std.ArrayList(u32), frame: u32, next_frame: *u32) Allocator.Error!void {
         for (av) |e| {
             const path = try w.o.concat(prefix, e.path);
             const ap = if (approx != 0) approx else e.approx;
             try out.append(w.a, .{ .path = path, .cell = e.cell, .approx = ap });
+            if (frames) |fr| try fr.append(w.a, frame);
             const c = w.cells.items[e.cell];
             if (c.kind != .closure) continue;
             if (std.mem.indexOfScalar(u32, seen.items, c.a) != null) continue;
@@ -6295,7 +6371,9 @@ const Walker = struct {
             for (w.closures.items[c.a].captures) |cap| {
                 const held = w.local_av[cap.local] orelse continue;
                 const sub = try w.projPath(held, cap.path, null);
-                try w.expandInto(sub, at, ap, out, seen);
+                const f = next_frame.*;
+                next_frame.* += 1;
+                try w.expandInto(sub, at, ap, out, seen, frames, f, next_frame);
             }
         }
     }
@@ -7010,7 +7088,8 @@ const Walker = struct {
     /// two of its paths neither of which is a prefix of the other.
     fn deepCond(w: *Walker, av: AV) Allocator.Error!u32 {
         if (av.len == 0) return cond_yes;
-        const ex = try w.expand(av);
+        const xc = try w.expandCond(av, true);
+        const ex = xc.av;
         // A value this wide is not told apart cell by cell: the pairs are
         // quadratic. The answer is the pessimistic one, and the declaration
         // an error (§16.7).
@@ -7019,6 +7098,7 @@ const Walker = struct {
             return cond_limit;
         }
         var acc: CondAcc = .{};
+        try acc.add(w, xc.k);
         for (ex) |e| try acc.add(w, try w.cellCond(e.cell));
         for (ex, 0..) |e, i| for (ex[i + 1 ..]) |f| {
             if (try w.nested(e, f)) continue;
@@ -13588,7 +13668,7 @@ const Walker = struct {
             }
         }
         if (approx_hit == approx_place) {
-            rec.prelim = .{ .cause = .element, .detail = "another operand may hold it: one place of it stands for several, the levels of a recursive value" };
+            rec.prelim = .{ .cause = .element, .detail = "another operand may hold it: one place of it stands for several: the levels of a recursive value, or the environments of closures inside closures" };
             try w.demands.append(w.a, rec);
             return;
         }

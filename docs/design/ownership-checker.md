@@ -1265,24 +1265,65 @@ rejection delta, measured separately on `master` (`2cabeed03`) with an experimen
 over `bench/ownership-everywhere.mjs` (873 programs, every platform's modules and core, browser-inline's pages,
 goldens and modules included) and the verdict lines of `tests/corpus/ownership/`.
 
-**F1. Closures fold at their environment step.** A function type is taken to be recursive: a `◇` step on a
+**F1. Closures fold at their environment step.** *The first form below, its three bullets and its delta are
+superseded by the amendments after them (the fold under the marker); they are kept as the record of what was
+measured.* A function type is taken to be recursive: a `◇` step on a
 path that already has one goes on from where the first entered, so `◇p◇q` is `◇q`, and a projection along `◇`
 keeps every entry whose first step is `◇` at its own path, approximately (`approx_place`), as §16.7's
 amendment does for a field that is the type itself ("here").
-- *Soundness.* Folding merges places: the environments of a closure and of every closure it captured share one
+- *Soundness (superseded: unsound, see the amendment).* Folding merges places: the environments of a closure and of every closure it captured share one
   place, so every cell any of them captured is held at `◇q`, and a demand on one of them sees every holder of
   any. A projection along `◇` keeps the folded entries, so nothing merged is dropped when a closure's
   environment is taken apart (`instProv`'s `◇x.q`, `expandInto`). Folding `◇p◇q` into `◇q` also merges every
   place at `p`, the steps between the two `◇`s, into the place at `◇q`; that too is only more aliasing. The fold
   only adds aliasing, so it stays sound.
-- *Finite.* A path holds at most one `◇`. `mk n xs = if n == 0 then λx → x + List.length xs else (g = mk (n -
+- *Finite (superseded).* A path holds at most one `◇`. `mk n xs = if n == 0 then λx → x + List.length xs else (g = mk (n -
   1) xs; λx → g x)`, whose summary is `res ◇ π2, ◇◇ π2, …` cut at eight today, is `res ◇ π2`.
-- *Delta: none.* The bench is unchanged, browser-inline's pages, goldens and modules included; in
+- *Delta: none (superseded: measured for the first form).* The bench is unchanged, browser-inline's pages, goldens and modules included; in
   `tests/corpus/ownership/` fifteen goldens change, only in summary lines (`◇◇…` merged), and no verdict line.
   The owner's concern — that closures capturing closures become one place, so higher-order code and
   browser-inline's generated handlers pick up refusals — does not show: a closure's demand is on the cells its
   environment holds, and the merged place holds the same cells. A capture of a capture written while the outer
   closure lives is still rejected `captured`.
+- *Amended 2026-10-19 (the review of #378): F1 folds under the level marker.* `◇p◇q` → `◇q` is unsound as
+  written above, and "the fold only adds aliasing" was not the argument: a fold can also *remove a containment*.
+  Folded, the inner environment's `◇q` is a prefix, step by step, of the outer environment's other places, so the
+  inner `◇`'s cells read as the container of the outer `.b`, and a deep condition, which does not separate a
+  container from what it holds, never compared them: `g = λ⊤ → List.length xs; s = { a = g, b = xs }` and a
+  closure over `s` hold `xs` twice, and `[ f ]` was `{excl π1}` where it is `{shared}` (`ownership/EnvPrefix`).
+  The same fold lost that `◇.g` holds what `g` captured, and kept an exact entry at the rest of `◇q` that stood
+  for `◇p◇q`. So a function type is taken for a recursive type of its own, whose one region step is `◇`: a `◇` on
+  a path that has one already goes under the marker of that region, `◇p◇q` is `◇⟨◇⟩◇q` (the places `q` of the
+  environment of every closure at or below the first environment), and everything the marker's text above says
+  applies — overlap and holding through the marker, projection keeping a marked entry whole, a marker's place a
+  representative. The marker stands where the value may be a closure or not (`.maybe`): an environment holds
+  closures further down (`◇p◇q`, `p` not empty) or is one, a closure captured directly (`◇◇q`, the empty
+  expansion), so its expansion may begin with any step and may be empty. (As first built the marker was
+  `.below`, never empty, and the place `p = ∅` was reached only through the empty path's overlap with every
+  path; the review of #403 found it, and `ownership/DirectCapture` pins the direct capture read, written live,
+  written after, written inside, stored and passed through a summary, each verdict master's.) The fold now keeps a mark wherever it merged places, and the soundness
+  argument is the marker's: a place the fold merged is one the marker stands for, so containment through it is
+  approximate, never lost. (This paragraph ended "and no pair a deep condition must compare is taken for a
+  container and its contents"; as built that was false, and the next amendment corrects it.)
+  *Finite*: a path holds one `◇` and at most one closure marker after it. `mk`'s summary is `res ◇ π2, ◇⟨◇⟩◇ π2`.
+  *Built 2026-10-19.* The bench is unchanged; in `tests/corpus/ownership/` sixteen goldens change, in summary lines
+  only (`◇◇` and `◇.a◇` become `◇⟨◇⟩◇`). `ownership/Clo` pins `mk`, `EnvPrefix` stays `{shared}`, and
+  `ownership/ClosureLevels` pins a capture written while a closure that holds it is held through a record field,
+  through a closure in a closure in a record, and through a call. The summary block's marker step names no
+  module for this type. Core's check costs 3 324M instructions, less than before F1.
+- *Amended 2026-10-19 (the review of #403): two environments the fold merges are still compared.* The marker
+  keeps containment, but it also puts two *sibling* environments at one place: `g1` and `g2` both capture `xs`,
+  `s = { a = g1, c = g2 }` and `f = λ⊤ → s.a ⊤ + s.c ⊤` hold `xs` at `◇.a◇` and `◇.c◇`, which fold to the one
+  path `◇⟨◇⟩◇`. A deep condition compares entries at two paths, and here both entries sat at one, so `[ f ]` was
+  `{excl π1}` where it is `{shared}`; the same loss dropped `sep π1 π2` (one list per closure) and
+  `sep π1#Node.0 π1#Node.1` (two parts of one tree). So the deep condition also judges the pairs the closure
+  expansion brings to one place. Each (closure, capture) the expansion enters is a frame of its own, and two
+  entries at one path from different frames are compared as two paths are. One cell is `{shared}`, unless both
+  entries are approximate (a merge the fold made, which already stands for the same cell twice). Two cells are
+  `sep`, unless one covers the other. Every deep condition is then the one the unfolded checker gives, or
+  `lost`. `ownership/SiblingEnvs` pins the record, tuple, nested record and constructor shapes (`{shared}`), two
+  lists (`sep π1 π2`) and two parts of a tree (`sep π1#Node.0 π1#Node.1`): each is master's condition, and each
+  was wrong before this amendment.
 
 **F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
 answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new
