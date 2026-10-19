@@ -1,10 +1,10 @@
 -- CK-262: `view` writes a `For` row's item (issue #315; `ownership-checker.md`
 -- §31.8). The runtime hands `view` the model to read only, and a row's item
 -- is the model's own record: `label` writes it through `relabel`, which in
--- place would change `model.rows`. Rejected `read-only`, exactly. Red until
--- R2c reads `relabel`'s `W{F}` off its summary and `view`'s entry checks it
--- (§31.7, §31.8); today the update in `relabel` is only its body's
--- `accepted param`.
+-- place would change `model.rows`. Rejected `read-only`, exactly. Red: R2c
+-- reads `relabel`'s `W{F}` at the call, but the row's write is the callback's
+-- own, and a `For` hands its callback where the checker cannot see its calls,
+-- so the line is `pending`, as a list's is in the same place.
 import Browser
 import Html exposing (Html)
 import Tea

@@ -12,8 +12,8 @@ module SchemaMemberHanded
   summary chained: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
   summary direct: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
   summary built: res [*] ~fresh2{lost}, fresh1{lost}
-  summary grown: res fresh1
-  summary grownShared: res fresh1 shared(SchemaMemberHanded.forest)
+  summary grown: res [*]#Leaf.0 ~fresh2◦, fresh1
+  summary grownShared: res [*]#Leaf.0 shared(SchemaMemberHanded.forest)[*]#Leaf.0 ~fresh2◦, fresh1 shared(SchemaMemberHanded.forest)
   demands 7: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 total 7: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause top-level 5

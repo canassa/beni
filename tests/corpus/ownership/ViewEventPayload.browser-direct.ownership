@@ -1,28 +1,31 @@
 module ViewEventPayload
-  41:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  44:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  47:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  41:13 update model: accepted param
+  44:13 update model: accepted param
+  47:13 update model: accepted param
   47:30 List.push model.kept: accepted param
-  50:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  50:13 update model: accepted param
   50:32 List.push model.seeded: accepted param
-  53:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  53:13 update model: accepted param
   53:30 List.push rows: accepted param
   88:9 entry ViewEventPayload.update model.kept: accepted entry
   88:9 entry ViewEventPayload.update model.seeded: accepted entry
   88:9 entry ViewEventPayload.update msg#KeepGrown.0: accepted entry
+  88:9 update entry ViewEventPayload.update model: accepted entry
   92:9 entry ViewEventPayload.update model.kept: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   92:9 entry ViewEventPayload.update model.seeded: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   92:9 entry ViewEventPayload.update msg#KeepGrown.0: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
+  92:9 update entry ViewEventPayload.update model: accepted entry
   96:9 entry ViewEventPayload.update model.kept: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   96:9 entry ViewEventPayload.update model.seeded: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   96:9 entry ViewEventPayload.update msg#KeepGrown.0: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
-  summary update: π1 R, π1#Keep.0 RA, π1#KeepGrown.0 RAW, π1#KeepGrown.0[*] A, π1#Seed.0 RA, π2.kept RAW, π2.kept[*] A, π2.rows RA, π2.seeded RAW, π2.seeded[*] A; res .kept π1#Keep.0 π1#KeepGrown.0 π2.kept, .kept[*] ~π1#KeepGrown.0[*] ~π2.kept[*], .rows π2.rows, .seeded π1#Seed.0 π2.seeded, .seeded[*] ~π2.seeded[*]
+  96:9 update entry ViewEventPayload.update model: accepted entry
+  summary update: π1 R, π1#Keep.0 RA, π1#KeepGrown.0 RAW, π1#KeepGrown.0[*] A, π1#Seed.0 RA, π2 W{kept, seeded}, π2.kept RAW, π2.kept[*] A, π2.rows RA, π2.seeded RAW, π2.seeded[*] A; res .kept π1#Keep.0 π1#KeepGrown.0 π2.kept, .kept[*] ~π1#KeepGrown.0[*] ~π2.kept[*], .rows π2.rows, .seeded π1#Seed.0 π2.seeded, .seeded[*] ~π2.seeded[*], π2◦
   summary grows: π1.seeded R; res ⟨render⟩ fresh1{lost}
   summary keeping: π1.rows RA; res ⟨events⟩⋆ ~π1.rows, ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1.rows
   summary seeding: π1.seeded R; res ⟨events⟩⋆ ~fresh1, ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1
-  summary initial: res .kept fresh2, .rows fresh1, .seeded fresh3
+  summary initial: res .kept fresh2, .rows fresh1, .seeded fresh3, fresh4◦
   demands 12: accepted 6 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 3; assumed 0), pending 0, rejected 6
-  records 5: accepted 0, pending 5, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 8: accepted 8, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 12: accepted 6 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 3; assumed 0), pending 0, rejected 6
-records 5: accepted 0, pending 5, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 8: accepted 8, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause payload 6

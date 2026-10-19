@@ -37,7 +37,7 @@ module BridgeResultPaths
   summary freshResult: res fresh1
   summary caseProjection: π1 R; res fresh1
   summary nestedBlock: π1 RAW, π1[*] R; res π1
-  summary returnedReader: res .reader λ, .reader◇ fresh1, .values fresh1
+  summary returnedReader: res .reader λ, .reader◇ fresh1, .values fresh1, fresh2◦
   summary laterNamedReader: res [*] fresh2 ~fresh1, fresh3{lost}
   summary freshCallback: res [*] fresh1 ~fresh3{lost}, fresh2{lost}
   summary ownedFold: π1 R; res ~fresh1

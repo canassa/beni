@@ -6185,6 +6185,10 @@ update's `W{F}` in `update`'s summary (R2c, §31.7). Until then `Edit t → { mo
 param`, where they are `payload`, approximately.
 `tests/pending/ownership/RecordPayload.beni`, red until R2c.
 
+**Fixed 2026-10-19 (R2c of #315):** the entry reads each record write off
+`update`'s summary (`W{F}`); both are `payload`, approximately, and the
+fixture is `tests/corpus/ownership/RecordPayload.beni`.
+
 ## CK-261 — a closure a command keeps captures a record (2026-10-19)
 
 Ownership, issue #315 (`ownership-checker.md` §31.6), report mode. A command's
@@ -6194,9 +6198,20 @@ write of it is `escaped` at the entry; one that captures the field path
 off `update`'s summary (R2c). `tests/pending/ownership/RecordCapture.beni`, red
 until R2c.
 
+**Fixed 2026-10-19 (R2c of #315):** the command that keeps the model whole
+escapes its object, and the entry rejects the write `escaped`; the form,
+which that model holds, is `escaped` with it. The field-path capture alone is
+`tests/corpus/ownership/RecordCaptureField.beni`, accepted; this one is
+`tests/corpus/ownership/RecordCapture.beni`.
+
 ## CK-262 — `view` writes a `For` row's item (2026-10-19)
 
 Ownership, issue #315 (`ownership-checker.md` §31.8), report mode. `view` is
 handed the model to read only; a row's item is the model's record, and a write
 of it through a callee is `read-only`, exactly, once the callee's `W{F}` is in
 its summary (R2c). `tests/pending/ownership/RecordForItem.beni`, red until R2c.
+
+**2026-10-19 (R2c of #315):** still red. `relabel`'s `W{label}` reaches the
+call, but the write is the row callback's own, and a `For` hands its callback
+where the checker cannot see its calls: `pending`, as a list's is in the same
+place. #402 tracks the markup's supply.

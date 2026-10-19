@@ -5,12 +5,12 @@ module BranchEscapes
   46:9 call BranchEscapes.repeat xs: rejected escaped: it was given to JavaScript, or kept by a callee (BranchEscapes.repeat writes π2) (approx)
   48:11 construction xs: accepted param
   65:9 construction old: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  summary choose: π2 R, π2[*] RAE; res .0 esc1{lost} fresh3, .0[*] ~esc2{lost} ~π2[*], .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc5{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc4{lost} ~λ ~λ ~π2[*]
-  summary unsafe: π1 R, π1[*] RAE; res .0 esc1{lost}, .0[*] ~esc2{lost} ~π1[*], .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc4{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc3{lost} ~λ ~π1[*]
-  summary joined: π2 R, π2[*] RAE; res .0 esc1{lost}, .0[*] ~esc2{lost} ~π2[*], .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc4{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc3{lost} ~λ ~λ ~π2[*]
+  summary choose: π2 R, π2[*] RAE; res .0 esc1{lost} fresh3, .0[*] ~esc2{lost} ~π2[*], .1 fresh6◦, .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc5{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc4{lost} ~λ ~λ ~π2[*]
+  summary unsafe: π1 R, π1[*] RAE; res .0 esc1{lost}, .0[*] ~esc2{lost} ~π1[*], .1 fresh5◦, .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc4{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc3{lost} ~λ ~π1[*]
+  summary joined: π2 R, π2[*] RAE; res .0 esc1{lost}, .0[*] ~esc2{lost} ~π2[*], .1 fresh5◦, .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc4{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc3{lost} ~λ ~λ ~π2[*]
   summary repeat: π2 RAEW; res π2
-  summary fork: π2 RAE; res .children ⊤{lost}, .finalizers ⊤{lost}, .observers ⊤{lost}, .outcome ⊤{lost}, .parent ⊤{lost}, .parked ⊤{lost}, .scope ⊤{lost}, .stack esc2{lost}, .stack⋆ ~esc1{excl π2} ~λ ~λ ~π2
-  summary afterCall: π2 R, π2[*] RAE; res .0 esc1{lost}, .0[*] ~esc2{lost} ~π2[*], .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc4{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc3{lost} ~λ ~λ ~π2[*]
+  summary fork: π2 RAE; res .children ⊤{lost}, .finalizers ⊤{lost}, .observers ⊤{lost}, .outcome ⊤{lost}, .parent ⊤{lost}, .parked ⊤{lost}, .scope ⊤{lost}, .stack esc2{lost}, .stack⋆ ~esc1{excl π2} ~λ ~λ ~π2, fresh3◦
+  summary afterCall: π2 R, π2[*] RAE; res .0 esc1{lost}, .0[*] ~esc2{lost} ~π2[*], .1 fresh5◦, .1.children ⊤{lost}, .1.finalizers ⊤{lost}, .1.observers ⊤{lost}, .1.outcome ⊤{lost}, .1.parent ⊤{lost}, .1.parked ⊤{lost}, .1.scope ⊤{lost}, .1.stack esc4{lost}, .1.stack⋆ ~esc1{lost} ~esc2{lost} ~esc3{lost} ~λ ~λ ~π2[*]
   demands 6: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 total 6: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause escaped 4

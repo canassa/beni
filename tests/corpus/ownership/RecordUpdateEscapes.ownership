@@ -1,27 +1,29 @@
 module RecordUpdateEscapes
-  23:9 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  23:9 update r: accepted param
   25:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   31:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  36:14 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  36:14 update r: accepted param
   37:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  44:17 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  44:17 update r: accepted param
   46:15 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  56:17 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  56:17 update r: accepted param
   66:9 call RecordUpdateEscapes.openEsc <record>.items: rejected alias: xs holds it and is read at 67:7 (RecordUpdateEscapes.openEsc writes π1.items)
+  66:9 update <record>: accepted fresh (RecordUpdateEscapes.openEsc writes it)
   67:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  72:9 update <literal>[*]: accepted fresh (RecordUpdateEscapes.escHead writes it)
   73:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  summary size: π1.items R
-  summary keep: π1 RAE; res .children ⊤{lost}, .finalizers ⊤{lost}, .observers ⊤{lost}, .outcome ⊤{lost}, .parent ⊤{lost}, .parked ⊤{lost}, .scope ⊤{lost}, .stack esc2{lost}, .stack⋆ ~esc1{excl π1} ~λ ~π1
-  summary openEsc: π1 RE, π1.items RAW; res π1.items
+  summary size: π1.items R, π1.n R
+  summary keep: π1 RAE; res .children ⊤{lost}, .finalizers ⊤{lost}, .observers ⊤{lost}, .outcome ⊤{lost}, .parent ⊤{lost}, .parked ⊤{lost}, .scope ⊤{lost}, .stack esc2{lost}, .stack⋆ ~esc1{excl π1} ~λ ~π1, fresh3◦
+  summary openEsc: π1 REW{n}, π1.items RAW; res π1.items
   summary plain: π1 RE, π1.items RAW; res π1.items
-  summary viaCallee: π1 RE, π1.items RAW; res π1.items
-  summary inList: π1 R, π1[*] RE, π1[*].items RAW; res fresh1 π1[*].items{excl π1}; xreq excl π1
-  summary escHead: π1 R, π1[*] RE
+  summary viaCallee: π1 REW{n}, π1.items RAW; res π1.items
+  summary inList: π1 R, π1[*] REW{n}, π1[*].items RAW; res fresh1 π1[*].items{excl π1}; xreq excl π1
+  summary escHead: π1 R, π1[*] REW{n}
   summary caller: π1 RAEW; res π1
   summary callerOfHead: π1 RAEW; res π1
   demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
-  records 4: accepted 0, pending 4, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
-records 4: accepted 0, pending 4, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause escaped 6
 cause alias 1

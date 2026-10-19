@@ -1,17 +1,19 @@
 module EntryKeepsOld
-  31:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  31:13 update model: accepted param
   31:31 List.push model.items: accepted param
-  34:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  41:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  34:13 update model: accepted param
+  41:13 update model: accepted param
   41:31 List.push model.items: accepted param
-  44:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  44:13 update model: accepted param
   57:8 entry EntryKeepsOld.keepOld model.items: rejected disjoint: another path of the model may hold it after some message: update's arms are joined, so the entry cannot tell them apart (§20.4) (approx)
+  57:8 update entry EntryKeepsOld.keepOld model: accepted entry
   61:10 entry EntryKeepsOld.saveCopy model.items: accepted entry
-  summary keepOld: π2.items RAW, π2.items[*] A, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved π2.items π2.saved
-  summary saveCopy: π2.items RAW, π2.items[*] RA, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved fresh1{lost} π2.saved, .saved[*] π2.items[*]
+  61:10 update entry EntryKeepsOld.saveCopy model: accepted entry
+  summary keepOld: π2 W{items, saved}, π2.items RAW, π2.items[*] A, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved π2.items π2.saved, π2◦
+  summary saveCopy: π2 W{items, saved}, π2.items RAW, π2.items[*] RA, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved fresh1{lost} π2.saved, .saved[*] π2.items[*], π2◦
   summary view: π1.items R, π1.saved R; res ⟨render⟩ fresh1{lost}
   demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
-  records 4: accepted 0, pending 4, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
-records 4: accepted 0, pending 4, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause disjoint 1

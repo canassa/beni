@@ -32,10 +32,10 @@ module FoldAccumulators
   summary dictRight: π1#Dict.0 R, π1#Dict.0#Node.1 R, π1#Dict.0#Node.2 R, π1#Dict.0#Node.2.0 A, π1#Dict.0#Node.2.1 A, π1#Dict.0#Node.2.2 A, π1#Dict.0#Node.3 R, π1#Dict.0#Node.4 R; res #Dict.0#Node.1 ~π1#Dict.0#Node.2.0{lost}, #Dict.0#Node.2.0 ~π1#Dict.0#Node.2.1, #Dict.0#Node.2.1 ~fresh1{lost}, #Dict.0#Node.2.1[*] ~fresh2{lost} ~π1#Dict.0#Node.2.2
   summary subscribed: res #Dict.0#Node.1 ~fresh1{lost}, #Dict.0#Node.2.0 ~fresh4{lost}, #Dict.0#Node.2.1 ~fresh5{lost}, #Dict.0#Node.2.1[*] ~fresh3{lost}, #Dict.0#Node.2.1[*]⋆ ~fresh2 ~λ ~λ
   summary escaped: π1 R, π1[*] AE; res [*] ~π1[*], ~esc1{lost}
-  summary captured: π1 R, π1[*] A; res .readers ~fresh2{shared}, .readers[*]◇ ~fresh1{lost}, .readers[*]◇[*] ~π1[*], .values ~fresh1{lost}, .values[*] ~π1[*]
+  summary captured: π1 R, π1[*] A; res .readers ~fresh2{shared}, .readers[*]◇ ~fresh1{lost}, .readers[*]◇[*] ~π1[*], .values ~fresh1{lost}, .values[*] ~π1[*], ~fresh3◦
   summary duplicated: π1 R, π1[*] A; res #Dict.0#Node.2 ~fresh1{lost}, #Dict.0#Node.2[*] ~fresh2{lost} ~π1[*]
   summary sharedStart: π1 R, π1[*] A; res #Dict.0#Node.2 ~fresh1{lost} ~shared(FoldAccumulators.shared)#Dict.0#Node.2{lost}, #Dict.0#Node.2[*] ~fresh2{lost} ~π1[*]
-  summary capturedAfter: π1 R, π1[*] A; res .readers ~fresh2{shared}, .readers[*]◇ ~fresh1{lost}, .readers[*]◇[*] ~π1[*], .values ~fresh1{lost}, .values[*] ~π1[*]
+  summary capturedAfter: π1 R, π1[*] A; res .readers ~fresh2{shared}, .readers[*]◇ ~fresh1{lost}, .readers[*]◇[*] ~π1[*], .values ~fresh1{lost}, .values[*] ~π1[*], ~fresh3◦
   demands 26: accepted 17 (fresh 9, call 0, param 1, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 9
   records 0: accepted 0, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 total 26: accepted 17 (fresh 9, call 0, param 1, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 9

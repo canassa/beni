@@ -1,53 +1,53 @@
 module RecordDemands
-  55:9 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  61:9 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  55:9 update p: accepted param
+  61:9 update p: accepted param [hoisted 1]
   66:13 update p: rejected later-use: p is read again at 66:11 [copy]
   72:9 update p: rejected alias: old holds it and is read at 73:5 [copy]
   78:12 update model: rejected later-use: model is read again at 79:29 [copy]
-  79:29 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  85:5 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  85:22 update form: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  79:29 update model: accepted param
+  85:5 update model: accepted param
+  85:22 update form: accepted param
   89:16 update item: rejected later-use: item is read again at 89:34 [copy]
   89:34 update item: rejected held-operand: the value at 89:16, evaluated before it, holds it until its consumer runs [copy]
   93:13 update link: rejected disjoint: another operand of the same operation reaches it [copy]
   97:11 update RecordDemands.origin: rejected top-level: RecordDemands.origin is a top-level value [restructure]
   103:5 update p: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
-  114:9 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
-  121:9 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
-  129:9 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
-  136:9 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  114:9 update p: accepted param [hoisted 1]
+  121:9 update p: accepted param [hoisted 1]
+  129:9 update p: accepted param [hoisted 1]
+  136:9 update p: accepted param [hoisted 1]
   150:9 update p: rejected later-use: p is read again at 151:11 [copy]
-  162:9 update p: pending: it is handed at 163:11 to a callee whose summary does not yet say which of a record's fields it reads (§31.7)
-  175:13 update RecordDemands.originAlias: pending: nothing yet names where its base's object comes from: a summary's results do not carry a record's object until §31.7's
-  181:5 update answer: pending: its base is what a call returns, and the summary that names a record's object is not built yet (§31.7)
-  209:9 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
-  215:9 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  162:9 update p: accepted param
+  175:13 update RecordDemands.originAlias: rejected top-level: RecordDemands.origin is a top-level value [restructure]
+  181:5 update answer: accepted call
+  209:9 update r: accepted param [hoisted 1]
+  215:9 update r: accepted param [hoisted 1]
   226:9 update r: accepted fresh [hoisted 1]
-  summary untouched: π1.tags R
-  summary hoisted: π1.tags R
-  summary whole: π1 RA, π1.tags RA; res .0.tags π1.tags, .1 π1
-  summary bound: π1 RA, π1.tags R; res π1
-  summary rebased: π1.heard RA; res .heard fresh1 π1.heard
-  summary nested: π1.form R, π1.heard RA; res .heard π1.heard
-  summary twice: π1.tags RA; res [*].tags π1.tags, fresh1{shared}
-  summary loop: unused
-  summary moved: res .tags shared(RecordDemands.origin).tags
-  summary kept: π1 RE, π1.tags RA; res .tags π1.tags
+  summary untouched: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary hoisted: π1 W{x}, π1.tags R, π1.x R
+  summary whole: π1 RAW{x}, π1.tags RA; res .0 π1◦, .0.tags π1.tags, .1 π1
+  summary bound: π1 RAW{x}, π1.tags R; res π1
+  summary rebased: π1 RW{count, heard}, π1.form R, π1.heard RA; res .form π1.form, .heard fresh1 π1.heard, π1◦
+  summary nested: π1 W{form}, π1.form RW{name}, π1.heard RA; res .form π1.form◦, .heard π1.heard, π1◦
+  summary twice: π1 W{x}, π1.tags RA; res [*] π1◦, [*].tags π1.tags, fresh1{shared}
+  summary loop: π1 RW{next}; res .next#Just.0#Node.0 π1, π1◦
+  summary moved: res .tags shared(RecordDemands.origin).tags, shared(RecordDemands.origin)◦
+  summary kept: π1 REW{x}, π1.tags RA; res .tags π1.tags, π1◦
   summary originX: unused
-  summary closureAfter: π1.tags R
-  summary closureAfterList: π1.tags R
-  summary readOnce: π1.tags RA, π1.x R; res .0.tags π1.tags
-  summary destructure: π1 R, π1.tags R
+  summary closureAfter: π1 W{x}, π1.tags R, π1.x R
+  summary closureAfterList: π1 W{tags}, π1.tags R
+  summary readOnce: π1 RW{x}, π1.tags RA, π1.x R; res .0 π1◦, .0.tags π1.tags
+  summary destructure: π1 RW{x}, π1.tags R, π1.x R
   summary getX: π1.x R
-  summary throughCallee: π1.tags R, π1.x R
+  summary throughCallee: π1 W{x}, π1.tags R, π1.x R
   summary getY: π1.y R
-  summary throughCalleeY: π1.tags R, π1.y R
-  summary viaCallback: π1 R, π2 R; res .tags cb1.tags{excl cb1.tags}; π1 calls ≤1, supply 1 π2 owned{excl π2}
+  summary throughCalleeY: π1 W{x}, π1.tags R, π1.x R, π1.y R
+  summary viaCallback: π1 R, π2 R; res .tags cb1.tags{excl cb1.tags}, cb1◦; π1 calls ≤1, supply 1 π2 owned{excl π2}
   summary countItems: π1.items R
-  summary nestedCallee: π1.a.b.items R
-  summary nestedList: π1.a.b.items R
+  summary nestedCallee: π1 W{a}, π1.a.b R, π1.a.b.items R, π1.z R
+  summary nestedList: π1 W{a}, π1.a.b.items R, π1.z R
   summary joined: unused
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 24: accepted 1, pending 14, rejected 9 (copy 8, restructure 1); hoisted 8, eager reads 2
+  records 24: accepted 14, pending 0, rejected 10 (copy 8, restructure 2); hoisted 8, eager reads 2
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 24: accepted 1, pending 14, rejected 9 (copy 8, restructure 1); hoisted 8, eager reads 2
+records 24: accepted 14, pending 0, rejected 10 (copy 8, restructure 2); hoisted 8, eager reads 2

@@ -5,20 +5,21 @@ module HttpAnswer
   73:17 List.push issues: pending: Http.expectStringResponse loses sight of what calls it
   113:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
   114:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
-  119:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  122:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  119:15 update model: accepted param
+  122:15 update model: accepted param
   122:34 List.push model.errors: accepted param
-  125:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  128:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  125:15 update model: accepted param
+  128:15 update model: accepted param
   128:34 List.push model.errors: accepted param
   141:5 entry HttpAnswer.update model.errors: accepted entry
-  summary pushing: π1 R, π1#BadRequest_.0#UnprintableBody.0 RAW, π1#BadRequest_.0#UnprintableBody.0[*] A; res #Ok.0 π1#BadRequest_.0#UnprintableBody.0, #Ok.0[*] ~π1#BadRequest_.0#UnprintableBody.0[*], #Ok.0[*].path ~fresh1
+  141:5 update entry HttpAnswer.update model: accepted entry
+  summary pushing: π1 R, π1#BadRequest_.0#UnprintableBody.0 RAW, π1#BadRequest_.0#UnprintableBody.0[*] A; res #Ok.0 π1#BadRequest_.0#UnprintableBody.0, #Ok.0[*] ~fresh2◦ ~π1#BadRequest_.0#UnprintableBody.0[*], #Ok.0[*].path ~fresh1
   summary expecting: π1 RA; res #Expect.1 λ, #Expect.1◇ π1; π1 calls 0, unseen
   summary get: π1 R; res cb(π1#Expect.1){excl cb(π1#Expect.1)}; π1#Expect.1 calls ≤1, supply 1 fresh owned{lost}, supply 1#BadRequest_.0 fresh owned{lost}
-  summary update: π1 R, π1#Fetched.0#Ok.0 RA, π1#Loaded.0#Ok.0 RA, π2 RA, π2.errors RAW, π2.errors[*] A, π2.words RA; res .0 π2, .0.errors π2.errors, .0.errors[*] ~π2.errors[*], .0.words π1#Fetched.0#Ok.0 π1#Loaded.0#Ok.0 π2.words, .1#Cmd.0 fresh2{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh1{lost}, .1#Cmd.0[*]#Perform.0◇◇ ~π2.words
+  summary update: π1 R, π1#Fetched.0#Ok.0 RA, π1#Loaded.0#Ok.0 RA, π2 RAW{errors, words}, π2.errors RAW, π2.errors[*] A, π2.words RA; res .0 π2 π2◦, .0.errors π2.errors, .0.errors[*] ~π2.errors[*], .0.words π1#Fetched.0#Ok.0 π1#Loaded.0#Ok.0 π2.words, .1#Cmd.0 fresh2{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh1{lost}, .1#Cmd.0[*]#Perform.0◇◇ ~π2.words
   summary view: π1.words R; res ⟨render⟩ fresh1{lost}
   demands 9: accepted 4 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 1; assumed 0), pending 3, rejected 2
-  records 4: accepted 0, pending 4, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+  records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 total 9: accepted 4 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 1; assumed 0), pending 3, rejected 2
-records 4: accepted 0, pending 4, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 cause need 2
