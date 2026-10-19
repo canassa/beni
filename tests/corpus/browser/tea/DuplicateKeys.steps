@@ -1,0 +1,12 @@
+# Mark a node of a repeated key in each list.
+input #removed>li:nth-child(3)>input "marked"
+input #inserted>li:nth-child(3)>input "marked"
+input #prepended>li:nth-child(2)>input "marked"
+input #swapped>li:nth-child(1)>input "marked"
+input #rekeyed>li:nth-child(2)>input "marked"
+# Each list's script, one at a time.
+click #remove
+click #insert
+click #prepend
+click #swap
+click #rekey

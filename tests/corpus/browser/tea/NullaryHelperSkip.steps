@@ -1,0 +1,4 @@
+# Nothing the helpers are given reads the model: none is called.
+click #run
+# The same after the other message.
+click #add

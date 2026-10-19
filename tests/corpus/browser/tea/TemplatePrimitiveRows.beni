@@ -1,0 +1,39 @@
+-- A helper can return the Html.text primitive, whose native payload is a
+-- string, from a keyed value row. Template metadata must not mutate it.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Grow
+    | Swap
+    | Quiet
+
+
+label : Int → Html Msg
+label n = Html.text (String.fromInt n)
+
+
+update : Msg, List Int → List Int
+update msg rows =
+    case msg of
+        Grow →
+            List.push rows (List.length rows + 1)
+        Swap →
+            List.swap rows 0 1
+        Quiet →
+            rows
+
+
+view : List Int → Html Msg
+view rows =
+    <main>
+        <button id="grow" onClick={Grow}>grow</button>
+        <button id="swap" onClick={Swap}>swap</button>
+        <button id="quiet" onClick={Quiet}>quiet</button>
+        <For each={rows} keyed={λn → n}>{λn → label n}</For>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ 1, 2 ], update = update, view = view }

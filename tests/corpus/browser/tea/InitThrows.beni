@@ -1,0 +1,19 @@
+-- A throw in `init` is a defect of the mount (docs/design/browser-direct.md
+-- §8.2): `init` is a function every platform calls when the program mounts
+-- (boundary.md §9.8.16), inside the program's mount, which `run` enters
+-- through the dispatch guard, so the page stops and the development build
+-- shows the crash screen — on `browser-direct` and on `browser-tea` alike,
+-- one golden. (Until `init` was a function, `browser-tea` evaluated it
+-- where `main` was, while the module loaded, and this page had a
+-- `.tea-expected` of its own.) The release builds of both show no screen
+-- (`InitThrows.release-expected`).
+import Html exposing (Html)
+import Tea
+
+
+view : String → Html {}
+view _ = <p>never shown</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → Debug.todo "init threw", update = λ_ m → m, view = view }

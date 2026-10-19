@@ -1,0 +1,3 @@
+throws load
+# The page stopped while mounting: a click applies nothing.
+click body

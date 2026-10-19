@@ -1,0 +1,118 @@
+-- load
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+  </main>
+</body>
+-- click #insert
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"4"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+  </main>
+</body>
+-- click #remove
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"3"</li>
+      <li>"2"</li>
+      <li>"1"</li>
+    </ul>
+  </main>
+</body>
+-- click #prepend
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"4"</li>
+      <li>"3"</li>
+      <li>"2"</li>
+      <li>"1"</li>
+    </ul>
+  </main>
+</body>
+-- click #append
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"4"</li>
+      <li>"3"</li>
+      <li>"2"</li>
+      <li>"1"</li>
+      <li>"5"</li>
+    </ul>
+  </main>
+</body>
+-- click #edit
+<body>
+  <main>
+    <button id="insert">"insert"</button>
+    <button id="remove">"remove"</button>
+    <button id="swap">"swap"</button>
+    <button id="prepend">"prepend"</button>
+    <button id="append">"append"</button>
+    <button id="edit">"edit"</button>
+    <ul>
+      <li>"6"</li>
+      <li>"3"</li>
+      <li>"2"</li>
+      <li>"1"</li>
+      <li>"5"</li>
+    </ul>
+  </main>
+</body>

@@ -1,0 +1,9 @@
+import Html exposing (Html)
+
+
+inner : Int → Html msg
+inner n = <b>{n}</b>
+
+
+pub row : String, Int → Html msg
+row label n = <p title={label}>{inner n}</p>

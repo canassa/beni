@@ -1,0 +1,4 @@
+-- See Main.beni: a function of another module, given the whole model.
+
+pub sum : { r | a : Int, b : Int, c : Int } → Int
+sum m = m.a + m.b + m.c

@@ -1,0 +1,5 @@
+# The button, then the section: the section reads the new model.
+click #inc
+click #inc
+# The paragraph alone: only the section.
+click #seen

@@ -1,0 +1,46 @@
+-- Markup stored in the model is a declared value fallback, with its source
+-- and cost boundary recorded in _direct-plan.json, rather than a producer
+-- whose parameters can be substituted from the view.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Quiet
+    | Transform (Model → Model)
+
+
+type alias Model =
+    count : Int
+    stored : Html Msg
+
+
+body : Int → Html Msg
+body n = <span>{n}</span>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            next = model.count + 1
+            { count = next, stored = body next }
+        Quiet →
+            model
+        Transform transform →
+            transform model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="quiet" onClick={Quiet}>quiet</button>
+        <button id="transform" onClick={Transform λm → m}>same stored value</button>
+        {model.stored}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { count = 0, stored = body 0 }, update = update, view = view }

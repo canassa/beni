@@ -1,0 +1,8 @@
+click #add
+input #text "typed"
+click #rebuild
+click #add
+input #text "current"
+click #leave
+click #rebuild
+click #add

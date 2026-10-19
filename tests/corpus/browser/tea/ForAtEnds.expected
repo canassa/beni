@@ -1,0 +1,173 @@
+-- load
+<body>
+  <button id="grow">"grow"</button>
+  <button id="front">"front"</button>
+  <button id="empty">"empty"</button>
+  <ul id="leading">
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"leading's last"</li>
+  </ul>
+  <ul id="trailing">
+    <li>"trailing's first"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+  </ul>
+  <ul id="only">
+    <li>"a"</li>
+    <li>"b"</li>
+  </ul>
+  <ul id="middle">
+    <li>"before"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"after"</li>
+  </ul>
+  <p>"a"</p>
+  <p>"b"</p>
+  <p>"the end"</p>
+</body>
+-- click #grow
+<body>
+  <button id="grow">"grow"</button>
+  <button id="front">"front"</button>
+  <button id="empty">"empty"</button>
+  <ul id="leading">
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+    <li>"leading's last"</li>
+  </ul>
+  <ul id="trailing">
+    <li>"trailing's first"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+  </ul>
+  <ul id="only">
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+  </ul>
+  <ul id="middle">
+    <li>"before"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+    <li>"after"</li>
+  </ul>
+  <p>"a"</p>
+  <p>"b"</p>
+  <p>"row 0"</p>
+  <p>"the end"</p>
+</body>
+-- click #front
+<body>
+  <button id="grow">"grow"</button>
+  <button id="front">"front"</button>
+  <button id="empty">"empty"</button>
+  <ul id="leading">
+    <li>"front 1"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+    <li>"leading's last"</li>
+  </ul>
+  <ul id="trailing">
+    <li>"trailing's first"</li>
+    <li>"front 1"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+  </ul>
+  <ul id="only">
+    <li>"front 1"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+  </ul>
+  <ul id="middle">
+    <li>"before"</li>
+    <li>"front 1"</li>
+    <li>"a"</li>
+    <li>"b"</li>
+    <li>"row 0"</li>
+    <li>"after"</li>
+  </ul>
+  <p>"front 1"</p>
+  <p>"a"</p>
+  <p>"b"</p>
+  <p>"row 0"</p>
+  <p>"the end"</p>
+</body>
+-- click #empty
+<body>
+  <button id="grow">"grow"</button>
+  <button id="front">"front"</button>
+  <button id="empty">"empty"</button>
+  <ul id="leading">
+    <li>"leading's last"</li>
+  </ul>
+  <ul id="trailing">
+    <li>"trailing's first"</li>
+  </ul>
+  <ul id="only"></ul>
+  <ul id="middle">
+    <li>"before"</li>
+    <li>"after"</li>
+  </ul>
+  <p>"the end"</p>
+</body>
+-- click #grow
+<body>
+  <button id="grow">"grow"</button>
+  <button id="front">"front"</button>
+  <button id="empty">"empty"</button>
+  <ul id="leading">
+    <li>"row 2"</li>
+    <li>"leading's last"</li>
+  </ul>
+  <ul id="trailing">
+    <li>"trailing's first"</li>
+    <li>"row 2"</li>
+  </ul>
+  <ul id="only">
+    <li>"row 2"</li>
+  </ul>
+  <ul id="middle">
+    <li>"before"</li>
+    <li>"row 2"</li>
+    <li>"after"</li>
+  </ul>
+  <p>"row 2"</p>
+  <p>"the end"</p>
+</body>
+-- click #front
+<body>
+  <button id="grow">"grow"</button>
+  <button id="front">"front"</button>
+  <button id="empty">"empty"</button>
+  <ul id="leading">
+    <li>"front 3"</li>
+    <li>"row 2"</li>
+    <li>"leading's last"</li>
+  </ul>
+  <ul id="trailing">
+    <li>"trailing's first"</li>
+    <li>"front 3"</li>
+    <li>"row 2"</li>
+  </ul>
+  <ul id="only">
+    <li>"front 3"</li>
+    <li>"row 2"</li>
+  </ul>
+  <ul id="middle">
+    <li>"before"</li>
+    <li>"front 3"</li>
+    <li>"row 2"</li>
+    <li>"after"</li>
+  </ul>
+  <p>"front 3"</p>
+  <p>"row 2"</p>
+  <p>"the end"</p>
+</body>

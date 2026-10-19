@@ -1,0 +1,42 @@
+-- The same producer has a bound call and a stored-value placement. The bound
+-- call keeps its substitution; only the stored placement falls back.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Quiet
+
+
+type alias Model =
+    count : Int
+    stored : Html Msg
+
+
+body : Int → Html Msg
+body n = <span>{n}</span>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            next = model.count + 1
+            { count = next, stored = body next }
+        Quiet →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="quiet" onClick={Quiet}>quiet</button>
+        {body model.count}
+        {model.stored}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { count = 0, stored = body 0 }, update = update, view = view }

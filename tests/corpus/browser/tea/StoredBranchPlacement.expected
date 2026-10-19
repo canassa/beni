@@ -1,0 +1,74 @@
+-- load
+<body>
+  <main>
+    <button>"inc"</button>
+    <button>"toggle"</button>
+    <p>"0"</p>
+    <button>"replace"</button>
+    <section>
+      <button>"1"</button>
+      <button>"2"</button>
+    </section>
+  </main>
+</body>
+-- click main>button:nth-of-type(3)
+(the DOM did not change)
+-- click main>button:nth-child(1)
+<body>
+  <main>
+    <button>"inc"</button>
+    <button>"toggle"</button>
+    <p>"1"</p>
+    <button>"replace"</button>
+    <section>
+      <button>"1"</button>
+      <button>"2"</button>
+    </section>
+  </main>
+</body>
+-- click main>button:nth-child(2)
+<body>
+  <main>
+    <button>"inc"</button>
+    <button>"toggle"</button>
+    <p>"1"</p>
+    <button>"replace"</button>
+    <p>"closed"</p>
+  </main>
+</body>
+-- click main>button:nth-child(1)
+<body>
+  <main>
+    <button>"inc"</button>
+    <button>"toggle"</button>
+    <p>"2"</p>
+    <button>"replace"</button>
+    <p>"closed"</p>
+  </main>
+</body>
+-- click main>button:nth-child(2)
+<body>
+  <main>
+    <button>"inc"</button>
+    <button>"toggle"</button>
+    <p>"2"</p>
+    <button>"replace"</button>
+    <section>
+      <button>"1"</button>
+      <button>"2"</button>
+    </section>
+  </main>
+</body>
+-- click main>button:nth-child(1)
+<body>
+  <main>
+    <button>"inc"</button>
+    <button>"toggle"</button>
+    <p>"3"</p>
+    <button>"replace"</button>
+    <section>
+      <button>"1"</button>
+      <button>"2"</button>
+    </section>
+  </main>
+</body>

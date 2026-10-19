@@ -1,0 +1,18 @@
+# Mark every row.
+input li:nth-child(1)>input "1"
+input li:nth-child(2)>input "2"
+input li:nth-child(3)>input "3"
+# A todo added at the end; one toggled in place, its node kept.
+click #add
+click #toggle3
+# Only the active ones: rows 2 and 3 go, 1 and 4 keep their nodes.
+click #active
+# Toggled while shown: it leaves the list.
+click #toggle1
+# The completed ones: 2 and 3 come back as new rows, and 1.
+click #completed
+click #all
+# One removed from the middle; the rest keep their nodes.
+click #remove2
+click #add
+click #toggle5
