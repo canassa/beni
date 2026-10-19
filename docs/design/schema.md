@@ -1531,7 +1531,7 @@ does. The rule is never an estimate of bytes.
   refused (2026-10-19): fitted freely to these programs it picked the larger lowering for 8 of
   57 research apps (T = 25: 4), and assembled from costs measured piece by piece it picked
   workers at every size, because brotli's cost for a piece measured alone does not carry into a
-  large program. `zig build test-shape-threshold` re-measures the crossover (*Fixtures*, below).
+  large program. `tests/shape-threshold/check.mjs` re-measures the crossover (*Fixtures*, below).
 - **T was measured** *(2026-10-18, before the copy; superseded by the item above)*. The table gives each build's total bytes, with
   its runs kept as workers (W) and taken as shapes (S):
 
@@ -1575,8 +1575,11 @@ does. The rule is never an estimate of bytes.
   `ShapeThresholdAt` (25) takes its shapes. `run/SchemaErrorUnreadOrders`, `…Events`, `…Items`
   and `…Copies` (each under T) and `run/SchemaErrorUnreadShapes` (the four in one program, over
   T) print one set of answers, so the differential inputs pass through both lowerings, each also
-  through the library. `zig build test-shape-threshold`, a step outside the gates that CI runs,
-  builds a fixed set of programs both ways and fails when T has stopped being their crossover.
+  through the library. `tests/shape-threshold/check.mjs` builds a fixed set of programs both
+  ways and fails when T has stopped being their crossover. *(2026-10-19: held, not wired into the
+  build or CI. #430's review found the crossover is the release renamer running out of one-letter
+  property names, about 350 B past 52 distinct names, so T measures that cliff until the renamer
+  orders its short names by use.)*
 
 ## 7. Effects
 

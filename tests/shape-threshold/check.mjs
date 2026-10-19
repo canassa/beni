@@ -1,4 +1,10 @@
-// `zig build test-shape-threshold` (`schema.md` §6, *How a program chooses between shapes and
+// Held, not wired into the build or CI (2026-10-19, the owner): #430's review found that the
+// crossover this measures is the release renamer running out of one-letter property names —
+// past about 52 distinct names the worker build jumps by about 350 B — not a property of the
+// two lowerings. It comes back once the renamer orders its short names by use.
+// Run by hand: node tests/shape-threshold/check.mjs <beni> <scratch dir>
+//
+// Formerly `zig build test-shape-threshold` (`schema.md` §6, *How a program chooses between shapes and
 // workers*): builds the dashboard-shaped programs of `gen.mjs` both ways, each seed, and fails
 // when T = `SchemaValid.shape_threshold` has stopped being their crossover: workers must be
 // smaller at T − 4 runs and shapes at T runs, for every seed. It prints every measurement, so
