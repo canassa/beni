@@ -1697,9 +1697,19 @@ infinite. That gives the four sources, and only four:
 2. **A step the type does not write: a closure's environment.** F1, built: a function type is a recursive type of
    its own whose region step is `◇`, so `◇p◇q` is `◇⟨◇⟩◇q` and a path holds one `◇` and at most one closure
    marker after it (the F1 amendments, `ownership/Clo`, `ClosureLevels`, `SiblingEnvs`, `DirectCapture`).
-3. **A walk read at another type: a cast.** F2, the cast marker `⟨as T⟩`, which the owner decides (its finding
-   above). Until it lands, a type a path enters twice with no recursion was cast and read again, and it folds
-   onto where it first entered, with no marker: bounded by the number of types, imprecise, sound.
+3. **A walk read at another type: a cast.** F2, the cast marker `⟨as T⟩`. *Corrected 2026-10-19:* this source
+   has no fold yet. Until F2 lands, a constructor of a type that a path enters twice, with no recursion, was
+   cast and read again, and it folds onto where it first entered, with no marker. That bounds a cast that
+   re-reads a *named type* by the number of types. A cast that re-reads a *record* or a *tuple* is not bounded.
+   A field or tuple step carries no type in the path, so the fold cannot see the second entry. Core's
+   `Schema` grows that way:
+   - `collect`: `π1.parent.parent…`;
+   - `unpack`: `π1.0.0.0…`;
+   - `productOf`: `res .0.0.0…`.
+   On `master` the cut holds them at eight steps. Without it they never settle, and the `rounds` limit makes
+   them pessimistic (measured 2026-10-19 with `k` removed). So casts are F2's, and `k` cannot go before F2.
+   The owner decided F2 on 2026-10-18: option (iii), the check made to scale (not `value-cells` raised), with a
+   marker that records the full type, not the head. Its measurement goes to the owner before it is built.
 4. **An infinite graph: polymorphic recursion.** Instantiation composes paths. Outside a recursive group this is
    finite by induction on the call graph: a callee's summary is settled before any caller instantiates it
    (§16.9), its paths are finite, and a caller's argument paths are finite. So their concatenation is too, and a
@@ -1709,8 +1719,10 @@ infinite. That gives the four sources, and only four:
    same finite graph, and 1–3 bound it. When a call instantiates a variable at a structure (`a` at `List a`),
    the types along the composed path are drawn from an infinite family (`List a`, `List (List a)`, …), and no
    fold of 1–3 sees a repeated region. `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns
-   `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. **Pending the owner.** Two
-   designs, neither accepted:
+   `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. *Decided and built
+   (2026-10-19):* the owner chose the second design below, the fold on the composed path. It was built with
+   #429, which folds every route of the growth, and #447 corrected `nested` for prefixes that stand for several
+   places (F3's amendments above). The two designs as they were put to the owner:
    - *The fold at the call* (option 2 of the F3 amendment, the WIP of #286): at a call inside the group being
      solved, an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
      first step and go to `⋆` below it). Finite, sound (`⋆` only merges), and every bench verdict unchanged. But
@@ -1732,7 +1744,7 @@ infinite. That gives the four sources, and only four:
      unknown, or a mark on summary entries, which is a summary-format change.
 
 *Why no fifth.* Every step is one of: a typed step (bounded by 1 on a finite type graph); a root-only slot; `◇`
-(2); a step after a cast (3); or a `⋆`, which ends growth. The type graph is finite except through instantiation
+(2); a step after a cast (3, unbounded for records and tuples until F2); or a `⋆`, which ends growth. The type graph is finite except through instantiation
 inside a recursive group at a structure (4), since outside a group instantiation is settled bottom-up, and the
 types a module names are finite. Symbolic cells (`param(x, q)`, `env`, `cbres`) carry paths built by the same
 `child`, so the same argument bounds them. A spine condition (§18.2) names cells, not new paths. A fifth source
@@ -1742,8 +1754,9 @@ type checker gives no other way to make one.
 
 *What else `k` holds up.* Besides the cut in `childRaw`, `k_limit` sizes the path buffers (`[k_limit + 1]Step`,
 about twenty) and guards `markupEvents`'s walk of a type term. That walk is bounded by the term's size, a finite
-type, so the guard goes with `k`. The order of (c) is unchanged: F1 has landed; 4 waits for the owner's choice
-above, and 3 for F2's; then `k` goes.
+type, so the guard goes with `k`. The order of (c): F1 has landed, and 4 (#429, #447). 3 waits for F2. Then
+`k` goes: the cut, the buffers (as a stack room that spills, not a limit), and the summary block's one-byte path
+length.
 
 ### 16.8 The library
 
