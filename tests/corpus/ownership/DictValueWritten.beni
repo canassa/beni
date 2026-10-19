@@ -1,0 +1,17 @@
+-- ownership: core `Dict`'s exemption from the level marker (ownership-checker.md
+-- §16.7, *core `Dict`'s tree keeps the merged fold, until #294*). A value got
+-- out of a dictionary is one of the values at `#Dict.0#Node.2`, every level's
+-- merged, and a write of it while the dictionary is read afterwards is refused.
+-- If `Dict`'s tree were ever not recognised (`dictTree`), its levels would come
+-- apart and this pin would show it.
+import Dict exposing (Dict)
+
+
+pub written : Dict String (List Int) → List Int × Int
+written d =
+    case Dict.get d "a" of
+        Just xs →
+            ( List.push xs 1, Dict.size d )
+
+        Nothing →
+            ( [], 0 )

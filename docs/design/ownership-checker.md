@@ -1421,6 +1421,211 @@ author must copy a list that is never shared at the same time, and why.
 the mutual pair), and change no verdict. F2 waits for the owner's decision above, then (a) and (c), the removal
 of `k`; (d) waits for its go-ahead, then (e).
 
+*Amended 2026-10-18 (issue #379, CK-256; the owner's decision): the level marker `⟨T⟩` replaces (d).* (d) cannot
+be built as written above. Folding sent `#Node.0#Node.1`, a list of the left subtree, to `#Node.1`, the root's own
+list, so a parameter's symbolic cell for a deeper level's list *was* the cell of level 0's list:
+`case t of Node l _ _ → case l of Node _ zs _ → ( List.push zs 1, l )` was accepted `param` while `l`, returned,
+holds `zs`, and its summary is `ParamHole`'s `hole`'s, which writes the root's list. No condition on the levels can
+tell the two apart once they are one cell (`tests/pending/ownership/DeeperLevel`). The fold now keeps a level it
+reached apart from the level it started at, with a step of its own:
+
+- **What `⟨T⟩` stands for.** `T` is a recursive type. A path `Q⟨T⟩r` names the places `r` of *every value of type
+  `T` at or below the position `Q`*, within the region of `T` that holds `Q` (the region ends at a field that holds
+  `T` only through a type parameter: #341's rule, *Folding never goes through a type parameter*). At or below:
+  when the value at `Q` is a `T` it is one of them; when it is not (a `List Rose`, a `Maybe Tree`, a closure) only
+  the `T`s inside it are. So `t#Node.0⟨Tree⟩#Node.1` is every list of `t`'s left subtree, its root's included, and
+  `t#Node.1` is `t`'s own list and nothing else: a path with no marker names one place at each level it writes.
+- **The fold.** A constructor step `s` of `T` added to a path that is already inside a region of `T` goes on from
+  the region's first step, under the marker: the region's first step into `T` is the step `s₀` at the position `P`,
+  and the result is `P s₀ ⟨T⟩ s`; when the region has its marker already (`… M⟨T⟩ …`), it is `M⟨T⟩ s`. So
+  `#Node.0#Node.1` is `#Node.0⟨Tree⟩#Node.1`, `#Node.0#Node.0#Node.2` is `#Node.0⟨Tree⟩#Node.2`,
+  `#Node.0⟨Tree⟩#Node.0#Node.1` is `#Node.0⟨Tree⟩#Node.1`, and `Rose`'s `#Rose.1[*]#Rose.0` is
+  `#Rose.1⟨Rose⟩#Rose.0`: the steps between the region's first step and the folded one (`[*]`, `#Just.0`, a tuple's)
+  are inside the marker. A `⟨T⟩` added inside a region folds onto it the same way (onto `P s₀ ⟨T⟩`, or onto the
+  marker already there); added anywhere else it is a step of its own, which a summary's paths and `concat` make
+  (`π1⟨Tree⟩#Node.1`: every list of the tree). The fold takes place before the cut, like F1's, and a region holds at
+  most one marker, so the paths stay finite: the level a region starts at, its first step, then one marker.
+  Different first steps are different regions, so the left and the right subtree are two places: `#Node.0⟨Tree⟩#Node.1`
+  and `#Node.2⟨Tree⟩#Node.1` do not overlap.
+- **Where a marker stands.** A marker right after a region's first step `s₀` stands at `P s₀`, whose value is a
+  `T` when `s₀`'s field is a `T` itself (`levelOf`'s `here`: `Node Tree …`'s `#Node.0`) and is not when the `T`s
+  are further down (`below`: `Rose`'s `List Rose`). Any other marker — one a summary's path begins with, one `concat`
+  puts on a path that is in no region, one the canonical form below writes — stands at a position whose value is a
+  `T`: such markers are only made there. A parameter's own root is in no region, so a path from it with no marker
+  is exact (`π1#Node.1` is the root's own list), and `P s₀⟨T⟩` with nothing after it is its own path, held exactly
+  by `P s₀` (a prefix): what is stored under the one is stored under the other, so the two are one storage (the
+  Lean oracle's reading, #386).
+- **Overlap** *(amended 2026-10-18: exact, no longer as `⋆`).* At the first index `k` where `p` has a marker
+  `⟨T⟩r` standing at `Q` and `q` has not the same marker: the two overlap when `q` ends before `k` (a prefix);
+  when `q[k]` is `⋆` or a marker of another type; when `q[k]` is a step the marker's expansion may begin with
+  (*a region step*: when the value at `Q` is a `T`, a constructor step of `T` whose field can hold a `T`; when it
+  is not, any step); and, when the value at `Q` is a `T`, when `r` overlaps `q` from `k` (the expansion that is
+  empty: `Q` itself is one of the `T`s). Otherwise they do not. Two markers of one type at one index are compared
+  on, both read as standing at a `T`, whatever their kinds: there the rule is coarser than exact, on purpose
+  (the empty expansion is let through where `below` or `⁺` would refuse it). A marker that, while it expands, meets a
+  marker of its type on the other path either goes on through all that one stands for, or ends inside it and lets
+  that one take the rest (`expand`): `⟨Tree⟩#Node.0` overlaps `#Node.0⟨Tree⟩#Node.2`, a subtree two levels down. So `#Node.1` and
+  `#Node.0⟨Tree⟩#Node.1` are two places, `#Node.0` and `#Node.0⟨Tree⟩#Node.1` are a holder
+  and what it holds; `⟨Tree⟩#Node.1` overlaps `#Node.1` (the root's list is one of every tree's lists) and every
+  path into a subtree, and for `type T = N (List Int) (List Int) T`, `⟨T⟩#N.0` does not overlap `#N.1`. Where the region's first
+  step leads to a value with fields that cannot hold `T` beside ones that can (`C (List Int × T)`'s `#C.0`), the
+  marker's position is not a `T`, and any step counts as a region step: conservative, since the path does not say
+  which component the marker went through.
+- **Holding a symbolic cell** (`covers`, `levelHolds`). `param(x, O)` holds `param(x, I)` exactly when `O` is a
+  prefix of `I`, as before: `param(t, #Node.0)` holds `param(t, #Node.0⟨Tree⟩#Node.1)`. It holds it
+  *approximately* (a place that stands for several, `approx_place`, cause `element`), with `⋆` between, when at the
+  first index `k` where they differ:
+  - `I` has a marker standing at `Q`, and `O[k]` is a region step of it (`O`'s value is below `Q`, inside the
+    region, and may hold some of the `T`s), or the value at `Q` is a `T` and `O` holds `I`'s rest after the marker
+    from `k` (`Q` itself is one of them);
+  - `O` has a marker standing at `Q`, and `I[k]` is a region step of it, or the value at `Q` is a `T` and `O`'s
+    rest after the marker holds `I` from `k`;
+  - both passed the same marker just before `k`, and `O[k]` is a constructor step of `T` whose field can hold a
+    `T` (`#Node.0⟨Tree⟩#Node.0`, the left subtrees below, holds some of `#Node.0⟨Tree⟩#Node.1`).
+  Otherwise it does not hold it. An exact prefix stays exact through a marker both share: `P⟨T⟩r₁` holds
+  `P⟨T⟩r₁r₂` with no approximation of its own, on purpose; that each stands for several places is said where it
+  matters, by `representative()` and the entries' own `approx`, not by the holding.
+- **The canonical form.** A fact written at `P r`, where `P` is a position whose value is a `T` and is in no region
+  of `T`, and at `P s⟨T⟩r` for *every* region step `s` of `T` at `P`, is one fact about every `T` at or below `P`,
+  `P` included, and is written once as `P⟨T⟩r`. A fact written at every region but not at the root (or a different
+  one there) is one fact about every `T` strictly below `P`, and is written once as `P⟨T⟩⁺r`: a marker that stands
+  at a `T` and whose expansion is never empty (its kind `under`; *Overlap* and *Holding* read it as a marker at a
+  `T` with the empty expansion left out). The region steps counted are those of `T` as it is written: a field
+  holds a `T` through constructors, records, tuples and `List`, not through a function's captures, a `foreign
+  type`'s arguments or a schema's slots, which a path reaches only by a cast; a canonical place still stands for
+  those too, which is sound, and the cross-check below shows no verdict changes for it. By the overlap and
+  holding rules, a canonical place and the set it replaces stand for the same places otherwise. A summary's
+  read-off writes it (§16.3) for the facts it states per path — a use's bits, a result path's entries, a result
+  entry's provenance among those at one result path, a supply's entries — and drops a fact at one of a canonical
+  place's places when the canonical fact already states it (a use's bits are within its bits; a result's or a
+  supply's entry is one of its entries), which is what a fixpoint's join of an expanded round with a canonical one
+  leaves. It is applied innermost region first and again until nothing changes. Measured: core `Schema`'s summaries
+  wrote 2 393 of their 4 238 use entries under a marker, 443 facts each repeated over the 4 regions of `Made` or
+  the 7 of `Node`; with the canonical form its summaries are 128 KB of text (293 KB expanded, 70 KB on `master`,
+  before the marker). Under `-Downership-full-cross-check`, every report is computed again with the expanded form,
+  and each site's verdict — the worst of its lines, accepted, pending or rejected, since one canonical write may be
+  several expanded lines — must be the same, or the build panics. A rejection's cause may differ: the expanded
+  form sees two places where the canonical one sees one written under a marker (`disjoint` against `exclusive`).
+  The summaries are compared too, declaration by declaration, by text since the two runs number their paths
+  apart: each canonical entry is written out as its member places (and as itself, a marker a projection made
+  being one the expanded run writes as it is), and every use bit, result entry and supply the expanded run states
+  must be among them, and a supply owned in the canonical run must be owned in the expanded one. The same build
+  also checks the matcher against concrete places: for each recursive type with no parameter in a reported module,
+  every concrete path to seven steps is folded and every pair compared with the concrete relation (a prefix either
+  way overlaps; a prefix holds), and so is every place of `⟨T⟩r` and `⟨T⟩⁺r`, written out (`checkMatch`;
+  `ownership/MarkerTypes` holds `Tree`, `Rose`, `N (List Int) (List Int) N` and `C (List Int × C)`). It found that a
+  marker meeting a marker of its type at another index must be able to go on through all the second stands for
+  (`ownership/MarkerAcross`, a write accepted while a deeper subtree that holds its lists was returned).
+- **What a call instantiates.** A callee's cell `πᵢ.p` is the caller's argument projected along `p` (§16.4): the
+  entries whose paths overlap `p` under the rule above, each at the rest of its path or kept whole, approximately,
+  under a marker (*Projection*, below). The Lean oracle (#386) matches every entry whose path conflicts with `p`,
+  which is coarser and sound; the bridge (#386) compares the two.
+- **Projection.** Along a step `s`, an entry whose first step is `s` is kept at the rest of its path, as before. An
+  entry whose first step is a marker `⟨T⟩r` stands for values at or below the root: it is kept whole,
+  approximately, when the field `s` reaches may hold a `T` (a constructor step of `T` whose field can hold `T`, or
+  any step that is not a constructor step of `T`); and when `r` begins with `s`, it is also kept at the rest of `r`,
+  approximately (the value at the root is one of the `T`s). Every other entry is dropped. In particular an entry
+  whose first step is *another* constructor step of `T` is dropped: it is another field of the same level, and #341's
+  rule, which kept those entries because the levels shared their paths, is withdrawn with the reason it had. A
+  symbolic cell is projected to the cell at the folded path (`param(t, #Node.0)` along `#Node.1` is
+  `param(t, #Node.0⟨Tree⟩#Node.1)`).
+- **With `[*]` and `◇`.** `⟨T⟩` is the region's marker and nothing else: a `[*]` or `◇` step after it is a step of
+  the places it names (`#Rose.1⟨Rose⟩#Rose.1[*]`, the kids lists' elements, deeper than the root), and one before it
+  is part of where the region is (`π1[*]#Node.1` stays exact, an element's own list). A function field is a level
+  below (`levelOf`'s `below`), so a closure that captures a `T` starts no region of its own: F1 folds its `◇`, and a
+  `T` reached under it folds as any other. The two folds are independent: a path holds at most one `◇` and one marker
+  per region of a recursive type.
+- **Representatives.** A path names a place that stands for several when it holds `[*]` or a marker; every other
+  path is one place, a level's own field included (`#Node.1` is exact now, where #341 took every step into a recursive
+  type for a representative).
+- **Exclusivity, and what it does not say.** A value's deep condition (§18.2) has `sep` between the cells at every
+  two of its paths that neither holds nor overlaps the other, so `excl π1` of a tree now includes
+  `sep π1#Node.1 π1#Node.0⟨Tree⟩#Node.1`: level 0 shares no list with the left subtree. That is what (d)'s `lvl`
+  was to state between levels, and it is checked where `excl` is, by the call-site demand that already compares an
+  argument's other paths (`disjoint`): `ParamHole.shared`'s tree holds `xs` at `#Node.1` and at
+  `#Node.0⟨Tree⟩#Node.1`, so `hole`'s write of `π1#Node.1` is refused there, and `hole` itself stays accepted. **What
+  no condition states is sharing among the levels inside one region.** A marked cell stands for every list of its
+  region, as `π1[*]` stands for every element; a write of one of them while another is held is a write of the one
+  cell, refused approximately (`element`), however distinct the two are: in
+  `case t of Node (Node _ a (Node _ b _)) _ _ → ( List.push a 1, b )`, `a` and `b` are both
+  `t#Node.0⟨Tree⟩#Node.1`. Telling those apart would need a place per level, and the levels of a recursive value are
+  unbounded, so a finite summary cannot name them; `master` refused the same programs, since all of a tree's lists
+  were one cell there. This is (e)'s limit, wider than (e) says: (e) is the case where the sharing is real. It
+  is a stated limit, not a design to come (the owner, 2026-10-18).
+- **A callee's places that are one cell at its caller** *(amended 2026-10-19, the review of #393)*. A callee takes
+  two of its parameter's places that neither holds nor overlaps the other for two places, and at its caller they
+  may be one cell: `two t` pushes `t#Node.1` and `t#Node.0⟨Tree⟩#Node.1`, and a caller that hands it a subtree
+  `l = param(t, #Node.0)` reads both as `param(t, #Node.0⟨Tree⟩#Node.1)`, every list of that subtree. So a
+  call-site demand on the written place `q` also compares, with the cell it writes, the argument's cells at each of
+  the callee's other places of that argument (`call_uses`). A cell that is not the written one is another holder,
+  approximately, like the argument's other paths. The written cell itself, when it is a symbolic cell that stands
+  for several places (under `[*]` or a marker), is two of them only if the argument is exclusive at the place
+  before the step that makes it stand for several, and the demand relies on that (§18.4): `viaLeft` records
+  `xreq excl π1#Node.0`, and a caller whose subtree holds one list at two levels is refused there. Any other cell
+  there is one list at two places. core `Dict`'s tree, under its exemption, is not compared so.
+  The argument's *other paths* (§16.4 item 3, `disjoint`) are operands only where the callee uses them: a path
+  under none of its uses, or under one that only reads a place above it (a read of a node is not a read of what
+  is below it), it never reaches, so a list there is not another operand. Before the marker every level's list was
+  at one path, and a tree that shares its root's list with an unused subtree was accepted by not seeing it; it
+  stays accepted, by seeing that the callee does not look (the bridge's `run` family).
+- **A write under a marker.** A callee that writes a place under a marker writes the lists of every place the
+  marker stands for, one by one, and they are distinct lists only if the argument is exclusive where the marker's
+  region begins: the call-site demand relies on the argument's deep condition at the path before the marker. A
+  recursive update of every level of a tree (`incAll`) is refused on a tree that holds one list at two levels.
+- **What a fold hides.** A value placed one step down (a constructor's argument) may have two of its places fold
+  onto one marked path, and no later deep condition can see them apart. So the fold lowers their cells'
+  conditions as the value's deep condition would have said of the pair: `sep` of two cells, and for one cell at
+  both, `excl` of the place before it stands for several when it is a symbolic cell that does, else the pair's
+  `sepCells` (`shared` for one list at two places, exactly). A pair the deep condition does not compare
+  (§16.7, *Pairs a deep condition compares*) is left alone. `ownership/LevelPlacesCall`, `LevelPlacesKinds` and
+  `LevelRecursiveUpdates` pin the three: each refused call was accepted before.
+- **Pairs a deep condition compares.** A deep condition (§18.2) and a spine condition (§20.4) do not separate
+  two entries of a value when one path is a prefix of the other, since that is a container and what it holds.
+  That holds for a prefix step by step. A prefix only through `⋆` or a marker is a place that stands for several,
+  so the two entries are compared unless their cells are two that hold one another (`covers`). One cell at
+  both is two places that share it, unless one of the two entries is approximate: a projection keeps a marked
+  entry whole and also at the rest of its path, and those two are one entry, not two places.
+  (`ownership/EnvPrefix` pins the shape that made F1's `◇q` unsound: one list in a closure's environment and
+  in the closure that environment holds.)
+
+*Scope (the owner, 2026-10-18).* Two folds keep their form from before this amendment:
+
+- **Folds of a type that does not reach itself are unchanged from `master`.** A path into such a type twice was
+  cast through `Js.Value` and read again, and it folds onto where it first entered the type, with no marker;
+  F2, the cast marker with the full type and a check made to scale (the owner's option iii), is where those
+  folds change. Markers there were measured: `Schema`'s `ctorArgs`, `fieldsFrom` and `printWith` went past
+  `value-cells`, F2's finding again, so this amendment does not touch them.
+- **core `Dict`'s tree keeps the merged fold, until #294** (the dictionary on a `Map`, which removes the tree),
+  and with it #341's projection rule (a step into the tree keeps the entries of its other fields, at their own
+  path or at `⋆`), and its paths are representatives (`representative()` is true for every path through the
+  tree, so a demand or a holder there stays approximate). Why #379's hole cannot occur there: the hole is a
+  write of a list at one exact level, which the fold merged with another, while a holder of the other level is
+  read afterwards. In `core/Dict` no function writes a key or a value (they are `k` and `v`, which no writer
+  applies to); a value is written only by a callback the module hands it to, as a call-site demand on the
+  dictionary at `#Dict.0#Node.2`, the one place of every value, which a caller outside the module cannot split,
+  since it cannot name a level. Inside, what keeps a write from being seen at another position is §20.9's
+  one-position obligation — no function of `core/Dict` places one value at two positions of a tree — read for
+  callbacks: **no function of `core/Dict` hands a callback, or writes, a value that a position it reads afterwards
+  holds.** A traversal meets it because a position read later is another position. The audit, function by
+  function:
+  - `mapTree` binds one node's `value`, reads `left` before `func` and `right` after, neither of which holds it;
+    `foldlTree`/`foldrTree` hand `value` to `func` and then read the other subtree, which does not hold it.
+  - `filter` and `partition` go through `foldlTree`: `isGood key value`, then `insert dict key value`. The value
+    is then in the input tree and in the result, which is a result's provenance like any other (`res` names `π1`'s
+    values), checked at the caller, and no position the traversal reads later holds it.
+  - `union` is `foldl t1` inserting into `t2`, `diff` is `foldl t2` removing from `t1` (no value reaches a
+    callback), and `merge` makes `toList leftDict`, then `foldl rightDict` and `List.foldl` hand `lValue`, `rValue`
+    and the leftovers to the caller's callbacks, each once, from a list position or a tree position no later read
+    holds: the callbacks' writes are supplies of `π1`'s and `π2`'s values, call-site demands at the caller.
+  - `focus` is the asserted destructive read of §20.8.
+
+  The exemption protects precision as much as safety: under the marker, the tree's levels came apart and
+  `browser-direct`'s `Tea.want` was refused, approximately, because rebalancing moves a value from one region to
+  another, so `Dict.insert`'s result held one input cell at two result paths. #294 is its only exit, and its work
+  list includes: delete `dictTree`, the `unmarked` branch of `Walker.proj` and the other-places exception in
+  `callSiteDemandDeep`, and remove the obligation's clause above. `ownership/DictValueWritten` pins the
+  exemption: a dictionary's value written while the dictionary is still read is refused.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
@@ -2021,7 +2226,8 @@ What the checker takes on trust, each item privileged code whose error is a corr
 - `traverseAt`'s obligation, met by `foldlFrom`, `foldrFrom`, `mapHelp`, `indexedMapHelp` and `filterMapHelp`,
   the only functions that call it, core-private and audited (§19 item 3);
 - `Dict.focus`'s destructive read, and `core/Dict`'s obligation that no function places one value at two
-  positions of a tree (§20.8);
+  positions of a tree (§20.8); *amended 2026-10-18 (§16.7's level marker, until #294):* read for callbacks:
+  no function of `core/Dict` hands a callback, or writes, a value that a position it reads afterwards holds;
 - the entry rows (§20.2): the template rows are what browser-tea and browser do today; the direct row is what
   browser-direct must meet — P1's hand-over, and P2–P4 and P7, which the checker does not see — before slice 5
   writes a list in place (thesis §7, *The obligation a future slice must meet*).

@@ -1,0 +1,94 @@
+-- ownership: a callee's two places one cell at its caller, as in
+-- `LevelPlacesCall`, when the callee writes one place and returns the other
+-- (`keep`), through a list of children (`Rose`) and through a `Maybe` (`A`):
+-- each call relies on its argument being exclusive, and each demo, whose
+-- argument holds one list at two levels, is refused.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+keep : Tree → List Int × List Int
+keep t =
+    case t of
+        Node (Node _ a _) xs _ →
+            ( List.push xs 1, a )
+
+        _ →
+            ( [], [] )
+
+
+pub viaLeftKeep : Tree → List Int × List Int
+viaLeftKeep t =
+    case t of
+        Node l _ _ →
+            keep l
+
+        Leaf →
+            ( [], [] )
+
+
+pub demoKeep : List Int × List Int
+demoKeep =
+    xs = [ 0 ]
+    viaLeftKeep (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+twoR : Rose → List Int × List Int
+twoR r =
+    case r of
+        Rose xs [ Rose ys _ ] →
+            ( List.push xs 1, List.push ys 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub viaKid : Rose → List Int × List Int
+viaKid r =
+    case r of
+        Rose _ [ k ] →
+            twoR k
+
+        _ →
+            ( [], [] )
+
+
+pub demoRose : List Int × List Int
+demoRose =
+    xs = [ 0 ]
+    viaKid (Rose [] [ Rose xs [ Rose xs [] ] ])
+
+
+type A
+    = A (List Int) (Maybe A)
+
+
+twoA : A → List Int × List Int
+twoA a =
+    case a of
+        A xs (Just (A ys _)) →
+            ( List.push xs 1, List.push ys 2 )
+
+        _ →
+            ( [], [] )
+
+
+pub viaNext : A → List Int × List Int
+viaNext a =
+    case a of
+        A _ (Just n) →
+            twoA n
+
+        _ →
+            ( [], [] )
+
+
+pub demoA : List Int × List Int
+demoA =
+    xs = [ 0 ]
+    viaNext (A [] (Just (A xs (Just (A xs Nothing)))))

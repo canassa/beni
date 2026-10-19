@@ -1,0 +1,13 @@
+module UnusedSubtree
+  17:15 List.push xs: accepted param
+  27:15 List.push xs: rejected alias: t#Node.1 holds it and is read at 27:13
+  36:5 call UnusedSubtree.f <Node …>#Node.1: accepted fresh (UnusedSubtree.f writes π1#Node.1)
+  42:5 call UnusedSubtree.keepAll <Node …>#Node.1: rejected disjoint: another operand of the same operation reaches it (UnusedSubtree.keepAll writes π1#Node.1)
+  summary f: π1 R, π1#Node.0 RA, π1#Node.1 RAW, π1#Node.1[*] A; res .0 fresh1 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1#Node.0
+  summary keepAll: π1 RA, π1#Node.1 RAW, π1#Node.1[*] A; res .0 fresh1 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1
+  summary run: res .0 ~fresh1
+  summary runAll: res .0 ~fresh1 ~fresh2, .1#Node.1 fresh1, .1#Node.2⟨Tree⟩#Node.1 fresh1
+  demands 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 1
+cause alias 1

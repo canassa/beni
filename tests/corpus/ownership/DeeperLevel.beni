@@ -1,0 +1,48 @@
+-- ownership: a level a fold reaches is not the root's (CK-256, issue #379).
+-- Folding sent `#Node.0#Node.1` to `#Node.1`, so the symbolic cell of level
+-- 1's list, reached from `t` through `l`, was the cell of the root's own
+-- list. `inner` pushes level 1's list and returns `l`, which holds it, with
+-- no sharing in the input at all, and both were accepted `param`. `pick`
+-- hands the pair back through a call, and `outer` pushes the list while it
+-- holds `l`. With the level marker of ownership-checker.md §16.7 the list is
+-- `l⟨Tree⟩#Node.1`, which `l` holds, and both pushes are rejected.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub inner : Tree → List Int × Tree
+inner t =
+    case t of
+        Node l _ _ →
+            case l of
+                Node _ zs _ →
+                    ( List.push zs 1, l )
+
+                Leaf →
+                    ( [], Leaf )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pick : Tree → List Int × Tree
+pick t =
+    case t of
+        Node l _ _ →
+            case l of
+                Node _ zs _ →
+                    ( zs, l )
+
+                Leaf →
+                    ( [], Leaf )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub outer : Tree → List Int × Tree
+outer s =
+    case pick s of
+        ( zs, l ) →
+            ( List.push zs 1, l )

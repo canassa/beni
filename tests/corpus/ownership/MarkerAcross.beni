@@ -1,0 +1,36 @@
+-- ownership: a marker against a marker of the same type at another index
+-- (ownership-checker.md §16.7, *Overlap*), which the matcher missed and the
+-- cross-check's marker check found. `incAll` writes every list of the tree,
+-- `t⟨Tree⟩#Node.1`, and `keepRight` returns `lr`, the right child of the left
+-- subtree, `t#Node.0⟨Tree⟩#Node.2`. The first marker must go on through what
+-- the second stands for: `lr`'s lists are among `t`'s, so the write is
+-- refused while `lr` is returned. It was accepted, and in place the returned
+-- subtree would see the pushes.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+pub keepRight : Tree → Tree × Tree
+keepRight t =
+    case t of
+        Node l _ _ →
+            case l of
+                Node _ _ lr →
+                    ( incAll t, lr )
+
+                Leaf →
+                    ( t, Leaf )
+
+        Leaf →
+            ( t, Leaf )

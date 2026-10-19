@@ -2,13 +2,14 @@ module FoldLevels
   31:23 List.push zs: rejected element: xs holds it and is read at 31:21 (approx)
   49:31 List.push zs: rejected element: xs holds it and is read at 49:29 (approx)
   62:21 List.push zs: accepted fresh
-  94:23 List.push xs: rejected element: l#Node.1 holds it and is read at 94:15 (approx)
-  summary sub: π1 RAw, π1[*] A; res .0 fresh2 ~fresh1 ~π1, .0[*] ~π1[*], .1 π1
-  summary rose: π1 RAw; res .0 fresh2, .0[*]⋆ ~fresh1{excl π1} ~π1, .0⋆ ~fresh1{excl π1} ~π1, .1 π1
+  94:23 List.push xs: rejected call: l⟨Tree⟩#Node.1 may hold it through the call at 91:9, and is read at 94:15 (approx)
+  summary sub: π1 RAw, π1[*] A; res .0 fresh1 ~π1, .0[*] ~π1[*], .1 π1
+  summary rose: π1 RAw, π1[*] A; res .0 fresh2 ~π1, .0[*] ~π1[*], .0[*]⟨Rose⟩#Rose.0 ~π1, .0[*]⟨Rose⟩#Rose.1 ~fresh1, .0⟨Rose⟩#Rose.0 ~π1, .0⟨Rose⟩#Rose.1 ~fresh1, .1 π1
   summary fresh: res fresh2 ~fresh1
-  summary build: res #Node.1 fresh1
-  summary size: π1 R, π1#Node.0 R, π1#Node.1 R, π1#Node.2 R
-  summary pushRoot: res .0#Node.1 fresh1, .0#Node.1[*] ~fresh2
+  summary build: res #Node.0⟨Tree⟩#Node.1 fresh1{shared}, #Node.1 fresh1 fresh2, #Node.2⟨Tree⟩#Node.1 fresh3{shared}
+  summary size: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
+  summary pushRoot: res .0#Node.0⟨Tree⟩#Node.1 fresh1{shared}, .0#Node.1[*] ~fresh2{shared}, .0#Node.2⟨Tree⟩#Node.1 fresh3{shared}
   demands 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-cause element 3
+cause element 2
+cause call 1

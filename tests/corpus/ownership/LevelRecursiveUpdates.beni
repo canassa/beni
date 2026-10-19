@@ -1,0 +1,64 @@
+-- ownership: recursive updates of every list of a tree (`incAll`, `incAll2`)
+-- or of its left spine (`incLeft`) write the lists of every level of a
+-- subtree, which are one cell there: each call relies on its argument being
+-- exclusive. `c1` to `c4` hand them a tree that holds one list at two levels
+-- and are refused; `c5`'s lists are distinct and it is accepted.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub incAll : Tree → Tree
+incAll t =
+    case t of
+        Node l xs r →
+            Node (incAll l) (List.push xs 1) (incAll r)
+
+        Leaf →
+            Leaf
+
+
+pub incAll2 : Tree → Tree
+incAll2 t =
+    case t of
+        Node l xs r →
+            ys = List.push xs 1
+            Node (incAll2 l) ys (incAll2 r)
+
+        Leaf →
+            Leaf
+
+
+pub incLeft : Tree → Tree
+incLeft t =
+    case t of
+        Node l xs r →
+            ys = List.push xs 1
+            Node (incLeft l) ys r
+
+        Leaf →
+            Leaf
+
+
+pub c1 : List Int → Tree
+c1 xs = incAll2 (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub c2 : List Int → Tree
+c2 xs = incAll2 (Node (Node Leaf xs Leaf) xs Leaf)
+
+
+pub c3 : List Int → Tree
+c3 xs = incLeft (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub c4 : Tree
+c4 =
+    xs = [ 1 ]
+    incLeft (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)
+
+
+pub c5 : Tree
+c5 =
+    xs = [ 1 ]
+    incLeft (Node (Node (Node Leaf [ 5 ] Leaf) [ 6 ] Leaf) [] Leaf)

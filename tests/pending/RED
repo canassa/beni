@@ -124,14 +124,6 @@ tests/pending/emit/release/inline/ResearchS3 exit=0 js-differs
 tests/pending/emit/release/inline/Texts exit=0 js-differs
 tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
 
-# CK-254 (2026-10-18, issue #286): a parameter's folded levels are not checked
-# (`paramHole`, ownership-checker.md §16.7). Red until decision (d), `lvl`.
-tests/pending/ownership/ParamHole.beni exit=0 ownership-differs
-
-# CK-256 (2026-10-18, issue #379): a level reached through a fold is taken for
-# the root's level (ownership-checker.md §16.7). Red until the fold keeps them apart.
-tests/pending/ownership/DeeperLevel.beni exit=0 ownership-differs
-
 # CK-260, CK-261, CK-262 (2026-10-19, issue #315): the three record demands of
 # #315 checked at the entry (ownership-checker.md §31.6, §31.8). Red until R2c
 # reads a record update's W{F} off a summary.
