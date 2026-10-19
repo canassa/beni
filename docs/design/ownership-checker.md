@@ -1557,6 +1557,16 @@ reached apart from the level it started at, with a step of its own:
   `ownership/MarkerTypes` holds `Tree`, `Rose`, `N (List Int) (List Int) N` and `C (List Int × C)`). It found that a
   marker meeting a marker of its type at another index must be able to go on through all the second stands for
   (`ownership/MarkerAcross`, a write accepted while a deeper subtree that holds its lists was returned).
+  *Amended 2026-10-19 (issue #427).* The check had stopped compiling (a use entry's bits became `u16`), and,
+  built again, it refused `ownership/RecordTree`. Projected along a marker that may begin anywhere, every entry
+  of the root went to `⋆` (`alongMarker`), even one above every `T` below the root: a record's list field beside
+  the field that holds the `T`s. So the expanded form stated a place the canonical form does not. Only a path
+  that may hide a `T` below the root goes to `⋆`: a step into `T` (`◇` for a function type), a `⋆`, any marker
+  (whose levels may pass through a `T`), or a path at the cut. Every other path is above every `T`. Inside a
+  region, a step into `T` goes under the marker, and the marker's own rest is kept. The CI job
+  `ownership cross-check` builds with the option and runs `tests/corpus/ownership/`, and `check` needs it, so the
+  check cannot stop compiling or diverge again unseen. The local gate does not run it, since the shadow run is
+  over the budget.
 - **What a call instantiates.** A callee's cell `πᵢ.p` is the caller's argument projected along `p` (§16.4): the
   entries whose paths overlap `p` under the rule above, each at the rest of its path or kept whole, approximately,
   under a marker (*Projection*, below). The Lean oracle (#386) matches every entry whose path conflicts with `p`,

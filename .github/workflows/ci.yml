@@ -216,6 +216,87 @@ jobs:
             ~/.cache/zig
           key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
+  # The ownership checker's two forms against each other on its corpus
+  # (ownership-checker.md §16.7, *The canonical form*): a beni built with
+  # `-Downership-full-cross-check` runs every case a second time in the
+  # expanded form and panics where a verdict or a summary fact of the two
+  # disagrees. The local gate does not run it (the shadow run is over the
+  # budget), so this job is where the check is held: `check` needs it, so
+  # a check that stops compiling, or a disagreement, blocks a merge (#427).
+  # Its Zig caches are its own (`zig-crosscheck-`), first filled from the
+  # `tests` job's.
+  crosscheck:
+    name: ownership cross-check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+
+      # The `tests` job saves the store; this job only restores it.
+      - name: restore the Nix store
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: dev shell
+        run: nix develop --command true
+
+      # As in `tests`: the global cache stays `~/.cache/zig`.
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+
+      - name: restore the Zig caches
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-crosscheck-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: |
+            zig-crosscheck-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+            zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+
+      # As in `tests`: a master run that restores more than 3 GiB starts
+      # from nothing.
+      - name: bound the Zig caches
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          du -sh .zig-cache ~/.cache/zig 2>/dev/null || true
+          if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
+            echo "Zig caches over 3 GiB: removed"
+            rm -rf .zig-cache ~/.cache/zig
+          fi
+
+      - name: zig build test-blackbox -Downership-full-cross-check -Dcorpus=ownership
+        run: nix develop --command zig build test-blackbox -Downership-full-cross-check -Dtest-budget=0 -Dcorpus=ownership
+
+      - name: save the Zig caches
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-crosscheck-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
   # The Lean ownership proofs (proofs/ownership/README.md):
   # `scripts/audit.sh`, the independent audit, then `lake build`, the
   # kernel check and the in-build axiom audit. `check` needs this job, so
@@ -394,7 +475,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests, playground, lean]
+    needs: [tests, playground, crosscheck, lean]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
