@@ -170,6 +170,10 @@ pub const Input = struct {
     /// With `in_place` true for every platform module, as that flag makes
     /// it, `browser-tea`'s `Tea.*` get the direct row already.
     entry_everywhere: bool = false,
+    /// `--ownership-records-lost` (§31.4 item 6, hidden and test-only): every
+    /// cell's record condition fails approximately, which no list's verdict
+    /// may notice.
+    records_lost: bool = false,
     /// §28.3: a checked module is read by another module through its block,
     /// written and read back, as an installed one is — so that the verdicts
     /// are the ones a build that installed it would give, and the block's
@@ -7357,6 +7361,7 @@ const Walker = struct {
     /// an arrival is `rexcl` of itself.
     fn rcellCond(w: *Walker, c_in: u32) Allocator.Error!u32 {
         const c = w.rbase(c_in);
+        if (w.o.in.records_lost) return cond_lost;
         if (w.cell_rcond.items[c] != none) return w.cell_rcond.items[c];
         const x = w.cells.items[c];
         if (!try w.mayHoldRecord(c)) return cond_yes;

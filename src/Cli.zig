@@ -181,6 +181,12 @@ pub const Common = struct {
     /// same rows. Absent from `usage`, for `--allow-debug`'s reason. It is
     /// deleted when enforcement becomes the language's (§30.7, O4).
     ownership_everywhere: bool = false,
+    /// `--ownership-records-lost` — **hidden** and test-only
+    /// (`ownership-checker.md` §31.4 item 6): every record condition fails
+    /// approximately, so that a test can show no list's verdict reads one —
+    /// its list lines byte for byte those of the ordinary run. On `Common`
+    /// for `--ownership-everywhere`'s reason; absent from `usage`.
+    ownership_records_lost: bool = false,
 };
 
 /// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
@@ -638,6 +644,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--ownership-everywhere")) {
         if (value != null) return noValue(name);
         common.ownership_everywhere = true;
+        return null;
+    }
+    // Hidden and test-only (see `Common.ownership_records_lost`).
+    if (std.mem.eql(u8, name, "--ownership-records-lost")) {
+        if (value != null) return noValue(name);
+        common.ownership_records_lost = true;
         return null;
     }
     if (std.mem.eql(u8, name, "--core-root")) {
