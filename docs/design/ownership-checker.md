@@ -3837,6 +3837,27 @@ of the module's source and its imports' blocks; the determinism test runs `check
 - **The checked core**: its refusal is a core or platform module with an error, which the maker already refuses
   with the diagnostics; core and `browser-direct`'s chain have no rejected line to refuse today.
 
+*Amended 2026-10-19 (issue #423, the retirement of `browser-direct`):* the harness no longer names
+`browser-direct`. **Whether a build enforces is the chain's**: its first `"lists"` down the chain (§28.2), read
+from the shipped manifests under `platforms/` or a test platform's own, or the hidden `--ownership-everywhere`
+(§30.7). The whole-program lowerings, `browser-direct` and `browser-inline`, are the platforms whose chains say
+`"in-place"`. Hence:
+
+- **The dump against the build** holds for every `.platform` token whose chain enforces. A token
+  `<platform>+everywhere` is that platform with `--ownership-everywhere`, its golden
+  `X.<platform>+everywhere.ownership`; `browser-tea+everywhere` is the enforcing build of a program written for
+  `browser-tea` (`ownership/LaterUseEnforced`).
+- **`build/bad/everywhere/`** projects are built for `browser-tea` with `--ownership-everywhere`: the checker's
+  refusals, apart from any lowering's. **`check/bad/inline/`** fixtures are checked with
+  `--platform=browser-inline`, as `check/bad/direct/`'s are with `browser-direct`.
+- **The `browser-tea` cross-build** of the first bullet is made for every enforcing `build/bad/` project whose
+  golden holds only the codes of §28.6: under `build/bad/direct/`, `build/bad/inline/` or a project's own
+  `platform/` on an in-place chain, and under `build/bad/everywhere/`, where it is the same build without the
+  flag.
+- **The release refusal**: every enforcing `build/bad/` project is built again with `--release --allow-debug`
+  and must be refused with the same diagnostics and nothing written. `--allow-debug` is there because `Debug`'s
+  own refusal is `build/bad-release/`'s claim.
+
 ### 28.11 Open questions
 
 1. **The pass on the DAG, and the block in the interface.** §16.9 and §16.10 put the summaries in the interface

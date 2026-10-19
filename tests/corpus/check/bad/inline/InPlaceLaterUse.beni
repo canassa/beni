@@ -1,0 +1,8 @@
+-- `list_still_used` on `browser-inline`, whose chain says `"lists":
+-- "in-place"` (`ownership-checker.md` §28.2): `check` runs the ownership
+-- checker there, and `List.push xs n` followed by a read of `xs` is an
+-- error. On a platform that edits nothing in place the module checks clean.
+grownBy : List Int, Int → Int
+grownBy xs n =
+    ys = List.push xs n
+    List.length ys + List.length xs
