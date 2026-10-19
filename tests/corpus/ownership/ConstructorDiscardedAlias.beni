@@ -1,0 +1,25 @@
+-- #456: a constructor's operands coexist there, but an unused subtree may
+-- be discarded before its alias matters. Sharing facts cannot permanently
+-- poison the list cell. `take` returns only the root's list and the empty
+-- left subtree; the right subtree's alias is dead. The inner lists are
+-- still exclusive, so the traversal in `afterDiscard` is accepted.
+type Tree
+    = Leaf
+    | Node Tree (List (List Int)) Tree
+
+
+take : Tree → List (List Int) × Tree
+take tree =
+    case tree of
+        Node left xs _ →
+            ( List.push xs [], left )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub afterDiscard : ⊤ → List (List Int)
+afterDiscard ⊤ =
+    xs = [ [ 1 ] ]
+    ( next, _ ) = take (Node Leaf xs (Node Leaf xs Leaf))
+    List.map next λinner → List.push inner 2

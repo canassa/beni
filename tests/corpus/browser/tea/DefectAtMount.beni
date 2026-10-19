@@ -1,0 +1,28 @@
+-- A mount that cannot happen stops the page as a defect, on both platforms
+-- (docs/design/browser-direct.md §8.2, §9.3): `run` mounts every program
+-- inside the dispatch guard, so the first program renders, the second's
+-- missing element is thrown before it renders anything, and the third is
+-- never mounted. The development build shows the crash screen with the
+-- error the host reported; the release build adds nothing
+-- (`DefectAtMount.release-expected`), and on `browser-direct` its error
+-- says the fault in a few words, where `browser-tea`'s keeps the prose
+-- (`DefectAtMount.tea-release-expected`; browser-direct.md §8.4, as amended
+-- for the lean slice).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+page : String → Html {}
+page _ = <p>first</p>
+
+
+main : Tea.Program
+main =
+    Browser.programs
+        [ Tea.sandbox { init = λ⊤ → "a", update = λ_ m → m, view = page }
+        , Browser.mountAt
+            (Tea.sandbox { init = λ⊤ → "b", update = λ_ m → m, view = page })
+            "nowhere"
+        , Tea.sandbox { init = λ⊤ → "c", update = λ_ m → m, view = page }
+        ]

@@ -1,0 +1,72 @@
+-- load
+<body>
+  <main>
+    <input id="in" .value="">
+    <p id="text">""</p>
+    <p id="clicks" class="few">"0"</p>
+    <button id="click">"click"</button>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="sub">"0"</p>
+  </main>
+</body>
+-- input #in "hello"
+<body>
+  <main>
+    <input id="in" .value="hello">
+    <p id="text">"hello"</p>
+    <p id="clicks" class="few">"0"</p>
+    <button id="click">"click"</button>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="sub">"0"</p>
+  </main>
+</body>
+-- click #click
+<body>
+  <main>
+    <input id="in" .value="hello">
+    <p id="text">"hello"</p>
+    <p id="clicks" class="few">"1"</p>
+    <button id="click">"click"</button>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="sub">"0"</p>
+  </main>
+</body>
+-- click #click
+<body>
+  <main>
+    <input id="in" .value="hello">
+    <p id="text">"hello"</p>
+    <p id="clicks" class="many">"2"</p>
+    <button id="click">"click"</button>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="sub">"0"</p>
+  </main>
+</body>
+-- click #a
+<body>
+  <main>
+    <input id="in" .value="hello">
+    <p id="text">"hello"</p>
+    <p id="clicks" class="many">"2"</p>
+    <button id="click">"click"</button>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="sub">"1"</p>
+  </main>
+</body>
+-- click #b
+<body>
+  <main>
+    <input id="in" .value="hello">
+    <p id="text">"hello"</p>
+    <p id="clicks" class="many">"2"</p>
+    <button id="click">"click"</button>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <p id="sub">"7"</p>
+  </main>
+</body>

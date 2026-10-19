@@ -1,0 +1,48 @@
+-- A producer owns keyed and positional lists. Its row bodies and nested
+-- helpers retain the same parameter-path selection as markup in Main.
+import Helpers
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+    prefix : String
+
+
+type Msg
+    = Edit
+    | Swap
+    | Prefix
+    | Quiet
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Edit →
+            { model | rows = List.update model.rows 0 λrow → { row | label = row.label ++ "!" } }
+        Swap →
+            { model | rows = List.swap model.rows 0 1 }
+        Prefix →
+            { model | prefix = model.prefix ++ "+" }
+        Quiet →
+            model
+
+
+view : Model → Html Msg
+view model = Helpers.page Edit Swap Prefix Quiet model.rows model.prefix
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = [ { id = 1, label = "a" }, { id = 2, label = "b" } ], prefix = ">" }
+        , update = update
+        , view = view
+        }

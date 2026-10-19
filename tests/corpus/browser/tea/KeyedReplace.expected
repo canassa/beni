@@ -1,0 +1,421 @@
+-- load
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #only>li:nth-child(1)>input "1"
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="1">
+        "a"
+      </li>
+      <li>
+        <input .value="">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #only>li:nth-child(2)>input "2"
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="1">
+        "a"
+      </li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #only>li:nth-child(3)>input "3"
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="1">
+        "a"
+      </li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="3">
+        "c"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #framed>li:nth-child(3)>input "2"
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="1">
+        "a"
+      </li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="3">
+        "c"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- focus #only>li:nth-child(2)>input
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="1">
+        "a"
+      </li>
+      <li>
+        <input .value="2" :focus>
+        "b"
+      </li>
+      <li>
+        <input .value="3">
+        "c"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #ends
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="3">
+        "c"
+      </li>
+      <li>
+        <input .value="2" :focus>
+        "b"
+      </li>
+      <li>
+        <input .value="1">
+        "a"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "c"
+      </li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "a"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #promote
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="2" :focus>
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "r10"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="2">
+        "b"
+      </li>
+      <li>
+        <input .value="">
+        "r10"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #all
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="">
+        "r11"
+      </li>
+      <li>
+        <input .value="">
+        "r12"
+      </li>
+      <li>
+        <input .value="">
+        "r13"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "r11"
+      </li>
+      <li>
+        <input .value="">
+        "r12"
+      </li>
+      <li>
+        <input .value="">
+        "r13"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- input #only>li:nth-child(2)>input "kept"
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="">
+        "r11"
+      </li>
+      <li>
+        <input .value="kept">
+        "r12"
+      </li>
+      <li>
+        <input .value="">
+        "r13"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "r11"
+      </li>
+      <li>
+        <input .value="">
+        "r12"
+      </li>
+      <li>
+        <input .value="">
+        "r13"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>
+-- click #keep
+<body>
+  <main>
+    <button id="ends">"ends"</button>
+    <button id="promote">"promote"</button>
+    <button id="all">"all"</button>
+    <button id="keep">"keep"</button>
+    <ul id="only">
+      <li>
+        <input .value="">
+        "r14"
+      </li>
+      <li>
+        <input .value="kept">
+        "r12"
+      </li>
+      <li>
+        <input .value="">
+        "r15"
+      </li>
+    </ul>
+    <ol id="framed">
+      <li>"first"</li>
+      <li>
+        <input .value="">
+        "r14"
+      </li>
+      <li>
+        <input .value="">
+        "r12"
+      </li>
+      <li>
+        <input .value="">
+        "r15"
+      </li>
+      <li>"last"</li>
+    </ol>
+  </main>
+</body>

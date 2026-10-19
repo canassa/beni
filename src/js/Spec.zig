@@ -8191,8 +8191,10 @@ const Pts = struct {
     const NodeKey = struct { module: u32, node: u32 };
     const elem_prop: u32 = std.math.maxInt(u32) - 1;
     /// A var holding more sites than this is `top`, its sites escaped: the
-    /// sets stay small and the analysis linear in the program.
-    const max_sites = 48;
+    /// sets stay small and the analysis linear in the program. An interim
+    /// value (#442 tracks removing the cap): past it the analysis loses
+    /// precision silently, and the release optimiser keeps every field.
+    const max_sites = 1000;
     const max_pts_sweeps = 64;
 
     /// `prim` is a primitive that is neither `null` nor `undefined`; `nul`

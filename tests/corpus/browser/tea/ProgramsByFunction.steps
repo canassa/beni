@@ -1,0 +1,5 @@
+# The first program counts; the second does not move.
+click #first>section>button
+click #first>section>button
+# The second counts on its own.
+click #second>section>button

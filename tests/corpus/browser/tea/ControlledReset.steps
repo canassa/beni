@@ -1,0 +1,12 @@
+# Accepted: the model holds "xy".
+input #text "xy"
+input #plain "free"
+# The reset puts every control back to its default, the uncontrolled one
+# included, and nothing renders.
+click #reset
+# A task later the controlled ones show the model again; the uncontrolled
+# one keeps its default.
+advance 0
+# Again, and a render comes first: it reconciles them.
+click #reset
+click #tick

@@ -1,0 +1,128 @@
+-- load
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <p>
+      "before "
+      <!---->
+      <!---->
+      " after"
+    </p>
+    <p>
+      "a "
+      <!---->
+      <!---->
+      " b"
+    </p>
+    <ul>
+      <!---->
+      <li>"2"</li>
+      <!---->
+      <li>"4"</li>
+    </ul>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <p>
+      "before "
+      <b>"on"</b>
+      <!---->
+      " after"
+    </p>
+    <p>
+      "a "
+      <!---->
+      <!---->
+      " b"
+    </p>
+    <ul>
+      <!---->
+      <li>"2"</li>
+      <!---->
+      <li>"4"</li>
+    </ul>
+  </main>
+</body>
+-- click #toggle
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <p>
+      "before "
+      <!---->
+      <!---->
+      " after"
+    </p>
+    <p>
+      "a "
+      <!---->
+      <!---->
+      " b"
+    </p>
+    <ul>
+      <!---->
+      <li>"2"</li>
+      <!---->
+      <li>"4"</li>
+    </ul>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <p>
+      "before "
+      <!---->
+      <!---->
+      " after"
+    </p>
+    <p>
+      "a "
+      <!---->
+      <!---->
+      " b"
+    </p>
+    <ul>
+      <li>"4"</li>
+      <!---->
+      <li>"2"</li>
+      <!---->
+    </ul>
+  </main>
+</body>
+-- click #drop
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="reverse">"reverse"</button>
+    <button id="drop">"drop"</button>
+    <p>
+      "before "
+      <!---->
+      <!---->
+      " after"
+    </p>
+    <p>
+      "a "
+      <!---->
+      <!---->
+      " b"
+    </p>
+    <ul>
+      <li>"4"</li>
+      <!---->
+    </ul>
+  </main>
+</body>

@@ -170,6 +170,10 @@ pub const Input = struct {
     /// With `in_place` true for every platform module, as that flag makes
     /// it, `browser-tea`'s `Tea.*` get the direct row already.
     entry_everywhere: bool = false,
+    /// `--ownership-records-lost` (§31.4 item 6, hidden and test-only): every
+    /// cell's record condition fails approximately, which no list's verdict
+    /// may notice.
+    records_lost: bool = false,
     /// §28.3: a checked module is read by another module through its block,
     /// written and read back, as an installed one is — so that the verdicts
     /// are the ones a build that installed it would give, and the block's
@@ -539,7 +543,9 @@ fn gStep(g: Grown) Grown {
     return gMake(gMarked(g), if (pend > 0) pend - 1 else 0);
 }
 
-pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: Grown = 0 };
+/// `rxc`: the record condition (§31.4 item 6), failing approximately unless
+/// a read-off or a row says otherwise.
+pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: Grown = 0, rxc: XSum = .{ .no = 1 } };
 
 pub const SupplyEntry = struct {
     fun: u32,
@@ -552,6 +558,8 @@ pub const SupplyEntry = struct {
     approx: bool = false,
     /// The condition of what is supplied (§18.3).
     xc: XSum = .{},
+    /// Its record condition (§31.4 item 6).
+    rxc: XSum = .{ .no = 1 },
     /// §16.7's mark, as on `ResEntry`.
     grown: Grown = 0,
 };
@@ -673,6 +681,9 @@ pub const Summary = struct {
     asserted: bool = false,
     /// §18.4: the exclusivity the body relied on, which callers discharge.
     xreq: []const XAtom = &.{},
+    /// §31.4 item 6: the record atoms the body relied on, which every caller
+    /// discharges.
+    rxreq: []const XAtom = &.{},
     /// §18.8, a class only: it writes what it captured, so it runs once.
     once: bool = false,
     /// §24: read from the declaration's ownership words, not off a body.
@@ -743,7 +754,7 @@ nominal_on: []bool = &.{},
 nominal_solving: bool = false,
 /// §30.9: the nominal types whose bodies `ownMayHold` is reading.
 holding: std.ArrayList(TypeId) = .empty,
-ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
+ctor_ids: std.HashMapUnmanaged(u64, u32, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// Per module: the summary of each declaration, allocated on first use.
 slots: []?[]Slot = &.{},
 groups: []?Groups = &.{},
@@ -764,7 +775,7 @@ ctor_key: std.ArrayList(u64) = .empty,
 /// field)` pair, so any field of any constructor is a step of its own
 /// (issue #289; before, the step was `c * 64 + i`, and field 64 named field
 /// 0 of the next constructor).
-ctor_steps: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+ctor_steps: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
 /// Per constructor step: its constructor id and its field.
 step_ctor: std.ArrayList([2]u32) = .empty,
 /// Per module: where each declaration's schema constructors start
@@ -794,11 +805,11 @@ split_of: std.ArrayList(u32) = .empty,
 places_of: std.ArrayList(u32) = .empty,
 canon_splits: std.ArrayList(CanonicalSplit) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
-concat_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+concat_memo: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, type variable)`: whether a value of the type may hold a cell.
-tracked_memo: std.AutoHashMapUnmanaged(u64, bool) = .empty,
+tracked_memo: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, declaration)`: its qualified name.
-names_memo: std.AutoHashMapUnmanaged(u64, []const u8) = .empty,
+names_memo: std.HashMapUnmanaged(u64, []const u8, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// §30.10: per `(module, schema declaration)`, what its own conversions and
 /// the declarations it names put in its slots (`schemaTaint`); `null` while
 /// it is being derived.
@@ -1647,15 +1658,17 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
     for (x.supply, y.supply) |a, b| {
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
-            a.approx != b.approx or !a.xc.eql(b.xc) or a.grown != b.grown) return false;
+            a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
     }
     if (x.rsupply.len != y.rsupply.len) return false;
     for (x.rsupply, y.rsupply) |a, b| {
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
-            a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+            a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc)) return false;
     }
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
+    if (x.rxreq.len != y.rxreq.len) return false;
+    for (x.rxreq, y.rxreq) |a, b| if (!a.eql(b)) return false;
     for (x.slots, y.slots) |a, b| if (a[0] != b[0] or a[1] != b[1]) return false;
     for (x.klasses, y.klasses) |a, b| {
         if (!try o.summaryDeepEql(a.sum.*, b.sum.*)) return false;
@@ -1670,7 +1683,7 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
 }
 
 fn resEql(a: ResEntry, b: ResEntry) bool {
-    return a.path == b.path and a.prov.eql(b.prov) and a.approx == b.approx and a.xc.eql(b.xc) and a.sc.eql(b.sc) and a.grown == b.grown;
+    return a.path == b.path and a.prov.eql(b.prov) and a.approx == b.approx and a.xc.eql(b.xc) and a.sc.eql(b.sc) and a.rxc.eql(b.rxc) and a.grown == b.grown;
 }
 
 /// The module's top-level declarations as strongly connected groups by
@@ -1906,18 +1919,20 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
         }
     }.f;
     const res = try keep.alloc(ResEntry, s.res.len);
-    for (res, s.res) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc), .grown = r.grown };
+    for (res, s.res) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc), .rxc = try xsum(keep, r.rxc), .grown = r.grown };
     const supply = try keep.alloc(SupplyEntry, s.supply.len);
     for (supply, s.supply) |*d, e| {
         d.* = e;
         d.xc = try xsum(keep, e.xc);
+        d.rxc = try xsum(keep, e.rxc);
     }
     const objs = try keep.alloc(ResEntry, s.objs.len);
-    for (objs, s.objs) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc) };
+    for (objs, s.objs) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc), .rxc = try xsum(keep, r.rxc) };
     const rsupply = try keep.alloc(SupplyEntry, s.rsupply.len);
     for (rsupply, s.rsupply) |*d, e| {
         d.* = e;
         d.xc = try xsum(keep, e.xc);
+        d.rxc = try xsum(keep, e.rxc);
     }
     const klasses = try keep.alloc(Carried, s.klasses.len);
     for (klasses, s.klasses) |*d, k| {
@@ -1934,6 +1949,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.rsupply = rsupply;
     out.funs = try keep.dupe(FunFacts, s.funs);
     out.xreq = try keep.dupe(XAtom, s.xreq);
+    out.rxreq = try keep.dupe(XAtom, s.rxreq);
     out.slots = try keep.dupe([2]u32, s.slots);
     out.klasses = klasses;
     return out;
@@ -1946,12 +1962,14 @@ fn summaryEql(x: Summary, y: Summary) bool {
     for (x.res, y.res) |a, b| if (!resEql(a, b)) return false;
     if (x.objs.len != y.objs.len) return false;
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
-    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or a.grown != b.grown) return false;
+    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
     if (x.rsupply.len != y.rsupply.len) return false;
-    for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+    for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc)) return false;
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
+    if (x.rxreq.len != y.rxreq.len) return false;
+    for (x.rxreq, y.rxreq) |a, b| if (!a.eql(b)) return false;
     return true;
 }
 
@@ -2092,6 +2110,9 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     var xreq: std.ArrayList(XAtom) = .empty;
     try xreq.appendSlice(keep, x.xreq);
     try xreq.appendSlice(keep, y.xreq);
+    var rxreq: std.ArrayList(XAtom) = .empty;
+    try rxreq.appendSlice(keep, x.rxreq);
+    try rxreq.appendSlice(keep, y.rxreq);
     return o.normalize(.{
         .params = @max(x.params, y.params),
         .uses = uses.items,
@@ -2101,6 +2122,7 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
         .rsupply = rsupply.items,
         .funs = funs.items,
         .xreq = xreq.items,
+        .rxreq = rxreq.items,
         .once = x.once or y.once,
     });
 }
@@ -2235,6 +2257,7 @@ fn sortedRes(keep: Allocator, entries: []const ResEntry) Allocator.Error![]const
             res[nr - 1].grown = gJoin(res[nr - 1].grown, r.grown);
             res[nr - 1].xc = try xsumAnd(keep, res[nr - 1].xc, r.xc);
             res[nr - 1].sc = try xsumAnd(keep, res[nr - 1].sc, r.sc);
+            res[nr - 1].rxc = try xsumAnd(keep, res[nr - 1].rxc, r.rxc);
             continue;
         }
         res[nr] = r;
@@ -2265,6 +2288,7 @@ fn sortedSupply(keep: Allocator, entries: []const SupplyEntry) Allocator.Error![
                 p.owned = p.owned and e.owned;
                 p.approx = !p.owned and !exact;
                 p.xc = try xsumAnd(keep, p.xc, e.xc);
+                p.rxc = try xsumAnd(keep, p.rxc, e.rxc);
                 p.grown = gJoin(p.grown, e.grown);
                 continue;
             }
@@ -2275,7 +2299,55 @@ fn sortedSupply(keep: Allocator, entries: []const SupplyEntry) Allocator.Error![
     return supply[0..ns];
 }
 
-fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
+/// §31.4 item 6: a list condition's record twin — `excl`, `sep` and
+/// `keep` as their record forms (`rkeepShape` for a keep); a spine's atoms
+/// are a list's array, and dropped. Sound because an asserted row's
+/// condition says where each element comes from — which argument's
+/// positions, which callback's answers — whatever the element's type, so it
+/// says the same of a record element as of a list element (core's rows are
+/// polymorphic; `ownership/RecordContentsBuilt` drives `repeat`, `append`
+/// and `concat` with records). A failure keeps its kind: `{shared}`, one
+/// cell at two places, is one record at two places when the cell is a
+/// record; it only labels a refusal exact.
+fn recordTwin(o: *Ownership, x: XSum) Allocator.Error!XSum {
+    if (x.no != 0) return x;
+    var out: std.ArrayList(XAtom) = .empty;
+    for (x.atoms) |t| switch (t.kind) {
+        .excl, .sep, .keep => try out.append(o.keep.allocator(), t),
+        .spine, .sep_spine, .keep_spine => {},
+    };
+    return .{ .atoms = out.items };
+}
+
+/// `s` with each entry's record condition the twin of its list one.
+fn recordTwins(o: *Ownership, s: Summary) Allocator.Error!Summary {
+    const keep = o.keep.allocator();
+    var out = s;
+    const res = try keep.dupe(ResEntry, s.res);
+    for (res) |*r| {
+        r.rxc = try o.recordTwin(r.xc);
+        // A `foreign`'s `exclusive` word speaks of its list's lists
+        // (`boundary.md` §4), not of records it may hold twice.
+        if (s.words and r.rxc.no == 0 and r.rxc.atoms.len == 0 and r.prov.kind != .param) r.rxc = .{ .no = 1 };
+    }
+    out.res = res;
+    const objs = try keep.dupe(ResEntry, s.objs);
+    for (objs) |*r| r.rxc = try o.recordTwin(r.xc);
+    out.objs = objs;
+    const supply = try keep.dupe(SupplyEntry, s.supply);
+    for (supply) |*e| e.rxc = try o.recordTwin(e.xc);
+    out.supply = supply;
+    const rsupply = try keep.dupe(SupplyEntry, s.rsupply);
+    for (rsupply) |*e| e.rxc = try o.recordTwin(e.xc);
+    out.rsupply = rsupply;
+    out.rxreq = (try o.recordTwin(.{ .atoms = s.xreq })).atoms;
+    return out;
+}
+
+fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
+    // §31.4 item 6: a row core asserts states its record conditions as its
+    // list ones, by where each element comes from: the twin of each `xc`.
+    const s = if (s_in.asserted) try o.recordTwins(s_in) else s_in;
     const keep = o.keep.allocator();
     const uses = try keep.dupe(UseEntry, s.uses);
     std.mem.sort(UseEntry, uses, {}, struct {
@@ -2337,6 +2409,7 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         .limit_at = s.limit_at,
         .asserted = s.asserted,
         .xreq = o.pruneAtoms(try keep.dupe(XAtom, s.xreq)),
+        .rxreq = o.pruneAtoms(try keep.dupe(XAtom, s.rxreq)),
         .once = s.once,
         .words = s.words,
         .slots = s.slots,
@@ -3715,7 +3788,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
             try groups.append(arena, .{ .path = pt, .provs = .empty });
             break :blk groups.items.len - 1;
         };
-        const t = try std.fmt.allocPrint(arena, "{s}{s}", .{ try o.provText(r.prov), try o.xsumText(r.xc) });
+        const t = try std.fmt.allocPrint(arena, "{s}{s}{s}", .{ try o.provText(r.prov), try o.xsumText(r.xc), try o.rxsumText(r.rxc) });
         try groups.items[i].provs.append(arena, if (r.approx) try std.fmt.allocPrint(arena, "~{s}", .{t}) else t);
     };
     if (groups.items.len > 0) {
@@ -3750,7 +3823,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
             if (e.fun != f.param) continue;
             const pt = try o.pathText(e.path);
-            try sup.append(arena, try std.fmt.allocPrint(arena, "supply {d}{s} {s} {s}{s}{s}", .{ e.k + 1, pt, try o.provText(e.prov), if (e.owned) "owned" else "borrowed", if (e.prov.taken) " taken" else "", try o.xsumText(e.xc) }));
+            try sup.append(arena, try std.fmt.allocPrint(arena, "supply {d}{s} {s} {s}{s}{s}{s}", .{ e.k + 1, pt, try o.provText(e.prov), if (e.owned) "owned" else "borrowed", if (e.prov.taken) " taken" else "", try o.xsumText(e.xc), try o.rxsumText(e.rxc) }));
         };
         sortText(sup.items);
         for (sup.items) |t| wr.print(", {s}", .{t}) catch return error.OutOfMemory;
@@ -3761,6 +3834,12 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         for (s.xreq) |x| try reqs.append(arena, try o.atomText(x));
         sortText(reqs.items);
         try parts.append(arena, try std.fmt.allocPrint(arena, "xreq {s}", .{try std.mem.join(arena, ", ", reqs.items)}));
+    }
+    if (s.rxreq.len > 0) {
+        var reqs: std.ArrayList([]const u8) = .empty;
+        for (s.rxreq) |x| try reqs.append(arena, try o.atomText(x));
+        sortText(reqs.items);
+        try parts.append(arena, try std.fmt.allocPrint(arena, "rxreq {s}", .{try std.mem.join(arena, ", ", reqs.items)}));
     }
     if (s.limit != .none) try parts.append(arena, try std.fmt.allocPrint(arena, "limit {s} {d}", .{ s.limit.text(), s.limit_at }));
     const facts = if (parts.items.len == 0) "unused" else try std.mem.join(arena, "; ", parts.items);
@@ -3780,6 +3859,15 @@ fn xsumText(o: *Ownership, x: XSum) Allocator.Error![]const u8 {
     for (x.atoms) |t| try parts.append(arena, try o.atomText(t));
     sortText(parts.items);
     return std.fmt.allocPrint(arena, "{{{s}}}", .{try std.mem.join(arena, ", ", parts.items)});
+}
+
+/// A record condition as a summary line prints it (§31.4 item 6): `r{…}`
+/// beside a list's, nothing when it holds outright.
+fn rxsumText(o: *Ownership, x: XSum) Allocator.Error![]const u8 {
+    if (x.no == 1) return "r{lost}";
+    if (x.no == 2) return "r{shared}";
+    if (x.atoms.len == 0) return "";
+    return std.fmt.allocPrint(o.out.allocator(), "r{s}", .{try o.xsumText(x)});
 }
 
 fn atomText(o: *Ownership, x: XAtom) Allocator.Error![]const u8 {
@@ -4976,6 +5064,40 @@ fn holdsList(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Err
     }
 }
 
+/// §31.4 item 6: whether a value of this type may be or hold a record's
+/// object, which a record condition is about; a list of numbers holds none,
+/// so two places that share it share no record.
+fn holdsRecord(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
+    if (depth > type_depth) return true;
+    switch (store.resolvedContent(v)) {
+        .flex, .rigid, .err, .alias => return true,
+        .structure => |s| switch (s) {
+            .unit, .empty_record, .func => return false,
+            .record => return true,
+            .tuple => |r| {
+                for (store.vars(r)) |el| if (try o.holdsRecord(store, el, depth + 1)) return true;
+                return false;
+            },
+            .app => |a| {
+                if (a.type == o.in.types.well_known.list) {
+                    for (store.vars(a.args)) |arg| if (try o.holdsRecord(store, arg, depth + 1)) return true;
+                    return false;
+                }
+                if (o.isPrimitive(a.type)) return false;
+                const nf = try o.nominalFacts(a.type);
+                // A record, or what the checker cannot see into — a `foreign
+                // type` (`Js.Value`, a program, a host's handle) or a list,
+                // function or foreign type inside the declaration — may hold
+                // one (#421): only a type whose body is seen to hold none
+                // holds none.
+                if (nf.record or nf.own) return true;
+                if (nf.params) for (store.vars(a.args)) |arg| if (try o.holdsRecord(store, arg, depth + 1)) return true;
+                return false;
+            },
+        },
+    }
+}
+
 /// Whether a value of this type may hold a cell (§4.4: it does not cross).
 fn tracked(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
     return o.trackedIn(store, v, depth, true);
@@ -5534,8 +5656,6 @@ const Consumption = struct {
     rbad: []const ?[]const u8 = &.{},
     rbad_approx: []const bool = &.{},
     rbad_cause: []const Cause = &.{},
-    /// supply: per parameter, why a record write there is not yet decided.
-    rpending: []const ?[]const u8 = &.{},
     /// The summary or callee that decided it, for the note.
     name: []const u8 = "",
     /// pending: why.
@@ -5753,6 +5873,8 @@ const SupplyRec = struct {
     approx: bool = false,
     /// The condition of what is supplied (§18.3).
     cond: u32 = cond_yes,
+    /// Its record condition (§31.4 item 6).
+    rcond: u32 = cond_yes,
     /// A destructive supply, passed on (§18.5).
     taken: bool = false,
     /// A call inside a lambda (§18.9): the probe where the lambda made the
@@ -5913,6 +6035,14 @@ const Walker = struct {
     /// one other than its kind's.
     conds: std.ArrayList(WCond) = .empty,
     cell_cond: std.ArrayList(u32) = .empty,
+    /// §31.4 item 6: the record conditions, a table of their own that no
+    /// list's fact reads, and each cell's; what frames relied on of them.
+    rconds: std.ArrayList(WCond) = .empty,
+    cell_rcond: std.ArrayList(u32) = .empty,
+    rreqs: std.ArrayList(Req) = .empty,
+    /// Per cell, whether it may hold a record (`mayHoldRecord`): 0 not yet
+    /// asked, 1 no, 2 yes. A cell's type does not change.
+    cell_rec: std.ArrayList(u8) = .empty,
     cell_spine: std.ArrayList(u32) = .empty,
     /// §31.2: the exception sets of `except` cells, each sorted, by index.
     exsets: std.ArrayList([]const u32) = .empty,
@@ -6016,6 +6146,7 @@ const Walker = struct {
         try w.ctx_nodes.append(w.a, .{ .parent = none, .case_id = none, .arm = 0, .depth = 0 });
         try w.frames.append(w.a, .{ .parent = none, .pending_base = 0 });
         try w.conds.appendSlice(w.a, &fixed_conds);
+        try w.rconds.appendSlice(w.a, &fixed_conds);
         w.params = w.bir.extraSlice(.{ .start = w.decl.params_start, .end = w.decl.params_end }, Inst.Index);
         try w.fn_state.appendNTimes(w.a, .{}, w.params.len);
         for (w.params, 0..) |p, i| {
@@ -6073,6 +6204,8 @@ const Walker = struct {
         made.nonlist = c.nonlist or c.kind == .except or w.isRecordCell(c) or try w.holdsOnlyRecords(c);
         try w.cells.append(w.a, made);
         try w.cell_cond.append(w.a, none);
+        try w.cell_rcond.append(w.a, none);
+        try w.cell_rec.append(w.a, 0);
         try w.cell_spine.append(w.a, none);
         return id;
     }
@@ -6245,11 +6378,16 @@ const Walker = struct {
                     const k: u32 = (try w.apartCond(e.cell)) orelse try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
                     try w.lowerCond(e.cell, k);
                     try w.lowerSpine(e.cell, k);
+                    // §31.4 item 6: one record at two places, folded to one.
+                    try w.rlowerCond(e.cell, try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
                     continue;
                 }
                 const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
                 try w.lowerCond(e.cell, k);
                 try w.lowerCond(f.cell, k);
+                const rk = try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                try w.rlowerCond(e.cell, rk);
+                try w.rlowerCond(f.cell, rk);
                 const sk = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
                 try w.lowerSpine(e.cell, sk);
                 try w.lowerSpine(f.cell, sk);
@@ -7245,6 +7383,374 @@ const Walker = struct {
         return w.condAndAll(&acc);
     }
 
+    // ---- records' exclusive contents (§31.4 item 6) ------------------------
+    //
+    // A record condition is a list's in a table of its own (`rconds`,
+    // `cell_rcond`), over record objects: `excl c` is `rexcl c`, `sep c d` is
+    // `rsep c d`. No list's fact reads the table, and it has no cap.
+
+    /// A record condition holding on `atoms`.
+    fn rmkCond(w: *Walker, atoms: []const WAtom) Allocator.Error!u32 {
+        if (atoms.len == 0) return cond_yes;
+        var own = try w.a.dupe(WAtom, atoms);
+        own.len = sortWAtoms(own);
+        try w.rconds.append(w.a, .{ .atoms = own });
+        return @intCast(w.rconds.items.len - 1);
+    }
+
+    /// A record condition's conjunction, gathered: failing exactly beats
+    /// failing approximately, and a holding one rests on every atom.
+    const RAcc = struct {
+        shared: bool = false,
+        lost: bool = false,
+        limit: bool = false,
+        /// The one condition added so far, while every condition added is
+        /// that one (the common case: a container's `rexcl`, again and
+        /// again), so that no new condition is made for it.
+        one: u32 = cond_yes,
+        many: bool = false,
+        atoms: std.ArrayList(WAtom) = .empty,
+
+        fn add(acc: *RAcc, w: *Walker, k: u32) Allocator.Error!void {
+            switch (k) {
+                cond_yes => {},
+                cond_shared => acc.shared = true,
+                cond_lost => acc.lost = true,
+                cond_limit => acc.limit = true,
+                else => {
+                    if (!acc.many and (acc.one == cond_yes or acc.one == k)) {
+                        acc.one = k;
+                        return;
+                    }
+                    if (!acc.many) {
+                        acc.many = true;
+                        try acc.atoms.appendSlice(w.a, w.rconds.items[acc.one].atoms);
+                    }
+                    try acc.atoms.appendSlice(w.a, w.rconds.items[k].atoms);
+                },
+            }
+        }
+
+        fn done(acc: *RAcc, w: *Walker) Allocator.Error!u32 {
+            if (acc.shared) return cond_shared;
+            if (acc.limit) return cond_limit;
+            if (acc.lost) return cond_lost;
+            if (!acc.many) return acc.one;
+            return w.rmkCond(acc.atoms.items);
+        }
+    };
+
+    /// Two record conditions' conjunction; one of them when the other adds
+    /// no atom, so that a round that lowers nothing moves no index.
+    fn rcondAnd(w: *Walker, x: u32, y: u32) Allocator.Error!u32 {
+        if (x == y or y == cond_yes) return x;
+        if (x == cond_yes) return y;
+        if (x == cond_shared or y == cond_shared) return cond_shared;
+        if (x == cond_limit or y == cond_limit) return cond_limit;
+        if (x == cond_lost or y == cond_lost) return cond_lost;
+        const xs = w.rconds.items[x].atoms;
+        const ys = w.rconds.items[y].atoms;
+        const all = try w.a.alloc(WAtom, xs.len + ys.len);
+        @memcpy(all[0..xs.len], xs);
+        @memcpy(all[xs.len..], ys);
+        const n = sortWAtoms(all);
+        if (n == xs.len) return x;
+        if (n == ys.len) return y;
+        return w.rmkCond(all[0..n]);
+    }
+
+    /// The cell a record condition names for `c`: the record an `except`
+    /// cell was written over, a taken element's own. And one id per object:
+    /// a result's record that may hold lists is a list-facing cell in `res`
+    /// and its `nonlistOf` copy in `objs` (§31.7), two ids for one record,
+    /// so a copy is named by the cell it copies, where that cell exists
+    /// (`cell` interns: a record whose cell is always `nonlist` names
+    /// itself).
+    fn rbase(w: *Walker, c_in: u32) Allocator.Error!u32 {
+        var c = c_in;
+        while (w.cells.items[c].kind == .except) c = w.cells.items[c].a;
+        const x = w.cells.items[c];
+        if (!x.nonlist) return c;
+        var y = x;
+        y.nonlist = false;
+        return w.cell(y);
+    }
+
+    /// A cell's record condition (§31.4 item 6): its table's, or its kind's —
+    /// an arrival is `rexcl` of itself.
+    fn rcellCond(w: *Walker, c_in: u32) Allocator.Error!u32 {
+        const c = try w.rbase(c_in);
+        if (w.o.in.records_lost) return cond_lost;
+        if (w.cell_rcond.items[c] != none) return w.cell_rcond.items[c];
+        const x = w.cells.items[c];
+        if (!try w.mayHoldRecord(c)) return cond_yes;
+        const k: u32 = switch (x.kind) {
+            .site, .shared, .closure, .func => cond_yes,
+            .top, .payload => cond_lost,
+            .result => if (x.path != eps) blk: {
+                var root = x;
+                root.path = eps;
+                root.ty = .none;
+                root.nonlist = false;
+                break :blk try w.rcellCond(try w.cell(root));
+            } else cond_lost,
+            .except => unreachable,
+            .param, .env, .cbres => try w.rmkCond(&.{.{ .kind = .excl, .a = c }}),
+            .taken => if (w.instCol(?AV, w.split_scrut, x.b, null)) |scrut| blk: {
+                var acc: RAcc = .{};
+                for (scrut) |e| if (e.path == eps) {
+                    try acc.add(w, try w.rcellCond(e.cell));
+                };
+                break :blk try acc.done(w);
+            } else try w.rmkCond(&.{.{ .kind = .excl, .a = try w.containerOf(c) }}),
+        };
+        w.cell_rcond.items[c] = k;
+        return k;
+    }
+
+    /// The record condition of a cell this walk made, which starts at `k`.
+    fn rinitCond(w: *Walker, c_in: u32, k: u32) Allocator.Error!void {
+        const c = try w.rbase(c_in);
+        const cur = w.cell_rcond.items[c];
+        w.cell_rcond.items[c] = if (cur != none) try w.rcondAnd(cur, k) else k;
+    }
+
+    /// Lower a cell's record condition, as a store into it does.
+    fn rlowerCond(w: *Walker, c: u32, k: u32) Allocator.Error!void {
+        if (k == cond_yes) return;
+        const b = try w.rbase(c);
+        w.cell_rcond.items[b] = try w.rcondAnd(try w.rcellCond(b), k);
+    }
+
+    fn arrived(k: CellKind) bool {
+        return k == .param or k == .env or k == .cbres;
+    }
+
+    /// Whether two cells share no record object.
+    fn rsepCells(w: *Walker, x_in: u32, y_in: u32, exact: bool) Allocator.Error!u32 {
+        const x = try w.rbase(x_in);
+        const y = try w.rbase(y_in);
+        const cx = w.cells.items[x];
+        const cy = w.cells.items[y];
+        if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
+        if (!try w.mayHoldRecord(x) or !try w.mayHoldRecord(y)) return cond_yes;
+        if (x == y or (try w.covers(x, y)) != null or (try w.covers(y, x)) != null) {
+            const one = !(try w.o.representative(cx.path)) and !(try w.o.representative(cy.path));
+            return if (exact and one) cond_shared else cond_lost;
+        }
+        if (cx.kind == .top or cy.kind == .top or cx.kind == .payload or cy.kind == .payload) return cond_lost;
+        if (cx.kind == .taken or cy.kind == .taken) {
+            const t = if (cx.kind == .taken) x else y;
+            const other = if (cx.kind == .taken) y else x;
+            const base = try w.takenBase(t);
+            if (other != base and (try w.covers(other, base)) != null) return cond_lost;
+            if (other == base or (try w.covers(base, other)) != null) return w.rcellCond(t);
+        }
+        if (cx.kind == .shared or cy.kind == .shared) return cond_yes;
+        if (madeHere(cx.kind) or madeHere(cy.kind)) {
+            const made = if (madeHere(cx.kind)) x else y;
+            const other = if (madeHere(cx.kind)) cy else cx;
+            // A callback may return what it was handed.
+            if (other.kind == .cbres) if (w.instCol(?AV, w.cb_args, other.b, null)) |args| {
+                if ((try w.reaches(args, &.{.{ .path = eps, .cell = made }})) != null) return cond_lost;
+            };
+            return cond_yes;
+        }
+        return w.rmkCond(&.{if (x <= y) .{ .kind = .sep, .a = x, .b = y } else .{ .kind = .sep, .a = y, .b = x }});
+    }
+
+    /// Whether a cell may be or hold a record's object: an `except` cell is
+    /// one; a cell of a known type is when the type may hold one.
+    fn mayHoldRecord(w: *Walker, c: u32) Allocator.Error!bool {
+        if (w.cell_rec.items[c] != 0) return w.cell_rec.items[c] == 2;
+        const x = w.cells.items[c];
+        const yes = x.kind == .except or if (x.ty.unwrap()) |v| try w.o.holdsRecord(w.store, v, 0) else true;
+        w.cell_rec.items[c] = if (yes) 2 else 1;
+        return yes;
+    }
+
+    /// The record cells a value holds, closures expanded, each once: exact
+    /// when any entry reaches it exactly. A cell that holds no record is no
+    /// place of one (`mayHoldRecord`).
+    fn rcellsOf(w: *Walker, av: AV) Allocator.Error!AV {
+        var out: std.ArrayList(Entry) = .empty;
+        for (try w.expand(av)) |e| {
+            const k = w.cells.items[e.cell].kind;
+            if (k == .closure or k == .func) continue;
+            if (!try w.mayHoldRecord(e.cell)) continue;
+            try out.append(w.a, .{ .path = e.path, .cell = try w.rbase(e.cell), .approx = e.approx });
+        }
+        return out.items;
+    }
+
+    /// Whether two values share no record object.
+    fn rsepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
+        if (x.len == 0 or y.len == 0) return cond_yes;
+        var acc: RAcc = .{};
+        const ex = try w.cellsOf(try w.rcellsOf(x));
+        const ey = try w.cellsOf(try w.rcellsOf(y));
+        for (ex) |a| for (ey) |b| {
+            try acc.add(w, try w.rsepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
+            if (acc.shared) return cond_shared;
+        };
+        return acc.done(w);
+    }
+
+    /// A value's deep record condition: its cells' record conditions, and no
+    /// record object at two of its paths neither of which is a prefix of the
+    /// other. Built without pairing every two cells (§31.4 item 6, no cap):
+    /// one cell at two such paths is found by a sort, and a pair is formed
+    /// only where neither cell is one the body made.
+    fn rdeepCond(w: *Walker, av: AV) Allocator.Error!u32 {
+        if (av.len == 0) return cond_yes;
+        const ex = try w.rcellsOf(av);
+        if (ex.len == 0) return cond_yes;
+        if (ex.len == 1) return w.rcellCond(ex[0].cell);
+        var acc: RAcc = .{};
+        for (ex) |e| try acc.add(w, try w.rcellCond(e.cell));
+        // One cell at two places that do not nest: pairwise for a few
+        // entries, sorted by cell for more.
+        if (ex.len <= 16) {
+            for (ex, 0..) |e, a| for (ex[a + 1 ..]) |f| {
+                if (e.cell != f.cell or try w.nested(e, f)) continue;
+                const one = !(try w.o.representative(e.path)) and !(try w.o.representative(f.path));
+                try acc.add(w, if (e.approx == 0 and f.approx == 0 and one) cond_shared else cond_lost);
+            };
+        } else try w.rduplicates(ex, &acc);
+        if (acc.shared) return cond_shared;
+        // Two distinct cells: what the body made shares nothing with another
+        // cell but a callback's answer it was handed (`rsepCells`), so only
+        // those pairs and the pairs of arrivals are formed.
+        // A container and what it holds are not two places (`nested`).
+        // A pair of cells is asked once, however many paths hold them: an
+        // expanded value names one parameter at many paths.
+        var seen: std.ArrayList([3]u32) = .empty;
+        for (ex, 0..) |e, a| {
+            const ke = w.cells.items[e.cell].kind;
+            if (!arrived(ke) and ke != .taken and ke != .top and ke != .payload and ke != .except) continue;
+            for (ex[a + 1 ..]) |f| {
+                const kf = w.cells.items[f.cell].kind;
+                // Two arrivals, or a callback's answer and what the body made.
+                const pair = if (madeHere(kf)) ke == .cbres else kf != .site and kf != .shared;
+                if (!pair or e.cell == f.cell) continue;
+                try w.rpairOnce(&seen, e, f, &acc);
+            }
+            // What the body made before it, against a callback's answer.
+            if (ke == .cbres) for (ex[0..a]) |f| {
+                if (!madeHere(w.cells.items[f.cell].kind)) continue;
+                try w.rpairOnce(&seen, e, f, &acc);
+            };
+        }
+        return acc.done(w);
+    }
+
+    /// `rsepCells` of two entries' cells into `acc`, unless the pair was
+    /// asked already, or the entries nest.
+    fn rpairOnce(w: *Walker, seen: *std.ArrayList([3]u32), e: Entry, f: Entry, acc: *RAcc) Allocator.Error!void {
+        const exact: u32 = @intFromBool(e.approx == 0 and f.approx == 0);
+        const key: [3]u32 = if (e.cell < f.cell) .{ e.cell, f.cell, exact } else .{ f.cell, e.cell, exact };
+        for (seen.items) |s| if (s[0] == key[0] and s[1] == key[1] and s[2] == key[2]) return;
+        if (try w.nested(e, f)) return;
+        try seen.append(w.a, key);
+        try acc.add(w, try w.rsepCells(e.cell, f.cell, exact == 1));
+    }
+
+    /// `rdeepCond`'s one cell at two places that do not nest, found by a
+    /// sort.
+    fn rduplicates(w: *Walker, ex: AV, acc: *RAcc) Allocator.Error!void {
+        const by_cell = try w.a.dupe(Entry, ex);
+        std.mem.sort(Entry, by_cell, {}, struct {
+            fn less(_: void, p: Entry, q: Entry) bool {
+                if (p.cell != q.cell) return p.cell < q.cell;
+                return p.path < q.path;
+            }
+        }.less);
+        var i: usize = 0;
+        while (i < by_cell.len) {
+            var j = i + 1;
+            while (j < by_cell.len and by_cell[j].cell == by_cell[i].cell) : (j += 1) {}
+            for (by_cell[i..j], i..) |e, a| for (by_cell[a + 1 .. j]) |f| {
+                if (try w.nested(e, f)) continue;
+                const one = !(try w.o.representative(e.path)) and !(try w.o.representative(f.path));
+                try acc.add(w, if (e.approx == 0 and f.approx == 0 and one) cond_shared else cond_lost);
+            };
+            i = j;
+        }
+    }
+
+    /// The record condition of stored items, pairwise and against what the
+    /// list already holds.
+    fn rstoredCond(w: *Walker, items: []const AV, elements: AV) Allocator.Error!u32 {
+        var acc: RAcc = .{};
+        // Each value's record cells once, not once per pair.
+        const cells = try w.a.alloc(AV, items.len);
+        for (items, cells) |v, *c| c.* = try w.cellsOf(try w.rcellsOf(v));
+        const ecells = try w.cellsOf(try w.rcellsOf(elements));
+        for (items, cells, 0..) |v, cv, i| {
+            if (cv.len == 0) continue;
+            try acc.add(w, try w.rdeepCond(v));
+            try w.rsepCellsOf(cv, ecells, &acc);
+            for (cells[i + 1 ..]) |cu| try w.rsepCellsOf(cv, cu, &acc);
+            if (acc.shared) return cond_shared;
+        }
+        return acc.done(w);
+    }
+
+    /// `rsepValues` over two values' record cells, gathered in `acc`.
+    fn rsepCellsOf(w: *Walker, ex: AV, ey: AV, acc: *RAcc) Allocator.Error!void {
+        for (ex) |a| for (ey) |b| {
+            try acc.add(w, try w.rsepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
+        };
+    }
+
+    /// Relying on a record condition: its atoms become requirements of
+    /// `frame` (`rxreq`), or it fails.
+    fn rrely(w: *Walker, k: u32, frame: u32) Allocator.Error!Rely {
+        if (k == cond_lost) return .approx;
+        if (k == cond_limit) return .limit;
+        if (k == cond_shared) return .exact;
+        const atoms = w.rconds.items[k].atoms;
+        for (atoms) |t| if (!w.ownedBy(t, frame)) return .approx;
+        for (atoms) |t| try w.rreqs.append(w.a, .{ .frame = frame, .atom = t });
+        return .ok;
+    }
+
+    /// A record condition in a summary's vocabulary.
+    fn rxsumOf(w: *Walker, k: u32, frame: u32, params: []const Inst.Index, self: u32) Allocator.Error!XSum {
+        if (k == cond_lost or k == cond_limit) return .{ .no = 1 };
+        if (k == cond_shared) return .{ .no = 2 };
+        const keep = w.o.keep.allocator();
+        var out: std.ArrayList(XAtom) = .empty;
+        for (w.rconds.items[k].atoms) |t| {
+            if (self != none and t.kind == .excl and t.a == (try w.rbase(self))) continue;
+            const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
+            try out.append(keep, x);
+        }
+        return .{ .atoms = w.o.pruneAtoms(out.items) };
+    }
+
+    /// A summary's record condition, instantiated at a call.
+    fn rinstXSum(w: *Walker, x: XSum, ctx: InstCtx) Allocator.Error!u32 {
+        if (x.no == 1) return cond_lost;
+        if (x.no == 2) return cond_shared;
+        var acc: RAcc = .{};
+        for (x.atoms) |t| {
+            const c = switch (t.kind) {
+                .excl => try w.rdeepCond(try w.instProv(t.a, ctx)),
+                .sep => if (t.a.eql(t.b) and t.a.kind == .cb)
+                    try w.rfreshAcross(t.a.a, ctx)
+                else
+                    try w.rsepValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                .keep => try w.rkeepShape(t.a.a, t.b, ctx),
+                // A spine is a list's array.
+                .spine, .sep_spine, .keep_spine => cond_yes,
+            };
+            if (c == cond_shared) return cond_shared;
+            try acc.add(w, c);
+        }
+        return acc.done(w);
+    }
+
     /// Relying on a condition (§18.4): its atoms become requirements of
     /// `frame`, or it fails.
     fn rely(w: *Walker, k: u32, frame: u32) Allocator.Error!Rely {
@@ -7377,6 +7883,84 @@ const Walker = struct {
             };
         }
         return w.condAndAll(&acc);
+    }
+
+    /// `rsep cb_j cb_j` at a call: two calls of the actual for `π_j` return no
+    /// record object in common — each answer's object made during the call,
+    /// or the element the callee hands it destructively.
+    fn rfreshAcross(w: *Walker, j: u32, ctx: InstCtx) Allocator.Error!u32 {
+        if (j >= ctx.avs.len) return cond_lost;
+        const actual = ctx.avs[j];
+        if (w.fnParamOf(actual)) |jj| {
+            if (w.frame != 0) return cond_lost;
+            const c = try w.cell(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
+            return w.rmkCond(&.{.{ .kind = .sep, .a = c, .b = c }});
+        }
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) return cond_lost;
+        var acc: RAcc = .{};
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return cond_lost;
+            if (c.limit != .none) return cond_limit;
+            for ([_][]const ResEntry{ c.objs, c.res }) |entries| for (entries) |r| {
+                switch (r.prov.kind) {
+                    .fresh, .esc => {},
+                    .param => try acc.add(w, try w.rtakenSupply(j, r.prov, ctx)),
+                    else => return cond_lost,
+                }
+            };
+        }
+        return acc.done(w);
+    }
+
+    /// `takenSupply` for records: what `ctx.s` supplies the actual for
+    /// `π_j` at `p`, list or record supply, is only ever an element taken
+    /// destructively, its container's record condition holding.
+    fn rtakenSupply(w: *Walker, j: u32, p: Prov, ctx: InstCtx) Allocator.Error!u32 {
+        var acc: RAcc = .{};
+        var any = false;
+        for ([_][]const SupplyEntry{ ctx.s.supply, ctx.s.rsupply }) |sup| for (sup) |e| {
+            if (e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
+            if (!e.prov.taken) return cond_lost;
+            any = true;
+            try acc.add(w, try w.rinstXSum(e.rxc, ctx));
+        };
+        return if (any) acc.done(w) else cond_lost;
+    }
+
+    /// `keepShape` for records (`keep cb_j c`): the actual for `π_j`,
+    /// handed an element of `c` destructively, puts back records made
+    /// during the call or the element's own at the same path, and holds no
+    /// record at two places — so the container keeps no record twice.
+    fn rkeepShape(w: *Walker, j: u32, container: Prov, ctx: InstCtx) Allocator.Error!u32 {
+        if (j >= ctx.avs.len) return cond_lost;
+        const actual = ctx.avs[j];
+        if (w.fnParamOf(actual)) |jj| {
+            if (w.frame != 0) return cond_lost;
+            var acc: RAcc = .{};
+            for (try w.instProv(container, ctx)) |e| {
+                if (e.path != eps) continue;
+                try acc.add(w, try w.rmkCond(&.{.{ .kind = .keep, .a = jj, .b = try w.rbase(e.cell) }}));
+            }
+            return acc.done(w);
+        }
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) return cond_lost;
+        var acc: RAcc = .{};
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return cond_lost;
+            if (c.limit != .none) return cond_limit;
+            for ([_][]const ResEntry{ c.res, c.objs }) |entries| for (entries) |r| switch (r.prov.kind) {
+                .fresh => {},
+                .param => {
+                    if (r.path != r.prov.path) return cond_lost;
+                    try acc.add(w, try w.rtakenSupply(j, r.prov, ctx));
+                },
+                else => return cond_lost,
+            };
+        }
+        try acc.add(w, try w.rdeepCond(try w.instProv(.{ .kind = .cb, .a = j }, ctx)));
+        return acc.done(w);
     }
 
     /// Whether what callee `ctx.s` supplies the actual for `π_j` at the
@@ -8490,6 +9074,8 @@ const Walker = struct {
                 parts[0] = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst) });
                 // §18.2: a literal's items, each exclusive and pairwise apart.
                 try w.initCond(parts[0][0].cell, try w.storedCond(avs, &.{}));
+                // §31.4 item 6: and no record object at two of its positions.
+                try w.rinitCond(parts[0][0].cell, try w.rstoredCond(avs, &.{}));
                 for (avs, 0..) |av, i| parts[i + 1] = try w.shift(av, .{ .kind = .elem, .arg = 0 });
                 const out = try w.unionOf(parts);
                 try w.sight(out, .{ .pending = "it is stored in a list" }, w.token(inst));
@@ -8655,7 +9241,7 @@ const Walker = struct {
             w.fn_state.items[j].calls = .many;
             w.cb_args[function.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
             for (avs, 0..) |av, k| if (av.len != 0) {
-                try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = none, .owned = false, .cond = try w.deepCond(av) });
+                try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = none, .owned = false, .cond = try w.deepCond(av), .rcond = try w.rdeepCond(av) });
             };
             return w.single(.{ .kind = .cbres, .a = j, .b = function.int() });
         }
@@ -9377,12 +9963,14 @@ const Walker = struct {
         supplies: usize,
         probes: usize,
         reqs: usize,
+        rreqs: usize,
         env_calls: usize,
         env_passes: usize,
         lambda_needs: []const LambdaNeed,
         frames: usize,
         closures: usize,
         conds: usize,
+        rconds: usize,
         captures: []const usize,
         consumed: []const usize,
         once_probes: []const [2]usize,
@@ -9393,6 +9981,7 @@ const Walker = struct {
         fn_state: []const FnState,
         unseen: std.AutoHashMapUnmanaged(u64, void),
         cell_cond: []const u32,
+        cell_rcond: []const u32,
         cell_spine: []const u32,
         esc_index: std.AutoHashMapUnmanaged([4]u32, EscAt),
         esc_heads: std.AutoHashMapUnmanaged([4]u32, u32),
@@ -9422,12 +10011,14 @@ const Walker = struct {
             .supplies = w.supplies.items.len,
             .probes = w.probe_ok.items.len,
             .reqs = w.reqs.items.len,
+            .rreqs = w.rreqs.items.len,
             .env_calls = w.env_calls.items.len,
             .env_passes = w.env_passes.items.len,
             .lambda_needs = try w.a.dupe(LambdaNeed, w.lambda_needs.items),
             .frames = w.frames.items.len,
             .closures = n,
             .conds = w.conds.items.len,
+            .rconds = w.rconds.items.len,
             .captures = captures,
             .consumed = consumed,
             .once_probes = once_probes,
@@ -9437,6 +10028,7 @@ const Walker = struct {
             .fn_state = try w.a.dupe(FnState, w.fn_state.items),
             .unseen = try w.unseen_funcs.clone(w.a),
             .cell_cond = try w.a.dupe(u32, w.cell_cond.items),
+            .cell_rcond = try w.a.dupe(u32, w.cell_rcond.items),
             .cell_spine = try w.a.dupe(u32, w.cell_spine.items),
             .esc_index = try w.esc_index.clone(w.a),
             .esc_heads = try w.esc_heads.clone(w.a),
@@ -9456,6 +10048,7 @@ const Walker = struct {
         w.probe_approx.shrinkRetainingCapacity(s.probes);
         w.probe_info.shrinkRetainingCapacity(s.probes);
         w.reqs.shrinkRetainingCapacity(s.reqs);
+        w.rreqs.shrinkRetainingCapacity(s.rreqs);
         w.env_calls.shrinkRetainingCapacity(s.env_calls);
         w.env_passes.shrinkRetainingCapacity(s.env_passes);
         w.lambda_needs.shrinkRetainingCapacity(s.lambda_needs.len);
@@ -9463,6 +10056,7 @@ const Walker = struct {
         w.frames.shrinkRetainingCapacity(s.frames);
         w.closures.shrinkRetainingCapacity(s.closures);
         w.conds.shrinkRetainingCapacity(s.conds);
+        w.rconds.shrinkRetainingCapacity(s.rconds);
         for (w.frames.items, s.captures) |*f, n| f.captures.shrinkRetainingCapacity(n);
         for (w.closures.items, s.consumed, s.once_probes, s.once_bad, s.carried) |*c, x, y, z, v| {
             c.consumed.shrinkRetainingCapacity(x);
@@ -9482,6 +10076,8 @@ const Walker = struct {
         w.unseen_funcs = try s.unseen.clone(w.a);
         @memcpy(w.cell_cond.items[0..s.cell_cond.len], s.cell_cond);
         @memset(w.cell_cond.items[s.cell_cond.len..], none);
+        @memcpy(w.cell_rcond.items[0..s.cell_rcond.len], s.cell_rcond);
+        @memset(w.cell_rcond.items[s.cell_rcond.len..], none);
         @memcpy(w.cell_spine.items[0..s.cell_spine.len], s.cell_spine);
         @memset(w.cell_spine.items[s.cell_spine.len..], none);
         w.esc_index = try s.esc_index.clone(w.a);
@@ -10082,14 +10678,37 @@ const Walker = struct {
             try fresh.append(w.a, e.cell);
             w.cell_cond.items[e.cell] = cond_yes;
         }
-        if (fresh.items.len == 0) return;
+        // §31.4 item 6: the records of the model, the same invariant, on the
+        // record cell an update's object was written over too.
+        var rfresh: std.ArrayList(u32) = .empty;
+        for (model) |e| {
+            const b = try w.rbase(e.cell);
+            const c = w.cells.items[b];
+            if (c.kind != .result or c.a != inst.int() or c.b == 0 or c.b >= entry_init_ns) continue;
+            if (try w.isEscaped(b) or try w.isEscaped(e.cell) or try w.isEscaped(try w.exceptCell(b, &.{}, true))) continue;
+            const initial_cell = for (made_initially) |i| {
+                if ((try w.covers(i.cell, b)) != null) break true;
+            } else false;
+            if (initial_cell) continue;
+            if (std.mem.indexOfScalar(u32, rfresh.items, b) != null) continue;
+            try rfresh.append(w.a, b);
+            w.cell_rcond.items[b] = cond_yes;
+        }
+        if (fresh.items.len == 0 and rfresh.items.len == 0) return;
         // §20.4, amended 2026-10-16 (#229): the rounds run over a finite
         // domain — every cell is named by where it is made, a carried lambda
         // too — so a round that makes no cell, grows no carried lambda and
         // moves no condition is the fixpoint. Conditions only go down a chain
         // of finite height, so it is reached in a bounded number of rounds.
+        // The list table and the record table settle apart (§31.4 item 6):
+        // one that does not is lowered to the limit alone, so that a record
+        // condition never moves a list's verdict, and only a list's that
+        // does not settle makes the declaration an error.
+        var lists_settled = false;
+        var records_settled = false;
         for (0..round_cap) |_| {
             const before = try w.a.dupe(u32, w.cell_cond.items);
+            const rbefore = try w.a.dupe(u32, w.cell_rcond.items);
             const grew = w.carry_grew;
             const demands_before = w.demands.items.len;
             const uses_before = w.uses.items.len;
@@ -10100,12 +10719,18 @@ const Walker = struct {
                 std.debug.assert(w.uses.items.len == uses_before);
                 std.debug.assert(w.escaped.items.len == escapes_before);
             }
-            if (w.carry_grew == grew and std.mem.eql(u32, before, w.cell_cond.items)) return;
+            // A cell made in the round grows both tables: neither settled.
+            lists_settled = w.carry_grew == grew and std.mem.eql(u32, before, w.cell_cond.items);
+            records_settled = std.mem.eql(u32, rbefore, w.cell_rcond.items);
+            if (lists_settled and records_settled) return;
         }
         // Never use an unfinished proof, and never lose it silently: the
         // declaration is an error (§16.7).
-        try w.o.hitLimit(.fixpoint, round_cap);
-        for (fresh.items) |c| try w.lowerCond(c, cond_limit);
+        if (!lists_settled) {
+            try w.o.hitLimit(.fixpoint, round_cap);
+            for (fresh.items) |c| try w.lowerCond(c, cond_limit);
+        }
+        if (!records_settled) for (rfresh.items) |c| try w.rlowerCond(c, cond_limit);
     }
 
     /// Every cell of `av`, closures expanded, at `⋆`: what a value built
@@ -10312,17 +10937,32 @@ const Walker = struct {
         // §31.8: each record update writes is an `update` demand at the entry,
         // with the fields written; reported, not enforced (R4).
         {
-            const RecordWrite = struct { param: u32, path: u32, fields: []const u32, origin: Origin };
+            const RecordWrite = struct { param: u32, path: u32, fields: []const u32, origin: Origin, xfail: ?Rely };
             var rw: std.ArrayList(RecordWrite) = .empty;
-            for (upd.sums) |s| for (s.uses) |u| {
+            for (upd.classes, upd.sums) |cls, s| for (s.uses) |u| {
                 if (u.bits & bit_f == 0 or u.param > 1) continue;
                 const origin: Origin = if (s.limit != .none) .limit else .exact;
+                // §31.4 item 6: update's `rxreq` on the model or the
+                // message, as its `xreq` above.
+                var xfail: ?Rely = null;
+                {
+                    const ci: u32 = if (cls == .closure) cls.closure else none;
+                    for (s.rxreq) |x| {
+                        const p = xreqParam(x) orelse continue;
+                        if (p != u.param) continue;
+                        const k = try w.rinstXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
+                        const r = try w.rrely(k, w.frame);
+                        if (r == .ok) continue;
+                        xfail = Rely.worse(xfail, r);
+                    }
+                }
                 for (rw.items) |*x| {
                     if (x.param != u.param or x.path != u.path) continue;
                     x.fields = try unionFields(w.a, x.fields, u.fields);
                     if (origin == .exact) x.origin = origin;
+                    if (xfail) |r| x.xfail = Rely.worse(x.xfail, r);
                     break;
-                } else try rw.append(w.a, .{ .param = u.param, .path = u.path, .fields = u.fields, .origin = origin });
+                } else try rw.append(w.a, .{ .param = u.param, .path = u.path, .fields = u.fields, .origin = origin, .xfail = xfail });
             };
             const rop = try std.fmt.allocPrint(arena, "update {s}", .{op});
             for (rw.items) |x| {
@@ -10343,6 +10983,7 @@ const Walker = struct {
                     .entry = row,
                     .payload_from = view_msgs,
                     .fields = if (x.fields.len != 0) x.fields else try w.allFields(base),
+                    .xfail = x.xfail,
                 });
             }
         }
@@ -10739,7 +11380,7 @@ const Walker = struct {
             var others: std.ArrayList(AV) = .empty;
             for (avs, 0..) |x, i| if (i != k) try others.append(w.a, x);
             const probe = try w.probeDemand(inst, av, others.items);
-            try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = probe, .cond = try w.deepCond(av), .rprobe = try w.recordProbe(inst, av, others.items) });
+            try w.supplies.append(w.a, .{ .fun = j, .k = @intCast(k), .path = eps, .av = av, .probe = probe, .cond = try w.deepCond(av), .rcond = try w.rdeepCond(av), .rprobe = try w.recordProbe(inst, av, others.items) });
         }
         if (!try w.isTracked(inst)) return &.{};
         return w.single(.{ .kind = .cbres, .a = j, .b = inst.int(), .ty = w.instTypeOpt(inst) });
@@ -10845,7 +11486,7 @@ const Walker = struct {
                     continue;
                 }
                 const rprobe2 = if (owned and cells.len > 0) try w.recordProbe(ctx.inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .taken = taken, .rprobe = rprobe2 });
+                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .rcond = try w.rdeepCond(cells), .taken = taken, .rprobe = rprobe2 });
             }
             if (outer) |oc| {
                 try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .many = many });
@@ -11050,10 +11691,45 @@ const Walker = struct {
         // list's); core's rows write lists, and `Record.copy` reads. A pessimistic
         // summary writes every record of every parameter, applied where the
         // argument is one.
+        // §31.4 item 6: what the callee relied on of records, at the
+        // arguments; a failure is reported on the record demand of the
+        // argument it names, or on a record line of its own.
+        const rxfail = try w.a.alloc(?Rely, args.len);
+        @memset(rxfail, null);
+        for (s.rxreq) |x| {
+            const k = try w.rinstXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 });
+            const r = try w.rrely(k, w.frame);
+            if (r == .ok) continue;
+            const i = xreqParam(x) orelse continue;
+            if (i >= args.len) continue;
+            rxfail[i] = Rely.worse(rxfail[i], r);
+        }
         for (s.uses) |u| {
             if (u.bits & bit_f == 0 or u.param >= args.len) continue;
             if (s.limit != .none and !w.isRecordType(w.instType(args[u.param]))) continue;
-            try w.callSiteRecordDemand(inst, args, avs, callee_av, u.param, u.path, u.fields, if (s.limit != .none) .limit else .exact);
+            try w.callSiteRecordDemandX(inst, args, avs, callee_av, u.param, u.path, u.fields, if (s.limit != .none) .limit else .exact, rxfail[u.param]);
+            rxfail[u.param] = null;
+        }
+        for (rxfail, 0..) |f, i| {
+            const r = f orelse continue;
+            const detail = try std.fmt.allocPrint(w.o.out.allocator(), "{s} needs the elements of {s} to hold no record at two positions, and they may", .{ callee.name, try w.baseText(args[i]) });
+            try w.demands.append(w.a, .{
+                .kind = .value,
+                .token = tok,
+                .op = "update",
+                .base = try w.baseText(args[i]),
+                .base_local = none,
+                .base_path = eps,
+                .point = w.point,
+                .frame = w.frame,
+                .ctx = w.ctx,
+                .element = false,
+                .accept = .param,
+                .holders = &.{},
+                .fixed = .{ .verdict = .{ .rejected = if (r == .limit) .limit else .exclusive }, .detail = detail },
+                .prelim = .{ .cause = if (r == .limit) .limit else .exclusive, .detail = detail, .approx = r != .exact },
+                .fields = &.{},
+            });
         }
         // 3. W: the caller's side of a written parameter.
         const saved_uses = w.call_uses;
@@ -11364,6 +12040,10 @@ const Walker = struct {
         // `several` below reads neighbours: `normalize` sorts `res` by path.
         if (std.debug.runtime_safety and s.res.len > 1) for (s.res[1..], 0..) |r, i| std.debug.assert(s.res[i].path <= r.path);
         var out: std.ArrayList(Entry) = .empty;
+        // §31.4 item 6: each record condition of the summary instantiated
+        // once per call — a condition over what the call is handed, as it
+        // is handed — and read back for each entry that states it.
+        var rmemo: std.ArrayList(RMemo) = .empty;
         const grown = try w.grownArgs(ctx);
         var before: std.ArrayList(Entry) = .empty;
         var cut = false;
@@ -11396,6 +12076,8 @@ const Walker = struct {
             if (ctx.conds and r.prov.kind == .param) for (cells) |e| if (e.path == eps) {
                 try w.lowerSpine(e.cell, try w.instXSum(r.sc, ctx));
             };
+            // §31.4 item 6: and its record condition, as a list's.
+            if (ctx.conds) try w.instRecordCond(r, cells, ctx, &rmemo);
             const from = before.items.len;
             var av: AV = try w.composeRes(r, cells, grown, &before, &cut);
             if (several or r.approx) {
@@ -11414,6 +12096,7 @@ const Walker = struct {
             const cells = try w.instProv(r.prov, ctx);
             const own = try w.a.alloc(Entry, cells.len);
             for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown };
+            if (ctx.conds) try w.instRecordCond(r, own, ctx, &rmemo);
             // No list's fact may read what `objs` names.
             if (std.debug.runtime_safety) for (own) |x| std.debug.assert(w.listFacing(x.cell) == null);
             var av = try w.under(own, r.path);
@@ -11421,6 +12104,43 @@ const Walker = struct {
             try out.appendSlice(w.a, av);
         }
         return w.norm(out.items);
+    }
+
+    /// §31.4 item 6: a result entry's record condition at a call: a cell
+    /// made by the call starts at it, an argument's is lowered by it.
+    const RMemo = struct { x: XSum, k: u32 };
+
+    fn instRecordCond(w: *Walker, r: ResEntry, cells: AV, ctx: InstCtx, memo: *std.ArrayList(RMemo)) Allocator.Error!void {
+        // A cell that holds no record has no record condition to set.
+        for (cells) |e| {
+            if (e.path == eps and try w.mayHoldRecord(e.cell)) break;
+        } else return;
+        switch (r.prov.kind) {
+            .fresh, .esc => {
+                const k = try w.rinstMemo(r.rxc, ctx, memo);
+                for (cells) |e| if (e.path == eps) try w.rinitCond(e.cell, k);
+            },
+            .param => if (r.rxc.no != 0 or r.rxc.atoms.len != 0) {
+                const k = try w.rinstMemo(r.rxc, ctx, memo);
+                for (cells) |e| if (e.path == eps) try w.rlowerCond(e.cell, k);
+            },
+            else => {},
+        }
+    }
+
+    fn rinstMemo(w: *Walker, x: XSum, ctx: InstCtx, memo: *std.ArrayList(RMemo)) Allocator.Error!u32 {
+        if (x.no == 1) return cond_lost;
+        if (x.no == 2) return cond_shared;
+        if (x.atoms.len == 0) return cond_yes;
+        for (memo.items) |m| {
+            if (m.x.no != x.no or m.x.atoms.len != x.atoms.len) continue;
+            for (m.x.atoms, x.atoms) |a, b| {
+                if (!a.eql(b)) break;
+            } else return m.k;
+        }
+        const k = try w.rinstXSum(x, ctx);
+        try memo.append(w.a, .{ .x = x, .k = k });
+        return k;
     }
 
     /// `cells`, what summary entry `r` names at the call, placed under its
@@ -11954,6 +12674,12 @@ const Walker = struct {
     /// record objects argument `i` holds at path `q`, writing `fields` (all of
     /// them when a block could not say which).
     fn callSiteRecordDemand(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, fields: []const u32, origin: Origin) Allocator.Error!void {
+        return w.callSiteRecordDemandX(inst, args, avs, callee_av, i, q, fields, origin, null);
+    }
+
+    /// `callSiteRecordDemand`, with what the callee relied on of the
+    /// argument's records and may not have (`rxreq`, §31.4 item 6).
+    fn callSiteRecordDemandX(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, fields: []const u32, origin: Origin, xfail: ?Rely) Allocator.Error!void {
         const base = try w.projPath(avs[i], q, null);
         var others: std.ArrayList(AV) = .empty;
         try others.append(w.a, callee_av);
@@ -11979,6 +12705,7 @@ const Walker = struct {
             .origin = origin,
             .base_inst = if (q == eps) args[i] else null,
             .fields = written,
+            .xfail = xfail,
         });
     }
 
@@ -12588,7 +13315,7 @@ const Walker = struct {
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
                 const rprobe = if (e.owned and cells.len > 0) try w.recordProbe(inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = none, .owned = e.owned, .approx = e.approx, .taken = e.prov.taken, .rprobe = rprobe });
+                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = none, .owned = e.owned, .approx = e.approx, .rcond = try w.rinstXSum(e.rxc, ictx), .taken = e.prov.taken, .rprobe = rprobe });
             }
             for (s.supply) |e| {
                 if (e.fun != j) continue;
@@ -12620,11 +13347,11 @@ const Walker = struct {
                     for (avs, 0..) |x, i| if (i != j and i != from) try rothers.append(w.a, x);
                     const rowned = e.owned and !rcaptured;
                     const rprobe = if (rowned) try w.recordProbe(inst, rcells.items, rothers.items) else none;
-                    try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = rcells.items, .probe = none, .owned = rowned, .approx = e.approx or rcaptured, .taken = e.prov.taken, .rprobe = rprobe });
+                    try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = rcells.items, .probe = none, .owned = rowned, .approx = e.approx or rcaptured, .rcond = try w.rinstXSum(e.rxc, ictx), .taken = e.prov.taken, .rprobe = rprobe });
                 }
                 if (captured.items.len != 0) {
                     const named = try w.declView(captured.items);
-                    try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = named, .probe = none, .owned = false, .approx = true, .cond = try w.instXSum(e.xc, ictx), .taken = e.prov.taken });
+                    try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = named, .probe = none, .owned = false, .approx = true, .cond = try w.instXSum(e.xc, ictx), .rcond = try w.rinstXSum(e.rxc, ictx), .taken = e.prov.taken });
                 }
                 const cells: AV = own.items;
                 // Disjoint against every argument but the function and the
@@ -12633,6 +13360,7 @@ const Walker = struct {
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
                 const cond = try w.instXSum(e.xc, ictx);
+                const rcond = try w.rinstXSum(e.rxc, ictx);
                 // §30.9: each cell supplied is owned or not on its own, so a
                 // cell made during the call is not borrowed because another
                 // supplied beside it is.
@@ -12640,12 +13368,12 @@ const Walker = struct {
                     for (cells) |x| {
                         const one = try w.a.dupe(Entry, &.{x});
                         const probe = if (e.owned) try w.probeDemand(inst, one, others.items) else none;
-                        try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = one, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = cond, .taken = e.prov.taken });
+                        try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = one, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = cond, .rcond = rcond, .taken = e.prov.taken });
                     }
                     continue;
                 }
                 const probe = if (e.owned and cells.len > 0) try w.probeDemand(inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = cond, .taken = e.prov.taken });
+                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = cond, .rcond = rcond, .taken = e.prov.taken });
             }
         }
     }
@@ -12803,8 +13531,6 @@ const Walker = struct {
             const rbad_approx = try w.a.alloc(bool, c.params);
             @memset(rbad_approx, false);
             const rbad_cause = try w.a.alloc(Cause, c.params);
-            const rpending = try w.a.alloc(?[]const u8, c.params);
-            @memset(rpending, null);
             @memset(rbad_cause, .supply);
             for (c.uses) |u| {
                 if (u.bits & bit_f == 0 or u.param >= c.params or rbad[u.param] != null) continue;
@@ -12835,11 +13561,16 @@ const Walker = struct {
                     // §31.4 item 6: a record a destructive read hands out is
                     // its container's position, so the container's contents
                     // must be exclusive: no record object at two positions.
-                    // A list's conditions read no record object (`mkCond`),
-                    // so they cannot say it: not yet a verdict.
-                    if (e.prov.taken) {
-                        rpending[u.param] = try std.fmt.allocPrint(arena, "{s} hands its parameter {d} a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)", .{ callee.name, u.param + 1 });
-                    }
+                    // The supply's record condition says so, relied on here.
+                    if (e.prov.taken) switch (try w.rrely(try w.rinstXSum(e.rxc, ictx), w.frame)) {
+                        .ok => {},
+                        else => |r| {
+                            rbad[u.param] = try std.fmt.allocPrint(arena, "{s} hands its parameter {d} a position of a list that may hold one record at two positions", .{ callee.name, u.param + 1 });
+                            rbad_approx[u.param] = r != .exact;
+                            rbad_cause[u.param] = if (r == .limit) .limit else .exclusive;
+                            break :supplies;
+                        },
+                    };
                     // An owned supply of the callee's own parameter: the
                     // caller's argument is written, at the call (§31.7). A taken
                     // supply's path is the element's, `π1[*]`, the position it
@@ -12970,7 +13701,7 @@ const Walker = struct {
                     .prelim = .{ .cause = bad_cause[0], .detail = why, .approx = bad_approx[0] },
                 }),
                 .closure => |ci| {
-                    try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .rbad = rbad, .rbad_approx = rbad_approx, .rbad_cause = rbad_cause, .rpending = rpending, .name = callee.name });
+                    try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .rbad = rbad, .rbad_approx = rbad_approx, .rbad_cause = rbad_cause, .name = callee.name });
                     if (need_bad) try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
                 },
                 .func => {
@@ -13022,26 +13753,6 @@ const Walker = struct {
                                 .holders = &.{},
                                 .fixed = .{ .verdict = .{ .rejected = rbad_cause[k] }, .detail = why },
                                 .prelim = .{ .cause = rbad_cause[k], .detail = why, .approx = rbad_approx[k] },
-                                .fields = &.{},
-                            });
-                            break;
-                        };
-                        for (rpending, 0..) |x, k| if (x) |why| {
-                            if (rbad[k] != null) continue;
-                            try w.demands.append(w.a, .{
-                                .kind = .value,
-                                .token = tok,
-                                .op = "update",
-                                .base = name,
-                                .base_local = none,
-                                .base_path = eps,
-                                .point = w.point,
-                                .frame = w.frame,
-                                .ctx = w.ctx,
-                                .element = false,
-                                .accept = .callback_param,
-                                .holders = &.{},
-                                .fixed = .{ .verdict = .pending, .detail = why },
                                 .fields = &.{},
                             });
                             break;
@@ -13811,19 +14522,25 @@ const Walker = struct {
         // when it is a list that lives on.
         var stored: std.ArrayList(AV) = .empty;
         var spread_k = cond_yes;
+        var rspread_k = cond_yes;
         for (items, avs, 0..) |it, av, i| {
             if (i == bi) continue;
             if (!it.spread) {
                 try stored.append(w.a, av);
             } else if ((try w.refPath(it.inst)) != null) {
                 spread_k = cond_lost;
+                rspread_k = cond_lost;
             } else {
                 try stored.append(w.a, try w.elementsOf(av));
                 spread_k = try w.condAnd(spread_k, try w.deepCond(av));
+                rspread_k = try w.rcondAnd(rspread_k, try w.rdeepCond(av));
             }
         }
         const stored_k = try w.condAnd(spread_k, try w.storedCond(stored.items, try w.elementsOf(avs[bi])));
         for (avs[bi]) |e| if (e.path == eps) try w.lowerCond(e.cell, stored_k);
+        // §31.4 item 6: a record stored twice, or one the list holds.
+        const rstored_k = try w.rcondAnd(rspread_k, try w.rstoredCond(stored.items, try w.elementsOf(avs[bi])));
+        for (avs[bi]) |e| if (e.path == eps) try w.rlowerCond(e.cell, rstored_k);
         var parts: std.ArrayList(AV) = .empty;
         try parts.append(w.a, avs[bi]);
         for (items, avs, 0..) |it, av, i| {
@@ -13851,6 +14568,7 @@ const Walker = struct {
         for (avs[0..bi]) |av| try stored.append(w.a, av);
         const k = try w.condAnd(try w.storedCond(stored.items, try w.elementsOf(avs[bi])), try w.deepCond(avs[bi]));
         try w.initCond(site[0].cell, k);
+        try w.rinitCond(site[0].cell, try w.rcondAnd(try w.rstoredCond(stored.items, try w.elementsOf(avs[bi])), try w.rdeepCond(avs[bi])));
         var parts: std.ArrayList(AV) = .empty;
         try parts.append(w.a, site);
         // The array may be the base's — only a re-cons makes it so, which
@@ -13933,6 +14651,9 @@ const Walker = struct {
             const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
             try w.lowerCond(e.cell, k);
             try w.lowerCond(f.cell, k);
+            const rk = try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+            try w.rlowerCond(e.cell, rk);
+            try w.rlowerCond(f.cell, rk);
             const sk = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
             try w.lowerSpine(e.cell, sk);
             try w.lowerSpine(f.cell, sk);
@@ -14224,7 +14945,7 @@ const Walker = struct {
         rec.top = worst_top;
         if (spec.xfail) |r| {
             rec.xfail = r;
-            rec.xdetail = "the callee needs the list's elements not to share, and they may";
+            rec.xdetail = if (spec.fields != null) "the callee needs the list's elements to hold no record at two positions, and they may" else "the callee needs the list's elements not to share, and they may";
         }
         if (worst) |cs| {
             rec.prelim = .{ .cause = cs, .detail = worst_detail, .approx = worst_approx };
@@ -14873,16 +15594,6 @@ const Walker = struct {
                     d.assumed = false;
                     continue;
                 };
-                if (x[1] < c.rpending.len) if (c.rpending[x[1]]) |why| {
-                    if (rank >= 4) continue;
-                    rank = 4;
-                    d.verdict = .pending;
-                    d.detail = why;
-                    d.approx = false;
-                    d.note = "";
-                    d.assumed = false;
-                    continue;
-                };
                 if (rank == 0) d.note = try std.fmt.allocPrint(out, "{s} supplies it owned", .{c.name});
             } else if (x[1] < c.bad.len) {
                 if (c.bad[x[1]]) |why| {
@@ -15172,7 +15883,9 @@ const Walker = struct {
             // instantiation.
             const xc = try w.xsumOf(try w.cellCond(e.cell), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
             const sc = try w.xsumOf(try w.spineAt(&spines, e), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
-            try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .xc = xc, .sc = sc, .grown = e.grown });
+            // §31.4 item 6: its record condition, in the record table.
+            const rxc = try w.rxsumOf(try w.rcellCond(e.cell), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
+            try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .xc = xc, .sc = sc, .rxc = rxc, .grown = e.grown });
         }
         // §31.7: what the result holds of records, apart from `res`, which
         // every list's fact reads.
@@ -15205,7 +15918,9 @@ const Walker = struct {
                 // their own: an update's, a literal's, a call's; a record of
                 // numbers held whole is its provenance, whole.
                 prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
-                try objs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0 });
+                const rown = w.paramIndex(w.cells.items[try w.takenBase(base_cell)], frame, params) != null and bx.kind != .taken;
+                const rxc = try w.rxsumOf(try w.rcellCond(base_cell), frame, params, if (rown) base_cell else none);
+                try objs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .rxc = rxc });
             }
         }
         // Function parameters.
@@ -15253,6 +15968,7 @@ const Walker = struct {
                 const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
                 const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
                 const xc = try w.xsumOf(sr.cond, frame, params, none);
+                const rxc = try w.rxsumOf(sr.rcond, frame, params, none);
                 for (try w.listView(try w.expand(sr.av))) |e| {
                     // A cell made here keeps the number the result gives it,
                     // renumbered as the result's entries are (0 when the
@@ -15276,7 +15992,7 @@ const Walker = struct {
                         .top, .esc, .env => true,
                         else => probe_approx or e.approx != 0,
                     };
-                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .xc = xc, .grown = e.grown });
+                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .xc = xc, .rxc = rxc, .grown = e.grown });
                 }
                 // §31.5: the records it supplies, which no list's fact reads:
                 // as `objs` names a result's, by the provenance of the record
@@ -15304,7 +16020,7 @@ const Walker = struct {
                         .top, .esc, .env => true,
                         else => (sr.rprobe != none and w.probe_approx.items[sr.rprobe]) or e.approx != 0,
                     };
-                    try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx });
+                    try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .rxc = rxc });
                 }
             }
         } else {
@@ -15321,6 +16037,12 @@ const Walker = struct {
             if (r.frame != frame) continue;
             if (try w.xatomOf(r.atom, frame, params)) |x| try xreq.append(keep, x);
         }
+        // §31.4 item 6: what it relied on of records.
+        var rxreq: std.ArrayList(XAtom) = .empty;
+        for (w.rreqs.items) |r| {
+            if (r.frame != frame) continue;
+            if (try w.xatomOf(r.atom, frame, params)) |x| try rxreq.append(keep, x);
+        }
         if (atoms.items.len > atom_cap) return w.o.pessimistic(.{ .params = @intCast(params.len), .funs = funs.items }, .owned_atoms, @intCast(atoms.items.len));
         return w.o.normalize(.{
             .params = @intCast(params.len),
@@ -15331,6 +16053,7 @@ const Walker = struct {
             .rsupply = rsupply.items,
             .funs = funs.items,
             .xreq = xreq.items,
+            .rxreq = rxreq.items,
             .slots = if (frame == 0) try keep.dupe([2]u32, w.slot_keys.items) else &.{},
             .klasses = klasses.items,
         });

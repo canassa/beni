@@ -1,0 +1,30 @@
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Reset
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+        Reset →
+            0
+
+
+view : Int → Html Msg
+view n =
+    <div data-role="single">
+        <output>{n}</output>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+pub demo : Tea.Program
+demo = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }

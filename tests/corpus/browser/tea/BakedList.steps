@@ -1,0 +1,4 @@
+# Each row of the menu the page was parsed with sends its own message.
+click #menu>li:nth-child(2)>a
+click #menu>li:nth-child(3)>a
+click #menu>li:nth-child(1)>a

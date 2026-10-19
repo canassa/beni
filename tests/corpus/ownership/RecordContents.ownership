@@ -1,16 +1,15 @@
 module RecordContents
-  16:5 update <literal>[*]: accepted fresh (List.map writes it)
-  16:28 update x: pending: List.map hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
+  16:28 update x: rejected exclusive: List.map hands its parameter 1 a position of a list that may hold one record at two positions [copy]
   20:14 update <literal>[*]: accepted fresh (List.map writes it)
-  21:5 update x: pending: List.map hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
+  21:5 update x: accepted callback-param (List.map supplies it owned)
   25:14 update tasks[*]: accepted param (List.map writes it)
-  25:34 update x: pending: List.map hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
+  25:34 update x: accepted callback-param (List.map supplies it owned)
   29:12 update <literal>[*]: accepted fresh (RecordContents.mark writes it)
-  summary twice: res [*] ~fresh2 ~fresh501◦, fresh1
+  summary twice: res [*] ~fresh2r{shared} ~fresh501◦, fresh1r{shared}
   summary distinct: res [*] ~fresh2 ~fresh501◦ ~fresh502◦, fresh1
-  summary mark: π1 R, π1[*] W{done}; res [*] ~fresh2 ~π1[*]◦, fresh1
+  summary mark: π1 R, π1[*] W{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
   summary marked: res [*] ~fresh2 ~fresh501◦, fresh1
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 7: accepted 4, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 6: accepted 5, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 7: accepted 4, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 6: accepted 5, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

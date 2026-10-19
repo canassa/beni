@@ -6228,3 +6228,33 @@ what the command reads next. `tests/pending/ownership/SendInPayload.beni` and
 `NestedLambdaSend.beni`, each with a `browser-inline` token and the
 `browser-direct` verdict as its golden, are red until `browser-inline`'s
 `Cmd.perform` callback gets the direct row for its `send`.
+
+## CK-264 — a split element stored back into its own list, for records (2026-10-19)
+
+Ownership, issues #419 and #421 (`ownership-checker.md` §18.4 item 4, §31.4
+item 6), report mode. An element a list pattern binds is still in the list it
+was matched against, so `List.push rows first` holds `first` twice, and a
+callback that writes each record of that list in place is unsound. The list
+domain takes a taken element to be apart from its container's elements
+(`sepCells`), and the record domain copies the rule (`rsepCells`), so `mark`'s
+write is accepted. `tests/pending/ownership/RecordSplitPushBack.beni`, red until
+#419's fix, which changes both domains.
+
+## CK-265 — approximate projections hide an alias at two recursive levels (2026-10-19)
+
+**Issue:** #456. **Fixture:** `tests/pending/ownership/ApproximateAliasLevels.beni`.
+
+`wrap 1 ee` returns the same list `ee` inside a recursive wrapper. A pattern
+projection finds it again, with approximate entries. Placing the projected alias
+and `ee` at separate levels of `R a = RN (List a) (R (List a)) | RL` lets a
+callee write one while returning the other. Master accepts that call `fresh`;
+original #447 also accepts it. The twin projecting both aliases is accepted too.
+Both must be refused. The approximate entry can be an actual second occurrence,
+not only a duplicate analysis view of one occurrence.
+
+The unfinished `restMayBeEmpty` tightening refuses both, but also refuses valid
+recursive tree rebuilding (`browser/direct/ValuePath`,
+`ownership/EntryInvariantCommand`). Those acceptances remain required. Tracing
+the projection/instantiation producers is approved; a different representation
+or a precision compromise requires the owner's decision. #447 and #448 stay
+blocked until a sound correction preserves both sides.

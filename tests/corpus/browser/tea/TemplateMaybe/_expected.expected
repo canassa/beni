@@ -1,0 +1,72 @@
+-- load
+<body>
+  <main>
+    <button id="show">"show"</button>
+    <button id="text">"text"</button>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <section>
+      <b>"0"</b>
+    </section>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #inc
+<body>
+  <main>
+    <button id="show">"show"</button>
+    <button id="text">"text"</button>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <section>
+      <b>"1"</b>
+    </section>
+  </main>
+</body>
+-- click #text
+<body>
+  <main>
+    <button id="show">"show"</button>
+    <button id="text">"text"</button>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <section>"1"</section>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="show">"show"</button>
+    <button id="text">"text"</button>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <section>"2"</section>
+  </main>
+</body>
+-- click #show
+<body>
+  <main>
+    <button id="show">"show"</button>
+    <button id="text">"text"</button>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <section></section>
+  </main>
+</body>
+-- click #text
+(the DOM did not change)
+-- click #show
+<body>
+  <main>
+    <button id="show">"show"</button>
+    <button id="text">"text"</button>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <section>
+      <b>"2"</b>
+    </section>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)

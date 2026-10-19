@@ -1,0 +1,39 @@
+-- A program built by a function has its state per mount (§8.2; S4's
+-- amendment, item 6): `counter 0` and `counter 5` are two program values,
+-- each mounted with its own model, nodes and slots, so each counts on its
+-- own — a click on one changes nothing of the other.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+counter : Int → Tea.Program
+counter start =
+    Tea.sandbox
+        { init = λ⊤ → start
+        , update = λInc n → n + 1
+        , view = λn → <section><button onClick={Inc}>inc</button><p>{n}</p></section>
+        }
+
+
+-- Where the two mount: a page of two elements.
+shell : Tea.Program
+shell =
+    Tea.sandbox
+        { init = λ⊤ → ⊤
+        , update = λ_ m → m
+        , view = λ_ → <main><div id="first" /><div id="second" /></main>
+        }
+
+
+main : Tea.Program
+main =
+    Browser.programs
+        [ shell
+        , Browser.mountAt (counter 0) "first"
+        , Browser.mountAt (counter 5) "second"
+        ]

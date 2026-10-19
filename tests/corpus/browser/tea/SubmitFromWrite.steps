@@ -1,0 +1,3 @@
+# The click, then the form's submission, its default prevented.
+click #go
+click #go

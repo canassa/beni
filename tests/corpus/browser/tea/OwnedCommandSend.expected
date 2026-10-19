@@ -1,0 +1,14 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #start
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <p>"3"</p>
+  </main>
+</body>

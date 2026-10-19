@@ -1,0 +1,69 @@
+-- `browser/dom/ControlledUnseen`, rebuilt for `browser-direct` (its S4
+-- amendment, item 2): a message that changes nothing a row reads visits no
+-- row, and no control. What shows it is a value written with no event (the
+-- driver's `set`, as a script outside beni would): nothing marks it, so a
+-- dispatch leaves it. `pageshow`, which follows the browser's restoring of
+-- form state, puts every control back. Rejected edits are still put back,
+-- keyed and by position; an accepted one prints its row once.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Edit Int String
+    | Tick
+
+
+type alias Item =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Item
+    n : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Edit id s →
+            if String.length s > 3 then
+                m
+            else
+                { m | rows = List.map m.rows λr → if r.id == id then { r | label = s } else r }
+
+        Tick →
+            { m | n = m.n + 1 }
+
+
+cell : String → Html Msg
+cell s = <b>{Debug.log "cell" s}</b>
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="tick" onClick={Tick}>{m.n}</button>
+        <For each={m.rows} keyed={.id}>
+            {λr →
+                <p>
+                    {Debug.log "keyed" r.label}
+                    <input id="k${String.fromInt r.id}" value={r.label} onInput={Edit r.id _} />
+                    {cell r.label}
+                </p>
+            }
+        </For>
+        <For each={m.rows} keyed={False}>
+            {λr → <input id="p${String.fromInt r.id}" value={r.label} onInput={Edit r.id _} />}
+        </For>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = [ { id = 0, label = "a" }, { id = 1, label = "b" } ], n = 0 }
+        , update = update
+        , view = view
+        }

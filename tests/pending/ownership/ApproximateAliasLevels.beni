@@ -1,0 +1,123 @@
+-- CK-265: #456. A projection through a recursive marker returns the same
+-- list it was handed, with approximate analysis entries. Reusing that
+-- alias at another recursive level is still actual sharing, not another
+-- analysis view of the same occurrence. `wr` writes the second level and
+-- returns the alias from the third level. The sharing calls must be refused;
+-- master and original #447 accept them. Twins use constructor aliases and
+-- helper summaries. Distinct fresh lists and mutually exclusive arms stay accepted.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+wrap : Int, a → T a
+wrap n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wrap (n - 1) [ x ])
+
+
+type R a
+    = RN (List a) (R (List a))
+    | RL
+
+
+wr : R Int → List (List Int) × List Int
+wr t =
+    case t of
+        RN _ (RN a (RN b _)) →
+            case b of
+                [ [ c ] ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub projectedThenBuilt : ⊤ → List (List Int) × List Int
+projectedThenBuilt ⊤ =
+    ee = []
+    case wrap 1 ee of
+        Wrap (Leaf [ copy ]) →
+            wr (RN [] (RN ee (RN [ [ copy ] ] RL)))
+
+        _ →
+            ( [], [] )
+
+
+pub bothProjected : ⊤ → List (List Int) × List Int
+bothProjected ⊤ =
+    ee = []
+    case wrap 1 ee of
+        Wrap (Leaf [ a ]) →
+            case wrap 1 ee of
+                Wrap (Leaf [ b ]) →
+                    wr (RN [] (RN a (RN [ [ b ] ] RL)))
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub constructorAlias : ⊤ → List (List Int) × List Int
+constructorAlias ⊤ =
+    ee = []
+    nodeCtor = RN
+    case wrap 1 ee of
+        Wrap (Leaf [ copy ]) →
+            wr (nodeCtor [] (nodeCtor ee (nodeCtor [ [ copy ] ] RL)))
+
+        _ →
+            ( [], [] )
+
+
+node : List a, R (List a) → R a
+node a rest = RN a rest
+
+
+pub throughHelper : ⊤ → List (List Int) × List Int
+throughHelper ⊤ =
+    ee = []
+    case wrap 1 ee of
+        Wrap (Leaf [ copy ]) →
+            wr (node [] (node ee (node [ [ copy ] ] RL)))
+
+        _ →
+            ( [], [] )
+
+
+chooseNode : Bool, List a, R (List a) → R a
+chooseNode yes a rest =
+    if yes then
+        RN a RL
+    else
+        RN [] rest
+
+
+-- The two incoming aliases never coexist in one returned value.
+pub exclusiveArms : Bool → List (List Int) × List Int
+exclusiveArms yes =
+    ee = []
+    case wrap 1 ee of
+        Wrap (Leaf [ copy ]) →
+            wr (node [] (chooseNode yes ee (node [ [ copy ] ] RL)))
+
+        _ →
+            ( [], [] )
+
+
+pub distinctFresh : ⊤ → List (List Int) × List Int
+distinctFresh ⊤ =
+    ee = []
+    case wrap 1 [] of
+        Wrap (Leaf [ separate ]) →
+            wr (node [] (node ee (node [ [ separate ] ] RL)))
+
+        _ →
+            ( [], [] )

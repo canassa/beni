@@ -3,7 +3,7 @@ module EntryInitProgram
   28:11 entry EntryInitProgram.update model: rejected top-level: EntryInitProgram.start is a top-level value
   32:9 entry EntryInitProgram.update model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   summary update: π2 RAW, π2[*] A; res [*] ~π2[*], π2
-  summary view: π1 R; res ⟨render⟩ fresh1{lost}
+  summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause top-level 1

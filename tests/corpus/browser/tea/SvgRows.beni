@@ -1,0 +1,80 @@
+-- SVG under `browser-direct` (boundary.md §9.9; browser-direct.md §6): a
+-- keyed `For` whose row is a `<rect>`, which the page's parser makes an SVG
+-- element only inside an `<svg>`, so the row's template is parsed wrapped in
+-- one and the row is the wrapper's child. Rows are added, moved and edited
+-- by key, a hole in a row's SVG attribute is written again when its item
+-- changes, a click on a row sends its item's message through the list's
+-- delegated listener, and the drawing's own text and attributes are holes
+-- of the page. Both platforms show one page, every element in the SVG
+-- namespace.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Grow Int
+    | Add
+    | Reverse
+
+
+type alias Bar =
+    id : Int
+    height : Int
+
+
+type alias Model =
+    bars : List Bar
+    next : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Grow id →
+            { model
+                | bars =
+                    List.map model.bars λb → if b.id == id then { b | height = b.height + 1 } else b
+            }
+
+        Add →
+            { model
+                | bars = List.push model.bars { id = model.next, height = 1 }
+                , next = model.next + 1
+            }
+
+        Reverse →
+            { model | bars = List.reverse model.bars }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <svg viewBox="0 0 ${String.fromInt (model.next * 5)} 10">
+            <g id="bars">
+                <For each={model.bars} keyed={.id}>
+                    {λb →
+                        <rect
+                            id="bar${String.fromInt b.id}"
+                            x={String.fromInt (b.id * 5)}
+                            width="4"
+                            height={String.fromInt b.height}
+                            onClick={Grow b.id}
+                        />
+                    }
+                </For>
+            </g>
+            <text x="0" y="9" font-size="2">{String.fromInt (List.length model.bars)} bars</text>
+        </svg>
+        <button id="add" onClick={Add}>add</button>
+        <button id="reverse" onClick={Reverse}>reverse</button>
+    </main>
+
+
+main : Browser.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { bars = [ { id = 1, height = 2 }, { id = 2, height = 3 } ], next = 3 }
+        , update = update
+        , view = view
+        }

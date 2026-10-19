@@ -1,0 +1,48 @@
+-- Concurrent arms receive fresh filtered job spines. Escapes in the
+-- other policy arms must not poison them (ownership-checker.md's dated
+-- alternative-arm escape amendment). Both queued and fiber jobs are covered.
+import Html exposing (Html)
+import Task exposing (Fiber)
+import Tea
+
+
+type Policy
+    = Restart
+    | Concurrent
+
+
+chooseFiber : Policy, List Int → List Int × Fiber Int
+chooseFiber policy runs =
+    old = List.filter runs λ_ → True
+    case policy of
+        Restart →
+            ( [], Task.spawn λ⊤ → List.length old )
+        Concurrent →
+            ( [ …old, 2 ], Task.spawn λ⊤ → 0 )
+
+
+chooseSoon : Policy, List Int → List Int × Task.Soon
+chooseSoon policy runs =
+    old = List.filter runs λ_ → True
+    case policy of
+        Restart →
+            ( [], Task.soon λ⊤ → Debug.log "old ${String.fromInt (List.length old)}" ⊤ )
+        Concurrent →
+            ( [ …old, 2 ], Task.soon λ⊤ → ⊤ )
+
+
+type Msg
+    = Tick
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                ( a, _ ) = chooseFiber Concurrent [ 1 ]
+                ( b, _ ) = chooseSoon Concurrent [ 1 ]
+                List.length a + List.length b
+        , update = λTick model → model + 1
+        , view = λmodel → <button id="tick" onClick={Tick}>{model}</button>
+        }

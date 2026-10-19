@@ -1,0 +1,39 @@
+-- The dispatch-end phase drains messages sent by after-render work and
+-- repeats for work those messages queue (browser-direct.md §10.2, S5).
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Start
+    | Next
+    | Last
+
+
+update : Msg, Int → Int × Cmd.Cmd Msg
+update msg n =
+    case msg of
+        Start →
+            ( n + 1, Cmd.afterRender λsend → send Next )
+
+        Next →
+            ( n + 1, Cmd.afterRender λsend → send Last )
+
+        Last →
+            ( n + 1, Cmd.none )
+
+
+view : Int → Html Msg
+view n = <main><button id="start" onClick={Start}>start</button><p>{n}</p></main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
