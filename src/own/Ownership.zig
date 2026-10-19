@@ -5396,7 +5396,9 @@ const Req = struct { frame: u32, atom: WAtom };
 /// by §18.6's rule only (`js`, with the call as `why`).
 const EscAt = struct { gen: u32 = none, js: u32 = none, why: u32 = 0 };
 
-const Escape = struct { cell: u32, point: u32, why: u32, ctx: u32, prev: u32 };
+/// `list_only`: an escape a list's facts take, which is no record's object's
+/// (`callbackEscapes`: a callback that keeps part of what it is handed).
+const Escape = struct { cell: u32, point: u32, why: u32, ctx: u32, prev: u32, list_only: bool = false };
 
 const Entry = struct {
     path: u32,
@@ -5895,6 +5897,8 @@ const Walker = struct {
     use_destructure: bool = false,
     /// The use being recorded reads no field (`Use.reads_none`).
     use_reads_none: bool = false,
+    /// The escapes being noted are a list's only (`Escape.list_only`).
+    escaping_list_only: bool = false,
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
     eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
@@ -7555,7 +7559,7 @@ const Walker = struct {
         const head = try w.esc_heads.getOrPut(w.a, key);
         const previous = if (head.found_existing) head.value_ptr.* else none;
         const event: u32 = @intCast(w.escaped.items.len);
-        try w.escaped.append(w.a, .{ .cell = c, .point = at, .why = why, .ctx = w.ctx, .prev = previous });
+        try w.escaped.append(w.a, .{ .cell = c, .point = at, .why = why, .ctx = w.ctx, .prev = previous, .list_only = w.escaping_list_only });
         head.value_ptr.* = event;
         const gop = try w.esc_index.getOrPut(w.a, escKey(w.cells.items[c], w.cells.items[c].path));
         if (!gop.found_existing) gop.value_ptr.* = .{};
@@ -7597,6 +7601,11 @@ const Walker = struct {
     /// Unescaped at a demand: an alternative arm cannot retain its cell.
     /// Summary read-off deliberately keeps escapeOf's union of every arm.
     fn escapeBefore(w: *Walker, c: u32) Allocator.Error!EscAt {
+        return w.escapeBeforeOf(c, false);
+    }
+
+    /// `escapeBefore` for a record's object: a list's escapes left out.
+    fn escapeBeforeOf(w: *Walker, c: u32, record: bool) Allocator.Error!EscAt {
         var out: EscAt = .{};
         for ([_]u32{ c, try w.takenBase(c) }) |cc| {
             const x = w.cells.items[cc];
@@ -7609,7 +7618,7 @@ const Walker = struct {
                 var event = w.esc_heads.get(escKey(x, path)) orelse none;
                 while (event != none) {
                     const e = w.escaped.items[event];
-                    if (e.point < w.point and w.compatible(e.ctx, w.ctx)) {
+                    if (e.point < w.point and w.compatible(e.ctx, w.ctx) and !(record and e.list_only)) {
                         if (e.why == 0) {
                             out.gen = @min(out.gen, e.point);
                         } else if (e.point < out.js) {
@@ -10682,7 +10691,17 @@ const Walker = struct {
                 for (s.supply) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
-                    try w.escape(cells, w.point - 1);
+                    // A callback that keeps a part below what it is handed: a
+                    // list's facts take the whole value as kept, as they always
+                    // have; a record's object is not kept, only the part, so
+                    // the whole is a list's escape alone (§31.4 item 2).
+                    const below = if (try w.o.suffix(e.path, u.path)) |rest| rest != eps else false;
+                    if (below) {
+                        w.escaping_list_only = true;
+                        defer w.escaping_list_only = false;
+                        try w.escape(cells, w.point - 1);
+                    } else try w.escape(cells, w.point - 1);
+                    if (below) try w.escape(try w.projPath(cells, (try w.o.suffix(e.path, u.path)).?, null), w.point - 1);
                 }
             }
             if (cls == .closure) try w.escapeCaptures(cls.closure, w.point - 1);
@@ -12908,16 +12927,21 @@ const Walker = struct {
     /// supplied owned (a loan, `recordLoanDemands`).
     fn returnsOwnedRecord(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32) Allocator.Error!bool {
         if (c.limit != .none or s.limit != .none) return false;
-        // A record that may hold lists — an open row, a type parameter — is
-        // named whole in `res`, its object with it: the answer's own, at ε.
+        // The answer's own object, at ε, is what the callee writes — an
+        // accumulator's update, a `need` — not the records inside it. A record
+        // that may hold lists (an open row, a type parameter) is named whole
+        // in `res`, its object with it.
         var at_root: std.ArrayList(ResEntry) = .empty;
+        for (c.objs) |r| if (r.path == eps) try at_root.append(w.a, r);
         for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
-        for ([_][]const ResEntry{ c.objs, at_root.items }) |entries| for (entries) |r| {
+        for (at_root.items) |r| {
             switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
-                    // Kept, the record is not the caller's to write.
-                    for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j | bit_k) != 0 and w.o.overlap(u.path, r.prov.path)) return false;
+                    // Kept, the record is not the caller's to write: kept at its
+                    // own path or above it. A field kept below it (a scope
+                    // a runtime holds) keeps the field, not the object.
+                    for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j | bit_k) != 0 and w.o.isPrefix(u.path, r.prov.path)) return false;
                     var found = false;
                     for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |sup| for (sup) |e| {
                         if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
@@ -12934,7 +12958,7 @@ const Walker = struct {
             }
             // One record at two of the result's paths is not owned.
             for (c.objs) |x| if (x.path != r.path and x.prov.eql(r.prov)) return false;
-        };
+        }
         return true;
     }
 
@@ -12968,10 +12992,11 @@ const Walker = struct {
     fn recordLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, depth: u32) Allocator.Error!void {
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const s = callee.sum;
-        // As `returnsOwnedRecord` reads them: `objs`, and `res` at ε.
+        // As `returnsOwnedRecord` reads them: the answer's own object, at ε.
         var at_root: std.ArrayList(ResEntry) = .empty;
+        for (c.objs) |r| if (r.path == eps) try at_root.append(w.a, r);
         for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
-        for ([_][]const ResEntry{ c.objs, at_root.items }) |answers| for (answers) |r| {
+        for (at_root.items) |r| {
             if (r.prov.kind != .param) continue;
             for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                 if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
@@ -12990,7 +13015,7 @@ const Walker = struct {
                     else => {},
                 }
             };
-        };
+        }
     }
 
     /// §31.5: a callee writes what a function value returns, and the value
@@ -13576,14 +13601,14 @@ const Walker = struct {
                 .site, .param, .result, .closure, .func, .cbres, .taken, .except => {},
             }
             // A real escape names itself before §18.6's conservative one.
-            var esc = try w.escapeBefore(e.cell);
+            var esc = if (spec.fields != null) try w.escapeBeforeOf(e.cell, true) else try w.escapeBefore(e.cell);
             // §31.2: a record demand on a whole record's cell is a demand on
             // its object, which escapes on its own (the object alone, an
             // `except` cell over it) where a capture or a result keeps it.
             if (spec.fields != null) {
                 const k = w.cells.items[base].kind;
                 if (k != .site and k != .top and k != .closure and k != .func and k != .except) {
-                    const obj = try w.escapeBefore(try w.exceptCell(base, &.{}, true));
+                    const obj = try w.escapeBeforeOf(try w.exceptCell(base, &.{}, true), true);
                     esc.gen = @min(esc.gen, obj.gen);
                     if (obj.js < esc.js) {
                         esc.js = obj.js;

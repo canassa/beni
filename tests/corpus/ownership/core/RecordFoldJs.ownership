@@ -1,0 +1,10 @@
+module RecordFoldJs
+  17:5 update driver: accepted param
+  21:19 update driver: accepted param (List.foldl writes it)
+  21:47 update d: accepted callback-param (List.foldl supplies it owned)
+  summary step: π2 W{count}, π2.count R, π2.scope RAE; res .scope π2.scope, π2◦
+  summary drive: π1 R, π2 RAEW{count, scope}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

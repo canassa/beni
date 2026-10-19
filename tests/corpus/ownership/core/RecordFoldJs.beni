@@ -1,0 +1,21 @@
+-- ownership (core): the Tea drivers' `perform` shape (`ownership-checker.md`
+-- §31.5). `step` hands the host a field of the state, its `scope`, and
+-- writes another, `count`: the field is kept, not the record, so the record
+-- `step` answers is still the one `List.foldl` handed it, owned, and the
+-- fold's write is accepted at `drive`'s callers.
+import Js
+
+
+type alias Driver =
+    scope : Js.Value
+    count : Int
+
+
+step : Int, Driver → Driver
+step n driver =
+    Js.set (Js.global "globalThis") "scope" driver.scope
+    { driver | count = driver.count + n }
+
+
+pub drive : List Int, Driver → Driver
+drive ns driver = List.foldl ns driver λn d → step n d
