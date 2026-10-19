@@ -8339,7 +8339,9 @@ const Pts = struct {
     fn addDep(p: *Pts, head: u32) Allocator.Error!u32 {
         const at = p.deps.items.len;
         // `append`, written out: Zig's own backend inlines none of its calls.
-        if (p.deps.capacity == at) try p.deps.ensureUnusedCapacity(p.arena(), 1);
+        // Dependency chains are read only by this fixpoint. Reclaim the
+        // pool with its constraints when the next fixpoint starts (#464).
+        if (p.deps.capacity == at) try p.deps.ensureUnusedCapacity(p.tmp.allocator(), 1);
         p.deps.items.len = at + 1;
         p.deps.items.ptr[at] = .{ .stmt = p.cur, .next = head };
         return @intCast(at);
@@ -8455,6 +8457,18 @@ const Pts = struct {
         const flags: Val = .{ .top = a.top or b.top, .prim = a.prim or b.prim, .nul = a.nul or b.nul, .undef = a.undef or b.undef };
         if (a.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = b.sites };
         if (b.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = a.sites };
+        // Site slices are immutable snapshots. A settled union can share
+        // the containing operand instead of retaining another identical
+        // snapshot on every fixpoint reevaluation (#464).
+        const large = if (a.sites.len >= b.sites.len) a.sites else b.sites;
+        const small = if (a.sites.len >= b.sites.len) b.sites else a.sites;
+        var matched: usize = 0;
+        for (large) |site| {
+            if (site == small[matched]) {
+                matched += 1;
+                if (matched == small.len) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
+            } else if (site > small[matched]) break;
+        }
         var out: std.ArrayList(u32) = .empty;
         try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
         var i: usize = 0;
@@ -10597,6 +10611,71 @@ test "a value read from a var keeps its sites when a later join adds one" {
         try want.insert(arena, 0, site);
     }
     try testing.expectEqualSlices(u32, want.items, (try p.view(v)).sites);
+}
+
+// #464: the points-to fixpoint repeatedly joins the same site facts.
+// Allocating another immutable snapshot when the union adds no sites made
+// N16 of unique-components retain hundreds of MB within one fixpoint. Four
+// sites suffice: repeated equal and contained unions must keep bounded
+// space, preserve every flag, and leave the earlier values unchanged.
+test "repeated points-to unions of settled site facts keep bounded space" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    var storage: [8192]u8 = undefined;
+    var bounded: std.heap.FixedBufferAllocator = .init(&storage);
+    s.pts.tmp.deinit();
+    s.pts.tmp = .init(bounded.allocator());
+    const sites = [_]u32{ 1, 3, 5, 7 };
+    const equal = [_]u32{ 1, 3, 5, 7 };
+    const subset = [_]u32{ 3, 7 };
+    const all: Pts.Val = .{ .sites = &sites, .prim = true };
+    const contained: Pts.Val = .{ .sites = &subset, .nul = true };
+    for (0..512) |_| {
+        const forward = try s.pts.unionOf(all, contained);
+        const backward = try s.pts.unionOf(contained, all);
+        const same = try s.pts.unionOf(all, .{ .sites = &equal, .undef = true });
+        for ([_]Pts.Val{ forward, backward, same }) |v| try testing.expectEqualSlices(u32, &sites, v.sites);
+        try testing.expect(forward.prim and forward.nul and !forward.undef and !forward.top);
+        try testing.expect(backward.prim and backward.nul and !backward.undef and !backward.top);
+        try testing.expect(same.prim and same.undef and !same.nul and !same.top);
+    }
+    // A common prefix is insufficient for containment, in either order.
+    const mixed = try s.pts.unionOf(all, .{ .sites = &.{ 3, 8 }, .nul = true });
+    const reverse = try s.pts.unionOf(.{ .sites = &.{ 3, 8 }, .undef = true }, all);
+    try testing.expectEqualSlices(u32, &.{ 1, 3, 5, 7, 8 }, mixed.sites);
+    try testing.expectEqualSlices(u32, &.{ 1, 3, 5, 7, 8 }, reverse.sites);
+    try testing.expect(mixed.prim and mixed.nul and !mixed.undef);
+    try testing.expect(reverse.prim and reverse.undef and !reverse.nul);
+    try testing.expectEqualSlices(u32, &.{ 1, 3, 5, 7 }, all.sites);
+    try testing.expectEqualSlices(u32, &.{ 3, 7 }, contained.sites);
+}
+
+// #464: dependency records are abandoned at the next fixpoint, but their
+// backing arrays used to remain in the whole-compilation arena. Repeat a
+// tiny fixpoint's dependency pool in bounded outer storage: earlier pools
+// must be reclaimable, while each live dependency chain remains intact.
+test "points-to dependency storage is reclaimed between fixpoints" {
+    var storage: [8192]u8 = undefined;
+    var bounded: std.heap.FixedBufferAllocator = .init(&storage);
+    var s = try emptySpec(testing.allocator, bounded.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    for (0..64) |_| {
+        try p.reset();
+        p.cur = 7;
+        var head = none;
+        for (0..64) |_| head = try p.addDep(head);
+        var count: u32 = 0;
+        while (head != none) : (count += 1) {
+            try testing.expectEqual(7, p.deps.items[head].stmt);
+            head = p.deps.items[head].next;
+        }
+        try testing.expectEqual(64, count);
+    }
 }
 
 test "a key map's removal keeps every other key reachable" {
