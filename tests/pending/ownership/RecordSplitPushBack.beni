@@ -1,4 +1,4 @@
--- CK-263: #419, for records (`ownership-checker.md` §18.4 item 4, §31.4 item 6): an
+-- CK-264: #419, for records (`ownership-checker.md` §18.4 item 4, §31.4 item 6): an
 -- element a list pattern binds is still in the list it was matched against,
 -- so pushed back onto that list it is there twice, and `mark`'s write of
 -- each row is rejected `exclusive`. Red: a taken element is taken to be apart

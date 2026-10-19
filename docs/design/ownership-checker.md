@@ -5447,7 +5447,7 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
      a round makes no more of once the list table has settled.
    - **A `keep`** (`rkeepShape`) rests on what the callee hands its callback being taken (`rtakenSupply`
      refuses a supply that is not), which is #419's surface too: until #419's fix, a split element pushed
-     back onto its own list is accepted for records as for lists (CK-263, `tests/pending`).
+     back onto its own list is accepted for records as for lists (CK-264, `tests/pending`).
    - **A `foreign`'s `exclusive` word** speaks of its list's lists, so the record twin of a words row's
      made result fails approximately unless it is the row's argument.
    A summary line prints a record condition after the list one, `r{…}`, nothing when it holds outright.

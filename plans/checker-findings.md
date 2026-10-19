@@ -6229,7 +6229,7 @@ what the command reads next. `tests/pending/ownership/SendInPayload.beni` and
 `browser-direct` verdict as its golden, are red until `browser-inline`'s
 `Cmd.perform` callback gets the direct row for its `send`.
 
-## CK-263 — a split element stored back into its own list, for records (2026-10-19)
+## CK-264 — a split element stored back into its own list, for records (2026-10-19)
 
 Ownership, issues #419 and #421 (`ownership-checker.md` §18.4 item 4, §31.4
 item 6), report mode. An element a list pattern binds is still in the list it

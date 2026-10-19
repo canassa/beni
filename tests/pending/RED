@@ -133,4 +133,6 @@ tests/pending/ownership/RecordForItem.beni#browser-inline exit=0 browser-inline.
 # demand, so a shared send builds. Golden: the browser-direct verdict.
 tests/pending/ownership/NestedLambdaSend.beni exit=0 browser-inline.ownership-differs
 tests/pending/ownership/SendInPayload.beni exit=0 browser-inline.ownership-differs
+# #419 (CK-264): a split element stored back into its own list is taken
+# as apart from it, for records as for lists. Golden: the verdict with the fix.
 tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
