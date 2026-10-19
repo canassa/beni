@@ -1,0 +1,3 @@
+element "root"
+click [data-role=inc]
+throws click [data-role=inc]

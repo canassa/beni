@@ -298,6 +298,15 @@ beni over `Js` in `Inline.beni`:
   release optimiser keeps a binding whose value reads a field, which it cannot prove pure — so
   #351's first text, which evaluated every `let` in every binding function and counted on release
   to drop the unread ones, was wrong.
+- **Evaluation order** (*added 2026-10-19, the review of #398*). A binding function evaluates, per
+  context: first the `let`s it reads; then every value that may throw — a hole's or an attribute's
+  value, or a `when`'s branch value, holding any call that is not a basic operator
+  (`Context.valueSafe`: literals, locals, field and tuple reads, `if`s and `case`s, interpolation
+  and `Operator`'s calls of such are safe); then each write, with its safe values evaluated just
+  before it. A `Debug.todo` in a binding therefore throws before the function has written
+  anything, and the page stays as the last pass left it, as on master and `browser-tea`
+  (`browser/inline/ThrowBeforeWrite`); a safe value is still written at its write, where release
+  writes it in place (#365's rule, `backend.md` §9 item 1, is the same set of values).
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as

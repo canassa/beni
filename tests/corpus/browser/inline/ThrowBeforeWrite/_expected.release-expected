@@ -1,0 +1,28 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="top">
+      <div data-role="app">
+        <button data-role="inc">"+"</button>
+        <span>"0"</span>
+        <em>"0"</em>
+      </div>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="top">
+      <div data-role="app">
+        <button data-role="inc">"+"</button>
+        <span>"1"</span>
+        <em>"1"</em>
+      </div>
+    </div>
+  </div>
+</body>
+-- throws click [data-role=inc]
+(threw: Error: TODO: boom)
+(the DOM did not change)

@@ -1326,6 +1326,17 @@ pub const Context = struct {
         return cx.vtable.value_reads_let(cx.impl, r, k, v);
     }
 
+    /// 1.15: whether evaluating value `v` cannot fail: it is made only of
+    /// literals, locals, field and tuple reads, `if`s and `case`s, string
+    /// interpolation and the basic operators (`Operator`) — the values
+    /// `--release` writes past a write (`backend.md` §9 item 1, amended
+    /// 2026-10-18). Any other call may throw (`Debug.todo`), so a
+    /// lowering evaluates it before it writes anything that depends on
+    /// the same pass (`browser-inline.md` §8.2).
+    pub fn valueSafe(cx: *Context, v: Value.Index) bool {
+        return cx.vtable.value_safe(cx.impl, v);
+    }
+
     /// 1.15, inside `Lowering.piece` only: a top-level constant of the
     /// module named `<Module>$<base>`, exported, of `value`.
     pub fn pieceExport(cx: *Context, base: []const u8, init: Expr) Error!void {
@@ -1778,6 +1789,7 @@ pub const VTable = struct {
     piece_event_ctor: *const fn (impl: *anyopaque, handler: Value.Index, payload: bool) ?Context.PieceEvent,
     root_let_readers: *const fn (impl: *anyopaque, r: Root.Index, k: u32) u32,
     value_reads_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32, v: Value.Index) bool,
+    value_safe: *const fn (impl: *anyopaque, v: Value.Index) bool,
     piece_export: *const fn (impl: *anyopaque, base: []const u8, value: Expr) Error!void,
     program_piece: *const fn (impl: *anyopaque, node: Node.Index) Error!?*const PieceFacts,
     program_piece_name: *const fn (impl: *anyopaque, node: Node.Index, base: []const u8) Error!Name,
