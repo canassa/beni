@@ -5288,6 +5288,18 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
      (`ownership/RecordContentsEntry`, `RecordContentsTwice`).
    - **A caller's failed `rxreq`** is reported on the record demand the call makes of that argument, or on
      a record line of its own, cause `exclusive`.
+   - **No list verdict reads a record condition**, and `zig build test-records-lost` shows it mechanically:
+     every corpus program is checked again with every record condition failing (`--ownership-records-lost`,
+     hidden and test-only), and its list lines must be the same, byte for byte. The one place the two
+     tables met, the entry's rounds (§20.4), now settles them apart: a record table that does not settle
+     is lowered to the limit alone, and only a list table that does not settle makes the declaration an
+     error. The record table does settle: a record condition only gains atoms, over the walk's cells, which
+     a round makes no more of once the list table has settled.
+   - **A `keep`** (`rkeepShape`) rests on what the callee hands its callback being taken (`rtakenSupply`
+     refuses a supply that is not), which is #419's surface too: until #419's fix, a split element pushed
+     back onto its own list is accepted for records as for lists (CK-263, `tests/pending`).
+   - **A `foreign`'s `exclusive` word** speaks of its list's lists, so the record twin of a words row's
+     made result fails approximately unless it is the row's argument.
    A summary line prints a record condition after the list one, `r{…}`, nothing when it holds outright.
    Over the 1 092 programs of the comparison, no list line moves against master, and the 64 pending item 6
    lines are all decided: each callback now relies on its list's records, as `rxreq` of its declaration.

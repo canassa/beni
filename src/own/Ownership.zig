@@ -2240,7 +2240,14 @@ fn sortedSupply(keep: Allocator, entries: []const SupplyEntry) Allocator.Error![
 
 /// §31.4 item 6: a list condition's record twin — `excl`, `sep` and
 /// `keep` as their record forms (`rkeepShape` for a keep); a spine's atoms
-/// are a list's array, and dropped.
+/// are a list's array, and dropped. Sound because an asserted row's
+/// condition says where each element comes from — which argument's
+/// positions, which callback's answers — whatever the element's type, so it
+/// says the same of a record element as of a list element (core's rows are
+/// polymorphic; `ownership/RecordContentsBuilt` drives `repeat`, `append`
+/// and `concat` with records). A failure keeps its kind: `{shared}`, one
+/// cell at two places, is one record at two places when the cell is a
+/// record; it only labels a refusal exact.
 fn recordTwin(o: *Ownership, x: XSum) Allocator.Error!XSum {
     if (x.no != 0) return x;
     var out: std.ArrayList(XAtom) = .empty;
@@ -2256,7 +2263,12 @@ fn recordTwins(o: *Ownership, s: Summary) Allocator.Error!Summary {
     const keep = o.keep.allocator();
     var out = s;
     const res = try keep.dupe(ResEntry, s.res);
-    for (res) |*r| r.rxc = try o.recordTwin(r.xc);
+    for (res) |*r| {
+        r.rxc = try o.recordTwin(r.xc);
+        // A `foreign`'s `exclusive` word speaks of its list's lists
+        // (`boundary.md` §4), not of records it may hold twice.
+        if (s.words and r.rxc.no == 0 and r.rxc.atoms.len == 0 and r.prov.kind != .param) r.rxc = .{ .no = 1 };
+    }
     out.res = res;
     const objs = try keep.dupe(ResEntry, s.objs);
     for (objs) |*r| r.rxc = try o.recordTwin(r.xc);
@@ -7350,17 +7362,26 @@ const Walker = struct {
     }
 
     /// The cell a record condition names for `c`: the record an `except`
-    /// cell was written over, a taken element's own.
-    fn rbase(w: *const Walker, c_in: u32) u32 {
+    /// cell was written over, a taken element's own. And one id per object:
+    /// a result's record that may hold lists is a list-facing cell in `res`
+    /// and its `nonlistOf` copy in `objs` (§31.7), two ids for one record,
+    /// so a copy is named by the cell it copies, where that cell exists
+    /// (`cell` interns: a record whose cell is always `nonlist` names
+    /// itself).
+    fn rbase(w: *Walker, c_in: u32) Allocator.Error!u32 {
         var c = c_in;
         while (w.cells.items[c].kind == .except) c = w.cells.items[c].a;
-        return c;
+        const x = w.cells.items[c];
+        if (!x.nonlist) return c;
+        var y = x;
+        y.nonlist = false;
+        return w.cell(y);
     }
 
     /// A cell's record condition (§31.4 item 6): its table's, or its kind's —
     /// an arrival is `rexcl` of itself.
     fn rcellCond(w: *Walker, c_in: u32) Allocator.Error!u32 {
-        const c = w.rbase(c_in);
+        const c = try w.rbase(c_in);
         if (w.o.in.records_lost) return cond_lost;
         if (w.cell_rcond.items[c] != none) return w.cell_rcond.items[c];
         const x = w.cells.items[c];
@@ -7391,7 +7412,7 @@ const Walker = struct {
 
     /// The record condition of a cell this walk made, which starts at `k`.
     fn rinitCond(w: *Walker, c_in: u32, k: u32) Allocator.Error!void {
-        const c = w.rbase(c_in);
+        const c = try w.rbase(c_in);
         const cur = w.cell_rcond.items[c];
         w.cell_rcond.items[c] = if (cur != none) try w.rcondAnd(cur, k) else k;
     }
@@ -7399,7 +7420,7 @@ const Walker = struct {
     /// Lower a cell's record condition, as a store into it does.
     fn rlowerCond(w: *Walker, c: u32, k: u32) Allocator.Error!void {
         if (k == cond_yes) return;
-        const b = w.rbase(c);
+        const b = try w.rbase(c);
         w.cell_rcond.items[b] = try w.rcondAnd(try w.rcellCond(b), k);
     }
 
@@ -7409,8 +7430,8 @@ const Walker = struct {
 
     /// Whether two cells share no record object.
     fn rsepCells(w: *Walker, x_in: u32, y_in: u32, exact: bool) Allocator.Error!u32 {
-        const x = w.rbase(x_in);
-        const y = w.rbase(y_in);
+        const x = try w.rbase(x_in);
+        const y = try w.rbase(y_in);
         const cx = w.cells.items[x];
         const cy = w.cells.items[y];
         if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
@@ -7459,7 +7480,7 @@ const Walker = struct {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
             if (!try w.mayHoldRecord(e.cell)) continue;
-            try out.append(w.a, .{ .path = e.path, .cell = w.rbase(e.cell), .approx = e.approx });
+            try out.append(w.a, .{ .path = e.path, .cell = try w.rbase(e.cell), .approx = e.approx });
         }
         return out.items;
     }
@@ -7603,7 +7624,7 @@ const Walker = struct {
         const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
         for (w.rconds.items[k].atoms) |t| {
-            if (self != none and t.kind == .excl and t.a == w.rbase(self)) continue;
+            if (self != none and t.kind == .excl and t.a == (try w.rbase(self))) continue;
             const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
             try out.append(keep, x);
         }
@@ -7821,7 +7842,7 @@ const Walker = struct {
             var acc: RAcc = .{};
             for (try w.instProv(container, ctx)) |e| {
                 if (e.path != eps) continue;
-                try acc.add(w, try w.rmkCond(&.{.{ .kind = .keep, .a = jj, .b = w.rbase(e.cell) }}));
+                try acc.add(w, try w.rmkCond(&.{.{ .kind = .keep, .a = jj, .b = try w.rbase(e.cell) }}));
             }
             return acc.done(w);
         }
@@ -10229,7 +10250,7 @@ const Walker = struct {
         // record cell an update's object was written over too.
         var rfresh: std.ArrayList(u32) = .empty;
         for (model) |e| {
-            const b = w.rbase(e.cell);
+            const b = try w.rbase(e.cell);
             const c = w.cells.items[b];
             if (c.kind != .result or c.a != inst.int() or c.b == 0 or c.b >= entry_init_ns) continue;
             if (try w.isEscaped(b) or try w.isEscaped(e.cell) or try w.isEscaped(try w.exceptCell(b, &.{}, true))) continue;
@@ -10247,6 +10268,12 @@ const Walker = struct {
         // too — so a round that makes no cell, grows no carried lambda and
         // moves no condition is the fixpoint. Conditions only go down a chain
         // of finite height, so it is reached in a bounded number of rounds.
+        // The list table and the record table settle apart (§31.4 item 6):
+        // one that does not is lowered to the limit alone, so that a record
+        // condition never moves a list's verdict, and only a list's that
+        // does not settle makes the declaration an error.
+        var lists_settled = false;
+        var records_settled = false;
         for (0..round_cap) |_| {
             const before = try w.a.dupe(u32, w.cell_cond.items);
             const rbefore = try w.a.dupe(u32, w.cell_rcond.items);
@@ -10260,13 +10287,18 @@ const Walker = struct {
                 std.debug.assert(w.uses.items.len == uses_before);
                 std.debug.assert(w.escaped.items.len == escapes_before);
             }
-            if (w.carry_grew == grew and std.mem.eql(u32, before, w.cell_cond.items) and std.mem.eql(u32, rbefore, w.cell_rcond.items[0..rbefore.len])) return;
+            // A cell made in the round grows both tables: neither settled.
+            lists_settled = w.carry_grew == grew and std.mem.eql(u32, before, w.cell_cond.items);
+            records_settled = std.mem.eql(u32, rbefore, w.cell_rcond.items);
+            if (lists_settled and records_settled) return;
         }
         // Never use an unfinished proof, and never lose it silently: the
         // declaration is an error (§16.7).
-        try w.o.hitLimit(.fixpoint, round_cap);
-        for (fresh.items) |c| try w.lowerCond(c, cond_limit);
-        for (rfresh.items) |c| try w.rlowerCond(c, cond_limit);
+        if (!lists_settled) {
+            try w.o.hitLimit(.fixpoint, round_cap);
+            for (fresh.items) |c| try w.lowerCond(c, cond_limit);
+        }
+        if (!records_settled) for (rfresh.items) |c| try w.rlowerCond(c, cond_limit);
     }
 
     /// Every cell of `av`, closures expanded, at `⋆`: what a value built

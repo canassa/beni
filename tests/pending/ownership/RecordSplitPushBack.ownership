@@ -1,0 +1,10 @@
+module RecordSplitPushBack
+  16:13 List.push rows: accepted param
+  23:23 call RecordSplitPushBack.dupRow rows: accepted param (RecordSplitPushBack.dupRow writes π1)
+  23:41 update r: rejected exclusive: List.map hands its parameter 1 a position of a list that may hold one record at two positions (approx) [copy]
+  summary dupRow: π1 RAW, π1[*] R; res [*] ~π1[*]r{excl π1}, π1{lost}r{lost}
+  summary mark: π1 RW, π1[*] R; res [*] ~fresh2r{lost} ~π1[*]◦r{lost}, fresh1r{lost}
+  demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
