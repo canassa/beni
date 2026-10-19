@@ -1,6 +1,8 @@
 -- A record is an object literal with a canonical key order, so every value
 -- of one record type shares a hidden class (`backend.md` §4). Field access
--- is `.name`; record update spreads and overrides.
+-- is `.name`; record update spreads and overrides. `shift` writes the point
+-- it is handed, so the two calls before the last hand it a copy of `origin`
+-- (`ownership-checker.md` §31.7).
 import Node exposing (Program)
 import String
 
@@ -23,10 +25,10 @@ main : Program
 main =
     origin = { x = 0, y = 0 }
 
-    here = { name = "here", point = shift 3 origin }
+    here = { name = "here", point = shift 3 (Record.copy origin) }
     Node.printLines
         [ String.fromInt origin.x
-        , String.fromInt (shift 3 origin).x
+        , String.fromInt (shift 3 (Record.copy origin)).x
         , String.fromInt (shift 3 origin).y
         , here.name
         , String.fromInt here.point.x

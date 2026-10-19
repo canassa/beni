@@ -5,7 +5,9 @@
 -- An `if`: A → B → A with the same text. A `case` on a `Maybe`: Just →
 -- Nothing → Just with the same payload. A page union, as Conduit's: Home →
 -- Article → Home, each arm binding its payload, Home's arm a helper's
--- call written in place, whose button bumps the home page's count.
+-- call written in place, whose button bumps the home page's count. The
+-- page and `home` are kept as two records, each a copy of the other, so that
+-- the model holds no record at two paths (ownership-checker.md §31.8).
 import Html exposing (Html)
 import Tea
 
@@ -50,7 +52,7 @@ update msg model =
             { model | picked = Nothing }
 
         GoHome →
-            { model | page = HomePage model.home }
+            { model | page = HomePage (Record.copy model.home) }
 
         GoArticle →
             { model | page = ArticlePage "the article" }
@@ -59,7 +61,7 @@ update msg model =
             case model.page of
                 HomePage h →
                     next = { h | count = h.count + 1 }
-                    { model | page = HomePage next, home = next }
+                    { model | page = HomePage next, home = Record.copy next }
 
                 ArticlePage _ →
                     model

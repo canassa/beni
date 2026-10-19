@@ -2914,7 +2914,7 @@ names the fixture that pins each (§24.6).
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
 | `String.join`, `String.fromList` | `borrowed List …` | `Array.prototype.join` on the list's array or its `$plain()`, which keeps nothing |
 | `String.split`, `words`, `lines`, `toList`, `indexes` | `→ fresh exclusive List …` | `split`, `Array.from`, `filter` and a `Js.array` the body fills make a new array of strings or numbers, which no cell is held twice in |
-| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do |
+| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do. Re-read 2026-10-19: `print` builds its options with `defaultOptions ⊤`, a new record per call (§31.16), which reads neither argument |
 | `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5). Re-read 2026-10-15: a compiled schema's decoding worker also returns its conversions' answers, so the answer is still unknown |
 | `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
@@ -5751,3 +5751,23 @@ Every site of `core/` and the platforms that §31's measurement or reading found
 
 `core/` and every platform must hold no rejected or pending record line when beni is built (§28.7). Every row is
 checked by the report-mode slice before enforcement.
+
+*As built (2026-10-19, slice R3 of #315), the table and §31.13's programs.* `Schema.defaultOptions` is
+`⊤ → Options`; core's readers and a compiled schema's root wrappers call it (`defaultOptions()`, one record
+per run). The engine's child contexts — `hostEnds`, `belowBackward` and `run`'s `NConverted`, `NFlipped` and
+`NProjected` — are `{ Record.copy c | … }`, and `:1231`'s `{ last | … }`, a record read back from the
+engine's array, is a copy: `core/` holds no rejected record line. The programs, each with the fix its line
+named and no checker change: PrettyPrinter's `Concat` and `Group` (a copy, and `{ flat | mode = Break }`), and
+its `fits`, which only looks and so copies; both TypedKeys, which update in the arms that need it; Bike Wars'
+`initBikes`, `initModel` and `init` as functions of `⊤`, and a copy of the red bike for `Bike.shoot` and
+`Bike.update`; Sternhalma's `setOccupant`; Conduit's `Route.fromUrl`; `KeyedInPlace`'s `rows ⊤`;
+`BranchReturn`'s page and `home` as two records; `run/ListPersistence`'s model functions; `run/Records`,
+`run/MarkupFieldIdentity`, `run/TeaLoop`, and the `run/` programs whose top-level test value an update
+used (`Record.copy`). Every `run/`, `browser/` and `emit/` golden prints what it did; the emit goldens change
+only by `Schema$defaultOptions()`. Over the 1 071 programs, 57 record lines stay rejected: the TodoMVCs'
+`changed model (List.map model.todos …)` (#405), `KeyedEnds`' callback that reads `List.length rows` (a read
+at ε, the same summary limit), Bike Wars' `handleInput model _` and Conduit's and `StoredBranchPlacement`'s
+`payload` (§31.4 item 4 and P6, the checker's), and the two `Tea.beni` platforms: `Direct.beni`'s state read
+back from JavaScript (`Tea.commands (Js.to self)`) and `perform`'s `List.foldl` accumulator, whose record
+supply the checker does not yet follow through the callback's loans. Those wait for the checker (R2d) or a
+decision on the driver's state; none was rewritten to pass.

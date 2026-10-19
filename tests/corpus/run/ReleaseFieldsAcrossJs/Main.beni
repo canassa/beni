@@ -45,7 +45,7 @@ main =
     item = Probe.keep { label = "kept", weight = 7 }
     Node.printLines
         [ Probe.describe p
-        , Probe.describe { o | x = o.x + 1 }
+        , Probe.describe { Record.copy o | x = o.x + 1 }
         , String.fromFloat (Probe.area (Circle 2.0))
         , String.fromFloat (Probe.area (Square 3.0))
         , "${made.kind} ${String.fromInt made.count}"
