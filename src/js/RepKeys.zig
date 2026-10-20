@@ -3,7 +3,7 @@
 //! (`check/TypeKeys.zig`), one artifact
 //! per module, merged into ONE table for the build and mapped to what a
 //! value of each type is at run time in a release build. `Lower` writes the
-//! result into `JsIr.name_key` and `JsIr.node_key`; nothing decides what to
+//! result into `JsIr.name_key` and `JsIr.node_keys`; nothing decides what to
 //! emit by it, and fact 3's declared-type filter is its one reader.
 //!
 //! **The table.** A node is a canonical closed type, as the checker's are

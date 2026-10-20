@@ -313,7 +313,7 @@ pub const Input = struct {
     /// check per answer.
     record: ?*Funnel.Recorder = null,
     /// `--release`: the build's representation keys (`RepKeys`), written
-    /// into `JsIr.name_key` and `JsIr.node_key` and read by nothing that
+    /// into `JsIr.name_key` and `JsIr.node_keys` and read by nothing that
     /// decides what is emitted (`backend.md` §3, *Amended 2026-10-20*).
     /// Null: the columns stay empty.
     rep_keys: ?*const RepKeys = null,
@@ -755,10 +755,10 @@ pub fn lower(
     const range = try b.addRange(body.items);
     var ir = try b.toOwned(range);
     errdefer ir.deinit(gpa);
-    // `--release`: the two key columns, as long as the nodes and the names,
-    // a word never written wild.
+    // `--release`: the keyed nodes' rows, and the name column as long as the
+    // names, a word never written wild.
     if (input.rep_keys != null) {
-        ir.node_key = try keyColumn(gpa, l.node_keys.items, ir.nodes.len);
+        ir.node_keys = try keyRows(gpa, l.node_keys.items);
         ir.name_key = try keyColumn(gpa, l.name_keys.items, ir.names.len);
     }
     const diagnostics = try l.diagnostics.toOwnedSlice(gpa);
@@ -781,6 +781,23 @@ pub fn lower(
         .tail_len = tail_len,
         .units = units.items,
     };
+}
+
+/// `JsIr.node_keys` from what `Lowerer.keyNode` wrote, one word per node up
+/// to the last it keyed: a row per keyed node, ascending.
+fn keyRows(gpa: Allocator, written: []const u32) Allocator.Error![]JsIr.KeyedNode {
+    var n: usize = 0;
+    for (written) |w| {
+        if (w != Lowerer.key_unset) n += 1;
+    }
+    const out = try gpa.alloc(JsIr.KeyedNode, n);
+    var at: usize = 0;
+    for (written, 0..) |w, i| {
+        if (w == Lowerer.key_unset) continue;
+        out[at] = .{ .node = @fromBackingInt(@intCast(i)), .key = @fromBackingInt(w) };
+        at += 1;
+    }
+    return out;
 }
 
 /// A key column of `len` words from what lowering wrote (`Lowerer.keyNode`,
@@ -4744,7 +4761,7 @@ pub const Lowerer = struct {
     }
 
     /// `value`, what allocating instruction `inst` lowered to, takes the
-    /// instruction's key (`JsIr.node_key`) when it is an object, an array
+    /// instruction's key (`JsIr.node_keys`) when it is an object, an array
     /// or an arrow the instruction itself made — a node at `from` or later
     /// — and has no key yet: an inner allocation that is the whole value (a
     /// type that is its field) keeps its own, which is the same.

@@ -58,15 +58,18 @@ names: []const Name,
 body: SubRange,
 
 /// Owned, `--release` only (`backend.md` §9, *Declared-type filtering of fact
-/// 3*): per node, the representation key of what an object, array or arrow
-/// node allocates (`js/RepKeys.zig`), `RepKey.wild` for every other node. A
-/// node past its end is wild: the column is as long as the nodes lowering
-/// made, and a node a later pass appends has no key.
-node_key: []const RepKey = &.{},
+/// 3*): the representation key of what each keyed object, array or arrow
+/// node allocates (`js/RepKeys.zig`), by node, ascending, no node twice.
+/// Sparse, because only allocations are keyed: a node with no row is wild,
+/// and so is every node a later pass appends without giving it one.
+node_keys: []const KeyedNode = &.{},
 /// Owned, `--release` only: per name, the representation key of the Bir
 /// local it names (`Lower.localName`), `RepKey.wild` for every other name.
-/// A name past its end is wild, as a node is.
+/// A name past its end is wild.
 name_key: []const RepKey = &.{},
+
+/// One row of `node_keys`.
+pub const KeyedNode = struct { node: Node.Index, key: RepKey };
 
 /// A representation key (`js/RepKeys.zig`): an index into the build's table
 /// of canonical closed types, or `wild`, which filters nothing. Nothing reads
@@ -639,7 +642,7 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
     gpa.free(ir.extra);
     gpa.free(ir.string_bytes);
     gpa.free(ir.names);
-    gpa.free(ir.node_key);
+    gpa.free(ir.node_keys);
     gpa.free(ir.name_key);
     ir.* = undefined;
 }
@@ -693,13 +696,13 @@ pub fn setName(ir: *JsIr, index: NameIndex, n: Name) void {
 }
 
 /// The representation key of what `node` allocates, or `wild`
-/// (`node_key`). A safety build asserts what fact 3 relies on when it reads
+/// (`node_keys`). A safety build asserts what fact 3 relies on when it reads
 /// one (`backend.md` §9, *Declared-type filtering of fact 3*): a keyed node
 /// is still an object, an array or an arrow, so no rewrite left a stale key
 /// on a node it made something else.
 pub inline fn nodeKey(ir: *const JsIr, node: Node.Index) RepKey {
-    if (node.int() >= ir.node_key.len) return .wild;
-    const k = ir.node_key[node.int()];
+    const at = keyRow(ir.node_keys, node) orelse return .wild;
+    const k = ir.node_keys[at].key;
     if (std.debug.runtime_safety and k != .wild) switch (ir.tag(node)) {
         .object, .array, .arrow => {},
         else => std.debug.panic("node {d} is a {t} and keeps the key #{d} of an allocation", .{ node.int(), ir.tag(node), k.int() }),
@@ -714,12 +717,26 @@ pub inline fn nameKey(ir: *const JsIr, index: NameIndex) RepKey {
     return if (i < ir.name_key.len) ir.name_key[i] else .wild;
 }
 
+/// Where `node`'s row is in `rows` (`node_keys`, ascending by node), if it
+/// has one.
+pub fn keyRow(rows: []const KeyedNode, node: Node.Index) ?usize {
+    var lo: usize = 0;
+    var hi: usize = rows.len;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const at = rows[mid].node.int();
+        if (at == node.int()) return mid;
+        if (at < node.int()) lo = mid + 1 else hi = mid;
+    }
+    return null;
+}
+
 /// Clear `node`'s key: a pass that makes the node something else (`Spec`'s
-/// rewrites in place).
+/// rewrites in place). The row stays, wild.
 pub fn clearNodeKey(ir: *JsIr, node: Node.Index) void {
-    if (node.int() >= ir.node_key.len) return;
-    const keys: []RepKey = @constCast(ir.node_key);
-    keys[node.int()] = .wild;
+    const at = keyRow(ir.node_keys, node) orelse return;
+    const rows: []KeyedNode = @constCast(ir.node_keys);
+    rows[at].key = .wild;
 }
 
 /// The bytes of a `number`, `string` or `template_chunk` node.
