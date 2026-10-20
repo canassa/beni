@@ -38,7 +38,9 @@ import Task exposing (Exit, Resume)
 --|
 --| **The log goes to standard error**: from the start, each line `Log`
 --| writes is one `Log.logfmt` line on standard error, so the program's own
---| output on standard output stays clean (`boundary.md` §9.8.15 (b)).
+--| output on standard output stays clean (`boundary.md` §9.8.15 (b)). A
+--| line written before `run` is called — while `main` is evaluated — goes
+--| to `Log`'s default sink, the console.
 pub run : (⊤ → Program) → Program
 run body =
     ended = Js.ref False
@@ -83,7 +85,10 @@ stuck =
     "beni: the program cannot go on: every fiber is waiting for something that can never happen.\n"
 
 
--- `Log`'s sink on Node: one `logfmt` line per entry on standard error.
+-- `Log`'s sink on Node: one `logfmt` line per entry on standard error,
+-- written at once. A write that fails, to a closed pipe say, is an `error`
+-- event of `process.stderr` that nothing handles, so the program stops:
+-- an unknown failure crashes (`CLAUDE.md` rule 9).
 logLine : Log.Entry → ⊤
 logLine entry =
     _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from "${Log.logfmt entry}\n" ]
