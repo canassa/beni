@@ -1081,6 +1081,32 @@ function step(s) {
     case "mouse":
       target.dispatchEvent(new MouseEvent(s.name, { ...init, button: 0 }));
       return null;
+    // A pointer event at a point of a box: `x` and `y` are CSS pixels from
+    // the top-left corner of the `box:` element (by default the element the
+    // event is dispatched on), so its `clientX` is that box's left plus `x`.
+    // happy-dom has no layout and puts every box at 0; Chrome lays the page
+    // out, so only Chrome shows the conversion. `pointerenter` and
+    // `pointerleave` neither bubble nor cancel, and nor does
+    // `pointercancel`, as the Pointer Events standard fires them.
+    case "pointer": {
+      const box = s.box === undefined ? target : document.querySelector(s.box);
+      if (box === null) return `no element matches \`${s.box}\``;
+      const r = box.getBoundingClientRect();
+      const bubbles = s.name !== "pointerenter" && s.name !== "pointerleave";
+      const cancelable = s.name === "pointerdown" || s.name === "pointermove" || s.name === "pointerup" || s.name === "pointerover" || s.name === "pointerout";
+      const event = new PointerEvent(s.name, {
+        bubbles,
+        cancelable,
+        composed: bubbles,
+        clientX: r.left + s.x,
+        clientY: r.top + s.y,
+        pointerId: s.id,
+        pointerType: s.type,
+        isPrimary: s.primary,
+      });
+      if (!target.dispatchEvent(event)) globalThis.__beniHarness.log.push(`(${s.name}'s default prevented)`);
+      return null;
+    }
     // A drag event is a MouseEvent (DragEvent extends it), so both DOMs
     // dispatch the same object; nothing here carries a `dataTransfer`.
     // `dragleave` and `dragend` are not cancelable, as the HTML standard's
@@ -1575,6 +1601,30 @@ if (stepsPath !== undefined) {
     } else if (command === "mouse") {
       if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
       s.name = argument;
+    } else if (command === "pointer") {
+      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]`
+      const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
+      const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout"];
+      if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\``);
+      s.name = words[0];
+      s.x = 0;
+      s.y = 0;
+      s.id = 1;
+      s.type = "mouse";
+      s.primary = true;
+      let rest = words.slice(1);
+      if (rest.length >= 2 && /^-?[0-9]+(\.[0-9]+)?$/.test(rest[0]) && /^-?[0-9]+(\.[0-9]+)?$/.test(rest[1])) {
+        s.x = Number(rest[0]);
+        s.y = Number(rest[1]);
+        rest = rest.slice(2);
+      }
+      for (const w of rest) {
+        if (/^id:-?[0-9]+$/.test(w)) s.id = Number(w.slice("id:".length));
+        else if (/^type:(mouse|pen|touch)$/.test(w)) s.type = w.slice("type:".length);
+        else if (w === "secondary") s.primary = false;
+        else if (/^box:\S+$/.test(w)) s.box = w.slice("box:".length);
+        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch>\`, \`secondary\` or \`box:<selector>\` after the name, not \`${w}\``);
+      }
     } else if (command === "drag") {
       if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
       s.name = argument;

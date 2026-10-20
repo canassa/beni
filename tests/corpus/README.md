@@ -285,6 +285,29 @@ project) against it, one step per line, `#` for a comment:
                                 `dragleave` and `dragend`; one whose
                                 default a handler prevented logs
                                 `(drop's default prevented)` (or its name's)
+    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]
+                                one `PointerEvent` of that name
+                                (`pointerdown`, `pointermove`, `pointerup`,
+                                `pointercancel`, `pointerenter`,
+                                `pointerleave`, `pointerover`,
+                                `pointerout`) at the point `x`, `y`
+                                (default 0 0), CSS pixels from the top-left
+                                corner of the `box:` element's border box
+                                (default the element itself); `pointerId`
+                                `n` (default 1), `pointerType` `t`
+                                (`mouse`, the default, `pen` or `touch`),
+                                primary unless `secondary`. It bubbles and
+                                is cancelable as the standard fires it:
+                                `pointerenter` and `pointerleave` do
+                                neither, `pointercancel` does not cancel.
+                                One whose default a handler prevented logs
+                                `(pointerdown's default prevented)` (or its
+                                name's). happy-dom has no layout, so every
+                                box is at 0 there and only Chrome shows a
+                                handler converting the point to its own
+                                box: name the point in the box of the
+                                element that has the handler, and both DOMs
+                                print the same transcript
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable

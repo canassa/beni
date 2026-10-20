@@ -1,0 +1,51 @@
+-- Pointer events under the `inline` lowering (boundary.md §9.8.20 (d)): it
+-- attaches every listener to its element, so the pointer extractor reads
+-- the box of the element with the handler, as under `dom`. A move on the
+-- dot is a point in the arena's box; a touch's id and type come through.
+-- Each handler is a constructor, as the lowering asks (browser-inline.md
+-- §8.7), so `update` reads the `Pointer` after its dispatch.
+-- `browser-inline` compiles no `style` attribute yet, so the arena has no
+-- `touch-action: none`; in Chrome the body's margin still puts its box
+-- away from 0.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Moved Html.Pointer
+    | Pressed Html.Pointer
+
+
+type alias Model =
+    x : Float
+    y : Float
+    who : String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Moved p →
+            { model | x = Html.localX p, y = Html.localY p }
+
+        Pressed p →
+            { model | who = "${Html.pointerType p} #${String.fromInt (Html.pointerId p)}" }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div
+            id="arena"
+            onPointerMove={Moved}
+            onPointerDown={Pressed}
+        >
+            <span id="dot">dot</span>
+        </div>
+        <p id="at">{"${String.fromFloat model.x}, ${String.fromFloat model.y}"}</p>
+        <p id="who">{model.who}</p>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { x = 0, y = 0, who = "" }, update = update, view = view }
