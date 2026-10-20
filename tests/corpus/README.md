@@ -296,10 +296,11 @@ project) against it, one step per line, `#` for a comment:
                                 `pointerout`) at the point `x`, `y`
                                 (default 0 0), CSS pixels from the top-left
                                 corner of the `box:` element's border box
-                                (default the element itself); `pointerId`
-                                `n` (default 1), `pointerType` `t`
-                                (`mouse`, the default, `pen` or `touch`),
-                                primary unless `secondary`. It bubbles and
+                                (default the element itself; a selector
+                                with no spaces); `pointerId` `n` (default
+                                1), `pointerType` `t` (`mouse`, the
+                                default, `pen`, `touch`, or `none` for
+                                `""`), primary unless `secondary`. It bubbles and
                                 is cancelable as the standard fires it:
                                 `pointerenter` and `pointerleave` do
                                 neither, `pointercancel` does not cancel.

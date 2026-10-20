@@ -1602,7 +1602,8 @@ if (stepsPath !== undefined) {
       if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
       s.name = argument;
     } else if (command === "pointer") {
-      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]`
+      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]`;
+      // `type:none` is a `pointerType` of "", a device the browser cannot name.
       const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
       const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout"];
       if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\``);
@@ -1618,12 +1619,13 @@ if (stepsPath !== undefined) {
         s.y = Number(rest[1]);
         rest = rest.slice(2);
       }
+      if (rest.length >= 1 && /^-?[0-9]+(\.[0-9]+)?$/.test(rest[0])) usage(`${where}: \`pointer\` takes the point as two numbers, \`<x> <y>\``);
       for (const w of rest) {
         if (/^id:-?[0-9]+$/.test(w)) s.id = Number(w.slice("id:".length));
-        else if (/^type:(mouse|pen|touch)$/.test(w)) s.type = w.slice("type:".length);
+        else if (/^type:(mouse|pen|touch|none)$/.test(w)) s.type = w === "type:none" ? "" : w.slice("type:".length);
         else if (w === "secondary") s.primary = false;
         else if (/^box:\S+$/.test(w)) s.box = w.slice("box:".length);
-        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch>\`, \`secondary\` or \`box:<selector>\` after the name, not \`${w}\``);
+        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\` or \`box:<selector>\` after the name, not \`${w}\``);
       }
     } else if (command === "drag") {
       if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
