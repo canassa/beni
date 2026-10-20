@@ -67,7 +67,9 @@ try {
     const batch = old.leads.slice(offset, offset + 64), dir = resolve(work, 'reverse-' + offset);
     await mkdir(dir);
     for (const p of batch) await writeFile(resolve(dir, p.module + '.beni'), p.source);
-    const {stdout} = await exec(compiler, ['dump', '--stage=ownership', '--platform=browser-inline', '--jobs=1', dir], {maxBuffer: 32 * 1024 * 1024});
+    // The campaign's in-place platform, as bridge-precision.mjs reads it: a report without one is
+    // from a `browser-direct` campaign, whose pinned compiler carries that platform.
+    const {stdout} = await exec(compiler, ['dump', '--stage=ownership', `--platform=${report.environment.platform ?? 'browser-direct'}`, '--jobs=1', dir], {maxBuffer: 32 * 1024 * 1024});
     const rows = new Map(); let current;
     for (const line of stdout.split('\n')) {
       if (!line) continue;
