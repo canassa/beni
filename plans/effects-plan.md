@@ -758,3 +758,22 @@ second caller when it decides. For the same reason, `logfmt`'s two patterns stay
 functions: as top-level values, their `impure` initialisers stayed in every `Io.run` program too.
 The log context (`annotate`, `span`, `minimum`, `withSink`) and the measurement against Effect's
 `logDebug` are the next part.
+
+*P7, second part, as built (2026-10-20; #358).* The log context: `Log.annotate`, `span`, `minimum`
+and `withSink`, in the log-context slot of §17.5. The slot holds one immutable record — the
+annotations, the spans with the time each began, the minimum, and `withSink`'s sink — that
+`Task.withLogContext` sets for a function and puts back when it ends, returned or cancelled, as
+`Task.withClock` does for the clock; `Task.currentLogContext` reads it. A fiber started inside
+copies it with the rest of the slots. A call reads the slot once: below the minimum it builds
+nothing. Fixtures, both builds: `run/LogLevels` (every level through `withSink`; an inner
+`withSink`; a child that keeps the sink after `withSink` returns), `run/LogMinimumLevel`,
+`run/LogAnnotationsInherited`, `run/LogSpanLabel` (on a virtual clock, through `logfmt`), and the
+black-box test's line now carries a span and an annotation. **Against Effect v4** (`bench/fiber`,
+`node node.mjs --group=log`, development library build, median of 9 after 3 warm-ups, ns per line,
+load average 6–13): a line below the minimum 3.8 against Effect's `logDebug` 366; a line written to
+a counting sink 66 against `logInfo` to a counting `Logger` 609; the same inside one annotation and
+one span 79 against 622 (`annotateLogs`, `withLogSpan`). No operation is slower. **Bytes**
+(`bench/size.mjs`, the first part's compiler against this one, 522 programs and pages): only the two
+programs that log through the default or a program's sink change, `run/LogDefaultSink` +234 raw and
++84 brotli in release and `run/LogSetSink` +265 and +47: the slot read and the context each call
+carries. An `Io.run` program that never logs is unchanged.
