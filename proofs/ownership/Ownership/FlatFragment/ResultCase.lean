@@ -279,7 +279,8 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
   obtain ⟨o, w, abstract, valueInput, heapInput, abstractRun, paired, described, observed, valueTyped,
     flatInput, shape, allocated, tags⟩ := flat_atom_values inv inputTyped covered
   cases shape with
-  | result _ _ ae aa hE hS hLive =>
+  | bottom _ => exact absurd rfl (resultTags_ne_bottom tags)
+  | result _ _ ae aa hE hS =>
     cases flatInput with
     | result _ _ flatE flatA =>
       obtain ⟨childFuel, left, middle, right, last, _, _, leftRun, rightRun, resultEq, nextEq⟩ :=
@@ -357,11 +358,10 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           (inferExpr childFuel {ctx with escaped := union ctx.escaped before.facts.escapes}
             ((err, ae) :: aenv) onError after (site ++ [0])).run before = .ok (left, middle) →
           FlatType type ∧ FlatAbstract type left := by
-        intro bottom armRun
-        have neE : ae ≠ .bottom := fun h => by simp [h, BEq.beq, Abstract.equal] at bottom
+        intro _ armRun
         obtain ⟨flatType, shape, _⟩ := flat_static (self := self) flatError ((err, ae) :: aenv)
           ((err, e) :: tenv) before middle type (err :: bound) after (site ++ [0]) left childFuel _
-          (static.bind err flatE (hE neE)) errorTyped errorShadow errorAenvBound
+          (static.bind err flatE hE) errorTyped errorShadow errorAenvBound
           (by exact defaultConfig) armRun
         exact ⟨flatType, shape⟩
       have successStatic : (aa == .bottom) = false →
@@ -369,11 +369,10 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
             ((ok, aa) :: aenv) onSuccess after (site ++ [1])).run {middle with facts := before.facts} =
             .ok (right, last) →
           FlatType b' ∧ FlatAbstract b' right := by
-        intro bottom armRun
-        have neS : aa ≠ .bottom := fun h => by simp [h, BEq.beq, Abstract.equal] at bottom
+        intro _ armRun
         obtain ⟨flatType, shape, _⟩ := flat_static (self := self) flatSuccess ((ok, aa) :: aenv)
           ((ok, a) :: tenv) {middle with facts := before.facts} last b' (ok :: bound) after
-          (site ++ [1]) right childFuel _ (static.bind ok flatA (hS neS)) successTyped successShadow
+          (site ++ [1]) right childFuel _ (static.bind ok flatA hS) successTyped successShadow
           successAenvBound (by exact defaultConfig) armRun
         exact ⟨flatType, shape⟩
       -- The runtime value, by its tag.
@@ -396,7 +395,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           · rw [bottomS] at bottom; cases bottom
           obtain ⟨flatB, rightShape⟩ := successStatic bottomS rightRun
           -- The invariant under the binder, at the ticked states and the arm's facts.
-          have invArm := flatInvariant_bind (ticked_invariant inv) freshOk paired2 describedS flatA (hS neS)
+          have invArm := flatInvariant_bind (ticked_invariant inv) freshOk paired2 describedS flatA hS
             observedS typedS tagsS successLiveSub successLiveTyped
           have armPreserved := ihSuccess (valueTicked vs) (heapTicked hs) ((ok, o2, wS) :: env)
             (union (uses onSuccess) after) ((ok, aa) :: aenv) ((ok, a) :: tenv)
@@ -438,7 +437,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           rcases leftRun with ⟨bottom, _, _⟩ | ⟨_, leftRun⟩
           · rw [bottomE] at bottom; cases bottom
           obtain ⟨flatType, leftShape⟩ := errorStatic bottomE leftRun
-          have invArm := flatInvariant_bind (ticked_invariant inv) freshErr paired1 describedE flatE (hE neE)
+          have invArm := flatInvariant_bind (ticked_invariant inv) freshErr paired1 describedE flatE hE
             observedE typedE tagsE errorLiveSub errorLiveTyped
           have armPreserved := ihError (valueTicked vs) (heapTicked hs) ((err, o1, wE) :: env)
             (union (uses onError) after) ((err, ae) :: aenv) ((err, e) :: tenv) before middle gamma type

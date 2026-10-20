@@ -408,6 +408,38 @@ theorem infer_primitive_success {ctx : Context} {aenv : Env Abstract} {args : Li
       rw [infer_primitive_equation defaultConfig argsRun scope] at accepted
       exact ⟨childFuel, rfl, rfl, accepted⟩
 
+/-- The operands of an accepted primitive ran: the checker reads them before the primitive. -/
+theorem infer_primitive_args_success {ctx : Context} {aenv : Env Abstract} {args : List Atom} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {inferenceFuel : Nat} {op : Prim}
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.prim op args) after site).run before =
+      .ok (result, next)) :
+    ∃ abstracts, args.mapM (m := Except String) (abstractAtom aenv) = .ok abstracts := by
+  cases inferenceFuel with
+  | zero =>
+    simp [inferExpr, bridgeObserve, defaultConfig, Config.has,
+      StateT.run, StateT.bind, StateT.get, StateT.lift, Except.bind,
+      Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+      MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+      MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+        Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+        MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+        MonadExceptOf.throw] at accepted
+    | ok finished =>
+      cases finished
+      cases argsRun : args.mapM (m := Except String) (abstractAtom aenv) with
+      | error problem =>
+        simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope, argsRun,
+          StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+          Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+          MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+          MonadExceptOf.throw] at accepted
+      | ok abstracts => exact ⟨abstracts, rfl⟩
+
 end Ownership.FlatFragment.PrimitiveInference
 
 /-! extraction of the actual default let inference execution.
@@ -633,6 +665,60 @@ theorem infer_resultCase_succ_equation {ctx : Context} {aenv : Env Abstract} {in
       simp [bridgeObserve, defaultConfig, Config.has, getFacts, modifyFacts, scope, atomRun,
         record_three_ne_bottom, bottomE, bottomS,
         StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, modify, modifyGet, MonadStateOf.modifyGet]
+
+/-- The input of an accepted result case ran. -/
+theorem infer_resultCase_atom_success {ctx : Context} {aenv : Env Abstract} {input : Atom} {err ok : Var} {onError onSuccess : Expr} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.resultCase input err ok onError onSuccess) after site).run before =
+      .ok (result, next)) :
+    ∃ value, abstractAtom aenv input = .ok value := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      rw [inferExpr] at accepted
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+    | ok unit =>
+      cases unit
+      cases atomRun : abstractAtom aenv input with
+      | error problem =>
+        rw [inferExpr] at accepted
+        simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope, atomRun,
+          StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+      | ok value => exact ⟨value, rfl⟩
+
+theorem bottom_beq_bottom : ((Abstract.bottom) == .bottom) = true := by
+  simp [BEq.beq, Abstract.equal]
+
+/-- A case on a dead input (its abstract bottom) returns bottom and changes nothing. -/
+theorem infer_resultCase_bottom_success {ctx : Context} {aenv : Env Abstract} {input : Atom} {err ok : Var} {onError onSuccess : Expr} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (atomRun : abstractAtom aenv input = .ok .bottom)
+    (accepted : (inferExpr inferenceFuel ctx aenv (.resultCase input err ok onError onSuccess) after site).run before =
+      .ok (result, next)) :
+    result = .bottom ∧ next = before := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      rw [inferExpr] at accepted
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+    | ok unit =>
+      cases unit
+      rw [inferExpr] at accepted
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope, atomRun, bottom_beq_bottom,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+      exact ⟨accepted.1.symm, accepted.2.symm⟩
 
 /-- A skipped arm leaves its result bottom and its state untouched; an
 inferred arm runs from the incoming facts. -/
