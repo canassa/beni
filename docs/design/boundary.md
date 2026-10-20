@@ -6657,9 +6657,11 @@ pub type AttachError
   the host: the arena's twenty to thirty frames per second per player cost one `write` each. The
   host's own advice — fewer, larger frames — is the program's to take.
 - **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code this host lets a server send
-  — 1000 to 1003, 1007 to 1014 and 3000 to 4999, the set §9.11 (f) gives `node`; workerd accepts
-  every code of it and refuses 1004, 1005, 1006 and 1015 (`src/workerd/api/web-socket.c++:636-643`,
-  measured) — and a reason of at most 123 bytes, tested in beni; on a socket not open it does
+  — 1000 to 1003, 1007 to 1009, 1011 to 1014 and 3000 to 4999, the set §9.11's amendment gives
+  the `node` server (PR #545, item 3; 1010 is a client's code, RFC 6455 §7.4.1, so neither server
+  sends it; *amended 2026-10-21*); workerd accepts every code of it and refuses 1004, 1005, 1006
+  and 1015 (`src/workerd/api/web-socket.c++:636-643`, measured) — and a reason of at most 123
+  bytes, tested in beni; on a socket not open it does
   nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
   four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
 - **`protocol`** is the attachment's, as above. A close code the host refuses is its
