@@ -15,6 +15,7 @@ namespace Ownership.FlatFragment.Static
 open InPlaceSemantics Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Support Ownership.FlatFragment.Atoms
 open Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferLet Ownership.FlatFragment.Liveness Ownership.FlatFragment.Scope
 open Ownership.FlatFragment.InferBranch Ownership.FlatFragment.Shared Ownership.FlatFragment.InferResultCase
+open Ownership.FlatFragment.InferChainCase Ownership.FlatFragment.Chain
 open Ownership.FlatFragment.Result Ownership.FlatFragment.NamingFacts Ownership.FlatFragment.Description
 
 local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
@@ -155,6 +156,16 @@ theorem static_atom_list {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {ab
   | listBottom roots certificate => exact Or.inr ⟨roots, .bottom, certificate, rfl, Or.inl rfl⟩
   | listScalar roots certificate => exact Or.inr ⟨roots, .scalar, certificate, rfl, Or.inr rfl⟩
 
+theorem static_atom_chain {aenv : Env Abstract} {tenv : Env Ty} {atom : Atom} {abstract : Abstract}
+    (static : FlatStatic aenv tenv) (typed : atomType tenv atom = .ok (.chain .int))
+    (run : abstractAtom aenv atom = .ok abstract) :
+    abstract = .bottom ∨ ∃ roots element certificate, abstract = .list roots element certificate ∧
+      (element = .bottom ∨ element = .scalar) := by
+  cases static_atom_shape static typed run with
+  | bottom _ => exact Or.inl rfl
+  | chainBottom roots certificate => exact Or.inr ⟨roots, .bottom, certificate, rfl, Or.inl rfl⟩
+  | chainScalar roots certificate => exact Or.inr ⟨roots, .scalar, certificate, rfl, Or.inr rfl⟩
+
 theorem static_atoms_scalar {aenv : Env Abstract} {tenv : Env Ty} {args : List Atom} {types : List Ty} {as : List Abstract}
     (static : FlatStatic aenv tenv)
     (typed : args.mapM (atomType tenv) = .ok types) (ints : ∀ ty ∈ types, ty = .int)
@@ -293,6 +304,18 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     obtain ⟨e, a, inputTyped, errorTyped, _⟩ := exprType_resultCase_success typed
     cases atom_type_flat types inputTyped with
     | result _ _ flatE _ => exact ihError _ type (types_cons types flatE) errorTyped
+  | @endChain =>
+    intro tenv type types typed
+    rw [exprType_endChain_success typed]
+    exact .chainInt
+  | @link head tail =>
+    intro tenv type types typed
+    obtain ⟨_, _, rfl⟩ := exprType_link_success (fun _ h => atom_type_flat types h) typed
+    exact .chainInt
+  | @chainCase onEnd onLink input head tail _ _ ihEnd _ =>
+    intro tenv type types typed
+    obtain ⟨t, _, endTyped, _⟩ := exprType_chainCase_success typed
+    exact ihEnd tenv type types endTyped
 
 /-- The static facts of an integer primitive: an `Int` result described as a
 scalar, and no new escape. -/
@@ -656,5 +679,125 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
             · intro origin escaped
               rw [escapesEq]
               exact escaped_mono _ (leftMono origin escaped)
+  | @endChain =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    have chainType := exprType_endChain_success typed
+    subst chainType
+    obtain ⟨checkerState, resultShape⟩ := infer_endChain_success defaultConfig accepted
+    subst checkerState
+    subst resultShape
+    exact ⟨.chainInt, .chainBottom _ _, fun _ escaped => escaped⟩
+  | @link head tail =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨headTyped, tailTyped, chainType⟩ :=
+      exprType_link_success (fun _ h => static_atom_type static h) typed
+    subst chainType
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨h, rest1, headRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨t, rest2, tailRun, restRun', shape2⟩ := except_mapM_cons_success restRun
+    have restNil' := except_mapM_nil_success restRun'
+    subst shape1
+    subst shape2
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_chain static tailTyped tailRun with rfl |
+      ⟨roots, element, certificate, rfl, elementFlat⟩
+    · -- A link onto a dead chain: the checker returns bottom.
+      have bottomRun : (primitive {ctx with escaped := union ctx.escaped before.facts.escapes} site .link
+          [h, .bottom] (union (liveCellsWith ctx.config aenv after) ctx.pinned)).run before =
+          .ok (.bottom, before) := by
+        unfold primitive
+        simp [BEq.beq, Abstract.equal]
+        rfl
+      rw [bottomRun] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.chainInt, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · rw [primitive_link_run _ (show ({ctx with escaped := union ctx.escaped before.facts.escapes} :
+        Context).config = {} from defaultConfig)] at run
+      have equal := Except.ok.inj run
+      have first : _ = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      have headFlat := static_atom_scalar static headTyped headRun
+      refine ⟨.chainInt, ?_, by rw [second]; exact fun _ escaped => escaped⟩
+      rw [← first]
+      rcases flat_join_flat headFlat elementFlat with joined | joined
+      · rw [joined]; exact .chainBottom _ _
+      · rw [joined]; exact .chainScalar _ _
+  | @chainCase onEnd onLink input head tail flatEnd flatLink ihEnd ihLink =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed shadow boundKeys defaultConfig accepted
+    obtain ⟨t, inputTyped, endTyped, b', linkTyped, equalTypes⟩ := exprType_chainCase_success typed
+    obtain ⟨headFresh, tailFresh, different, endShadow, linkShadow⟩ := shadowFree_chainCase_success shadow
+    obtain ⟨abstract, run⟩ := infer_chainCase_atom_success defaultConfig accepted
+    have shape := static_atom_shape static inputTyped run
+    have inputFlat := static_atom_type static inputTyped
+    cases inputFlat with
+    | chainInt =>
+      cases shape with
+      | bottom _ =>
+        -- A case on a dead input: the checker returns bottom.
+        obtain ⟨resultBottom, nextSame⟩ := infer_chainCase_bottom_success defaultConfig run accepted
+        subst resultBottom
+        subst nextSame
+        exact ⟨flat_type_of_typed flatEnd tenv type static.types endTyped, .bottom _,
+          fun _ escaped => escaped⟩
+      | chainBottom roots certificate =>
+        obtain ⟨childFuel, left, middle, right, last, _, _, leftRun, rightRun, resultEq, nextEq⟩ :=
+          infer_chainCase_success defaultConfig run accepted
+        obtain ⟨flatType, leftShape, leftMono⟩ :=
+          ihEnd aenv tenv before middle type bound after (site ++ [0]) left childFuel _ static endTyped
+            endShadow boundKeys (by exact defaultConfig) leftRun
+        have sameType : type = b' := ty_equal_flat flatType equalTypes
+        subst sameType
+        have linkBoundKeys : ∀ x ∈ ((head, Abstract.bottom) :: (tail, Abstract.list roots .bottom certificate) :: aenv).map Prod.fst,
+            x ∈ head :: tail :: bound := by
+          intro x member
+          simp only [List.map_cons, List.mem_cons] at member
+          rcases member with rfl | rfl | old
+          · simp
+          · simp
+          · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (boundKeys x old))
+        obtain ⟨_, rightShape, _⟩ :=
+          ihLink ((head, .bottom) :: (tail, .list roots .bottom certificate) :: aenv)
+            ((head, .int) :: (tail, .chain .int) :: tenv) {middle with facts := before.facts} last type
+            (head :: tail :: bound) after (site ++ [1]) right childFuel _
+            ((static.bind tail .chainInt (.chainBottom _ _)).bind head .int (.bottom _)) linkTyped
+            linkShadow linkBoundKeys (by exact defaultConfig) rightRun
+        refine ⟨flatType, by rw [resultEq]; exact flatAbstract_join leftShape rightShape, ?_⟩
+        intro origin escaped
+        rw [nextEq, join_escapes]
+        exact escaped_mono _ (leftMono origin escaped)
+      | chainScalar roots certificate =>
+        obtain ⟨childFuel, left, middle, right, last, _, _, leftRun, rightRun, resultEq, nextEq⟩ :=
+          infer_chainCase_success defaultConfig run accepted
+        obtain ⟨flatType, leftShape, leftMono⟩ :=
+          ihEnd aenv tenv before middle type bound after (site ++ [0]) left childFuel _ static endTyped
+            endShadow boundKeys (by exact defaultConfig) leftRun
+        have sameType : type = b' := ty_equal_flat flatType equalTypes
+        subst sameType
+        have linkBoundKeys : ∀ x ∈ ((head, Abstract.scalar) :: (tail, Abstract.list roots .scalar certificate) :: aenv).map Prod.fst,
+            x ∈ head :: tail :: bound := by
+          intro x member
+          simp only [List.map_cons, List.mem_cons] at member
+          rcases member with rfl | rfl | old
+          · simp
+          · simp
+          · exact List.mem_cons_of_mem _ (List.mem_cons_of_mem _ (boundKeys x old))
+        obtain ⟨_, rightShape, _⟩ :=
+          ihLink ((head, .scalar) :: (tail, .list roots .scalar certificate) :: aenv)
+            ((head, .int) :: (tail, .chain .int) :: tenv) {middle with facts := before.facts} last type
+            (head :: tail :: bound) after (site ++ [1]) right childFuel _
+            ((static.bind tail .chainInt (.chainScalar _ _)).bind head .int .int) linkTyped
+            linkShadow linkBoundKeys (by exact defaultConfig) rightRun
+        refine ⟨flatType, by rw [resultEq]; exact flatAbstract_join leftShape rightShape, ?_⟩
+        intro origin escaped
+        rw [nextEq, join_escapes]
+        exact escaped_mono _ (leftMono origin escaped)
 
 end Ownership.FlatFragment.Static

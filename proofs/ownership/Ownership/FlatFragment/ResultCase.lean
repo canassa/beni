@@ -142,7 +142,7 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          tags2⟩ := armPreserved.success y s2 armValueRun
+          tags2, chains2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -178,8 +178,16 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
           · rcases joined with rfl | rfl
             · exact resultTags_join tags2 shapeArm shapeOther'
             · exact resultTags_join_right tags2 shapeOther' shapeArm
+        have chainsJoin : ChainTags type result value := by
+          rcases shapeOther with rfl | shapeOther'
+          · rcases joined with rfl | rfl
+            · rw [join_bottom_right]; exact chains2
+            · rw [join_bottom_left]; exact chains2
+          · rcases joined with rfl | rfl
+            · exact chainTags_join chains2 shapeArm shapeOther'
+            · exact chainTags_join_right chains2 shapeOther' shapeArm
         refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_,
-          tagsJoin⟩
+          tagsJoin, chainsJoin⟩
         · rw [heap_resultCase_eval_equation hs (heapEnv env) heapInput]
           rw [if_neg noDepth, if_neg heapFuel]
           simp only [heapArmRun]
@@ -277,7 +285,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
     fun use member => usesLive use (union_left _ _ use member)
   -- The input.
   obtain ⟨o, w, abstract, valueInput, heapInput, abstractRun, paired, described, observed, valueTyped,
-    flatInput, shape, allocated, tags⟩ := flat_atom_values inv inputTyped covered
+    flatInput, shape, allocated, tags, chains⟩ := flat_atom_values inv inputTyped covered
   cases shape with
   | bottom _ => exact absurd rfl (resultTags_ne_bottom tags)
   | result _ _ ae aa hE hS =>
@@ -383,6 +391,11 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           obtain ⟨o0, o1, o2, rfl, paired0, paired1, paired2⟩ := corresponds_three paired
           have o0Eq := corresponds_int_inv paired0
           subst o0Eq
+          have o1Eq := corresponds_int_inv paired1
+          subst o1Eq
+          have chainsS : ChainTags a aa o2 := by
+            cases chains with
+            | ok _ _ _ _ _ _ chainsS => exact chainsS
           have observedS : obsTyped declarations o2 a = true := by simpa [obsTyped] using observed
           have describedS : Describes gamma hs.heap aa wS := describes_field (i := 2) described rfl rfl
           have typedS : ValueTyped declarations hs.heap wS a :=
@@ -396,7 +409,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           obtain ⟨flatB, rightShape⟩ := successStatic bottomS rightRun
           -- The invariant under the binder, at the ticked states and the arm's facts.
           have invArm := flatInvariant_bind (ticked_invariant inv) freshOk paired2 describedS flatA hS
-            observedS typedS tagsS successLiveSub successLiveTyped
+            observedS typedS tagsS chainsS successLiveSub successLiveTyped
           have armPreserved := ihSuccess (valueTicked vs) (heapTicked hs) ((ok, o2, wS) :: env)
             (union (uses onSuccess) after) ((ok, aa) :: aenv) ((ok, a) :: tenv)
             {middle with facts := before.facts} last gamma b' (ok :: bound) after (site ++ [1]) right
@@ -426,6 +439,11 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           obtain ⟨o0, o1, o2, rfl, paired0, paired1, paired2⟩ := corresponds_three paired
           have o0Eq := corresponds_int_inv paired0
           subst o0Eq
+          have o2Eq := corresponds_int_inv paired2
+          subst o2Eq
+          have chainsE : ChainTags e ae o1 := by
+            cases chains with
+            | err _ _ _ _ _ _ chainsE => exact chainsE
           have observedE : obsTyped declarations o1 e = true := by simpa [obsTyped] using observed
           have describedE : Describes gamma hs.heap ae wE := describes_field (i := 1) described rfl rfl
           have typedE : ValueTyped declarations hs.heap wE e :=
@@ -438,7 +456,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           · rw [bottomE] at bottom; cases bottom
           obtain ⟨flatType, leftShape⟩ := errorStatic bottomE leftRun
           have invArm := flatInvariant_bind (ticked_invariant inv) freshErr paired1 describedE flatE hE
-            observedE typedE tagsE errorLiveSub errorLiveTyped
+            observedE typedE tagsE chainsE errorLiveSub errorLiveTyped
           have armPreserved := ihError (valueTicked vs) (heapTicked hs) ((err, o1, wE) :: env)
             (union (uses onError) after) ((err, ae) :: aenv) ((err, e) :: tenv) before middle gamma type
             (err :: bound) after (site ++ [0]) left childFuel (depth - 1) _ invArm errorTyped errorShadow

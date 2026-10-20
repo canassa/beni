@@ -14,12 +14,14 @@ operation. They do not replace its test with an external permission oracle. -/
 
 namespace Ownership.FlatFragment.State
 
-/-- The binding types of the flat fragment: integers, integer lists, records
-of them and results over them, nested. A result's two types are flat, so a
-case on it binds a flat payload. -/
+/-- The binding types of the flat fragment: integers, integer lists, integer
+chains, records of them and results over them, nested. A result's two types
+are flat, so a case on it binds a flat payload; a chain case binds an integer
+and a chain. -/
 inductive FlatType : Ty → Prop where
   | int : FlatType .int
   | listInt : FlatType (.list .int)
+  | chainInt : FlatType (.chain .int)
   | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
   | result (error success : Ty) : FlatType error → FlatType success →
       FlatType (.result error success)
@@ -71,7 +73,10 @@ push receivers to `List Int`. The push receiver may be a field path: a write
 through a field is in the fragment. A `branch` runs one of two fragment
 expressions on an integer condition. `ok` and `err` build a result whose
 other type is flat, and a `resultCase` binds the payload of a result to one
-of two fragment arms. -/
+of two fragment arms. `endChain` and `link` build an integer chain, which
+typing fixes to `Chain Int` (the link's head to `Int`), and a `chainCase`
+runs one fragment arm on an empty chain or binds the head and the tail of a
+nonempty one in the other. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
@@ -86,6 +91,10 @@ inductive FlatANF0 : Expr → Prop where
   | err : Ownership.FlatFragment.State.FlatType success → FlatANF0 (.prim (.err success) [x])
   | resultCase : FlatANF0 onError → FlatANF0 onSuccess →
       FlatANF0 (.resultCase input err ok onError onSuccess)
+  | endChain : FlatANF0 (.prim (.endChain .int) [])
+  | link : FlatANF0 (.prim .link [head, tail])
+  | chainCase : FlatANF0 onEnd → FlatANF0 onLink →
+      FlatANF0 (.chainCase input head tail onEnd onLink)
 
 theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
     (run : lookup env key = .ok value) :
@@ -301,6 +310,28 @@ theorem site_self_aliases (site : List Nat) :
     aliases (.site site 0) (.site site 0) = true := by
   change ((site == site) && (0 == 0)) = true
   simp
+
+local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
+local instance stepLawfulBEq : LawfulBEq Step := LawfulBEq.mk (by deriving_LawfulEq_tactic)
+local instance originReflBEq : ReflBEq Origin := ⟨by deriving_ReflEq_tactic⟩
+local instance originLawfulBEq : LawfulBEq Origin := LawfulBEq.mk (by deriving_LawfulEq_tactic)
+
+/-- Every origin aliases itself. -/
+theorem aliases_self (origin : Origin) : aliases origin origin = true := by
+  cases origin <;> simp [aliases]
+
+/-- The naming extended at any origin: a chain case names the copy of the
+tail by the input's origins, so the extension is at one of them. -/
+theorem origin_allocation_naming
+    (bounded : NamingBound gamma heapSize)
+    (separating : Separating gamma) (origin : Origin) :
+    ∃ next, ExtendsAt gamma next origin heapSize ∧
+      NamingBound next (heapSize + 1) ∧ Separating next ∧
+      (∀ o cell, cell < heapSize → (cell ∈ next o ↔ cell ∈ gamma o)) := by
+  obtain ⟨next, extension⟩ := extension_exists gamma origin heapSize
+  exact ⟨next, extension, extension_bound bounded extension,
+    extension_separating separating bounded extension (aliases_self origin),
+    fun o cell old => extension_old_membership extension old⟩
 
 /-- The caller constructs the extension at the real allocation boundary.
 No unused-site or globally alias-free-heap premise enters this theorem. -/
@@ -535,6 +566,10 @@ inductive FlatAbstract : Ty → Abstract → Prop where
       FlatAbstract (.list .int) (.list roots .bottom certificate)
   | listScalar (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.list .int) (.list roots .scalar certificate)
+  | chainBottom (roots : List Origin) (certificate : Certificate) :
+      FlatAbstract (.chain .int) (.list roots .bottom certificate)
+  | chainScalar (roots : List Origin) (certificate : Certificate) :
+      FlatAbstract (.chain .int) (.list roots .scalar certificate)
   | record (ts : List Ty) (as : List Abstract) : ts.length = as.length →
       (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a → FlatAbstract t a) →
       FlatAbstract (.record ts) (.record as)
@@ -555,6 +590,8 @@ inductive ResultTags : Ty → Abstract → Value → Prop where
   | int (n : Int) : ResultTags .int .scalar (.int n)
   | listInt (roots : List Origin) (element : Abstract) (certificate : Certificate) (w : Value) :
       ResultTags (.list .int) (.list roots element certificate) w
+  | chainInt (roots : List Origin) (element : Abstract) (certificate : Certificate) (w : Value) :
+      ResultTags (.chain .int) (.list roots element certificate) w
   | record (ts : List Ty) (as : List Abstract) (ws : List Value) : ts.length = as.length →
       (∀ (i : Nat) (t : Ty) (a : Abstract) (w : Value),
         ts[i]? = some t → as[i]? = some a → ws[i]? = some w → ResultTags t a w) →
@@ -565,6 +602,31 @@ inductive ResultTags : Ty → Abstract → Value → Prop where
   | err (error success : Ty) (tag ae aa : Abstract) (w : Value) :
       ae ≠ .bottom → ResultTags error ae w →
       ResultTags (.result error success) (.record [tag, ae, aa]) (.record [.int 0, w, .int 0])
+
+/-- The chain tags of a binding's abstract and its observation. The checker
+builds `endChain` with a bottom element and `link` with a scalar one, and a
+join keeps a bottom element only when both sides have one; so a chain whose
+element abstract is bottom is empty on the value side, through records and
+the live slot of a result. A chain case binds its head to the element
+abstract, so the relation says that an arm the runtime takes binds a scalar.
+The relation reads no heap, so a write keeps it. -/
+inductive ChainTags : Ty → Abstract → Observation → Prop where
+  | int (a : Abstract) (o : Observation) : ChainTags .int a o
+  | listInt (a : Abstract) (o : Observation) : ChainTags (.list .int) a o
+  | chainScalar (roots : List Origin) (certificate : Certificate) (o : Observation) :
+      ChainTags (.chain .int) (.list roots .scalar certificate) o
+  | chainBottom (roots : List Origin) (certificate : Certificate) :
+      ChainTags (.chain .int) (.list roots .bottom certificate) (.list [])
+  | record (ts : List Ty) (as : List Abstract) (os : List Observation) : ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract) (o : Observation),
+        ts[i]? = some t → as[i]? = some a → os[i]? = some o → ChainTags t a o) →
+      ChainTags (.record ts) (.record as) (.record os)
+  | ok (error success : Ty) (tag ae aa : Abstract) (o : Observation) :
+      ChainTags success aa o →
+      ChainTags (.result error success) (.record [tag, ae, aa]) (.record [.int 1, .int 0, o])
+  | err (error success : Ty) (tag ae aa : Abstract) (o : Observation) :
+      ChainTags error ae o →
+      ChainTags (.result error success) (.record [tag, ae, aa]) (.record [.int 0, o, .int 0])
 
 /-- An integer primitive types only at two `Int` operands, and its result is `Int`. -/
 theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership.FlatFragment.Support.ScalarOp op)
@@ -607,9 +669,10 @@ Their descriptions have the flat shapes that real primitive inference needs
 (`FlatAbstract`, which admits the bottom of dead code). The permanent
 observer witness covers the complete current observer list at the runtime's
 actual observation depth. Every binding's result tags agree with its
-abstract (`ResultTags`), which also excludes a bottom where a value is, and
-every live use is a typed path of its binding, so a projection of a live use
-never enters a result.
+abstract (`ResultTags`), which also excludes a bottom where a value is, its
+chain tags agree with its observation (`ChainTags`: a chain described with a
+bottom element is empty), and every live use is a typed path of its binding,
+so a projection of a live use never enters a result.
 -/
 structure FlatInvariant (declarations : List Decl)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
@@ -633,6 +696,9 @@ structure FlatInvariant (declarations : List Decl)
   tags : ∀ x ty abstract observation actual,
     tenv.lookup x = some ty → aenv.lookup x = some abstract →
       env.lookup x = some (observation, actual) → ResultTags ty abstract actual
+  chains : ∀ x ty abstract observation actual,
+    tenv.lookup x = some ty → aenv.lookup x = some abstract →
+      env.lookup x = some (observation, actual) → ChainTags ty abstract observation
   liveTyped : ∀ x p ty, (x, p) ∈ live → tenv.lookup x = some ty →
     ∃ t, Ownership.FlatFragment.Fields.tyAt ty p = some t
   namingBound : NamingBound gamma hs.heap.size
@@ -722,6 +788,7 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
     abstractShapes := ?_
     bindingsTyped := ?_
     tags := ?_
+    chains := ?_
     liveTyped := ?_
     namingBound := emptyNaming_bound 0
     observers := ⟨[], RepresentsMany.nil⟩
@@ -733,6 +800,8 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
   · intro x ty abstract present
     simp at present
   · intro x observation actual present
+    simp at present
+  · intro x ty abstract observation actual present
     simp at present
   · intro x ty abstract observation actual present
     simp at present
@@ -949,6 +1018,14 @@ theorem uses_resultCase (input : Atom) (err ok : Var) (onError onSuccess : Expr)
       union (atomUses input)
         (union (removeVars [err] (uses onError)) (removeVars [ok] (uses onSuccess))) := rfl
 
+theorem uses_endChain : uses (.prim (.endChain .int) []) = atomsUses [] := rfl
+
+theorem uses_link (head tail : Atom) : uses (.prim .link [head, tail]) = atomsUses [head, tail] := rfl
+
+theorem uses_chainCase (input : Atom) (head tail : Var) (onEnd onLink : Expr) :
+    uses (.chainCase input head tail onEnd onLink) =
+      union (atomUses input) (union (uses onEnd) (removeVars [head, tail] (uses onLink))) := rfl
+
 theorem flatExpr_default_uses (flat : FlatANF0 expression) :
     usesWith ({} : Config) expression = uses expression := by
   induction flat with
@@ -964,6 +1041,9 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | ok _ => simp_all [usesWith, uses, usesArms, Config.has]
   | err _ => simp_all [usesWith, uses, usesArms, Config.has]
   | resultCase _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | endChain => simp_all [usesWith, uses, usesArms, Config.has]
+  | link => simp_all [usesWith, uses, usesArms, Config.has]
+  | chainCase _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
 

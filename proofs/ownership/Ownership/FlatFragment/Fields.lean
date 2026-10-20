@@ -315,6 +315,13 @@ theorem allocated_of_typed {ds : List Decl} {heap : Heap} {w : Value} {ty : Ty} 
     | record _ => simp [obsTyped] at observedType
     | closure _ => simp [obsTyped] at observedType
     | ref allocated _ => exact .list _ (Array.getElem?_eq_some_iff.mp allocated).1
+  | chainInt =>
+    obtain ⟨depth, observation, footprint, represented, observedType⟩ := typed
+    cases represented with
+    | int => simp [obsTyped] at observedType
+    | record _ => simp [obsTyped] at observedType
+    | closure _ => simp [obsTyped] at observedType
+    | ref allocated _ => exact .chain _ (Array.getElem?_eq_some_iff.mp allocated).1
   | record ts _ ih =>
     obtain ⟨depth, observation, footprint, represented, observedType⟩ := typed
     cases represented with
@@ -365,6 +372,7 @@ theorem allocated_mono {heap next : Heap} {w : Value} {ty : Ty}
   induction shape with
   | int integer => exact .int integer
   | list root allocated => exact .list root (Nat.lt_of_lt_of_le allocated size)
+  | chain root allocated => exact .chain root (Nat.lt_of_lt_of_le allocated size)
   | record ws ts len _ ih => exact .record ws ts len (fun i w t ws_i ts_i => ih i w t ws_i ts_i)
   | ok e s w _ ih => exact .ok e s w ih
   | err e s w _ ih => exact .err e s w ih
@@ -379,6 +387,11 @@ theorem valueTyped_of_allocated {ds : List Decl} {heap : Heap} {w : Value} {ty :
     obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookup)
     rw [payload] at lookup
     exact allocated_integer_list_typed ds lookup
+  | chain root allocated =>
+    have lookup : heap[root]? = some heap[root] := by simp [allocated]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookup)
+    rw [payload] at lookup
+    exact allocated_integer_chain_typed ds lookup
   | record ws ts len _ ih =>
     exact valueTyped_record_of_fields len (fun i w t ws_i ts_i => ih i w t ws_i ts_i)
   | ok e s w _ ih =>
@@ -771,6 +784,12 @@ theorem arrayAt_flat {heap : Heap} {w : Value} {ty : Ty} {q : Path} {c : Nat}
     rw [payload] at lookupRoot
     obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
     exact ⟨allocated, rfl, fun _ => .here _⟩
+  | chain root allocated =>
+    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
+    rw [payload] at lookupRoot
+    obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
+    exact ⟨allocated, rfl, fun _ => .here _⟩
   | record ws ts len _ ih =>
     cases located with
     | @field _ i w' q' _ ws_i inner =>
@@ -812,6 +831,13 @@ theorem reaches_flat {heap : Heap} {w : Value} {ty : Ty} {c : Nat}
     have := flat_ref_reaches lookupRoot reachable
     subst this
     exact ⟨[], .here _⟩
+  | chain root allocated =>
+    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
+    rw [payload] at lookupRoot
+    have := flat_ref_reaches lookupRoot reachable
+    subst this
+    exact ⟨[], .here _⟩
   | record ws ts len _ ih =>
     cases reachable with
     | field member inner =>
@@ -847,6 +873,7 @@ theorem corresponds_flat_frame {heap next : Heap} {w : Value} {ty : Ty} {o : Obs
   induction shape generalizing o with
   | int integer => exact corresponds_int_frame paired
   | list root allocated => exact corresponds_ref_frame flat allocated paired (same [] root (.here _))
+  | chain root allocated => exact corresponds_ref_frame flat allocated paired (same [] root (.here _))
   | record ws ts len _ ih =>
     obtain ⟨os, rfl, lenO, fieldsC⟩ := corresponds_record_fields paired
     refine corresponds_record_of_fields lenO ?_
@@ -889,6 +916,17 @@ theorem describes_flat_frame {heap next : Heap} {gamma gamma' : Naming} {w : Val
     rw [payload] at lookupRoot
     cases tags with
     | listInt roots element certificate _ =>
+      have names := described.1.1 [] root (.here _)
+      rw [list_root_names] at names
+      exact allocated_list_described lookupRoot
+        (named_same_of_naming namingSame allocated (named_union_nil names))
+  | chain root allocated =>
+    have nextAllocated : root < next.size := Nat.lt_of_lt_of_le allocated size
+    have lookupRoot : next[root]? = some next[root] := by simp [nextAllocated]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values next[root] (nextFlat root _ lookupRoot)
+    rw [payload] at lookupRoot
+    cases tags with
+    | chainInt roots element certificate _ =>
       have names := described.1.1 [] root (.here _)
       rw [list_root_names] at names
       exact allocated_list_described lookupRoot
@@ -1013,6 +1051,13 @@ theorem named_cellsAt_of_covers {heap : Heap} {gamma : Naming} {w : Value} {ty :
   induction shape generalizing a q with
   | int integer => cases located
   | list root allocated =>
+    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
+    rw [payload] at lookupRoot
+    obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
+    have := covers _ _ (.here _)
+    simpa [namesAt] using this
+  | chain root allocated =>
     have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
     obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
     rw [payload] at lookupRoot
@@ -1203,6 +1248,12 @@ theorem flatAbstract_mapOrigins (f : Path → List Origin → List Origin) {ty :
   | listScalar roots certificate =>
     simp only [Abstract.mapOrigins]
     exact .listScalar _ _
+  | chainBottom roots certificate =>
+    simp only [Abstract.mapOrigins]
+    exact .chainBottom _ _
+  | chainScalar roots certificate =>
+    simp only [Abstract.mapOrigins]
+    exact .chainScalar _ _
   | record ts as len _ ih =>
     simp only [Abstract.mapOrigins]
     refine .record ts _ (by simp [len]) ?_
@@ -1226,6 +1277,9 @@ theorem resultTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty
   | listInt roots element certificate w =>
     simp only [Abstract.mapOrigins]
     exact .listInt _ _ _ _
+  | chainInt roots element certificate w =>
+    simp only [Abstract.mapOrigins]
+    exact .chainInt _ _ _ _
   | record ts as ws len _ ih =>
     simp only [Abstract.mapOrigins]
     refine .record ts _ ws (by simp [len]) ?_
@@ -1243,6 +1297,74 @@ theorem resultTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty
   | err e s tag ae aa w' ne _ ih =>
     rw [mapOrigins_three]
     exact .err e s _ _ _ w' (mapOrigins_ne_bottom f _ ne) (ih _)
+
+/-- The chain tags of a bottom abstract: only an integer or a list carries one. -/
+theorem chainTags_of_bottom {t : Ty} {o : Observation} (tags : ChainTags t .bottom o) (b : Abstract) :
+    ChainTags t b o := by
+  cases tags with
+  | int _ _ => exact .int _ _
+  | listInt _ _ => exact .listInt _ _
+
+/-- The chain tags survive an origin substitution: it keeps every constructor. -/
+theorem chainTags_mapOrigins (f : Path → List Origin → List Origin) {t : Ty} {a : Abstract} {o : Observation}
+    (tags : ChainTags t a o) (path : Path) : ChainTags t (a.mapOrigins f path) o := by
+  induction tags generalizing path with
+  | int a o => exact .int _ _
+  | listInt a o => exact .listInt _ _
+  | chainScalar roots certificate o =>
+    simp only [Abstract.mapOrigins]
+    exact .chainScalar _ _ _
+  | chainBottom roots certificate =>
+    simp only [Abstract.mapOrigins]
+    exact .chainBottom _ _
+  | record ts as os len _ ih =>
+    simp only [Abstract.mapOrigins]
+    refine .record ts _ os (by simp [len]) ?_
+    intro i t a' o' ts_i at_i os_i
+    rw [record_mapOrigins_index] at at_i
+    cases h : as[i]? with
+    | none => simp [h] at at_i
+    | some a0 =>
+      simp [h] at at_i
+      subst at_i
+      exact ih i t a0 o' ts_i h os_i _
+  | ok e s tag ae aa o' _ ih =>
+    rw [mapOrigins_three]
+    exact .ok e s _ _ _ o' (ih _)
+  | err e s tag ae aa o' _ ih =>
+    rw [mapOrigins_three]
+    exact .err e s _ _ _ o' (ih _)
+
+/-- The chain tags of a projection along a typed path. -/
+theorem chainTags_project {tk t : Ty} {a : Abstract} {o o' : Observation} {p : Path}
+    (tags : ChainTags tk a o) (shape : FlatAbstract tk a) (at_p : tyAt tk p = some t)
+    (projected : projectObs o p = some o') : ChainTags t (a.atPath p) o' := by
+  induction p generalizing tk a o with
+  | nil =>
+    simp [tyAt] at at_p
+    subst at_p
+    simp [projectObs] at projected
+    subst projected
+    simpa [Abstract.atPath] using tags
+  | cons step rest ih =>
+    cases step <;> cases tk <;> simp [tyAt] at at_p
+    rename_i i' ts
+    cases h : ts[i']? with
+    | none => simp [h] at at_p
+    | some t' =>
+      simp [h] at at_p
+      cases tags with
+      | record _ as os _ tagFields =>
+        cases shape with
+        | record _ _ len fields =>
+          obtain ⟨a', as_i, shape'⟩ := flatAbstract_record_field len fields h
+          simp [projectObs] at projected
+          cases h' : os[i']? with
+          | none => simp [h'] at projected
+          | some o1 =>
+            simp [h'] at projected
+            simp only [Abstract.atPath, as_i, Option.getD_some]
+            exact ih (tagFields i' t' a' o1 h as_i h') shape' at_p projected
 
 /-- The checker's shared marking: a nonempty cell list keeps its origins. -/
 def sharedMark (_ : Path) (cs : List Origin) : List Origin :=
@@ -1272,6 +1394,16 @@ theorem describes_mapOrigins_shared {gamma : Naming} {heap : Heap} {w : Value} {
     rw [payload] at lookupRoot
     cases tags with
     | listInt roots element certificate _ =>
+      have names := described.1.1 [] root (.here _)
+      rw [list_root_names] at names
+      simp only [Abstract.mapOrigins]
+      exact allocated_list_described lookupRoot (named_sharedMark path (named_union_nil names))
+  | chain root allocated =>
+    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
+    rw [payload] at lookupRoot
+    cases tags with
+    | chainInt roots element certificate _ =>
       have names := described.1.1 [] root (.here _)
       rw [list_root_names] at names
       simp only [Abstract.mapOrigins]
@@ -1472,12 +1604,13 @@ theorem flat_atom_values {declarations : List Decl} {vs : ValueSemantics.State} 
       abstractAtom aenv atom = .ok a ∧
       Corresponds hs.heap o w ∧ Describes gamma hs.heap a w ∧
       obsTyped declarations o ty = true ∧ ValueTyped declarations hs.heap w ty ∧
-      FlatType ty ∧ FlatAbstract ty a ∧ AllocatedFlatValue hs.heap w ty ∧ ResultTags ty a w := by
+      FlatType ty ∧ FlatAbstract ty a ∧ AllocatedFlatValue hs.heap w ty ∧ ResultTags ty a w ∧
+      ChainTags ty a o := by
   cases root : atomRoot atom with
   | none =>
     obtain ⟨n, rfl, rfl⟩ := atom_int_of_root_none typed root
     exact ⟨.int n, .int n, .scalar, rfl, rfl, rfl, integer_corresponds n, integer_described n,
-      by simp [obsTyped], ⟨1, .int n, [], .int, by simp [obsTyped]⟩, .int, .int, .int n, .int _⟩
+      by simp [obsTyped], ⟨1, .int n, [], .int, by simp [obsTyped]⟩, .int, .int, .int n, .int _, .int _ _⟩
   | some kp =>
     rcases kp with ⟨k, p⟩
     obtain ⟨tk, declared, at_p⟩ := atom_type_of_root typed root
@@ -1493,6 +1626,7 @@ theorem flat_atom_values {declarations : List Decl} {vs : ValueSemantics.State} 
     have flatTk := inv.types k tk' declared
     have shape0 := inv.abstractShapes k tk' a0 declared abstractBinding
     have tags0 := inv.tags k tk' a0 o0 w0 declared abstractBinding binding
+    have chains0 := inv.chains k tk' a0 o0 w0 declared abstractBinding binding
     have allocated0 := allocated_of_typed flatTk typed0 tags0
     have allocated := allocated_project allocated0 at_p valuePath
     exact ⟨o, w, a0.atPath p, value_atom_of_root root (valueEnv_lookup binding) obsPath,
@@ -1500,7 +1634,7 @@ theorem flat_atom_values {declarations : List Decl} {vs : ValueSemantics.State} 
       abstractAtom_of_root root abstractBinding shape0 tags0 allocated0 at_p, paired, described,
       projectObs_typed observed0 at_p obsPath, valueTyped_of_allocated allocated inv.heapInts,
       flatType_tyAt flatTk at_p, flatAbstract_atPath shape0 at_p, allocated,
-      resultTags_project tags0 shape0 at_p valuePath⟩
+      resultTags_project tags0 shape0 at_p valuePath, chainTags_project chains0 shape0 at_p obsPath⟩
 
 /-- An `Int`-typed atom whose uses are live is an integer on both sides and a
 scalar in the checker. -/
@@ -1512,7 +1646,7 @@ theorem flat_atom_integer {declarations : List Decl} {vs : ValueSemantics.State}
       ValueSemantics.atom (valueEnv env) atom = .ok (.int integer) ∧
       InPlaceSemantics.atom (heapEnv env) atom = .ok (.int integer) ∧
       abstractAtom aenv atom = .ok .scalar := by
-  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, _, _, _, _, _, _, tags⟩ :=
+  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, _, _, _, _, _, _, tags, _⟩ :=
     flat_atom_values inv typed covered
   cases tags with
   | int integer =>
@@ -1535,7 +1669,7 @@ theorem flat_atom_list_path {declarations : List Decl} {vs : ValueSemantics.Stat
       ValueSemantics.atom (valueEnv env) atom = .ok (.list (valueInts integers)) ∧
       InPlaceSemantics.atom (heapEnv env) atom = .ok (.ref root) ∧
       abstractAtom aenv atom = .ok (.list roots element certificate) := by
-  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, described, _, _, _, shape, allocated, tags⟩ :=
+  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, described, _, _, _, shape, allocated, tags, _⟩ :=
     flat_atom_values inv typed covered
   cases tags with
   | listInt roots element certificate _ =>
@@ -1555,6 +1689,50 @@ theorem flat_atom_list_path {declarations : List Decl} {vs : ValueSemantics.Stat
       | listScalar _ _ =>
         exact ⟨root, integers, roots, .scalar, certificate, lookupRoot, named_union_nil names, Or.inr rfl,
           valueRun, heapRun, abstractRun⟩
+
+/-- A `Chain Int`-typed atom whose uses are live is an allocated integer
+array on the heap side, its observation on the value side, and a named flat
+chain in the checker; a bottom element describes an empty chain. -/
+theorem flat_atom_chain_path {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {atom : Atom}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (typed : atomType tenv atom = .ok (.chain .int))
+    (covered : ∀ use ∈ atomUses atom, use ∈ live) :
+    ∃ (root : Nat) (integers : List Int) (roots : List Origin) (element : Abstract)
+      (certificate : Certificate),
+      hs.heap[root]? = some (heapInts integers) ∧
+      named gamma roots root ∧
+      (element = .bottom ∨ element = .scalar) ∧
+      (element = .bottom → integers = []) ∧
+      ValueSemantics.atom (valueEnv env) atom = .ok (.list (valueInts integers)) ∧
+      InPlaceSemantics.atom (heapEnv env) atom = .ok (.ref root) ∧
+      abstractAtom aenv atom = .ok (.list roots element certificate) := by
+  obtain ⟨o, w, a, valueRun, heapRun, abstractRun, paired, described, _, _, _, shape, allocated, tags,
+    chains⟩ := flat_atom_values inv typed covered
+  cases tags with
+  | chainInt roots element certificate _ =>
+    cases allocated with
+    | chain root lt =>
+      have lookupRoot : hs.heap[root]? = some hs.heap[root] := by simp [lt]
+      obtain ⟨integers, payload⟩ := integers_of_flat_values hs.heap[root] (inv.heapInts root _ lookupRoot)
+      rw [payload] at lookupRoot
+      have observed := observation_of_integer_ref lookupRoot paired
+      subst observed
+      have names := described.1.1 [] root (.here _)
+      rw [list_root_names] at names
+      cases shape with
+      | chainBottom _ _ =>
+        have empty : integers = [] := by
+          generalize eq : valueInts integers = os at chains
+          cases chains with
+          | chainBottom _ _ =>
+            cases integers with
+            | nil => rfl
+            | cons _ _ => simp [valueInts] at eq
+        exact ⟨root, integers, roots, .bottom, certificate, lookupRoot, named_union_nil names, Or.inl rfl,
+          fun _ => empty, valueRun, heapRun, abstractRun⟩
+      | chainScalar _ _ =>
+        exact ⟨root, integers, roots, .scalar, certificate, lookupRoot, named_union_nil names, Or.inr rfl,
+          (fun h => nomatch h), valueRun, heapRun, abstractRun⟩
 
 /-- The Dead test of a write keeps every array of a live projected value
 apart from the written root: the array is named by a cell at the binding's
@@ -1628,6 +1806,10 @@ theorem ty_equal_flat {t b : Ty} (flat : FlatType t) (equal : Ty.equal t b = tru
     cases b with
     | list e => cases e <;> simp [Ty.equal] at equal ⊢
     | _ => simp [Ty.equal] at equal
+  | chainInt =>
+    cases b with
+    | chain e => cases e <;> simp [Ty.equal] at equal ⊢
+    | _ => simp [Ty.equal] at equal
   | record ts _ ih =>
     cases b with
     | record ys =>
@@ -1669,6 +1851,10 @@ theorem ty_equal_flat_right {t b : Ty} (flat : FlatType b) (equal : Ty.equal t b
   | listInt =>
     cases t with
     | list e => cases e <;> simp [Ty.equal] at equal ⊢
+    | _ => simp [Ty.equal] at equal
+  | chainInt =>
+    cases t with
+    | chain e => cases e <;> simp [Ty.equal] at equal ⊢
     | _ => simp [Ty.equal] at equal
   | record ts _ ih =>
     cases t with
@@ -1769,6 +1955,16 @@ theorem flatAbstract_join {t : Ty} {a b : Abstract} (shapeA : FlatAbstract t a) 
     | bottom _ => rw [join_bottom_right]; exact .listScalar _ _
     | listBottom roots' certificate' => rw [join_list, join_scalar_bottom]; exact .listScalar _ _
     | listScalar roots' certificate' => rw [join_list, join_scalar]; exact .listScalar _ _
+  | chainBottom roots certificate =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .chainBottom _ _
+    | chainBottom roots' certificate' => rw [join_list, join_bottom_bottom]; exact .chainBottom _ _
+    | chainScalar roots' certificate' => rw [join_list, join_bottom_scalar]; exact .chainScalar _ _
+  | chainScalar roots certificate =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .chainScalar _ _
+    | chainBottom roots' certificate' => rw [join_list, join_scalar_bottom]; exact .chainScalar _ _
+    | chainScalar roots' certificate' => rw [join_list, join_scalar]; exact .chainScalar _ _
   | record ts as len fields ih =>
     cases shapeB with
     | bottom _ => rw [join_bottom_right]; exact .record ts as len fields
@@ -1806,6 +2002,11 @@ theorem resultTags_join {t : Ty} {a b : Abstract} {w : Value}
     | bottom _ => rw [join_bottom_right]; exact .listInt _ _ _ _
     | listBottom _ _ => rw [join_list]; exact .listInt _ _ _ _
     | listScalar _ _ => rw [join_list]; exact .listInt _ _ _ _
+  | chainInt roots element certificate w =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .chainInt _ _ _ _
+    | chainBottom _ _ => rw [join_list]; exact .chainInt _ _ _ _
+    | chainScalar _ _ => rw [join_list]; exact .chainInt _ _ _ _
   | record ts as ws len tagFields ih =>
     cases shapeA with
     | record _ _ lenA fieldsA =>
@@ -1848,6 +2049,11 @@ theorem resultTags_join_right {t : Ty} {a b : Abstract} {w : Value}
     | bottom _ => rw [join_bottom_left]; exact .listInt _ _ _ _
     | listBottom _ _ => rw [join_list]; exact .listInt _ _ _ _
     | listScalar _ _ => rw [join_list]; exact .listInt _ _ _ _
+  | chainInt roots element certificate w =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .chainInt _ _ _ _
+    | chainBottom _ _ => rw [join_list]; exact .chainInt _ _ _ _
+    | chainScalar _ _ => rw [join_list]; exact .chainInt _ _ _ _
   | record ts bs ws len tagFields ih =>
     cases shapeA with
     | bottom _ => rw [join_bottom_left]; exact .record ts bs ws len tagFields
@@ -1875,6 +2081,96 @@ theorem resultTags_join_right {t : Ty} {a b : Abstract} {w : Value}
       | result _ _ _ _ hE' hS' =>
         rw [join_three]
         exact .err e s _ _ _ w' (join_ne_bottom_right ne) (ih hE hE')
+
+/-- The chain tags of an observation survive a join with another flat abstract of its type. -/
+theorem chainTags_join {t : Ty} {a b : Abstract} {o : Observation}
+    (tags : ChainTags t a o) (shapeA : FlatAbstract t a) (shapeB : FlatAbstract t b) :
+    ChainTags t (a.join b) o := by
+  induction tags generalizing b with
+  | int a o => exact .int _ _
+  | listInt a o => exact .listInt _ _
+  | chainScalar roots certificate o =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .chainScalar _ _ _
+    | chainBottom _ _ => rw [join_list, join_scalar_bottom]; exact .chainScalar _ _ _
+    | chainScalar _ _ => rw [join_list, join_scalar]; exact .chainScalar _ _ _
+  | chainBottom roots certificate =>
+    cases shapeB with
+    | bottom _ => rw [join_bottom_right]; exact .chainBottom _ _
+    | chainBottom _ _ => rw [join_list, join_bottom_bottom]; exact .chainBottom _ _
+    | chainScalar _ _ => rw [join_list, join_bottom_scalar]; exact .chainScalar _ _ _
+  | record ts as os len tagFields ih =>
+    cases shapeA with
+    | record _ _ lenA fieldsA =>
+      cases shapeB with
+      | bottom _ => rw [join_bottom_right]; exact .record ts as os len tagFields
+      | record _ bs lenB fieldsB =>
+        rw [join_record]
+        refine .record ts _ os (by rw [record_join_length as bs (lenA.symm.trans lenB)]; exact len) ?_
+        intro i t a' o' ts_i at_i os_i
+        obtain ⟨x, y, as_i, bs_i, rfl⟩ := record_join_index_inv at_i
+        exact ih i t x o' ts_i as_i os_i (fieldsA i t x ts_i as_i) (fieldsB i t y ts_i bs_i)
+  | ok e s tag ae aa o' tagsS ih =>
+    cases shapeA with
+    | result _ _ _ _ hE hS =>
+      cases shapeB with
+      | bottom _ => rw [join_bottom_right]; exact .ok e s _ _ _ o' tagsS
+      | result _ _ be ba hE' hS' =>
+        rw [join_three]
+        exact .ok e s _ _ _ o' (ih hS hS')
+  | err e s tag ae aa o' tagsE ih =>
+    cases shapeA with
+    | result _ _ _ _ hE hS =>
+      cases shapeB with
+      | bottom _ => rw [join_bottom_right]; exact .err e s _ _ _ o' tagsE
+      | result _ _ be ba hE' hS' =>
+        rw [join_three]
+        exact .err e s _ _ _ o' (ih hE hE')
+
+/-- The chain tags of an observation survive a join on the other side. -/
+theorem chainTags_join_right {t : Ty} {a b : Abstract} {o : Observation}
+    (tags : ChainTags t b o) (shapeA : FlatAbstract t a) (shapeB : FlatAbstract t b) :
+    ChainTags t (a.join b) o := by
+  induction tags generalizing a with
+  | int a o => exact .int _ _
+  | listInt a o => exact .listInt _ _
+  | chainScalar roots certificate o =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .chainScalar _ _ _
+    | chainBottom _ _ => rw [join_list, join_bottom_scalar]; exact .chainScalar _ _ _
+    | chainScalar _ _ => rw [join_list, join_scalar]; exact .chainScalar _ _ _
+  | chainBottom roots certificate =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .chainBottom _ _
+    | chainBottom _ _ => rw [join_list, join_bottom_bottom]; exact .chainBottom _ _
+    | chainScalar _ _ => rw [join_list, join_scalar_bottom]; exact .chainScalar _ _ _
+  | record ts bs os len tagFields ih =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .record ts bs os len tagFields
+    | record _ as lenA fieldsA =>
+      cases shapeB with
+      | record _ _ lenB fieldsB =>
+        rw [join_record]
+        refine .record ts _ os (by rw [record_join_length as bs (lenA.symm.trans lenB)]; exact lenA) ?_
+        intro i t b' o' ts_i at_i os_i
+        obtain ⟨x, y, as_i, bs_i, rfl⟩ := record_join_index_inv at_i
+        exact ih i t y o' ts_i bs_i os_i (fieldsA i t x ts_i as_i) (fieldsB i t y ts_i bs_i)
+  | ok e s tag be ba o' tagsS ih =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .ok e s _ _ _ o' tagsS
+    | result _ _ ae aa hE hS =>
+      cases shapeB with
+      | result _ _ _ _ hE' hS' =>
+        rw [join_three]
+        exact .ok e s _ _ _ o' (ih hS hS')
+  | err e s tag be ba o' tagsE ih =>
+    cases shapeA with
+    | bottom _ => rw [join_bottom_left]; exact .err e s _ _ _ o' tagsE
+    | result _ _ ae aa hE hS =>
+      cases shapeB with
+      | result _ _ _ _ hE' hS' =>
+        rw [join_three]
+        exact .err e s _ _ _ o' (ih hE hE')
 
 /-! ### A join describes what either side describes -/
 
@@ -1930,6 +2226,50 @@ theorem describes_join {gamma : Naming} {heap : Heap} {t : Ty} {w : Value} {a b 
       | bottom _ => exact rightBottom rfl
       | listBottom ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
       | listScalar ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+  | chain root lt =>
+    have lookupRoot : heap[root]? = some heap[root] := by simp [lt]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flatHeap root _ lookupRoot)
+    rw [payload] at lookupRoot
+    have names : ∀ cs ds, (∃ e ex, a = .list cs e ex) → (∃ e ex, b = .list ds e ex) →
+        named gamma (union cs ds) root := by
+      intro cs ds ⟨e, ex, ha⟩ ⟨e', ex', hb⟩
+      rcases side with ⟨described, _⟩ | ⟨described, _⟩
+      · subst ha
+        have found := described.1.1 [] root (.here _)
+        rw [list_root_names] at found
+        obtain ⟨origin, member, address⟩ := named_union_nil found
+        exact ⟨origin, mem_union _ _ origin (Or.inl member), address⟩
+      · subst hb
+        have found := described.1.1 [] root (.here _)
+        rw [list_root_names] at found
+        obtain ⟨origin, member, address⟩ := named_union_nil found
+        exact ⟨origin, mem_union _ _ origin (Or.inr member), address⟩
+    have leftBottom : a = .bottom → Describes gamma heap (a.join b) (.ref root) := by
+      intro bottom
+      subst bottom
+      rw [join_bottom_left]
+      rcases side with ⟨_, tags⟩ | ⟨described, _⟩
+      · exact absurd rfl (resultTags_ne_bottom tags)
+      · exact described
+    have rightBottom : b = .bottom → Describes gamma heap (a.join b) (.ref root) := by
+      intro bottom
+      subst bottom
+      rw [join_bottom_right]
+      rcases side with ⟨described, _⟩ | ⟨_, tags⟩
+      · exact described
+      · exact absurd rfl (resultTags_ne_bottom tags)
+    cases shapeA with
+    | bottom _ => exact leftBottom rfl
+    | chainBottom cs ex =>
+      cases shapeB with
+      | bottom _ => exact rightBottom rfl
+      | chainBottom ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+      | chainScalar ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+    | chainScalar cs ex =>
+      cases shapeB with
+      | bottom _ => exact rightBottom rfl
+      | chainBottom ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+      | chainScalar ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
   | record ws ts len _ ih =>
     have leftBottom : a = .bottom → Describes gamma heap (a.join b) (.record ws) := by
       intro bottom
@@ -2192,6 +2532,115 @@ theorem shadowFree_resultCase_success {bound : List Var} {input : Atom} {err ok 
     obtain ⟨_, first, second⟩ := except_bind_success children
     exact ⟨freshErr, freshOk, first, second⟩
 
+/-! ### Typing and shadows of the chain constructors and a chain case -/
+
+theorem primType_endChain_success {t type : Ty} (run : primType (.endChain t) [] = .ok type) :
+    type = .chain t := by
+  simp [primType, pure, Except.pure] at run
+  exact run.symm
+
+/-- A link types only at an integer head and an integer chain, and its result is that chain. -/
+theorem primType_link_success {ta tb type : Ty} (flatB : FlatType tb)
+    (run : primType .link [ta, tb] = .ok type) :
+    ta = .int ∧ tb = .chain .int ∧ type = .chain .int := by
+  cases flatB with
+  | int => simp [primType] at run
+  | listInt => simp [primType] at run
+  | record _ _ => simp [primType] at run
+  | result _ _ _ _ => simp [primType] at run
+  | chainInt =>
+    simp only [primType] at run
+    by_cases same : (ta == Ty.int) = true
+    · rw [if_pos same] at run
+      have taInt := ty_equal_int same
+      subst taInt
+      simp [pure, Except.pure] at run
+      exact ⟨rfl, rfl, run.symm⟩
+    · rw [if_neg same] at run
+      cases run
+
+theorem exprType_endChain_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {type : Ty}
+    (typed : exprType declarations self tenv (.prim (.endChain .int) []) = .ok type) :
+    type = .chain .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  have restNil := except_mapM_nil_success atomsTyped
+  subst restNil
+  exact primType_endChain_success primTyped
+
+theorem exprType_link_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {head tail : Atom} {type : Ty}
+    (flatTypes : ∀ t, atomType tenv tail = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .link [head, tail]) = .ok type) :
+    atomType tenv head = .ok .int ∧ atomType tenv tail = .ok (.chain .int) ∧ type = .chain .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tH, rest, headTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tT, rest', tailTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  have restNil := except_mapM_nil_success restTyped'
+  subst restNil
+  obtain ⟨headInt, tailChain, typeChain⟩ := primType_link_success (flatTypes tT tailTyped) primTyped
+  subst headInt
+  subst tailChain
+  exact ⟨headTyped, tailTyped, typeChain⟩
+
+theorem exprType_chainCase_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {input : Atom} {head tail : Var} {onEnd onLink : Expr} {type : Ty}
+    (typed : exprType declarations self tenv (.chainCase input head tail onEnd onLink) = .ok type) :
+    ∃ t, atomType tenv input = .ok (.chain t) ∧
+      exprType declarations self tenv onEnd = .ok type ∧
+      ∃ b, exprType declarations self ((head, t) :: (tail, .chain t) :: tenv) onLink = .ok b ∧
+        Ty.equal type b = true := by
+  rw [exprType] at typed
+  cases inputType : atomType tenv input with
+  | error problem => rw [inputType] at typed; simp [Bind.bind, Except.bind] at typed
+  | ok t =>
+    rw [inputType] at typed
+    simp only [Bind.bind, Except.bind] at typed
+    cases t with
+    | chain t =>
+      dsimp only at typed
+      cases leftType : exprType declarations self tenv onEnd with
+      | error problem => rw [leftType] at typed; simp [pure, Except.pure] at typed
+      | ok left =>
+        rw [leftType] at typed
+        cases rightType : exprType declarations self ((head, t) :: (tail, .chain t) :: tenv) onLink with
+        | error problem => rw [rightType] at typed; simp [pure, Except.pure] at typed
+        | ok right =>
+          rw [rightType] at typed
+          simp only [pure, Except.pure] at typed
+          by_cases same : (left == right) = true
+          · rw [if_pos same] at typed
+            cases Except.ok.inj typed
+            first
+            | exact ⟨t, rfl, leftType, right, rightType, same⟩
+            | exact ⟨t, rfl, rfl, right, rightType, same⟩
+            | exact ⟨t, rfl, leftType, right, rfl, same⟩
+            | exact ⟨t, rfl, rfl, right, rfl, same⟩
+          · rw [if_neg same] at typed; cases typed
+    | _ => simp [pure, Except.pure] at typed
+
+theorem shadowFree_chainCase_success {bound : List Var} {input : Atom} {head tail : Var} {onEnd onLink : Expr}
+    (shadow : shadowFree bound (.chainCase input head tail onEnd onLink) = .ok ()) :
+    head ∉ bound ∧ tail ∉ bound ∧ head ≠ tail ∧
+      shadowFree bound onEnd = .ok () ∧ shadowFree (head :: tail :: bound) onLink = .ok () := by
+  cases occupied : (bound.contains head || bound.contains tail || head == tail) with
+  | true =>
+    simp only [shadowFree, if_pos occupied] at shadow
+    change Except.error _ = Except.ok () at shadow
+    contradiction
+  | false =>
+    simp only [Bool.or_eq_false_iff] at occupied
+    have freshHead : head ∉ bound := fun member =>
+      by have := List.contains_iff_mem.mpr member; rw [occupied.1.1] at this; contradiction
+    have freshTail : tail ∉ bound := fun member =>
+      by have := List.contains_iff_mem.mpr member; rw [occupied.1.2] at this; contradiction
+    have different : head ≠ tail := by
+      intro same
+      subst same
+      simp at occupied
+    have children :
+        (shadowFree bound onEnd >>= fun _ => shadowFree (head :: tail :: bound) onLink) = .ok () := by
+      simpa [shadowFree, freshHead, freshTail, different] using shadow
+    obtain ⟨_, first, second⟩ := except_bind_success children
+    exact ⟨freshHead, freshTail, different, first, second⟩
+
 /-! ### The uses of a typed expression are typed paths -/
 
 theorem atom_use_typed {tenv : Env Ty} {a : Atom} {ty : Ty} {x : Var} {p : Path}
@@ -2304,5 +2753,32 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
         obtain ⟨tk, t, declared, at_p⟩ := ihSuccess _ b successTyped x p filtered.1
         rw [lookup_cons_other _ _ _ different] at declared
         exact ⟨tk, t, declared, at_p⟩
+  | @endChain =>
+    intro tenv ty typed x p use
+    simp [uses, usesArms, atomsUses] at use
+  | @link head tail =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @chainCase onEnd onLink input head tail _ _ ihEnd ihLink =>
+    intro tenv ty typed x p use
+    obtain ⟨t, inputTyped, endTyped, b, linkTyped, _⟩ := exprType_chainCase_success typed
+    rw [uses_chainCase] at use
+    rcases mem_union_cases _ _ (x, p) use with inInput | arms
+    · exact atom_use_typed inputTyped inInput
+    · rcases mem_union_cases _ _ (x, p) arms with inEnd | inLink
+      · exact ihEnd tenv ty endTyped x p inEnd
+      · have filtered := List.mem_filter.mp inLink
+        have notHead : x ≠ head := by
+          intro same
+          subst same
+          simp at filtered
+        have notTail : x ≠ tail := by
+          intro same
+          subst same
+          simp at filtered
+        obtain ⟨tk, t', declared, at_p⟩ := ihLink _ b linkTyped x p filtered.1
+        rw [lookup_cons_other _ _ _ notHead, lookup_cons_other _ _ _ notTail] at declared
+        exact ⟨tk, t', declared, at_p⟩
 
 end Ownership.FlatFragment.Fields
