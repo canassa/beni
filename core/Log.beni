@@ -13,7 +13,7 @@
 --!
 --! **Levels.** `Trace < Debug < Info < Warn < Error`. A line below the
 --! minimum, `Info` unless `minimum` changes it, is not written: the call
---! builds nothing and costs one comparison.
+--! builds nothing, and costs a read of the fiber's slot and one comparison.
 --!
 --! **The sink.** A call makes an `Entry` — the level, the line, the
 --! annotations and log spans of the calling fiber, and the time on its
