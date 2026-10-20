@@ -5037,7 +5037,8 @@ handler's element. While an event is dispatched, `currentTarget` is that element
 listener is on the element itself. The `dom` lowering's delegated listener is on the document
 (`backend.md` §15.3, *Events*), so under it `currentTarget` is the document. So the pointer events are not
 `delegated`: `dom` attaches one listener to each element that has a pointer handler, through the
-runtime's `listen`, and `browser-inline` attaches every listener to its element already.
+runtime's `listen`, and `browser-inline` attaches every listener to its element already (its
+runtime's `on`, `platforms/browser-inline/Inline.beni`).
 
 The position is taken by `pointer`, the events' extractor and a `foreign` of `Html` (§9.3), while
 the event is dispatched. After the dispatch `currentTarget` is null and the box can have moved, so
@@ -5051,11 +5052,17 @@ non-`pub` extractor is accepted by the checker and then replaced by the raw even
 guarantee**: a `Pointer` comes only from the listener of a pointer event on its own element, so
 `localX` of every `Pointer` is a point in its handler's element, under every lowering and at any
 time after. The other readers read properties of the event, which do not change after the
-dispatch.
+dispatch. **The second wall is `Js`**: `Js.to : Value → a` can make a value of any type, so a
+package that may import `Js` can make a `Dispatched` and call `pointer` on any event. A program
+cannot import `Js` (`js_outside_platform`, §4.2), so only a platform package can, which is the
+trust every `foreign` has (rule 6).
 
 The cost is one listener for each element that has a pointer handler, not one for each page: a
 `For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
 surface is one element. A delegated form waits for a page that needs it and a measurement (rule 8).
+The extractor also reads the element's box on every event, and the read forces a layout when the
+page has changed since the last one. That is the cost of a point that stays right after the
+dispatch. It is accepted, unmeasured, until a page shows the cost (rule 8).
 
 **(e) The browser's own gestures.** A page stops scrolling, pinch zoom and double-tap zoom on its
 game surface with CSS: **`touch-action: none`** in the element's `style`, an ordinary attribute
@@ -5088,7 +5095,8 @@ pins movement, up, cancel, enter and leave, identity and type, `preventDefault`,
 element with a child (the box is the handler's, not the target's), a `Pointer` read in `update`
 after its dispatch, and a handler that the view changes in place. `browser/dom/PointerEvents` pins
 the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot steered toward the
-pointer by animation frames.
+pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
+a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
@@ -5098,8 +5106,8 @@ specified, with these findings:
 - **Measured** (`bench/size.mjs --pages-only`, the compiler before and after this change): every
   release figure is the same, and TodoMVC's release file is the same bytes. Every page that reaches
   no `foreign` of `Html` is the same in development too. TodoMVC and Conduit reach `targetValue`, and
-  their development output grows by 358 bytes raw (140 brotli): a development build copies the
-  sibling file whole, with the new export. `examples/steer`, the demonstration, is 10 800 bytes raw
+  their development output grows by 523 bytes raw: a development build copies the sibling file
+  whole, with the new export and its comments. `examples/steer`, the demonstration, is 10 800 bytes raw
   and 4 267 brotli under `--release`.
 - **The extractor's key is `ev`, not `e`.** A first version returned `{ e, x, y }`. The release
   minifier keeps the spelling of a name that stands where a property name can, anywhere in the file
