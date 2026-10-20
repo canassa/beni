@@ -5,7 +5,8 @@
 -- the host still counts. The socket belongs to the call: when the
 -- function returns, the platform closes it with 1000, and when a keyed
 -- `Restart` cancels the body, it closes an open socket the same way and
--- stops one that is still connecting, with no code.
+-- stops one that is still connecting, with no code. A defect's teardown
+-- runs `connect`'s release too, so the socket a body waits on is closed.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub
@@ -21,6 +22,7 @@ type Msg
     = Start String
     | Got String
     | Done (Result WebSocket.ConnectError String)
+    | Crash
 
 
 update : Msg, List String → List String × Cmd Msg
@@ -40,6 +42,9 @@ update msg lines =
 
         Done (Err _) →
             ( lines ++ [ "failed" ], Cmd.none )
+
+        Crash →
+            Debug.todo "update threw"
 
 
 -- Echo each message, until the server says "stop" or the connection ends.
@@ -78,6 +83,7 @@ view lines =
     <main>
         <button id="a" onClick={Start "/a"}>a</button>
         <button id="b" onClick={Start "/b"}>b</button>
+        <button id="crash" onClick={Crash}>crash</button>
         <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
     </main>
 

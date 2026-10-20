@@ -436,7 +436,9 @@ is the page's — and stays connecting until a `socket <n> open` or `socket
 so a platform that hands the host something it refuses meets the host's
 own exception. A message that arrives while the page closes the socket is
 dropped, as the host drops it, and logged. A socket still open when the
-script ends is not a failure: a page that keeps one is the normal case.
+script ends is not a failure: a page that keeps one is the normal case. Chrome ends a connection whose
+network dropped with `close` 1006 and no `error`; a script writes that as `socket <n> close 1006
+""`, which is clean, since the page module does not read `wasClean`.
 
 **The page never leaves its document.** A navigation the page starts to
 another document — `location.assign`, `replace` or `reload`, a write to

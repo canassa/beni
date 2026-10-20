@@ -1,0 +1,81 @@
+-- `==` on a socket is identity (boundary.md §9.11 (a);
+-- static-dispatch-spike.md §3.5's row for `WebSocket.Socket`): a socket
+-- equals itself and no other one, by `==` and `≠`, by `Basics.eq` called
+-- by name and passed as a value, and inside a derived record and a
+-- `Maybe`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import WebSocket exposing (Socket)
+
+
+type alias Model =
+    a : Maybe Socket
+    b : Maybe Socket
+    lines : List String
+
+
+type Msg
+    = A WebSocket.Event
+    | B WebSocket.Event
+    | Compare
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        A (WebSocket.Opened socket) →
+            ( { model | a = Just socket }, Cmd.none )
+
+        B (WebSocket.Opened socket) →
+            ( { model | b = Just socket }, Cmd.none )
+
+        Compare →
+            case ( model.a, model.b ) of
+                ( Just a, Just b ) →
+                    ( { model | lines = comparisons a b }, Cmd.none )
+
+                _ →
+                    ( { model | lines = [ "not open" ] }, Cmd.none )
+
+        _ →
+            ( model, Cmd.none )
+
+
+type alias Holder =
+    socket : Socket
+
+
+comparisons : Socket, Socket → List String
+comparisons a b =
+    byValue = Basics.eq
+    [ "a == a: ${a == a}, a == b: ${a == b}"
+    , "a ≠ a: ${a ≠ a}, a ≠ b: ${a ≠ b}"
+    , "Basics.eq a a: ${Basics.eq a a}, Basics.eq a b: ${Basics.eq a b}"
+    , "as a value: ${byValue a a}, ${byValue a b}"
+    , "in a record: ${holder a == holder a}, ${holder a == holder b}"
+    , "in a Maybe: ${Just a == Just a}, ${Just a == Just b}"
+    ]
+
+
+holder : Socket → Holder
+holder socket = { socket = socket }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="compare" onClick={Compare}>compare</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { a = Nothing, b = Nothing, lines = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.batch [ WebSocket.listen "/a" [] A, WebSocket.listen "/b" [] B ]
+        }

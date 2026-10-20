@@ -1,8 +1,10 @@
 // The cost of one WebSocket message in a page (docs/design/boundary.md
 // §9.11 (m)): from the host's `message` event to `update` and the render,
 // each message in a task of its own, as a game's 30 states a second
-// arrive; and, on the same page, a click's message, for comparison.
-// happy-dom in Node, as §9.8.11's commands are measured.
+// arrive, and each a new state of about 1 KiB, so the render writes it.
+// Beside it, the same work written by hand in JavaScript on the same DOM,
+// and a click's message on the beni page. happy-dom in Node, as §9.8.11's
+// commands are measured.
 //
 //   beni build --release --platform=browser-tea --out=<build> bench/websocket/page
 //   node bench/websocket/page.mjs tests/browser/happy-dom.mjs <build>/_main.mjs [messages]
@@ -45,12 +47,38 @@ socket.readyState = 1;
 socket.dispatchEvent(new Event("open"));
 for (let i = 0; i < 5; i++) await turn();
 
-const state = `{"tick":0,"players":[${Array.from({ length: 8 }, (_, i) => `{"id":${i},"x":${i * 3},"y":${i * 5},"dir":"up","score":${i * 10}}`).join(",")}]}`;
-const message = () => {
-  const event = new Event("message");
-  Object.defineProperty(event, "data", { value: state });
-  socket.dispatchEvent(event);
+// A state of about 1 KiB, a new string for every tick, as a server sends.
+// The strings are made before the clock starts, so making them is not
+// counted.
+const states = Array.from({ length: n }, (_, tick) => `{"tick":${tick},"players":[${Array.from({ length: 20 }, (_, i) => `{"id":${i},"x":${(tick + i * 3) % 64},"y":${i * 5},"dir":"up","score":${i * 10}}`).join(",")}]}`);
+let next = 0;
+const nextState = () => {
+  next = (next + 1) % n;
+  return states[next];
 };
+const dispatch = (target) => {
+  const event = new Event("message");
+  Object.defineProperty(event, "data", { value: nextState() });
+  target.dispatchEvent(event);
+};
+const message = () => dispatch(socket);
+// The same page by hand: a listener that keeps the state and a count, and
+// writes the two texts that changed, as the beni view does.
+const handSocket = new EventTarget();
+const hand = document.createElement("section");
+const handState = document.createElement("p");
+const handCount = document.createElement("p");
+hand.append(handState, handCount);
+document.body.append(hand);
+let handModel = { state: "", count: 0 };
+handSocket.addEventListener("message", (event) => {
+  handModel = { state: event.data, count: handModel.count + 1 };
+  queueMicrotask(() => {
+    if (handState.textContent !== handModel.state) handState.textContent = handModel.state;
+    handCount.textContent = String(handModel.count);
+  });
+});
+const byHand = () => dispatch(handSocket);
 const button = document.getElementById("b");
 const click = () => button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
 const nothing = () => {};
@@ -64,11 +92,14 @@ const time = async (what) => {
   return Number(process.hrtime.bigint() - start) / n;
 };
 // Warm up, then measure each three times and keep the fastest.
-for (const what of [message, click, nothing]) await time(what);
+for (const what of [message, byHand, click, nothing]) await time(what);
 const best = async (what) => Math.min(await time(what), await time(what), await time(what));
 const base = await best(nothing);
 const perMessage = (await best(message)) - base;
+const perHand = (await best(byHand)) - base;
 const perClick = (await best(click)) - base;
-const shown = document.querySelectorAll("p")[1].textContent;
-console.log(JSON.stringify({ messages: n, baseNs: Math.round(base), messageNs: Math.round(perMessage), clickNs: Math.round(perClick), count: shown }));
+const shown = document.querySelector("main").querySelectorAll("p")[1].textContent;
+console.log(
+  JSON.stringify({ messages: n, stateBytes: nextState().length, baseNs: Math.round(base), messageNs: Math.round(perMessage), byHandNs: Math.round(perHand), clickNs: Math.round(perClick), count: shown }),
+);
 process.exit(0);

@@ -5844,15 +5844,24 @@ and (j) say, with these readings:
   ["<protocol>"]`, `message "<text>"`, `binary <bytes>`, `close <code> "<reason>"`, `fail`,
   `error-only` and `buffered <bytes>`, then `socket blocked` (the next constructor throws `SecurityError`) and
   `sockets` (those made and not closed); `tests/corpus/README.md` has them.
-- **Fixtures** (`tests/corpus/browser/tea/`): `WebSocketChat`, `WebSocketDirect`,
-  `WebSocketFailures` and `WebSocketLifetime`, each also run with its listeners in fibers
-  (`--fiber-page`), against the same golden.
+- **The URL is parsed with `URL.parse`**, which answers null for what does not parse, so no
+  catch is needed; `new URL` inside `Js.catchIf` that takes only a `TypeError` is for an engine
+  with no `URL.parse`, as step 1 of (c) says.
+- **Fixtures** (`tests/corpus/browser/tea/`): `WebSocketChat`, `WebSocketDirect` (with a defect
+  while `connect` holds a socket), `WebSocketFailures` (with the empty fragment `"/chat#"`),
+  `WebSocketLifetime` and `WebSocketEquality` (a socket compared with itself and with another by
+  `==`, `≠`, `Basics.eq` by name and as a value, in a record and in a `Maybe`), each also run with
+  its listeners in fibers (`--fiber-page`), against the same golden.
 - **Measured** (`--release`, one file, brotli 11): a `Tea.element` page that uses `listen` and
   `send` is 4 679 bytes, against 3 789 for a page with another `Sub.on` listener
   (`Navigation.onUrlRequest`) and 1 152 for the empty `Tea.element`: the module costs about 890
-  bytes. One received message, each in a task of its own, costs about 3.5 µs from the host's
-  `message` event to `update` and the render, against about 7.2 µs for a click on the same page
-  (happy-dom in Node, 20 000 of each; the event's string reaches `update` as it is, with no copy).
+  bytes. One received message, each in a task of its own and each a new state of 936 bytes,
+  costs about 4.3 µs from the host's `message` event to `update` and the render (happy-dom in
+  Node, 20 000 of each, `bench/websocket/page.mjs`); the same page written by hand in JavaScript
+  costs 6 to 7 µs in that benchmark, and 4.2 to 4.6 µs in the review's own version of it: beni
+  costs what hand-written JavaScript costs. A click on the same page costs about 7.5 µs. The
+  event's string reaches `update` as it is, with no copy. A constant state is cheaper, about 3.5
+  µs, only because the view then has no text to write.
 
 ## Appendix — what is deliberately not done
 

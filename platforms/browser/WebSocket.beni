@@ -23,11 +23,12 @@
 --! stops. Every operation on a closed socket is total, so a model may hold
 --! one.
 --!
---! Written over `Js`. A socket is the object `{ w, q, r, o, e, l, k, opened }`:
---! the host's `WebSocket`, the messages no one has read, the fibers waiting
---! in `read`, the fiber waiting in `connect` for the open (or null), the end
---! once there is one (or null), the subscription's send (or null), whether a
---! subscription opened it, and whether it has opened.
+--! Written over `Js`. A socket is the object `{ w, q, r, o, e, l, k, opened,
+--! u }`: the host's `WebSocket`, the messages no one has read, the fibers
+--! waiting in `read`, the fiber waiting in `connect` for the open (or
+--! null), the end once there is one (or null), the subscription's send (or
+--! null), whether a subscription opened it, whether it has opened, and the
+--! URL as the program wrote it, for the console's line.
 
 import Cmd exposing (Cmd)
 import Js
@@ -131,7 +132,10 @@ read socket = Task.callback λresume → take (Js.from socket) resume
 
 
 --| Send `text` as one message: `Err NotOpen` when the connection is not
---| open. Never waits; `buffered` says what is not sent yet.
+--| open. Never waits; `buffered` says what is not sent yet. Firefox throws
+--| from the host's `send` for a message over 2 GiB (its
+--| `network.websocket.max-message-size`); nothing catches that, so it is a
+--| defect, by choice (#542).
 pub write : Socket, String → Result WriteError ⊤
 write socket text =
     s = Js.from socket

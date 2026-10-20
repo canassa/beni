@@ -3,6 +3,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol></ol>
   </main>
 </body>
@@ -12,6 +13,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
     </ol>
@@ -25,6 +27,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -37,6 +40,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -52,6 +56,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -67,6 +72,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -84,6 +90,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -101,6 +108,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -123,6 +131,7 @@
   <main>
     <button id="a">"a"</button>
     <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
     <ol>
       <li>"start /a"</li>
       <li>"read x"</li>
@@ -134,6 +143,53 @@
       <li>"done: ended 4001 \"gone\", then the same end, a write is not open, and 0 bytes wait"</li>
     </ol>
   </main>
+</body>
+-- sockets
+(sockets: 0)
+(the DOM did not change)
+-- click #a
+(socket 5: /a)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+      <li>"start /a"</li>
+      <li>"read y"</li>
+      <li>"start /b"</li>
+      <li>"done: ended 4001 \"gone\", then the same end, a write is not open, and 0 bytes wait"</li>
+      <li>"start /a"</li>
+    </ol>
+  </main>
+</body>
+-- socket 5 open
+(the DOM did not change)
+-- throws click #crash
+(socket 5 close: 1000 "")
+(threw: Error: TODO: update threw)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+      <li>"start /a"</li>
+      <li>"read y"</li>
+      <li>"start /b"</li>
+      <li>"done: ended 4001 \"gone\", then the same end, a write is not open, and 0 bytes wait"</li>
+      <li>"start /a"</li>
+    </ol>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: update threw"</div>
 </body>
 -- sockets
 (sockets: 0)

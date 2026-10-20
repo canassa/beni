@@ -1,10 +1,12 @@
--- Every failure a page can meet is a value (boundary.md §9.11 (c)): a URL
--- that does not parse, one with another scheme or with a fragment, a
--- subprotocol that is not a token or that is given twice, and a socket
--- the host blocks, each `Failed` with no socket made but the blocked one,
--- and `Err` from `connect` the same way; `disconnect` with a code or a
--- reason a page may not send; `send` once the socket is closing. The
--- socket reports the subprotocol the server chose and what it has not sent.
+-- Every failure a page can meet is a value (boundary.md §9.11 (c), and
+-- its amendment's item 5): a URL that does not parse, one with another
+-- scheme or with a fragment — an empty one too, `"/chat#"`, whose `hash` is
+-- `""` — a subprotocol that is not a token or that is given twice, and a
+-- socket the host blocks, each `Failed` with no socket made but the
+-- blocked one, and `Err` from `connect` the same way; `disconnect` with a
+-- code or a reason a page may not send; `send` once the socket is
+-- closing. The socket reports the subprotocol the server chose and what
+-- it has not sent.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub exposing (Sub)
@@ -131,6 +133,7 @@ view model =
         <button id="unparsed" onClick={Target "http://[" []}>unparsed</button>
         <button id="scheme" onClick={Target "ftp://example.com/" []}>scheme</button>
         <button id="fragment" onClick={Target "/chat#top" []}>fragment</button>
+        <button id="empty-fragment" onClick={Target "/chat#" []}>empty fragment</button>
         <button id="token" onClick={Target "/chat" [ "chat v1" ]}>token</button>
         <button id="twice" onClick={Target "/chat" [ "v1", "v1" ]}>twice</button>
         <button id="blocked" onClick={Target "/blocked" []}>blocked</button>
