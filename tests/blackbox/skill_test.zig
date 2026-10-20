@@ -107,6 +107,18 @@ fn blocksOf(arena: std.mem.Allocator, file: []const u8, text: []const u8, out: *
             }
             continue;
         }
+        // A fence this parser cannot read, whose info string still says beni:
+        // indented, `~~~`, four backticks, or `Beni`. Reported, never skipped.
+        const lead = std.mem.trimStart(u8, line, " \t");
+        if (std.mem.startsWith(u8, lead, "~~~") or std.mem.startsWith(u8, lead, "```")) {
+            const fence_len = std.mem.indexOfNone(u8, lead, "`~") orelse lead.len;
+            const after = std.mem.trimStart(u8, lead[fence_len..], " \t");
+            const says_beni = after.len >= 4 and std.ascii.eqlIgnoreCase(after[0..4], "beni");
+            const readable = lead.ptr == line.ptr and std.mem.startsWith(u8, line, "```") and fence_len == 3;
+            if (says_beni and (!readable or !std.mem.startsWith(u8, after, "beni"))) {
+                try problems.append(arena, try std.fmt.allocPrint(arena, "{s}:{d}: a beni block in a fence the gate cannot read; write it as a column-0 ``` fence whose info string starts with `beni`", .{ file, line_no }));
+            }
+        }
         if (!std.mem.startsWith(u8, line, "```")) continue;
         const info = std.mem.trim(u8, line[3..], " \t");
         var tokens = std.mem.tokenizeScalar(u8, info, ' ');
@@ -293,7 +305,7 @@ test "every command and flag of beni help is in the CLI reference, and every fla
     const reference_flags = try flagsIn(arena, reference);
     try testing.expect(help_flags.len >= 25);
     for (help_flags) |flag| {
-        if (!contains(reference_flags, flag)) try problems.append(arena, try std.fmt.allocPrint(arena, "{s}: the flag `{s}` of beni help is not in it", .{ cli_reference, flag }));
+        if (!contains(reference_flags, flag) or !inBackticks(reference, flag)) try problems.append(arena, try std.fmt.allocPrint(arena, "{s}: the flag `{s}` of beni help is not in it in backticks", .{ cli_reference, flag }));
     }
     for (reference_flags) |flag| {
         if (!contains(help_flags, flag) and !contains(&hidden_flags, flag)) {
@@ -326,6 +338,17 @@ fn flagsIn(arena: std.mem.Allocator, text: []const u8) ![]const []const u8 {
         if (!contains(out.items, flag)) try out.append(arena, flag);
     }
     return out.items;
+}
+
+/// Whether `needle` occurs inside a backtick span of `text`: `dump --stage=…`
+/// counts, a flag in prose does not.
+fn inBackticks(text: []const u8, needle: []const u8) bool {
+    var spans = std.mem.splitScalar(u8, text, '`');
+    var inside = false;
+    while (spans.next()) |span| : (inside = !inside) {
+        if (inside and std.mem.indexOf(u8, span, needle) != null) return true;
+    }
+    return false;
 }
 
 fn contains(list: []const []const u8, item: []const u8) bool {
@@ -491,7 +514,10 @@ test "SKILL.md has the standard's frontmatter, stays short, and names every refe
     const line_count = std.mem.count(u8, text, "\n");
     try testing.expect(line_count < 500);
     // Codex injects at most 8 000 bytes of SKILL.md when a user names the skill.
-    try testing.expect(text.len < 8000);
+    if (text.len >= 8000) {
+        std.debug.print("SKILL.md is {d} bytes; it stays under 8 000 (frontend.md §12.1)\n", .{text.len});
+        return error.SkillTooLarge;
+    }
     // Every reference file is named, every named file exists, and a
     // hand-written topic stays short enough to read whole.
     var files: std.ArrayList([]const u8) = .empty;
@@ -713,6 +739,9 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     const inside = try skill(&w, exe, &.{ "install", "prefix/share/beni/skills/beni/references" });
     const folder = try skill(&w, exe, &.{ "install", "prefix/share/beni/skills/beni" });
     const itself = try skill(&w, exe, &.{ "install", "--link", "--force", "prefix/share/beni/skills" });
+    // A `..` after a directory that does not exist yet still resolves to the
+    // folder's parent; before the fix this path deleted the installed folder.
+    const dotdot = try skill(&w, exe, &.{ "install", "--link", "--force", "nx/../prefix/share/beni/skills" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -729,6 +758,8 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni/beni' is the installed skill, or lies inside it\n", folder.stderr);
     try testing.expectEqual(@as(u8, 2), itself.exit_code);
     try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni' is the installed skill, or lies inside it\n", itself.stderr);
+    try testing.expectEqual(@as(u8, 2), dotdot.exit_code);
+    try testing.expectEqualStrings("beni: 'nx/../prefix/share/beni/skills/beni' is the installed skill, or lies inside it\n", dotdot.stderr);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -739,4 +770,6 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     try testing.expectEqual(Io.File.Kind.directory, try w.kind("prefix/share/beni/skills/beni"));
     try testing.expect(!w.exists("prefix/share/beni/skills/beni/references/beni"));
     try testing.expect(!w.exists("prefix/share/beni/skills/beni/beni"));
+    try testing.expect(!w.exists("nx"));
+    try expectSameTree(w.arena.allocator(), w.io, skill_root, try w.projectSubPath(w.arena.allocator(), "prefix/share/beni/skills/beni"));
 }

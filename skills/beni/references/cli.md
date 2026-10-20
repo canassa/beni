@@ -20,7 +20,7 @@
 A `<path>` is a `.beni` file or a directory, walked recursively. Inside a project, `build` and
 `serve` take the platform and the paths from `beni.json`.
 
-## Options for every command
+## Options for every command but `skill`
 
 | Flag | Meaning |
 |---|---|
@@ -31,7 +31,7 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 | `--core` | treat the files as the core package (`foreign` is legal); never for a project |
 | `--core-root=<dir>` | read core from this directory instead of the embedded copy |
 | `--explain` | also emit `unit_discarded`, a `_ =` in front of a `⊤` |
-| `--pattern-budget=<n>` | the work one `case` may spend on exhaustiveness before it is refused |
+| `--pattern-budget=<n>` | the work one `case` can spend on exhaustiveness before it is refused |
 
 ## `check`, `build` and `serve`
 
@@ -66,7 +66,7 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 | Flag | Meaning |
 |---|---|
 | `new --platform=browser-tea\|node` | which template (default `browser-tea`) |
-| `fmt --check` | exit 1 if any file would change; write nothing |
+| `fmt --check` | exit 1 when a file is not in the formatter's layout; write nothing |
 | `fmt --stdout` | print the formatted text instead of writing it |
 | `dump --stage=tokens\|ast\|bir\|interface\|raw\|types\|graph\|dispatch\|writes\|ownership` | which representation (required); `interface` prints a module's public signatures |
 | `dump --positions` | include source positions |
@@ -80,11 +80,12 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 file in place: `beni fmt --migrate-cons <file>` for `::`, `--migrate-unicode` for the ASCII
 symbols, `--migrate-top` for `()` and `Never`, `--migrate-lambda` for `\x ->`, `--migrate-let` for
 `let … in`, `--migrate-names` for `modBy`, `remainderBy` and `logBase`, `--migrate-init` for an
-`init` that is a value. Each keeps the file's layout and rewrites one thing. Run one at a time.
+`init` that is a value. Each rewrites one thing; all but `--migrate-let` keep the file's layout, and
+`--migrate-let` reformats the whole file. Run one at a time.
 
 ## Exit codes and diagnostics
 
-- `0`: no errors. `1`: at least one error diagnostic (`fmt --check`: a file would change). `2`: a
+- `0`: no errors. `1`: at least one error diagnostic (`fmt --check`: a file is not formatted). `2`: a
   usage or I/O failure.
 - A warning never changes the exit code.
 - `--diagnostics=json` prints one array of objects: `code`, `severity` (`error` or `warning`),

@@ -89,7 +89,7 @@ sql =
 
 A body written as lines is a block. There is no `let … in`; `let` is the error `let_removed`.
 
-- `x = e` binds a name. An annotation `x : T` may stand on the line before it.
+- `x = e` binds a name. An annotation `x : T` can stand on the line before it.
 - `x ← f a` binds the rest of the block as the last argument of `f a` (see `calls.md`).
 - A line that is an expression is a statement. Its type must be `⊤`. `_ = e` discards a value of
   another type.
@@ -117,7 +117,7 @@ area r =
 `λx y → e` is the only lambda. `\x -> e` is the error `backslash_lambda_removed`. A lambda's
 parameters are irrefutable patterns: a name, `_`, `⊤`, a tuple.
 
-The last argument of a call may be a lambda without parentheses. Its body runs to the end of the
+The last argument of a call can be a lambda without parentheses. Its body runs to the end of the
 line, or, when it starts on the next line, to the end of that block.
 
 ```beni
@@ -131,7 +131,7 @@ total xs = List.foldl xs 0 λx acc → x + acc
 
 ## `if` and `case`
 
-- `if c then a else b`. When `a` has type `⊤`, the `else` may be left out: `if c then a`.
+- `if c then a else b`. When `a` has type `⊤`, the `else` can be left out: `if c then a`.
 - `case e of` lists branches. The formatter writes each body on the line after its pattern.
 - A `case` must be exhaustive. Patterns: a constructor with its arguments, a literal, a name, `_`,
   `( a, b )`, `[]`, `[ x ]`, `[ x, …rest ]`, `[ …init, last ]`, `⊤`.
@@ -179,9 +179,9 @@ that still has the ASCII forms. A type `Int × String` is one pair; `a × b × c
 ## Records
 
 - A literal: `{ x = 1, y = 2 }`. Access: `p.x`. An accessor function: `.x`.
-- An update: `{ p | x = 1 }`. It writes into `p`'s own object. A later use of the old `p` whole is
-  an error; to keep it, write `{ Record.copy p | x = 1 }`. Reading a field of the old `p` stays
-  allowed. See `lists.md`, *Ownership*.
+- An update: `{ p | x = 1 }`. Today the compiler accepts a later use of the old `p`. A rule that
+  makes the update consume its base is specified and not built. `{ Record.copy p | x = 1 }` keeps
+  a copy of `p` on purpose and compiles today. See `lists.md`, *Ownership*.
 - A record alias is written in layout: one field per line, no braces. The formatter writes this
   form. A record type inside another type keeps braces: `List { x : Int, y : Int }`.
 - An untouched field keeps its identity across an update, which is what makes a view cheap.
@@ -210,7 +210,7 @@ Any arity from 2 up. There is no `Tuple` module.
 `e?` where `e : Result x a` yields the `a` or returns the `Err` from the enclosing function. Where
 `e : Maybe a` it yields the `a` or returns `Nothing`. It binds tighter than every operator and
 looser than application: `parse s?` is `(parse s)?`. It returns from the nearest definition with
-parameters, and it may not stand inside a lambda (`question_in_lambda`).
+parameters. Inside a lambda it is the error `question_in_lambda`.
 
 ```beni
 pub sum : String, String → Result String Int

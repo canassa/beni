@@ -27,14 +27,14 @@ pub schema Message tagged "kind" of
 
 - A field is `name : Schema` plus modifiers. Fields are written in layout, one per line.
 - `as "key"` renames the field or the variant on the wire. Without it the name is the key.
-- `optional` marks a field whose key may be missing; its type becomes `Presence a`
+- `optional` marks a field whose key can be missing; its type becomes `Presence a`
   (`Missing | Present a`).
 - `nullable` admits `null`; its type becomes `Nullable a` (`Null | NonNull a`).
 - `via conversion` converts after parsing and before printing, with a `Conversion b a`.
 - `tagged "kind" of` declares a union. Each variant carries its payload fields; the tag is written
   under the discriminator key.
 - A parameter (`Page a`) is a schema the caller supplies: `Page.schema (User.schema ⊤)`.
-- A schema may name itself or another schema of its module. Recursion goes through a `tagged`
+- A schema can name itself or another schema of its module. Recursion goes through a `tagged`
   union.
 - Operands: `String`, `Int`, `Float`, `FiniteFloat`, `Bool`, `Null`, `Value`, `List s`, a record,
   another schema.

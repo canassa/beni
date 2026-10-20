@@ -1,7 +1,7 @@
 # Effects
 
 beni has no effect syntax. The compiler infers, for every function, whether it reaches the host
-(`impure`) and whether it may wait (`suspends`). You write a function that waits like any other,
+(`impure`) and whether it can wait (`suspends`). You write a function that waits like any other,
 and you call it like any other.
 
 ## The model
@@ -15,8 +15,9 @@ and you call it like any other.
   the platform or the host — stops the program with a report.
 - A function that must not wait is `sync`; the compiler checks it where a platform asks for it
   (an event handler, a `view`). You never write the word.
-- In a generated reference, a type shows its class after the result: `(a → b !e1) → List b !e1`,
-  `Duration → ⊤ !suspends`, `Ref a → a !impure`.
+- A generated reference writes a signature with no effect mark: `List a, (a → b) → List b`. A
+  value whose result reaches the host ends in the comment `-- impure`; one that can wait ends in
+  `-- suspends`: `Task.sleep : Duration → ⊤  -- suspends`, `Ref.get : Ref a → a  -- impure`.
 
 ## Fibers: `Task`
 
@@ -28,14 +29,14 @@ A fiber is one line of execution; many fibers take turns on one thread. `Task` i
 | `Task.join fiber` | waits for its value |
 | `Task.cancel fiber` | stops it; `bracket` releases run first |
 | `Task.scope λscope → body` | a scope: every fiber spawned in it is joined or cancelled when `body` returns |
-| `Task.bracket acquire release use` | `release` runs when `use` ends, also on cancellation |
+| `Task.bracket acquire release use` | `release` runs when `use` ends, also on cancellation; it gets the resource and an `Exit a`, which is `Done value` or `Cancelled` |
 | `Task.sleep duration` | waits |
 | `Task.timeout duration (λ⊤ → work)` | `Just` the value, or `Nothing` after the duration |
 | `Task.race left right` | the first of two to finish; the other is cancelled |
 | `Task.retry schedule (λ⊤ → attempt)` | repeats a `Result` attempt as a `Schedule` says |
 
 Nothing a fiber starts outlives what started it, unless it is joined first. Cancellation is
-delivered only where a fiber may wait.
+delivered only where a fiber can wait.
 
 ```beni
 import Duration
@@ -64,11 +65,11 @@ patient work = Task.timeout (Duration.seconds 2) work
   a virtual clock with `Clock.run`.
 - `Duration`: `Duration.millis n`, `Duration.seconds n`, `Duration.minutes n`.
 
-## Where a program may wait
+## Where a program can wait
 
 `main` is evaluated once, when the program starts, and must not wait.
 
-- On `node`, `main = Io.run λ⊤ → …` starts a fiber that may wait: `Io.sleep ms`,
+- On `node`, `main = Io.run λ⊤ → …` starts a fiber that can wait: `Io.sleep ms`,
   `Io.readFile path`, `Http.Server.listen`, `Deferred.wait`.
 - On `browser-tea`, work that waits runs in a command's body (`platforms.md`): `Cmd.task`,
   `Cmd.perform`, `Cmd.keyed`. An event handler and `view` must not wait.
