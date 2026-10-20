@@ -6035,7 +6035,9 @@ what its arrow's return var is filtered by.
 
 **The wild set's local half** (`wild`): every closed type a `Js.from` or a `Js.to` of the module is
 instantiated at, every closed type the module instantiates a crossing quantifier at, and every
-closed part of either; and the subject type of every `?`. The merge adds unboxing's boundary set
+closed part of either; the subject type of every `?`; and every schema declaration's endpoints
+(`Type`, `Encoded`) and its tagged variants' payloads, inline records included, with their closed
+parts, which compiled code parses and prints and which no other part of the build can name. The merge adds unboxing's boundary set
 and closes the set through named types' bodies (`backend.md` §9).
 
 **Crossing quantifiers.** A quantifier of a declaration crosses when the body instantiates
