@@ -8675,8 +8675,10 @@ artifact's order, and every node the walk makes after them in the order it meets
 `CtorRep.unboxed` through the field's written type in its declaring module's `Bir`, the type's
 arguments substituted, canonicalised as the checker's keys are (an alias expanded, a record's fields
 by text, `{ r | … }` under a closed `r` its whole row, a host type wild); a type that is its own field
-through unboxing is wild. **A column holds the representation key itself**, wild for a type that
-makes no site; `RepKeys.isWild` answers for the wild set and `RepKeys.result` gives a function key's
+through unboxing is wild. **`node_key` is sparse**: `JsIr.node_keys` holds a row (node, key) per
+keyed allocation, ascending, since only objects, arrays and arrows carry one, and a dense column was
+23 % of `JsIr`'s bytes on `bench/corpus`; `name_key` stays a dense column. **A key is the
+representation key itself**, wild for a type that makes no site; `RepKeys.isWild` answers for the wild set and `RepKeys.result` gives a function key's
 result, so the filter maps through the set where it reads. The wild set is as specified, the
 boundary's named types being every named type of constructors without integer tags; where its
 closure would have to go through a body this file cannot canonicalise as the checker does (a schema
