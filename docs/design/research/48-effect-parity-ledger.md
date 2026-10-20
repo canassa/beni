@@ -373,7 +373,11 @@ cancels the fiber, which aborts the request through its canceller and answers `N
 doc comment should say which to reach for. **A `browser` `Log` module and a core `Log` cannot both
 exist** — module names are global — so the logging slice moves `platforms/browser/Log.beni`'s three
 functions into core with the same signatures, as routing just moved `Url` into core
-(`b92a78aa`).
+(`b92a78aa`). *Corrected 2026-10-20 (#358):* both can exist. A module name is unique per package,
+and a platform module shadows the core module of its name for the program and for the platform
+itself (`boundary.md` §9.8.11 (a), §9.1). So while both exist, a browser program sees the
+browser's `Log`, and the browser's `Log` cannot import core's. The move is still needed, so that
+a browser program gets core's `Log`; it is no longer needed for the build to work.
 
 ### 4.3 `core/Task.js` in beni (`plans/core-in-beni.md` step 2), being studied
 
