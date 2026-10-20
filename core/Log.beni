@@ -1,0 +1,261 @@
+--! A log a shipped program keeps (`transparent-effects-proposal.md`
+--! §17.11, `boundary.md` §9.8.15 (b)): a line at one of five levels,
+--! handed to the program's sink. Effect's `Effect.log` and `Logger`.
+--!
+--!     Log.warn "saving took ${String.fromInt ms} ms"
+--!
+--! `Debug.log` is for development, and a `--release` build refuses it.
+--! These are kept by every build: each call is `impure`, so `--release`
+--! never drops one.
+--!
+--! A line is text: a program that logs a value formats it, because
+--! `Debug.toString`'s text is not a promise.
+--!
+--! **Levels.** `Trace < Debug < Info < Warn < Error`. A line below `Info`
+--! is not written: the call builds nothing and costs one comparison.
+--!
+--! **The sink.** A call makes an `Entry` — the level, the line and the time
+--! on the calling fiber's clock — and hands it to the sink. The default
+--! sink writes the line on the console at its level: `console.debug` for
+--! `Trace` and `Debug`, then `console.info`, `console.warn` and
+--! `console.error`. A platform replaces it with `setSink`: the `node`
+--! platform's `Io.run` writes one `logfmt` line per entry to standard
+--! error.
+--!
+--! Nothing here is `foreign`.
+
+import Clock
+import Js
+import List
+import String
+
+
+--| How much a line matters, least first: `Trace < Debug < Info < Warn <
+--| Error`.
+pub type Level
+    = Trace
+    | Debug
+    | Info
+    | Warn
+    | Error
+
+
+--| One line, as a sink is given it: its `level`, its `message`, the
+--| `annotations` of the log context as key and value, outermost first, the
+--| log `spans` it is inside as label and the milliseconds since that span
+--| began, innermost first, and its `time` in milliseconds since the Unix
+--| epoch, on the calling fiber's clock.
+pub type alias Entry =
+    level : Level
+    message : String
+    annotations : List (String × String)
+    spans : List (String × Int)
+    time : Int
+
+
+--| The line at `Trace`, the finest detail.
+pub trace : String → ⊤
+trace message = log Trace message
+
+
+--| The line at `Debug`.
+pub debug : String → ⊤
+debug message = log Debug message
+
+
+--| The line at `Info`.
+pub info : String → ⊤
+info message = log Info message
+
+
+--| The line at `Warn`.
+pub warn : String → ⊤
+warn message = log Warn message
+
+
+--| The line at `Error`.
+pub error : String → ⊤
+error message = log Error message
+
+
+--| The line at `level`: an `Entry`, handed to the sink — unless `level` is
+--| below `Info`, when nothing is built.
+pub log : Level, String → ⊤
+log level message =
+    if rank level ≥ rank Info then
+        emit { level = level, message = message, annotations = [], spans = [], time = Clock.now ⊤ }
+
+
+-- A level's place in the order.
+rank : Level → Int
+rank level =
+    case level of
+        Trace →
+            0
+
+        Debug →
+            1
+
+        Info →
+            2
+
+        Warn →
+            3
+
+        Error →
+            4
+
+
+-- The sink `setSink` installed: undefined until it is called, for the
+-- default.
+sink : Js.Ref Js.Value
+sink = Js.ref Js.undefined
+
+
+--| Make `f` the sink of every line the program writes from now on. It is
+--| a platform's call, as `Task.onDefect` is: the `node` platform's
+--| `Io.run` makes it. The last call wins. A sink runs during the call
+--| that logs, so it must not suspend.
+pub setSink : sync (Entry → ⊤) → ⊤
+setSink f = Js.write sink (Js.from f)
+
+
+-- Hand `entry` to the sink.
+emit : Entry → ⊤
+emit entry =
+    installed = Js.read sink
+
+    if Js.isUndefined installed then
+        console entry
+    else
+        Js.to (Js.apply installed [ Js.from entry ])
+
+
+-- The default sink: the console method for the level, given the message
+-- with each span appended as ` label=Nms`, and the annotations as a second
+-- argument, an object of strings, when there are any. With neither it is
+-- the one-argument call `browser`'s `Log` always made, so a page prints
+-- what it printed.
+console : Entry → ⊤
+console entry =
+    text = entry.message ++ String.concat (List.map entry.spans spanText)
+    out = Js.global "console"
+    name = methodOf entry.level
+
+    if List.isEmpty entry.annotations then
+        Js.to (Js.call out name [ Js.from text ])
+    else
+        Js.to (Js.call out name [ Js.from text, annotationObject entry.annotations ])
+
+
+-- The console method for a level.
+methodOf : Level → String
+methodOf level =
+    case level of
+        Trace →
+            "debug"
+
+        Debug →
+            "debug"
+
+        Info →
+            "info"
+
+        Warn →
+            "warn"
+
+        Error →
+            "error"
+
+
+-- The annotations as one object of strings, in their order. Made by
+-- `Object.fromEntries`, which defines each key as its own property, so a
+-- key such as `__proto__` is a key like any other.
+annotationObject : List (String × String) → Js.Value
+annotationObject annotations =
+    pairs = Js.array []
+
+    List.foldl annotations ⊤ λ( key, value ) _ →
+        Js.to (Js.call pairs "push" [ Js.array [ Js.from key, Js.from value ] ])
+
+    Js.call (Js.global "Object") "fromEntries" [ pairs ]
+
+
+--| The line the `node` platform writes for an entry: Effect's `logfmt`
+--| (`Logger.formatLogFmt`).
+--|
+--|     timestamp=2026-10-20T09:15:00.000Z level=INFO message="saved 3 items" save=12ms user=7
+--|
+--| The time in ISO 8601, in UTC; the level in capitals; the message; then
+--| each span as `label=Nms`, innermost first; then each annotation as
+--| `key=value`, outermost first. A value with white space, a `"` or a `=`
+--| in it is quoted as `JSON.stringify` quotes a string, and any other is
+--| written as it is. In a key or a label, each white space, `"` and `=` is
+--| written `_`. A time outside the range of a JavaScript `Date`,
+--| ±8.64 × 10¹⁵ ms, is written as the nearest end of it.
+pub logfmt : Entry → String
+logfmt entry =
+    head =
+        "timestamp=${timestamp entry.time} level=${levelName entry.level} message=${valueText entry.message}"
+    spans = String.concat (List.map entry.spans spanText)
+    annotations = String.concat (List.map entry.annotations annotationText)
+    head ++ spans ++ annotations
+
+
+-- A level as `logfmt` writes it.
+levelName : Level → String
+levelName level =
+    case level of
+        Trace →
+            "TRACE"
+
+        Debug →
+            "DEBUG"
+
+        Info →
+            "INFO"
+
+        Warn →
+            "WARN"
+
+        Error →
+            "ERROR"
+
+
+-- The time in ISO 8601, in UTC: `Date`'s `toISOString`, which throws for
+-- a time outside a `Date`'s range, so such a time is first moved to the
+-- nearest end of it.
+timestamp : Int → String
+timestamp ms =
+    inRange = Basics.clamp ms (-8640000000000000) 8640000000000000
+    Js.to (Js.call (Js.construct (Js.global "Date") [ Js.from inRange ]) "toISOString" [])
+
+
+-- An annotation as ` key=value`.
+annotationText : String × String → String
+annotationText ( key, value ) = " ${labelText key}=${valueText value}"
+
+
+-- A span as ` label=Nms`, Effect's `formatLogSpan`.
+spanText : String × Int → String
+spanText ( label, ms ) = " ${labelText label}=${String.fromInt ms}ms"
+
+
+-- A key or a label with each white space, `"` and `=` written `_`:
+-- Effect's `formatLabel`.
+labelText : String → String
+labelText label =
+    Js.to
+        (Js.call (Js.call (Js.from label) "split" [ Js.regExp "[\\s\"=]" "" ]) "join"
+            [ Js.from "_" ]
+        )
+
+
+-- A value as it is when it holds no white space, `"` or `=` (Effect's
+-- `textOnly`), and else quoted as `JSON.stringify` quotes a string.
+valueText : String → String
+valueText value =
+    if Js.to (Js.call (Js.regExp "^[^\\s\"=]*$" "") "test" [ Js.from value ]) then
+        value
+    else
+        Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from value ])

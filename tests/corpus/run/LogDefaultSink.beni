@@ -1,0 +1,18 @@
+-- run: a `node` program that never calls `Io.run` logs through core's
+-- default sink (transparent-effects-proposal.md §17.11): `console.info`
+-- of the line, which Node writes to standard output, ahead of what the
+-- `Program` prints when it ends. `console.warn` and `console.error` write
+-- to standard error, which this golden does not hold, and `Trace` and
+-- `Debug` are below the default minimum.
+import Log
+import Node exposing (Program)
+
+
+main : Program
+main =
+    Log.trace "not written"
+    Log.debug "not written"
+    Log.info "an info line"
+    Log.warn "a warning, on standard error"
+    Log.info "another info line"
+    Node.print "the program's own output"

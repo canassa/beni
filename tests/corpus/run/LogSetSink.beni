@@ -1,0 +1,54 @@
+-- run: `Log.setSink` (transparent-effects-proposal.md §17.11) replaces the
+-- sink for the whole program, and the last call wins: here it replaces the
+-- one `Io.run` installed. Each call hands the sink an `Entry` with its
+-- level, its line and the time on the calling fiber's clock — a virtual
+-- one here — and no annotation or span. `Trace` and `Debug` are below the
+-- default minimum, `Info`, and reach no sink. `--release` keeps every
+-- call, so its pass prints the same entries.
+import Clock
+import Duration
+import Io
+import Log exposing (Entry, Level, Trace, Debug, Info, Warn, Error)
+import Node exposing (Program)
+import Ref exposing (Ref)
+
+
+show : Entry → String
+show entry =
+    level =
+        case entry.level of
+            Trace →
+                "trace"
+
+            Debug →
+                "debug"
+
+            Info →
+                "info"
+
+            Warn →
+                "warn"
+
+            Error →
+                "error"
+
+    "${level} \"${entry.message}\" at ${String.fromInt entry.time}, ${String.fromInt (List.length entry.annotations)} annotations, ${String.fromInt (List.length entry.spans)} spans"
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    Log.setSink λentry → Ref.update seen λlines → [ …lines, "first sink: ${show entry}" ]
+    Log.setSink λentry → Ref.update seen λlines → [ …lines, show entry ]
+    clock = Clock.virtual 1000
+    Clock.run clock λ⊤ →
+        Log.trace "fine detail"
+        Log.debug "detail"
+        Log.info "started"
+    Clock.adjust clock (Duration.millis 250)
+    Clock.run clock λ⊤ →
+        Log.warn "slow"
+        Log.error "failed"
+        Log.log Info "by level"
+        Log.log Debug "by level, below the minimum"
+    Node.printLines (Ref.get seen)

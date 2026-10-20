@@ -1,0 +1,4 @@
+info "started" at 1000, 0 annotations, 0 spans
+warn "slow" at 1250, 0 annotations, 0 spans
+error "failed" at 1250, 0 annotations, 0 spans
+info "by level" at 1250, 0 annotations, 0 spans

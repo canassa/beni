@@ -1,0 +1,36 @@
+-- run: `Log.logfmt` (transparent-effects-proposal.md §17.11), the line the
+-- `node` platform writes, is Effect's `formatLogFmt` without its fiber id:
+-- the time in ISO 8601, the level in capitals, the message, each span
+-- innermost first, then each annotation outermost first. A value with
+-- white space, `"` or `=` in it is quoted as `JSON.stringify` quotes it,
+-- and any other — the empty one too — is written as it is; in a key or a
+-- label each of those is `_`. A time outside a `Date`'s range is the
+-- nearest end of it, never a throw.
+import Log exposing (Entry, Level, Trace, Debug, Info, Warn, Error)
+import Node exposing (Program)
+
+
+entry : Level, String → Entry
+entry level message = { level = level, message = message, annotations = [], spans = [], time = 0 }
+
+
+main : Program
+main =
+    late = entry Info "late"
+    early = entry Info "early"
+    Node.printLines
+        [ Log.logfmt (entry Trace "plain")
+        , Log.logfmt (entry Debug "two words")
+        , Log.logfmt (entry Info "")
+        , Log.logfmt (entry Warn "say \"hi\"")
+        , Log.logfmt (entry Error "a=b\tc\nd é")
+        , Log.logfmt
+            { level = Info
+            , message = "saved"
+            , annotations = [ ( "user", "7" ), ( "the key", "a b" ), ( "q\"=k", "" ) ]
+            , spans = [ ( "inner", 3 ), ( "outer span", 12 ) ]
+            , time = 1760000000123
+            }
+        , Log.logfmt { late | time = 9000000000000000 }
+        , Log.logfmt { early | time = -9000000000000000 }
+        ]
