@@ -320,7 +320,7 @@ All three general proof obligations remain open.
 A binding holds an integer, an integer list, an integer chain, a record of such values, or a result over them, nested (`FlatType`); the atoms read records through field paths, a push writes through one, a result case binds a result's live payload, and a chain case binds a chain's head and a copy of its tail.
 The proof uses no `sorry` and none of the three pinned obligations.
 The generic theorem `flat_preserved` carries the strengthened relation `FlatInvariant` through every fragment expression, in both runtime directions, from the actual acceptance, typing, and shadow runs.
-The fragment excludes lists of lists, calls, closures, views, constructions, and scopes. The three general obligations remain open.
+The fragment excludes lists of lists, calls, closures, views, constructions, scopes, the loops (`traverse`), `focus`, and every other primitive. The three general obligations remain open.
 
 `Invariant` carries two link clauses since 2026-10-16 (#169, owner decisions q1 and q4): every stored link is valid (`LinksValid`, with the view's contents since 2026-10-17), and linked storage that a live path or an observer protects is named as one array (`LinkNamed`).
 [ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, that the same witness in allocation order fails `LinkNamed` alone, and checks that a builder's `put` leaves a garbage view stale, which is why the contents clause needs #284's hand-over, and that the program whose garbage view went stale that way is refused since `close` hands the builder over.
