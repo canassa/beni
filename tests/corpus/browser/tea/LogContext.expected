@@ -7,7 +7,7 @@
   </main>
 </body>
 -- click #direct
-console.info: saved save=0ms {"user":"7","__proto__":"p"}
+console.info: saved inner=0ms outer=0ms {"1":"x","user":"7","__proto__":"p"}
 console.debug: a trace line
 console.debug: a debug line
 <body>
@@ -19,6 +19,7 @@ console.debug: a debug line
 </body>
 -- click #command
 console.warn: from a command
+console.error: an error from a command, without update's annotation
 <body>
   <main>
     <button id="direct">"direct"</button>

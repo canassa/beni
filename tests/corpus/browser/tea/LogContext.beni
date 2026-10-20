@@ -1,12 +1,14 @@
 -- core's `Log` on a page (transparent-effects-proposal.md §17.11): the
 -- default sink is the console method for the level. A line inside
--- `Log.span` has ` label=Nms` after its message, and a line with
--- annotations has them as a second argument, an object of strings, where
--- `__proto__` is a key like any other. Under `Log.minimum Log.Trace`,
--- `Trace` and `Debug` lines are `console.debug`; under the default minimum
--- they are not written. `Cmd.log` writes its line when the command runs
--- (boundary.md §9.8.16 (b)). No time passes on the page, so a span is
--- `0ms`.
+-- `Log.span` has ` label=Nms` after its message, innermost first, and a
+-- line with annotations has them as a second argument, an object of
+-- strings, where `__proto__` is a key like any other and an integer-index
+-- key comes first (§17.12 item 12). Under `Log.minimum Log.Trace`, `Trace`
+-- and `Debug` lines are `console.debug`; under the default minimum they
+-- are not written. `Cmd.log` writes its line when the command runs, after
+-- `update` returned, so with the default context: no annotation of
+-- `update`'s, and the minimum `Info` (boundary.md §9.8.16 (b)). No time
+-- passes on the page, so a span is `0ms`.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log
@@ -25,19 +27,24 @@ update msg n =
         Direct →
             Log.debug "not written: below the default minimum"
             Log.annotate "user" "7" λ⊤ →
-                Log.annotate "__proto__" "p" λ⊤ → Log.span "save" λ⊤ → Log.info "saved"
+                Log.annotate "1" "x" λ⊤ →
+                    Log.annotate "__proto__" "p" λ⊤ →
+                        Log.span "outer" λ⊤ → Log.span "inner" λ⊤ → Log.info "saved"
             Log.minimum Log.Trace λ⊤ →
                 Log.trace "a trace line"
                 Log.debug "a debug line"
             ( n + 1, Cmd.none )
 
         Command →
-            ( n + 1
-            , Cmd.batch
-                [ Cmd.log Log.Warn "from a command"
-                , Cmd.log Log.Debug "not written: a command below the minimum"
-                ]
-            )
+            Log.annotate "request" "r1" λ⊤ →
+                Log.minimum Log.Trace λ⊤ →
+                    ( n + 1
+                    , Cmd.batch
+                        [ Cmd.log Log.Warn "from a command"
+                        , Cmd.log Log.Error "an error from a command, without update's annotation"
+                        , Cmd.log Log.Debug "not written: a command has the default minimum"
+                        ]
+                    )
 
 
 view : Int → Html Msg
