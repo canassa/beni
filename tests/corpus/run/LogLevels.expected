@@ -1,0 +1,8 @@
+test: info info
+test: warn warn
+test: error error
+test: warn warn, by level
+inner: info inside the inner withSink
+test: info outside the inner withSink
+program: info after withSink
+test: info from a child, after withSink returned

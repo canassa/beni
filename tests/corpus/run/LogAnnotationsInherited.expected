@@ -1,0 +1,6 @@
+both [request=r1, user=7]
+the request replaced, in its place [request=r2, user=7]
+the request back [request=r1, user=7]
+the user gone [request=r1]
+from the caller, after annotate returned []
+from the child, after annotate returned [fiber=child]

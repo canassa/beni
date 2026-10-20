@@ -1,0 +1,35 @@
+-- run: `Log.span` (transparent-effects-proposal.md §17.11) puts its label
+-- and the milliseconds since it began, on the calling fiber's clock, on
+-- every line of the function it runs: innermost first, as `logfmt` writes
+-- them. On a virtual clock the milliseconds are fixed. A span ends with
+-- its function.
+import Clock
+import Duration
+import Io
+import Log exposing (Entry)
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+record : Ref (List String), Entry → ⊤
+record seen entry = Ref.update seen λlines → [ …lines, Log.logfmt entry ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    clock = Clock.virtual 0
+    worker = Task.spawn λ⊤ →
+        Clock.run clock λ⊤ →
+            Log.withSink (record seen _) λ⊤ →
+                Log.span "outer" λ⊤ →
+                    Task.sleep (Duration.millis 5)
+                    Log.span "inner" λ⊤ →
+                        Task.sleep (Duration.millis 7)
+                        Log.info "in both"
+                    Log.info "the inner span ended"
+                Log.info "no span"
+    Clock.adjust clock (Duration.millis 20)
+    Task.join worker
+    Node.printLines (Ref.get seen)

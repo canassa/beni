@@ -5458,7 +5458,8 @@ test "Io.run writes each log line to standard error as logfmt, in both builds" {
     // `Log.logfmt` line per entry to standard error, so standard output
     // holds only what the `Program` prints. A virtual clock fixes the
     // time (transparent-effects-proposal.md §17.11, *Fixtures*), and
-    // `Debug` is below the default minimum. `--release` keeps every call.
+    // `Debug` is below the default minimum. A line carries the fiber's
+    // log spans and annotations. `--release` keeps every call.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -5474,7 +5475,9 @@ test "Io.run writes each log line to standard error as logfmt, in both builds" {
         \\        Log.info "listening"
         \\        Log.debug "not written"
         \\        Log.warn "slow \"disk\""
-        \\        Log.error "failed"
+        \\        Log.annotate "user" "7" λ⊤ →
+        \\            Log.span "save" λ⊤ →
+        \\                Log.error "failed"
         \\    Node.print "done"
         \\
     );
@@ -5483,7 +5486,7 @@ test "Io.run writes each log line to standard error as logfmt, in both builds" {
         .stderr = .{ .exact =
         \\timestamp=2025-10-09T08:53:20.000Z level=INFO message=listening
         \\timestamp=2025-10-09T08:53:20.000Z level=WARN message="slow \"disk\""
-        \\timestamp=2025-10-09T08:53:20.000Z level=ERROR message=failed
+        \\timestamp=2025-10-09T08:53:20.000Z level=ERROR message=failed save=0ms user=7
         \\
         },
     };

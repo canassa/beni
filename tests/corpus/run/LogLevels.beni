@@ -1,0 +1,57 @@
+-- run: every level through `Log.withSink` (transparent-effects-proposal.md
+-- §17.11). The sink `withSink` gives a function gets that function's lines
+-- in place of the program's sink, and an inner `withSink` replaces it for
+-- its own function. When `withSink` returns, the program's sink gets the
+-- lines again — but a fiber started inside keeps the sink it copied. The
+-- default minimum, `Info`, keeps `Trace` and `Debug` from every sink. The
+-- release pass prints the same lines.
+import Io
+import Log exposing (Entry, Level, Trace, Debug, Info, Warn, Error)
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+levelName : Level → String
+levelName level =
+    case level of
+        Trace →
+            "trace"
+
+        Debug →
+            "debug"
+
+        Info →
+            "info"
+
+        Warn →
+            "warn"
+
+        Error →
+            "error"
+
+
+record : Ref (List String), String, Entry → ⊤
+record seen sink entry = Ref.update seen λlines →
+    [ …lines, "${sink}: ${levelName entry.level} ${entry.message}" ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    Log.setSink (record seen "program" _)
+    child = Log.withSink (record seen "test" _) λ⊤ →
+        Log.trace "trace"
+        Log.debug "debug"
+        Log.info "info"
+        Log.warn "warn"
+        Log.error "error"
+        Log.log Warn "warn, by level"
+        Log.withSink (record seen "inner" _) λ⊤ → Log.info "inside the inner withSink"
+        Log.info "outside the inner withSink"
+        Task.spawn λ⊤ →
+            Task.yieldNow ⊤
+            Log.info "from a child, after withSink returned"
+    Log.info "after withSink"
+    Task.join child
+    Node.printLines (Ref.get seen)
