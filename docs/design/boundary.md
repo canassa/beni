@@ -898,6 +898,18 @@ and `browser-direct`'s manifest drops it. What a platform does owe instead:
 - **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
   `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
 
+**The entry file's named exports are part of that shape, and it is `"exports"`** (*added
+2026-10-20*, §9.12 (c)). A platform whose host finds code by the entry module's export names — a
+Durable Object class, under Cloudflare Workers — declares `"exports": "program"`: the entry file
+then takes what `run(main)` returns, writes its `default` as the default export, and writes one
+named export per name the app's `beni.json` lists under `"exports"` (`frontend.md` §10.1), each the
+answer of the result's `exports(name)`. The platform declares the mechanism and the app the names,
+as the app replaces the chain's `"html"` with its own. Any other value of the key is
+`invalid_entry_exports`, a name that is not an ECMAScript identifier, is `default` or is listed
+twice is `invalid_entry_export`, both against the manifest that holds them at `1:1`. A chain that
+does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
+contract whole.
+
 ### 5.3 One project, several platforms
 
 The full-stack case is a first-class requirement, not an afterthought: a browser client and a server
@@ -6209,6 +6221,480 @@ and (j) say, with these readings:
   costs what hand-written JavaScript costs. A click on the same page costs about 7.5 µs. The
   event's string reaches `update` as it is, with no copy. A constant state is cheaper, about 3.5
   µs, only because the view then has no text to write.
+
+### 9.12 The `cloudflare` platform: Workers and Durable Objects (2026-10-20)
+
+*Added 2026-10-20, for issue #526. Status: specified, not built. Three decisions are the owner's
+and are asked on the dashboard (`cf-workers-q1` to `q3`): the platform's name, the shape of a
+Durable Object in beni, and how the object classes reach the entry file. The text below assumes the
+recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
+app's manifest — and (k) records the answers when they come. Every statement about the host cites
+Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
+`workerd`, and one marked* owed *has not been.*
+
+**(a) The host, in beni's terms.** A Worker is an ES module whose default export has a `fetch`
+handler, called once per request with the request, the bindings (`env`) and an execution context
+([the `fetch` handler](https://developers.cloudflare.com/workers/runtime-apis/handlers/fetch/)).
+Timers and `fetch` "are only available inside of the Request Context"
+([web standards](https://developers.cloudflare.com/workers/runtime-apis/web-standards/)), so what
+the entry file runs at module evaluation — `run(main)` — may start nothing: it builds the handler
+table and returns it. A Durable Object is a class the Worker's main module exports, named in the
+Wrangler configuration; one instance per id, and the host delivers its events — a request, a
+WebSocket message, a close, an error, an alarm — one at a time
+([the base class](https://developers.cloudflare.com/durable-objects/api/base/)). "When hibernated,
+the in-memory state is discarded", and a hibernated object's WebSockets "stay connected"; the
+object hibernates "after 10 seconds of no incoming request or event" when no timer is set, no
+promise is pending and no request is in flight, and after 70 to 140 seconds of inactivity it is
+evicted; "an incoming request or event re-runs the `constructor()`"
+([lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)).
+A WebSocket accepted with `ctx.acceptWebSocket` is delivered to the class's `webSocketMessage`,
+`webSocketClose` and `webSocketError` methods and may hibernate; `serializeAttachment` keeps up to
+16 384 bytes with the socket across hibernation
+([WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/),
+[`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)). An object schedules one
+alarm at a time, delivered to `alarm()` at least once, and retried on an uncaught exception
+([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)). A SQLite-backed object
+has a synchronous key-value store, `ctx.storage.kv`, whose writes are "fast and synchronous"
+([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)); its key and value
+together may hold 2 MB ([limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
+Each of these is one piece of the API below, and nothing else of the host is reached.
+
+**(b) The package.** `platforms/cloudflare/`, embedded like `node` (§5.3). Its manifest:
+
+```json
+{
+  "platform": true,
+  "name": "cloudflare",
+  "program": "Worker.Program",
+  "runtime": "runtime.js",
+  "entry": "_worker.mjs",
+  "exports": "program"
+}
+```
+
+It depends on no platform and declares no markup: a Worker that renders HTML wants the `ssr`
+lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s are §9.11's):
+
+| Module | Holds |
+|---|---|
+| `Worker` | `Program`, `program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, and their errors |
+| `Worker.Object` | `define`, `Context`, the handlers, `tick`, alarms, the attached sockets |
+| `WebSocket` | the server WebSocket: §9.11's common surface, `accept`, the attachment, `autoReply` |
+| `Worker.Storage` | the object's key-value store, through schemas |
+
+`runtime.js` is the one file that defines a JavaScript class: the Durable Object classes the
+entry file exports, one per `Worker.Object.define`, each a subclass of `DurableObject` from
+`cloudflare:workers` whose methods hand every event to beni. Everything else is beni over `Js`
+and siblings of §4's shape. A sibling reaches `Response`, `WebSocketPair` and the other host
+globals that §5.1's common set does not list through `globalThis`, as `platforms/browser/Dom.js`
+reaches `document`; check 3 is lexical and that is the edge it makes visible.
+
+**(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
+compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
+by its export name — `class_name` in the binding, and the key of the `exports` field, of the
+Wrangler configuration ([configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#durable-objects)) —
+so the names must be known when the entry file is written). §5.2's amendment of this date adds the
+key; this is its whole contract.
+
+- **The platform manifest** declares `"exports": "program"`. Any other value is
+  `invalid_entry_exports`, reported against the manifest at `1:1` with no excerpt, as
+  `invalid_entry_file` is. Inherited first-found down the chain like every output key (§9.1).
+- **The app's `beni.json`** lists the names: `"exports": ["Arena"]` (`frontend.md` §10.1). Each
+  is an ECMAScript identifier of ASCII letters, digits, `_` and `$` not beginning with a digit, not
+  a reserved word and not `default`, and no name is listed twice; otherwise `invalid_entry_export`,
+  reported against the app's manifest at `1:1`, naming the entry. With the key absent, the list is
+  empty. A list on an app built for a chain that declares no `"exports"` is ignored, like any key a
+  manifest does not know.
+- **The entry file** is, in a development build,
+
+  ```js
+  // Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
+  // the platform's output shape asks for.
+  import { run } from "./_platform/runtime.foreign.mjs";
+  import { Main$main } from "./Main.mjs";
+
+  const program = run(Main$main);
+  export default program.default;
+  export const Arena = program.exports("Arena");
+  ```
+
+  and under `--release` the same statements with the header and the whitespace gone, `Main$main`
+  spelled as the exporting module spells it (§9 item 2 of `backend.md`). The names come in the
+  manifest's order, one `export const` each, so the file is a function of the program and the
+  manifest alone (rule 5). `--library` writes no entry file and ignores the list.
+- **What `run` returns** when the chain declares the key: an object with `default`, the value of
+  the default export, and `exports`, a function called once per listed name at load, whose answer
+  is that name's export. A name the program defines nothing for is `exports`'s to refuse: it throws
+  an `Error` whose message names the export and the manifest key, so the Worker fails to load with
+  that message rather than exporting `undefined` and failing in Wrangler's words. Without the key,
+  `run`'s result is not read, as today.
+
+**(d) `Worker`: the program and the request handler.**
+
+```elm
+module Worker
+
+pub foreign type Program
+
+pub program : { fetch : Env, Request → Response, objects : List Object.Definition } → Program
+
+pub foreign type Request                 -- the host's `Request`, read through these
+pub method : Request → String            -- upper case, as the host gives it
+pub url : Request → String               -- the full URL as the host gives it: "https://h/arena/x/ws?k=v"
+pub path : Request → String              -- its `pathname`, "/arena/x/ws"
+pub header : Request, String → Maybe String    -- the header's value, the name in any case; the host joins repeats with ", "
+pub headers : Request → List (String × String) -- names lower-cased, in the host's order
+pub body : Request → Result BodyError String   -- the whole body as UTF-8 text, suspending; "" when there is none
+
+pub type BodyError
+    = BodyUsed                           -- `bodyUsed` was already true: read before; the host is not called
+    | ConnectionLost                     -- the client went away while the body was read: "Network connection lost"
+
+pub opaque type Response
+pub text : Int, String → Response        -- `content-type: text/plain; charset=utf-8`
+pub html : Int, String → Response        -- `content-type: text/html; charset=utf-8`
+pub empty : Int → Response               -- no body
+pub withHeader : Response, String, String → Response   -- appended; a repeated name is written twice
+pub redirect : String, Int → Response    -- `location`, with 301, 302, 303, 307 or 308
+
+pub foreign type Env
+pub objects : Env, String → Maybe Namespace    -- the Durable Object binding of that name
+pub service : Env, String → Maybe Service      -- a service or assets binding: anything with `fetch`
+pub var : Env, String → Maybe String           -- a plain-text variable or secret
+
+pub foreign type Namespace
+pub byName : Namespace, String → Stub          -- `getByName`: the one object of that name
+pub unique : Namespace → Stub                  -- `newUniqueId`, then `get`: a fresh object; its id is `Stub.id`
+pub byId : Namespace, String → Result IdError Stub   -- `idFromString`: the id a `unique` stub reported through `stubId`
+
+pub type IdError = InvalidId                   -- the host's `TypeError`, "Invalid Durable Object ID"
+
+pub foreign type Stub
+pub forward : Stub, Request → Result StubError Response   -- suspends; the object's `request` handler answers
+pub stubId : Stub → String                     -- 64 hex digits
+pub stubName : Stub → Maybe String             -- the name `byName` was given; `Nothing` otherwise
+
+pub type StubError
+    = Overloaded                               -- "Durable Object is overloaded", the error's `overloaded` is true
+    | ConnectionLost                           -- "Network connection lost"
+    | Reset                                    -- "Durable Object reset …", "… exceeded timeout which caused object to be reset"
+    | RateLimited                              -- "Your account is generating too much load …", "… too many concurrent storage operations …"
+
+pub foreign type Service
+pub callService : Service, Request → Result ServiceError Response   -- suspends: `env.ASSETS.fetch(request)`
+pub type ServiceError = ServiceUnavailable     -- "Network connection lost"
+```
+
+- **`fetch` runs in a fiber of its own per request**, started with `Task.start` from the host's
+  `fetch` handler, which returns a promise resolved with the `Response` the fiber ends with. The
+  handler may suspend: `forward`, `callService`, `body` and `Task.sleep` park it.
+  Nothing cancels it — the host has no event for a client that left, short of `request.signal`
+  behind a compatibility flag — so a fiber ends `Done`. A fiber that throws is a defect: the
+  promise rejects with the throw, and the host answers the client with its error 1101 "Worker threw
+  a JavaScript exception" ([errors](https://developers.cloudflare.com/workers/observability/errors/)).
+  That is (f)'s rule for a Worker: the request fails, the next one runs.
+- **A fiber resumes in the request context it belongs to.** The host refuses to perform I/O "on
+  behalf of a different request" (the same page): an object the host owns — a `Request`, a
+  `Response`, a stub, a socket — may be used only while its request's handler, or a continuation of
+  it, runs. Core's scheduler drains every ready fiber in one microtask (`core/Task.beni`), so a
+  fiber woken by request A's reply could run in the microtask request B's reply queued. Whether the
+  host attributes a microtask to the context that queued it, or to the one whose continuation runs
+  it, is *owed*: `WorkersConcurrentRequests` holds two requests in flight whose handlers each sleep,
+  then answer with a `Response` built before the sleep, and the first slice measures it before the
+  API is called done. If the host refuses, the scheduler gains a per-context drain and this
+  paragraph records it; the API above does not move.
+- **A `Response` is the host's object**, built when the constructor is called, and a 101 answer
+  carries the host's `webSocket` — the one value that cannot be plain data, which is why `Response`
+  is opaque where `Http.Server`'s is a record (§9.10). `Request` is opaque for the same reason: the
+  object the Worker forwards to a stub must be the one the host made, body stream and `Upgrade`
+  header included.
+- **The host checks the status.** `text`, `html`, `empty` and `redirect` call the constructor with
+  what they are given; a status outside 200 to 599 is the host's `RangeError`, which the platform
+  does not catch: it is a defect, since every constructor here is called with a literal the program
+  wrote, and a status the program computed is the program's to bound. A status that takes no body
+  (204, 205, 304) is given none by `empty` and a body by `text`, which the host refuses the same
+  way. *(A `Response` that validates in beni as §9.10 (d) does, answering 500, is a later slice; the
+  two platforms will then agree.)*
+- **The log** keeps core's default sink, the console method of each level: the host's logs collect
+  what `console` writes. `node`'s `logfmt` line on standard error has no equivalent here.
+- **Bindings are read by name and answer `Maybe`**: a binding the configuration does not declare
+  is `undefined` on `env`, which is not an error the host throws but a mismatch between two files
+  the program's author owns, so it is a value the program decides about — a 500, say — and never a
+  crash. `objects`, `service` and `var` read `env[name]` and test its shape: an object with
+  `getByName` and `idFromString`, an object with `fetch`, a string.
+
+**(e) `Worker.Object`: a Durable Object.** An object is a name, a function that restores its state
+and the handlers it answers events with. Every handler is `sync`; the host delivers an object's
+events one at a time, and a handler that cannot suspend keeps that order visible in beni: no two
+handlers interleave, so threading the state through them is safe.
+
+```elm
+module Worker.Object
+
+pub opaque type Definition               -- what `Worker.program`'s `objects` lists
+pub foreign type Context                 -- the object: its id, storage, sockets, alarm and timer
+
+pub define : String, (Context → state), Handlers state → Definition
+
+pub type alias Handlers state =
+    { request : sync (Context, state, Request → state × Response)
+    , message : sync (Context, state, Socket, String → state)
+    , closed : sync (Context, state, Socket, Close → state)        -- `Close` is `WebSocket.Close`, §9.11 (a)
+    , failed : sync (Context, state, Socket, String → state)
+    , alarm : sync (Context, state → state)
+    , tick : sync (state → Maybe Duration)
+    , ticked : sync (Context, state → state)
+    }
+
+pub none : Handlers state                -- every handler leaves the state as it is; `request` answers 404; `tick` is `Nothing`
+
+pub id : Context → String                -- `ctx.id.toString()`
+pub name : Context → Maybe String        -- `ctx.id.name`, when the object was reached by name
+pub sockets : Context → List Socket      -- every accepted socket still open, `ctx.getWebSockets()`
+pub socketsTagged : Context, String → List Socket
+
+pub alarmAt : Context, Int → ⊤           -- `setAlarm(ms since the epoch)`; replaces the one set
+pub alarmIn : Context, Duration → ⊤      -- `alarmAt` of `Clock.now ⊤` plus the duration
+pub cancelAlarm : Context → ⊤            -- `deleteAlarm`
+```
+
+The program is written as `Worker.program`'s `objects` entry:
+
+```elm
+arena : Object.Definition
+arena =
+    Object.define "Arena" restore
+        { Object.none
+            | request = join
+            , message = input
+            , closed = leave
+            , tick = λstate → if List.isEmpty state.players then Nothing else Just (Duration.millis 50)
+            , ticked = step
+        }
+```
+
+- **The name** is the class the entry file exports — `"Arena"` must be in the app's `"exports"`
+  list, and `exports("Arena")` of (c) answers this definition's class. A name listed and not
+  defined fails the load as (c) says; a name defined and not listed is a definition no export
+  reaches, which the host never instantiates, and `run` reports nothing: the configuration is the
+  author's, and (i)'s table says what to write.
+- **`restore` runs before the first event of each start.** The host runs the constructor on
+  creation, on every wake from hibernation and after every eviction or restart, and the in-memory
+  state is gone each time ((a)). The platform calls `restore ctx` once per instance, on the first
+  event rather than in the constructor (the host asks for a light constructor), and holds the state
+  it returns; a program rebuilds it from `Storage` and from `sockets` with their attachments.
+  Nothing else of the previous life is visible.
+- **The state is the platform's to hold** between events; a handler is handed it and returns it.
+  Nothing a handler returns is written anywhere by itself: what must survive a restart goes through
+  `Storage`, incrementally, as the host recommends (no shutdown hook exists).
+- **`request`** answers a request the Worker's stub forwarded; `WebSocket.accept` is how it answers an
+  upgrade ((g)). **`message`** is a text frame. A binary frame — `ArrayBuffer` — is not in this slice
+  ((j)): the platform closes the socket with 1003 "unsupported data" and the program sees `closed`.
+  **`closed`** is the host's `webSocketClose`, with its code and reason as §9.11 (a)'s `Close`;
+  under a compatibility date of 2026-04-07 or later the host answers the close frame itself
+  (`web_socket_auto_reply_to_close`), so the platform calls nothing. **`failed`** is
+  `webSocketError`, with the error's message; the socket is closed by the host after it.
+  **`alarm`** is `alarm()`.
+- **`tick` is the timer, declared.** After `restore` and after every handler the platform calls
+  `tick` on the new state. `Just d` keeps one host timer of `d` armed — set with `setTimeout`,
+  re-armed from the moment it fires — and `ticked` runs when it fires; a different `d` re-arms from
+  now; `Nothing` clears it. A set timer keeps the object from hibernating ((a)), which is what an
+  active arena wants, and `Nothing` is how the program lets it sleep: "the game will stop its tick
+  when the arena is idle" (#526). The timer's callback runs `ticked` in the host's callback, in no
+  fiber, as every handler runs. An alarm is the durable timer: it survives hibernation and
+  eviction, fires once, and wakes the object; the program sets the next one in `alarm`.
+- **A handler that throws is a defect, and the object stops** ((f)).
+- **Order and determinism.** Events are delivered in the host's order, one at a time; a `tick`
+  fires between events, never inside one. What a program observes depends on the events and the
+  state, never on a host timer's resolution — a fixture never ticks for real, (i).
+
+**(f) A defect stops the object** (rule 9; `transparent-effects-proposal.md` §16.5; the owner's
+decision 1 of #331, applied here). A throw in a handler, in `restore`, in `ticked` or in a sibling
+leaves the host's method; nothing catches it. On its way out the platform calls
+`ctx.abort(message)`, which "immediately resets the Durable Object and logs a JavaScript `Error`
+with the message", an error "application code cannot catch"
+([`ctx.abort`](https://developers.cloudflare.com/durable-objects/api/state/)): in-flight requests
+fail, the stub that called sees the error ((d): the Worker's request is a defect too), and the next
+event starts a new instance whose `restore` runs. From `alarm` the platform passes
+`{ retryAlarm: false }`: the host retries an alarm whose handler threw, "up to 6 retries", and a
+defect is not a transient failure to retry. What becomes of the attached sockets on an abort is
+*owed*: slice (d) measures it, and `closed` is what a program sees if the host closes them. A
+defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes on.
+
+**(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (PR #531, the
+`ws` worker's spec for the page and the `node` server): this platform's module is also named
+`WebSocket`, and it has §9.11 (a)'s common surface — `Socket`, `eq`, `Close`, `WriteError`,
+`CloseError`, `write`, `close`, `buffered`, `protocol` — with the same names, types and meaning,
+so a protocol module written over those checks under `browser`, `node` and `cloudflare` alike.
+Nothing of §9.11 (a) is defined a second time here. What differs is the Durable Object's hibernation,
+and it changes two things:
+
+- **There is no `read`.** §9.11 (a)'s `read` suspends the fiber that waits for the next message,
+  and §9.11 (e)'s `accept session` runs the session in a fiber. A hibernated object has no fiber:
+  its memory is discarded ((a) above), and the host delivers each message as an event to the class's
+  `webSocketMessage`. So a message reaches the program through the `message` handler of (e), a
+  close through `closed`, and `read` is not declared: a `sync` handler could not call it, and a
+  fiber that called it would not survive hibernation.
+- **The upgrade is answered by the `request` handler**, not by a second handler: it returns the
+  `Response` that `accept` makes (§9.11 (e)'s `accept session`, with the handlers of (e) as the
+  session), or any other response (its `refuse response`). The host routes every request the
+  Worker forwards to the one `fetch` of the class, so there is no `listenWith` to split them.
+
+```elm
+module WebSocket   -- cloudflare: §9.11 (a)'s common surface, less `read`, plus these
+
+pub accept : Context, Request, List String → Result AcceptError (Socket × Response)
+pub id : Socket → String                 -- the platform's id, kept in the attachment: the same across hibernation
+pub tags : Socket → List String          -- `ctx.getTags(ws)`
+pub attach : Socket, Schema e a, a → Result AttachError ⊤
+pub attachment : Socket, Schema e a → Result (List Schema.Issue) (Maybe a)
+pub autoReply : Context, String, String → ⊤   -- `setWebSocketAutoResponse`: answered without waking the object
+
+pub type AcceptError
+    = NotAnUpgrade                       -- no `Upgrade: websocket` header, or the method is not GET; nothing is accepted
+    | TooManyTags                        -- more than 10, or one over 256 characters
+
+pub type AttachError
+    = TooLarge                           -- the printed value, with the platform's id, over 16 384 bytes
+    | Unprintable (List Schema.Issue)
+```
+
+- **`accept ctx request tags`** checks the handshake as §9.11 (e) does — the method is `GET`
+  and `upgrade` is `websocket`, without case — makes a `WebSocketPair`, calls
+  `ctx.acceptWebSocket(server, tags)` and answers the socket and the 101 `Response` carrying the
+  client, which the `request` handler returns. The host checks the rest of the handshake before
+  the Worker runs. The platform writes the socket's id into the attachment first —
+  `{ id, data: null }` — so that `id` is the same after hibernation: `ctx.getWebSockets()` hands
+  the host's objects back, and `id` reads it from them. `attach` prints the value with its schema
+  and stores `{ id, data: text }`; `attachment` parses it back. The attachment is the one place a
+  value of the program's crosses a restart beside `Storage`, so it crosses as JSON text through a
+  schema, (h). The host keeps attachments "as long as the WebSocket remains healthy" and drops
+  them when either side closes.
+- **`write`** is §9.11 (a)'s: `ws.send(text)` when `readyState` is OPEN, `Err NotOpen` otherwise,
+  tested before the host is called; the host documents no failure of `send` on an open socket, so
+  a throw is a defect. From a handler it is a direct call with no runtime between the program and
+  the host: the arena's twenty to thirty frames per second per player cost one `write` each. The
+  host's own advice — fewer, larger frames — is the program's to take.
+- **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code the server may send (§9.11
+  (f)'s list) and a reason of at most 123 bytes, tested in beni; on a socket not open it does
+  nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
+  four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
+- **`buffered`** is *owed*: whether the host's `WebSocket` reports a send buffer is measured in
+  slice (d), and until then `buffered` answers 0. **`protocol`** is the host's `ws.protocol`.
+- **`eq`** compares by identity, as §9.11 (a) says. Within one life of the object every event
+  hands the same host object back, so a socket held in the state is equal to the one an event
+  names; across hibernation the state is rebuilt from `sockets`, and `id` is what a program keeps
+  in storage.
+- **Binary frames** are §9.11 (j)'s rule, applied by the platform: the socket is closed with
+  1003 and the program sees `closed`.
+- **Hibernation.** A socket accepted here keeps the object free to hibernate; the standard
+  `ws.accept()` with listeners does not, and is not offered. The host answers ping frames and the
+  `autoReply` pair without waking the object.
+
+**(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
+SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
+every operation returns before the handler goes on, which is what lets a `sync` handler use it.
+
+```elm
+module Worker.Storage
+
+pub get : Context, Schema e a, String → Result (List Schema.Issue) (Maybe a)
+pub put : Context, Schema e a, String, a → Result PutError ⊤
+pub delete : Context, String → Bool     -- whether the key was there
+pub keys : Context, String → List String -- the keys with that prefix, in order
+
+pub type PutError
+    = TooLarge                          -- key and printed value over 2 000 000 bytes of UTF-8
+    | Unprintable (List Schema.Issue)
+```
+
+- **A value is JSON text, printed and parsed by a schema** (`schema.md`). The host would take any
+  structured-clone value, and a beni record is one; but a `--release` build spells a record's
+  fields short (`backend.md` §9, *Item 4*), and the next deploy may spell them differently, so a
+  value stored as the host sees it would not parse after a release. A schema names every field
+  by text in every build (§4, *Types a shape reads keep their names*), so what one build wrote the
+  next reads.
+- **Limits are checked in beni before the host is called**: key and value together under
+  2 MB, so no host exception needs catching; the host's failure past them is a defect.
+- **A namespace that is not SQLite-backed** has no `ctx.storage.kv`. The platform finds that at
+  the first event and throws an `Error` naming the class and `"storage": "sqlite"` ((i)): the
+  configuration is wrong, nothing can run, and the message says what to write.
+- The asynchronous API, SQL and point-in-time recovery are (j)'s.
+
+**(i) The Wrangler configuration the program's author writes.** A build —
+`beni build --platform=cloudflare --out=out src/Server.beni`, or `beni build` with the project
+file — writes `out/_worker.mjs`, `out/_platform/runtime.foreign.mjs`, the modules and
+`out/_manifest.txt` (`backend.md` §2). The page, built separately for `browser-tea`
+(§5.3), goes to its own directory. The author writes `wrangler.jsonc` beside them:
+
+```jsonc
+{
+  "name": "snake-arena",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": { "bindings": [{ "name": "ARENAS", "class_name": "Arena" }] },
+  "exports": { "Arena": { "type": "durable-object", "storage": "sqlite" } },
+  "assets": { "directory": "page/", "binding": "ASSETS", "run_worker_first": ["/arena/*"] }
+}
+```
+
+| Key | Must be |
+|---|---|
+| `main` | the entry file, `out/_worker.mjs` |
+| `compatibility_date` | 2026-04-07 or later: the host then answers a close frame itself, and the platform's `closed` needs no `ws.close` of its own |
+| `durable_objects.bindings[].class_name` | a name in the app's `"exports"` list and a `Worker.Object.define` of the program |
+| `exports.<class>` | `"type": "durable-object"`, `"storage": "sqlite"`: the synchronous store (h) needs SQLite; the legacy `migrations` form with `new_sqlite_classes` is the same declaration |
+| `assets` | optional: the page, served by the host before the Worker unless `run_worker_first` names the paths the Worker takes |
+
+and the program:
+
+```elm
+main : Worker.Program
+main =
+    Worker.program { fetch = route, objects = [ arena ] }
+
+
+route : Env, Request → Response
+route env request =
+    case ( Worker.objects env "ARENAS", arenaOf (Worker.path request) ) of
+        ( Just arenas, Just name ) →
+            case Worker.forward (Worker.byName arenas name) request of
+                Ok response → response
+                Err _ → Worker.text 503 "the arena is not available"
+
+        _ →
+            Worker.text 404 "no such page"
+
+
+-- "/arena/<name>/ws" is `Just name`.
+arenaOf : String → Maybe String
+arenaOf path =
+    case String.split path "/" of
+        [ "", "arena", name, "ws" ] → Just name
+        _ → Nothing
+```
+
+**(j) Not in the first slices.** Binary frames and `Bytes`; RPC methods on a stub and
+`WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
+recovery; `ctx.waitUntil`; `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
+Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
+`setHibernatableWebSocketEventTimeout`; the `ssr` lowering for a Worker that renders markup; a
+`Response` validated in beni as §9.10 (d) validates one. Each gets an issue when a program needs
+it.
+
+**(k) The tests.** A Worker runs in `workerd`, which nixpkgs carries inside `wrangler` 4.93.0
+with Miniflare (`lib/packages/miniflare`, `workerd` 1.20260518.1 — 2.2 GB in the store). Putting
+`wrangler` in the dev shell is a `flake.nix` change, which is Cesar's to review and goes in a PR of
+its own. With it, a corpus kind `tests/corpus/workers/` runs each fixture — a project built for
+`cloudflare`, with its `wrangler.jsonc` — under Miniflare by `tests/workers/driver.mjs`, driven by
+a `.steps` script of requests, WebSocket opens, sends and closes, and compared as a transcript, with
+run hashes as `serve/`'s. Nothing is deployed, no account is used, and the listener is
+`127.0.0.1`. The budget (`AGENTS.md`, *Every test has a budget*) counts Node, Miniflare and
+`workerd` for each case; what a case costs is measured first, and a grant, if one is needed, is
+asked for with the number. Without the tool in the shell the step says so once and runs nothing,
+as `test-browser` does without Chromium.
+
+*The owner's answers, when they come, are recorded here.*
 
 ## Appendix — what is deliberately not done
 
