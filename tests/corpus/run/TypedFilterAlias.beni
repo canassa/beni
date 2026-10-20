@@ -1,0 +1,32 @@
+-- run: a record alias and its written structure are one type, so they
+-- have one representation key (`backend.md` §9, *Declared-type filtering
+-- of fact 3*: the key is canonical, aliases expanded). The point is bound
+-- to a name annotated with the alias and handed to one annotated with the
+-- structure, and `depth` is read only through the second. A key that told
+-- the two apart would keep the point out of the second name, and the
+-- release build would drop `depth` from the literal. Both builds print the
+-- same.
+import Node exposing (Program)
+
+
+type alias Point =
+    x : Int
+    depth : Int
+
+
+deeper : { x : Int, depth : Int } → Int
+deeper raw =
+    shape : { x : Int, depth : Int }
+    shape = raw
+    shape.depth * 10
+
+
+main : Program
+main =
+    point : Point
+    point = { x = 1, depth = 4 }
+
+    plain : { x : Int, depth : Int }
+    plain = point
+    Node.printLines
+        [ String.fromInt point.x, String.fromInt plain.depth, String.fromInt (deeper point) ]

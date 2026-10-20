@@ -1,0 +1,21 @@
+-- run: a model through `Debug.log`, which returns the value it logs
+-- (`backend.md` §9, *Declared-type filtering of fact 3*: `core` is wild,
+-- and `Debug` is `core`). The release pass of the corpus builds it with
+-- `--allow-debug`. `steps` is read only from the logged model, bound to a
+-- name of the model's type. Both builds print the same.
+import Node exposing (Program)
+
+
+type alias Model =
+    steps : Int
+    title : String
+
+
+main : Program
+main =
+    model : Model
+    model = { steps = 3, title = "walk" }
+
+    logged : Model
+    logged = Debug.log "model" model
+    Node.printLines [ model.title, String.fromInt logged.steps ]

@@ -58,6 +58,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const JsIr = @import("JsIr.zig");
+const RepKeys = @import("RepKeys.zig");
 const lists = @import("../lists.zig");
 
 const Node = JsIr.Node;
@@ -308,6 +309,10 @@ pub const Input = struct {
     /// where it came from, so that `Stats.pts_largest` can name the var that
     /// held `Stats.pts_max_set` sites. It changes no fact and no byte.
     trace_largest: bool = false,
+    /// `--release`: the build's representation keys, which say which of
+    /// the keys in the IR's columns are wild (`backend.md` §9,
+    /// *Declared-type filtering of fact 3*). Null: every key is.
+    rep_keys: ?*const RepKeys = null,
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -9105,6 +9110,13 @@ const Pts = struct {
         /// How many edges `succ` and `pred` list (`indexEdge`).
         succs: u32 = 0,
         preds: u32 = 0,
+        /// Its declared-type filter (`backend.md` §9, *Declared-type
+        /// filtering of fact 3*): a local's or a parameter's name's key, a
+        /// function's return's its arrow's result key, `wild` for every
+        /// other var and for a key in the wild set (`Pts.closedKey`). A var
+        /// with a closed filter holds only the sites of that key and the
+        /// wild ones (`joinNow`).
+        allow: JsIr.RepKey = .wild,
     };
 
     const Pending = struct { v: VarId, val: Val, folded: bool };
@@ -9139,7 +9151,7 @@ const Pts = struct {
         scratch: std.ArrayList(u32) = .empty,
     };
     const SetHash = struct { lo: u32, hi: u32, len: u32 };
-    const SetOp = enum(u32) { join, difference };
+    const SetOp = enum(u32) { join, difference, filter };
     const SetOpKey = struct { op: u32, a: SetId, b: SetId };
 
     /// A copy edge: `to ⊒ from`, kept while the fixpoint runs. A site or a
@@ -9253,6 +9265,10 @@ const Pts = struct {
         kind: SiteKind,
         module: u32,
         node: Index,
+        /// Its node's representation key, `wild` for none or one in the
+        /// wild set (`Pts.closedKey`): a var's filter passes it when the
+        /// two are equal or this is wild.
+        key: JsIr.RepKey = .wild,
         /// Allocated at most once: made at a module's top level, outside
         /// any function and any loop (slice 4, fact 6).
         once: bool = false,
@@ -9519,14 +9535,17 @@ const Pts = struct {
         }
         const new_flags = flags.top or flags.prim or flags.nul or flags.undef;
         if (new_flags) p.varChanged(v);
+        // Only the sites `v`'s declared type allows join it (*Declared-type
+        // filtering of fact 3*); the flags pass whatever the filter.
+        const sites = try p.filterSites(val.sites, p.vars.items[v].allow);
         if (p.vars.items[v].top and !p.vars.items[v].uncapped) {
             // A var that is `top` holds no list: what joins it escapes, and
             // what it copies into is `top` already.
-            for (val.sites) |site| try p.escapeSite(site);
+            for (sites) |site| try p.escapeSite(site);
             return;
         }
         const old = p.vars.items[v].sites;
-        var added = try p.difference(val.sites, old);
+        var added = try p.difference(sites, old);
         if (added.len != 0) {
             // A new set, never the old one grown (`VSet`): the table's entry
             // of the union, which every var that held `old` and takes the
@@ -9542,8 +9561,50 @@ const Pts = struct {
         } else if (!new_flags) return;
         flags.sites = added;
         var e = p.vars.items[v].succ;
-        while (e != none) : (e = p.edges.items[e].next_out) try p.enqueue(p.edges.items[e].to, flags, true);
+        while (e != none) : (e = p.edges.items[e].next_out) {
+            const to = p.edges.items[e].to;
+            try p.enqueue(to, flags, p.linksAcross(v, to));
+        }
         if (!folded and p.vars.items[v].summary != none) for (added) |site| try p.foldSite(p.vars.items[v].summary, site);
+    }
+
+    /// The sites of `sites` a var whose filter is `allow` holds: those whose
+    /// key is `allow` or wild (*Declared-type filtering of fact 3*). One
+    /// more operation of the set table, made once per set and key
+    /// (`Sets.ops`); `sites` itself when every one passes.
+    fn filterSites(p: *Pts, sites: []const u32, allow: JsIr.RepKey) Allocator.Error![]const u32 {
+        if (allow == .wild or sites.len == 0) return sites;
+        const a = try p.setOf(sites);
+        const key: SetOpKey = .{ .op = @backingInt(SetOp.filter), .a = a, .b = allow.int() };
+        if (p.sets.ops.get(key)) |id| return p.setSites(id);
+        const out = &p.sets.scratch;
+        out.clearRetainingCapacity();
+        try out.ensureTotalCapacity(p.tmp.allocator(), sites.len);
+        for (sites) |site| {
+            const k = p.sites.items[site].key;
+            if (k == .wild or k == allow) out.appendAssumeCapacity(site);
+        }
+        const id = if (out.items.len == sites.len) a else if (out.items.len == 0) 0 else try p.intern(out.items);
+        try p.sets.ops.put(p.tmp.allocator(), key, id);
+        return p.setSites(id);
+    }
+
+    /// Whether a copy edge `from → to` links `to`'s field summary to
+    /// `from`'s (*Declared-type filtering of fact 3*, *Summaries across a
+    /// filter*): Σ(A ∪ B) = Σ(A) ∪ Σ(B) needs `to` to hold every site
+    /// `from` holds, which it does when its filter is wild or the same.
+    /// Otherwise `to`'s summary folds the sites it holds one by one.
+    inline fn linksAcross(p: *const Pts, from: VarId, to: VarId) bool {
+        const allow = p.vars.items[to].allow;
+        return allow == .wild or allow == p.vars.items[from].allow;
+    }
+
+    /// `k` as a filter or a site's key: itself when it is closed, `wild`
+    /// when it is wild or in the build's wild set (`RepKeys.isWild`), and
+    /// always `wild` without the build's keys.
+    fn closedKey(p: *const Pts, k: JsIr.RepKey) JsIr.RepKey {
+        const keys = p.s.in.rep_keys orelse return .wild;
+        return if (keys.isWild(k)) .wild else k;
     }
 
     /// The sites of `a` that are not in `b`, both sorted sets: `a` itself
@@ -9701,9 +9762,12 @@ const Pts = struct {
         p.vars.items[to].preds += 1;
         p.s.stats.pts_edges += 1;
         try p.indexEdge(from, to);
-        if (p.vars.items[to].summary != none) try p.linkSummaries(try p.summaryOf(from), p.vars.items[to].summary);
+        // Across a stricter filter `to`'s summary folds what joins it, as
+        // it does a site no edge brought (`linksAcross`).
+        const links = p.linksAcross(from, to);
+        if (links and p.vars.items[to].summary != none) try p.linkSummaries(try p.summaryOf(from), p.vars.items[to].summary);
         const set = p.vars.items[from];
-        try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, true);
+        try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, links);
         try p.drain();
     }
 
@@ -9786,7 +9850,7 @@ const Pts = struct {
             var e = p.vars.items[x].pred;
             while (e != none) : (e = p.edges.items[e].next_in) {
                 const from = p.edges.items[e].from;
-                if (p.vars.items[from].summary != none) continue;
+                if (p.vars.items[from].summary != none or !p.linksAcross(from, x)) continue;
                 try p.newSummary(from);
                 try p.work.append(a, from);
             }
@@ -9822,11 +9886,15 @@ const Pts = struct {
         const id = p.vars.items[v].summary;
         if (p.summaries.items[id].dead) return;
         var e = p.vars.items[v].pred;
-        while (e != none) : (e = p.edges.items[e].next_in) try p.linkSummaries(try p.summaryOf(p.edges.items[e].from), id);
+        while (e != none) : (e = p.edges.items[e].next_in) {
+            const from = p.edges.items[e].from;
+            if (p.linksAcross(from, v)) try p.linkSummaries(try p.summaryOf(from), id);
+        }
         for (p.vars.items[v].sites) |site| {
             var covered = false;
             var f = p.vars.items[v].pred;
             while (f != none and !covered) : (f = p.edges.items[f].next_in) {
+                if (!p.linksAcross(p.edges.items[f].from, v)) continue;
                 const from = p.vars.items[p.edges.items[f].from].sites;
                 covered = std.sort.binarySearch(u32, from, site, orderU32) != null;
             }
@@ -10295,6 +10363,9 @@ const Pts = struct {
         const gop = try p.locals.getOrPut(p.arena(), .{ .module = mi, .top = p.top.int(), .name = n.int() });
         if (!gop.found_existing) {
             gop.value_ptr.* = try p.newVar();
+            // Filtered by its name's declared type (*Declared-type filtering
+            // of fact 3*); a name the compiler made is wild.
+            p.vars.items[gop.value_ptr.*].allow = p.closedKey(p.s.mods[mi].ir.nameKey(n));
             if (p.s.in.trace_largest) p.originAt(gop.value_ptr.*, .{ .kind = .local, .of = .local, .module = mi, .node = p.top.int(), .name = p.s.mods[mi].names.items[n.int()] });
         }
         p.cacheLocal(mi, p.top, n, gop.value_ptr.*);
@@ -10373,13 +10444,13 @@ const Pts = struct {
 
     fn siteOf(p: *Pts, mi: u32, node: Index, kind: SiteKind) Allocator.Error!u32 {
         if (p.siteAt(mi, node)) |site| return site;
-        // Where fact 3's filter will read a site's key (`backend.md` §9,
-        // *Declared-type filtering of fact 3*): a safety build checks that a
-        // keyed node is still an object, an array or an arrow.
-        if (std.debug.runtime_safety) _ = p.s.mods[mi].ir.nodeKey(node);
+        // The site's key (`backend.md` §9, *Declared-type filtering of fact
+        // 3*): a safety build checks that a keyed node is still an object,
+        // an array or an arrow (`JsIr.nodeKey`).
+        const key = p.closedKey(p.s.mods[mi].ir.nodeKey(node));
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
-        try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .once = p.once_ctx, .any = try p.newVar() });
+        try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
         if (p.s.in.trace_largest) p.originAt(p.sites.items[id].any, .{ .kind = .site_any, .of = .site_any, .module = mi, .node = node.int() });
         // Keys written before anything can read them exist from the moment
         // the object does, as a literal's own do.
@@ -10401,6 +10472,10 @@ const Pts = struct {
         for (params, names) |*v, n| v.* = try p.localVar(mi, n);
         p.sites.items[site].params = params;
         p.sites.items[site].ret = try p.newVar();
+        // The arrow's result key filters what it returns; the key goes
+        // through the build's table as it is, so a wild function type
+        // gives a wild result (`RepKeys.result`).
+        if (p.s.in.rep_keys) |keys| p.vars.items[p.sites.items[site].ret].allow = p.closedKey(keys.result(ir.nodeKey(node)));
         if (p.s.in.trace_largest) p.originAt(p.sites.items[site].ret, .{ .kind = .ret, .of = .ret, .module = mi, .node = node.int() });
         return site;
     }

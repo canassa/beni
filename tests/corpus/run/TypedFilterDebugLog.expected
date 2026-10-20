@@ -1,0 +1,3 @@
+model: { steps = 3, title = "walk" }
+walk
+3

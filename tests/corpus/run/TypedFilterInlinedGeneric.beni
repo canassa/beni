@@ -1,0 +1,35 @@
+-- run: a generic body the inliner copies into concrete code (`backend.md`
+-- §9, *Declared-type filtering of fact 3*: `Copy` keeps a body's keys only
+-- when its declaration's type holds no type variable). `tagged` makes its
+-- record at `{ item : a, mark : Int }`, a type with a variable, and is
+-- called once with each of two record types, so the copies' records are
+-- wild and the callers' bindings of closed type hold them. `item.name` and
+-- `item.left` are read only through those bindings. Both builds print the
+-- same.
+import Node exposing (Program)
+
+
+type alias Named =
+    name : String
+
+
+type alias Pair =
+    left : Int
+    right : Int
+
+
+tagged : a, Int → { item : a, mark : Int }
+tagged x n = { item = x, mark = n }
+
+
+main : Program
+main =
+    named : { item : Named, mark : Int }
+    named = tagged { name = "kept" } 1
+
+    pair : { item : Pair, mark : Int }
+    pair = tagged { left = 7, right = 8 } 2
+    Node.printLines
+        [ "${named.item.name} ${String.fromInt named.mark}"
+        , "${String.fromInt pair.item.left} ${String.fromInt pair.mark}"
+        ]

@@ -1,0 +1,47 @@
+-- run: `?` returns the failure it tested unchanged, at the enclosing
+-- function's result type (`backend.md` §4, *`?` is a test and a `return`*):
+-- the `Err` `readCount` builds at `Result Problem Int` leaves `readPair`,
+-- which answers `Result Problem (Int × Int)`, as the same object. The
+-- subject's type is in the wild set (`backend.md` §9, *Declared-type
+-- filtering of fact 3*), so the binding `pair` of closed type holds that
+-- `Err`, and the problem's `detail` is read only through it. Both builds
+-- print the same.
+import Node exposing (Program)
+
+
+type alias Problem =
+    detail : String
+    code : Int
+
+
+readCount : String → Result Problem Int
+readCount s =
+    case String.toInt s of
+        Just n →
+            Ok n
+
+        Nothing →
+            Err { detail = "not a count: ${s}", code = 2 }
+
+
+readPair : String, String → Result Problem (Int × Int)
+readPair a b =
+    left = readCount a?
+    right = readCount b?
+    Ok ( left, right )
+
+
+describe : String, String → String
+describe a b =
+    pair : Result Problem (Int × Int)
+    pair = readPair a b
+    case pair of
+        Ok ( l, r ) →
+            String.fromInt (l + r)
+
+        Err problem →
+            problem.detail
+
+
+main : Program
+main = Node.printLines [ describe "1" "2", describe "1" "x" ]
