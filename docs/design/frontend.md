@@ -2069,11 +2069,12 @@ harnesses agree on one and a cloud agent has none. The help text lists the direc
 107 §5 found, as examples. The steps:
 
 1. The folder must be present (above); otherwise the same message as `beni skill`, exit 2.
-2. `<dir>` must not be the folder or lie inside it, or the copy writes the tree into itself and
-   a link points at its own path. Before anything is written, the command takes the real path of
-   `<dir>`'s nearest existing ancestor, joins the rest of `<dir>` to it, and refuses when that
-   path equals the folder's real path or begins with it: `beni: '<dir>' is inside the installed
-   skill`, exit 2.
+2. `<dir>/beni` must not be the folder or lie inside it, or the copy writes the tree into itself
+   and a link points at its own path. Before anything is written, the command takes the real path
+   of `<dir>`'s nearest existing ancestor, joins the rest of `<dir>` and `beni` to it, and refuses
+   when that path equals the folder's real path or lies under it — so `<dir>` equal to the
+   folder, inside it, or its parent are all refused: `beni: '<dir>/beni' is the installed skill,
+   or lies inside it`, exit 2.
 3. `<dir>` is created with its missing parents, as `beni new` creates them.
 4. `<dir>/beni` must not exist. When it does — a directory, a file, or a symlink, a dangling one
    included — the command stops: `beni: '<dir>/beni' exists; pass --force to replace it`,
