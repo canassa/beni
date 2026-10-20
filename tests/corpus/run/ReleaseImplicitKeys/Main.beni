@@ -1,0 +1,13 @@
+-- A release build keeps `valueOf` and `toString` on a `Js.object`, including
+-- a `valueOf` written later. Both builds print the same lines.
+import Keys
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (Keys.coerced ⊤)
+        , Keys.shown ⊤
+        , String.fromInt (Keys.assigned ⊤)
+        ]

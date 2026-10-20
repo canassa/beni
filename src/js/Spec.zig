@@ -273,6 +273,9 @@ pub const Input = struct {
     /// (`toString`, `constructor`, …): an object literal without one does
     /// not read as `undefined` there.
     builtin_props: []const u32 = &.{},
+    /// The property-name ids of `implicit_host_keys`. A key of one is not
+    /// unread. The host reads it with no member expression in the program.
+    implicit_props: []const u32 = &.{},
     /// The property-name ids of `node_makers`' names: a call of one on a
     /// value the program did not allocate is a node (fact 5's host fact).
     node_makers: []const u32 = &.{},
@@ -8665,6 +8668,23 @@ pub const node_makers = [_][]const u8{
     "createTextNode", "createComment", "createDocumentFragment",
 };
 
+/// Names the host reads with no member expression in the program
+/// (`backend.md` §9, fact 3). `valueOf` and `toString` are what
+/// `ToPrimitive` reads. `toJSON` is what `JSON.stringify` reads. A
+/// well-known symbol is not a string name, so it is not here.
+/// `keyUnread` keeps a key it cannot name. Both drop predicates refuse
+/// an id in `Input.implicit_props`.
+pub const implicit_host_keys = [_][]const u8{
+    "toJSON", "toString", "valueOf",
+};
+
+test "implicit_host_keys names toJSON, toString and valueOf" {
+    try testing.expectEqual(@as(usize, 3), implicit_host_keys.len);
+    try testing.expectEqualStrings("toJSON", implicit_host_keys[0]);
+    try testing.expectEqualStrings("toString", implicit_host_keys[1]);
+    try testing.expectEqualStrings("valueOf", implicit_host_keys[2]);
+}
+
 /// The names `Object.prototype` has: an object literal that holds none of
 /// these still has one to read (`Input.builtin_props`).
 pub const prototype_names = [_][]const u8{
@@ -11789,7 +11809,7 @@ const Pts = struct {
     /// Property `id` is never read on any object `obj` may be: writing it
     /// changes nothing anyone can see.
     fn neverRead(p: *const Pts, obj: Val, id: u32) bool {
-        if (id == none or !p.known(obj)) return false;
+        if (id == none or !p.known(obj) or p.hostImplicit(id)) return false;
         for (obj.sites) |site| {
             if (p.sites.items[site].all_read) return false;
             if (p.findProp(site, id)) |pr| if (pr.read) return false;
@@ -11798,13 +11818,21 @@ const Pts = struct {
     }
 
     /// Of object literal `node`, a site: whether key `id` is never read.
+    /// A key this pass cannot name stays. A well-known symbol is not a
+    /// string name, so a `.property` does not hold one.
     fn keyUnread(p: *const Pts, mi: u32, node: Index, id: u32) bool {
-        if (!p.ok or id == none) return false;
+        if (!p.ok or id == none or p.hostImplicit(id)) return false;
         const site = p.siteAt(mi, node) orelse return false;
         const st = &p.sites.items[site];
         if (st.escaped or st.all_read) return false;
         if (p.findProp(site, id)) |pr| if (pr.read) return false;
         return true;
+    }
+
+    /// Whether `id` is a name in `implicit_host_keys`.
+    fn hostImplicit(p: *const Pts, id: u32) bool {
+        for (p.s.in.implicit_props) |k| if (k == id) return true;
+        return false;
     }
 };
 
