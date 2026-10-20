@@ -794,7 +794,9 @@ argument, `__proto__` a plain key, `console.debug` under `minimum Trace`, `Cmd.l
 annotation and the one outside without it); `LogLevels`, `ValueCommands` and the ownership goldens
 of `EntryValueCommand` unchanged. **Bytes** (every `browser/tea` and `browser/dom` page and the four
 browser examples, an `origin/master` compiler against this one, development and release, no source
-maps): only the 12 pages that call `Log` change, release +874 to +1 332 raw and +351 to +529 brotli
-(`LogLevels` 2 687 → 4 019 raw, 1 180 → 1 709 brotli): the entry, the time, the slot read and the
+maps): only the 13 pages that call `Log` change (12 under `browser/tea`, and
+`browser/dom/HostedRootReleases`), release +874 to +1 332 raw and +351 to +529 brotli (`LogLevels` 2
+687 → 4 019 raw, 1 180 → 1 709 brotli, its `index.html` counted), and `ValueCommands`, whose
+`master` build has `Log.write`, +958 raw and +330 brotli: the entry, the time, the slot read and the
 list helpers of the spans and the annotations. A fold in the console sink took 119 raw and 38 brotli
 of it off. Every other page and every example is byte for byte the same.
