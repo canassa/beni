@@ -1,0 +1,86 @@
+-- emit/release/inline: two models of two record types pass through one
+-- generic helper, `keep`, that is not inlined (its `Maybe` is read twice and
+-- its argument is a call), so fact 3's var of its return holds the sites of
+-- both. Each caller binds the result to a local of its own closed type, and
+-- `shown` is read only through `First`. Declared-type filtering (`backend.md`
+-- §9, *Declared-type filtering of fact 3*) keeps `Second`'s sites out of the
+-- `First` local, so `Second`'s literals drop `shown`, which no read of a
+-- `Second` reaches; without it they keep it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias First =
+    count : Int
+    shown : Int
+
+
+type alias Second =
+    count : Int
+    shown : Int
+    spare : Bool
+
+
+type alias Model =
+    first : First
+    second : Second
+
+
+type Msg
+    = Bump
+
+
+keep : Maybe a, a → a
+keep found fallback =
+    case found of
+        Just value →
+            value
+
+        Nothing →
+            fallback
+
+
+growFirst : First → Maybe First
+growFirst f = if f.count > 3 then Nothing else Just { count = f.count + 1, shown = f.shown + 2 }
+
+
+growSecond : Second → Maybe Second
+growSecond s =
+    if s.count > 5 then Nothing else Just { count = s.count + 1, shown = 0, spare = s.count > 2 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            first = keep (growFirst model.first) model.first
+            second = keep (growSecond model.second) model.second
+            { first = first, second = second }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="merge">
+        <output>{model.first.shown}</output>
+        <p>{model.first.count}</p>
+        <p>{model.second.count}</p>
+        <p>{if model.second.spare then "spare" else "none"}</p>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init =
+                λ⊤ →
+                    { first = { count = 0, shown = 1 }
+                    , second = { count = 0, shown = 5, spare = False }
+                    }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
