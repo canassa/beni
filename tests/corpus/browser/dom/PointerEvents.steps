@@ -1,0 +1,10 @@
+# Not tracked yet: the move is ignored.
+pointer #surface pointermove 5 6
+click #track
+# The target is a row and the handler the surface's: a point in its box.
+pointer #r1 pointermove 30 40 box:#surface
+pointer #r2 pointerdown 4 3 type:pen
+pointer #r2 pointerup 4 3 type:pen
+click #add
+pointer #r3 pointerdown 7 2 id:5 type:touch
+pointer #r3 pointercancel 7 2 id:5 type:touch

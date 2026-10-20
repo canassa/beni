@@ -1,0 +1,40 @@
+-- load
+<body>
+  <main>
+    <div id="arena">
+      <span id="dot">"dot"</span>
+    </div>
+    <p id="at">"0.0, 0.0"</p>
+    <p id="who"></p>
+  </main>
+</body>
+-- pointer #arena pointermove 12 34
+<body>
+  <main>
+    <div id="arena">
+      <span id="dot">"dot"</span>
+    </div>
+    <p id="at">"12.0, 34.0"</p>
+    <p id="who"></p>
+  </main>
+</body>
+-- pointer #dot pointermove 55 25 box:#arena
+<body>
+  <main>
+    <div id="arena">
+      <span id="dot">"dot"</span>
+    </div>
+    <p id="at">"55.0, 25.0"</p>
+    <p id="who"></p>
+  </main>
+</body>
+-- pointer #arena pointerdown 100 50 id:7 type:touch
+<body>
+  <main>
+    <div id="arena">
+      <span id="dot">"dot"</span>
+    </div>
+    <p id="at">"55.0, 25.0"</p>
+    <p id="who">"touch #7"</p>
+  </main>
+</body>

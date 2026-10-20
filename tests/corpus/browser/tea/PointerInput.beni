@@ -1,0 +1,121 @@
+-- Pointer input (boundary.md §9.8.20): each of the six pointer events hands
+-- its handler a `Html.Pointer`. The arena is laid out at 40, 30, so in
+-- Chrome a point's `clientX` is 40 more than its `localX`, and the
+-- transcript shows only the local point, the same in both DOMs. `Down`
+-- carries the `Pointer` itself, and `update` reads its point after the
+-- dispatch, when `currentTarget` is null: the extractor took the point
+-- while the event was dispatched. A move on the dot, inside the arena, is
+-- a point in the ARENA's box, the element whose handler runs, not the
+-- dot's. A primary pointer's down prevents its default, so the browser
+-- sends no compatibility mouse events; a second finger's does not. Two
+-- touches keep their ids from down to up or cancel, and a touch that
+-- leaves the arena still moves in it, at a negative point. `#zoom`
+-- changes the move handler, which the view writes in place: the next
+-- move is doubled. `#corner` is fixed at the viewport's corner, so its
+-- `clientX` is its `localX` in Chrome too, and both DOMs print it.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Down Html.Pointer
+    | Moved String
+    | Up Int
+    | Cancelled Int
+    | Entered String
+    | Left String
+    | Zoom
+    | Client Float Float
+
+
+type alias Model =
+    log : List String
+    held : List Int
+    scale : Float
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Down p →
+            { model
+                | log = model.log ++ [ "down ${describe 1 p}" ]
+                , held = model.held ++ [ Html.pointerId p ]
+            }
+
+        Moved what →
+            { model | log = model.log ++ [ "move ${what}" ] }
+
+        Up id →
+            { model
+                | log = model.log ++ [ "up #${String.fromInt id}" ]
+                , held = List.filter model.held λh → h ≠ id
+            }
+
+        Cancelled id →
+            { model
+                | log = model.log ++ [ "cancel #${String.fromInt id}" ]
+                , held = List.filter model.held λh → h ≠ id
+            }
+
+        Entered kind →
+            { model | log = model.log ++ [ "enter ${kind}" ] }
+
+        Left kind →
+            { model | log = model.log ++ [ "leave ${kind}" ] }
+
+        Zoom →
+            { model | scale = model.scale * 2 }
+
+        Client x y →
+            { model | log = model.log ++ [ "client ${String.fromFloat x}, ${String.fromFloat y}" ] }
+
+
+describe : Float, Html.Pointer → String
+describe scale p =
+    primary = if Html.isPrimary p then "" else " secondary"
+    x = String.fromFloat (Html.localX p * scale)
+    y = String.fromFloat (Html.localY p * scale)
+    "${Html.pointerType p} #${String.fromInt (Html.pointerId p)}${primary} at ${x}, ${y}"
+
+
+down : Html.Pointer → Msg
+down p =
+    if Html.isPrimary p then
+        Html.preventDefault (Html.pointerEvent p)
+        Down p
+    else
+        Down p
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div
+            id="arena"
+            style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none"
+            onPointerDown={down}
+            onPointerMove={λp → Moved (describe model.scale p)}
+            onPointerUp={λp → Up (Html.pointerId p)}
+            onPointerCancel={λp → Cancelled (Html.pointerId p)}
+            onPointerEnter={λp → Entered (Html.pointerType p)}
+            onPointerLeave={λp → Left (Html.pointerType p)}
+        >
+            <span
+                id="dot"
+                style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"
+            />
+        </div>
+        <button id="zoom" onClick={Zoom}>zoom</button>
+        <div
+            id="corner"
+            style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"
+            onPointerDown={λp → Client (Html.clientX p) (Html.clientY p)}
+        />
+        <p id="held">{String.join (List.map model.held String.fromInt) " "}</p>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { log = [], held = [], scale = 1 }, update = update, view = view }

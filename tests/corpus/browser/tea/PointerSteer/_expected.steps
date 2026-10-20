@@ -1,0 +1,19 @@
+# Nothing aims the dot: the page asks for no frame.
+frames
+# The mouse aims 40 pixels to the right; each 16 ms frame moves the dot 4.
+pointer #arena pointermove 190 100
+frames
+frame 2
+# The mouse leaves and the aim stays: the dot reaches it and stops asking.
+pointer #arena pointerleave 300 100
+frame 9
+frames
+# A finger aims it down and to the left, and moves while it touches.
+pointer #arena pointerdown 190 160 id:4 type:touch
+frame 3
+pointer #arena pointermove 100 160 id:4 type:touch
+frame 5
+# The finger lifts: the dot stops where it is.
+pointer #arena pointerup 100 160 id:4 type:touch
+frames
+frame 2
