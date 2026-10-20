@@ -14,11 +14,13 @@
 //! sections  in table order, each 4-byte aligned
 //! ```
 //!
-//! Five sections, in this order and no other: `interface`, `dispatch`,
-//! `schema_plan`, `diagnostics`, `ownership`. The last is the module's
-//! ownership summary block (`ownership-checker.md` §28.4,
+//! Six sections, in this order and no other: `interface`, `dispatch`,
+//! `schema_plan`, `diagnostics`, `ownership`, `type_keys`. The fifth is the
+//! module's ownership summary block (`ownership-checker.md` §28.4,
 //! `own/summary_bytes.zig`), empty when the run that wrote the entry did
-//! not summarise the module.
+//! not summarise the module. The sixth is its type-key artifact
+//! (checker-v2.md §36, `cache/type_keys_bytes.zig`), empty for a module
+//! whose keys are all wild.
 //!
 //! **`interface` is the bytes `iface_bytes.write` produced, verbatim**, so
 //! `iface_bytes.hash` over that section IS the interface hash the firewall
@@ -74,15 +76,18 @@ pub const magic = "BENICAC\x00";
 /// 10: a fifth section, `ownership`, the module's summary block
 /// (`ownership-checker.md` §28.4).
 /// 11: nullary method dispatch sites replay the checked-BIR call rewrite.
-pub const format_version: u32 = 11;
+/// 12: a sixth section, `type_keys`, the module's type-key artifact
+/// (checker-v2.md §36, `backend.md` §3).
+pub const format_version: u32 = 12;
 
-/// The five sections, in this order and no other.
+/// The six sections, in this order and no other.
 pub const Section = enum(u32) {
     interface,
     dispatch,
     schema_plan,
     diagnostics,
     ownership,
+    type_keys,
 
     pub const count: u32 = @typeInfo(Section).@"enum".field_names.len;
 };
@@ -97,7 +102,7 @@ pub const ReadError = error{
     BadEntry,
 } || Allocator.Error;
 
-/// What an entry holds, as five opaque byte strings plus the key it was
+/// What an entry holds, as six opaque byte strings plus the key it was
 /// written for. Borrowed from the file's bytes on the way in and out.
 pub const Entry = struct {
     key: [16]u8,
@@ -112,6 +117,8 @@ pub const Entry = struct {
     /// `summary_bytes.write`'s output, or empty: a run that did not
     /// summarise the module wrote none.
     ownership: []const u8 = &.{},
+    /// `type_keys_bytes.write`'s output (checker-v2.md §36).
+    type_keys: []const u8 = &.{},
 
     fn section(e: *const Entry, s: Section) []const u8 {
         return switch (s) {
@@ -120,6 +127,7 @@ pub const Entry = struct {
             .schema_plan => e.schema_plan,
             .diagnostics => e.diagnostics,
             .ownership => e.ownership,
+            .type_keys => e.type_keys,
         };
     }
 };
@@ -198,6 +206,7 @@ pub fn read(bytes: []const u8) ReadError!Entry {
             .schema_plan => entry.schema_plan = slice,
             .diagnostics => entry.diagnostics = slice,
             .ownership => entry.ownership = slice,
+            .type_keys => entry.type_keys = slice,
         }
     }
     return entry;
@@ -326,6 +335,7 @@ fn sampleEntry() Entry {
         .schema_plan = "plan",
         .diagnostics = "rows and a blob!!",
         .ownership = "summaries",
+        .type_keys = "keys",
     };
 }
 
@@ -342,6 +352,7 @@ test "an entry round-trips, sections and key alike" {
     try testing.expectEqualStrings(entry.schema_plan, back.schema_plan);
     try testing.expectEqualStrings(entry.diagnostics, back.diagnostics);
     try testing.expectEqualStrings(entry.ownership, back.ownership);
+    try testing.expectEqualStrings(entry.type_keys, back.type_keys);
 
     // Writing the loaded entry again gives the same bytes, which is what
     // makes two processes that compute one key write one file.

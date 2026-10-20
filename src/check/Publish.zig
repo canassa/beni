@@ -49,6 +49,10 @@ pub const Input = struct {
     /// The dispatch table P6 wrote: each value's identity parameters are
     /// published as its quantifiers' identity bit (checker-v2.md §33).
     dispatch: ?*const Dispatch = null,
+    /// Per declaration, the quantifiers whose instantiations cross into
+    /// JavaScript (`TypeKeys`, checker-v2.md §36), published as their
+    /// `crosses` bit.
+    crossing: []const []const u16 = &.{},
 };
 
 /// Fill the module's record, round-trip it under the flag, and translate its
@@ -95,6 +99,8 @@ pub fn fill(in: Input) Error!u32 {
         };
         writer.identities = quantifiers;
         defer writer.identities = &.{};
+        writer.crossing = if (decl) |d| (if (d.int() < in.crossing.len) in.crossing[d.int()] else &.{}) else &.{};
+        defer writer.crossing = &.{};
         v.scheme = try p.scheme(root, decl);
     }
     gpa.free(@constCast(iface.values));

@@ -97,6 +97,7 @@ const files = [_]File{
     .{ .path = "CallStyle.zig", .text = @embedFile("CallStyle.zig") },
     .{ .path = "Prepend.zig", .text = @embedFile("Prepend.zig") },
     .{ .path = "TypeFacts.zig", .text = @embedFile("TypeFacts.zig") },
+    .{ .path = "TypeKeys.zig", .text = @embedFile("TypeKeys.zig") },
     .{ .path = "TypeStore.zig", .text = @embedFile("TypeStore.zig") },
     .{ .path = "Types.zig", .text = @embedFile("Types.zig") },
     .{ .path = "Unify.zig", .text = @embedFile("Unify.zig") },
@@ -121,7 +122,9 @@ const child_readers = [_][]const u8{ "Walk.zig", "Unify.zig", "Instantiate.zig" 
 /// read children because that is what they are for: the store itself, its
 /// interface writer and reader, the printer and the texts that print with it,
 /// and the schema endpoints' builder. Nothing the solver runs is here.
-const shared_child_readers = [_][]const u8{ "TypeStore.zig", "Schemes.zig", "Render.zig", "Diagnostics.zig", "Schema.zig" };
+/// `TypeKeys.zig` (checker-v2.md §36) is listed for the writer's reason: it
+/// serialises a solved type into its canonical key, after the solver is done.
+const shared_child_readers = [_][]const u8{ "TypeStore.zig", "Schemes.zig", "Render.zig", "Diagnostics.zig", "Schema.zig", "TypeKeys.zig" };
 
 const child_reads = [_][]const u8{
     "store.vars(",       "st.vars(",        "store().vars(", "store.fields(",

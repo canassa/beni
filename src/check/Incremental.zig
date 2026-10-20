@@ -16,6 +16,7 @@ const Graph = @import("../resolve/Graph.zig");
 const iface_bytes = @import("../resolve/iface_bytes.zig");
 const reads = @import("reads.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
+const type_keys_bytes = @import("../cache/type_keys_bytes.zig");
 const CacheEntry = @import("../cache/Entry.zig");
 const Key = @import("../cache/Key.zig");
 const Digest = @import("../cache/Digest.zig");
@@ -319,6 +320,12 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     d.plans[m.int()].deinit(gpa);
     d.plans[m.int()] = loaded.plan;
     loaded.plan = .empty;
+    // The type-key artifact (checker-v2.md §36), its named nodes this
+    // session's ids.
+    type_keys_bytes.resolve(&loaded.type_keys, d.graph, d.types);
+    d.type_keys[m.int()].deinit(gpa);
+    d.type_keys[m.int()] = loaded.type_keys.artifact;
+    loaded.type_keys.artifact = .empty;
 
     // 3. `Types.ref_ids`, which is not part of the record and is recomputed
     //    once per module per build — here for the same reason publication

@@ -1,0 +1,38 @@
+module Use
+  key #0 Basics.Int
+  key #1 { sent : #0 }
+  key #2 { relayed : #0 }
+  key #3 { kept : #0 }
+  key #4 { other : #0 }
+  key #5 { local : #0 }
+  key #6 String.String
+  key #7 Result.Result #6 #0
+  wild #0
+  wild #1
+  wild #2
+  wild #3
+  wild #5
+  wild #7
+  decl send
+    local m #1
+  decl forward
+    local m #2
+  decl both
+    local k #3
+    local o #4
+  decl viaLet
+    local m #5
+    local go wild
+    local x wild
+  decl bump
+    local r #7
+    local n #0
+  inst 65 call #7
+module Wrap
+  decl toValue
+    local x wild
+  decl keep
+    local x wild
+    local y wild
+  decl relay
+    local x wild

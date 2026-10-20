@@ -14,6 +14,8 @@
 //!                                   comments in the same order
 //!   bir/X.beni        + X.bir       `dump --stage=bir` equals the golden
 //!   dispatch/X.beni   + X.dispatch  `dump --stage=dispatch` equals the golden
+//!   typekeys/X.beni   + X.typekeys  `check` exits 0 silently and `dump --stage=typekeys`
+//!                                   equals the golden (checker-v2.md §36)
 //!   check/good/X.beni + X.iface     `check` exits 0 and `dump --stage=interface`
 //!                                   equals the golden; an optional X.diag holds
 //!                                   the `warning`s it is allowed to print
@@ -120,6 +122,7 @@ const Kind = enum {
     fmt,
     bir,
     dispatch,
+    typekeys,
     writes,
     ownership,
     check_good,
@@ -141,6 +144,7 @@ const Kind = enum {
             .fmt => "fmt",
             .bir => "bir",
             .dispatch => "dispatch",
+            .typekeys => "typekeys",
             .writes => "writes",
             .ownership => "ownership",
             .check_good => "check/good",
@@ -166,6 +170,7 @@ const Kind = enum {
             .fmt, .run, .browser => "expected",
             .bir => "bir",
             .dispatch => "dispatch",
+            .typekeys => "typekeys",
             .writes => "writes",
             .ownership => "ownership",
             .check_good => "iface",
@@ -183,7 +188,7 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .writes or kind == .ownership or
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .typekeys or kind == .writes or kind == .ownership or
             kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser;
     }
 
@@ -205,7 +210,7 @@ const Kind = enum {
     fn partOf(kind: Kind, pass: RunPass) Part {
         return switch (kind) {
             .parse_good, .parse_bad, .fmt, .bir, .regress => .parse,
-            .check_good, .check_bad, .check_args, .check_depth, .dispatch, .writes, .ownership => .check,
+            .check_good, .check_bad, .check_args, .check_depth, .dispatch, .typekeys, .writes, .ownership => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
                 .dev, .dev_library, .dev_fiber => .run_dev,
@@ -247,6 +252,13 @@ test "corpus: bir" {
 // invisible in `--stage=types` and obvious here.
 test "corpus: dispatch" {
     try walk(.dispatch);
+}
+
+// The checker's type keys (checker-v2.md §36), for `dispatch/`'s reason: an
+// output of a phase, printed with no ids, and the artifact the points-to
+// analysis will read (`plans/type-directed-points-to.md` slice 2).
+test "corpus: typekeys" {
+    try walk(.typekeys);
 }
 
 // The write-set pass's dump (`write-sets.md` §8.1): per message key the
@@ -1453,6 +1465,7 @@ const Case = struct {
             .fmt => try c.format(),
             .bir => try c.lowering(),
             .dispatch => try c.dispatching(),
+            .typekeys => try c.typeKeys(),
             .writes => try c.writeSets(),
             .ownership => try c.ownershipReport(),
             .check_good => try c.checkGood(),
@@ -3002,6 +3015,21 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=dispatch", path });
         try expectExit(0, r);
         try c.expectGolden("dispatch", r.stdout);
+    }
+
+    /// The type keys of one module or project (checker-v2.md §36): the
+    /// fixture must check clean, and the keys are the golden.
+    fn typeKeys(c: Case) !void {
+        const path = try c.fixturePath();
+        const checked = try c.compiler(&.{ "check", path });
+        try expectExit(0, checked);
+        if (checked.stderr.len != 0) {
+            detail("{s}: a typekeys fixture must produce no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, checked.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        const r = try c.compiler(&.{ "dump", "--stage=typekeys", path });
+        try expectExit(0, r);
+        try c.expectGolden("typekeys", r.stdout);
     }
 
     /// The ownership report of a module or a project (`ownership-checker.md`

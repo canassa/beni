@@ -1,0 +1,11 @@
+-- typekeys: a polymorphic local is wild (checker-v2.md §36). `twice` has no
+-- annotation and generalises, so `x` and its tuple are wild; `both`, a `let`
+-- function, generalises too; `ones` is the tuple `both` makes at `Int`, which
+-- is closed.
+twice x = ( x, x )
+
+
+ones : Int × Int
+ones =
+    both y = ( y, y )
+    both 1

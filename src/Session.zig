@@ -73,6 +73,7 @@ const entry_bytes = @import("cache/entry_bytes.zig");
 const CacheEntry = @import("cache/Entry.zig");
 const dispatch_bytes = @import("cache/dispatch_bytes.zig");
 const schema_plan_bytes = @import("cache/schema_plan_bytes.zig");
+const type_keys_bytes = @import("cache/type_keys_bytes.zig");
 const iface_bytes = @import("resolve/iface_bytes.zig");
 const build_id = @import("build_id.zig");
 const core_package = @import("core_package");
@@ -2374,6 +2375,13 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
     defer gpa.free(sidecar);
     const plan = try schema_plan_bytes.write(gpa, &session.checked.plans[m.int()], &session.interner);
     defer gpa.free(plan);
+    // An artifact with no key at all is an empty section (checker-v2.md §36).
+    const artifact = &session.checked.type_keys[m.int()];
+    const keys: []u8 = if (artifact.locals.len == 0 and artifact.insts.len == 0 and artifact.nodes.len == 0)
+        &.{}
+    else
+        try type_keys_bytes.write(gpa, artifact, &session.checked.types, &session.interner);
+    defer gpa.free(keys);
 
     var rows: std.ArrayList(entry_bytes.Diagnostic) = .empty;
     defer rows.deinit(gpa);
@@ -2398,6 +2406,7 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
         .schema_plan = plan,
         .diagnostics = diagnostics,
         .ownership = if (m.int() < session.ownership_blocks.len) session.ownership_blocks[m.int()] orelse &.{} else &.{},
+        .type_keys = keys,
     });
 }
 

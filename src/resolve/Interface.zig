@@ -350,6 +350,11 @@ pub const Quantified = struct {
     /// checker-v2.md §33): bit 9 of the flag word. Only a scheme's
     /// quantifier with a constraint has it.
     identity: bool = false,
+    /// A `Js.from` in the value's body, or a crossing quantifier of a
+    /// callee, is instantiated at a type mentioning this quantifier: what
+    /// the value is applied at crosses into JavaScript (`backend.md` §9,
+    /// *Declared-type filtering of fact 3*; checker-v2.md §36). Bit 10.
+    crosses: bool = false,
     /// Index into this interface's own `symbols` column, NOT a `Symbol`.
     ///
     /// A `Symbol` is an index into the session's interner, whose numbering
@@ -380,16 +385,18 @@ pub const Quantified = struct {
     pub const words = 4;
 
     pub fn flags(q: Quantified) u32 {
-        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9);
+        return @as(u32, q.kind) | (@as(u32, @intFromBool(q.equatable)) << 8) | (@as(u32, @intFromBool(q.identity)) << 9) | (@as(u32, @intFromBool(q.crosses)) << 10);
     }
 
     pub const identity_bit: u32 = 1 << 9;
+    pub const crosses_bit: u32 = 1 << 10;
 
     pub fn unpack(flag_word: u32, name_word: u32, start: u32, len: u32) Quantified {
         return .{
             .kind = @truncate(flag_word),
             .equatable = (flag_word >> 8) & 1 == 1,
             .identity = (flag_word >> 9) & 1 == 1,
+            .crosses = (flag_word >> 10) & 1 == 1,
             .name = @fromBackingInt(@intCast(name_word)),
             .constraints_start = start,
             .constraints_len = len,

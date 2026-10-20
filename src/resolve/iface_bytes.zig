@@ -88,7 +88,9 @@ pub const magic = "BENIIFC\x00";
 /// declaration with such a class has a second, suspendable body (§16.2).
 /// 12: a quantifier's flag word carries bit 9, `identity`: the value takes
 /// the quantifier's type identity as a hidden parameter (checker-v2.md §33).
-pub const format_version: u32 = 12;
+/// 13: and bit 10, `crosses`: what the quantifier is instantiated at crosses
+/// into JavaScript (checker-v2.md §36).
+pub const format_version: u32 = 13;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,

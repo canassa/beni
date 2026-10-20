@@ -32,6 +32,7 @@ const iface_bytes = @import("../resolve/iface_bytes.zig");
 const Key = @import("../cache/Key.zig");
 const CacheDir = @import("../cache/Dir.zig");
 const Digest = @import("../cache/Digest.zig");
+const TypeKeysDump = @import("../dump/typekeys.zig");
 
 pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, options_in: Session.Options, check: Cli.Check) u8 {
     var options = options_in;
@@ -130,6 +131,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
     // order the flags are documented in.
     if (check.cache.cutoff_compare) {
         printCompareKeys(gpa, stdout, &session) catch return fail(stderr, "beni: out of memory", .{});
+    }
+    // After the key blocks, for the same reason.
+    if (check.cache.type_keys) {
+        printTypeKeys(stdout, &session) catch return 2;
     }
     if (summary.errors > 0) {
         _ = session.renderLate(&.{}, stderr) catch return 2;
@@ -359,4 +364,26 @@ fn printFrontendKeys(stdout: *Io.Writer, session: *Session) !void {
 fn fail(stderr: *Io.Writer, comptime format_string: []const u8, args: anytype) u8 {
     stderr.print(format_string ++ "\n", args) catch {};
     return 2;
+}
+
+/// `--type-keys` (hidden): every source module's type keys, in path order,
+/// exactly as `dump --stage=typekeys` prints them (checker-v2.md §36).
+fn printTypeKeys(stdout: *Io.Writer, session: *Session) !void {
+    for (session.store.byPath()) |f| {
+        if (session.store.isEmbedded(f)) continue;
+        for (0..session.graph.count()) |i| {
+            const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
+            if (session.graph.moduleFile(m) != f or session.graph.modulePackage(m) != .app) continue;
+            if (i >= session.checked.type_keys.len) continue;
+            try TypeKeysDump.write(
+                stdout,
+                session.store.moduleName(f),
+                session.artifacts.bir(f),
+                &session.checked.type_keys[i],
+                &session.checked.types,
+                &session.interner,
+            );
+        }
+    }
+    try stdout.flush();
 }
