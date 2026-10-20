@@ -737,3 +737,20 @@ each yield once 35 464 against 54 988; `timeout` around a body that answers at o
 *a function called once* counts callers that reachability has removed — `begin`'s call of the run
 loop's `pushBack` took `pushBack` out of the run loop in every fiber program (+4 to +29 brotli
 bytes) until `begin` got a copy of its own (`takeOn`).
+
+*P7, first part, as built (2026-10-20; #358).* `core/Log.beni` holds the five levels, the five
+direct forms, `log`, `Entry`, `setSink` and `logfmt`, in beni over `Js`; the default minimum is
+`Info`, and no call changes it yet. `node`'s `Io.run` installs the `logfmt` sink. A sink is kept as
+a `Js.Value` and called with `Js.apply`, as `Task` keeps a fiber's work, so a function that logs
+does not become suspendable. `platforms/browser/Log.beni` stays until `Log.write` (`boundary.md`
+§9.8.16 (b)) has a home outside it, which is the owner's decision; a platform module hides the core
+module of its name, so a browser program still uses the browser's `Log`. Fixtures: `run/LogFmt`,
+`run/LogSetSink`, `run/LogDefaultSink`, and a black-box test of the exact standard error of an
+`Io.run` program, development and `--release`. **Bytes** (`bench/size.mjs` against `master`
+`ffc2fdb84`, 519 programs and pages): no browser page and no program without `Io.run` changes. The
+development build of each of the 87 `Io.run` programs grows by 2.5–3.8 kB raw (550–950 brotli):
+`Log`, and the `String` it uses, are reached through the sink. Its release build drops the unread
+sink but keeps `core/List.beni`'s top-level `isPlain`, an `impure` initialiser of a module that
+reachability reached first: most grow by 22–28 raw bytes (−27 to +41 with the renaming), and brotli
+moves by −37 to +38 (#511). The log context (`annotate`, `span`, `minimum`, `withSink`) and the
+measurement against Effect's `logDebug` are the next part.

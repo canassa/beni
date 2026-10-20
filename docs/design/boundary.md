@@ -4367,6 +4367,13 @@ the console method for the level), adds `trace`, `debug`, `log`, `annotate`, `sp
 default sink with `Log.setSink`; **`node`'s `Io.run` installs one that writes a `logfmt` line per
 entry to standard error.** §9.8.10 (d) is superseded by this paragraph.
 
+*As built in part, 2026-10-20 (#358).* `core/Log.beni` has the levels, the five direct forms,
+`log`, `Entry`, `setSink` and `logfmt`; `node`'s `Io.run` installs the `logfmt` sink. The log
+context (`annotate`, `span`, `minimum`, `withSink`) is the next slice. **`platforms/browser/Log.beni`
+stays until §9.8.16 (b)'s `Log.write` has a home outside it**: a platform module shadows the core
+module of the same name (`src/resolve/Graph.zig`, `lookup`), so a browser program still imports the
+browser's `Log`, and a `node` program imports core's.
+
 **(c) A Node program that can never wake ends, with exit 1** (§17.10; A8's "never a silent exit
 0"). `Io.run` sets the exit code to 1 when it starts its fiber, which the fiber's end overwrites as
 today (the program's code, or 130). When Node's event loop is about to empty (`beforeExit`) and that
