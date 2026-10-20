@@ -8157,6 +8157,13 @@ const Pts = struct {
     /// `tmp`.
     edges: std.ArrayList(Edge) = .empty,
     edge_set: KeyMap(EdgeKey, void) = .empty,
+    /// The summary links that wait (`linkSummaries`), and whether one is
+    /// being made; a stack the walks over summaries and vars share, each
+    /// above where it found it (`summaryOf`, `summaryProp`, `setUnknown`,
+    /// `setAnyWritten`).
+    link_queue: std.ArrayList(SumLink) = .empty,
+    linking: bool = false,
+    work: std.ArrayList(u32) = .empty,
     summaries: std.ArrayList(Summary) = .empty,
     /// The joins that wait (`join`), and whether `drain` is running.
     pending: std.ArrayList(Pending) = .empty,
@@ -8266,17 +8273,17 @@ const Pts = struct {
     };
 
     /// A load cell: the var a member read gives, fed by a copy edge from
-    /// the property's var of every site the object holds; the object's
-    /// sites linked so far, so the next evaluation links only the
-    /// difference; and whether the read may be anything, which the var
+    /// the property's var of every site the object holds; the union of the
+    /// object's sites every evaluation saw, so the next links only what is
+    /// new to all of them; and whether the read may be anything, which the var
     /// does not hold, since a var that is `top` escapes its sites and a
     /// read that may be anything does not. Every read of one property of
     /// one var shares one cell (`load_cells`), as every spread of a var
     /// shares its summary; a read of any other object expression has the
     /// cell of its node (`load_nodes`). A read through an escaped object
-    /// is `top` and still carries the site's property values: `propagate`
-    /// escapes those, so no consumer tells the two apart, and a cell that
-    /// linked them before the site escaped keeps them. The reference sweep
+    /// is `top` and links nothing, as `read` gives nothing more; a cell that
+    /// linked a site before it escaped keeps its property values, which
+    /// `propagate` escapes, so no consumer tells the two apart. The reference sweep
     /// of a safety build reads through the same cells.
     const Load = struct { out: VarId, done: []const u32 = &.{} };
     const LoadKey = struct { v: VarId, id: u32 };
@@ -8343,6 +8350,9 @@ const Pts = struct {
         /// apply — a consumer that joins the value into its own var makes
         /// that var `top`, as the join of the read's value did.
         uncapped: bool = false,
+        /// How many edges `succ` and `pred` list (`indexEdge`).
+        succs: u32 = 0,
+        preds: u32 = 0,
     };
 
     const Pending = struct { v: VarId, val: Val, folded: bool };
@@ -8394,6 +8404,7 @@ const Pts = struct {
     };
 
     const SumProp = struct { id: u32, vals: VarId };
+    const SumLink = struct { src: u32, dst: u32 };
 
     const Val = struct {
         top: bool = false,
@@ -8773,29 +8784,61 @@ const Pts = struct {
         try p.edges.append(a, .{ .from = from, .to = to, .next_out = p.vars.items[from].succ, .next_in = p.vars.items[to].pred });
         p.vars.items[from].succ = at;
         p.vars.items[to].pred = at;
+        p.vars.items[from].succs += 1;
+        p.vars.items[to].preds += 1;
         p.s.stats.pts_edges += 1;
-        try p.edge_set.put(a, .{ .from = from, .to = to }, {});
+        try p.indexEdge(from, to);
         if (p.vars.items[to].summary != none) try p.linkSummaries(try p.summaryOf(from), p.vars.items[to].summary);
         const set = p.vars.items[from];
         try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, true);
         try p.drain();
     }
 
+    /// How many edges of a var's list `hasEdge` walks before it asks
+    /// `edge_set`.
+    const short_edges = 8;
+
+    /// `edge_set`, kept for what `hasEdge` asks it: every edge whose source
+    /// has more than `short_edges` edges out and whose target more than
+    /// `short_edges` in. The edge `from → to` was just made: it goes in when
+    /// both lists are long, and when one of them has just become long, so do
+    /// the edges of that list whose other end's list is long already. Most
+    /// vars have one or two edges, and no edge of theirs is ever kept.
+    fn indexEdge(p: *Pts, from: VarId, to: VarId) Allocator.Error!void {
+        const a = p.tmp.allocator();
+        const out = p.vars.items[from].succs;
+        const in = p.vars.items[to].preds;
+        if (out > short_edges and in > short_edges) try p.edge_set.put(a, .{ .from = from, .to = to }, {});
+        if (out == short_edges + 1) {
+            var e = p.vars.items[from].succ;
+            while (e != none) : (e = p.edges.items[e].next_out) {
+                const t = p.edges.items[e].to;
+                if (p.vars.items[t].preds > short_edges) try p.edge_set.put(a, .{ .from = from, .to = t }, {});
+            }
+        }
+        if (in == short_edges + 1) {
+            var e = p.vars.items[to].pred;
+            while (e != none) : (e = p.edges.items[e].next_in) {
+                const f = p.edges.items[e].from;
+                if (p.vars.items[f].succs > short_edges) try p.edge_set.put(a, .{ .from = f, .to = to }, {});
+            }
+        }
+    }
+
     /// Whether the edge `from → to` exists: by the shorter of the two
     /// lists when one is short — a property's var has one or two sources —
-    /// else by the set of every edge, kept for that case alone.
+    /// else by the set of the edges between long lists (`indexEdge`).
     fn hasEdge(p: *Pts, from: VarId, to: VarId) bool {
-        const short = 8;
         var n: usize = 0;
         var e = p.vars.items[to].pred;
-        while (e != none and n < short) : (e = p.edges.items[e].next_in) {
+        while (e != none and n < short_edges) : (e = p.edges.items[e].next_in) {
             if (p.edges.items[e].from == from) return true;
             n += 1;
         }
         if (e == none) return false;
         n = 0;
         e = p.vars.items[from].succ;
-        while (e != none and n < short) : (e = p.edges.items[e].next_out) {
+        while (e != none and n < short_edges) : (e = p.edges.items[e].next_out) {
             if (p.edges.items[e].to == to) return true;
             n += 1;
         }
@@ -8808,14 +8851,54 @@ const Pts = struct {
     /// edge brought are folded one by one. A summary is a homomorphism of
     /// the union — Σ(A ∪ B) = Σ(A) ∪ Σ(B) — so a var that is a copy of
     /// another costs one edge per property, not one per site and property.
+    ///
+    /// Every var that copies into `v`, transitively, and has no summary is
+    /// given one first, by a walk over `work` and never by recursion: a chain
+    /// of copies is as long as the program makes it. Then each is fed and
+    /// folded, the farthest from `v` first, so that a summary has what its
+    /// sources hold before it feeds the next. The order changes no fact.
     fn summaryOf(p: *Pts, v: VarId) Allocator.Error!u32 {
         if (p.vars.items[v].summary != none) return p.vars.items[v].summary;
+        const a = p.tmp.allocator();
+        const base = p.work.items.len;
+        defer p.work.shrinkRetainingCapacity(base);
+        try p.newSummary(v);
+        try p.work.append(a, v);
+        var i = base;
+        while (i < p.work.items.len) : (i += 1) {
+            const x = p.work.items[i];
+            // A dead summary is fed nothing (`Summary.dead`).
+            if (p.vars.items[x].top) continue;
+            var e = p.vars.items[x].pred;
+            while (e != none) : (e = p.edges.items[e].next_in) {
+                const from = p.edges.items[e].from;
+                if (p.vars.items[from].summary != none) continue;
+                try p.newSummary(from);
+                try p.work.append(a, from);
+            }
+        }
+        var j = p.work.items.len;
+        while (j > base) {
+            j -= 1;
+            try p.feedSummary(p.work.items[j]);
+        }
+        return p.vars.items[v].summary;
+    }
+
+    /// A summary for var `v`, empty: dead when `v` is `top`.
+    fn newSummary(p: *Pts, v: VarId) Allocator.Error!void {
         const id: u32 = @intCast(p.summaries.items.len);
         const any = try p.newVar();
         if (p.s.in.trace_largest) p.originAt(any, p.originOf(v, .summary_any, none));
         try p.summaries.append(p.tmp.allocator(), .{ .any = any, .dead = p.vars.items[v].top, .of = v });
         p.vars.items[v].summary = id;
-        if (p.vars.items[v].top) return id;
+    }
+
+    /// Var `v`'s new summary, fed by the summaries of the vars that copy
+    /// into `v`, and the sites none of them brought folded into it.
+    fn feedSummary(p: *Pts, v: VarId) Allocator.Error!void {
+        const id = p.vars.items[v].summary;
+        if (p.summaries.items[id].dead) return;
         var e = p.vars.items[v].pred;
         while (e != none) : (e = p.edges.items[e].next_in) try p.linkSummaries(try p.summaryOf(p.edges.items[e].from), id);
         for (p.vars.items[v].sites) |site| {
@@ -8827,11 +8910,22 @@ const Pts = struct {
             }
             if (!covered) try p.foldSite(id, site);
         }
-        return id;
     }
 
-    /// Summary `dst` holds what summary `src` holds, now and later.
+    /// Summary `dst` holds what summary `src` holds, now and later. A link
+    /// waits in `link_queue`, as a join waits in `pending`, while another
+    /// is being made: making one copies into summaries, and a copy may link
+    /// two more, so that links nested by recursion as deep as a chain of
+    /// summaries is long.
     fn linkSummaries(p: *Pts, src: u32, dst: u32) Allocator.Error!void {
+        try p.link_queue.append(p.tmp.allocator(), .{ .src = src, .dst = dst });
+        if (p.linking) return;
+        p.linking = true;
+        defer p.linking = false;
+        while (p.link_queue.pop()) |l| try p.linkNow(l.src, l.dst);
+    }
+
+    fn linkNow(p: *Pts, src: u32, dst: u32) Allocator.Error!void {
         if (src == dst or p.summaries.items[dst].dead) return;
         for (p.summaries.items[src].succs.items) |s| if (s == dst) return;
         try p.summaries.items[src].succs.append(p.tmp.allocator(), dst);
@@ -8841,8 +8935,8 @@ const Pts = struct {
             try p.copy(sp.vals, try p.summaryProp(dst, sp.id));
         }
         try p.copy(p.summaries.items[src].any, p.summaries.items[dst].any);
-        if (p.summaries.items[src].unknown) p.setUnknown(dst);
-        if (p.summaries.items[src].any_written) p.setAnyWritten(dst);
+        if (p.summaries.items[src].unknown) try p.setUnknown(dst);
+        if (p.summaries.items[src].any_written) try p.setAnyWritten(dst);
     }
 
     /// Site `site`, now held by the var of summary `sum`: read whole, its
@@ -8860,7 +8954,7 @@ const Pts = struct {
             p.changed = true;
         }
         if (st.kind != .object) {
-            p.setUnknown(sum);
+            try p.setUnknown(sum);
             return;
         }
         var k: usize = 0;
@@ -8869,25 +8963,52 @@ const Pts = struct {
             try p.copy(pr.vals, try p.summaryProp(sum, pr.id));
         }
         try p.copy(p.sites.items[site].any, p.summaries.items[sum].any);
-        if (p.sites.items[site].any_written) p.setAnyWritten(sum);
+        if (p.sites.items[site].any_written) try p.setAnyWritten(sum);
     }
 
     /// The summary's var for property `id`, made when it is new: what read
     /// the summary reads the new property too, and the summaries this one
-    /// feeds get the property as well.
+    /// feeds get the property as well — each made there in its turn, by a
+    /// walk over `work` and never by recursion along the summaries' links.
     fn summaryProp(p: *Pts, sum: u32, id: u32) Allocator.Error!VarId {
-        const props = &p.summaries.items[sum].props;
-        const at = std.sort.lowerBound(SumProp, props.items, id, orderSumProp);
-        if (at < props.items.len and props.items[at].id == id) return props.items[at].vals;
+        if (p.findSumProp(sum, id)) |v| return v;
+        const v = try p.addSumProp(sum, id);
+        if (p.summaries.items[sum].succs.items.len == 0) return v;
+        const a = p.tmp.allocator();
+        const base = p.work.items.len;
+        defer p.work.shrinkRetainingCapacity(base);
+        try p.work.append(a, sum);
+        while (p.work.items.len > base) {
+            const s = p.work.pop().?;
+            const from = p.findSumProp(s, id).?;
+            var k: usize = 0;
+            while (k < p.summaries.items[s].succs.items.len) : (k += 1) {
+                const succ = p.summaries.items[s].succs.items[k];
+                const to = p.findSumProp(succ, id) orelse made: {
+                    const made = try p.addSumProp(succ, id);
+                    try p.work.append(a, succ);
+                    break :made made;
+                };
+                try p.copy(from, to);
+            }
+        }
+        return v;
+    }
+
+    fn findSumProp(p: *const Pts, sum: u32, id: u32) ?VarId {
+        const props = p.summaries.items[sum].props.items;
+        const at = std.sort.lowerBound(SumProp, props, id, orderSumProp);
+        return if (at < props.len and props[at].id == id) props[at].vals else null;
+    }
+
+    /// A new var for property `id` of summary `sum`: what read the summary
+    /// reads it too.
+    fn addSumProp(p: *Pts, sum: u32, id: u32) Allocator.Error!VarId {
+        const at = std.sort.lowerBound(SumProp, p.summaries.items[sum].props.items, id, orderSumProp);
         const v = try p.newVar();
         if (p.s.in.trace_largest) p.originAt(v, p.originOf(p.summaries.items[sum].of, .summary_prop, id));
         try p.summaries.items[sum].props.insert(p.tmp.allocator(), at, .{ .id = id, .vals = v });
         p.summaryChanged(sum);
-        var k: usize = 0;
-        while (k < p.summaries.items[sum].succs.items.len) : (k += 1) {
-            const succ = p.summaries.items[sum].succs.items[k];
-            try p.copy(v, try p.summaryProp(succ, id));
-        }
         return v;
     }
 
@@ -8895,18 +9016,38 @@ const Pts = struct {
         return std.math.order(id, pr.id);
     }
 
-    fn setUnknown(p: *Pts, sum: u32) void {
+    /// Summary `sum`, and every summary it feeds, may hold anything under
+    /// any key: a walk over `work`, not a recursion along the links.
+    fn setUnknown(p: *Pts, sum: u32) Allocator.Error!void {
         if (p.summaries.items[sum].unknown) return;
-        p.summaries.items[sum].unknown = true;
-        p.summaryChanged(sum);
-        for (p.summaries.items[sum].succs.items) |succ| p.setUnknown(succ);
+        const a = p.tmp.allocator();
+        const base = p.work.items.len;
+        defer p.work.shrinkRetainingCapacity(base);
+        try p.work.append(a, sum);
+        while (p.work.items.len > base) {
+            const s = p.work.pop().?;
+            if (p.summaries.items[s].unknown) continue;
+            p.summaries.items[s].unknown = true;
+            p.summaryChanged(s);
+            for (p.summaries.items[s].succs.items) |succ| if (!p.summaries.items[succ].unknown) try p.work.append(a, succ);
+        }
     }
 
-    fn setAnyWritten(p: *Pts, sum: u32) void {
+    /// Summary `sum`, and every summary it feeds, has a site written under
+    /// an unknown key: as `setUnknown` walks.
+    fn setAnyWritten(p: *Pts, sum: u32) Allocator.Error!void {
         if (p.summaries.items[sum].any_written) return;
-        p.summaries.items[sum].any_written = true;
-        p.summaryChanged(sum);
-        for (p.summaries.items[sum].succs.items) |succ| p.setAnyWritten(succ);
+        const a = p.tmp.allocator();
+        const base = p.work.items.len;
+        defer p.work.shrinkRetainingCapacity(base);
+        try p.work.append(a, sum);
+        while (p.work.items.len > base) {
+            const s = p.work.pop().?;
+            if (p.summaries.items[s].any_written) continue;
+            p.summaries.items[s].any_written = true;
+            p.summaryChanged(s);
+            for (p.summaries.items[s].succs.items) |succ| if (!p.summaries.items[succ].any_written) try p.work.append(a, succ);
+        }
     }
 
     /// The constraint being evaluated depends on summary `sum`'s properties,
@@ -8927,12 +9068,12 @@ const Pts = struct {
     }
 
     /// Site `site` has been written under a key the pass does not know.
-    fn markAnyWritten(p: *Pts, site: u32) void {
+    fn markAnyWritten(p: *Pts, site: u32) Allocator.Error!void {
         const st = &p.sites.items[site];
         if (st.any_written) return;
         st.any_written = true;
         p.siteChanged(site);
-        for (p.sites.items[site].summaries.items) |sum| p.setAnyWritten(sum);
+        for (p.sites.items[site].summaries.items) |sum| try p.setAnyWritten(sum);
     }
 
     /// Whether a guard may narrow what ident node `node` reads (`narrowed`):
@@ -9234,15 +9375,19 @@ const Pts = struct {
         const out = p.loads.items[li].out;
         if (obj.top or obj.prim or id == none) try p.join(out, Val.top_val);
         const fresh = try p.difference(obj.sites, p.loads.items[li].done);
-        p.loads.items[li].done = obj.sites;
+        // What was linked, and what is now: two reads share a cell, and one
+        // may be evaluated with an older, smaller object than the other.
+        if (fresh.len != 0) p.loads.items[li].done = (try p.unionOf(.{ .sites = p.loads.items[li].done }, .{ .sites = fresh })).sites;
         for (fresh) |site| {
-            try p.sites.items[site].loads.append(p.tmp.allocator(), li);
             const st = &p.sites.items[site];
-            if (st.kind != .object or id == none) {
+            // No object, an unknown key or an escaped site: the read is
+            // anything, and nothing is linked. A site that escaped is read
+            // whole by `propagate`, which escapes its properties' values.
+            if (st.kind != .object or id == none or st.escaped) {
                 try p.join(out, Val.top_val);
                 continue;
             }
-            if (st.escaped) try p.join(out, Val.top_val);
+            try p.sites.items[site].loads.append(p.tmp.allocator(), li);
             const pr = try p.prop(site, id);
             if (!pr.read) {
                 pr.read = true;
@@ -9341,7 +9486,7 @@ const Pts = struct {
 
     fn writeAnyOne(p: *Pts, site: u32, value: Val) Allocator.Error!void {
         try p.seeSite(site);
-        p.markAnyWritten(site);
+        try p.markAnyWritten(site);
         try p.join(p.sites.items[site].any, value);
         if (p.sites.items[site].escaped) try p.escape(value);
     }
@@ -9598,6 +9743,9 @@ const Pts = struct {
         p.deps = .empty;
         p.edges = .empty;
         p.edge_set = .empty;
+        p.link_queue = .empty;
+        p.linking = false;
+        p.work = .empty;
         p.summaries = .empty;
         p.pending = .empty;
         p.draining = false;
@@ -9901,7 +10049,7 @@ const Pts = struct {
             // constraints that saw it unset are evaluated again, as `writeAnyOne`
             // wakes them: setting it here alone left a constraint evaluated earlier
             // in the sweep the site escaped in never to see it.
-            p.markAnyWritten(@intCast(i));
+            try p.markAnyWritten(@intCast(i));
             for (p.sites.items[i].props.items) |pr| try p.escape(try p.view(pr.vals));
             try p.escape(try p.view(p.sites.items[i].any));
             if (p.sites.items[i].kind == .func) {
@@ -10381,7 +10529,7 @@ const Pts = struct {
                                 }
                                 if (p.summaries.items[sum].any_written) {
                                     try p.seeSite(site);
-                                    p.markAnyWritten(site);
+                                    try p.markAnyWritten(site);
                                     try p.copy(p.summaries.items[sum].any, p.sites.items[site].any);
                                 }
                             } else {
@@ -12021,4 +12169,51 @@ test "a field summary composes along a copy edge" {
     // A var that goes `top` has a dead summary: nothing more is folded.
     try p.makeTop(v);
     try testing.expect(p.summaries.items[sum_v].dead);
+}
+
+// #487: a field summary is made for every var that copies into the spread
+// one, transitively, and a summary feeds every summary its var copies into.
+// Making them, and carrying a property, an unknown-key write or a site that
+// is no object along them, recursed once per copy, so a chain of copies as
+// long as a program makes it overflowed the stack. On `small_stack`'s
+// stack, a chain of 10 000 copies and a spread of its last var: the summary
+// is made, and what the chain's head gains later reaches it.
+test "a field summary of a long chain of copies is made and fed without recursion" {
+    try @import("../small_stack.zig").run(summaryOfLongChain, .{});
+}
+
+fn summaryOfLongChain() !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    // Site 0, an object whose property 1 holds itself; site 1, a function.
+    try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = try p.newVar() });
+    try p.sites.append(arena, .{ .kind = .func, .module = 0, .node = @fromBackingInt(1), .any = try p.newVar() });
+    try p.addSite((try p.prop(0, 1)).vals, 0);
+    const head = try p.newVar();
+    try p.addSite(head, 0);
+    var last = head;
+    for (0..10_000) |_| {
+        const next = try p.newVar();
+        try p.copy(last, next);
+        last = next;
+    }
+    const sum = try p.summaryOf(last);
+    try testing.expectEqual(@as(usize, 1), p.summaries.items[sum].props.items.len);
+    try testing.expectEqualSlices(u32, &.{0}, (try p.view(p.summaries.items[sum].props.items[0].vals)).sites);
+    // A property the head's site gains later, along every summary.
+    try p.addSite((try p.prop(0, 2)).vals, 0);
+    const later = p.summaries.items[sum].props.items[1];
+    try testing.expectEqual(@as(u32, 2), later.id);
+    try testing.expectEqualSlices(u32, &.{0}, (try p.view(later.vals)).sites);
+    // A write under an unknown key, and a site that is no object.
+    try p.markAnyWritten(0);
+    try testing.expect(p.summaries.items[sum].any_written);
+    try p.addSite(head, 1);
+    try testing.expect(p.summaries.items[sum].unknown);
+    try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(last)).sites);
 }
