@@ -425,9 +425,9 @@ pub const Stats = struct {
     inline_capped: u64 = 0,
     /// Fact 3's sets (`plans/type-directed-points-to.md` slice 0), over
     /// every fixpoint but a safety build's reference (`Pts.fixpoint`): the
-    /// most sites one var held at once; the site words its sets allocated
-    /// (every var's grown set, every union and difference that made a new
-    /// slice); the copy edges and the load cells it made.
+    /// most sites one var held at once; the site words its set table holds
+    /// (`Pts.Sets`: each distinct set once, whichever var, union or
+    /// difference made it); the copy edges and the load cells it made.
     pts_max_set: u64 = 0,
     pts_set_words: u64 = 0,
     pts_edges: u64 = 0,
@@ -8165,6 +8165,12 @@ const Pts = struct {
     linking: bool = false,
     work: std.ArrayList(u32) = .empty,
     summaries: std.ArrayList(Summary) = .empty,
+    /// The site-set table (`backend.md` §9, *The combined solver — Cells*):
+    /// every set a var holds, and every union and difference `Pts` makes, is
+    /// one entry of it, content-addressed, so vars that hold the same sites
+    /// hold one copy, and a batch that grows several of them alike makes one
+    /// new set. Of one fixpoint, in `tmp` (`Sets`).
+    sets: Sets = .{},
     /// The joins that wait (`join`), and whether `drain` is running.
     pending: std.ArrayList(Pending) = .empty,
     draining: bool = false,
@@ -8320,10 +8326,10 @@ const Pts = struct {
     /// throws, so it contributes nothing to what the read may be.
     ///
     /// `sites` is a sorted set that is never changed in place: a join that
-    /// adds a site makes a new slice in the arena and leaves the old one as
-    /// it was, so a `Val` that `view` handed out — a node's value in `vals`,
-    /// an operand a walk holds while it evaluates the next — keeps the set
-    /// it was read as. Growing the set in place shifted, moved or freed the
+    /// adds a site takes the table's entry of the grown set (`Sets`) and
+    /// leaves the old one as it was, so a `Val` that `view` handed out — a
+    /// node's value in `vals`, an operand a walk holds while it evaluates
+    /// the next — keeps the set it was read as. Growing the set in place shifted, moved or freed the
     /// memory such a value still pointed into: a call in a later operand
     /// joins a site into the very parameter an earlier operand read.
     const VSet = struct {
@@ -8356,6 +8362,39 @@ const Pts = struct {
     };
 
     const Pending = struct { v: VarId, val: Val, folded: bool };
+
+    /// A set's id in `Sets`: 0 is the empty set.
+    const SetId = u32;
+
+    /// The site-set table. An entry is a sorted set of sites, stored once
+    /// whichever var or operation made it first; it is never changed or
+    /// freed while the fixpoint runs, so a value read before a join keeps
+    /// the set it was read as. Ids number in solve order, and no fact
+    /// depends on one: every consumer reads the sites, and an id only finds
+    /// an entry or a result the table already made. The maps are only ever
+    /// looked up, never walked, so where an entry lives in memory is no
+    /// answer either.
+    const Sets = struct {
+        /// Per id, its sites (`items[0]`, the empty set, is a placeholder),
+        /// and the next id whose sites hash alike (`by_hash`'s chains).
+        items: std.ArrayList([]const u32) = .empty,
+        chain: std.ArrayList(SetId) = .empty,
+        /// Per content hash, the last id made with it.
+        by_hash: KeyMap(SetHash, SetId) = .empty,
+        /// Per entry, the id its own slice has: a set a var or a value
+        /// already holds is found without reading its sites.
+        by_slice: KeyMap(SetHash, SetId) = .empty,
+        /// Per operation and operand ids, the result: a second var that
+        /// holds what the first held and takes the same batch takes the
+        /// same set, with no work. A filter (*Declared-type filtering of
+        /// fact 3*) is one more operation, of a set and a key.
+        ops: KeyMap(SetOpKey, SetId) = .empty,
+        /// Where an operation's result is built before it is looked up.
+        scratch: std.ArrayList(u32) = .empty,
+    };
+    const SetHash = struct { lo: u32, hi: u32, len: u32 };
+    const SetOp = enum(u32) { join, difference };
+    const SetOpKey = struct { op: u32, a: SetId, b: SetId };
 
     /// A copy edge: `to ⊒ from`, kept while the fixpoint runs. A site or a
     /// flag that joins `from` after the edge was made is joined into `to`
@@ -8519,12 +8558,11 @@ const Pts = struct {
         return o;
     }
 
-    /// A new set of `len` sites was made for var `v` (`Stats.pts_*`); under
+    /// Var `v` took a new set of `len` sites (`Stats.pts_max_set`); under
     /// `Input.trace_largest`, a set larger than any before is noted with
     /// where its var and each of its sites came from.
     fn countSet(p: *Pts, v: VarId, len: usize) Allocator.Error!void {
         const stats = &p.s.stats;
-        stats.pts_set_words += len;
         if (len <= stats.pts_max_set) return;
         stats.pts_max_set = len;
         if (p.s.in.trace_largest) {
@@ -8626,10 +8664,7 @@ const Pts = struct {
 
     /// Site `site` joins var `v`.
     fn addSite(p: *Pts, v: VarId, site: u32) Allocator.Error!void {
-        const one = try p.tmp.allocator().alloc(u32, 1);
-        one[0] = site;
-        p.s.stats.pts_set_words += 1;
-        try p.join(v, .{ .sites = one });
+        try p.join(v, .{ .sites = p.setSites(try p.setOf(&.{site})) });
     }
 
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
@@ -8711,22 +8746,15 @@ const Pts = struct {
             return;
         }
         const old = p.vars.items[v].sites;
-        const added = try p.difference(val.sites, old);
+        var added = try p.difference(val.sites, old);
         if (added.len != 0) {
-            // A new set, never the old one grown (`VSet`).
-            const grown = try p.tmp.allocator().alloc(u32, old.len + added.len);
-            var i: usize = 0;
-            var j: usize = 0;
-            var k: usize = 0;
-            while (i < old.len or j < added.len) : (k += 1) {
-                if (j == added.len or (i < old.len and old[i] < added[j])) {
-                    grown[k] = old[i];
-                    i += 1;
-                } else {
-                    grown[k] = added[j];
-                    j += 1;
-                }
-            }
+            // A new set, never the old one grown (`VSet`): the table's entry
+            // of the union, which every var that held `old` and takes the
+            // same batch shares (`Sets.ops`). The batch the var passes on is
+            // an entry too, so its successors find it by its slice.
+            const batch = try p.setOf(added);
+            if (old.len == 0) added = p.setSites(batch);
+            const grown = p.setSites(try p.unionSets(try p.setOf(old), batch));
             p.vars.items[v].sites = grown;
             try p.countSet(v, grown.len);
             p.varChanged(v);
@@ -8739,35 +8767,140 @@ const Pts = struct {
     }
 
     /// The sites of `a` that are not in `b`, both sorted sets: `a` itself
-    /// when `b` is empty, nothing when `b` holds all of `a`, else a new
-    /// slice. Gaps in `b` are galloped over, as `containsSites` does.
+    /// when `b` is empty, nothing when `b` holds all of `a`, else the
+    /// table's entry of the difference.
     fn difference(p: *Pts, a: []const u32, b: []const u32) Allocator.Error![]const u32 {
         if (a.len == 0 or b.len == 0) return a;
         if (containsSites(b, a)) return &.{};
-        var out: std.ArrayList(u32) = .empty;
-        try out.ensureTotalCapacity(p.tmp.allocator(), a.len);
-        p.s.stats.pts_set_words += a.len;
+        return p.setSites(try p.differenceSets(try p.setOf(a), try p.setOf(b)));
+    }
+
+    // ---- The set table -------------------------------------------------------
+
+    /// The id of the set `sites` holds: the entry whose own slice it is,
+    /// else the entry of its content, made when the table has none.
+    fn setOf(p: *Pts, sites: []const u32) Allocator.Error!SetId {
+        if (sites.len == 0) return 0;
+        if (p.sets.by_slice.get(sliceKey(sites))) |id| return id;
+        return p.intern(sites);
+    }
+
+    fn setSites(p: *const Pts, id: SetId) []const u32 {
+        if (id == 0) return &.{};
+        return p.sets.items.items[id];
+    }
+
+    /// The entry of the sites `content` holds, made when the table has
+    /// none: a copy, since `content` may be `scratch` or a caller's own
+    /// memory. Only an entry's own slice goes in `by_slice`, so a slice
+    /// found there is that entry, and an address is never an answer.
+    fn intern(p: *Pts, content: []const u32) Allocator.Error!SetId {
+        const a = p.tmp.allocator();
+        const t = &p.sets;
+        if (t.items.items.len == 0) {
+            try t.items.append(a, &.{});
+            try t.chain.append(a, none);
+        }
+        const gop = try t.by_hash.getOrPut(a, hashSites(content));
+        var head: SetId = none;
+        if (gop.found_existing) {
+            head = gop.value_ptr.*;
+            var at = head;
+            while (at != none) : (at = t.chain.items[at]) {
+                if (std.mem.eql(u32, t.items.items[at], content)) return at;
+            }
+        }
+        const id: SetId = @intCast(t.items.items.len);
+        gop.value_ptr.* = id;
+        const stored = try a.dupe(u32, content);
+        p.s.stats.pts_set_words += stored.len;
+        try t.items.append(a, stored);
+        try t.chain.append(a, head);
+        try t.by_slice.put(a, sliceKey(stored), id);
+        return id;
+    }
+
+    fn hashSites(sites: []const u32) SetHash {
+        var h: u64 = 0x9E3779B97F4A7C15;
+        for (sites) |site| {
+            h = (h ^ site) *% 0xFF51AFD7ED558CCD;
+            h ^= h >> 29;
+        }
+        return .{ .lo = @truncate(h), .hi = @truncate(h >> 32), .len = @intCast(sites.len) };
+    }
+
+    fn sliceKey(sites: []const u32) SetHash {
+        const at: u64 = @intFromPtr(sites.ptr);
+        return .{ .lo = @truncate(at), .hi = @truncate(at >> 32), .len = @intCast(sites.len) };
+    }
+
+    /// The union of sets `a` and `b`, made once per pair (`Sets.ops`).
+    fn unionSets(p: *Pts, a: SetId, b: SetId) Allocator.Error!SetId {
+        if (a == b or b == 0) return a;
+        if (a == 0) return b;
+        const key: SetOpKey = .{ .op = @backingInt(SetOp.join), .a = @min(a, b), .b = @max(a, b) };
+        if (p.sets.ops.get(key)) |id| return id;
+        const x = p.setSites(a);
+        const y = p.setSites(b);
+        const out = &p.sets.scratch;
+        out.clearRetainingCapacity();
+        try out.ensureTotalCapacity(p.tmp.allocator(), x.len + y.len);
+        var i: usize = 0;
+        var j: usize = 0;
+        while (i < x.len or j < y.len) {
+            if (j == y.len or (i < x.len and x[i] < y[j])) {
+                out.appendAssumeCapacity(x[i]);
+                i += 1;
+            } else if (i == x.len or y[j] < x[i]) {
+                out.appendAssumeCapacity(y[j]);
+                j += 1;
+            } else {
+                out.appendAssumeCapacity(x[i]);
+                i += 1;
+                j += 1;
+            }
+        }
+        const id = try p.intern(out.items);
+        try p.sets.ops.put(p.tmp.allocator(), key, id);
+        return id;
+    }
+
+    /// The sites of set `a` that set `b` lacks, made once per pair
+    /// (`Sets.ops`). Gaps in `b` are galloped over, as `containsSites`
+    /// does.
+    fn differenceSets(p: *Pts, a: SetId, b: SetId) Allocator.Error!SetId {
+        if (a == 0 or b == 0) return a;
+        if (a == b) return 0;
+        const key: SetOpKey = .{ .op = @backingInt(SetOp.difference), .a = a, .b = b };
+        if (p.sets.ops.get(key)) |id| return id;
+        const x = p.setSites(a);
+        const y = p.setSites(b);
+        const out = &p.sets.scratch;
+        out.clearRetainingCapacity();
+        try out.ensureTotalCapacity(p.tmp.allocator(), x.len);
         var at: usize = 0;
-        for (a) |wanted| {
-            if (at < b.len and b[at] < wanted) {
+        for (x) |wanted| {
+            if (at < y.len and y[at] < wanted) {
                 var lo = at + 1;
                 var hi = lo;
                 var step: usize = 1;
-                while (hi < b.len and b[hi] < wanted) {
+                while (hi < y.len and y[hi] < wanted) {
                     lo = hi + 1;
-                    hi += @min(step, b.len - hi);
+                    hi += @min(step, y.len - hi);
                     step = step +| step;
                 }
-                const limit = if (hi < b.len) hi + 1 else b.len;
-                at = lo + std.sort.lowerBound(u32, b[lo..limit], wanted, orderU32);
+                const limit = if (hi < y.len) hi + 1 else y.len;
+                at = lo + std.sort.lowerBound(u32, y[lo..limit], wanted, orderU32);
             }
-            if (at < b.len and b[at] == wanted) {
+            if (at < y.len and y[at] == wanted) {
                 at += 1;
                 continue;
             }
             out.appendAssumeCapacity(wanted);
         }
-        return out.items;
+        const id = if (out.items.len == 0) 0 else try p.intern(out.items);
+        try p.sets.ops.put(p.tmp.allocator(), key, id);
+        return id;
     }
 
     // ---- Copy edges and field summaries ---------------------------------------
@@ -9111,25 +9244,8 @@ const Pts = struct {
         const large = if (a.sites.len >= b.sites.len) a.sites else b.sites;
         const small = if (a.sites.len >= b.sites.len) b.sites else a.sites;
         if (containsSites(large, small)) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
-        var out: std.ArrayList(u32) = .empty;
-        try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
-        p.s.stats.pts_set_words += a.sites.len + b.sites.len;
-        var i: usize = 0;
-        var j: usize = 0;
-        while (i < a.sites.len or j < b.sites.len) {
-            if (j == b.sites.len or (i < a.sites.len and a.sites[i] < b.sites[j])) {
-                out.appendAssumeCapacity(a.sites[i]);
-                i += 1;
-            } else if (i == a.sites.len or b.sites[j] < a.sites[i]) {
-                out.appendAssumeCapacity(b.sites[j]);
-                j += 1;
-            } else {
-                out.appendAssumeCapacity(a.sites[i]);
-                i += 1;
-                j += 1;
-            }
-        }
-        return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = out.items };
+        const sites = p.setSites(try p.unionSets(try p.setOf(a.sites), try p.setOf(b.sites)));
+        return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = sites };
     }
 
     /// Both operands are sorted sets. Adjacent matches walk once; gaps
@@ -9749,6 +9865,9 @@ const Pts = struct {
         p.summaries = .empty;
         p.pending = .empty;
         p.draining = false;
+        // A fresh table, not the old one cleared: a safety build's
+        // reference (`fixpoint`) keeps its own, which `expectSame` reads.
+        p.sets = .{};
         p.loads = .empty;
         p.load_cells = .empty;
         p.load_nodes = .empty;
@@ -12123,6 +12242,46 @@ test "a copy edge carries the difference, and a value read before keeps its site
     try p.makeTop(a);
     try testing.expect((try p.view(c)).top);
     try testing.expect(p.sites.items[5].escaped and !p.sites.items[0].escaped);
+}
+
+// #496: vars that hold the same sites hold one copy (`Pts.Sets`). Two vars
+// a source copies into grow by the same batches and take each grown set
+// the source took, a value read before a growth keeps the set it was read
+// as, and a var given the same sites another way holds the same entry.
+test "points-to vars grown by the same batches share their sets" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const src = try p.newVar();
+    const a = try p.newVar();
+    const b = try p.newVar();
+    try p.copy(src, a);
+    try p.copy(src, b);
+    var before: Pts.Val = .{};
+    var site: u32 = 0;
+    while (site < 64) : (site += 1) {
+        if (site == 32) before = try p.view(a);
+        try p.addSite(src, site);
+        const held = (try p.view(src)).sites;
+        try testing.expectEqual(@as(usize, site + 1), held.len);
+        try testing.expectEqual(held.ptr, (try p.view(a)).sites.ptr);
+        try testing.expectEqual(held.ptr, (try p.view(b)).sites.ptr);
+    }
+    try testing.expectEqual(@as(usize, 32), before.sites.len);
+    for (before.sites, 0..) |x, i| try testing.expectEqual(@as(u32, @intCast(i)), x);
+    // Each of the 64 sets is stored once, not once per var, and so is
+    // each batch of one site but the first, which is the first set.
+    const words: u64 = 64 * 65 / 2 + 63;
+    try testing.expectEqual(words, s.stats.pts_set_words);
+    var all: [64]u32 = undefined;
+    for (&all, 0..) |*x, i| x.* = @intCast(i);
+    const c = try p.newVar();
+    try p.join(c, .{ .sites = &all });
+    try testing.expectEqual((try p.view(a)).sites.ptr, (try p.view(c)).sites.ptr);
+    try testing.expectEqual(words, s.stats.pts_set_words);
 }
 
 // #464: a spread of a var copies through its field summary, and a var that
