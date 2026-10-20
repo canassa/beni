@@ -765,18 +765,21 @@ annotations, the spans with the time each began, the minimum, and `withSink`'s s
 `Task.withLogContext` sets for a function and puts back when it ends, returned or cancelled, as
 `Task.withClock` does for the clock; `Task.currentLogContext` reads it. A fiber started inside
 copies it with the rest of the slots. A call reads the slot once: below the minimum it builds
-nothing. Fixtures, both builds: `run/LogLevels` (every level through `withSink`; an inner
-`withSink`; a child that keeps the sink after `withSink` returns), `run/LogMinimumLevel`,
-`run/LogAnnotationsInherited`, `run/LogSpanLabel` (on a virtual clock, through `logfmt`), and the
-black-box test's line now carries a span and an annotation. **Against Effect v4** (`bench/fiber`,
-`node node.mjs --group=log`, development library build, median of 9 after 3 warm-ups, ns per line,
-load average 6–13): a line below the minimum 3.8 against Effect's `logDebug` 366; a line written to
-a counting sink 66 against `logInfo` to a counting `Logger` 609; the same inside one annotation and
-one span 79 against 622 (`annotateLogs`, `withLogSpan`). No operation is slower. **Bytes**
-(`bench/size.mjs`, the first part's compiler against this one, 522 programs and pages): only the two
-programs that log through the default or a program's sink change, `run/LogDefaultSink` +234 raw and
-+84 brotli in release and `run/LogSetSink` +255 and +81: the slot read and the context each call
-carries. An `Io.run` program that never logs is unchanged. **A budget grant**: the test *ownership
-words: core's are catalogued* runs the ownership stage on all of `core/`, and this part put it 10M
-over 4 300M; the owner granted it 4 750M on 2026-10-20 (dashboard `node-log-q2`), until #514 brings
-it back.
+nothing. That read is a cost every call now pays, which §17.5 prices at two loads; per call, against
+the first part (instructions, development library build, `perf stat`, (count at 2 000 000 calls −
+count at 0) / 2 000 000, the reviewer's count): `Log.info` to a sink that counts 509–512 → 625–628
+(+23%), `Log.debug` below the minimum, with its loop, 100–101 → 140–144 (+40%). Fixtures, both
+builds: `run/LogLevels` (every level through `withSink`; an inner `withSink`; a child that keeps the
+sink after `withSink` returns), `run/LogMinimumLevel`, `run/LogAnnotationsInherited`,
+`run/LogSpanLabel` (on a virtual clock, through `logfmt`), and the black-box test's line now carries
+a span and an annotation. **Against Effect v4** (`bench/fiber`, `node node.mjs --group=log`,
+development library build, median of 9 after 3 warm-ups, ns per line, load average 6–13): a line
+below the minimum 3.8 against Effect's `logDebug` 366; a line written to a counting sink 66 against
+`logInfo` to a counting `Logger` 609; the same inside one annotation and one span 79 against 622
+(`annotateLogs`, `withLogSpan`). No operation is slower. **Bytes** (`bench/size.mjs`, the first
+part's compiler against this one, 522 programs and pages): only the two programs that log through
+the default or a program's sink change, `run/LogDefaultSink` +234 raw and +84 brotli in release and
+`run/LogSetSink` +255 and +81: the slot read and the context each call carries. An `Io.run` program
+that never logs is unchanged. **A budget grant**: the test *ownership words: core's are catalogued*
+runs the ownership stage on all of `core/`, and this part put it 10M over 4 300M; the owner granted
+it 4 750M on 2026-10-20 (dashboard `node-log-q2`), until #514 brings it back.
