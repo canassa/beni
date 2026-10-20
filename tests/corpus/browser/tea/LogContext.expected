@@ -7,7 +7,7 @@
   </main>
 </body>
 -- click #direct
-console.info: saved save=0ms {"user":"7"}
+console.info: saved save=0ms {"user":"7","__proto__":"p"}
 console.debug: a trace line
 console.debug: a debug line
 <body>
