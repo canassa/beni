@@ -8,8 +8,10 @@
 //! this file turns each cast's type into rows: every field NAME of every
 //! record node and every named type the walk reaches. A type variable is
 //! opaque (`boundary.md` §4, *What JavaScript may read of a beni value*), so
-//! the walk stops at one; it does not open a named type's constructors,
-//! whose bodies the backend reads from `Bir`.
+//! the walk stops at one. A `let` can generalise that variable before the
+//! record is known; the copies made while the cast's declaration is solved
+//! are walked too (`Instantiate.CastCopies`). The walk does not open a named
+//! type's constructors, whose bodies the backend reads from `Bir`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -19,6 +21,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Walk = @import("Walk.zig");
 const Solve = @import("Solve.zig");
+const Instantiate = @import("Instantiate.zig");
 
 const Var = TypeStore.Var;
 
@@ -30,12 +33,13 @@ pub fn rows(
     types: *const Types,
     interner: *const InternPool.Global,
     casts: []const Solve.Cast,
+    copies: []const Instantiate.CastCopies,
 ) Allocator.Error![]const Dispatch.Boundary {
     if (casts.len == 0) return &.{};
     var out: std.ArrayList(Dispatch.Boundary) = .empty;
     defer out.deinit(gpa);
     const stack = &stacks.vars;
-    for (casts) |cast| {
+    for (casts, copies) |cast, images| {
         // Every expression is some declaration's, so every use has one.
         if (cast.decl == std.math.maxInt(u32)) {
             if (std.debug.runtime_safety) std.debug.panic("checker invariant: a `Js` cast outside every declaration (checker-v2.md §28)", .{});
@@ -52,6 +56,7 @@ pub fn rows(
             .from => if (func.params.len == 1) func.params[0] else continue,
             .to => func.result,
         });
+        for (images.vars.items) |v| try stack.append(gpa, v);
         while (stack.pop()) |v| {
             const root = store.find(v);
             if (store.mark(root) == seen) continue;

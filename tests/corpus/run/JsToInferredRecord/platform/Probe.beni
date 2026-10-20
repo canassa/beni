@@ -1,0 +1,34 @@
+--! An inferred `Js.to` and an inferred `Js.from` (`boundary.md` §4, *What
+--! JavaScript may read of a beni value*). The record is found after a `let`
+--! generalises the cast. `--release` keeps every field name the read
+--! reaches (`backend.md` §9, *Item 4, taken up*).
+
+import Js
+
+
+foreign pure made : ⊤ → Js.Value
+
+
+foreign pure take : Js.Value → String
+
+
+--| `row` is generalised before its field is read.
+pub missed : ⊤ → String
+missed ⊤ =
+    row = Js.to (made ⊤)
+    row.missed
+
+
+--| `inner` is generalised before its field is read.
+pub buried : ⊤ → String
+buried ⊤ =
+    row = Js.to (made ⊤)
+    inner = row.hole
+    inner.buried
+
+
+--| `read`'s parameter is a type variable at the cast, and a record at the call.
+pub throughFrom : ⊤ → String
+throughFrom ⊤ =
+    read r = take (Js.from r)
+    read { sent = "sent" }

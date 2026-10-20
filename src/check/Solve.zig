@@ -415,12 +415,16 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                     const copy = try s.instantiate.copy(scheme);
                     try s.instantiated(node.region);
                     _ = try s.unify(target, copy, node.region, node.category);
-                    if (s.jsCast(node.region)) |which| try s.casts.append(s.cx.gpa, .{
-                        .inst = node.region,
-                        .copy = copy,
-                        .decl = s.instantiate.decl orelse std.math.maxInt(u32),
-                        .which = which,
-                    });
+                    if (s.jsCast(node.region)) |which| {
+                        const decl = s.instantiate.decl orelse std.math.maxInt(u32);
+                        try s.casts.append(s.cx.gpa, .{
+                            .inst = node.region,
+                            .copy = copy,
+                            .decl = decl,
+                            .which = which,
+                        });
+                        try s.noteCastImage(which, copy, decl);
+                    }
                     if (s.debugUse(node.region)) |which| try s.debugs.append(s.cx.gpa, .{
                         .inst = node.region,
                         .copy = copy,
@@ -690,6 +694,21 @@ fn isBasicsAppend(s: *Solve, inst: Bir.Inst.Index) bool {
     const iface = s.cx.iface(basics);
     if (d.rhs >= iface.values.len) return false;
     return iface.symbols[@backingInt(iface.values[d.rhs].name)] == InternPool.WellKnown.append.symbol();
+}
+
+/// `to`'s result, or `from`'s parameter when it has one. `Instantiate.copy`
+/// records later copies of type variables reachable from it, while `decl`
+/// is solved (checker-v2.md §28).
+fn noteCastImage(s: *Solve, which: Which, copy: Var, decl: u32) Error!void {
+    const func = Walk.function(s.store(), copy) orelse {
+        try s.instantiate.noteCastRoot(decl, null);
+        return;
+    };
+    const relevant: ?Var = switch (which) {
+        .from => if (func.params.len == 1) func.params[0] else null,
+        .to => func.result,
+    };
+    try s.instantiate.noteCastRoot(decl, relevant);
 }
 
 /// Whether the reference at `inst` is core's `Js.from` or `Js.to`: the two

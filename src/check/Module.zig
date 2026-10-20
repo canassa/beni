@@ -869,7 +869,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
     std.mem.sort(Bir.Inst.Index, appends.items, {}, instLessThan);
     // What JavaScript sees through each `Js.from` and `Js.to`, read here
     // for the same reason (checker-v2.md §28).
-    const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items);
+    const boundary = try Boundary.rows(gpa, store, &solver.stacks, solver.cx.types, solver.cx.interner, solver.casts.items, solver.instantiate.cast_copies.items);
     errdefer gpa.free(boundary);
     // The type each `Debug.toString` and `Debug.log` prints, read here for
     // the same reason (checker-v2.md §32).
