@@ -2562,7 +2562,7 @@ it wins. Research 79 measures it.*
 | Thesis piece | Slice 3c |
 |---|---|
 | `init` is a function (Change 4) | **built on every platform** (§22.2; `boundary.md` §9.8.16 (a)), with `beni fmt --migrate-init` |
-| Command constructors that take values (O5) | **built**: `Storage.save`, `Http.send`, `Cmd.log`, `Log.write` until 2026-10-20 (§22.3; `boundary.md` §9.8.16 (b)) |
+| Command constructors that take values (O5) | **built**: `Storage.save`, `Http.send`, `Cmd.log` (`Log.write` until 2026-10-20) (§22.3; `boundary.md` §9.8.16 (b)) |
 | The writers' rows (thesis §3.11) | `swap` **asserted** with `pop`'s row; the others checked (§22.5) |
 | Owned sends (Change 7) | not built: slice 3d (§21 item 1) |
 

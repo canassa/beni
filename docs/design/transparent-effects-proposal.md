@@ -2941,8 +2941,10 @@ revisit (decision sheet C4).
 
 **The browser's `Log` moves into core** (research 48 §4.2: module names are global, so the two
 cannot both exist): `platforms/browser/Log.beni` is removed and `browser-tea` re-exports core's,
-whose `info`, `warn` and `error` have the same signatures and, by the default sink, the same
-output. `boundary.md` §9.8.10 (d) records the move.
+whose `info`, `warn` and `error` have the same signatures and, by the default sink, the same output.
+`boundary.md` §9.8.10 (d) records the move. *Amended 2026-10-20 (#547):* `browser-tea` does not
+re-export it: no platform module has the name once `platforms/browser/Log.beni` is gone, and a
+program sees core's modules without a re-export (`boundary.md` §9.8.15 (b)).
 
 **Fixtures.** `run/LogLevels` (every level through `withSink`, the default minimum dropping `Trace`
 and `Debug`); `run/LogMinimumLevel`; `run/LogAnnotationsInherited` (a spawned child's entries carry
