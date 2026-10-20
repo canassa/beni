@@ -1,0 +1,29 @@
+-- run: a record goes into JavaScript through `Js.from` at a type variable
+-- and comes back through `Js.to` at another closed type (`backend.md` §9,
+-- *Declared-type filtering of fact 3*: a quantifier that crosses at a
+-- `Js.from` makes every type it is instantiated at wild). The `Source`
+-- literal is held by a binding of type `Seen`, and `secret` is read only
+-- through that binding, so a filter that kept the `Source` out of it would
+-- let the release build drop `secret` from the literal. Both builds print
+-- the same.
+import Cast
+import Node
+
+
+type alias Source =
+    label : String
+    secret : Int
+
+
+type alias Seen =
+    secret : Int
+
+
+main : Node.Program
+main =
+    source : Source
+    source = { label = "source", secret = 42 }
+
+    seen : Seen
+    seen = Cast.launder source
+    Node.printLines [ source.label, String.fromInt seen.secret ]

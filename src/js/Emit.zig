@@ -4879,6 +4879,7 @@ const Emitter = struct {
             .entry = entry_call,
             .one_scope = one_scope,
             .trace_largest = e.options.points_to_largest,
+            .rep_keys = if (e.rep_keys) |*k| k else null,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
             .insert_before = if (props.get("insertBefore")) |id| .{
                 .insert_before = id,

@@ -1,0 +1,56 @@
+-- run: the dashboard's `Result.withDefault (Json.decodeValue state) model`
+-- with two models (`backend.md` §9, *Declared-type filtering of fact 3*):
+-- `withDefault` is generic, so its parameter and its result hold both
+-- models' literals and the host's object, and each `replace` binds the
+-- result to a name of its own model's type. `mood` and `level` are read
+-- only from what `replace` returned, and `note` is supplied only by the
+-- host's JSON. Both builds print the same.
+import Host
+import Json
+import Node
+import Schema exposing (Value)
+
+
+type alias Lamp =
+    level : Int
+    mood : String
+
+
+type alias Memo =
+    note : String
+    pinned : Bool
+
+
+replaceLamp : Value, Lamp → Lamp
+replaceLamp state lamp =
+    next : Lamp
+    next = Result.withDefault (Json.decodeValue state) lamp
+    next
+
+
+replaceMemo : Value, Memo → Memo
+replaceMemo state memo =
+    next : Memo
+    next = Result.withDefault (Json.decodeValue state) memo
+    next
+
+
+pinned : Memo → String
+pinned memo = if memo.pinned then "pinned" else "loose"
+
+
+main : Node.Program
+main =
+    kept = replaceLamp (Host.parse "not json") { level = 1, mood = "calm" }
+    sent =
+        replaceLamp (Host.parse "{\"level\": 7, \"mood\": \"bright\"}") { level = 2, mood = "dim" }
+    memo =
+        replaceMemo (Host.parse "{\"note\": \"from the host\", \"pinned\": true}")
+            { note = "", pinned = False }
+    stale = replaceMemo (Host.parse "[]") { note = "local", pinned = False }
+    Node.printLines
+        [ "${kept.mood} ${String.fromInt kept.level}"
+        , "${sent.mood} ${String.fromInt sent.level}"
+        , "${memo.note} ${pinned memo}"
+        , "${stale.note} ${pinned stale}"
+        ]

@@ -1,0 +1,32 @@
+-- run: a helper with a `where a.compare` clause picks between two values of
+-- each of two record types (`backend.md` §9, *Declared-type filtering of
+-- fact 3*): its parameters and its result are generic, its evidence is no
+-- local at all, so every caller's records meet in it, and each caller's
+-- binding of closed type keeps its own. `name` and `weight` are read only
+-- through what `larger` returned. Both builds print the same.
+import Node exposing (Program)
+
+
+type alias Person =
+    age : Int
+    name : String
+
+
+type alias Parcel =
+    weight : Float
+    code : String
+
+
+larger : a, a → a
+    where a.compare : a, a → Order
+larger x y = if x < y then y else x
+
+
+main : Program
+main =
+    older : Person
+    older = larger { age = 30, name = "Ada" } { age = 41, name = "Grace" }
+
+    heavier : Parcel
+    heavier = larger { weight = 2.0, code = "b" } { weight = 1.5, code = "a" }
+    Node.printLines [ older.name, String.fromFloat heavier.weight ]

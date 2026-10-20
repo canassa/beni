@@ -5,7 +5,11 @@
 -- derived `==` and `compare` and by `==` against a constructor, passed as a
 -- function, held in a record that an update leaves alone, nested in another
 -- such type, and core's `Duration`, `Dict` and `Set`, each a type of this
--- kind, through their own modules.
+-- kind, through their own modules. A record held by such a type passes through
+-- a generic function and is read back through a binding of the type, whose
+-- representation key is the record's (`backend.md` §9, *Declared-type
+-- filtering of fact 3*), so the binding keeps the record and the release
+-- build keeps the field only it reads.
 import Dict
 import Duration
 import Node exposing (Program)
@@ -22,6 +26,15 @@ type Box a
 
 type Tagged
     = Tagged (Box String)
+
+
+type alias Spot =
+    row : Int
+    col : Int
+
+
+type Cell
+    = Cell Spot
 
 
 type alias Trip =
@@ -48,6 +61,17 @@ label : Tagged → String
 label (Tagged (Box s)) = s
 
 
+both : a, a, Bool → a
+both x y first = if first then x else y
+
+
+column : Cell → String
+column c =
+    case c of
+        Cell s →
+            String.fromInt s.col
+
+
 yes : Bool → String
 yes b = if b then "yes" else "no"
 
@@ -60,6 +84,12 @@ main =
     renamed = { trip | name = "stroll" }
 
     lengths = List.map [ 1.0, 3.0, 2.0 ] Meters
+
+    cell : Cell
+    cell = both (Cell { row = 1, col = 6 }) (Cell { row = 2, col = 9 }) (List.length lengths > 1)
+
+    boxed : Box Spot
+    boxed = both (Box { row = 3, col = 4 }) (Box { row = 5, col = 8 }) False
 
     longest = List.foldl lengths (Meters 0.0) λm best → if best < m then m else best
     Node.printLines
@@ -77,4 +107,6 @@ main =
         , String.fromInt (Duration.toMillis (Duration.sum (Duration.seconds 1) (Duration.millis 5)))
         , String.join (Dict.keys (Dict.insert (Dict.singleton "b" 2) "a" 1)) ","
         , String.fromInt (Set.size (Set.fromList [ 3, 1, 3 ]))
+        , column cell
+        , String.fromInt (unbox boxed).col
         ]

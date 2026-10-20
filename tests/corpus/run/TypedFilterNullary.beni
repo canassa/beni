@@ -1,0 +1,57 @@
+-- run: a nullary constructor of a type with a parameter is one object at
+-- every instantiation (`backend.md` §4, *A nullary constructor is one
+-- object*), so its site is wild (`backend.md` §9, *Declared-type filtering
+-- of fact 3*): `Empty` is held by a `Slot Box` and a `Slot Crate`, and a
+-- binding of either type must keep it, or its tag would read as the only
+-- other constructor's. Both builds print the same.
+import Node exposing (Program)
+
+
+type Slot a
+    = Empty
+    | Full a
+
+
+type alias Box =
+    width : Int
+
+
+type alias Crate =
+    weight : Int
+    fragile : Bool
+
+
+boxIn : Int → Slot Box
+boxIn n = if n > 0 then Full { width = n } else Empty
+
+
+crateIn : Int → Slot Crate
+crateIn n = if n > 0 then Full { weight = n, fragile = n > 5 } else Empty
+
+
+showBox : Int → String
+showBox n =
+    slot : Slot Box
+    slot = boxIn n
+    case slot of
+        Empty →
+            "no box"
+
+        Full b →
+            "box ${String.fromInt b.width}"
+
+
+showCrate : Int → String
+showCrate n =
+    slot : Slot Crate
+    slot = crateIn n
+    case slot of
+        Empty →
+            "no crate"
+
+        Full c →
+            if c.fragile then "fragile crate" else "crate ${String.fromInt c.weight}"
+
+
+main : Program
+main = Node.printLines [ showBox 0, showBox 3, showCrate 0, showCrate 4, showCrate 9 ]
