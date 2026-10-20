@@ -288,7 +288,10 @@ function that may suspend is emitted in a suspendable form — a comparison on t
 continuation handed to core's fiber runtime (`core/Task.beni`, written in beni over `Js` since 2026-10-02, with `Js.suspending` marking its one parking point; `plans/core-in-beni.md` step 2) when it parks — with a second body,
 `name$s`, for a declaration whose callbacks may or may not suspend; code that cannot suspend is
 emitted byte for byte as before. `Task` has `spawn`, `join`, `scope` and `bracket`; the `node` platform's `Io` has `run`, `sleep`
-and `readFile`; a defect closes every root scope (`boundary.md` §9.8.14). **The bar is Effect v4
+and `readFile`; a defect closes every root scope (`boundary.md` §9.8.14). **Core's `Log` has landed**
+(2026-10-20, #358; proposal §17.11): five levels, `annotate`, `span`, `minimum`, `withSink`,
+`setSink` and `logfmt`, with the context in the fiber's log-context slot; under `Io.run` a `node`
+program writes one `logfmt` line per entry to standard error. **The bar is Effect v4
 parity** (the owner, 2026-10-02): the ledger is [`research/48`](docs/design/research/48-effect-parity-ledger.md),
 the contract `transparent-effects-proposal.md` §17, the slices `plans/effects-plan.md` §8. One
 hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
