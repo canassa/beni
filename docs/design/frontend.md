@@ -1976,7 +1976,7 @@ file's relative path and what it holds. A harness loads a reference file only wh
 names it (research 107 §3.6), so every file under `references/` is named there. `SKILL.md`
 stays under 500 lines.
 
-**The topics**, one file each, each under 200 lines:
+**The topics**, one file each, each under 300 lines (the gate counts):
 
 | File | Holds |
 |---|---|
@@ -1994,8 +1994,9 @@ stays under 500 lines.
 A reference file is for a developer who writes beni, not for one who works on the compiler
 (`.claude/skills/` holds those). It states facts, in ASD-STE100, and names no plan item, slice
 or issue. Its last line is `Sources:` and the design sections the facts come from, so that a
-change to a section finds the file that quotes it. The generated files carry one header line
-that names the command that wrote them.
+change to a section finds the file that quotes it. The generated files' exact bytes — a title
+line, one fixed paragraph that says how to read a type, and the dump in a `text` fence, the dump's
+own module order — are defined once, in the generator `tests/skill_api.zig`, and nowhere else.
 
 **Code blocks are checked, so they are complete.** A fenced block whose info string starts with
 `beni` is a whole module, exactly as a file on disk: imports first, then declarations. The info
@@ -2010,7 +2011,9 @@ string says what the gate does with it:
 A fragment — a type alone, an expression, a line of a block — is not a module and is written
 with another info string (`text`, `json`, `sh`), which nothing checks; so a reference file
 prefers a whole example. The info string `elm` is refused by the gate: beni is not Elm, and the
-highlighter would read `->` and `::` as correct.
+highlighter would read `->` and `::` as correct. A block has no module header, as no beni file
+has; the gate writes block *n* of the folder as `B<n>.beni` in its group's directory, so two
+blocks never share a module name and a block's diagnostics are matched to it by that file.
 
 ### 12.2 Installed beside the binary
 
@@ -2046,13 +2049,18 @@ harnesses agree on one and a cloud agent has none. The help text lists the direc
 2. `<dir>` is created with its missing parents, as `beni new` creates them.
 3. `<dir>/beni` must not exist. When it does — a directory, a file, or a symlink, a dangling one
    included — the command stops: `beni: '<dir>/beni' exists; pass --force to replace it`,
-   exit 2, nothing written. With `--force` the entry is removed first: a symlink is unlinked, a
-   directory is deleted with everything in it, a file is deleted.
-4. Without `--link`, every directory and file of the folder is copied under `<dir>/beni` at the
-   same relative path, files as regular files. A copy that fails midway is removed, so
-   `<dir>/beni` is whole or absent. With `--link`, `<dir>/beni` is one symlink whose target is
-   the folder's absolute path; a linked skill follows every `zig build install`, a copied one is
-   refreshed with `--force`.
+   exit 2, nothing written. With `--force` the entry is removed just before the new one is put in
+   its place (step 4): a symlink is unlinked and never followed, a symlink to a directory
+   included; a directory is deleted with everything in it; a file is deleted.
+4. Without `--link`, the folder is copied to `<dir>/.beni-new` first — every directory and file
+   at the same relative path, files as regular files — and renamed to `<dir>/beni` when it is
+   complete. So `<dir>/beni` is the old folder or the new one, never half of either, and a copy
+   that fails leaves the old one in place; the failed `.beni-new` is removed, and one left by an
+   interrupted run is removed before the copy starts. With `--link`, `<dir>/beni` is one symlink
+   whose target is the folder's absolute path; a linked skill follows every `zig build install`,
+   a copied one is refreshed with `--force`. A link into a Nix store path lasts as long as that
+   path does: a user who links a Nix-installed beni's skill accepts that, as with every link into
+   the store.
 5. On success stdout gets one line: `Installed the beni skill at <dir>/beni` or
    `Linked the beni skill at <dir>/beni`. A harness loads it at its next start or on its reload
    command.
@@ -2060,12 +2068,16 @@ harnesses agree on one and a cloud agent has none. The help text lists the direc
 A write that fails is `beni: cannot write '<path>': <error>`, exit 2, as `beni new`'s is.
 Usage errors, exit 2 and nothing done: `beni skill install` with no directory or with two,
 `beni: skill install needs exactly one directory`; `--link` or `--force` without `install`,
-`beni: --link needs skill install` (`--force` likewise); any other word after `skill`,
-`beni: skill has one subcommand, install, not '<word>'`. The command takes none of §1's common
-options, because none of them means anything to it; each is the ordinary `unknown option`.
+`beni: --link needs skill install` and `beni: --force needs skill install`; a value on either,
+`beni: option '--link' does not take a value`; any other word after `skill`,
+`beni: skill has one subcommand, install, not '<word>'`. The two options may stand anywhere
+among the arguments, and a `--` ends the options, so a directory whose name begins with `-`
+follows it. The command takes none of §1's common options, because none of them means anything
+to it; each is the ordinary `unknown option`.
 
 The command's output depends on the executable's location and its arguments and on nothing
-else, so two runs print the same bytes (rule 5).
+else, so two runs print the same bytes (rule 5). It is specified for Linux and macOS, the hosts
+beni builds on; Windows is not a target of this section.
 
 ### 12.4 Kept current
 
@@ -2074,32 +2086,46 @@ every agent that reads it. Two things keep it so.
 
 **The rule.** A pull request that adds or changes a feature a user sees — syntax, a core module's
 public surface, a platform's API, a diagnostic, a command or a flag — updates `skills/beni/` in
-the same pull request. `CLAUDE.md` states it under *Operational*.
+the same pull request. `CLAUDE.md` (which `AGENTS.md` links to) states it under *Operational*;
+the edit lands with the folder.
 
 **The gate**, `tests/blackbox/skill_test.zig`, runs inside `test-blackbox` and so inside
 `zig build gates`, holds to the budget like every test, and fails when:
 
 1. a `beni` code block of any file under `skills/beni/` does not do what its info string says
-   (§12.1). The blocks of one info string are one group and one `beni check` run, so the cost
-   is one process per group and not per block; the failure names the file and the line of the
-   block;
+   (§12.1). The accepted blocks of one platform are one group and one `beni check
+   --diagnostics=json` run, the refused blocks of that platform another, so the gate runs at
+   most two processes per platform and two for core, whatever the number of blocks; a block's
+   diagnostics are matched to it by its file; the failure names the file and the line of the
+   block, and for a formatting failure what `beni fmt` writes;
 2. a command name of `beni help`'s `commands:` block, or a `--flag` token anywhere in the help
    text, is not in `references/cli.md` in backticks; or a `--flag` in `references/cli.md` is not
    in the help text;
 3. a generated `references/api-*.md` differs from what `zig build skill-api` writes today. The
-   step runs `beni dump --stage=interface` over `core/` and over each platform directory
-   (`--root=platforms/<name> --platform=<name>`), wraps each in the header line and a `text`
-   fence, and writes the files into `skills/beni/references/`. The test regenerates into a
-   temporary directory and compares byte for byte, and its message says to run the step;
+   generator is `tests/skill_api.zig`, built as the tool `zig-out/tools/beni-skill-api`; the
+   step runs it on the gates' ReleaseSafe beni, over `core/` (`--core`) and over each platform
+   directory (`--root=platforms/<name> --platform=<name>`), one `beni dump --stage=interface`
+   per package, and writes the files into `skills/beni/references/`. The packages are a list in
+   the generator — `core` and the five platforms a default build embeds — so a platform added
+   with `-Dplatform=` is not among them. The test runs the same tool with the binary under test
+   (the gates' ReleaseSafe beni; the LLVM one under `-Dllvm`) into a temporary directory and
+   compares byte for byte, and its message says to run the step; an `api-*.md` the generator
+   does not write fails it too;
 4. `SKILL.md`'s frontmatter is not `name: beni` and a `description` of 1 to 1 024 characters,
    or `SKILL.md` has 500 lines or more, or a file under `references/` is not named in
-   `SKILL.md`, or a path named there does not exist;
+   `SKILL.md` as a backticked `references/<path>` token, or such a token names no file, or a
+   hand-written `references/*.md` has 300 lines or more;
 5. `zig-out/share/beni/skills/beni/` and `skills/beni/` differ in any file, name or byte;
 6. the command does not behave as §12.3 says, in a prefix the test builds under its own
    temporary directory: a copy of the installed binary at `<tmp>/bin/beni` beside a copy of the
    folder at `<tmp>/share/beni/skills/beni/`, so the path resolution, the missing-folder case,
    the copy, the link, the refusal and `--force` are each one scenario with exact stdout, stderr
    and exit code.
+
+The gate's cost is counted the first time it runs under `zig build gates`, as every test's is
+(CLAUDE.md, *Every test has a budget*): one `check` per group, one `fmt --check` per accepted
+group, six dumps, and two copies of the binary. A test over the budget is split by package or by
+scenario, never granted an exemption.
 
 ### 12.5 What is not here
 
