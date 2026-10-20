@@ -5252,7 +5252,7 @@ const Emitter = struct {
             const lowered = &(slot.lowered orelse continue);
             const ir = &lowered.ir;
             var any = false;
-            for (ir.node_key) |k| any = any or k != .wild;
+            for (ir.node_keys) |row| any = any or row.key != .wild;
             for (ir.name_key) |k| any = any or k != .wild;
             if (!any) continue;
             const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
@@ -5263,9 +5263,10 @@ const Emitter = struct {
                 try w.print("  name {s}${d} #{d}\n", .{ names.text(n.base), n.tag, k.int() });
             }
             const starts = e.session.store.lineStarts(file);
-            for (ir.node_key, 0..) |k, n| {
+            for (ir.node_keys) |row| {
+                const k = row.key;
                 if (k == .wild) continue;
-                const node: JsIr.Node.Index = @fromBackingInt(@intCast(n));
+                const node = row.node;
                 try w.print("  node {t} ", .{ir.tag(node)});
                 const p = ir.pos(node);
                 if (p == JsIr.Node.no_pos) {

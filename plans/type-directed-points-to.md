@@ -256,9 +256,12 @@ Each slice is one PR with its own issue. `zig build gates` must be green on dago
   `Copy`'s rule, the assertion in `JsIr.nodeKey` read at `Pts.siteOf`; `backend.md` §9's *As
   built* note has what the specification did not foresee (a `NameIndex` is shared by two
   declarations' locals; the artifact keys no declaration). Every golden, run hash and the
-  determinism test unchanged. `bench/corpus` (`--release --library --jobs=1`, ReleaseFast,
-  median of 21): `JsIr` 478 162 bytes → 587 858 (+109 696, +23 %, the two dense columns over
-  24 724 nodes); lowering 3.21 ms → 3.36 ms (+4 %); the merge 0.06 ms.
+  determinism test unchanged. `bench/corpus` (`--release --library --jobs=1`, ReleaseFast):
+  with a dense node column, `JsIr` 478 162 bytes → 587 858 (+23 %) and lowering 3.21 ms → 3.36 ms
+  (median of 21, quiet machine); with `node_keys` sparse (a row per keyed allocation),
+  478 162 → 493 218 (+15 056, +3.1 %, of which the dense `name_key` is most), and the whole build
+  381.1M → 382.5M user instructions (+0.36 %, `perf stat`, five runs; the host was too loaded for
+  wall times then). The merge costs about 0.06 ms.
 
 ### Slice 4 — The filter
 

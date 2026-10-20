@@ -603,12 +603,12 @@ const Mod = struct {
     extra: std.ArrayList(u32),
     string_bytes: std.ArrayList(u8),
     names: std.ArrayList(JsIr.Name),
-    /// The IR's two key columns (`JsIr.node_key`, `JsIr.name_key`), as
-    /// lists `Copy` may extend. A node or a name past the end is wild, so a
-    /// node `addNode` appends and a name `addName` appends have no key
+    /// The IR's keys (`JsIr.node_keys`, `JsIr.name_key`), as lists `Copy`
+    /// may extend. A node with no row and a name past the end are wild, so
+    /// a node `addNode` appends and a name `addName` appends have no key
     /// unless `Copy` gives one its source's (`backend.md` §9,
     /// *Declared-type filtering of fact 3*).
-    node_key: std.ArrayList(JsIr.RepKey),
+    node_keys: std.ArrayList(JsIr.KeyedNode),
     name_key: std.ArrayList(JsIr.RepKey),
     tables: ?*Tables,
     self: JsIr.Symbol.Optional,
@@ -715,16 +715,17 @@ const Mod = struct {
         m.changed();
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
-        if (node.int() < m.node_key.items.len) m.node_key.items[node.int()] = .wild;
+        if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
     /// `key`.
     fn setNodeKey(m: *Mod, gpa: Allocator, node: Index, key: JsIr.RepKey) Allocator.Error!void {
-        const i = node.int();
-        if (i >= m.node_key.items.len) try m.node_key.appendNTimes(gpa, .wild, i + 1 - m.node_key.items.len);
-        m.node_key.items[i] = key;
-        m.ir.node_key = m.node_key.items;
+        // An appended node is past every row, so the rows stay ascending.
+        const rows = m.node_keys.items;
+        std.debug.assert(rows.len == 0 or rows[rows.len - 1].node.int() < node.int());
+        try m.node_keys.append(gpa, .{ .node = node, .key = key });
+        m.ir.node_keys = m.node_keys.items;
     }
 
     /// `n`, a name a `Copy` that keeps its source's keys made afresh, takes
@@ -1081,7 +1082,7 @@ const Spec = struct {
                 .extra = .{ .items = @constCast(ir.extra), .capacity = ir.extra.len, .pointer_stability = .{} },
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len, .pointer_stability = .{} },
                 .names = .{ .items = @constCast(ir.names), .capacity = ir.names.len, .pointer_stability = .{} },
-                .node_key = .{ .items = @constCast(ir.node_key), .capacity = ir.node_key.len, .pointer_stability = .{} },
+                .node_keys = .{ .items = @constCast(ir.node_keys), .capacity = ir.node_keys.len, .pointer_stability = .{} },
                 .name_key = .{ .items = @constCast(ir.name_key), .capacity = ir.name_key.len, .pointer_stability = .{} },
                 .tables = src.tables,
                 .self = src.self,
@@ -1171,7 +1172,7 @@ const Spec = struct {
             m.ir.string_bytes = try m.string_bytes.toOwnedSlice(s.gpa);
             m.ir.names = try m.names.toOwnedSlice(s.gpa);
             // A development build's columns are empty and own nothing.
-            if (m.node_key.capacity != 0) m.ir.node_key = try m.node_key.toOwnedSlice(s.gpa);
+            if (m.node_keys.capacity != 0) m.ir.node_keys = try m.node_keys.toOwnedSlice(s.gpa);
             if (m.name_key.capacity != 0) m.ir.name_key = try m.name_key.toOwnedSlice(s.gpa);
         }
     }
@@ -4891,7 +4892,7 @@ const Spec = struct {
     fn keepsKeys(s: *const Spec, m: *const Mod, stmt: Index) bool {
         _ = s;
         const ir = m.ir;
-        if (ir.node_key.len == 0) return false;
+        if (ir.name_key.len == 0) return false;
         const d = ir.data(stmt);
         const record: ExtraIndex = switch (ir.tag(stmt)) {
             .func_decl, .gen_decl => @fromBackingInt(@intCast(d.rhs)),
