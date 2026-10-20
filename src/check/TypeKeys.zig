@@ -107,6 +107,10 @@ pub const Artifact = struct {
     labels: []const InternPool.Symbol = &.{},
     /// One per `Bir.locals` entry, or empty.
     locals: []const TypeKey = &.{},
+    /// One per `Bir.decls` entry, or empty: a value declaration's scheme when
+    /// it is closed (no quantifier), so a top-level function's return var
+    /// has a filter; `wild` for every other declaration.
+    decls: []const TypeKey = &.{},
     /// Ascending by instruction.
     insts: []const InstKey = &.{},
     /// What the module adds to fact 3's wild set, ascending, no key twice.
@@ -119,9 +123,15 @@ pub const Artifact = struct {
         gpa.free(a.args);
         gpa.free(a.labels);
         gpa.free(a.locals);
+        gpa.free(a.decls);
         gpa.free(a.insts);
         gpa.free(a.wild);
         a.* = .empty;
+    }
+
+    /// The key of declaration `decl`: `wild` when the module has none.
+    pub fn declKey(a: *const Artifact, decl: u32) TypeKey {
+        return if (decl < a.decls.len) a.decls[decl] else .wild;
     }
 
     /// The key of local `local`: `wild` when the module has none.
@@ -225,6 +235,15 @@ pub fn build(in: Input) Error!Output {
             try insts.append(in.scratch, row);
         }
         artifact.insts = try in.gpa.dupe(InstKey, insts.items);
+        // Each value declaration's scheme: a quantifier is a `flex` at the
+        // generalised rank, so a polymorphic scheme is wild.
+        const decls = try in.gpa.alloc(TypeKey, in.bir.decls.len);
+        artifact.decls = decls;
+        for (decls, in.bir.decls, 0..) |*k, d, i| {
+            k.* = .wild;
+            if (!d.kind.isValue() or i >= in.decl_scheme.len) continue;
+            if (in.decl_scheme[i].unwrap()) |v| k.* = try b.keyOf(v);
+        }
     }
 
     var c: Crossing = .{ .in = in, .b = &b };

@@ -1,7 +1,9 @@
 module Polymorphic
-  decl twice
+  key #0 Basics.Int
+  key #1 #0 × #0
+  decl twice wild
     local x wild
-  decl ones
+  decl ones #1
     local both wild
     local y wild
   inst 3 tuple wild

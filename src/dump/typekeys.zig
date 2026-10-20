@@ -7,7 +7,7 @@
 //! module Main
 //!   key #0 Basics.Int
 //!   key #1 { x : #0 }
-//!   decl origin
+//!   decl origin #1
 //!     local p #1
 //!   inst 4 record #1
 //! ```
@@ -82,10 +82,13 @@ pub fn write(
     }
     // What the module adds to the wild set.
     for (keys.wild) |k| try w.print("  wild #{d}\n", .{k.int()});
-    for (bir.decls) |d| {
+    for (bir.decls, 0..) |d, di| {
         const locals = bir.declLocals(d);
-        if (locals.len == 0) continue;
-        try w.print("  decl {s}\n", .{interner.slice(bir.symbol(d.name))});
+        if (!d.kind.isValue() and locals.len == 0) continue;
+        // A value declaration's own type: its scheme when closed.
+        try w.print("  decl {s} ", .{interner.slice(bir.symbol(d.name))});
+        try writeKey(w, keys.declKey(@intCast(di)));
+        try w.writeByte('\n');
         for (locals, d.locals_start..) |l, li| {
             const name = if (l.name.unwrap()) |s| interner.slice(bir.symbols[s]) else "_";
             try w.print("    local {s} ", .{name});

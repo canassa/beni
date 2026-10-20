@@ -5996,6 +5996,7 @@ pub const Artifact = struct {
     args: []const TypeKey,          // every node's children; never wild
     labels: []const Symbol,         // every record node's field labels
     locals: []const TypeKey,        // one per Bir.locals entry, or empty
+    decls: []const TypeKey,         // one per Bir.decls entry, or empty
     insts: []const InstKey,         // one per allocating instruction, ascending
     wild: []const TypeKey,          // what the module adds to the wild set, ascending
 };
@@ -6022,6 +6023,10 @@ unsolved type); a record whose row does not end closed; a `foreign type` other t
 `Value`, `Html`, a fiber); and any type with a wild part. Every key of a module of the core package
 or of a platform is wild in this version, as is every key of a module checked silently or with an
 error: its artifact is empty.
+
+**The declarations.** A value declaration's key is its scheme's when the scheme is closed — no
+quantifier, nothing wild — and `wild` otherwise; it is what a top-level function's return var is
+filtered by, as a lambda's `result` is a lambda's. Every other declaration's key is `wild`.
 
 **The allocating instructions** are a record literal, a record update, a tuple, a list literal, a
 lambda and a constructor application (a `call` whose callee is a constructor). Each row's `key` is
@@ -6063,7 +6068,8 @@ build would make its output depend on whether a development build had warmed the
 `--roundtrip-dispatch` round-trips the artifact too.
 
 **The dump.** `dump --stage=typekeys` (hidden) prints a module's nodes, `key #<n> …`, the keys it
-adds to the wild set, `wild #<n>`, each declaration's locals, `local <name> #<n>` or `wild`, then
+adds to the wild set, `wild #<n>`, each value declaration's key, `decl <name> #<n>` or `wild`, and its locals, `local <name>
+#<n>` or `wild`, then
 the instruction rows, `inst <index> <tag> #<n>`, with `result #<n>` for a lambda; a module with no
 keys prints `every key wild`. `dump --stage=raw` marks a crossing quantifier `crosses`. The hidden
 `check --type-keys` prints the typekeys dump for every source module, which is how

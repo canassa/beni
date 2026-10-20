@@ -2,9 +2,10 @@ module Extensible
   key #0 String.String
   key #1 Basics.Int
   key #2 { name : #0, x : #1 }
-  decl getX
+  decl getX wild
     local r wild
-  decl setX
+  decl setX wild
     local r wild
+  decl useBoth #1
   inst 18 record_update wild
   inst 24 record #2
