@@ -751,8 +751,10 @@ module of its name, so a browser program still uses the browser's `Log`. Fixture
 development build of each of the 87 `Io.run` programs grows by 2.7–4.0 kB raw (630–990 brotli):
 `Log`, and the `String` and `Basics` functions it uses, are reached through the sink. Its release
 build drops the unread sink but keeps `core/List.beni`'s top-level `isPlain`, an `impure`
-initialiser of a module that reachability reached first: most grow by 22–28 raw bytes (−27 to +41
-with the renaming), and brotli moves by −37 to +38 (#511). For the same reason, `logfmt`'s two
-patterns stay inside its functions: as top-level values, their `impure` initialisers stayed in every
-`Io.run` program too. The log context (`annotate`, `span`, `minimum`, `withSink`) and the
-measurement against Effect's `logDebug` are the next part.
+initialiser of a module that reachability reached first: most grow by 22–28 raw bytes, and brotli
+moves by −37 to +38 (#511). The range is −27 to +41: the renaming, and in 3 programs `List.done`
+too, which the optimiser no longer inlines into its one loop, because `logfmt`'s `List.map` is a
+second caller when it decides. For the same reason, `logfmt`'s two patterns stay inside its
+functions: as top-level values, their `impure` initialisers stayed in every `Io.run` program too.
+The log context (`annotate`, `span`, `minimum`, `withSink`) and the measurement against Effect's
+`logDebug` are the next part.
