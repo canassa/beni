@@ -5832,8 +5832,9 @@ renumbered.
 2. **`buffered` and `drain` are not shared.** Cloudflare's `WebSocket` has no `bufferedAmount` and
    no back-pressure signal (workerd `web-socket.c++:900-903`), and an answer of 0 there is a
    wrong answer. On `browser` and `node`, `buffered` is a back-pressure signal, not one unit: the
-   page counts the bytes of the text of messages not yet sent, with no frame headers, and the
-   count changes only between tasks; the server counts the bytes in Node's queue for the socket,
+   page answers the host's `bufferedAmount`, the UTF-8 bytes of the text of messages not yet sent,
+   with no frame headers, a count that changes only between tasks — and answers 0 itself once the
+   connection has ended, where `bufferedAmount` keeps counting; the server counts the bytes in Node's queue for the socket,
    frame headers included, and **not the kernel's send buffer**, which Linux lets grow to 4 MiB
    first (`tcp_wmem`; measured: 3 927 040 bytes on loopback before Node queued one byte). So a
    tick that skips a player whose `buffered` is over a limit skips only after that much backlog,
@@ -5877,7 +5878,8 @@ renumbered.
    from there. Two components that need two connections use two keys.
 10. **What the server sees of the page's 1003.** The page cannot send 1003 ((j)), so it closes with
     no code, and the server sees 1005. The page reports 1003 to its own program. For a binary
-    message, the two sides therefore do not report one code.
+    message, the two sides therefore do not report one code: a shared module's arm for it is 1003
+    on the page and 1005 on the server.
 11. **`connect`'s acquire does not wait.** `Task.bracket`'s acquire is uninterruptible
     (`core/Task.beni`), so `connect` makes the socket in the acquire and waits for the open in the
     use, where a cancellation reaches the wait.
@@ -5905,14 +5907,23 @@ renumbered.
     that Node gives them, ends that connection with 1006: `ECONNRESET`, `EPIPE`, `ETIMEDOUT`,
     `ENETUNREACH`, `EHOSTUNREACH`, `EHOSTDOWN`, `ENONET`, `ENOPROTOOPT`, `ECONNREFUSED`, `ENOTSUP`
     (libuv's name for errno 95, which the kernel calls `EOPNOTSUPP`), `EPROTO`, `EACCES`,
-    `ECONNABORTED` and `ENETDOWN`. Any other code is a defect, as (i) says. `ENOTCONN` is not in
-    the list: Node ignores it at shutdown (`net.js:684`), so a socket never emits it.
+    `ECONNABORTED` and `ENETDOWN`, and `ENETRESET`, which macOS and the BSDs report for a
+    connection that a network reset broke. Any other code is a defect, as (i) says: `ENOBUFS`,
+    for one, is the machine's lack of buffers, not one client's failure. `ENOTCONN` is not in the
+    list: Node ignores it at shutdown (`net.js:684`), so a socket never emits it. A `write` to a
+    socket that Node has ended or destroyed would fail with `ERR_STREAM_WRITE_AFTER_END` or
+    `ERR_STREAM_DESTROYED`; the platform tests the socket first, so the program gets
+    `Err NotOpen` and Node is not called.
 16. **The platform adds its `error` listener in the `upgrade` event itself**, before it checks the
     handshake or calls the program's handler. An upgraded socket arrives with none, so a reset
-    while the handler decides is otherwise an uncaught exception.
+    while the handler decides is otherwise an uncaught exception. The upgrade's request has no
+    body to read, and the platform adds no listener to it: an `error` on it is a defect.
 17. **A client that ends TCP with no close frame ends the session.** An upgraded socket is half
     open (`allowHalfOpen: true`): after the client's FIN only `end` fires, and the socket stays
-    writable. The platform destroys it on `end` and ends the connection with 1006.
+    writable. On `end`, the platform ends the connection with 1006, unless a close frame was
+    already received (then the end is that frame's), and ends the socket with `destroySoon`, so a
+    close frame this side is still writing is flushed first. Messages that arrived before the FIN
+    are still read before the end.
 18. **After a close frame is sent or received, reading goes on and data frames are dropped.** A
     paused socket sees no close frame, FIN or RST: without this rule, every such close ends at
     the 5-second limit with 1006. Messages that arrive after this side sent its close frame are
@@ -5953,8 +5964,8 @@ renumbered.
     2³² is over every `maxMessage`: the codec tests the high 32 bits first and never depends on a
     double's precision.
 25. **A ping flood is bounded.** While more than 64 KiB wait to be sent, the server answers no
-    ping at once: it keeps the latest ping's data and answers that one when its buffer drains, as
-    RFC 6455 §5.5.3 allows.
+    ping at once: it keeps only the latest ping's data, drops the earlier ones, and answers the
+    latest when its buffer drains, as RFC 6455 §5.5.3 allows.
 26. **The siblings meet by value.** `Server.js` and `WebSocket.js` cannot import each other
     (`backend.md` §2): the upgrade's record, which `Server.js` makes and `WebSocket.js` takes,
     carries the socket, the `head` bytes and the functions each side gives the other, as
