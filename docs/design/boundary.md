@@ -2906,6 +2906,7 @@ as JSON, `BadBody` otherwise; decoding it into a type waits on schemas' parse (`
 superseded by §9.8.12, HTTP version 2; `Nav` and `Tea.application` are §9.8.13's.)*
 *(Amended 2026-10-12: `onAnimationFrame`, with `onAnimationFrameDelta` and their direct forms, is
 §9.8.18's; `Browser.nextFrame` stays owed, for the reason given there.)*
+*(Amended 2026-10-20: `Ws` is §9.11's `WebSocket`, on the page and on the `node` server.)*
 
 #### 9.8.9 The rest of the answers
 
@@ -5334,7 +5335,483 @@ as bytes (#335); a request body size limit (#336); cancelling a handler when its
 (#337); signals, so `SIGTERM` closes the server gracefully (#338); outbound HTTP on `node` (#339);
 TLS, HTTP/2, an API for WebSocket and `upgrade` and for `100-continue` (today Node answers both
 by itself, (c)), trailers, a Unix socket address and configuring Node's timeouts (#340). Raw `node:net`, routing, command-line arguments, environment
-variables and file writes are #331's later slices.
+variables and file writes are #331's later slices. *(Amended 2026-10-20: the WebSocket part of #340 — `upgrade`, and an API
+for a WebSocket — is §9.11.)*
+
+### 9.11 WebSocket, in a page and on the `node` server (2026-10-20)
+
+*Added 2026-10-20, for issues #524 (the page) and #340 (its WebSocket part). Status: proposed. The
+shape of the API is the owner's decision; (n) lists the two questions on the dashboard
+(`ws-q1`, `ws-q2`) and the recommendation each section follows until they are answered.* One
+design covers both sides of a connection, so a text message and a close mean the same thing in a
+page and on a server. The page side is a module of `browser`, re-exported by `browser-tea`; the
+server side is a module of `node` and an addition to `Http.Server` (§9.10). The external
+`snake-arena` game is the first user: its server sends a state message to each player 20 to 30
+times per second and receives small input messages ((m)).
+
+The model is the host's own API (the WHATWG `WebSocket` interface, RFC 6455) and Effect v4's
+`Socket` (`references/effect`, `packages/effect/src/unstable/socket/Socket.ts` at the pinned
+commit), not an Elm package: elm-lang/websocket was withdrawn in 0.19. Its names (`send`,
+`listen`) are kept for the command and the subscription, as §9.8.17 (b) keeps Elm's names for
+the wrappers. Research 45 §4.3 sketched this API, and W52 (§9.8.9) settled its one question: a
+model may hold the socket, because every operation on a closed socket is total.
+
+**(a) The common surface.** Both platforms have a module named `WebSocket` with these
+declarations, with the same names, types and meaning. A module that imports `WebSocket` and uses
+only these declarations checks under `browser`, `browser-tea` and `node`, so a full-stack program
+can share one protocol module between its page and its server.
+
+```elm
+-- module WebSocket (browser, re-exported by browser-tea; and node)
+
+pub foreign type Socket
+pub eq : Socket, Socket → Bool         -- identity: one connection is equal only to itself
+
+pub type alias Close =
+    { code : Int       -- 1000 normal, 1001 going away, 1005 no code, 1006 no close frame, …
+    , reason : String  -- "" when there is none
+    }
+
+pub type WriteError
+    = NotOpen          -- the connection is not open: it is still connecting, closing or closed
+
+pub type CloseError
+    = InvalidCode Int  -- a code this side may not send, (c) step 4 and (f)
+    | ReasonTooLong    -- a reason longer than 123 bytes of UTF-8
+
+pub read : Socket → Result Close String           -- suspends until a message, or the end
+pub write : Socket, String → Result WriteError ⊤  -- impure, never waits
+pub close : Socket, Close → Result CloseError ⊤   -- impure, never waits
+pub buffered : Socket → Int                        -- impure: bytes written and not yet sent
+pub protocol : Socket → String                     -- impure: the subprotocol in use, "" for none
+```
+
+- **`read socket`** answers the oldest text message that no one has read: `Ok text`. When the
+  connection has ended and every message received before the end has been read, it answers
+  `Err close`, and it answers the same `Err close` to every later call. While no message waits
+  and the connection is open, it suspends. Fibers that read one socket at the same time get the
+  messages in the order they began to wait. A cancelled reader leaves the list of waiters, and
+  no message is lost (`transparent-effects-proposal.md` §17.1 item 1).
+- **`write socket text`** sends `text` as one text message and answers `Ok ⊤`. It never waits:
+  the message joins the host's send buffer. When the connection is not open, it sends nothing and
+  answers `Err NotOpen`. The host sends a lone surrogate of `text` as U+FFFD, on both sides (the
+  `USVString` conversion of the browser, and `Buffer.from(text, "utf8")` on Node).
+- **`close socket { code, reason }`** starts the closing handshake: it sends a close frame with
+  that code and reason, and from that moment `write` answers `Err NotOpen`. A code this side may
+  not send is `Err (InvalidCode code)`, and a reason longer than 123 bytes of UTF-8 is
+  `Err ReasonTooLong`; both are found by a test of the value before the host is called. A
+  connection that is closing or closed already is not changed, and the answer is `Ok ⊤`.
+- **`buffered socket`** is the number of bytes that `write` accepted and the host did not send
+  yet: the browser's `bufferedAmount`, and Node's `socket.writableLength`. It is how a program
+  sees back-pressure ((h)).
+- **`protocol socket`** is the subprotocol the server chose in the handshake, or `""`.
+- **`eq`** compares two sockets by identity. So `==` works on a model that holds a
+  `Maybe Socket`, and `model.socket == Nothing` checks. `static-dispatch-spike.md` §3.5 lists
+  handles with no `eq` "since nothing needs it"; a model that holds a socket needs it.
+
+**What `Close` says.** `Close` tells why a connection ended, by these rules, in this order:
+
+1. The peer sent a close frame first: its code and its reason. A close frame with no code is
+   1005 and `""` (RFC 6455 §7.1.5).
+2. This side sent a close frame first (`close`, the end of its owner, `Server.close`): the code
+   and the reason of the close frame that the peer sent in answer. A peer usually repeats the
+   code it received. This is what the browser's `close` event reports.
+3. This side failed the connection because the peer broke a rule ((f), (j)): the code that this
+   side sent, and `""`. The server sends 1002, 1003, 1007 or 1009. The page fails a connection
+   only for a binary message, and reports 1003 for it, though the host does not let it send that
+   code ((j)).
+4. The connection ended with no close frame from the peer, or the closing handshake timed out:
+   1006 and `""`.
+
+The meaning of every code is RFC 6455 §7.4 and the IANA registry. A program matches on the
+codes it knows; 4000–4999 are the application's own.
+
+**(b) The page: the API.** `browser`'s `WebSocket` has the common surface and these:
+
+```elm
+pub type ConnectError
+    = BadUrl String       -- the URL does not parse relative to the page, has another scheme, or a fragment
+    | BadProtocol String  -- a subprotocol that is not a token, or that is given twice
+    | Blocked             -- the host refused the connection at once (`SecurityError`)
+    | Unreachable         -- the connection failed before it opened
+
+-- the direct form (§9.8.11 (a))
+pub connect : String, List String, (Socket → a) → Result ConnectError a    -- suspends
+
+-- The Elm Architecture's forms
+pub type Event
+    = Opened Socket
+    | Received String
+    | Closed Close
+    | Failed ConnectError
+
+pub listen : String, List String, (Event → msg) → Sub msg
+pub send : Socket, String, (WriteError → msg) → Cmd msg
+pub disconnect : Socket, Close, (CloseError → msg) → Cmd msg
+```
+
+**`connect url protocols use`** opens a connection, waits until it is open, calls
+`use socket`, and answers `Ok` with what `use` answers. The socket belongs to the call: when
+`use` returns, or when the calling fiber is cancelled, the platform closes an open socket with
+1000 and `""`, and stops a socket that is still connecting. `connect` does not wait for the
+closing handshake; the host finishes it. A connection that fails before it opens is
+`Err Unreachable`, and `use` is not called. A program that needs a time limit on the open
+writes `Task.timeout` around the call.
+
+**`listen url protocols tag`** is the subscription. While its key — the URL as written and the
+protocols — is in the set, the platform holds one connection, and every declaration of that key
+gets each event through its own tagger (§9.8.5). The events of one connection are, in order:
+
+- `Opened socket`, once, when the connection opens. From then on `write` works on `socket`, so
+  `update` keeps it in the model and gives it to `send`.
+- `Received text`, once for each text message, in the order the server sent them.
+- At the end, exactly one of `Closed close` (the connection opened first) or `Failed error` (it
+  never opened). Nothing comes after it.
+
+A declaration that joins a key that is live already gets the events from then on: `Opened` is
+not sent again, so the declaration that holds the socket in the model is the one that was there
+when the connection opened.
+
+A subscription only listens, so it is a `Sub.on` listener and needs no fiber (§9.8.5's
+amendment): a page that uses `listen` and `send` reaches no fiber runtime through them. When the
+key leaves the set, the listener is removed at once, and the platform closes an open socket with
+1000 and `""` (or stops a connecting one). After a defect, `Hosted`'s `Task.onShutdown` function
+removes the listener in the same way (§9.8.14 (a)). Every message of a socket that `listen`
+opened goes to the subscription, so `read` on that socket answers only the end.
+
+**`send socket text failed`** is `write` when the command runs, and **`disconnect socket close
+failed`** is `close` when the command runs. Each sends `failed error` only when the operation
+failed, as `Storage.save` does (§9.8.16 (b)), and each is a `Now` command, with no fiber
+(§9.8.11 (b)). They take values (§9.8.16 (b)): the socket and the text, never a function that
+reads the model.
+
+**Reconnecting** is the program's decision, as Effect leaves it to `Effect.retry`. The platform
+never opens a second connection for a key by itself. A program that sees `Closed` or
+`Failed Unreachable` removes the key from its subscriptions, waits, and puts the key back:
+
+```elm
+subscriptions model =
+    case model.link of
+        Waiting _ →
+            Sub.none
+
+        _ →
+            WebSocket.listen "/arena" [] Socket
+
+
+update msg model =
+    case msg of
+        Socket (WebSocket.Opened socket) →
+            ( { model | link = Up socket }, Cmd.none )
+
+        Socket (WebSocket.Received text) →
+            ( { model | arena = Protocol.decode text model.arena }, Cmd.none )
+
+        Socket (WebSocket.Closed _) →
+            ( { model | link = Waiting 1 }, retryAfter 1 )
+
+        Socket (WebSocket.Failed _) →
+            ( { model | link = Waiting (next model.link) }, retryAfter (next model.link) )
+
+        Retry →
+            ( { model | link = Connecting }, Cmd.none )
+
+        Turn direction →
+            case model.link of
+                Up socket →
+                    ( model, WebSocket.send socket (Protocol.turn direction) Unsent )
+
+                _ →
+                    ( model, Cmd.none )
+
+        Unsent _ →
+            ( model, Cmd.none )
+
+
+retryAfter : Int → Cmd Msg
+retryAfter attempt = Cmd.perform λsend →
+    Time.sleep (Time.millis (500 * attempt))
+    send Retry
+```
+
+The key must be out of the set for one render, so that the next render starts a new
+connection: the set is computed once per render (§9.8.5). A wait does that, since the message
+that ends it arrives in a later task. A program that reconnects at once without a wait changes
+the key instead: `"/arena?attempt=${n}"`.
+
+**(c) The page: what each operation does, and every failure.** Each failure that the WHATWG
+standard documents is one constructor. Each is found by a test of the value before the host is
+called, except `SecurityError`, which only the constructor can report (rule 9; `Http`'s steps
+1–4 in §9.8.12 (b) are the model).
+
+1. **The URL** is parsed by `new URL(url, document.baseURI)` inside `Js.catchIf`, which takes
+   only a `TypeError`: `Err (BadUrl url)`. A relative URL is therefore allowed, as the current
+   standard allows it, also in a host that is older than that change. The scheme `http:` becomes
+   `ws:` and `https:` becomes `wss:`. Any other scheme than those four is `BadUrl url`, and so is
+   a URL with a fragment (the constructor's `SyntaxError` for both).
+2. **Each protocol** must be an HTTP token (RFC 9110's `tchar`), and no protocol may appear twice
+   (compared as written): else `Err (BadProtocol protocol)`, the constructor's `SyntaxError`.
+3. **The constructor**, `new WebSocket(href, protocols)`, runs inside `Js.catchIf`, which takes
+   only a `DOMException` named `SecurityError`: `Err Blocked`. A browser throws it for a socket
+   that the page may not open, for example an insecure `ws:` socket from an `https:` page.
+   Anything else that the constructor throws is a defect. `binaryType` is set to
+   `"arraybuffer"`, so that a binary message needs no `Blob` read ((j)).
+4. **`close`** may send the code 1000 or a code from 3000 to 4999; any other code is
+   `Err (InvalidCode code)`, which the host reports as `InvalidAccessError`. The reason is
+   measured in UTF-8 bytes after the `USVString` conversion.
+5. **`write`** calls `send` only when `readyState` is `OPEN`. In `CONNECTING` the host throws
+   `InvalidStateError`, and in `CLOSING` or `CLOSED` it drops the message with no error; both are
+   `Err NotOpen` here, so a message is never dropped without an answer.
+
+| The host's event | Is |
+|---|---|
+| `open` | `Opened socket`; `connect` calls `use` |
+| `message` with a string | `Received text`, or a message for `read` |
+| `message` with an `ArrayBuffer` | (j): the platform fails the connection |
+| `error` | nothing: the standard always fires `close` after it, and `close` carries the result. The host gives a page no detail of a failure, on purpose, so a refused handshake, a server that is down, a TLS failure and a blocked port are all one failure |
+| `close` before `open` | `Failed Unreachable`, or `Err Unreachable` from `connect` |
+| `close` after `open` | `Closed { code, reason }` from the event, or the end for `read` |
+
+**(d) The page: who owns a socket.** A socket belongs to the call of `connect` that opened it, or
+to the key of `listen` that opened it, and it lives as long as its owner:
+
+| The owner stops | What the platform does |
+|---|---|
+| `use` returns | closes an open socket with 1000 and `""` |
+| the fiber that called `connect` is cancelled (`Restart`, `Cmd.cancel`, a scope's end, a defect's teardown) | the same: `connect` is a `Task.bracket`, and its release closes the socket (§9.8.14 (a)) |
+| the key of `listen` leaves the set | removes the listener and closes the socket, in that render |
+| a defect stops the page | `Hosted`'s `onShutdown` function removes the listener and closes the socket |
+
+A socket that is still connecting is stopped with `close()`, with no code, which the standard
+allows. After the owner stops, no event of that socket reaches the program, and the model may
+keep the socket: every operation on it is total.
+
+**(e) The server: the upgrade.** `Http.Server` (§9.10) gains a second way to listen:
+
+```elm
+-- module Http.Server (node), additions
+pub type alias Handlers =
+    { request : Request → Response   -- every request that is not a WebSocket upgrade
+    , upgrade : Request → Upgrade    -- every request that asks for a WebSocket
+    }
+
+pub listenWith : Address, Handlers → Result ListenError Server
+
+pub type Upgrade                     -- opaque: the answer to a request for a WebSocket
+pub accept : (Socket → ⊤) → Upgrade
+pub acceptWith : { protocol : Maybe String, maxMessage : Int }, (Socket → ⊤) → Upgrade
+pub refuse : Response → Upgrade
+
+pub protocols : Request → List String   -- the subprotocols the client offered, in order
+```
+
+`Socket` is `WebSocket.Socket`. `listen address handler` does not change: it has no upgrade
+handler, so a request for a WebSocket is an ordinary request, as today (§9.10 (c)).
+
+```elm
+main : Program
+main = Io.run λ⊤ →
+    arena = Arena.make ⊤
+    _ = Task.spawn λ⊤ → Arena.tick arena
+    case Server.listenWith { host = "127.0.0.1", port = 8080 } { request = page, upgrade = join arena _ } of
+        Err error →
+            Node.exitWith (describe error) 1
+
+        Ok server →
+            Server.wait server
+
+
+join : Arena, Request → Upgrade
+join arena request =
+    if request.path == "/arena" then
+        Server.accept (play arena _)
+    else
+        Server.refuse (Server.text 404 "no such socket")
+
+
+play : Arena, Socket → ⊤
+play arena socket =
+    id = Arena.add arena socket
+    Task.onExit (λ⊤ → inputs arena id socket) λ_ → Arena.remove arena id
+
+
+inputs : Arena, Int, Socket → ⊤
+inputs arena id socket =
+    case WebSocket.read socket of
+        Ok text →
+            Arena.input arena id text
+            inputs arena id socket
+
+        Err _ →
+            ⊤
+```
+
+**Which requests are upgrades.** Node 24's `shouldUpgradeCallback` routes a request to
+`upgrade` only when the program gave `listenWith` and the request's `upgrade` header is
+`websocket`, without case. Every other request, with another `upgrade` header too, reaches
+`request` as an ordinary request. The platform then checks the handshake (RFC 6455 §4.2.1):
+the method is `GET`, `connection` holds the token `upgrade`, `sec-websocket-key` is the base64
+of 16 bytes, and `sec-websocket-version` is `13`. A handshake that fails a check never reaches
+the program: the platform answers 400, or 426 with `sec-websocket-version: 13` for another
+version, and ends the connection.
+
+**The answer.** The platform calls `upgrade request` in a fiber of the server's scope, as it
+calls a request handler.
+
+- `refuse response` writes `response` as an HTTP/1.1 answer on the connection, with
+  `connection: close`, and ends the connection. The rules of §9.10 (d) apply: an invalid
+  response is a 500 with a line on standard error.
+- `accept session` answers `101 Switching Protocols` with `sec-websocket-accept` and no
+  subprotocol, then calls `session socket` in the same fiber. `acceptWith { protocol, maxMessage }`
+  also names the subprotocol, which must be one of `protocols request`, and sets the largest
+  message the session accepts, in bytes ((f)). `accept` is `acceptWith { protocol = Nothing,
+  maxMessage = 1048576 }`. A protocol that the client did not offer is an invalid answer: 500,
+  and a line on standard error, as in §9.10 (d), since a browser fails such a handshake.
+
+The platform negotiates no extension: it ignores `sec-websocket-extensions`, so no message is
+compressed. Bytes that the client sent after its handshake, in the same packet (Node's `head`),
+are the first bytes of the connection.
+
+**(f) The server: a session, and the protocol rules.** A session is `session socket`, in the
+fiber of the upgrade. The common surface works on `socket` as (a) says; the codes that the
+server may send with `close` are 1000 to 1003, 1007 to 1014 and 3000 to 4999 (RFC 6455 §7.4 and
+the IANA registry), and `close` with any other code is `Err (InvalidCode code)`. The platform
+reads and writes RFC 6455 frames itself in `WebSocket.js`, a sibling of `node`'s `WebSocket`
+module, with `node:crypto` for the handshake and no package:
+
+- It sends each message as one unmasked frame. It joins a fragmented message from the client
+  before `read` sees it, and it answers each ping with a pong that carries the ping's data.
+  Control frames between fragments are allowed. A pong is ignored. The program sees no control
+  frame.
+- It **fails the connection with 1002** (a protocol error) for a frame that is not masked, a set
+  RSV bit, a reserved opcode, a control frame longer than 125 bytes or not final, a continuation
+  with no message to continue, a new message before the last one is final, a 64-bit length with
+  its high bit set, a close frame of one byte, and a close code that RFC 6455 does not allow on
+  the wire (below 1000, 1004 to 1006, 1015 to 2999, 5000 and above).
+- It **fails the connection with 1007** for a text message, or a close reason, that is not valid
+  UTF-8 (`buffer.isUtf8`, so nothing is caught).
+- It **fails the connection with 1009** for a message longer than `maxMessage`, as soon as the
+  frame headers show it: the platform does not keep the bytes.
+- It **fails the connection with 1003** for a binary message ((j)).
+
+To fail the connection, the platform sends a close frame with that code and ends the TCP
+connection without reading more (RFC 6455 §7.1.7). `read` answers the messages that arrived
+before the fault, then `Err { code, reason = "" }` with that code ((a), rule 3).
+
+**The closing handshake.** When the client sends a close frame first, the platform answers with
+a close frame with the same code (none when the client sent none), ends the TCP connection, and
+`read` answers `Err` with the client's code and reason. When the server sends one first, the
+platform waits for the client's answer, then ends the TCP connection. When no answer arrives
+within 5 seconds, the platform destroys the connection and `read` answers 1006.
+
+**(g) The server: lifetimes.** A WebSocket connection belongs to its session, and the session
+belongs to the server's scope, as a request handler does (§9.10 (b)):
+
+| When | The connection |
+|---|---|
+| `session` returns | an open connection is closed with 1000 and `""`; the platform finishes the handshake on its own, within the 5 seconds |
+| the server's owner ends, or is cancelled | the session fibers are cancelled and every connection is destroyed at once, with no close frame, as every HTTP connection is (§9.10 (b)). Nothing keeps the process alive |
+| `Server.close` | the server stops accepting, and each open WebSocket connection is closed with 1001 and `""` (going away). A session sees the client's answer as the end of `read`. A session that `accept`s after `close` gets a connection that the platform closes with 1001 at once |
+| `Server.wait` | returns when the server has closed, every response is written and every WebSocket connection has ended |
+
+Node's `closeAllConnections` does not reach an upgraded socket, and Node's `close` callback
+waits for one (measured, Node 24.19), so the platform keeps its own set of open WebSocket
+connections and destroys them itself on cancellation.
+
+**(h) Back-pressure.** `write` never waits, on either side, because the browser has no way to
+wait for its send buffer. A sender that can go faster than its peer reads sees it in
+`buffered`: the game's tick skips a player whose `buffered socket` is over a limit, and the next
+tick sends the newer state. The server has one more operation, which the page cannot have:
+
+```elm
+pub drain : Socket → ⊤      -- node only: suspends until `buffered socket` is 0, or the connection has ended
+```
+
+`drain` waits for Node's `drain` event of the socket. A sender of many messages writes and then
+drains. The other direction is the platform's: when the messages that the server received and
+`read` did not take hold more than 64 KiB, the platform stops reading the TCP connection, and it
+reads again when `read` takes them. A slow session therefore slows its client through TCP, and
+the memory that the server holds for one connection stays bounded, at about `maxMessage` and
+64 KiB more. A session that
+never calls `read` sees no close from its client until a `write` fails: the connection ends with
+1006.
+
+**(i) The server: every failure that Node documents.**
+
+| Operation | Node's failure | Becomes |
+|---|---|---|
+| the handshake | a request that fails a check of (e) | 400, or 426 for another version; the program is not called |
+| the handshake | a protocol in `acceptWith` that the client did not offer | 500 and a line on standard error |
+| the handshake | the client went away before the 101 is written | the session does not start: `upgrade`'s answer is dropped |
+| the connection | `error` with `ECONNRESET`, `EPIPE` or `ETIMEDOUT` | the connection ended with no close frame: `read` answers 1006 |
+| the connection | `error` with any other code | thrown again: a defect, which stops the process (§9.10 (f)) |
+| a frame | a fault of (f) | the connection fails with 1002, 1003, 1007 or 1009 |
+| `write` | the connection is not open (`socket.writable` is false, or a close frame was sent or received) | `Err NotOpen`, tested before Node is called |
+| `close` | a code or a reason this side may not send | `Err (InvalidCode code)` or `Err ReasonTooLong`, tested before Node is called |
+
+A defect in `upgrade` or in a session stops the process, as a defect in a handler does (§9.10
+(f)).
+
+**(j) Binary messages are a later slice.** beni has no `Bytes` type yet (§9.8.12's *Where this
+departs*, #335). Binary messages arrive with it, under the same API: `read` and `Received` stay
+text, and a binary form is added beside them. Until then a binary message is a message this side
+cannot accept, which RFC 6455 §7.4.1 names 1003. The server fails the connection with 1003. The
+page cannot send 1003 (the host allows only 1000 and 3000–4999), so it closes the socket with no
+code, and the program sees `Closed { code = 1003, reason = "" }` at once, by rule 3 of (a); no
+later event of that socket reaches it. On both sides the platform writes one line: to standard
+error on the server, and with `console.warn` in the page, in both builds.
+
+**(k) Order and determinism.** One fiber runs at a time (§17.1 item 3). The messages of one
+connection reach `read`, or the subscription, in the order the peer sent them. The page delivers
+a subscription's events where a fiber's resumption would land (§9.8.5's amendment, point 2), so
+an event keeps its place among commands, fibers and other subscriptions. The server starts a
+session per accepted upgrade in the order the upgrades arrive, as it starts request handlers
+(§9.10 (g)).
+
+**(l) How the tests drive it.**
+
+- **The page.** The page driver scripts the page's `WebSocket` as it scripts `fetch`, in both
+  DOMs. Each `new WebSocket` is logged as it is made, `(socket <n>: <url> <protocols>)`, and stays
+  connecting until a step answers it. The steps: `socket <n> open ["<protocol>"]`, `socket <n>
+  message "<text>"`, `socket <n> binary <bytes>`, `socket <n> close <code> "<reason>"` (the
+  server's close frame: the event, clean) and `socket <n> fail` (`error`, then `close` with 1006,
+  not clean). The page's own calls are logged: `(socket <n> sent: "<text>")` and
+  `(socket <n> close: <code> "<reason>")`. The fixtures are in `tests/corpus/browser/tea/`.
+- **The server.** A `run/` fixture's `.requests` script (§9.10 (h)) gains WebSocket steps that
+  the driver's own small RFC 6455 client runs: open a socket by name on a path, send a text
+  message, read the next message or the close, send a close frame, send a raw frame for each
+  fault of (f), stop reading, and drop the TCP connection. Each is printed in the transcript as a
+  request is.
+- **Both together** — the demonstration of #524: a server program and a page program in one
+  fixture, the page loaded under the page driver with the host's real `WebSocket`, connected to
+  the server the serve driver started. Its kind and its steps are specified with its slice.
+
+**(m) The game's load, measured.** The slices measure what the game does: a server with 100
+players, each sent a 1 KiB state 30 times per second while it sends 5 small inputs per second;
+the server's CPU time per message sent, and the time from a tick to the last client's read. In
+the page, the cost of one received message from the host's event to `update` (happy-dom in Node,
+as §9.8.11's commands are measured), and the page's bytes (`bench/size.mjs`, `--release`,
+brotli). A cost that a profile shows — a copy of a message, an encoding per player — is fixed or
+reported with its number.
+
+**(n) The owner's decisions.**
+
+- **`ws-q1`, the API of (a)–(d).** *Recommended*: as written, which keeps §9.8.17's rule: the
+  wrappers take Elm's names (`send`, `listen`), and the direct forms take other names (`read`,
+  `write`, Effect's and the WHATWG `WebSocketStream`'s), so the names that a shared module uses
+  are the same on both sides. *The other choice*: the direct forms take the host's names
+  (`send`, `receive`), and the command takes a new name.
+- **`ws-q2`, the server's upgrade of (e).** *Recommended*: a second handler in `listenWith`,
+  which answers `accept session` or `refuse response`. `Request`, `Response` and `listen` do not
+  change. *The other choice*: a request handler accepts the upgrade itself, which needs a field
+  in `Request` that names the connection, and so changes the record that #331 settled.
+
+**(o) Not in this slice.** Each gets an issue when this section lands: binary messages (j); the
+`permessage-deflate` extension; pings that the server sends to find a client that is gone;
+settings for the 5-second closing time and the 64 KiB read buffer; a WebSocket client on `node`
+(Node 24 has the WHATWG `WebSocket`, so `browser`'s module could serve it); the
+`browser-inline` platform, which has no fibers, though `listen` needs none; and the Cloudflare
+Workers platform (#526), whose server side gives `upgrade` and the common surface the same shape.
 
 ## Appendix — what is deliberately not done
 
