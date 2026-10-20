@@ -2783,6 +2783,10 @@ pub const Lowerer = struct {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
+                // The declaration's own arrow takes its key (checker-v2.md §36,
+                // the declarations), so its return var has a filter: not a
+                // suspendable twin, nor an arrow evidence parameters lead.
+                if (variant == .direct and evidence == 0 and !own_suspends) if (l.in.rep_keys) |keys| try l.keyArrow(arrow, keys.declKey(l.in.module, index));
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, own_suspends))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
             },
@@ -2797,9 +2801,9 @@ pub const Lowerer = struct {
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @fromBackingInt(@intCast(ld.rhs)), p, l.functionSuspends(body));
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
-                // The lambda's own arrow, unless evidence parameters lead it
-                // and it is no longer a function of the lambda's type.
-                if (evidence == 0) try l.keyNode(body, arrow, arrow.int());
+                // The declaration's arrow, as `.params`' is: the lambda's
+                // type, which is the declaration's.
+                if (variant == .direct and evidence == 0) try l.keyNode(body, arrow, arrow.int());
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, l.functionSuspends(body)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
             },
@@ -4776,7 +4780,20 @@ pub const Lowerer = struct {
             .object, .array, .arrow => {},
             else => return,
         }
-        const key = keys.instKey(l.in.module, inst);
+        // A function that may suspend answers a parked fiber where it
+        // stops, not a value of its result.
+        if (l.bir.instTag(inst) == .lambda and l.functionSuspends(inst)) return;
+        try l.setNodeKey(value, keys.instKey(l.in.module, inst));
+    }
+
+    /// A top-level declaration's own arrow takes its key: no instruction
+    /// makes it.
+    fn keyArrow(l: *Lowerer, arrow: Node.Index, key: JsIr.RepKey) !void {
+        try l.setNodeKey(arrow, key);
+    }
+
+    /// `value` takes `key` unless it has one.
+    fn setNodeKey(l: *Lowerer, value: Node.Index, key: JsIr.RepKey) !void {
         if (key == .wild) return;
         const i = value.int();
         if (i >= l.node_keys.items.len) try l.node_keys.appendNTimes(l.scratch, key_unset, i + 1 - l.node_keys.items.len);

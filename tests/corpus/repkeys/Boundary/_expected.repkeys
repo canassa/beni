@@ -5,9 +5,13 @@ key #3 Basics.Int
 key #4 { label : #0, size : #3 }
 key #5 { name : #0 } wild
 key #6 List.List #0 wild
+key #7 #2 → #0
+key #8 #4 → #0
 module Boundary
   name m$1 #2
   name o$1 #4
+  node arrow 27:14 #7
+  node arrow 31:18 #8
   node object 36:34 #5
   node object 36:30 #1
   node object 36:9 #2

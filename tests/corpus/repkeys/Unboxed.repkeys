@@ -7,6 +7,14 @@ key #5 #2 → #2
 key #6 #2 × #1
 key #7 String.String wild
 key #8 List.List #7 wild
+key #9 #0 → #2 is #5
+key #10 #1 → #3 is #16
+key #11 #3 → #2 is #5
+key #12 #2 → #6
+key #13 #6 → #1
+key #14 #1 → #4
+key #15 #4 → #1
+key #16 #1 → #2
 module Unboxed
   name w$1 #2
   name p$2 #2
@@ -15,12 +23,20 @@ module Unboxed
   name q$1 #2
   name ps$1 #4
   name rest$3 #4
+  node arrow 27:5 #5
   node object 33:14 #2
+  node arrow 33:10 #16
   node object 37:11 #2
+  node arrow 37:11 #5
   node object 37:11 #2
+  node arrow 42:5 #5
   node object 48:16 #2
   node arrow 48:8 #5
   node object 52:10 #6
+  node arrow 52:10 #12
+  node arrow 56:19 #13
   node object 60:27 #2
   node array 60:12 #4
+  node arrow 60:12 #14
+  node arrow 65:5 #15
   node array 76:9 #8

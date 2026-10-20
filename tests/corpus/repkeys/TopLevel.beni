@@ -1,0 +1,31 @@
+-- repkeys: a top-level function's own arrow takes its declaration's key
+-- (checker-v2.md §36, the declarations), the closed scheme the checker
+-- found, so its return var has a filter as a lambda's does: `step`'s
+-- arrow keys `Model, Int → Model`, and so does `twice`'s, written as a
+-- lambda. `same` is polymorphic and its arrow has no key. Each is called
+-- twice, so lowering keeps it a function of its own.
+import Node
+
+
+type alias Model =
+    count : Int
+
+
+step : Model, Int → Model
+step m n = { m | count = m.count + n }
+
+
+twice : Model, Int → Model
+twice = λm n → step (step m n) n
+
+
+same : a → a
+same x = x
+
+
+main : Node.Program
+main =
+    a = same (step { count = 1 } 2)
+    b = same (twice a 3)
+    c = twice b 4
+    Node.printLines [ String.fromInt a.count, String.fromInt b.count, String.fromInt c.count ]
