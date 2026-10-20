@@ -152,6 +152,23 @@
 //   fail <n>                    reject the `n`-th request with `new
 //                               TypeError("Failed to fetch")`, the Fetch
 //                               standard's network error
+//   socket <n> open ["<protocol>"]
+//                               the `n`-th WebSocket the page made opens,
+//                               with that subprotocol (default none)
+//   socket <n> message "<text>" the server sends a text message
+//   socket <n> binary <bytes>   the server sends a binary message of that
+//                               many bytes
+//   socket <n> close <code> "<reason>"
+//                               the server's close frame: `close`, clean
+//   socket <n> fail             the connection fails: `error`, then `close`
+//                               with 1006, not clean
+//   socket <n> error-only       the connection fails as WebKit fails one:
+//                               `error`, and no `close`
+//   socket <n> buffered <bytes> set the socket's `bufferedAmount`
+//   socket blocked              the next `new WebSocket` throws a
+//                               `SecurityError`
+//   sockets                     log `(sockets: <n>)`, the sockets the page
+//                               made and has not closed
 //   throws <step>               any step above, which must make the page
 //                               throw: each uncaught exception is the line
 //                               `(threw: <its first line>)` instead of the
@@ -183,6 +200,11 @@
 // `(fetch <n> aborted: <the reason's name>)`. A `data:` URL is the host's
 // own `fetch`, not numbered or logged. A request still pending when the
 // script ends fails the run, as an uncaught exception does.
+//
+// The page's `WebSocket` is scripted too (docs/design/boundary.md §9.11
+// (l)): each socket is logged as it is made, `(socket <n>: <path>
+// [<protocols>])`, and stays connecting until a `socket` step answers it;
+// what the page sends and closes is logged as it happens.
 //
 // The page never leaves its document. A navigation it starts to another
 // document — `location.assign`, `replace` or `reload`, a write to
@@ -421,6 +443,96 @@ function prelude() {
       else signal.addEventListener("abort", aborted, { once: true });
     });
   };
+  // The page's `WebSocket` is scripted too (docs/design/boundary.md §9.11
+  // (l)): each socket is numbered and logged as it is made, and stays
+  // connecting until a `socket <n> open` or `socket <n> fail` step answers
+  // it. What the page sends and closes is logged; what the server sends is
+  // a step. The constructor and `send` and `close` check their arguments as
+  // the standard says, so a platform that hands the host something it
+  // refuses meets the host's own exception.
+  const sockets = [];
+  record.sockets = sockets;
+  record.blockSocket = false;
+  const socketPath = (href) => {
+    const where = new URL(href);
+    return where.host === location.host ? where.pathname + where.search : href;
+  };
+  const tokenPattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+  class ScriptedSocket extends EventTarget {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    static CLOSING = 2;
+    static CLOSED = 3;
+    constructor(url, protocols = []) {
+      super();
+      let target;
+      try {
+        target = new URL(url, document.baseURI);
+      } catch (error) {
+        if (!(error instanceof TypeError)) throw error;
+        throw new DOMException(`The URL '${url}' is invalid.`, "SyntaxError");
+      }
+      if (target.protocol === "http:") target.protocol = "ws:";
+      if (target.protocol === "https:") target.protocol = "wss:";
+      if (target.protocol !== "ws:" && target.protocol !== "wss:") throw new DOMException(`The URL's scheme must be either 'http', 'https', 'ws', or 'wss'.`, "SyntaxError");
+      if (target.href.includes("#")) throw new DOMException("The URL contains a fragment identifier.", "SyntaxError");
+      const list = typeof protocols === "string" ? [protocols] : [...protocols];
+      for (const [i, p] of list.entries()) {
+        if (!tokenPattern.test(p) || list.indexOf(p) !== i) throw new DOMException(`The subprotocol '${p}' is invalid.`, "SyntaxError");
+      }
+      if (record.blockSocket) {
+        record.blockSocket = false;
+        record.log.push(`(socket blocked: ${socketPath(target.href)})`);
+        throw new DOMException("The operation is insecure.", "SecurityError");
+      }
+      this.url = target.href;
+      this.readyState = 0;
+      this.protocol = "";
+      this.extensions = "";
+      this.bufferedAmount = 0;
+      this.binaryType = "blob";
+      this.n = sockets.length + 1;
+      sockets.push(this);
+      record.log.push(`(socket ${this.n}: ${socketPath(this.url)}${list.length === 0 ? "" : ` ${JSON.stringify(list)}`})`);
+    }
+    send(data) {
+      if (this.readyState === 0) throw new DOMException("Still in CONNECTING state.", "InvalidStateError");
+      const text = String(data);
+      if (this.readyState !== 1) {
+        // The standard drops it, and counts it as buffered.
+        this.bufferedAmount += new TextEncoder().encode(text).length;
+        record.log.push(`(socket ${this.n} dropped: ${JSON.stringify(text)})`);
+        return;
+      }
+      record.log.push(`(socket ${this.n} sent: ${JSON.stringify(text)})`);
+    }
+    close(code = undefined, reason = undefined) {
+      if (code !== undefined && code !== 1000 && !(code >= 3000 && code <= 4999)) {
+        throw new DOMException(`The code must be either 1000, or between 3000 and 4999. ${code} is neither.`, "InvalidAccessError");
+      }
+      if (reason !== undefined && new TextEncoder().encode(reason).length > 123) {
+        throw new DOMException("The message must not be greater than 123 bytes.", "SyntaxError");
+      }
+      if (this.readyState >= 2) return;
+      record.log.push(`(socket ${this.n} close${code === undefined ? "" : `: ${code} ${JSON.stringify(reason ?? "")}`})`);
+      if (this.readyState === 0) {
+        // Closing a socket that is still connecting fails the connection:
+        // `error`, then `close` with 1006, as a task of the host's would.
+        this.readyState = 2;
+        queueMicrotask(() => this.ended(1006, "", false));
+        return;
+      }
+      this.readyState = 2;
+    }
+    ended(code, reason, clean) {
+      this.readyState = 3;
+      if (!clean) this.dispatchEvent(new Event("error"));
+      const event = new Event("close");
+      Object.defineProperties(event, { code: { value: code }, reason: { value: reason }, wasClean: { value: clean } });
+      this.dispatchEvent(event);
+    }
+  }
+  globalThis.WebSocket = ScriptedSocket;
   // The page's entropy is a fixed sequence (an LCG from 1), so a program
   // that seeds `Random` from `crypto.getRandomValues` is deterministic.
   let entropy = 1;
@@ -788,6 +900,53 @@ function step(s) {
       }
       return null;
     })();
+  }
+  if (s.command === "socket") {
+    const harness = globalThis.__beniHarness;
+    if (s.selector === "blocked") {
+      harness.blockSocket = true;
+      return null;
+    }
+    const socket = harness.sockets[s.n - 1];
+    if (socket === undefined) return `the page made no socket ${s.n}`;
+    if (s.action === "open") {
+      if (socket.readyState !== 0) return `socket ${s.n} is not connecting`;
+      socket.readyState = 1;
+      socket.protocol = s.text ?? "";
+      socket.dispatchEvent(new Event("open"));
+      return null;
+    }
+    if (s.action === "message" || s.action === "binary") {
+      if (socket.readyState === 0 || socket.readyState === 3) return `socket ${s.n} is not open`;
+      // The standard drops a message that arrives while the page closes.
+      if (socket.readyState === 2) {
+        harness.log.push(`(socket ${s.n} is closing: the host drops the message)`);
+        return null;
+      }
+      const data = s.action === "message" ? s.text : socket.binaryType === "arraybuffer" ? new ArrayBuffer(s.bytes) : new Blob([new Uint8Array(s.bytes)]);
+      const event = new Event("message");
+      Object.defineProperty(event, "data", { value: data });
+      socket.dispatchEvent(event);
+      return null;
+    }
+    if (s.action === "buffered") {
+      socket.bufferedAmount = s.bytes;
+      return null;
+    }
+    if (socket.readyState === 3) return `socket ${s.n} is closed`;
+    if (s.action === "close") socket.ended(s.code, s.text, true);
+    else if (s.action === "fail") socket.ended(1006, "", false);
+    else {
+      // WebKit fails a connection with `error` alone, and no `close`.
+      socket.readyState = 3;
+      socket.dispatchEvent(new Event("error"));
+    }
+    return null;
+  }
+  if (s.command === "sockets") {
+    const open = globalThis.__beniHarness.sockets.filter((socket) => socket.readyState < 2).length;
+    globalThis.__beniHarness.log.push(`(sockets: ${open})`);
+    return null;
   }
   if (s.command === "hash") {
     const oldURL = location.href;
@@ -1228,6 +1387,7 @@ if (stepsPath !== undefined) {
     const line = throws ? written.slice("throws ".length).trim() : written;
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
+    if (line === "sockets") return void steps.push({ line: written, where, command: "sockets", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
     if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store" && s.command !== "element"))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
@@ -1352,6 +1512,42 @@ if (stepsPath !== undefined) {
           s.body = JSON.parse(body[1]);
           headers(body[2]);
         }
+      }
+    } else if (command === "socket") {
+      if (selector === "blocked") {
+        if (argument !== undefined) usage(`${where}: \`socket blocked\` takes nothing more`);
+      } else {
+        const a = (argument ?? "").match(/^(open|message|binary|buffered|close|fail|error-only)(?:\s+(.*))?$/);
+        if (!/^[1-9][0-9]*$/.test(selector) || a === null) {
+          usage(`${where}: \`socket\` takes \`blocked\`, or a socket's number and \`open\`, \`message\`, \`binary\`, \`buffered\`, \`close\`, \`fail\` or \`error-only\``);
+        }
+        s.n = Number(selector);
+        s.action = a[1];
+        const rest = a[2];
+        const json = (text) => {
+          try {
+            const value = JSON.parse(text ?? "");
+            return typeof value === "string" ? value : undefined;
+          } catch (error) {
+            if (!(error instanceof SyntaxError)) throw error;
+            return undefined;
+          }
+        };
+        if (s.action === "open") {
+          s.text = rest === undefined ? undefined : json(rest);
+          if (rest !== undefined && s.text === undefined) usage(`${where}: \`socket <n> open\` takes at most the subprotocol as a JSON string`);
+        } else if (s.action === "message") {
+          s.text = json(rest);
+          if (s.text === undefined) usage(`${where}: \`socket <n> message\` takes the text as a JSON string`);
+        } else if (s.action === "binary" || s.action === "buffered") {
+          if (!/^[0-9]+$/.test(rest ?? "")) usage(`${where}: \`socket <n> ${s.action}\` takes a number of bytes`);
+          s.bytes = Number(rest);
+        } else if (s.action === "close") {
+          const c = (rest ?? "").match(/^([0-9]+)\s+("(?:[^"\\]|\\.)*")$/);
+          if (c === null) usage(`${where}: \`socket <n> close\` takes a code and the reason as a JSON string`);
+          s.code = Number(c[1]);
+          s.text = JSON.parse(c[2]);
+        } else if (rest !== undefined) usage(`${where}: \`socket <n> ${s.action}\` takes nothing more`);
       }
     } else if (command === "flush") {
       s.more = argument === undefined ? [] : argument.split(/\s+/);
