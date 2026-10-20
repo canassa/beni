@@ -7,9 +7,12 @@
 --! when the last response is written. It exists because the `node`
 --! platform has no signals yet (canassa/beni#338): until it does, Ctrl-C
 --! kills the process with its connections open, and a test needs a clean
---! stop. The program prints its one line when it stops: a `node` program
---! writes standard output only through the `Program` it ends with
---! (canassa/beni#358).
+--! stop.
+--!
+--! When the server listens, it logs the address on standard error, as one
+--! `logfmt` line (`Log`, under `Io.run`). It prints its one line on
+--! standard output when it stops: a `node` program writes standard output
+--! only through the `Program` it ends with.
 
 import Api
 import Config
@@ -17,6 +20,7 @@ import Deferred exposing (Deferred)
 import Files
 import Http.Server as Server exposing (Request, Response, Server)
 import Io
+import Log
 import Node exposing (Program)
 import Ref exposing (Ref)
 import Route
@@ -32,6 +36,7 @@ main = Io.run λ⊤ →
 
         Ok server →
             _ = Deferred.complete self server
+            Log.info "listening on ${url (Server.address server)}"
             Server.wait server
             Node.print "todo server stopped"
 
@@ -54,6 +59,13 @@ handle self store request =
 
         rest →
             Files.serve request.method rest
+
+
+-- The address as a URL: an IPv6 host goes in brackets.
+url : Server.Address → String
+url address =
+    host = if String.contains address.host ":" then "[${address.host}]" else address.host
+    "http://${host}:${String.fromInt address.port}"
 
 
 cannotListen : Server.ListenError → String

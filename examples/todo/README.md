@@ -38,8 +38,14 @@ node out/_main.mjs
 
 Open http://127.0.0.1:8080/ in a browser.
 
-The server prints nothing while it runs. It prints one line when it stops. To
-stop it, send `POST /api/shutdown`, or press Ctrl-C:
+When the server listens, it writes one line on standard error:
+
+```text
+timestamp=2026-10-20T16:30:00.000Z level=INFO message="listening on http://127.0.0.1:8080"
+```
+
+It prints one line on standard output when it stops. To stop it, send
+`POST /api/shutdown`, or press Ctrl-C:
 
 ```sh
 curl -X POST http://127.0.0.1:8080/api/shutdown
@@ -72,8 +78,6 @@ method on a known path is 405 with an `allow` header.
 - **No binary files.** The server reads files as text (`Io.readFile`) and serves
   `.html`, `.mjs`, `.js`, `.map`, `.json`, `.css`, `.svg` and `.txt`. An image
   or a font is 404 until the server has bodies as bytes (canassa/beni#335).
-- **No line while it runs.** A `node` program writes standard output only
-  through the `Program` it ends with (canassa/beni#358).
 - **No signal handling.** Ctrl-C kills the process with its connections open.
   `POST /api/shutdown` is the clean stop until `node` has signals
   (canassa/beni#338).
