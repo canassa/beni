@@ -905,8 +905,9 @@ then takes what `run(main)` returns, writes its `default` as the default export,
 named export per name the app's `beni.json` lists under `"exports"` (`frontend.md` §10.1), each the
 answer of the result's `exports(name)`. The platform declares the mechanism and the app the names,
 as the app replaces the chain's `"html"` with its own. Any other value of the key is
-`invalid_entry_exports`, a name that is not an ECMAScript identifier, is `default` or is listed
-twice is `invalid_entry_export`, both against the manifest that holds them at `1:1`. A chain that
+`unknown_exports_mode`, a name that is not an ASCII identifier, is a reserved word, is `default`
+or is listed twice is `invalid_entry_export`, both against the manifest that holds them at `1:1`;
+a list on a chain that declares no `"exports"` is the warning `exports_ignored`. A chain that
 does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
 contract whole.
 
@@ -6297,14 +6298,17 @@ so the names must be known when the entry file is written). §5.2's amendment of
 key; this is its whole contract.
 
 - **The platform manifest** declares `"exports": "program"`. Any other value is
-  `invalid_entry_exports`, reported against the manifest at `1:1` with no excerpt, as
+  `unknown_exports_mode`, reported against the manifest at `1:1` with no excerpt, as
   `invalid_entry_file` is. Inherited first-found down the chain like every output key (§9.1).
 - **The app's `beni.json`** lists the names: `"exports": ["Arena"]` (`frontend.md` §10.1). Each
-  is an ECMAScript identifier of ASCII letters, digits, `_` and `$` not beginning with a digit, not
-  a reserved word and not `default`, and no name is listed twice; otherwise `invalid_entry_export`,
-  reported against the app's manifest at `1:1`, naming the entry. With the key absent, the list is
-  empty. A list on an app built for a chain that declares no `"exports"` is ignored, like any key a
-  manifest does not know.
+  is an ASCII identifier — letters, digits, `_` and `$`, not beginning with a digit; the check is
+  ASCII only, as the entry name's is — that is not one of the words the sibling scanner refuses as
+  an export name (`src/js/Sibling.zig`'s `keyword_words`: ECMAScript's reserved words, the
+  strict-mode ones, `await`, `yield`, `undefined`), not `default`, and no name is listed twice;
+  otherwise `invalid_entry_export`, reported against the app's manifest at `1:1`, naming the
+  entry. With the key absent, the list is empty. A list on an app built for a chain that declares
+  no `"exports"` does nothing, and a list that does nothing is almost always a mistake, so it is
+  the warning `exports_ignored` (rule 7), naming the platform.
 - **The entry file** is, in a development build,
 
   ```js
@@ -6344,11 +6348,7 @@ pub url : Request → String               -- the full URL as the host gives it:
 pub path : Request → String              -- its `pathname`, "/arena/x/ws"
 pub header : Request, String → Maybe String    -- the header's value, the name in any case; the host joins repeats with ", "
 pub headers : Request → List (String × String) -- names lower-cased, in the host's order
-pub body : Request → Result BodyError String   -- the whole body as UTF-8 text, suspending; "" when there is none
-
-pub type BodyError
-    = BodyUsed                           -- `bodyUsed` was already true: read before; the host is not called
-    | ConnectionLost                     -- the client went away while the body was read: "Network connection lost"
+-- A Worker's `fetch` reads no body in this slice ((j)): the stream is the host's, forwarded whole.
 
 pub opaque type Response
 pub text : Int, String → Response        -- `content-type: text/plain; charset=utf-8`
@@ -6387,7 +6387,7 @@ pub type ServiceError = ServiceUnavailable     -- "Network connection lost"
 
 - **`fetch` runs in a fiber of its own per request**, started with `Task.start` from the host's
   `fetch` handler, which returns a promise resolved with the `Response` the fiber ends with. The
-  handler may suspend: `forward`, `callService`, `body` and `Task.sleep` park it.
+  handler may suspend: `forward`, `callService` and `Task.sleep` park it.
   Nothing cancels it — the host has no event for a client that left, short of `request.signal`
   behind a compatibility flag — so a fiber ends `Done`. A fiber that throws is a defect: the
   promise rejects with the throw, and the host answers the client with its error 1101 "Worker threw
@@ -6411,9 +6411,11 @@ pub type ServiceError = ServiceUnavailable     -- "Network connection lost"
   `stub.fetch(request)`'s promise itself, no fiber in a Worker, no core change, the recommended
   first slice — or fibers per request, routed through the `scheduler` slot that
   `transparent-effects-proposal.md` §17.5 reserves (`Task.withScheduler`, a change to
-  `core/Task.beni`). The first does not foreclose the second: a suspending handler returns the
-  same `Answer`. Until the answer, `forward`, `callService` and `body` above read as the
-  suspending form; (k) records what is taken.
+  `core/Task.beni`, which is core's — specified in that document and coordinated with #358's
+  edits of the same file — not this platform's). Either way the first slice carries the probe as
+  a fixture, so the choice is gated by a test and not by a measurement alone. The first does not foreclose the second: a suspending handler returns the
+  same `Answer`. Until the answer, `forward` and `callService` above read as the suspending
+  form; (k) records what is taken.
 - **A `Response` is the host's object**, built when the constructor is called, and a 101 answer
   carries the host's `webSocket` — the one value that cannot be plain data, which is why `Response`
   is opaque where `Http.Server`'s is a record (§9.10). `Request` is opaque for the same reason: the
@@ -6459,6 +6461,7 @@ pub type alias Handlers state =
 
 pub none : Handlers state                -- every handler leaves the state as it is; `request` answers 404; `tick` is `Nothing`
 
+pub body : Request → String              -- the whole body as UTF-8 text, read by the platform before `request` ran; "" when there is none
 pub id : Context → String                -- `ctx.id.toString()`
 pub name : Context → Maybe String        -- `ctx.id.name`, when the object was reached by name
 pub sockets : Context → List Socket      -- every accepted socket still open, `ctx.getWebSockets()`
@@ -6499,8 +6502,15 @@ arena =
   Nothing a handler returns is written anywhere by itself: what must survive a restart goes through
   `Storage`, incrementally, as the host recommends (no shutdown hook exists).
 - **`request`** answers a request the Worker's stub forwarded; `WebSocket.accept` is how it answers an
-  upgrade ((g)). **`message`** is a text frame. A binary frame — `ArrayBuffer` — is not in this slice
-  ((j)): the platform closes the socket with 1003 "unsupported data" and the program sees `closed`.
+  upgrade ((g)). **The platform reads the body before it calls the handler** — the class's `fetch`
+  awaits `request.text()`, then calls the `sync` handler with the whole text, which `body` answers
+  — so a handler that cannot suspend still reads a POST. A body over **1 MiB** is answered 413
+  before the handler runs, and a body whose read fails ("Network connection lost") is dropped:
+  there is no one to answer. The limit is a fixed number in this slice and will be a setting of
+  `define` with this default (rule 7, as §9.10 (c) owes #336); an upgrade request has no body. **`message`** is a text frame. A binary frame — `ArrayBuffer` — is not in this slice
+  ((j)): the platform closes the socket with 1003 "unsupported data", writes one line with
+  `console.warn` naming the socket's id, in both builds, as §9.11 (j) does, and the program sees
+  `closed` with 1003.
   **`closed`** is the host's `webSocketClose`, with its code and reason as §9.11 (a)'s `Close`;
   under a compatibility date of 2026-04-07 or later the host answers the close frame itself
   (`web_socket_auto_reply_to_close`), so the platform calls nothing. **`failed`** is
@@ -6512,8 +6522,14 @@ arena =
   now; `Nothing` clears it. A set timer keeps the object from hibernating ((a)), which is what an
   active arena wants, and `Nothing` is how the program lets it sleep: "the game will stop its tick
   when the arena is idle" (#526). The timer's callback runs `ticked` in the host's callback, in no
-  fiber, as every handler runs. An alarm is the durable timer: it survives hibernation and
-  eviction, fires once, and wakes the object; the program sets the next one in `alarm`.
+  fiber, as every handler runs. The same `d` returned again does not re-arm the timer, so a tick
+  is not delayed by the events between ticks; within one life the ticks are re-armed as each
+  fires, and across a restart there is no timer at all: **after an eviction or a restart the
+  object runs nothing until an event arrives** — its sockets stay connected, and a quiet arena
+  does not tick until a player sends — so a tick is not durable and `restore` arms it only when
+  the first event has come. An alarm is the durable timer: it survives hibernation and eviction,
+  fires once, and wakes the object; the program sets the next one in `alarm`. A `ticked` that
+  throws is (f)'s defect, and no timer survives it.
 - **A handler that throws is a defect, and the object stops** ((f)).
 - **Order and determinism.** Events are delivered in the host's order, one at a time; a `tick`
   fires between events, never inside one. What a program observes depends on the events and the
@@ -6521,14 +6537,24 @@ arena =
 
 **(f) A defect stops the object** (rule 9; `transparent-effects-proposal.md` §16.5; the owner's
 decision 1 of #331, applied here). A throw in a handler, in `restore`, in `ticked` or in a sibling
-leaves the host's method; nothing catches it. On its way out the platform calls
-`ctx.abort(message)`, which "immediately resets the Durable Object and logs a JavaScript `Error`
+leaves the host's method; nothing catches it. **The guard is `Js.finally`-shaped**: the class's
+method runs the handler inside `Js.finally` with a flag set after the body, as `core/Task.beni`'s
+drain does, and when the flag is not set on the way out it calls `ctx.abort(message)` with the
+error's message and lets the throw go on unchanged — no `catch`, nothing replaced, nothing
+swallowed. `restore` runs inside the first event's method, under that event's guard. `ticked`
+runs in the timer's callback, which has no host method to leave: the callback holds the same
+guard, so the throw reaches the host as an uncaught exception of a timer and `abort` is what
+resets the object. `ctx.abort(message)` "immediately resets the Durable Object and logs a JavaScript `Error`
 with the message", an error "application code cannot catch"
 ([`ctx.abort`](https://developers.cloudflare.com/durable-objects/api/state/)): in-flight requests
 fail, the stub that called sees the error ((d): the Worker's request is a defect too), and the next
 event starts a new instance whose `restore` runs. From `alarm` the platform passes
-`{ retryAlarm: false }`: the host retries an alarm whose handler threw, "up to 6 retries", and a
-defect is not a transient failure to retry. *Measured 2026-10-20 under
+`{ retryAlarm: false }`: the host retries an alarm whose handler threw "using exponential
+backoff, starting at 2 second delays for up to 6 retries"
+([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)), and `abort`'s options
+"accept `retryAlarm` (boolean, default `true`)"; "passing `{ retryAlarm: false }` prevents the
+retry" ([`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)). A defect is not a
+transient failure to retry. *Measured 2026-10-20 under
 workerd:* a throw in the class's `fetch` rejects the stub's call and leaves the object as it was,
 and a throw in `webSocketMessage` leaves the object and the socket as they were — which is why
 the platform calls `abort` itself; after `abort` every attached socket is closed, the client sees
@@ -6603,7 +6629,7 @@ pub type AttachError
   names; across hibernation the state is rebuilt from `sockets`, and `id` is what a program keeps
   in storage.
 - **Binary frames** are §9.11 (j)'s rule, applied by the platform: the socket is closed with
-  1003 and the program sees `closed`.
+  1003, one `console.warn` line names it, and the program sees `closed`.
 - **Hibernation.** A socket accepted here keeps the object free to hibernate; the standard
   `ws.accept()` with listeners does not, and is not offered. The host answers ping frames and the
   `autoReply` pair without waking the object.
@@ -6693,7 +6719,8 @@ arenaOf path =
         _ → Nothing
 ```
 
-**(j) Not in the first slices.** Binary frames and `Bytes`; RPC methods on a stub and
+**(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
+forwarded whole; an object reads its body through (e)); binary frames and `Bytes`; RPC methods on a stub and
 `WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
 recovery; `ctx.waitUntil`; `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
 Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
