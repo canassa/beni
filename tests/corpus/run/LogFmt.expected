@@ -6,3 +6,4 @@ timestamp=1970-01-01T00:00:00.000Z level=ERROR message="a=b\tc\nd é"
 timestamp=2025-10-09T08:53:20.123Z level=INFO message=saved inner=3ms outer_span=12ms user=7 the_key="a b" q__k=
 timestamp=+275760-09-13T00:00:00.000Z level=INFO message=late
 timestamp=-271821-04-20T00:00:00.000Z level=INFO message=early
+timestamp=NaN level=INFO message="not a number"
