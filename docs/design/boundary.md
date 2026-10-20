@@ -5908,7 +5908,9 @@ renumbered.
     `ENETUNREACH`, `EHOSTUNREACH`, `EHOSTDOWN`, `ENONET`, `ENOPROTOOPT`, `ECONNREFUSED`, `ENOTSUP`
     (libuv's name for errno 95, which the kernel calls `EOPNOTSUPP`), `EPROTO`, `EACCES`,
     `ECONNABORTED` and `ENETDOWN`, and `ENETRESET`, which macOS and the BSDs report for a
-    connection that a network reset broke. Any other code is a defect, as (i) says: `ENOBUFS`,
+    connection that a network reset broke. libuv has no name for `ENETRESET`, so Node's `code`
+    for it is not `ENETRESET`: the platform matches it by its number, an `errno` of
+    `-os.constants.errno.ENETRESET`. Any other code is a defect, as (i) says: `ENOBUFS`,
     for one, is the machine's lack of buffers, not one client's failure. `ENOTCONN` is not in the
     list: Node ignores it at shutdown (`net.js:684`), so a socket never emits it. A `write` to a
     socket that Node has ended or destroyed would fail with `ERR_STREAM_WRITE_AFTER_END` or
