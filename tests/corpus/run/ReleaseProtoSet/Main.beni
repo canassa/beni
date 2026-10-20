@@ -1,0 +1,15 @@
+-- A release build keeps a `Js.set` of `__proto__`, and a later read or
+-- write of that object. `indexed` is `Js.setAt` of the string. Both builds
+-- print the same lines.
+import Node
+import Proto
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (Proto.coerced ⊤)
+        , String.fromInt (Proto.setter ⊤)
+        , String.fromInt (Proto.inherited ⊤)
+        , String.fromInt (Proto.indexed ⊤)
+        ]

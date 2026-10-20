@@ -6889,6 +6889,9 @@ that its three values are not folded away.
   of it folds. The text above made it an escape, which would have lost the program description an
   index loop walks (`p(v)`'s `a[b]`) for no reason: nothing unseen reads it. A spread `{...x}`
   reads all of `x` and copies what each of its properties may hold into the new object's.
+  *Amended 2026-10-20.* A computed write escapes when its key is the string literal `"__proto__"`
+  at the write site. That assignment sets `[[Prototype]]`. A key that comes from a `let`
+  binding stays field-insensitive, even when the value is the string `__proto__` at run time (#519).
 - **The iteration is optimistic where nothing can be unsound**: a call, read or write through a
   value that holds nothing yet does nothing (at the fixpoint such a value is never an object),
   while a name no module declares — a hand-written import — is `top` from the start. A var whose
@@ -6903,29 +6906,43 @@ that its three values are not folded away.
   *Amended 2026-10-20.* Fact 3 counts a member expression as a read. The host also reads
   some names with none. `implicit_host_keys` is that set. `keyUnread` and `neverRead` both
   refuse it, so the key stays in its literal and a write of it stays.
-  `valueOf` and `toString` are the names `ToPrimitive` reads. The operators and templates
-  this compiler emits invoke it, and fact 3 records them as a primitive result.
-  `run/ReleaseImplicitKeys` prints `1` and `x5y` in both builds. A release build that
-  dropped the keys printed `0` and `x[object Object]y`.
-  `toJSON` is the name `JSON.stringify` reads. That read is not a member expression,
-  so the set refuses the name. A call the pass cannot see also escapes its object,
-  which keeps every key. `run/ReleaseImplicitKeys` does not stringify.
-  A well-known symbol is not a string name. `Symbol.toPrimitive`, `Symbol.iterator`,
-  `Symbol.toStringTag` and the other well-known symbols are read by the host the same
-  way. `Js.object` accepts identifier keys only, so none of them is a `.property` name.
-  `keyUnread` keeps a key it cannot name, and `dropKeys` removes only a string-named
-  `.property`.
-  `then` is not on the list. Promise code reads it when the value is an argument of a
-  call the pass cannot see, and that call escapes the object. An unread `then` on an
-  object that stays inside the program is data.
-  `constructor` is a name on `prototype_names`. That list is what `neverWritten` refuses,
-  so a missing `constructor` does not fold to `undefined`. It is not a name `ToPrimitive`
-  reads, and it is not on `implicit_host_keys`. An unread own `constructor` drops. A probe
-  whose only use was `&` printed `0` in both builds. Release wrote `({}&1)`.
-  `__proto__` is not a key of `Js.object`. The checker reports `invalid_js_object`
-  (`check/bad/core/JsObjectKey`). A `Js.set` of the name assigns `[[Prototype]]`. Release
-  dropped that assignment. Development printed `1` from `&`, because the prototype's
-  `valueOf` ran. Release printed `0`. That write is not this set, and it is unfixed.
+
+  - `valueOf` and `toString` are the names `ToPrimitive` reads. The operators and templates
+    this compiler emits invoke it, and fact 3 records them as a primitive result.
+    `run/ReleaseImplicitKeys` prints `1` and `x5y` in both builds. A release build that
+    dropped the keys printed `0` and `x[object Object]y`.
+  - `toJSON` is the name `JSON.stringify` reads. That read is not a member expression,
+    so the set refuses the name. A call the pass cannot see also escapes its object,
+    which keeps every key. `run/ReleaseImplicitKeys` does not stringify.
+  - A well-known symbol is not a string name. `Symbol.toPrimitive`, `Symbol.iterator`,
+    `Symbol.toStringTag` and the other well-known symbols are read by the host the same
+    way. `Js.object` accepts identifier keys only, so none of them is a `.property` name.
+    `keyUnread` keeps a key it cannot name, and `dropKeys` removes only a string-named
+    `.property`.
+  - `then` is not on the list. Promise code reads it when the value is an argument of a
+    call the pass cannot see, and that call escapes the object. An unread `then` on an
+    object that stays inside the program is data.
+  - `constructor` is a name on `prototype_names`. That list is what `neverWritten` refuses,
+    so a missing `constructor` does not fold to `undefined`. It is not a name `ToPrimitive`
+    reads, and it is not on `implicit_host_keys`. An unread own `constructor` drops. A probe
+    whose only use was `&` printed `0` in both builds. Release wrote `({}&1)`.
+  - `__proto__` is not a key of `Js.object`. The checker reports `invalid_js_object`
+    (`check/bad/core/JsObjectKey`). `Js.object [ ( "__proto__", p ) ]` does not emit a
+    literal `__proto__: v` key. Development and release both refuse the call and write
+    no JavaScript. A `Js.set` of the name, or a `Js.setAt` whose key is the string
+    literal `"__proto__"` at the write site, assigns `[[Prototype]]`. That is not a host
+    read, so the name is not on `implicit_host_keys`. The write escapes the object. The
+    assignment stays, and a later read or write of that object is not dropped as an own
+    data property. `run/ReleaseProtoSet` prints `1`, `1`, `9` and `1` in both builds.
+    Before this escape, that release build printed `0`, `0`, `undefined` and `0`.
+    The other names on `prototype_names` are data properties. Assigning `__defineSetter__`
+    or `constructor` stores an own property, and an unread one drops. `Object.setPrototypeOf`
+    is a call. The call escapes its object, so that assignment stays. Measured on Node
+    v24.19.0, both builds agreed on those three.
+    A computed key that is not the string literal `"__proto__"` at the write site stays
+    field-insensitive. A `let` binding that holds that string is such a key, even when
+    the value is `__proto__` at run time (#519). A setter installed on `Object.prototype`
+    is outside this rule too (#520). Both are unfixed.
 - **Rounds.** Facts are recomputed each round; a round is repeated only when the program shrank
   in a way the facts can see — a branch, a read or a parameter gone, or `prune` dropping a
   declaration — so a program with nothing to specialise pays one round.

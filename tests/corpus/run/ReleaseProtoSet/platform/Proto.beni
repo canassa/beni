@@ -1,0 +1,62 @@
+--! A write of `__proto__` assigns `[[Prototype]]` (`backend.md` §9, fact 3).
+--! An arrow is not `Js.method`, so the object does not escape on its own.
+--! `pad` is an ordinary key nothing reads.
+
+import Js
+
+
+counter : Js.Ref Int
+counter = Js.ref 0
+
+
+--| `ToPrimitive` on `&`. Development is `1`. A release build that drops
+--| the `__proto__` write is `0`.
+pub coerced : ⊤ → Int
+coerced ⊤ =
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "valueOf", λ_ → 7 ) ]
+    Js.set o "__proto__" p
+    n : Int
+    n = Js.to o
+    Js.bitAnd n 1
+
+
+--| The prototype's setter runs. Development is `1`. Dropping the later
+--| write of `n` leaves `0`.
+pub setter : ⊤ → Int
+setter ⊤ =
+    Js.write counter 0
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "pad", 1 ) ]
+    _ =
+        Js.call p "__defineSetter__"
+            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    Js.set o "__proto__" p
+    Js.set o "n" (Js.from 1)
+    Js.read counter
+
+
+--| A property the literal never writes, inherited from the prototype.
+--| Development is `9`.
+pub inherited : ⊤ → Int
+inherited ⊤ =
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "x", 9 ) ]
+    Js.set o "__proto__" p
+    got : Int
+    got = Js.to (Js.get o "x")
+    got
+
+
+--| `o["__proto__"] = p`, then the same setter. Development is `1`.
+pub indexed : ⊤ → Int
+indexed ⊤ =
+    Js.write counter 0
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "pad", 1 ) ]
+    _ =
+        Js.call p "__defineSetter__"
+            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    Js.setAt o "__proto__" p
+    Js.set o "n" (Js.from 1)
+    Js.read counter
