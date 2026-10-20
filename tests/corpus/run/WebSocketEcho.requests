@@ -1,0 +1,27 @@
+# An upgrade to something other than a WebSocket is an ordinary request.
+{"method": "GET", "path": "/plain", "headers": {"connection": "upgrade", "upgrade": "h2c"}}
+{"socket": "a", "path": "/echo"}
+{"send": "a", "text": "one"}
+{"send": "a", "text": "two"}
+{"receive": "a"}
+{"receive": "a"}
+{"socket": "b", "path": "/chat", "protocols": ["v1", "bad token", "v2"]}
+{"receive": "b"}
+{"send": "b", "text": "hi"}
+{"receive": "b"}
+{"socket": "c", "path": "/nowhere"}
+{"socket": "d", "path": "/once"}
+{"send": "d", "text": "only"}
+{"receive": "d"}
+{"receive": "d"}
+{"receive": "d"}
+{"socket": "e", "path": "/quit"}
+{"send": "e", "text": "bye"}
+{"receive": "e"}
+{"receive": "e"}
+{"close": "a", "code": 4000, "reason": "client leaves"}
+{"receive": "a"}
+{"receive": "a"}
+{"method": "GET", "path": "/stop"}
+{"receive": "b"}
+{"receive": "b"}

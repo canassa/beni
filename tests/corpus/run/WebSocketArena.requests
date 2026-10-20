@@ -1,0 +1,20 @@
+{"socket": "a", "path": "/ann"}
+{"socket": "b", "path": "/bob"}
+{"socket": "c", "path": "/cy"}
+{"send": "a", "text": "up"}
+{"receive": "a"}
+{"send": "b", "text": "left"}
+{"receive": "b"}
+{"method": "GET", "path": "/tick"}
+{"receive": "a"}
+{"receive": "b"}
+{"receive": "c"}
+{"send": "c", "text": "down"}
+{"receive": "c"}
+{"close": "b", "code": 1000, "reason": "bye"}
+{"receive": "b"}
+{"receive": "b"}
+{"method": "GET", "path": "/tick"}
+{"receive": "a"}
+{"receive": "c"}
+{"signal": "SIGTERM"}

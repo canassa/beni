@@ -1,0 +1,7 @@
+{"socket": "a", "path": "/a"}
+{"send": "a", "text": "hi"}
+{"receive": "a"}
+{"socket": "b", "path": "/b"}
+{"method": "GET", "path": "/stop"}
+{"receive": "a"}
+{"receive": "b"}

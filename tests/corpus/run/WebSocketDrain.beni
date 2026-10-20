@@ -1,0 +1,95 @@
+-- run: `drain`, and a close while reading is paused (boundary.md §9.11,
+-- the amendment's items 14 and 18). A session writes 1 KiB messages until
+-- its socket holds some: the last write queued less than Node's
+-- high-water mark, so Node emits no `drain` event, and `drain` still
+-- returns once the client has read everything. A session that waits while
+-- its client's messages pause reading, then closes, still hears the
+-- client's answer to its close frame.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+type alias Gates =
+    holdClose : Deferred ⊤
+    filled : Deferred ⊤
+
+
+plain : Gates, Request → Response
+plain gates request =
+    case request.path of
+        "/filled" →
+            Deferred.wait gates.filled
+            Server.text 200 "filled"
+
+        _ →
+            _ = Deferred.complete gates.holdClose ⊤
+            Server.text 200 "go"
+
+
+session : Gates, Socket → ⊤
+session gates socket =
+    case WebSocket.read socket of
+        Ok "small" →
+            -- Write 1 KiB messages until the socket holds some: the last
+            -- write queued less than Node's high-water mark, so Node will
+            -- emit no `drain` event, and `drain` must still return once
+            -- the client has read it.
+            fill socket (String.repeat "y" 1024) 100000
+            _ = Deferred.complete gates.filled ⊤
+            WebSocket.drain socket
+            _ = WebSocket.write socket "drained"
+            session gates socket
+
+        Ok "hold-close" →
+            -- While the session waits, the client's messages fill the
+            -- read buffer and reading pauses; the session then closes,
+            -- and still hears the client's answer to its close frame.
+            Deferred.wait gates.holdClose
+            _ = WebSocket.close socket { code = 4002, reason = "paused" }
+            _ = Debug.log "closed while paused, then" (endOf socket)
+            ⊤
+
+        Ok _ →
+            session gates socket
+
+        Err _ →
+            ⊤
+
+
+-- Write `text` until the socket holds some of it, at most `n` times.
+fill : Socket, String, Int → ⊤
+fill socket text n =
+    if n > 0 && WebSocket.buffered socket == 0 then
+        _ = WebSocket.write socket text
+        fill socket text (n - 1)
+    else
+        ⊤
+
+
+-- Read until the end, and answer it.
+endOf : Socket → WebSocket.Close
+endOf socket =
+    case WebSocket.read socket of
+        Ok _ →
+            endOf socket
+
+        Err close →
+            close
+
+
+main : Program
+main = Io.run λ⊤ →
+    gates = { holdClose = Deferred.make ⊤, filled = Deferred.make ⊤ }
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain gates _, upgrade = λ_ → Server.accept (session gates _) }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

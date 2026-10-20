@@ -1,0 +1,101 @@
+-- The server side of boundary.md §9.11 (m): the snake game's shape. Each
+-- player's session reads its inputs into the arena; every 33 ms a tick
+-- writes the arena's state (about 2.5 KiB for 100 players) to every player, skipping a player whose
+-- `buffered` is over 64 KiB. The port goes to standard output.
+import Duration
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+import WebSocket exposing (Socket)
+
+
+type alias Player =
+    id : Int
+    socket : Socket
+    input : String
+
+
+type alias Arena =
+    players : Ref (List Player)
+    next : Ref Int
+    ticks : Ref Int
+
+
+tick : Arena → ⊤
+tick arena =
+    Task.sleep (Duration.millis 33)
+    n = Ref.get arena.ticks + 1
+    Ref.set arena.ticks n
+    players = Ref.get arena.players
+    all = String.join (List.map players entry) ","
+    state = "tick ${String.fromInt n} [${all}]"
+    sendAll players state
+    tick arena
+
+
+entry : Player → String
+entry p = "{\"id\":${String.fromInt p.id},\"input\":\"${p.input}\"}"
+
+
+sendAll : List Player, String → ⊤
+sendAll players state =
+    case players of
+        [] →
+            ⊤
+
+        [ p, …rest ] →
+            send p.socket state
+            sendAll rest state
+
+
+send : Socket, String → ⊤
+send socket text =
+    if WebSocket.buffered socket > 65536 then
+        ⊤
+    else
+        _ = WebSocket.write socket text
+        ⊤
+
+
+join : Arena, Request → Upgrade
+join arena _ = Server.accept (play arena _)
+
+
+play : Arena, Socket → ⊤
+play arena socket =
+    id = Ref.get arena.next
+    Ref.set arena.next (id + 1)
+    Ref.update arena.players λplayers → [ …players, { id = id, socket = socket, input = "-" } ]
+    Task.onExit (λ⊤ → inputs arena id socket) λ_ →
+        Ref.update arena.players λplayers → List.filter players λp → p.id ≠ id
+
+
+inputs : Arena, Int, Socket → ⊤
+inputs arena id socket =
+    case WebSocket.read socket of
+        Ok input →
+            Ref.update arena.players λplayers →
+                List.map players λp → if p.id == id then { p | input = input } else p
+            inputs arena id socket
+
+        Err _ →
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    arena = { players = Ref.make [], next = Ref.make 0, ticks = Ref.make 0 }
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = λ_ → Server.text 404 "", upgrade = join arena _ }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            _ = Debug.log "port" (Server.address server).port
+            _ = Task.spawn λ⊤ → tick arena
+            Server.wait server
+            Node.done

@@ -1,0 +1,69 @@
+# The handshake.
+{"socket": "v12", "path": "/version", "version": "12"}
+{"socket": "key", "path": "/key", "key": "c2hvcnQ="}
+{"socket": "post", "path": "/post", "method": "POST"}
+{"socket": "http10", "path": "/http10", "http": "1.0"}
+{"socket": "nohost", "path": "/nohost", "host": false}
+{"socket": "list", "path": "/list", "upgrade": "h2c, WebSocket"}
+{"send": "list", "text": "listed"}
+{"receive": "list"}
+# A fragmented message with a ping between its parts, read whole.
+{"socket": "frag", "path": "/frag"}
+{"send": "frag", "frame": {"fin": false, "opcode": 1, "text": "par"}}
+{"ping": "frag", "text": "p"}
+{"receive": "frag"}
+{"send": "frag", "frame": {"fin": true, "opcode": 0, "text": "ts"}}
+{"receive": "frag"}
+# One fault per connection.
+{"socket": "unmasked", "path": "/unmasked"}
+{"send": "unmasked", "text": "before"}
+{"send": "unmasked", "frame": {"opcode": 1, "text": "x", "mask": false}}
+{"receive": "unmasked"}
+{"receive": "unmasked"}
+{"receive": "unmasked"}
+{"socket": "rsv", "path": "/rsv"}
+{"send": "rsv", "frame": {"opcode": 1, "text": "x", "rsv": 4}}
+{"receive": "rsv"}
+{"socket": "opcode", "path": "/opcode"}
+{"send": "opcode", "frame": {"opcode": 3, "text": "x"}}
+{"receive": "opcode"}
+{"socket": "fragping", "path": "/fragping"}
+{"send": "fragping", "frame": {"fin": false, "opcode": 9, "text": "x"}}
+{"receive": "fragping"}
+{"socket": "longping", "path": "/longping"}
+{"send": "longping", "frame": {"opcode": 9, "hex": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}}
+{"receive": "longping"}
+{"socket": "cont", "path": "/cont"}
+{"send": "cont", "frame": {"opcode": 0, "text": "x"}}
+{"receive": "cont"}
+{"socket": "inside", "path": "/inside"}
+{"send": "inside", "frame": {"fin": false, "opcode": 1, "text": "a"}}
+{"send": "inside", "frame": {"opcode": 1, "text": "b"}}
+{"receive": "inside"}
+{"socket": "onebyte", "path": "/onebyte"}
+{"send": "onebyte", "frame": {"opcode": 8, "hex": "03"}}
+{"receive": "onebyte"}
+{"socket": "code", "path": "/code"}
+{"send": "code", "frame": {"opcode": 8, "hex": "03ed"}}
+{"receive": "code"}
+{"socket": "utf8", "path": "/utf8"}
+{"send": "utf8", "frame": {"opcode": 1, "hex": "c328"}}
+{"receive": "utf8"}
+{"socket": "reason", "path": "/reason"}
+{"send": "reason", "frame": {"opcode": 8, "hex": "03e8c328"}}
+{"receive": "reason"}
+{"socket": "big", "path": "/big"}
+{"send": "big", "text": "sixteen bytes ok"}
+{"receive": "big"}
+{"send": "big", "text": "seventeen bytes!!"}
+{"receive": "big"}
+{"socket": "zero", "path": "/zero"}
+{"send": "zero", "text": ""}
+{"receive": "zero"}
+{"send": "zero", "text": "a"}
+{"receive": "zero"}
+{"socket": "binary", "path": "/binary"}
+{"send": "binary", "frame": {"opcode": 2, "hex": "0102"}}
+{"receive": "binary"}
+{"receive": "binary"}
+{"signal": "SIGTERM"}

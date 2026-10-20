@@ -1,0 +1,96 @@
+-- run: the game's shape (boundary.md §9.11 (m)): one server, many players
+-- on one arena. Each player's session reads its inputs into the arena; a
+-- tick writes the arena's state to every player in one pass, and skips a
+-- player whose `buffered` is over 64 KiB, so a player that reads slowly
+-- holds no one back. A player that leaves is out of the next tick. Here a
+-- plain request ticks, and each input is answered, so the transcript
+-- depends on no clock and no race; the game ticks on `Task.sleep`.
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+import WebSocket exposing (Socket)
+
+
+type alias Player =
+    name : String
+    socket : Socket
+    input : String
+
+
+type alias Arena =
+    players : Ref (List Player)
+    ticks : Ref Int
+
+
+plain : Arena, Request → Response
+plain arena _ = Server.text 200 (tick arena)
+
+
+tick : Arena → String
+tick arena =
+    n = Ref.get arena.ticks + 1
+    Ref.set arena.ticks n
+    players = Ref.get arena.players
+    state = String.join (List.map players entry) " "
+    sent = List.filter players λp → send p.socket "tick ${String.fromInt n}: ${state}"
+    "tick ${String.fromInt n}: sent to ${String.fromInt (List.length sent)} of ${String.fromInt (List.length players)}"
+
+
+entry : Player → String
+entry player = "${player.name}=${player.input}"
+
+
+send : Socket, String → Bool
+send socket text =
+    if WebSocket.buffered socket > 65536 then
+        False
+    else
+        case WebSocket.write socket text of
+            Ok ⊤ →
+                True
+
+            Err WebSocket.NotOpen →
+                False
+
+
+join : Arena, Request → Upgrade
+join arena request =
+    name = String.dropLeft request.path 1
+    Server.accept (play arena name _)
+
+
+play : Arena, String, Socket → ⊤
+play arena name socket =
+    Ref.update arena.players λplayers → [ …players, { name = name, socket = socket, input = "-" } ]
+    Task.onExit (λ⊤ → inputs arena name socket) λ_ →
+        Ref.update arena.players λplayers → List.filter players λp → p.name ≠ name
+
+
+inputs : Arena, String, Socket → ⊤
+inputs arena name socket =
+    case WebSocket.read socket of
+        Ok input →
+            Ref.update arena.players λplayers →
+                List.map players λp → if p.name == name then { p | input = input } else p
+            _ = WebSocket.write socket "got ${input}"
+            inputs arena name socket
+
+        Err _ →
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    arena = { players = Ref.make [], ticks = Ref.make 0 }
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain arena _, upgrade = join arena _ }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

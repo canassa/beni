@@ -1,0 +1,19 @@
+(fault: socket:EIO)
+> (socket a) GET /a
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) "x"
+< (socket a) (the connection ended)
+--- stdout ---
+--- stderr ---
+<project>/<file>:<line>
+
+Error: read EIO: injected by tests/serve/preload.mjs
+{
+  code: 'EIO',
+  syscall: 'read'
+}
+
+--- exit 1 ---

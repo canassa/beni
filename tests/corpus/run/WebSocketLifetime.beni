@@ -1,0 +1,76 @@
+-- run: how a server's WebSocket ends (boundary.md §9.11 (g), (i)). A
+-- client that ends its TCP connection, or resets it (`ECONNRESET`), with
+-- no close frame ends `read` with 1006. A protocol the client did not
+-- offer, and an invalid refusal, are each answered 500 with a line on
+-- standard error, and no session starts. `Server.close` closes every open
+-- WebSocket with 1001; an upgrade the program accepts after it opens and
+-- is closed with 1001 at once; and `Server.wait` returns once every
+-- connection has ended.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+type alias Gates =
+    late : Deferred ⊤
+    closed : Deferred ⊤
+
+
+plain : Gates, Request → Response
+plain gates request =
+    case request.path of
+        "/close" →
+            _ = Deferred.complete gates.closed ⊤
+            Server.text 200 "closing"
+
+        _ →
+            Server.text 404 "no page"
+
+
+upgrade : Gates, Request → Upgrade
+upgrade gates request =
+    case request.path of
+        "/protocol" →
+            Server.acceptWith { protocol = Just "v9", maxMessage = 100 } (session "protocol" _)
+
+        "/invalid" →
+            Server.refuse { status = 1000, headers = [], body = "" }
+
+        "/late" →
+            Deferred.wait gates.late
+            Server.accept (session "late" _)
+
+        _ →
+            Server.accept (session request.path _)
+
+
+session : String, Socket → ⊤
+session name socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket "${name} ${text}"
+            session name socket
+
+        Err close →
+            _ = Debug.log "${name} ended" close
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    gates = { late = Deferred.make ⊤, closed = Deferred.make ⊤ }
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain gates _, upgrade = upgrade gates _ }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait gates.closed
+            Server.close server
+            _ = Deferred.complete gates.late ⊤
+            Server.wait server
+            Node.print "the server has closed"

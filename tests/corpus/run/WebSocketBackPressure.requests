@@ -1,0 +1,11 @@
+{"socket": "a", "path": "/a"}
+{"pause": "a"}
+{"send": "a", "text": "flood"}
+{"resume": "a"}
+{"receive": "a", "count": 128}
+{"socket": "b", "path": "/b"}
+{"send": "b", "text": "hold"}
+{"send": "b", "repeat": 300, "bytes": 1024}
+{"method": "GET", "path": "/go"}
+{"receive": "b"}
+{"signal": "SIGTERM"}

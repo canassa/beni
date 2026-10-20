@@ -1,0 +1,28 @@
+> (socket a) GET /a
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) "hi"
+< (socket a) "/a hi"
+> (socket b) GET /b
+< (socket b) 101
+< (socket b) upgrade: websocket
+< (socket b) connection: Upgrade
+< (socket b) sec-websocket-accept: (the right key)
+> GET /stop
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 17
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< the owner returns
+< (socket a) (the connection ended)
+< (socket b) (the connection ended)
+--- stdout ---
+/a cleaned up: ⊤
+/b cleaned up: ⊤
+the owner returns
+--- stderr ---
+--- exit 0 ---

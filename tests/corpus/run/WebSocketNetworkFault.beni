@@ -1,0 +1,55 @@
+-- run: one client's network failure ends that connection, never the
+-- server (boundary.md §9.11, the amendment's items 15 and 16). The serve
+-- preload fails the first socket after its first bytes with
+-- `EHOSTUNREACH`, as Node fails a socket — `error`, then `close` — and
+-- that session ends with 1006 while the server serves the next client.
+-- A client that resets its connection while the program decides on its
+-- upgrade is no defect either: the platform listens for the socket's
+-- errors from the `upgrade` event on, and no session starts.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+plain : Deferred ⊤, Request → Response
+plain gate _ =
+    _ = Deferred.complete gate ⊤
+    Server.text 200 "open"
+
+
+upgrade : Deferred ⊤, Request → Upgrade
+upgrade gate request =
+    if request.path == "/gate" then
+        Deferred.wait gate
+        Server.accept λ_ → Debug.log "the gate's session ran" ⊤
+    else
+        Server.accept (session request.path _)
+
+
+session : String, Socket → ⊤
+session name socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket "${name} ${text}"
+            session name socket
+
+        Err close →
+            _ = Debug.log "${name} ended" close
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    gate = Deferred.make ⊤
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain gate _, upgrade = upgrade gate _ }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

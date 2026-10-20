@@ -1,0 +1,132 @@
+-- run: a WebSocket server (boundary.md §9.11 (e)–(g)). `listenWith` sends
+-- a request whose `upgrade` header is `websocket` to `upgrade`, once its
+-- handshake checks, and every other request, with another `upgrade`
+-- header too, to `request`. `accept` answers 101 and runs the session,
+-- which here echoes each message in order; `acceptWith` names the
+-- subprotocol it chose of those the client offered, an offer that is not
+-- a token left out; `refuse` answers with a response and opens nothing. A
+-- client's close ends `read` with its code and reason; a session that
+-- closes first gets the client's answer, and may not send 1010, a
+-- client's code; a session that returns closes with 1000. `Server.close`
+-- closes every open socket with 1001, and `Server.wait` returns once each
+-- has ended.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+plain : Deferred ⊤, Request → Response
+plain stop request =
+    case request.path of
+        "/stop" →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 "stopping"
+
+        _ →
+            asked = Maybe.withDefault (Server.header request "upgrade") "none"
+            Server.text 200 "plain ${request.path}, upgrade ${asked}"
+
+
+upgrade : Request → Upgrade
+upgrade request =
+    case request.path of
+        "/echo" →
+            Server.accept (echo "echo" _)
+
+        "/chat" →
+            Server.acceptWith
+                { protocol = Just "v2", maxMessage = 1048576 }
+                (chat (Server.protocols request) _)
+
+        "/once" →
+            Server.accept once
+
+        "/quit" →
+            Server.accept quit
+
+        _ →
+            Server.refuse (Server.text 404 "no socket at ${request.path}")
+
+
+echo : String, Socket → ⊤
+echo name socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket "${name} ${text}"
+            echo name socket
+
+        Err close →
+            _ = Debug.log "${name} ended" close
+            ⊤
+
+
+chat : List String, Socket → ⊤
+chat offered socket =
+    list = String.join offered ","
+    _ = WebSocket.write socket "offered ${list}, chose ${WebSocket.protocol socket}"
+    echo "chat" socket
+
+
+-- One message, one answer, then the session returns: the platform closes
+-- the socket with 1000.
+once : Socket → ⊤
+once socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket "once ${text}"
+            ⊤
+
+        Err _ →
+            ⊤
+
+
+-- The session closes first, with its own code; `read` then answers the
+-- client's close, and a `write` after it is `NotOpen`.
+quit : Socket → ⊤
+quit socket =
+    case WebSocket.read socket of
+        Ok _ →
+            -- 1010 is a client's code: a server may not send it.
+            refused =
+                case WebSocket.close socket { code = 1010, reason = "" } of
+                    Err (WebSocket.InvalidCode code) →
+                        "invalid code ${String.fromInt code}"
+
+                    Err WebSocket.ReasonTooLong →
+                        "reason too long"
+
+                    Ok ⊤ →
+                        "sent"
+            _ = Debug.log "quit's 1010" refused
+            _ = WebSocket.close socket { code = 4001, reason = "done" }
+            late =
+                case WebSocket.write socket "late" of
+                    Ok ⊤ →
+                        "written"
+
+                    Err WebSocket.NotOpen →
+                        "not open"
+            _ = Debug.log "quit closed; a write after it" late
+            echo "quit" socket
+
+        Err _ →
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain stop _, upgrade = upgrade }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print "stopped"

@@ -1,0 +1,74 @@
+> GET /plain
+> connection: upgrade
+> upgrade: h2c
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 25
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< plain /plain, upgrade h2c
+> (socket a) GET /echo
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) "one"
+> (socket a) "two"
+< (socket a) "echo one"
+< (socket a) "echo two"
+> (socket b) GET /chat ["v1","bad token","v2"]
+< (socket b) 101
+< (socket b) upgrade: websocket
+< (socket b) connection: Upgrade
+< (socket b) sec-websocket-accept: (the right key)
+< (socket b) sec-websocket-protocol: v2
+< (socket b) "offered v1,v2, chose v2"
+> (socket b) "hi"
+< (socket b) "chat hi"
+> (socket c) GET /nowhere
+< (socket c) 404
+< (socket c) content-type: text/plain; charset=utf-8
+< (socket c) content-length: 21
+< (socket c) connection: close
+< (socket c)
+< (socket c) no socket at /nowhere
+> (socket d) GET /once
+< (socket d) 101
+< (socket d) upgrade: websocket
+< (socket d) connection: Upgrade
+< (socket d) sec-websocket-accept: (the right key)
+> (socket d) "only"
+< (socket d) "once only"
+< (socket d) close 1000 ""
+< (socket d) (the connection ended)
+> (socket e) GET /quit
+< (socket e) 101
+< (socket e) upgrade: websocket
+< (socket e) connection: Upgrade
+< (socket e) sec-websocket-accept: (the right key)
+> (socket e) "bye"
+< (socket e) close 4001 "done"
+< (socket e) (the connection ended)
+> (socket a) close 4000 "client leaves"
+< (socket a) close 4000 ""
+< (socket a) (the connection ended)
+> GET /stop
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 8
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< stopping
+< (socket b) close 1001 ""
+< (socket b) (the connection ended)
+--- stdout ---
+quit's 1010: "invalid code 1010"
+quit closed; a write after it: "not open"
+quit ended: { code = 4001, reason = "done" }
+echo ended: { code = 4000, reason = "client leaves" }
+chat ended: { code = 1001, reason = "" }
+stopped
+--- stderr ---
+--- exit 0 ---
