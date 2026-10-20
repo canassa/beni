@@ -783,3 +783,18 @@ the default or a program's sink change, `run/LogDefaultSink` +234 raw and +84 br
 that never logs is unchanged. **A budget grant**: the test *ownership words: core's are catalogued*
 runs the ownership stage on all of `core/`, and this part put it 10M over 4 300M; the owner granted
 it 4 750M on 2026-10-20 (dashboard `node-log-q2`), until #514 brings it back.
+
+*P7, third part, as built (2026-10-20; #358).* The browser's `Log` moved into core:
+`platforms/browser/Log.beni` is removed, so a page program imports core's `Log`, and the default
+sink prints what the browser's printed. `Log.write` is `Cmd.log : Log.Level, String → Cmd msg` in
+`browser`'s `Cmd`, the owner's decision (`boundary.md` §9.8.16 (b)); `browser-tea` no longer
+re-exports `Log`. Fixtures: pages `browser/tea/LogContext` (annotations as the console's second
+argument, `__proto__` a plain key, `console.debug` under `minimum Trace`, `Cmd.log`) and
+`browser/tea/LogContextDefect` (a defect's teardown runs the release inside `annotate` with the
+annotation and the one outside without it); `LogLevels`, `ValueCommands` and the ownership goldens
+of `EntryValueCommand` unchanged. **Bytes** (every `browser/tea` and `browser/dom` page and the four
+browser examples, an `origin/master` compiler against this one, development and release, no source
+maps): only the 12 pages that call `Log` change, release +874 to +1 332 raw and +351 to +529 brotli
+(`LogLevels` 2 687 → 4 019 raw, 1 180 → 1 709 brotli): the entry, the time, the slot read and the
+list helpers of the spans and the annotations. A fold in the console sink took 119 raw and 38 brotli
+of it off. Every other page and every example is byte for byte the same.
