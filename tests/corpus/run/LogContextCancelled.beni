@@ -1,0 +1,40 @@
+-- run: a scoped change of the log context is put back when its function is
+-- cancelled, as when it returns (transparent-effects-proposal.md §17.5). A
+-- fiber is cancelled while it sleeps inside `Log.annotate` and `Log.span`:
+-- the release of the `bracket` inside them still has the annotation and
+-- the span, and the release of the `bracket` outside them has neither. A
+-- virtual clock fixes the span's milliseconds.
+import Clock
+import Duration
+import Io
+import Log exposing (Entry)
+import Node exposing (Program)
+import Ref exposing (Ref)
+import String
+import Task
+
+
+record : Ref (List String), Entry → ⊤
+record seen entry =
+    pairs = String.join (List.map entry.annotations λ( key, value ) → "${key}=${value}") ", "
+    spans =
+        String.join (List.map entry.spans λ( label, ms ) → "${label}=${String.fromInt ms}ms") ", "
+    Ref.update seen λlines → [ …lines, "${entry.message} [${pairs}] {${spans}}" ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    clock = Clock.virtual 0
+    Log.withSink (record seen _) λ⊤ →
+        sleeper = Task.spawn λ⊤ →
+            Clock.run clock λ⊤ →
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "the outer release") λ_ →
+                    Log.annotate "inner" "i" λ⊤ →
+                        Log.span "s" λ⊤ →
+                            Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "the inner release") λ_ →
+                                Task.sleep (Duration.seconds 100)
+        Task.yieldNow ⊤
+        Task.cancel sleeper
+        Log.info "the parent, after the cancel"
+    Node.printLines (Ref.get seen)
