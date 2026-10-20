@@ -10,8 +10,11 @@
   it), a fragment is any `#` in the URL, and `buffered` is 0 after the end.
 - Scripted the page's `WebSocket` in the page driver, as `fetch` is, with `socket` steps.
   Four `browser/tea/WebSocket…` fixtures, each also run with fibered listeners.
-- Measured: the module costs about 890 bytes over another listener page; one message costs
-  about 3.5 µs from the event to the render, half a click's cost.
+- Measured: the module costs about 890 bytes over another listener page; one message with a
+  new 936-byte state costs about 4.3 µs from the event to the render, what hand-written
+  JavaScript costs.
+- After ws-review: fixtures for the empty fragment, for a defect while `connect` holds a socket,
+  and `WebSocketEquality` for the identity `eq`.
 
 **What I learned**
 
@@ -23,6 +26,8 @@
   (`beni check --platform=<copy>/browser-tea`) and even build and run pages with it, with no
   rebuild of beni and no wait for the shared lock.
 - `String.contains` is subject first: `String.contains href "#"`.
+- A benchmark whose payload never changes measures a write the view skips: the first figure,
+  3.5 µs, was that. Give each message a new state.
 - The standard is not the browsers: WebKit can fire `error` with no `close`, and Chrome alone
   throws `SecurityError` for an insecure socket. A scripted socket that follows the standard
   cannot find either; the driver needs a step for each host behaviour.

@@ -1,0 +1,27 @@
+-- load
+(socket 1: /a)
+(socket 2: /b)
+<body>
+  <main>
+    <button id="compare">"compare"</button>
+    <ol></ol>
+  </main>
+</body>
+-- socket 1 open
+(the DOM did not change)
+-- socket 2 open
+(the DOM did not change)
+-- click #compare
+<body>
+  <main>
+    <button id="compare">"compare"</button>
+    <ol>
+      <li>"a == a: true, a == b: false"</li>
+      <li>"a ≠ a: false, a ≠ b: true"</li>
+      <li>"Basics.eq a a: true, Basics.eq a b: false"</li>
+      <li>"as a value: true, false"</li>
+      <li>"in a record: true, false"</li>
+      <li>"in a Maybe: true, false"</li>
+    </ol>
+  </main>
+</body>

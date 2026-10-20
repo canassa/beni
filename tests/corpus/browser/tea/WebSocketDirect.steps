@@ -16,3 +16,8 @@ socket 4 open
 socket 4 buffered 7
 socket 4 close 4001 "gone"
 sockets
+# A defect while a body waits in `read`: the teardown closes its socket.
+click #a
+socket 5 open
+throws click #crash
+sockets

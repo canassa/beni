@@ -4,6 +4,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -23,6 +24,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -44,6 +46,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -66,6 +69,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -83,12 +87,13 @@
     </ol>
   </main>
 </body>
--- click #token
+-- click #empty-fragment
 <body>
   <main>
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -103,6 +108,32 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
+    </ol>
+  </main>
+</body>
+-- click #token
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
     </ol>
   </main>
@@ -113,6 +144,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -127,6 +159,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
     </ol>
@@ -141,6 +174,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -155,6 +189,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -167,6 +202,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -181,6 +217,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -197,6 +234,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -211,6 +249,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -227,6 +266,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -241,6 +281,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -256,6 +297,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -270,6 +312,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -286,6 +329,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -300,6 +344,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -320,6 +365,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -334,6 +380,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>
@@ -352,6 +399,7 @@
     <button id="unparsed">"unparsed"</button>
     <button id="scheme">"scheme"</button>
     <button id="fragment">"fragment"</button>
+    <button id="empty-fragment">"empty fragment"</button>
     <button id="token">"token"</button>
     <button id="twice">"twice"</button>
     <button id="blocked">"blocked"</button>
@@ -366,6 +414,7 @@
       <li>"failed: bad URL http://["</li>
       <li>"failed: bad URL ftp://example.com/"</li>
       <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad URL /chat#"</li>
       <li>"failed: bad protocol chat v1"</li>
       <li>"failed: bad protocol v1"</li>
       <li>"failed: blocked"</li>

@@ -1,6 +1,7 @@
 click #unparsed
 click #scheme
 click #fragment
+click #empty-fragment
 click #token
 click #twice
 socket blocked
