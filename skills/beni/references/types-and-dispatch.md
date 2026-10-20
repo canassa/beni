@@ -8,7 +8,7 @@ clause constrains a type variable, and `==` and `<` are method calls.
 - `type Shape = Circle Float | Dot` declares a custom type. `pub type` exports it with its
   constructors; `pub opaque type` exports the name only.
 - `type alias` names a type. A record alias is written in layout: one field per line, no braces.
-- A type may take parameters: `type Tree a = Leaf | Node (Tree a) a (Tree a)`.
+- A type can take parameters: `type Tree a = Leaf | Node (Tree a) a (Tree a)`.
 
 ```beni
 pub type Tree a
@@ -60,7 +60,7 @@ total prices = List.foldl prices (Cents 0) λprice acc → acc.add price
 
 ## `where` clauses
 
-A top-level annotation may constrain a type variable with the methods a body needs:
+A top-level annotation can constrain a type variable with the methods a body needs:
 
 ```text
 largest : List a → Maybe a

@@ -132,13 +132,16 @@ fn installInto(arena: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer,
 }
 
 /// The real path of `dir`'s nearest existing ancestor, with the rest of
-/// `dir` joined to it: what `dir` will resolve to once it exists.
+/// `dir` resolved against it: what `dir` will resolve to once it exists.
+/// The rest is resolved lexically, so `nx/../x` under a real path is `x`:
+/// every part of the rest does not exist yet and is created as a plain
+/// directory, so no symlink can make the lexical answer wrong.
 fn resolveAsFarAsExists(arena: Allocator, io: Io, dir: []const u8) ![]const u8 {
     var existing: []const u8 = dir;
     var rest: []const u8 = "";
     while (true) {
         if (Io.Dir.cwd().realPathFileAlloc(io, if (existing.len == 0) "." else existing, arena)) |real| {
-            return if (rest.len == 0) real else std.fs.path.join(arena, &.{ real, rest });
+            return if (rest.len == 0) real else std.fs.path.resolveAlloc(arena, &.{ real, rest });
         } else |err| switch (err) {
             error.FileNotFound => {},
             else => return err,

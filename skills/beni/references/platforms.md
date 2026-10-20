@@ -19,7 +19,7 @@ the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or w
 - `main : Program` is a value: `Node.print text`, `Node.printLines lines`, `Node.exitWith message
   code`, or `Node.done`. A `node` program writes its standard output only through the `Program` it
   ends with.
-- `main = Io.run λ⊤ → …` runs a fiber that may wait: `Io.sleep ms`, `Io.readFile path`
+- `main = Io.run λ⊤ → …` runs a fiber that can wait: `Io.sleep ms`, `Io.readFile path`
   (`Result FileError String`), `Deferred.wait`, `Task.sleep`.
 - `Http.Server.listen { host, port } handler` starts a server; the handler is `Request → Response`
   and runs once per request, in a fiber of its own. `Server.text status body` is a response;
@@ -71,19 +71,19 @@ The Elm Architecture over `browser`, in beni.
   `onUrlRequest`).
 
 **Commands.** A `Cmd msg` is data: it names work and does none. The work is a **body**, a function
-given `send : msg → ⊤`. A body may wait; it runs in a fiber of the program's scope.
+given `send : msg → ⊤`. A body can wait; it runs in a fiber of the program's scope.
 
 | Command | Does |
 |---|---|
 | `Cmd.none`, `Cmd.batch cmds` | nothing; several |
 | `Cmd.perform λsend → …` | runs the body |
-| `Cmd.task (λ⊤ → work) Done` | runs `work`, which may wait, and sends `Done result` |
+| `Cmd.task (λ⊤ → work) Done` | runs `work`, which can wait, and sends `Done result` |
 | `Cmd.keyed key policy λsend → …` | a body under a key; `Cmd.Restart` cancels the running one, `Cmd.Queue` waits for it, `Cmd.Ignore` drops the new one, `Cmd.Concurrent` runs both |
 | `Cmd.cancel key`, `Cmd.cancelAll` | stops keyed work |
 | `Cmd.afterRender λsend → …` | runs after the page is patched: focus, measure, scroll |
 | `Cmd.map cmd key Wrap` | a child's commands under a parent's message |
 
-**Subscriptions.** `subscriptions model` returns the set that should be live. After each message
+**Subscriptions.** `subscriptions model` returns the set that must be live. After each message
 the page starts what arrived and cancels what left. `Sub.none`, `Sub.batch`, `Time.every duration
 Tick`, `Browser.Events.onKeyDown`, `onKeyUp`, `onResize`, `onAnimationFrame`, `Sub.map`.
 

@@ -10,7 +10,7 @@ from the `html` platform (`api-html.md` lists all of it); the language knows non
   name (`mismatched_closing_tag` otherwise). `<p></p>` and `<p />` are the same.
 - `name="text"` is a string attribute. `name={expr}` is any typed value. A bare `name` is
   `name={True}`. Character references in text and quoted values are decoded.
-- Markup may start only where an operand may: after `=`, `→`, `(`, `,`, in a hole, as an argument
+- Markup starts only where an operand starts: after `=`, `→`, `(`, `,`, in a hole, as an argument
   in parentheses.
 - A child is text, a hole `{expr}`, or more markup. A hole holds a `String`, `Int`, `Float`,
   `Bool` or `Char` (rendered as text), an `Html msg`, a `Maybe (Html msg)` or a `List (Html msg)`
@@ -47,7 +47,7 @@ message. Which one is decided by the handler's type.
 - `onClick={Clicked}` sends `Clicked`.
 - `onInput={Typed}` calls `Typed` with the input's value, a `String`, and sends the result.
 - A handler receives the raw `Html.Event` where the vocabulary says so (`onKeyDown`, `onSubmit`,
-  `onClick` through a lambda). It may call `Html.preventDefault event` itself, as a statement,
+  `onClick` through a lambda). It can call `Html.preventDefault event` itself, as a statement,
   then return the message. `Html.key event`, `Html.targetValue event` and `Html.targetChecked event`
   read it.
 - A handler must not wait. It returns a message and does nothing else.

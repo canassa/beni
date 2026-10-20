@@ -32,7 +32,7 @@ increment = add 1
 
 ## `_` is the placeholder
 
-`f a _ c` is `λx → f a x c`. The placeholder may fill any position, the first included. At most one
+`f a _ c` is `λx → f a x c`. The placeholder can fill any position, the first included. At most one
 `_` per call; two missing arguments are a lambda. The lambda wraps the innermost call: in
 `f (g _) b` the placeholder belongs to `g`.
 
@@ -51,8 +51,9 @@ halves xs = List.map xs λx → x / 2
 
 ## `▷` and `◁`
 
-- `e ▷ f a b` is `f e a b`: the left operand becomes the **first** argument. The right operand must
-  be a call or a name (`pipe_rhs_not_application` otherwise).
+- `e ▷ f a b` is `f e a b`: the left operand becomes the **first** argument. The right operand is
+  a call or a name. A bare `case`, `if`, lambda, `?` or operator chain there is the error
+  `pipe_rhs_not_application`.
 - `f a ◁ e` is `f a e`, Elm's `<|`.
 - `>>` and `<<` are gone. Name the argument: `λx → g (f x)`.
 
@@ -96,7 +97,7 @@ A callback takes the element first: `List.foldl xs 0 λx acc → acc + x`; `List
 
 ## A trailing lambda
 
-The last argument of a call may be a lambda without parentheses. When its body starts on the same
+The last argument of a call can be a lambda without parentheses. When its body starts on the same
 line, the body runs to the end of the line, so a pipeline continues on the next line. A lambda that
 is not the last argument keeps its parentheses.
 
@@ -128,7 +129,7 @@ both left right =
     Task.join a + Task.join b
 ```
 
-A bind is never the last line of a block. A `?` may not stand after a bind in the same block, because
+A bind is never the last line of a block. A `?` after a bind in the same block is an error, because
 the rest of the block is a lambda.
 
 ## Method calls
