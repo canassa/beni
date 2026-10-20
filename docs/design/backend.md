@@ -8684,14 +8684,13 @@ function with a host-typed parameter and a closed result (a widget's `replace`, 
 `Schema.Value`) still filters its return, and a var of function type holds arrows of every key.
 `RepKeys.isWild` answers for the wild set where the filter reads. The wild set is as specified, the
 boundary's named types being every named type of constructors without integer tags. **A schema
-declaration adds its own `Type` and `Encoded` and nothing else** (their values come from `Js.to`):
-a record endpoint as its plan's term reads (an endpoint with parameters by matching every record of
-the table against that term), a tagged one as a named type of no integer tags, closed through its
-constructors' payloads (their interface schemes, or for a private schema its plan's variants when
-each payload is a primitive, a parameter or another schema). Where the closure would still have to
-go through a type this file cannot canonicalise as the checker does (a private tagged schema whose
-variant carries an inline record, say), every key is wild (`all_wild`), since a key no checker key
-equals would be a filter that drops a site of its own type. Three things the specification did not
+declaration adds its own `Type` and `Encoded` and its tagged variants' payloads, inline records
+included, and nothing else** (their values come from compiled code and `Js.to`); the checker lists
+them in the artifact's wild set (checker-v2.md §36), and the merge closes them as any wild type. A
+record endpoint a written type names is canonicalised from its plan's term, as the checker expands
+it. Where the closure would have to go through a type this file cannot canonicalise as the checker
+does, every key is wild (`all_wild`), since a key no checker key equals would be a filter that drops
+a site of its own type. Three things the specification did not
 foresee:
 
 - **A name is a `NameIndex`, not a local.** Lowering numbers a local's disambiguator within its
