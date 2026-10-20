@@ -8715,6 +8715,45 @@ The hidden `build --rep-keys` prints the table and every key lowering wrote, whi
 arm under `browser-inline`), and `cache_test.zig` asserts that a build from a warm cache prints what
 a cold one does.
 
+*As built 2026-10-20 (issue #491): the filter.* As specified, in `Pts` alone: `VSet.allow` is set in
+`localVar` from the name's key and in `funcSite` from `RepKeys.result` of the arrow's key, `Site.key`
+in `siteOf`, both through `Pts.closedKey`, which maps a key in the wild set (or every key, under
+`all_wild`) to `wild` once, so the filter compares two keys and never asks the table. `joinNow`
+intersects the batch with the var's filter first (`filterSites`, the set table's third cached
+operation, keyed by set and key, which answers with the batch's own entry when every site passes),
+and a `top` var escapes only the sites that passed. The summary-link rule is `Pts.linksAcross`, read
+in `copy`, in `joinNow`'s propagation (the `folded` flag of each successor's batch is the rule, so
+a target that does not link folds what arrives), in `summaryOf`'s walk (a summary is made only for
+the sources it will link) and in `feedSummary`'s cover. `expectSame` is unchanged. The fixtures are
+`emit/release/inline/TypedMerge` (blessed on the base: the second model's literals lose `shown`,
+1 127 → 1 119 bytes), `run/UnboxedTypes` extended and nine `run/TypedFilter*` programs, one per
+item of *Fixtures*; the model through `Js.from` and `Js.to` is `run/TypedFilterJsCast` with its own
+platform, since `tests/platforms/toy` is built only by `external_platform_test`. Two broken builds
+showed what they guard: one that ignores the wild set miscompiles `TypedFilterJsCast` and
+`TypedFilterQuestion`; one that drops wild sites from a closed var miscompiles those two and
+`TypedFilterExtensible`, `TypedFilterInlinedGeneric` and `TypedFilterNullary`. `Alias`, `Compare`,
+`DebugLog` and `WithDefault` fail only if two keys of one type differ, which neither break reaches.
+No other `emit/release/` golden and no other run hash moved; `bench/corpus` is 19 280 release
+brotli bytes before and after. Instructions of one release build (the safety compiler):
+`SpreadWide` 1 449M → 1 463M, `SpreadArms` 2 464M → 2 501M, `MemberReadsWide` 3 248M → 3 287M —
+the folding a stricter filter asks for, with no fact changed.
+
+**The dashboard does not move.** N=16, N=64 and N=64 without `withDefault` keep their
+`spec_pts_edges` (80 632, 26 222 539, 550 910 over 7, 6 and 6 runs), `spec_pts_max_set` (103, 415,
+415), output bytes and times (N=64 5.2–5.9 s either way), because nothing in it is keyed:
+`build --rep-keys` prints `every key wild`, since `Main` declares schemas and the wild set closes
+through their endpoints (`all_wild`). With `all_wild` ignored, as a measurement only, it still does
+not move (edges 90 077, 26 355 990, 684 361, more folding and the same output): `Main.Model` and
+`step`'s locals and result are keyed, but 12 of the 16 widget models are in the wild set — each
+`replace` decodes the model itself with `Json.decodeValue`, whose `a.codec` reaches `Schema`'s
+`toHost = Js.from` at `Codec a`, so `a` crosses (D2) — and `replace`'s arrow has no key in any
+widget, since its parameter `Schema.Value` is a host type and a function type with one wild part
+is wild. The merged set leaves `withDefault` into the property vars of `Main.Model`'s records,
+which no filter reads (slice 5). So the filter as specified cannot meet the plan's N=64 target;
+what would let it is a choice for the owner, not this slice: keys through schema endpoints, a
+function's result key independent of its parameters', a narrower D2 for `Schema`'s own `toHost`,
+and slice 5's property filters.
+
 ### Compact statements
 
 ### Compact statements
