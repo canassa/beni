@@ -4,8 +4,8 @@ The bridge exports the existing fixtures, bounded enumeration grammar and seeded
 v5 generator into the shipping compiler. It changes neither ownership policy.
 A Lean rejection is a lead, not a proof of a compiler defect. A confirmed
 shipping ownership defect requires divergence between the oracle's own value
-and in-place interpreters, plus a red pending refusal fixture. The emitted
-direct library still uses persistent lists and cannot confirm in-place safety.
+and in-place interpreters, plus a red pending refusal fixture. The library the
+in-place platform emits still uses persistent lists and cannot confirm in-place safety.
 The post-campaign replay is `node scripts/bridge-triage.mjs`;
 [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records its original-program partition.
 
@@ -145,9 +145,14 @@ failures remain fatal even if they finish while input is still being read. CI
 also runs a black-box failure control that forces a real compiler invocation to
 fail during a long tail of explicitly skipped programs.
 
-The dump parser rejects unfamiliar lines. Browser-direct `check` diagnostics
-must match exactly the dump's deduplicated rejected/pending source spans, with
-no unexpected diagnostic code or abnormal exit.
+The dump parser rejects unfamiliar lines. The in-place platform's `check`
+diagnostics must match exactly the dump's deduplicated rejected/pending source
+spans, with no unexpected diagnostic code or abnormal exit. The parser skips the
+record update demands (the `update` lines of #391) until #316 lands: the Lean
+oracle has no record field assignment, so it has no verdict for such a site, and
+the compiler reports a record demand without enforcing it, so a rejected one has
+no diagnostic to match. The parser checks that the skipped lines of a module
+equal its `records` count and the kept demand lines its `demands` count.
 
 ## Runtime boundary and historical minimization
 

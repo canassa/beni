@@ -206,10 +206,24 @@ async function minimize(original, dir, outcome) {
 }
 function parseDump(text, programs) {
   const byModule = new Map(programs.map(p => [p.module, []])); let current = null;
+  // #391's count lines check the partition: every `update` line skipped below
+  // is one of the module's `records N`, and every demand line kept is one of
+  // its `demands N`. A module without demands prints neither line.
+  const close = () => {
+    if (!current) return;
+    const skipped = current.skippedUpdates ?? 0, records = current.records ?? 0, demands = current.demands ?? 0;
+    if (skipped !== records) throw Error(`skipped ${skipped} update lines in ${current.name}, but it reports records ${records}`);
+    if (current.length !== demands) throw Error(`kept ${current.length} demand lines in ${current.name}, but it reports demands ${demands}`);
+  };
   for (const line of text.split('\n')) {
     if (!line) continue;
     let m = line.match(/^module (\S+)$/);
-    if (m) { current = byModule.get(m[1]); if (!current) throw Error(`unexpected module ${m[1]}`); continue; }
+    if (m) {
+      close();
+      current = byModule.get(m[1]); if (!current) throw Error(`unexpected module ${m[1]}`);
+      current.name = m[1];
+      continue;
+    }
     m = line.match(/^  (\d+):(\d+) (.+?): (accepted|rejected|pending)(?:(?: |: ?)(.*))?$/);
     if (m && current) {
       // A record update (`{ r | F = … }`) is a demand line since #391, with
@@ -219,17 +233,20 @@ function parseDump(text, programs) {
       // compiler reports the demand without enforcing it (`Enforce.zig`,
       // until §31.9's codes land), so a rejected one has no diagnostic to
       // match either. Skipped until #316 lands.
-      if (m[3].startsWith('update ')) continue;
+      if (m[3].startsWith('update ')) { current.skippedUpdates = (current.skippedUpdates ?? 0) + 1; continue; }
       current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue;
     }
+    m = line.match(/^  (demands|records) (\d+):/);
+    if (m && current) { current[m[1]] = +m[2]; continue; }
     // A §16.7 limit at a declaration (`ownership_limit`): the module is refused
     // there, not at a demand site. Kept beside the module's demands.
     m = line.match(/^  limit (\S+): (\S+) (\d+), over (\d+)$/);
     if (m && current) { (current.limits ??= []).push({ declaration:m[1], kind:m[2], at:+m[3], cap:+m[4] }); continue; }
-    // `records` (#391): the record demands' counts, per module and in total.
-    if (/^  (summary |value |demands |records )|^(total |cause |pending |limits |records )/.test(line)) continue;
+    // `records` (#391): the record demands' counts, in total.
+    if (/^  (summary |value )|^(total |cause |pending |limits |records )/.test(line)) continue;
     throw Error(`unparsed ownership dump: ${line}`);
   }
+  close();
   return byModule;
 }
 async function checkBatch(programs, n) {
