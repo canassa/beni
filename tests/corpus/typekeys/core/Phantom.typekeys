@@ -1,0 +1,27 @@
+module Phantom
+  key #0 Basics.Int
+  key #1 { kept : #0 }
+  key #2 Phantom.Tagged #1
+  key #3 { listed : #0 }
+  key #4 List.List #3
+  key #5 ⊤
+  key #6 { handled : #0 }
+  key #7 #6 → #5
+  key #8 { act : #7 }
+  wild #0
+  wild #3
+  wild #5
+  wild #6
+  decl sendTagged wild
+    local t wild
+  decl sendList wild
+    local xs wild
+  decl sendHandler wild
+    local h wild
+  decl useTagged wild
+    local t #2
+  decl useList wild
+    local xs #4
+  decl useHandler wild
+    local f #7
+  inst 61 record #8
