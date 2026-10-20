@@ -1,0 +1,28 @@
+-- load
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="command">"command"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #direct
+console.info: saved save=0ms {"user":"7"}
+console.debug: a trace line
+console.debug: a debug line
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="command">"command"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #command
+console.warn: from a command
+<body>
+  <main>
+    <button id="direct">"direct"</button>
+    <button id="command">"command"</button>
+    <p>"2"</p>
+  </main>
+</body>

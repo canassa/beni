@@ -2562,7 +2562,7 @@ it wins. Research 79 measures it.*
 | Thesis piece | Slice 3c |
 |---|---|
 | `init` is a function (Change 4) | **built on every platform** (§22.2; `boundary.md` §9.8.16 (a)), with `beni fmt --migrate-init` |
-| Command constructors that take values (O5) | **built**: `Storage.save`, `Http.send`, `Log.write` (§22.3; `boundary.md` §9.8.16 (b)) |
+| Command constructors that take values (O5) | **built**: `Storage.save`, `Http.send`, `Cmd.log`, `Log.write` until 2026-10-20 (§22.3; `boundary.md` §9.8.16 (b)) |
 | The writers' rows (thesis §3.11) | `swap` **asserted** with `pop`'s row; the others checked (§22.5) |
 | Owned sends (Change 7) | not built: slice 3d (§21 item 1) |
 
@@ -2613,7 +2613,7 @@ an older entry proof cannot survive the corrected rule.
 Nothing in the checker changes for them: what a command holds escapes at the constructor's call (§20.4
 (a)), and a value command holds only what it was handed. `Storage.save area key text failed` captures
 three strings, which cross, and a function of the error; `Http.send request tag` a record whose body is a
-`Body` (text, or parts of text) and whose `expect` is a function of the response; `Log.write level line`
+`Body` (text, or parts of text) and whose `expect` is a function of the response; `Cmd.log level line`
 a string. So a model list reaches none of them unless the program puts it there, and an arm that saves
 or sends the model's text leaves the model's lists unescaped. The three are beni over the direct forms,
 their summaries inferred; none is asserted.
@@ -2658,7 +2658,7 @@ New and changed fixtures in `tests/corpus/ownership/`:
 |---|---|---|
 | `EntryInit` (rewritten; browser-direct and browser-tea) | Change 4, T53, T14, T21 | `init = λ⊤ → initialModel` and `init = initTop` with `initTop ⊤ = initialModel`: `top-level` on both; a named function and a lambda that build the list: `entry` on browser-direct, `platform` on browser-tea; a top-level seed: `top-level` |
 | `EntryInitProgram` (browser) | `Browser.program`'s `init` | `top-level` for a top-level list, `platform` for a fresh one |
-| `EntryValueCommand` (browser-direct and browser-tea) | O5, §22.3–§22.4 | `Storage.save`, `Http.send` and `Log.write` of the model's text, then a push: `entry`; the same save through `Cmd.do` capturing `model`: `escaped` |
+| `EntryValueCommand` (browser-direct and browser-tea) | O5, §22.3–§22.4 | `Storage.save`, `Http.send` and `Cmd.log` of the model's text, then a push: `entry`; the same save through `Cmd.do` capturing `model`: `escaped` |
 | `Permutations` | §22.5 | an element edit after `swap`, `pop`, `removeAt` and `insertAt` of a literal: accepted with `xreq excl π1`; one list inserted twice, and `[ row, row ]` swapped: `exclusive` |
 
 and on the pages: `browser/tea/ValueCommands` (the three commands' effects), `StorageFaults` (`save`'s two
