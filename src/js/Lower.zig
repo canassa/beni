@@ -2947,7 +2947,9 @@ pub const Lowerer = struct {
         // (`browser-inline.md` §7).
         if (l.in.direct) |dr| for (dr.lifts, 0..) |piece, gi| {
             if (piece.module != l.in.module.int() or piece.in_place) continue;
-            if (l.in.live) |r| if (!r.of(l.in.module).lift(gi)) continue;
+            const answer = if (l.in.live) |r| r.of(l.in.module).lift(gi) else true;
+            l.askSelf(.lift, answer, 0, @intCast(gi));
+            if (!answer) continue;
             try names.append(l.scratch, try l.name(.{ .module = l.module_name.toOptional(), .base = try l.liftBase(l.in.module, piece), .tag = JsIr.Name.no_tag }));
         };
         // `core/List`'s core-private values the emitter calls from other
