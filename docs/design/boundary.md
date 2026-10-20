@@ -4376,7 +4376,11 @@ stays until §9.8.16 (b)'s `Log.write` has a home outside it**: a platform modul
 module of its name for the program and for the platform itself (§9.8.11 (a), §9.1), so a browser
 program still imports the browser's `Log`, and a `node` program imports core's. *Second part, the
 same day:* the log context (`annotate`, `span`, `minimum`, `withSink`) is built, in the fiber's
-log-context slot (§17.5), so a `node` line carries the fiber's spans and annotations.
+log-context slot (§17.5), so a `node` line carries the fiber's spans and annotations. *Third part,
+the same day:* `platforms/browser/Log.beni` is removed, so a page program imports core's `Log`, and
+the default sink prints what the browser's `Log` printed. `Log.write` is `Cmd.log` (§9.8.16 (b), the
+owner's decision). `browser-tea` no longer names `Log` in `"reexports"`: no platform module has the
+name now, and a program sees core's modules without a re-export.
 
 **(c) A Node program that can never wake ends, with exit 1** (§17.10; A8's "never a silent exit
 0"). `Io.run` sets the exit code to 1 when it starts its fiber, which the fiber's end overwrites as
