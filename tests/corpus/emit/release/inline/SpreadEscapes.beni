@@ -1,0 +1,72 @@
+-- #487: the points-to analysis's copy-edge machinery, on a program small
+-- enough (under `Pts.max_checked_nodes`) that a safety build computes its
+-- fixpoint a second time in a shuffled order and compares the two. Every
+-- arm of `update` spreads `model` and `child` (field summaries); `view`
+-- reads `model.w1` and `model.w2` more than once (shared load cells, one of
+-- them evaluated with an older object than the other); and `List.sortBy`
+-- hands both children to a foreign function, so their sites escape after
+-- a read was linked to them, and some read finds one escaped already. The
+-- golden was written by the compiler before the change.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Child =
+    a : Int
+    b : Int
+
+
+type ChildMsg
+    = Add
+    | Subtract
+
+
+type alias Model =
+    w1 : Child
+    w2 : Child
+
+
+type Msg
+    = W1 ChildMsg
+    | W2 ChildMsg
+
+
+init : ⊤ → Model
+init ⊤ = { w1 = { a = 0, b = 1 }, w2 = { a = 2, b = 3 } }
+
+
+step : ChildMsg, Int, Child → Child
+step msg by child =
+    case msg of
+        Add →
+            { child | a = child.a + by }
+
+        Subtract →
+            { child | b = child.b - by }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1 m →
+            { model | w1 = step m 1 model.w1 }
+
+        W2 m →
+            { model | w2 = step m 2 model.w2 }
+
+
+ranked : Model → Int
+ranked model = List.sum (List.map (List.sortBy [ model.w2, model.w1 ] λc → c.b) λc → c.a)
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p>{model.w1.a} {model.w1.b}</p><button onClick={W1 Add}>Add</button><button onClick={W1 Subtract}>Subtract</button>
+        <p>{model.w2.a} {ranked model}</p><button onClick={W2 Add}>Add</button><button onClick={W2 Subtract}>Subtract</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root"
