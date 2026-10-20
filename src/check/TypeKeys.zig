@@ -55,7 +55,7 @@ const Context = @import("Context.zig");
 const Publish = @import("Publish.zig");
 const Schema = @import("Schema.zig");
 const Interface = @import("../resolve/Interface.zig");
-const Schemes = @import("Schemes.zig");
+
 const Solve = @import("Solve.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
@@ -189,6 +189,8 @@ pub const Input = struct {
     casts: []const Solve.Cast,
     /// Every crossing quantifier of an import this module instantiated.
     uses: []const Instantiate.CrossingUse,
+    /// Every own scheme quantifier's copy, at each instantiation.
+    copies: []const Instantiate.CopyPair,
     /// The module's schema declarations' endpoints and payloads, which
     /// compiled code builds and parses (`schema.md` §6).
     schemas: *const Schema.State,
@@ -201,9 +203,9 @@ pub const Input = struct {
 pub const Output = struct {
     /// Owned by `gpa`.
     artifact: Artifact,
-    /// Per declaration, its crossing quantifiers in scheme order, ascending;
-    /// owned by `scratch`.
-    crossing: []const []const u16,
+    /// Per store variable: whether it is a scheme quantifier that crosses,
+    /// which P8 publishes as its `crosses` bit; owned by `scratch`.
+    crossing: []const bool,
 };
 
 pub fn build(in: Input) Error!Output {
@@ -310,7 +312,7 @@ pub fn build(in: Input) Error!Output {
         artifact.args = try in.gpa.dupe(TypeKey, b.args.items);
         artifact.labels = try in.gpa.dupe(InternPool.Symbol, b.labels.items);
     }
-    return .{ .artifact = artifact, .crossing = try c.published() };
+    return .{ .artifact = artifact, .crossing = c.crossing };
 }
 
 /// The instructions that make a value with an identity of its own, by tag;
@@ -755,251 +757,95 @@ const Builder = struct {
 };
 
 /// The crossing quantifiers of the module's declarations and `let`
-/// functions, to a fixpoint, and the wild set's closed types (§36).
+/// functions, and the wild set's closed types (§36). It reads only what the
+/// check recorded on its way: the casts, every imported crossing quantifier's
+/// instance, and every own scheme quantifier's copy at each instantiation
+/// (`Instantiate.copies`). A quantifier that comes to cross wakes the copies
+/// of it, so the fixpoint is a worklist over those records and never a second
+/// walk of the module.
 const Crossing = struct {
     in: Input,
     b: *Builder,
-    /// One per declaration, then one per `Bir` local: made when first asked.
-    owners: []Owner = &.{},
     wild: std.ArrayList(TypeKey) = .empty,
-    changed: bool = false,
     todo: std.ArrayList(Var) = .empty,
-    pairs: std.ArrayList(Pair) = .empty,
-    zip_stack: std.ArrayList(Pair) = .empty,
     fields: std.ArrayList(TypeStore.Field) = .empty,
-    other: std.ArrayList(TypeStore.Field) = .empty,
-    refs: std.ArrayList(Ref) = .empty,
+    /// Per store variable that existed when the walk began: whether it is a
+    /// scheme quantifier that crosses.
+    crossing: []bool = &.{},
+    /// The quantifiers that came to cross in the current pass.
+    queue: std.ArrayList(Var) = .empty,
+    /// Per declaration, the generalised variables of its scheme and of its
+    /// `let` functions' types, read once when an annotation's rigid variable
+    /// has to be named.
+    owned: []?[]const Var = &.{},
     /// Per `TypeId`, where its held parameters start in `held_words`.
     held_at: []u32 = &.{},
-    /// Per declaration, `worth`'s answer: 1, 0, or 2 for not yet asked.
-    worth_at: []u8 = &.{},
-    /// Per declaration, its `let` functions (`letsOf`), or null until asked.
-    lets_at: []?[]const u32 = &.{},
     held_words: std.ArrayList(u32) = .empty,
-
-    const Owner = struct {
-        made: bool = false,
-        /// The quantifiers, in the scheme's order.
-        order: []const Var = &.{},
-        crossing: []bool = &.{},
-        /// Every quantifier crosses.
-        all: bool = false,
-        /// Grows whenever a bit is set: what a reference compares.
-        version: u32 = 0,
-
-        fn any(o: *const Owner) bool {
-            // Every bit set, and `all`, bumps the version.
-            return o.version != 0;
-        }
-
-        fn crosses(o: *const Owner, q: usize) bool {
-            return o.all or (q < o.crossing.len and o.crossing[q]);
-        }
-    };
-
-    /// A scheme node and the instance node at the same place; `q` is the
-    /// quantifier when the scheme node is one.
-    const Pair = struct { s: Var, i: Var };
 
     fn deinit(c: *Crossing) void {
         const s = c.in.scratch;
         c.wild.deinit(s);
         c.todo.deinit(s);
-        c.pairs.deinit(s);
-        c.zip_stack.deinit(s);
         c.fields.deinit(s);
-        c.other.deinit(s);
-        c.refs.deinit(s);
+        c.queue.deinit(s);
         c.held_words.deinit(s);
     }
 
     fn run(c: *Crossing) Error!void {
         const in = c.in;
         const bir = in.bir;
-        c.owners = try in.scratch.alloc(Owner, bir.decls.len + bir.locals.len);
-        @memset(c.owners, .{});
+        c.crossing = try in.scratch.alloc(bool, in.store.count());
+        @memset(c.crossing, false);
         // The seeds: every `Js.from`, every imported crossing quantifier.
         for (in.casts) |cast| {
             const func = Walk.function(in.store, cast.copy) orelse continue;
             switch (cast.which) {
-                .from => if (func.params.len == 1 and try c.worth(cast.decl)) try c.cross(func.params[0], cast.decl, true),
+                .from => if (func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
                 // A `Js.to` adds its closed types to the wild set and crosses
                 // no quantifier (`backend.md` §9's table).
                 .to => if (in.keyed) try c.cross(func.result, cast.decl, false),
             }
         }
-        for (in.uses) |u| {
-            const decl = u.decl orelse declOf(bir, u.inst) orelse continue;
-            if (try c.worth(decl)) try c.cross(u.v, decl, true);
-        }
-        // The module's own references, until nothing new crosses: a
-        // reference is looked at again only when its callee's bits grew.
-        var any = false;
-        for (c.owners) |*o| any = any or o.any();
-        if (!any) return;
-        try c.collectSites();
-        const collected = try in.scratch.alloc(bool, bir.decls.len);
-        @memset(collected, false);
-        c.changed = true;
-        while (c.changed) {
-            c.changed = false;
-            // A declaration's references are read once something it names
-            // has crossing quantifiers: most of a module's never do.
-            for (bir.decls, 0..) |d, di| {
-                if (collected[di] or !d.kind.isValue() or !try c.relevant(d, @intCast(di)) or !try c.worth(@intCast(di))) continue;
-                collected[di] = true;
-                try c.collectDecl(d, @intCast(di));
+        for (in.uses) |u| try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
+        if (c.queue.items.len == 0) return;
+        // Passes over the copies until none wakes: a copy is read once its
+        // quantifier crosses, and a pass is a test per copy.
+        const done = try in.scratch.alloc(bool, in.copies.len);
+        @memset(done, false);
+        while (true) {
+            c.queue.clearRetainingCapacity();
+            for (in.copies, done) |p, *d| {
+                if (d.* or p.quantifier.int() >= c.crossing.len or !c.crossing[p.quantifier.int()]) continue;
+                d.* = true;
+                if (p.decl < bir.decls.len) try c.cross(p.copy, p.decl, true);
             }
-            for (c.refs.items) |*r| {
-                const o = &c.owners[r.callee];
-                if (o.version == r.seen) continue;
-                if (r.kind == .method and !try c.worth(r.decl)) continue;
-                r.seen = o.version;
-                switch (r.kind) {
-                    .instance => try c.instance(r.callee, r.scheme, r.inst, r.decl),
-                    .method => try c.method(r.inst, r.decl),
-                }
+            // A method call that runs a declaration of this module whose
+            // quantifiers cross: its scheme is not at hand here, so every
+            // type the call reads or makes crosses.
+            for (in.dispatch.sites) |site| {
+                const callee = site.callee.unwrap() orelse continue;
+                const decl = switch (in.dispatch.term(callee)) {
+                    .top => |t| t.decl.int(),
+                    else => continue,
+                };
+                if (decl >= bir.decls.len or bir.instTag(site.inst) != .method_call) continue;
+                if (!try c.declCrosses(decl)) continue;
+                const owner = declOf(bir, site.inst) orelse continue;
+                try c.crossInst(site.inst, owner);
+                const data = bir.instData(site.inst);
+                try c.crossInst(@fromBackingInt(@intCast(data.lhs)), owner);
+                const call = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
+                for (bir.extraSlice(.{ .start = call.args_start, .end = call.args_end }, Bir.Inst.Index)) |arg| try c.crossInst(arg, owner);
             }
+            if (c.queue.items.len == 0) return;
         }
     }
 
-    const Ref = struct {
-        inst: Bir.Inst.Index,
-        callee: usize,
-        decl: u32,
-        scheme: Var,
-        kind: enum { instance, method },
-        /// The callee's `version` when this was last looked at.
-        seen: u32 = 0,
-    };
-
-    /// Whether a walk in declaration `decl` can change anything: in a keyed
-    /// module it adds to the wild set; elsewhere it only marks quantifiers, so
-    /// a declaration with none of its own and no `let` function has nothing
-    /// to mark.
-    fn worth(c: *Crossing, decl: u32) Error!bool {
-        if (c.in.keyed) return true;
-        const bir = c.in.bir;
-        if (decl >= bir.decls.len) return false;
-        if (c.worth_at.len == 0) {
-            c.worth_at = try c.in.scratch.alloc(u8, bir.decls.len);
-            @memset(c.worth_at, 2);
-        }
-        if (c.worth_at[decl] != 2) return c.worth_at[decl] == 1;
-        const d = bir.decls[decl];
-        var yes = false;
-        var l = d.locals_start;
-        while (!yes and l < d.locals_end) : (l += 1) yes = bir.locals[l].kind == .let;
-        if (!yes and d.kind.isValue()) if (c.in.decl_scheme[decl].unwrap()) |v| {
-            yes = try c.quantified(v);
-        };
-        c.worth_at[decl] = @intFromBool(yes);
-        return yes;
-    }
-
-    /// Whether `v`'s type holds a quantifier: a walk with no order to keep,
-    /// cheaper than reading the scheme's quantifiers.
-    fn quantified(c: *Crossing, v: Var) Error!bool {
-        const store = c.in.store;
-        const s = c.in.scratch;
-        const seen = store.nextMark();
-        c.todo.clearRetainingCapacity();
-        try c.todo.append(s, v);
-        while (c.todo.pop()) |next| {
-            const r = store.find(next);
-            if (store.mark(r) == seen) continue;
-            store.setMark(r, seen);
-            switch (store.content(r)) {
-                .flex, .rigid => return true,
-                .err => {},
-                .alias => |a| try c.todo.append(s, a.actual),
-                .structure => |st| switch (st) {
-                    .unit, .empty_record => {},
-                    .func => |f| {
-                        try c.todo.appendSlice(s, store.vars(f.params));
-                        try c.todo.append(s, f.result);
-                    },
-                    .app => |a| try c.todo.appendSlice(s, store.vars(a.args)),
-                    .tuple => |t| try c.todo.appendSlice(s, store.vars(t)),
-                    .record => |rec| {
-                        for (store.fields(rec.fields)) |f| try c.todo.append(s, f.value);
-                        try c.todo.append(s, rec.ext);
-                    },
-                },
-            }
+    fn declCrosses(c: *Crossing, decl: u32) Error!bool {
+        for (try c.ownedBy(decl)) |v| {
+            if (c.crossing[v.int()]) return true;
         }
         return false;
-    }
-
-    /// Whether declaration `d` names a declaration of this module, or has a
-    /// `let` function, whose quantifiers cross.
-    fn relevant(c: *Crossing, d: Bir.Decl, di: u32) Error!bool {
-        const bir = c.in.bir;
-        for (bir.declRefs(d)) |r| {
-            if (r.kind == .top_value and r.a < bir.decls.len and c.owners[r.a].any()) return true;
-        }
-        for (try c.letsOf(di)) |l| {
-            if (c.owners[bir.decls.len + l].any()) return true;
-        }
-        return false;
-    }
-
-    /// Every reference in `d` to a declaration or a `let` function of this
-    /// module with a scheme.
-    fn collectDecl(c: *Crossing, d: Bir.Decl, di: u32) Error!void {
-        const in = c.in;
-        const bir = in.bir;
-        const tags = bir.insts.items(.tag);
-        {
-            var at = d.inst_start.int();
-            while (at < d.inst_end.int() and at < tags.len) : (at += 1) {
-                if (!reference_tags[@backingInt(tags[at])]) continue;
-                const inst: Bir.Inst.Index = @fromBackingInt(@intCast(at));
-                switch (tags[at]) {
-                    .top => {
-                        const callee = bir.instData(inst).lhs;
-                        if (callee >= bir.decls.len) continue;
-                        const scheme = in.decl_scheme[callee].unwrap() orelse continue;
-                        try c.refs.append(in.scratch, .{ .inst = inst, .callee = callee, .decl = di, .scheme = scheme, .kind = .instance });
-                    },
-                    .local => {
-                        const l = d.locals_start + bir.instData(inst).lhs;
-                        if (l >= bir.locals.len or bir.locals[l].kind != .let) continue;
-                        const t = in.local_type[l].unwrap() orelse continue;
-                        try c.refs.append(in.scratch, .{ .inst = inst, .callee = bir.decls.len + l, .decl = di, .scheme = t, .kind = .instance });
-                    },
-                    else => {},
-                }
-            }
-        }
-    }
-
-    /// Every method call that runs a declaration of this module.
-    fn collectSites(c: *Crossing) Error!void {
-        const in = c.in;
-        const bir = in.bir;
-        for (in.dispatch.sites) |site| {
-            const callee = site.callee.unwrap() orelse continue;
-            const decl = switch (in.dispatch.term(callee)) {
-                .top => |t| t.decl.int(),
-                else => continue,
-            };
-            if (decl >= bir.decls.len or bir.instTag(site.inst) != .method_call) continue;
-            const owner = declOf(bir, site.inst) orelse continue;
-            try c.refs.append(in.scratch, .{ .inst = site.inst, .callee = decl, .decl = owner, .scheme = undefined, .kind = .method });
-        }
-    }
-
-    /// A method call that runs a declaration of this module whose quantifiers
-    /// cross: its scheme is not at hand here, so every type the call reads or
-    /// makes crosses.
-    fn method(c: *Crossing, inst: Bir.Inst.Index, decl: u32) Error!void {
-        const bir = c.in.bir;
-        try c.crossInst(inst, decl);
-        const data = bir.instData(inst);
-        try c.crossInst(@fromBackingInt(@intCast(data.lhs)), decl);
-        const call = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
-        for (bir.extraSlice(.{ .start = call.args_start, .end = call.args_end }, Bir.Inst.Index)) |arg| try c.crossInst(arg, decl);
     }
 
     fn crossInst(c: *Crossing, inst: Bir.Inst.Index, decl: u32) Error!void {
@@ -1008,94 +854,25 @@ const Crossing = struct {
         try c.cross(v, decl, true);
     }
 
-    /// The reference at `inst`, in declaration `decl`, instantiates owner
-    /// `callee`'s scheme `scheme`: what each crossing quantifier became.
-    fn instance(c: *Crossing, callee: usize, scheme: Var, inst: Bir.Inst.Index, decl: u32) Error!void {
-        if (inst.int() >= c.in.inst_type.len) return;
-        const at = c.in.inst_type[inst.int()].unwrap() orelse return;
-        const owner = try c.ownerOf(callee);
-        try c.zip(scheme, at, owner);
-        for (c.pairs.items) |p| try c.cross(p.i, decl, true);
-    }
-
-    /// The pairs of `scheme`'s crossing quantifiers (`owner`'s) and the
-    /// instance nodes at their places, into `pairs`; the walk stops once every
-    /// crossing quantifier is found. A row variable is paired with the whole
-    /// record.
-    fn zip(c: *Crossing, scheme: Var, at: Var, owner: *const Owner) Error!void {
-        const store = c.in.store;
-        const s = c.in.scratch;
-        c.pairs.clearRetainingCapacity();
-        c.zip_stack.clearRetainingCapacity();
-        var want: usize = 0;
-        for (0..owner.order.len) |q| {
-            if (owner.crosses(q)) want += 1;
-        }
-        const seen = store.nextMark();
-        try c.zip_stack.append(s, .{ .s = scheme, .i = at });
-        while (c.zip_stack.pop()) |p| {
-            if (c.pairs.items.len >= want) break;
-            const sr = through(store, p.s);
-            const ir = through(store, p.i);
-            if (store.mark(sr) == seen) continue;
-            store.setMark(sr, seen);
-            switch (store.content(sr)) {
-                .flex, .rigid => if (indexOf(owner.order, sr)) |q| if (owner.crosses(q)) try c.pairs.append(s, .{ .s = sr, .i = ir }),
-                .err, .alias => {},
-                .structure => |ss| {
-                    const is = switch (store.content(ir)) {
-                        .structure => |x| x,
-                        else => continue,
-                    };
-                    switch (ss) {
-                        .unit, .empty_record => {},
-                        .func => |f| if (is == .func and is.func.params.len == f.params.len) {
-                            for (store.vars(f.params), store.vars(is.func.params)) |x, y| try c.zip_stack.append(s, .{ .s = x, .i = y });
-                            try c.zip_stack.append(s, .{ .s = f.result, .i = is.func.result });
-                        },
-                        .app => |a| if (is == .app and is.app.type == a.type and is.app.args.len == a.args.len) {
-                            for (store.vars(a.args), store.vars(is.app.args)) |x, y| try c.zip_stack.append(s, .{ .s = x, .i = y });
-                        },
-                        .tuple => |t| if (is == .tuple and is.tuple.len == t.len) {
-                            for (store.vars(t), store.vars(is.tuple)) |x, y| try c.zip_stack.append(s, .{ .s = x, .i = y });
-                        },
-                        .record => |r| if (is == .record) {
-                            c.fields.clearRetainingCapacity();
-                            const end = try wholeRow(store, s, &c.fields, r);
-                            c.other.clearRetainingCapacity();
-                            _ = try wholeRow(store, s, &c.other, is.record);
-                            for (c.fields.items) |f| {
-                                for (c.other.items) |g| if (g.name == f.name) {
-                                    try c.zip_stack.append(s, .{ .s = f.value, .i = g.value });
-                                    break;
-                                };
-                            }
-                            // A row variable stands for the fields the instance
-                            // has beyond the scheme's: all of the record.
-                            if (end) |e| if (store.mark(e) != seen) {
-                                store.setMark(e, seen);
-                                if (indexOf(owner.order, e)) |q| if (owner.crosses(q)) try c.pairs.append(s, .{ .s = e, .i = ir });
-                            };
-                        },
-                    }
-                },
-            }
-        }
+    fn markVar(c: *Crossing, v: Var) Error!void {
+        if (v.int() >= c.crossing.len or c.crossing[v.int()]) return;
+        c.crossing[v.int()] = true;
+        try c.queue.append(c.in.scratch, v);
     }
 
     /// `v`'s type crosses into JavaScript in declaration `decl`: its closed
-    /// parts join the wild set, and, when `quantifiers`, every quantifier it
-    /// mentions crosses.
+    /// parts join the wild set, and, when `quantifiers`, every quantifier its
+    /// representation holds crosses.
     fn cross(c: *Crossing, v: Var, decl: u32, quantifiers: bool) Error!void {
         const store = c.in.store;
         const s = c.in.scratch;
-        // A fresh mark per walk: a type met twice in one walk is walked once.
-        // `quantifier` may read a scheme's order with marks of its own, which
-        // at worst walks a node of this type again.
         const seen = store.nextMark();
-        c.todo.clearRetainingCapacity();
-        try c.todo.append(s, v);
-        while (c.todo.pop()) |next| {
+        // `quantifier` walks a scheme with a list of its own, so `todo` is
+        // this walk'"'"'s.
+        const todo = &c.todo;
+        todo.clearRetainingCapacity();
+        try todo.append(s, v);
+        while (todo.pop()) |next| {
             const r = store.find(next);
             if (store.mark(r) == seen) continue;
             store.setMark(r, seen);
@@ -1109,18 +886,17 @@ const Crossing = struct {
                 else => {},
             }
             if (c.in.keyed) {
-                // The walk below may move `todo`'s marks: `keyOf` reads none.
                 const k = try c.b.keyOf(r);
                 if (k != .wild) try c.wild.append(s, k);
             }
             switch (content) {
                 .flex, .rigid, .err => {},
-                .alias => |a| try c.todo.append(s, a.actual),
+                .alias => |a| try todo.append(s, a.actual),
                 .structure => |st| switch (st) {
                     .unit, .empty_record => {},
                     .func => |f| {
-                        try c.todo.appendSlice(s, store.vars(f.params));
-                        try c.todo.append(s, f.result);
+                        try todo.appendSlice(s, store.vars(f.params));
+                        try todo.append(s, f.result);
                     },
                     .app => |a| {
                         // Only the arguments its representation holds: a
@@ -1128,19 +904,20 @@ const Crossing = struct {
                         // (`backend.md` §9, amended 2026-10-20).
                         const args_held = try c.held(a.type);
                         for (store.vars(a.args), 0..) |x, i| {
-                            if (has(args_held, i)) try c.todo.append(s, x);
+                            if (has(args_held, i)) try todo.append(s, x);
                         }
                     },
-                    .tuple => |t| try c.todo.appendSlice(s, store.vars(t)),
+                    .tuple => |t| try todo.appendSlice(s, store.vars(t)),
                     .record => |rec| {
-                        // By text: the order `keyOf` meets them in numbers nodes.
+                        // By text where it is keyed: the order `keyOf` meets
+                        // them in numbers nodes.
                         c.fields.clearRetainingCapacity();
                         try c.fields.appendSlice(s, store.fields(rec.fields));
                         if (c.in.keyed) byText(TypeStore.Field, c.in.interner, c.fields.items);
                         var i = c.fields.items.len;
                         while (i > 0) {
                             i -= 1;
-                            try c.todo.append(s, c.fields.items[i].value);
+                            try todo.append(s, c.fields.items[i].value);
                         }
                         // A row's closed end is not a type a value has.
                         const ext = store.find(rec.ext);
@@ -1148,128 +925,99 @@ const Crossing = struct {
                             .structure => |e| e == .empty_record,
                             else => false,
                         };
-                        if (!ends) try c.todo.append(s, ext);
+                        if (!ends) try todo.append(s, ext);
                     },
                 },
             }
         }
     }
 
-    /// The type variable `r`, met in declaration `decl`, crosses: the
-    /// quantifier it is of, or, when no owner names it, every quantifier of
-    /// the declaration and of its `let` functions.
+    /// The type variable `r`, met in declaration `decl`, crosses. A
+    /// generalised one is a quantifier of the declaration's scheme or of one
+    /// of its `let` functions, and crosses itself. An annotation's rigid one
+    /// stands for the scheme quantifier of its name, which crosses; when no
+    /// owner has that name, every quantifier of the declaration does.
     fn quantifier(c: *Crossing, r: Var, decl: u32) Error!void {
-        const in = c.in;
-        const store = in.store;
-        if (decl >= in.bir.decls.len) return;
-        const rigid = store.content(r) == .rigid;
-        // A variable no generalisation reached is one type, not a
-        // quantifier: what reaches it is that type's (§36).
-        if (!rigid and store.rank(r) != TypeStore.generalized) return;
-        const lets = try c.letsOf(decl);
+        const store = c.in.store;
+        if (decl >= c.in.bir.decls.len) return;
+        if (store.content(r) != .rigid) {
+            // A variable no generalisation reached is one type, not a
+            // quantifier: what reaches it is that type's (§36).
+            if (store.rank(r) == TypeStore.generalized) try c.markVar(r);
+            return;
+        }
+        const owned = try c.ownedBy(decl);
         var found = false;
-        if (rigid) {
-            // An annotation's: by its name, in every owner of the declaration
-            // that has a quantifier of that name.
-            if (store.flagsOf(r).name.unwrap()) |name| {
-                if (try c.markNamed(decl, name)) found = true;
-                for (lets) |l| {
-                    if (try c.markNamed(in.bir.decls.len + l, name)) found = true;
-                }
-            }
-        } else {
-            // By identity: the declaration's own scheme, then its `let`s'.
-            if (try c.mark(decl, r)) found = true;
-            for (lets) |l| {
-                if (found) break;
-                if (try c.mark(in.bir.decls.len + l, r)) found = true;
+        if (store.flagsOf(r).name.unwrap()) |name| {
+            for (owned) |v| {
+                if (store.flagsOf(v).name.unwrap() != name) continue;
+                found = true;
+                try c.markVar(v);
             }
         }
         if (found) return;
-        try c.setAll(decl);
-        for (lets) |l| try c.setAll(in.bir.decls.len + l);
+        for (owned) |v| try c.markVar(v);
     }
 
-    /// The `let` functions of declaration `decl`, by local index, read once.
-    fn letsOf(c: *Crossing, decl: u32) Error![]const u32 {
-        const in = c.in;
-        if (c.lets_at.len == 0) {
-            c.lets_at = try in.scratch.alloc(?[]const u32, in.bir.decls.len);
-            @memset(c.lets_at, null);
-        }
-        if (c.lets_at[decl]) |l| return l;
-        const d = in.bir.decls[decl];
-        var list: std.ArrayList(u32) = .empty;
-        var l = d.locals_start;
-        while (l < d.locals_end) : (l += 1) {
-            if (in.bir.locals[l].kind == .let) try list.append(in.scratch, l);
-        }
-        c.lets_at[decl] = list.items;
-        return list.items;
-    }
-
-    fn setAll(c: *Crossing, index: usize) Error!void {
-        const o = try c.ownerOf(index);
-        if (o.all) return;
-        o.all = true;
-        o.version += 1;
-        c.changed = true;
-    }
-
-    fn mark(c: *Crossing, index: usize, r: Var) Error!bool {
-        const o = try c.ownerOf(index);
-        const q = indexOf(o.order, r) orelse return false;
-        if (!o.crossing[q]) {
-            o.crossing[q] = true;
-            o.version += 1;
-            c.changed = true;
-        }
-        return true;
-    }
-
-    fn markNamed(c: *Crossing, index: usize, name: InternPool.Symbol) Error!bool {
-        const o = try c.ownerOf(index);
-        var found = false;
-        for (o.order, 0..) |v, q| {
-            if (c.in.store.flagsOf(v).name.unwrap() != name) continue;
-            found = true;
-            if (!o.crossing[q]) {
-                o.crossing[q] = true;
-                o.version += 1;
-                c.changed = true;
-            }
-        }
-        return found;
-    }
-
-    /// Owner `index`'s quantifiers, read the first time it is asked about.
-    fn ownerOf(c: *Crossing, index: usize) Error!*Owner {
-        const o = &c.owners[index];
-        if (o.made) return o;
-        o.made = true;
+    /// The generalised variables of declaration `decl`'s scheme and of its
+    /// `let` functions' types, read once.
+    fn ownedBy(c: *Crossing, decl: u32) Error![]const Var {
         const in = c.in;
         const bir = in.bir;
-        const t: ?Var = if (index < bir.decls.len)
-            (if (bir.decls[index].kind.isValue()) in.decl_scheme[index].unwrap() else null)
-        else blk: {
-            const l = index - bir.decls.len;
-            break :blk if (bir.locals[l].kind == .let) in.local_type[l].unwrap() else null;
-        };
-        const root = t orelse return o;
-        var order: std.ArrayList(Var) = .empty;
-        if (index < bir.decls.len) {
-            // A declaration'"'"'s, in the order the interface writes them.
-            try Schemes.quantifierOrder(in.store, in.interner, root, &order, in.scratch);
-        } else {
-            // A `let`'"'"'s are never published, so any fixed order does, and a
-            // plain walk is cheaper. Its type may hold variables of the
-            // enclosing declaration, which it does not quantify.
-            try c.generalised(root, &order);
+        if (c.owned.len == 0) {
+            c.owned = try in.scratch.alloc(?[]const Var, bir.decls.len);
+            @memset(c.owned, null);
         }
-        o.order = order.items;
-        o.crossing = try in.scratch.alloc(bool, order.items.len);
-        @memset(o.crossing, false);
-        return o;
+        if (c.owned[decl]) |o| return o;
+        var out: std.ArrayList(Var) = .empty;
+        const d = bir.decls[decl];
+        if (d.kind.isValue()) if (in.decl_scheme[decl].unwrap()) |v| try c.generalised(v, &out);
+        // An annotated `let`'"'"'s too: a rigid variable may be its annotation'"'"'s.
+        // An unannotated one'"'"'s quantifiers are its own generalised variables,
+        // which `quantifier` marks as they are met.
+        var l = d.locals_start;
+        while (l < d.locals_end) : (l += 1) {
+            const local = bir.locals[l];
+            if (local.kind != .let or bir.instTag(local.inst) != .let_def) continue;
+            const def = bir.extraData(@fromBackingInt(@intCast(bir.instData(local.inst).lhs)), Bir.LetDef);
+            if (def.annotation == .none) continue;
+            if (in.local_type[l].unwrap()) |v| try c.generalised(v, &out);
+        }
+        c.owned[decl] = out.items;
+        return out.items;
+    }
+
+    /// The generalised variables of `v`'s type, each once, in a walk's order.
+    fn generalised(c: *Crossing, v: Var, out: *std.ArrayList(Var)) Error!void {
+        const store = c.in.store;
+        const s = c.in.scratch;
+        const seen = store.nextMark();
+        var todo: std.ArrayList(Var) = .empty;
+        defer todo.deinit(s);
+        try todo.append(s, v);
+        while (todo.pop()) |next| {
+            const r = store.find(next);
+            if (store.mark(r) == seen) continue;
+            store.setMark(r, seen);
+            switch (store.content(r)) {
+                .flex, .rigid => if (store.rank(r) == TypeStore.generalized and r.int() < c.crossing.len) try out.append(s, r),
+                .err => {},
+                .alias => |a| try todo.append(s, a.actual),
+                .structure => |st| switch (st) {
+                    .unit, .empty_record => {},
+                    .func => |f| {
+                        try todo.appendSlice(s, store.vars(f.params));
+                        try todo.append(s, f.result);
+                    },
+                    .app => |a| try todo.appendSlice(s, store.vars(a.args)),
+                    .tuple => |t| try todo.appendSlice(s, store.vars(t)),
+                    .record => |rec| {
+                        for (store.fields(rec.fields)) |f| try todo.append(s, f.value);
+                        try todo.append(s, rec.ext);
+                    },
+                },
+            }
+        }
     }
 
     /// Which parameters of the named type `id` its representation holds
@@ -1325,92 +1073,7 @@ const Crossing = struct {
         try c.held_words.appendSlice(in.scratch, words);
         return start;
     }
-
-    /// The generalised variables of `v`'s type, each once, in a walk's order.
-    fn generalised(c: *Crossing, v: Var, out: *std.ArrayList(Var)) Error!void {
-        const store = c.in.store;
-        const s = c.in.scratch;
-        const seen = store.nextMark();
-        var todo: std.ArrayList(Var) = .empty;
-        try todo.append(s, v);
-        while (todo.pop()) |next| {
-            const r = store.find(next);
-            if (store.mark(r) == seen) continue;
-            store.setMark(r, seen);
-            switch (store.content(r)) {
-                .flex, .rigid => if (store.rank(r) == TypeStore.generalized) try out.append(s, r),
-                .err => {},
-                .alias => |a| try todo.append(s, a.actual),
-                .structure => |st| switch (st) {
-                    .unit, .empty_record => {},
-                    .func => |f| {
-                        try todo.appendSlice(s, store.vars(f.params));
-                        try todo.append(s, f.result);
-                    },
-                    .app => |a| try todo.appendSlice(s, store.vars(a.args)),
-                    .tuple => |t| try todo.appendSlice(s, store.vars(t)),
-                    .record => |rec| {
-                        for (store.fields(rec.fields)) |f| try todo.append(s, f.value);
-                        try todo.append(s, rec.ext);
-                    },
-                },
-            }
-        }
-    }
-    /// Per declaration, its crossing quantifiers, for P8.
-    fn published(c: *Crossing) Error![]const []const u16 {
-        const decls = c.in.bir.decls.len;
-        const out = try c.in.scratch.alloc([]const u16, decls);
-        for (out, 0..) |*slot, d| {
-            slot.* = &.{};
-            if (d >= c.owners.len or !c.owners[d].made) continue;
-            const o = &c.owners[d];
-            var list: std.ArrayList(u16) = .empty;
-            for (0..o.order.len) |q| if (o.crosses(q)) try list.append(c.in.scratch, @intCast(q));
-            slot.* = list.items;
-        }
-        return out;
-    }
 };
-
-/// `v`'s root, through aliases to their expansion.
-fn through(store: *TypeStore, v: Var) Var {
-    var r = store.find(v);
-    var links: u32 = 0;
-    while (links <= store.count()) : (links += 1) switch (store.content(r)) {
-        .alias => |a| r = store.find(a.actual),
-        else => return r,
-    };
-    return r;
-}
-
-/// A record's whole row into `out`, and the variable it ends in, if any.
-fn wholeRow(store: *TypeStore, gpa: Allocator, out: *std.ArrayList(TypeStore.Field), rec: TypeStore.Structure.Record) Error!?Var {
-    try out.appendSlice(gpa, store.fields(rec.fields));
-    var ext = rec.ext;
-    var links: u32 = 0;
-    while (links <= store.count()) : (links += 1) {
-        const r = through(store, ext);
-        switch (store.content(r)) {
-            .structure => |s| switch (s) {
-                .record => |next| {
-                    try out.appendSlice(gpa, store.fields(next.fields));
-                    ext = next.ext;
-                },
-                .empty_record => return null,
-                else => return null,
-            },
-            .flex, .rigid => return r,
-            else => return null,
-        }
-    }
-    return null;
-}
-
-fn indexOf(order: []const Var, v: Var) ?usize {
-    for (order, 0..) |x, i| if (x == v) return i;
-    return null;
-}
 
 /// The declaration whose instruction range holds `inst`.
 fn declOf(bir: *const Bir, inst: Bir.Inst.Index) ?u32 {
@@ -1448,7 +1111,3 @@ fn has(bits: Bits, i: usize) bool {
     if (i / 32 >= words.len) return true;
     return words[i / 32] & (@as(u32, 1) << @intCast(i % 32)) != 0;
 }
-
-/// The instructions that name a declaration or a local, which `collectDecl`
-/// reads; a table so the scan tests one byte per instruction.
-const reference_tags = Bir.Inst.Tag.set(&.{ .top, .local });

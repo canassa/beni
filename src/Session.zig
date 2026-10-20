@@ -376,6 +376,9 @@ pub const Options = struct {
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
+    /// Compute the crossing bits even when no app module is in the run: the
+    /// checked core'"'"'s, which every build installs (checker-v2.md §36).
+    crossing_always: bool = false,
     /// Capacity of each worker's profile buffer. Allocated once at session
     /// start and never grown, so a worker records without allocating; a full
     /// buffer counts the drop and the trace says `dropped_events`.
@@ -2362,6 +2365,18 @@ fn packEntries(session: *Session, writer: *CorePack.Writer, cached: []const ?Cac
 
 /// One module's entry: the record's bytes verbatim, the dispatch sidecar and
 /// the module's own diagnostics (`checker.md` §7).
+/// Whether this run computes the crossing bits (checker-v2.md §36): when
+/// it keys an app module, whose keys read them, and for the checked core.
+/// A run of core or a platform alone has no reader for them; its records
+/// carry none, and its keys say so (`Key.OptionBits.crossing`).
+fn crossing(session: *const Session) bool {
+    if (session.options.crossing_always) return true;
+    for (0..session.graph.count()) |i| {
+        if (session.graph.modulePackage(@fromBackingInt(@intCast(i))) == .app) return true;
+    }
+    return false;
+}
+
 fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error![]u8 {
     const record = try iface_bytes.write(gpa, &session.resolution.interfaces[m.int()], &session.interner);
     defer gpa.free(record);
@@ -2463,6 +2478,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
             .informational = session.options.informational,
             .explain = session.options.explain,
             .pattern_budget = session.options.pattern_budget,
+            .crossing = session.crossing(),
             .lower_core = lower_core,
             .lower_platform = lower_platform,
             .reported = reported,
@@ -2536,6 +2552,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                     .jobs = r.session.options.jobs,
                     .size_by_work = r.session.options.size_by_work,
                     .pattern_budget = r.session.options.pattern_budget,
+                    .crossing = r.session.crossing(),
                     .roundtrip_interfaces = r.session.options.roundtrip_interfaces,
                     .roundtrip_dispatch = r.session.options.roundtrip_dispatch,
                     .cached = r.cached,

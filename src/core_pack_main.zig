@@ -156,6 +156,8 @@ fn check(
         .pack_out = writer,
         .pack_in = if (made.len == 0) null else made,
         .pack_build_id = build_id,
+        // Every build installs these records: they carry the crossing bits.
+        .crossing_always = true,
     });
     defer session.deinit();
 

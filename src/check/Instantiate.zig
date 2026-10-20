@@ -99,6 +99,13 @@ active_casts: std.ArrayList(u32) = .empty,
 /// variable this module instantiated it at (checker-v2.md §36): what
 /// `TypeKeys` follows once every type is final.
 crossing: std.ArrayList(CrossingUse) = .empty,
+/// Every own scheme quantifier's copy (`CopyPair`).
+copies: std.ArrayList(CopyPair) = .empty,
+/// The declaration a copy in progress notes its quantifiers for, while
+/// `mapped` runs (`copy`).
+copy_owner: ?u32 = null,
+/// Whether to keep `crossing` and `copies` (the run computes the bits).
+track_crossing: bool = true,
 
 pub const CastCopies = struct {
     decl: u32,
@@ -107,6 +114,11 @@ pub const CastCopies = struct {
 };
 
 pub const CrossingUse = struct { inst: Bir.Inst.Index, decl: ?u32, v: Var };
+
+/// A scheme quantifier of this module (a declaration's or a `let`'s) and the
+/// variable one instantiation copied it to, in declaration `decl`
+/// (checker-v2.md §36): what `TypeKeys` follows when the quantifier crosses.
+pub const CopyPair = struct { quantifier: Var, copy: Var, decl: u32 };
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
@@ -117,6 +129,7 @@ pub fn deinit(in: *Instantiate) void {
     in.cast_copies.deinit(in.cx.gpa);
     in.active_casts.deinit(in.cx.gpa);
     in.crossing.deinit(in.cx.gpa);
+    in.copies.deinit(in.cx.gpa);
 }
 
 /// A slot for the cast just appended to `Solve.casts`. `root` is null when
@@ -264,10 +277,14 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
     }
     // Pass 2: each copy's content, its successors mapped through the memo.
     in.entries = 0;
+    // A reference's quantifiers are noted as `mapped` meets them (§36).
+    in.copy_owner = if (in.track_crossing) in.record_owner else null;
+    defer in.copy_owner = null;
     for (in.copied.items[start..]) |r| {
         const c = store.copy(r).unwrap().?;
         store.setContent(c, try in.mapped(r));
     }
+    in.copy_owner = null;
     // The requirements it copied become wanteds, in canonical order,
     // read off the scheme while the memo still maps it to the copy.
     if (in.entries != 0) try in.wantInOrder(root, true);
@@ -446,6 +463,9 @@ fn mapped(in: *Instantiate, r: Var) Error!TypeStore.Content {
             // constraints mapped through the memo, and no obligation — a
             // generalised variable carries none open (§8.1 step 7), and a
             // copy must not share a row with its scheme.
+            // A reference's quantifier and its copy, for the crossing bits
+            // (`copies`, checker-v2.md §36).
+            if (in.copy_owner) |owner| try in.copies.append(in.cx.gpa, .{ .quantifier = r, .copy = store.copy(r).unwrap().?, .decl = owner });
             var copied = flags;
             copied.constraints = try in.mappedConstraints(flags);
             copied.obls = .none;
@@ -524,11 +544,12 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     // A value's summary, read from its record (transparent-effects-proposal.md
     // §14.3 rule 3): the use's classes get its rungs and dependencies now.
     if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@backingInt(scheme)], v, in.quantified.items, @backingInt(in.origin));
-    if (which == .value) {
+    if (which == .value and in.track_crossing) {
         const s = iface.schemes[@backingInt(scheme)];
         for (in.quantified.items, 0..) |q, i| {
             if (i >= s.quantified_count) break;
-            if (iface.quantified(s, @intCast(i)).crosses) try in.crossing.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
+            // The flag word alone: bit 10 is `crosses`.
+            if (iface.extra[s.quantified_start + i * Interface.Quantified.words] & Interface.Quantified.crosses_bit != 0) try in.crossing.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
         }
     }
     return v;
