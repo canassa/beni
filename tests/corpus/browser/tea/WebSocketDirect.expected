@@ -1,0 +1,140 @@
+-- load
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #a
+(socket 1: /a)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 open
+(the DOM did not change)
+-- socket 1 message "x"
+(socket 1 sent: "echo x")
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 message "stop"
+(socket 1 close: 1000 "")
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 close 1000 ""
+(the DOM did not change)
+-- click #b
+(socket 2: /b)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+    </ol>
+  </main>
+</body>
+-- click #a
+(socket 2 close)
+(socket 3: /a)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+      <li>"start /a"</li>
+    </ol>
+  </main>
+</body>
+-- socket 3 open
+(the DOM did not change)
+-- socket 3 message "y"
+(socket 3 sent: "echo y")
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+      <li>"start /a"</li>
+      <li>"read y"</li>
+    </ol>
+  </main>
+</body>
+-- click #b
+(socket 3 close: 1000 "")
+(socket 4: /b)
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+      <li>"start /a"</li>
+      <li>"read y"</li>
+      <li>"start /b"</li>
+    </ol>
+  </main>
+</body>
+-- socket 3 close 1000 ""
+(the DOM did not change)
+-- socket 4 open
+(the DOM did not change)
+-- socket 4 buffered 7
+(the DOM did not change)
+-- socket 4 close 4001 "gone"
+<body>
+  <main>
+    <button id="a">"a"</button>
+    <button id="b">"b"</button>
+    <ol>
+      <li>"start /a"</li>
+      <li>"read x"</li>
+      <li>"done: stopped by the server"</li>
+      <li>"start /b"</li>
+      <li>"start /a"</li>
+      <li>"read y"</li>
+      <li>"start /b"</li>
+      <li>"done: ended 4001 \"gone\", then the same end, a write is not open, and 0 bytes wait"</li>
+    </ol>
+  </main>
+</body>
+-- sockets
+(sockets: 0)
+(the DOM did not change)

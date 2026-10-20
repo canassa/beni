@@ -1,0 +1,73 @@
+-- Who owns a subscription's socket (boundary.md §9.11 (d), (j)): when the
+-- key leaves the subscriptions, the platform closes the open socket with
+-- 1000 in that render, and nothing the server sends later reaches the
+-- program. A binary message is one this version cannot read: the page
+-- closes the socket with no code, warns on the console, and the program
+-- sees `Closed` with 1003 at once. A defect stops the page and closes the
+-- socket the subscription holds.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import WebSocket
+
+
+type alias Model =
+    on : Bool
+    lines : List String
+
+
+type Msg
+    = Toggle
+    | Socket WebSocket.Event
+    | Crash
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Toggle →
+            ( { model | on = not model.on }, Cmd.none )
+
+        Socket (WebSocket.Opened _) →
+            ( { model | lines = model.lines ++ [ "opened" ] }, Cmd.none )
+
+        Socket (WebSocket.Received text) →
+            ( { model | lines = model.lines ++ [ "received ${text}" ] }, Cmd.none )
+
+        Socket (WebSocket.Closed close) →
+            ( { model
+                | lines =
+                    model.lines ++ [ "closed ${String.fromInt close.code} \"${close.reason}\"" ]
+              }
+            , Cmd.none
+            )
+
+        Socket (WebSocket.Failed _) →
+            ( { model | lines = model.lines ++ [ "failed" ] }, Cmd.none )
+
+        Crash →
+            Debug.todo "update threw"
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = if model.on then WebSocket.listen "/feed" [] Socket else Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        <button id="crash" onClick={Crash}>crash</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { on = True, lines = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

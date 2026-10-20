@@ -1,0 +1,16 @@
+socket 1 open
+socket 1 message "one"
+# The key leaves: socket 1 is closed in that render.
+click #toggle
+socket 1 message "dropped"
+socket 1 close 1000 ""
+click #toggle
+socket 2 open
+socket 2 message "two"
+socket 2 binary 4
+socket 2 close 1005 ""
+click #toggle
+click #toggle
+socket 3 open
+throws click #crash
+sockets

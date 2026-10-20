@@ -1,0 +1,18 @@
+click #unparsed
+click #scheme
+click #fragment
+click #token
+click #twice
+socket blocked
+click #blocked
+click #connect
+click #good
+socket 1 open "v2"
+socket 1 buffered 12
+click #buffered
+click #going
+click #long
+click #done
+click #say
+socket 1 close 4000 "done"
+sockets
