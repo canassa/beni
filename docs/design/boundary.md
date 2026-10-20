@@ -4473,6 +4473,15 @@ function of its arguments that never waits, so each command is `Now` (§9.8.11 (
 which is `Perform`. Elm has no storage or log commands — a port is its answer — so there is no name to
 mirror but elm/http's.
 
+*Decided 2026-10-20 by the owner (Jayson Reis, dashboard `node-log-q1`; #358):* when §9.8.15 (b)
+removes `platforms/browser/Log.beni`, `Log.write` becomes **`Cmd.log : Log.Level, String → Cmd msg`**
+in `browser`'s `Cmd`: the command form of core's `Log.log`, a body that calls `Log.log level line`
+when the command runs. A program writes `Cmd.log Log.Info line`. Core cannot hold the command,
+because `Cmd` is a `browser` type, and a `browser` module named `Log` would hide core's (§9.8.11 (a)).
+The level is core's `Log.Level`, so `Trace` and `Debug` lines can be commands too, and the log
+context of the fiber that runs the command applies to them. The other option was a module
+`Browser.Log` with `write`.
+
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
 with `credentials: "include"`. A program that tracks progress or sends cookies to another origin no
