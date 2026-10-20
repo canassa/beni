@@ -417,6 +417,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .decl_display = decl_display,
         .casts = solver.casts.items,
         .uses = solver.instantiate.crossing.items,
+        .schemas = &schemas,
         .dispatch = in.dispatch,
         .keyed = keyed,
     }) else null;
