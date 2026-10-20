@@ -53,6 +53,7 @@ const Dispatch = @import("Dispatch.zig");
 const Instantiate = @import("Instantiate.zig");
 const Context = @import("Context.zig");
 const Publish = @import("Publish.zig");
+const Schema = @import("Schema.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Schemes = @import("Schemes.zig");
 const Solve = @import("Solve.zig");
@@ -188,6 +189,9 @@ pub const Input = struct {
     casts: []const Solve.Cast,
     /// Every crossing quantifier of an import this module instantiated.
     uses: []const Instantiate.CrossingUse,
+    /// The module's schema declarations' endpoints and payloads, which
+    /// compiled code builds and parses (`schema.md` §6).
+    schemas: *const Schema.State,
     dispatch: *const Dispatch,
     /// Whether to make the keys: an app module (§36). The crossing bits are
     /// made for every module.
@@ -273,6 +277,22 @@ pub fn build(in: Input) Error!Output {
             const v = in.inst_type[subject].unwrap() orelse continue;
             const k = try b.keyOf(v);
             if (k != .wild) try c.wild.append(in.scratch, k);
+        }
+        // Every schema's endpoints and its tagged variants' payloads, inline
+        // records included: compiled code parses and prints them, outside
+        // any Bir instruction, and the types live only in this store
+        // (`schema.md` §6), so the artifact alone closes the wild set.
+        var payloads: std.ArrayList(Var) = .empty;
+        for (in.bir.decls, 0..) |d, i| {
+            if (d.kind != .schema or d.schema_body == .none or i >= in.schemas.endpoints.len) continue;
+            const pair = in.schemas.endpoints[i];
+            try c.cross(pair.program, @intCast(i), false);
+            try c.cross(pair.encoded, @intCast(i), false);
+            for ([_]Interface.SchemaCtor.Endpoint{ .type, .encoded }) |ep| {
+                payloads.clearRetainingCapacity();
+                try in.schemas.payloads(@intCast(i), ep, &payloads, in.scratch);
+                for (payloads.items) |p| try c.cross(p, @intCast(i), false);
+            }
         }
         std.mem.sort(TypeKey, c.wild.items, {}, struct {
             fn lessThan(_: void, x: TypeKey, y: TypeKey) bool {

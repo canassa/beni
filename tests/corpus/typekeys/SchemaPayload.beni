@@ -1,0 +1,17 @@
+-- typekeys: a schema's endpoints and its tagged variants' payloads are in the
+-- wild set (checker-v2.md §36): compiled code parses and prints them, and the
+-- payload's inline record is a type no other part of the build can name.
+-- `Set`'s `{ value : Int }` and `Event`'s endpoints are wild; `start`'s
+-- `Count`, a closed type nothing parses, keeps its key.
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Reset as "reset"
+
+
+type alias Count =
+    count : Int
+
+
+start : Count
+start = { count = 0 }
