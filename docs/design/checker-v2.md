@@ -5976,3 +5976,96 @@ must retain pristine frontend BIR separately; rechecking a destructively resolve
 or checked artifact is outside this boundary. The nullary rewrite runs after
 solving has returned all borrowed `extraSlice`s; both lowered and loaded BIR
 own their `extra` buffer through the session allocator.
+
+## 36. Amendment of 2026-10-20: the type-key artifact
+
+*The owner's decisions of 2026-10-20, D1 and D2 in its safe form (`plans/type-directed-points-to.md`
+§3); the contract is `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type filtering of fact
+3*, and `boundary.md` §4.2's amendment of the same day. Slice 2 of the plan, issue #489.* The
+release optimiser's points-to analysis filters a variable's sites by the variable's declared type.
+The backend sees no types, so what it needs crosses as data, as §28's boundary rows do. This
+section is what the checker makes; nothing in it changes what a module checks to or what a build
+emits, and lowering does not read it yet (slice 3).
+
+**The artifact** (`check/TypeKeys.zig`), one per module, beside the dispatch table in
+`Check.type_keys`:
+
+```zig
+pub const Artifact = struct {
+    nodes: []const KeyNode,         // the module's canonical closed types
+    args: []const TypeKey,          // every node's children; never wild
+    labels: []const Symbol,         // every record node's field labels
+    locals: []const TypeKey,        // one per Bir.locals entry, or empty
+    insts: []const InstKey,         // one per allocating instruction, ascending
+    wild: []const TypeKey,          // what the module adds to the wild set, ascending
+};
+pub const TypeKey = enum(u32) { wild = maxInt(u32), _ };
+pub const KeyNode = struct {
+    kind: enum(u8) { named, record, function, tuple, unit },
+    args: Range,                    // the children
+    value: u32,                     // named: a TypeId; record: its first label; else 0
+};
+pub const InstKey = struct { inst: Bir.Inst.Index, key: TypeKey, result: TypeKey };
+```
+
+A **named** node is a type applied to its argument keys; a **record** is its whole row's fields as
+(label, key) pairs, ordered by the label's TEXT; a **function** is its parameters then its result;
+a **tuple** its elements; **unit** is `⊤`. An alias is its expansion, so `type alias Point =
+{ x : Int, y : Int }` and the record written out are one node. Nodes are interned per module, so one
+type is one node and every child precedes its owner. Records are ordered by text, not by symbol as
+`backend.md` §3 words it: a symbol's id is the session's (§17), and an artifact read from the cache
+must equal the one a fresh check makes.
+
+**What is wild.** A type that holds a `flex`, a `rigid` or an `err` (a polymorphic, generalised or
+unsolved type); a record whose row does not end closed; a `foreign type` other than `Int`,
+`Float`, `Char`, `String` and `List`, whose values are the host's (`Js.Value`, `Js.Ref`, the schema
+`Value`, `Html`, a fiber); and any type with a wild part. Every key of a module of the core package
+or of a platform is wild in this version, as is every key of a module checked silently or with an
+error: its artifact is empty.
+
+**The allocating instructions** are a record literal, a record update, a tuple, a list literal, a
+lambda and a constructor application (a `call` whose callee is a constructor). Each row's `key` is
+the instruction's own type; a lambda's row also carries its result type's key, `result`, which is
+what its arrow's return var is filtered by.
+
+**The wild set's local half** (`wild`): every closed type a `Js.from` or a `Js.to` of the module is
+instantiated at, every closed type the module instantiates a crossing quantifier at, and every
+closed part of either; and the subject type of every `?`. The merge adds unboxing's boundary set
+and closes the set through named types' bodies (`backend.md` §9).
+
+**Crossing quantifiers.** A quantifier of a declaration crosses when the body instantiates
+`Js.from` at a type that mentions it, or instantiates a crossing quantifier of a callee at one. A
+callee is an import, whose interface carries the bit (`Interface.Quantified.crosses`, bit 10 of the
+flag word, `iface_bytes` format 12 → 13); a declaration of the module; or a `let` function, the last
+two to a fixpoint over the module's own references, each reference looked at again only when its
+callee's bits grew. An import's crossing quantifiers are recorded as the module instantiates them
+(`Instantiate.crossing`); an own callee's are found by walking its scheme beside the reference's
+instance type (`inst_type`), a row variable standing for the whole record. A type variable met in a
+crossing type is mapped to its quantifier by identity (an unannotated declaration's or a `let`'s)
+or, for an annotation's rigid variable, by name; one no owner names makes every quantifier of the
+declaration and of its `let` functions cross. A method call that runs a declaration of the module
+with crossing quantifiers makes every type it reads or makes cross. P8 publishes each
+declaration's bits. Core and the platforms compute and publish them although their keys are wild.
+
+**Where it is made.** After P7 and before P8, which publishes the bits, for every module checked
+aloud and with no error; instruction types are recorded for such a module whether or not the run
+keeps its store (`Context.inst_type`).
+
+**Determinism and the cache.** Nodes are interned in a walk over the locals, then the
+instructions, then the wild set's sources, each in index order, a record's fields visited and
+written in text order (§17): the artifact is a function of the module's source and its imports'
+interfaces, which the entry's key already pins. It is the cache entry's sixth section, `type_keys`
+(`cache/type_keys_bytes.zig`, format 1: nodes of 16 bytes, keys and labels of 4, instruction rows of
+12, `type_refs` and `strings` as `dispatch_bytes` writes them), empty for an artifact with no key;
+`entry_bytes` goes 11 → 12, so an older entry is a miss. The keys are made on every build, not only
+under `--release`: `--release` is not a term of the entry's key, so keys made only for a release
+build would make its output depend on whether a development build had warmed the cache.
+`--roundtrip-dispatch` round-trips the artifact too.
+
+**The dump.** `dump --stage=typekeys` (hidden) prints a module's nodes, `key #<n> …`, the keys it
+adds to the wild set, `wild #<n>`, each declaration's locals, `local <name> #<n>` or `wild`, then
+the instruction rows, `inst <index> <tag> #<n>`, with `result #<n>` for a lambda; a module with no
+keys prints `every key wild`. `dump --stage=raw` marks a crossing quantifier `crosses`. The hidden
+`check --type-keys` prints the typekeys dump for every source module, which is how
+`tests/blackbox/cache_test.zig` asserts that a module installed from the cache keys as a fresh
+check does. The corpus is `tests/corpus/typekeys/`.

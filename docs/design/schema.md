@@ -3374,7 +3374,8 @@ becomes version 2 (3 since the checker rewrite, whose `dispatch` section is
 `dispatch_bytes` format 2, `checker-v2.md` §14.3) and its sections are `interface`, `dispatch`, `schema_plan`,
 `diagnostics`. *(2026-09-28: plan format 2 and entry format 4 — plan terms name an
 alias and carry its body on the `type_refs` row, as interface terms do, `checker-v2.md` §14.2 and
-§14.3.)* `schema_plan` uses magic `BENISPL\0`, format version 1, the
+§14.3.)* *(2026-10-20: entry format 12, a sixth section `type_keys`, and interface format 13, a
+quantifier's `crosses` bit — `checker-v2.md` §36.)* `schema_plan` uses magic `BENISPL\0`, format version 1, the
 standard column table, little-endian scalars, four-byte alignment and
 zero-filled gaps. It has these columns in order:
 
