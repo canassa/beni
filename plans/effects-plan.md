@@ -748,9 +748,11 @@ module of its name, so a browser program still uses the browser's `Log`. Fixture
 `run/LogSetSink`, `run/LogDefaultSink`, and a black-box test of the exact standard error of an
 `Io.run` program, development and `--release`. **Bytes** (`bench/size.mjs` against `master`
 `ffc2fdb84`, 519 programs and pages): no browser page and no program without `Io.run` changes. The
-development build of each of the 87 `Io.run` programs grows by 2.5–3.8 kB raw (550–950 brotli):
-`Log`, and the `String` it uses, are reached through the sink. Its release build drops the unread
-sink but keeps `core/List.beni`'s top-level `isPlain`, an `impure` initialiser of a module that
-reachability reached first: most grow by 22–28 raw bytes (−27 to +41 with the renaming), and brotli
-moves by −37 to +38 (#511). The log context (`annotate`, `span`, `minimum`, `withSink`) and the
+development build of each of the 87 `Io.run` programs grows by 2.7–4.0 kB raw (630–990 brotli):
+`Log`, and the `String` and `Basics` functions it uses, are reached through the sink. Its release
+build drops the unread sink but keeps `core/List.beni`'s top-level `isPlain`, an `impure`
+initialiser of a module that reachability reached first: most grow by 22–28 raw bytes (−27 to +41
+with the renaming), and brotli moves by −37 to +38 (#511). For the same reason, `logfmt`'s two
+patterns stay inside its functions: as top-level values, their `impure` initialisers stayed in every
+`Io.run` program too. The log context (`annotate`, `span`, `minimum`, `withSink`) and the
 measurement against Effect's `logDebug` are the next part.
