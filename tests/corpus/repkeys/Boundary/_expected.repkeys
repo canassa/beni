@@ -1,0 +1,15 @@
+key #0 String.String wild
+key #1 Boundary.Tag wild
+key #2 { label : #0, tag : #1 } wild
+key #3 Basics.Int
+key #4 { label : #0, size : #3 }
+key #5 { name : #0 } wild
+key #6 List.List #0 wild
+module Boundary
+  name m$1 #2
+  name o$1 #4
+  node object 36:34 #5
+  node object 36:30 #1
+  node object 36:9 #2
+  node object 38:40 #4
+  node array 38:21 #6

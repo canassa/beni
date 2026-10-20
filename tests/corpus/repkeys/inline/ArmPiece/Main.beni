@@ -1,0 +1,46 @@
+-- repkeys: a lifted arm's parameter takes its local's key
+-- (`backend.md` §9, *Declared-type filtering of fact 3*). `Counter`'s arm
+-- piece for `Inc` (docs/design/browser-inline.md §8.4, as
+-- `emit/release/inline/ArmPiece`) is lowered as a function of `update`'s
+-- other parameter, `model`, named by `Lift` as the local is: its name keys
+-- `Counter.Model`'s record, and the update it returns is a spread keyed by
+-- the same.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+update : Msg, Model → Model
+update msg model = step msg model
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <button data-role="inc" onClick={CounterMsg Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

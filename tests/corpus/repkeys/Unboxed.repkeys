@@ -1,0 +1,26 @@
+key #0 Unboxed.Wrap is #2
+key #1 Basics.Int
+key #2 { x : #1, y : #1 }
+key #3 Unboxed.Box #2 is #2
+key #4 List.List #2
+key #5 #2 → #2
+key #6 #2 × #1
+key #7 String.String wild
+key #8 List.List #7 wild
+module Unboxed
+  name w$1 #2
+  name p$2 #2
+  name p$1 #2
+  name b$1 #2
+  name q$1 #2
+  name ps$1 #4
+  name rest$3 #4
+  node object 33:14 #2
+  node object 37:11 #2
+  node object 37:11 #2
+  node object 48:16 #2
+  node arrow 48:8 #5
+  node object 52:10 #6
+  node object 60:27 #2
+  node array 60:12 #4
+  node array 76:9 #8
