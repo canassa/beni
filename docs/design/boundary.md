@@ -2914,7 +2914,8 @@ superseded by §9.8.12, HTTP version 2; `Nav` and `Tea.application` are §9.8.13
 - **W52, handles in a model**: §4.1's "never hold a reference across an effect boundary" is amended
   for a handle every operation of which is total on a closed one — each returns a `Result` — and
   which is declared `equatable foreign type`, so a model holding it keeps its derived `==`. None is
-  built yet; `Queue` will be the first.
+  built yet; `Queue` will be the first. *(Amended 2026-10-20: `equatable` is core's alone, so a platform's handle — `WebSocket.Socket`,
+  §9.11 — is a `foreign type` whose module gives it a `pub eq`.)*
 - **W55, faking a service**: through records of functions only (A7); a test passes a record whose
   functions wait on `Time.sleep`, and the page driver's clock is virtual (`tests/corpus/README.md`,
   *`browser/`*, the `advance` step).
@@ -5625,10 +5626,12 @@ main = Io.run λ⊤ →
 
 join : Arena, Request → Upgrade
 join arena request =
-    if request.path == "/arena" then
-        Server.accept (play arena _)
-    else
+    if request.path ≠ "/arena" then
         Server.refuse (Server.text 404 "no such socket")
+    else if Server.header request "origin" ≠ Just "https://snake.example" then
+        Server.refuse (Server.text 403 "not from this site")
+    else
+        Server.accept (play arena _)
 
 
 play : Arena, Socket → ⊤
@@ -5808,12 +5811,155 @@ reported with its number.
   change. *The other choice*: a request handler accepts the upgrade itself, which needs a field
   in `Request` that names the connection, and so changes the record that #331 settled.
 
-**(o) Not in this slice.** Each gets an issue when this section lands: binary messages (j); the
-`permessage-deflate` extension; pings that the server sends to find a client that is gone;
-settings for the 5-second closing time and the 64 KiB read buffer; a WebSocket client on `node`
-(Node 24 has the WHATWG `WebSocket`, so `browser`'s module could serve it); the
-`browser-inline` platform, which has no fibers, though `listen` needs none; and the Cloudflare
-Workers platform (#526), whose server side gives `upgrade` and the common surface the same shape.
+*Amended 2026-10-20, after the two reviews of #531* (the review agent's findings H1–H4, M1–M10 and
+L1–L13, and the bot's 19 points; their evidence is in the PR that adds this amendment). Each item
+settles one finding. Where an item contradicts the text above, the item wins. No section is
+renumbered.
+
+**The shared surface (H1, M3, M10).**
+
+1. **The surface splits in two.** The *handle operations* — `write`, `close`, `protocol`, `eq`,
+   and the types `Close`, `WriteError` and `CloseError` — are shared by every platform that serves
+   or opens a WebSocket. The *reading style* is the platform's: `browser` and `node` read with a
+   pull `read`; a host that delivers events to handlers, such as a hibernating Durable Object
+   (#526), cannot keep a fiber waiting in `read`, since its memory is reset between events. Which
+   reading style a *server* shares across `node` and Cloudflare is the owner's question that
+   replaces `ws-q2` and `cf-workers-q2`; until it is answered, (e)–(h) stay as written for `node`.
+2. **`buffered` and `drain` are not shared.** Cloudflare's `WebSocket` has no `bufferedAmount` and
+   no back-pressure signal (workerd `web-socket.c++:900-903`), and an answer of 0 there would be a
+   wrong answer. On `browser` and `node`, `buffered` is a back-pressure signal, not one unit: the
+   page counts the bytes of the text of messages not yet sent, with no frame headers, and the
+   count changes only between tasks; the server counts the bytes that its socket holds, frame
+   headers included. On both it is 0 once the connection has ended: nothing more is sent.
+3. **The codes that `close` may send are the side's.** The page: 1000 and 3000–4999 (the WHATWG
+   standard). The `node` server: 1000–1003, 1007–1009, 1011–1014 and 3000–4999; 1010 is a
+   client's code (RFC 6455 §7.4.1), so the server's set has no 1010. Workers: 1000–4999 less 1004,
+   1005, 1006 and 1015 (workerd `web-socket.c++:919-926`). A shared module that needs one answer on
+   every side sends 1000 or a code from 3000 to 4999.
+
+**The page (H4, M1, M2, M7, L1, L2, L4, L5, L10, L12).**
+
+4. **An `error` alone ends the connection.** The standard fires `close` after every `error`, but
+   WebKit fires `error` with no `close` when a connection fails (`failAsynchronously`,
+   `didReceiveMessageError`), and Chrome fires `close` 1006 with no `error` when the network drops.
+   So the page takes whichever comes first: an `error` ends a connection that is open with 1006
+   (rule 4 of (a)), and one that never opened with `Failed Unreachable` (`Err Unreachable` from
+   `connect`). A `close` that follows finds the connection ended and adds nothing. The page driver
+   gets a step, `socket <n> error-only`, that fails a socket as WebKit does.
+5. **A fragment is any `#` in the serialised URL.** `new URL("ws://a/#").hash` is `""`, but the
+   fragment is not null and the constructor throws. Step 1 of (c) therefore tests the URL's `href`
+   for `#`.
+6. **`Blocked` is what a browser reports at once, and browsers differ.** The current standard
+   throws no `SecurityError` (whatwg/html removed it in 2016): mixed content, a bad port and a CSP
+   refusal are network errors, and so `Unreachable`. Chrome still throws `SecurityError` for an
+   insecure `ws:` socket from an `https:` page, and Safari for a socket that the page's CSP
+   forbids; Firefox throws for a CSP refusal too, with a name not yet verified (#542). The catch
+   takes `SecurityError` only, so a browser that throws another name stops the page: #542 owes
+   that check in a real Firefox.
+7. **`Task.timeout` around `connect` limits the whole session, not the open**, because `connect`
+   calls `use` inside itself. (b)'s sentence about it is withdrawn. A time limit on the open alone
+   is #544.
+8. **The page cannot pause a socket**, so the messages of a `connect` socket that no one reads are
+   kept with no bound, as the host keeps its events. A program that connects reads.
+9. **A declaration that joins a live `listen` key gets no `Opened`.** That is intended: the socket
+   lives in the model of the program that held the key when it opened, and a component gets it
+   from there. Two components that need two connections use two keys.
+10. **What the server sees of the page's 1003.** The page cannot send 1003 ((j)), so it closes with
+    no code, and the server sees 1005. The page reports 1003 to its own program. For a binary
+    message, the two sides therefore do not report one code.
+11. **`connect`'s acquire does not wait.** `Task.bracket`'s acquire is uninterruptible
+    (`core/Task.beni`), so `connect` makes the socket in the acquire and waits for the open in the
+    use, where a cancellation reaches the wait.
+12. **`Ok` from `write` means queued, not delivered.** The host can still fail the connection
+    later (a buffer that is full, a network that drops), which the program sees as the end.
+13. **`Unreachable` is not `Http.NetworkError`** because a refused handshake is also `Unreachable`:
+    the server answered, but not with a WebSocket.
+
+**The server (H2, H3, M4–M6, M8, M9, L3, L7, L9).**
+
+14. **`drain` does not wait for Node's `drain` event.** Node emits `drain` only after a `write()`
+    that returned `false`, so a program that wrote less than the high-water mark and then calls
+    `drain` would wait forever. `drain` answers at once when the socket holds nothing to send, or
+    the connection has ended. Otherwise it waits for the callback of the last write, which Node
+    calls when that chunk is flushed (callbacks run in order), or for the socket's `close`. A
+    callback's error — `ECANCELED` for a write pending at `destroy()`, or `ERR_STREAM_DESTROYED` —
+    ends the wait as the connection's end does.
+15. **One client's network failure ends that connection, never the process.** A socket's `error`
+    with `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, `EHOSTUNREACH`, `ENETUNREACH` (Linux reports them in
+    place of `ETIMEDOUT` when an ICMP error arrived, tcp(7)), `ECONNABORTED` or `ENETDOWN` ends it
+    with 1006. Any other code is a defect, as (i) says. `ENOTCONN` is not in the list: Node ignores
+    it at shutdown (`net.js:684`), so a socket never emits it.
+16. **The platform adds its `error` listener in the `upgrade` event itself**, before it checks the
+    handshake or calls the program's handler. An upgraded socket arrives with none, so a reset
+    while the handler decides would otherwise be an uncaught exception.
+17. **A client that ends TCP with no close frame ends the session.** An upgraded socket is half
+    open (`allowHalfOpen: true`): after the client's FIN only `end` fires, and the socket stays
+    writable. The platform destroys it on `end` and ends the connection with 1006.
+18. **After a close frame is sent or received, reading goes on and data frames are dropped.** A
+    paused socket sees no close frame, FIN or RST, so every close would otherwise end at the
+    5-second limit with 1006. Messages that arrive after this side sent its close frame are
+    dropped on both sides: the page's host drops them, and the server does the same.
+19. **The memory of a paused connection.** `socket.pause()` does not stop Node at once: it reads
+    on until its own buffer holds 64 KiB. So a connection holds about `maxMessage` and 128 KiB,
+    and the kernel's buffer, not `maxMessage` and 64 KiB as (h) says.
+20. **The server turns TCP keep-alive on** for each upgraded socket, with the interval and the
+    count that Node 24.19 can set, so an idle connection whose client vanished ends with 1006 in
+    about a minute, not after the retransmission timeout (tcp(7): up to 20 minutes). Pings that
+    the server sends are #536.
+21. **`Origin` is the program's.** `accept` checks nothing. A server whose clients use cookies
+    checks `Server.header request "origin"` and answers `refuse` to a stranger (RFC 6455 §10.2):
+    without the check, any page can open a socket with the user's cookies. (e)'s example now does.
+22. **What the handshake checks.** Node sends a request to `upgrade` only when `connection` holds
+    the token `upgrade` and an `upgrade` header exists; a request with `upgrade: websocket` and no
+    `connection: upgrade` is an ordinary request. Node does not check the method, the version of
+    HTTP or the `host` header, so the platform does (RFC 6455 §4.2.1): `GET`, HTTP/1.1 or later,
+    a `host` header, `sec-websocket-version: 13` (else 426 with `sec-websocket-version: 13`), and a
+    `sec-websocket-key` that is the base64 of 16 bytes; any other fault is 400. `upgrade` is a
+    comma list matched without case: a request reaches the `upgrade` handler when one of its tokens
+    is `websocket`.
+23. **`protocols request`** splits each `sec-websocket-protocol` value at its commas, trims each
+    entry, and drops an empty entry or one that is not a token, in the client's order.
+    `acceptWith`'s protocol must be one of them, so it is a token and cannot split the response.
+24. **`maxMessage` below 0 is 0**: only empty messages, the nearest meaning
+    (`transparent-effects-proposal.md` §17.1 item 4). A frame's length past 2³² is over every
+    `maxMessage`, so the codec tests the high 32 bits first and never depends on a double's
+    precision.
+25. **A ping flood is bounded.** While more than 64 KiB wait to be sent, the server answers no
+    ping at once: it keeps the latest ping's data and answers that one when its buffer drains, as
+    RFC 6455 §5.5.3 allows.
+26. **The siblings meet by value.** `Server.js` and `WebSocket.js` cannot import each other
+    (`backend.md` §2): the upgrade's record, which `Server.js` makes and `WebSocket.js` takes,
+    carries the socket, the `head` bytes and the functions each side gives the other, as
+    `Browser.js` reaches the render loop (§9.8.7).
+27. **One state, one encoding.** A server frame is not masked, so one state sent to every player
+    is the same bytes. `write` keeps the last text it encoded with its frame, and a `write` of the
+    same text reuses the frame, so a broadcast encodes once.
+28. **Smaller points.** UTF-8 is checked per whole message, not per fragment. An upgraded socket
+    has no timer (`server.timeout` is 0, and the parser's timeouts end with the upgrade), so the
+    platform sets none. A client that leaves while `upgrade` runs does not stop that handler
+    (#337); its answer is dropped. An upgrade accepted after `Server.close` stays 101 and then
+    1001, so its session runs as every other one does. The closing timer is `unref`'d.
+
+**The rest (L6, L8, L11, L13).**
+
+29. **W52 (§9.8.9)** asked for an `equatable foreign type`; `equatable` is core's alone, so a
+    platform gives its handle a `pub eq` instead (`static-dispatch-spike.md` §3.5's audit gains
+    the row with this amendment). §9.10 (c)'s and (e)'s `upgrade` rows describe `listen`, which
+    has no upgrade handler; with `listenWith`, (e) of this section applies.
+30. **Tests.** A shared module that checks under `browser-tea` and `node` is slice (d)'s fixture.
+    The serve driver keeps its own RFC 6455 client, which prints the handshake and sends the
+    frames that no conforming client sends; slice (d) also drives the server with Node 24's own
+    `WebSocket` (undici), an independent client. An Autobahn run is #540.
+31. **Every item of (o) has an issue**, listed there now.
+
+**(o) Not in this slice.** Each has an issue: binary messages (j), #535; the
+`permessage-deflate` extension, #539; pings that the server sends to find a client that is gone,
+#536; settings for the 5-second closing time and the 64 KiB read buffer, #537; a WebSocket client
+on `node` (Node 24 has the WHATWG `WebSocket`, so `browser`'s module could serve it), #538; the
+`browser-inline` platform, which has no fibers, though `listen` needs none, #543; a time limit on
+the page's open, #544; a check of Firefox's and WebKit's failures in real browsers, #542; and the
+Cloudflare Workers platform (#526), which shares the handle operations (item 1 of the amendment
+above).
 
 ## Appendix — what is deliberately not done
 
