@@ -8667,6 +8667,46 @@ wild. The `browser-inline` lowering keeps the model in a JavaScript binding, whi
 applies to the dashboard. Lifting the TEA model out of the `Js.ref` is separate work and not part of
 this subsection.
 
+*As built 2026-10-20 (issue #490): the columns,
+which nothing reads yet.* Under `--release` (an application or a `--library` build),
+`js/RepKeys.zig` merges every module's artifact into one table on the calling thread, after the
+boundary is closed and before any module is lowered: nodes in module order, each module's in its
+artifact's order, and every node the walk makes after them in the order it meets them. `rep` follows
+`CtorRep.unboxed` through the field's written type in its declaring module's `Bir`, the type's
+arguments substituted, canonicalised as the checker's keys are (an alias expanded, a record's fields
+by text, `{ r | … }` under a closed `r` its whole row, a host type wild); a type that is its own field
+through unboxing is wild. **A column holds the representation key itself**, wild for a type that
+makes no site; `RepKeys.isWild` answers for the wild set and `RepKeys.result` gives a function key's
+result, so the filter maps through the set where it reads. The wild set is as specified, the
+boundary's named types being every named type of constructors without integer tags; where its
+closure would have to go through a body this file cannot canonicalise as the checker does (a schema
+endpoint's, which is a plan), every key is wild (`all_wild`), since a key no checker key equals would
+be a filter that drops a site of its own type. Four things the specification did not foresee:
+
+- **A name is a `NameIndex`, not a local.** Lowering numbers a local's disambiguator within its
+  top-level declaration, so two declarations' `p$1` are one name. A name keeps a key while every
+  local it names has that key, and is wild once two disagree. Fact 3 keys a local's var by its
+  top-level statement, so a per-statement key would recover what this loses, if the filter finds it
+  matters. A local with no source name is not keyed: its `$p` name is one compiler-made parameters
+  take too.
+- **The artifact keys no declaration.** A top-level function's own arrow has no `node_key`, so its
+  return var stays wild; the arrow of a declaration whose whole body is a lambda takes the lambda's
+  key unless evidence parameters lead it. `Copy`'s rule needs the declaration's type, so
+  `Spec.keepsKeys` asks whether every parameter of the copied function names a keyed local: a
+  declaration whose type holds a variable in its result alone passes, and copies only keys the
+  checker made closed, which hold at every instantiation. A key per declaration in the artifact would
+  make both exact.
+- **A function type with one wild part is wild**, so a lambda of a generic parameter keys no
+  result although the artifact's `result` column has it.
+- The release peephole's two in-place rewrites clear a key as `Mod.setNode` does, though they run
+  after the filter. The safety assertion is `JsIr.nodeKey`, which `Pts.siteOf` calls in a safety
+  build.
+
+The hidden `build --rep-keys` prints the table and every key lowering wrote, which
+`tests/corpus/repkeys/` pins (an unboxed type, a type that crosses, a lambda, a spread, and a lifted
+arm under `browser-inline`), and `cache_test.zig` asserts that a build from a warm cache prints what
+a cold one does.
+
 ### Compact statements
 
 ### Compact statements
