@@ -700,6 +700,38 @@ const Perf = struct {
         };
     }
 
+    /// `eventRatio` for a `--release` library build of the file: the
+    /// summed duration of every `event` of the trace, whichever module or
+    /// none it names (`specialise` is one serial pass over the program).
+    /// The event's duration is wall time, of a `--jobs=1` run; each point
+    /// the best of 3.
+    fn releaseEventRatio(s: *Perf, small: []const u8, large: []const u8, n: usize, event: []const u8) !Verdict {
+        var ms: [2]f64 = undefined;
+        for ([_][]const u8{ small, large }, &ms) |file, *slot| {
+            const args = [_][]const u8{ "build", "--release", "--library", "--platform=node", "--out=out", "--no-cache", "--jobs=1", "--diagnostics=json", "--self-profile=trace.json", file };
+            var best: f64 = std.math.inf(f64);
+            for (0..3) |_| {
+                const run = try s.timed(&args, world.bulk_timeout_ms) orelse return error.PerfRunTimedOut;
+                try expectClean(run.result);
+                const Event = struct { name: []const u8, ph: []const u8, dur: f64 = 0 };
+                const text = try s.w.read("trace.json");
+                const parsed = try std.json.parseFromSliceLeaky(struct { traceEvents: []Event }, s.arena(), text, .{ .ignore_unknown_fields = true });
+                var total: ?f64 = null;
+                for (parsed.traceEvents) |e| {
+                    if (!std.mem.eql(u8, e.ph, "X") or !std.mem.eql(u8, e.name, event)) continue;
+                    total = (total orelse 0) + e.dur / 1000.0;
+                }
+                best = @min(best, total orelse return error.PerfEventMissing);
+            }
+            slot.* = best;
+        }
+        const r = ms[1] / @max(ms[0], 0.001);
+        return .{
+            .green = r <= 2.5,
+            .detail = try std.fmt.allocPrint(s.arena(), "n={d}: {d:.1} ms; 2n: {d:.1} ms; ratio {d:.2}, `{s}` event", .{ n, ms[0], ms[1], r, event }),
+        };
+    }
+
     /// `eventRatio` on the `cache_store` event: a `--jobs=1` check
     /// into a FRESH cache directory every run, so every run writes the
     /// module's entry. The event is the whole serial store pass, not one
@@ -1344,5 +1376,42 @@ fn typeChain(arena: std.mem.Allocator, count: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "pub type A0\n    = A0 Int\n    | B0\n\n\n");
     for (1..count + 1) |i| try out.print(arena, "pub type A{d}\n    = A{d} Int A{d}\n    | B{d}\n\n\n", .{ i, i, i - 1, i });
+    return out.items;
+}
+
+// The release optimiser's structural passes (`backend.md` §9, #492): a
+// function called once is written where it is called, one at a time, and a
+// local object only read by its keys is its keys. A page's `update` holds
+// every widget's call in ONE top-level statement, so each pass that walked
+// the whole statement again after each function it wrote — counting
+// mentions (`inlineScan`), naming (`occurrences`), asking a binding's every
+// mention (`replaceScalars`, `onlyInspected`, `declCount`) — was quadratic in
+// the calls it held: at N = 64 widgets they were 65% of `specialise`. What is
+// kept of a statement is now kept per statement and brought up to date by the
+// subtrees a change replaces (`Spec.NameScan`, `retract`, `extend`). The
+// shape: one `case` of n arms, each binding a call of its own function,
+// called nowhere else and too big to be small, whose record the arm reads by
+// its keys; the arms' values are numbers, so points-to merges nothing. The
+// `specialise` event of a `--release` library build. Calibration (ReleaseFast,
+// dagon): before, 4.8 / 15.6 ms at 64 / 128 arms (ratio 3.3, red); after, 2.2 /
+// 4.5 ms (ratio 2.1). n = 64, the dashboard's N.
+test "specialisation writes n calls of one statement in time linear in n" {
+    var s = try Perf.init(.alone);
+    defer s.deinit();
+    try s.w.write("C.beni", try callsInOneStatement(s.arena(), 64));
+    try s.w.write("C2.beni", try callsInOneStatement(s.arena(), 128));
+    try s.finish("specialising n calls of one statement", try s.releaseEventRatio("C.beni", "C2.beni", 64, "specialise"));
+}
+
+/// `pub run msg x = case msg of M1 → r = h1 x; r.a + … + r.h | …` with `n`
+/// arms, each `hK` returning an eight-key record of `x`.
+fn callsInOneStatement(arena: std.mem.Allocator, n: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias R =\n    { a : Int, b : Int, c : Int, d : Int, e : Int, f : Int, g : Int, h : Int }\n\n\npub type Msg\n    = M1\n");
+    for (2..n + 1) |i| try out.print(arena, "    | M{d}\n", .{i});
+    try out.appendSlice(arena, "\n\n");
+    for (1..n + 1) |i| try out.print(arena, "h{d} : Int → R\nh{d} x =\n    {{ a = x + {d}, b = x * {d}, c = x - {d}, d = x + {d}, e = x * {d}, f = x - {d}, g = x + {d}, h = x * {d} }}\n\n\n", .{ i, i, i, i, i, i + 1, i + 2, i + 3, i + 4, i + 5 });
+    try out.appendSlice(arena, "pub run : Msg, Int → Int\nrun msg x =\n    case msg of\n");
+    for (1..n + 1) |i| try out.print(arena, "        M{d} →\n            r = h{d} x\n            r.a + r.b + r.c + r.d + r.e + r.f + r.g + r.h\n\n", .{ i, i });
     return out.items;
 }
