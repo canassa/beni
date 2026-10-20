@@ -30,6 +30,7 @@
 import Browser
 import Hosted exposing (Job, Key, Later)
 import Js
+import Log
 
 
 --| How a body sends: `Browser.Send`, which never waits.
@@ -199,3 +200,14 @@ task work tag = perform λsend → send (tag (work ⊤))
 --| Run `work`, as `perform` runs a body, for what it does.
 pub do : (⊤ → ⊤) → Cmd msg
 do work = perform λ_ → work ⊤
+
+
+--| The command form of `Log.log`: the line, written at `level` when the
+--| command runs. The line is a value, formatted when the command is made,
+--| never a function that reads the model later (`docs/design/boundary.md`
+--| §9.8.16).
+--|
+--|     Saved ms →
+--|         ( model, Cmd.log Log.Info "saving took ${String.fromInt ms} ms" )
+pub log : Log.Level, String → Cmd msg
+log level line = perform λ_ → Log.log level line

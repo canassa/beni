@@ -1,0 +1,57 @@
+-- core's `Log` on a page (transparent-effects-proposal.md §17.11): the
+-- default sink is the console method for the level. A line inside
+-- `Log.span` has ` label=Nms` after its message, and a line with
+-- annotations has them as a second argument, an object of strings. Under
+-- `Log.minimum Log.Trace`, `Trace` and `Debug` lines are `console.debug`;
+-- under the default minimum they are not written. `Cmd.log` writes its
+-- line when the command runs (boundary.md §9.8.16 (b)). No time passes on
+-- the page, so a span is `0ms`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Direct
+    | Command
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Direct →
+            Log.debug "not written: below the default minimum"
+            Log.annotate "user" "7" λ⊤ → Log.span "save" λ⊤ → Log.info "saved"
+            Log.minimum Log.Trace λ⊤ →
+                Log.trace "a trace line"
+                Log.debug "a debug line"
+            ( n + 1, Cmd.none )
+
+        Command →
+            ( n + 1
+            , Cmd.batch
+                [ Cmd.log Log.Warn "from a command"
+                , Cmd.log Log.Debug "not written: a command below the minimum"
+                ]
+            )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="direct" onClick={Direct}>direct</button>
+        <button id="command" onClick={Command}>command</button>
+        <p>{String.fromInt n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

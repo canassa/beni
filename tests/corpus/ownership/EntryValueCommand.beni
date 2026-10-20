@@ -1,7 +1,7 @@
 -- ownership: commands that take values (thesis O5; boundary.md §9.8.16;
 -- `ownership-checker.md` §22.3). `values`' commands are handed what they
 -- persist or send — the text `Storage.save` stores, the request
--- `Http.send` sends with its body already text, the line `Log.write`
+-- `Http.send` sends with its body already text, the line `Cmd.log`
 -- writes — computed by `update` before it makes the command, so no command
 -- holds `model.items`, and `Add`'s push is accepted on browser-direct
 -- (`platform` on browser-tea). `closure` saves through `Cmd.do`, whose
@@ -63,7 +63,7 @@ values msg model =
             )
 
         Report →
-            ( model, Log.write Log.Info (joined model.items) )
+            ( model, Cmd.log Log.Info (joined model.items) )
 
         Done →
             ( model, Cmd.none )

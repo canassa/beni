@@ -1,11 +1,11 @@
 -- Commands that take values (boundary.md §9.8.16): `Storage.save`,
--- `Http.send` and `Log.write` are handed what they persist or send — the
+-- `Http.send` and `Cmd.log` are handed what they persist or send — the
 -- text, a request whose body is already text, the line — computed by
 -- `update` when it makes the command, never a function that reads the model
 -- when the command runs. `save` stores the items as `update` left them and
 -- sends nothing when the write succeeds (its failures are `StorageFaults`');
 -- `send` answers through its tag, as `Cmd.task` over `Http.request` would;
--- `write` logs the line at its level.
+-- `Cmd.log` logs the line at its level (`Log.write` until 2026-10-20).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
@@ -78,7 +78,7 @@ update msg model =
             logged model "the post failed"
 
         Report →
-            ( model, Log.write Log.Info "${String.fromInt (List.length model.items)} items" )
+            ( model, Cmd.log Log.Info "${String.fromInt (List.length model.items)} items" )
 
 
 view : Model → Html Msg
