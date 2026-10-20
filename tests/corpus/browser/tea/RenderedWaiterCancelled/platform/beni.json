@@ -1,1 +1,1 @@
-{ "platform": true, "name": "guarded", "platforms": ["browser-tea"], "reexports": ["Tea", "Html", "Cmd", "Sub", "Dom", "Log"] }
+{ "platform": true, "name": "guarded", "platforms": ["browser-tea"], "reexports": ["Tea", "Html", "Cmd", "Sub", "Dom"] }
