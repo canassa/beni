@@ -1,0 +1,15 @@
+key #0 Basics.Int
+key #1 { count : #0 }
+key #2 #1, #0 → #1
+key #3 String.String wild
+key #4 List.List #3 wild
+module TopLevel
+  name m$1 #1
+  name a$1 #1
+  name b$2 #1
+  name c$3 #1
+  node object 15:12 #1
+  node arrow 15:12 #2
+  node arrow 19:9 #2
+  node object 28:20 #1
+  node array 31:21 #4

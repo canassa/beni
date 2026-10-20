@@ -1,22 +1,27 @@
 key #0 Counter.Msg
 key #1 Basics.Int
 key #2 { count : #1 }
-key #3 Main.Msg is #0
-key #4 { c : #2 }
-key #5 ⊤ wild
-key #6 #5 → #4
-key #7 #3, #4 → #4 is #8
-key #8 #0, #4 → #4
+key #3 ⊤ wild
+key #4 #3 → #2
+key #5 #0, #2 → #2
+key #6 Main.Msg is #0
+key #7 { c : #2 }
+key #8 #3 → #7
+key #9 #6, #7 → #7 is #10
+key #10 #0, #7 → #7
 module Counter
   name model$2 #2
   node object 9:12 #2
+  node arrow 9:12 #4
   node object 21:13 #2
   node object 24:13 #2
+  node arrow 19:5 #5
   node object 21:13 #2
   node object 24:13 #2
 module Main
-  name model$2 #4
-  node object 26:13 #4
-  node object 45:41 #4
-  node object 26:13 #4
-  node object 26:13 #4
+  name model$2 #7
+  node object 26:13 #7
+  node arrow 24:5 #10
+  node object 45:41 #7
+  node object 26:13 #7
+  node object 26:13 #7

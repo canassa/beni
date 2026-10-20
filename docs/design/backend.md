@@ -8691,13 +8691,12 @@ be a filter that drops a site of its own type. Four things the specification did
   top-level statement, so a per-statement key would recover what this loses, if the filter finds it
   matters. A local with no source name is not keyed: its `$p` name is one compiler-made parameters
   take too.
-- **The artifact keys no declaration.** A top-level function's own arrow has no `node_key`, so its
-  return var stays wild; the arrow of a declaration whose whole body is a lambda takes the lambda's
-  key unless evidence parameters lead it. `Copy`'s rule needs the declaration's type, so
-  `Spec.keepsKeys` asks whether every parameter of the copied function names a keyed local: a
-  declaration whose type holds a variable in its result alone passes, and copies only keys the
-  checker made closed, which hold at every instantiation. A key per declaration in the artifact would
-  make both exact.
+- **A declaration's key is its arrow's.** The artifact keys each value declaration by its scheme
+  when closed (checker-v2.md §36). Lowering gives that key to the declaration's own arrow — not to a
+  suspendable twin, nor to an arrow evidence parameters lead, nor to any function that may suspend,
+  whose return is a parked fiber — so a top-level function's return var has a filter as a lambda's
+  does. `Copy`'s rule reads it there: `Spec.keepsKeys` keeps a body's keys only when the copied
+  declaration's arrow still has a key.
 - **A function type with one wild part is wild**, so a lambda of a generic parameter keys no
   result although the artifact's `result` column has it.
 - The release peephole's two in-place rewrites clear a key as `Mod.setNode` does, though they run
