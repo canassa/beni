@@ -67,7 +67,7 @@ try {
     const batch = old.leads.slice(offset, offset + 64), dir = resolve(work, 'reverse-' + offset);
     await mkdir(dir);
     for (const p of batch) await writeFile(resolve(dir, p.module + '.beni'), p.source);
-    const {stdout} = await exec(compiler, ['dump', '--stage=ownership', '--platform=browser-direct', '--jobs=1', dir], {maxBuffer: 32 * 1024 * 1024});
+    const {stdout} = await exec(compiler, ['dump', '--stage=ownership', '--platform=browser-inline', '--jobs=1', dir], {maxBuffer: 32 * 1024 * 1024});
     const rows = new Map(); let current;
     for (const line of stdout.split('\n')) {
       if (!line) continue;
@@ -76,8 +76,10 @@ try {
       const demand = line.match(/^  (\d+):(\d+) (.+?): (accepted|rejected|pending)(?:(?: |: ?)(.*))?$/);
       if (demand) {
         assert(current);
+        // An `update` demand has no Lean verdict (#316) and no diagnostic (reported, not enforced, until §31.9's codes land): skipped, as in bridge.mjs.
+        if (demand[3].startsWith('update ')) continue;
         if (demand[4] !== 'accepted') current.push({row: +demand[1], col: +demand[2], operation: demand[3], verdict: demand[4], detail: demand[5] ?? ''});
-      } else assert(/^  (summary |value |demands )|^(total |cause |pending )/.test(line), 'unparsed dump: ' + line);
+      } else assert(/^  (summary |value |demands |records )|^(total |cause |pending |limits |records )/.test(line), 'unparsed dump: ' + line);
     }
     assert.equal(rows.size, batch.length);
     for (const p of batch) {
