@@ -6393,16 +6393,27 @@ pub type ServiceError = ServiceUnavailable     -- "Network connection lost"
   promise rejects with the throw, and the host answers the client with its error 1101 "Worker threw
   a JavaScript exception" ([errors](https://developers.cloudflare.com/workers/observability/errors/)).
   That is (f)'s rule for a Worker: the request fails, the next one runs.
-- **A fiber resumes in the request context it belongs to.** The host refuses to perform I/O "on
-  behalf of a different request" (the same page): an object the host owns — a `Request`, a
-  `Response`, a stub, a socket — may be used only while its request's handler, or a continuation of
-  it, runs. Core's scheduler drains every ready fiber in one microtask (`core/Task.beni`), so a
-  fiber woken by request A's reply could run in the microtask request B's reply queued. Whether the
-  host attributes a microtask to the context that queued it, or to the one whose continuation runs
-  it, is *owed*: `WorkersConcurrentRequests` holds two requests in flight whose handlers each sleep,
-  then answer with a `Response` built before the sleep, and the first slice measures it before the
-  API is called done. If the host refuses, the scheduler gains a per-context drain and this
-  paragraph records it; the API above does not move.
+- **A fiber resumes in the request context it belongs to — and today it would not** (*measured
+  2026-10-20 under workerd, Miniflare 4.20260518.0; the probe is
+  `zig-out/scratch/probe/worker2.mjs` of the session, to become a fixture*). The host refuses to
+  perform I/O "on behalf of a different request"
+  ([errors](https://developers.cloudflare.com/workers/observability/errors/)): an object the host
+  owns — a `Request`, a `Response`, a stub, a socket — may be used only while its request's
+  handler, or a continuation of it, runs. Core's scheduler drains every ready fiber in one
+  microtask (`core/Task.beni`), so a fiber woken by request A's reply can run in the microtask
+  request B's reply queued. Measured: a continuation of request B run from A's microtask could
+  not read B's body, and could not build a `new Response` at all; resolving B's own promise from
+  A's microtask with a `Response` built in B worked, and a promise made in B and resolved from A
+  ran its `.then` in B's context (the host's `handle_cross_request_promise_resolution`). So the
+  hazard is real, and a per-request trampoline through a promise is a way out. **The decision is
+  the owner's** (`cf-workers-q4`): either a `sync` `fetch` that answers an `Answer` the host runs —
+  `Respond Response | Forward Stub Request | Serve Service Request`, the runtime returning
+  `stub.fetch(request)`'s promise itself, no fiber in a Worker, no core change, the recommended
+  first slice — or fibers per request, routed through the `scheduler` slot that
+  `transparent-effects-proposal.md` §17.5 reserves (`Task.withScheduler`, a change to
+  `core/Task.beni`). The first does not foreclose the second: a suspending handler returns the
+  same `Answer`. Until the answer, `forward`, `callService` and `body` above read as the
+  suspending form; (k) records what is taken.
 - **A `Response` is the host's object**, built when the constructor is called, and a 101 answer
   carries the host's `webSocket` — the one value that cannot be plain data, which is why `Response`
   is opaque where `Http.Server`'s is a record (§9.10). `Request` is opaque for the same reason: the
@@ -6517,8 +6528,11 @@ with the message", an error "application code cannot catch"
 fail, the stub that called sees the error ((d): the Worker's request is a defect too), and the next
 event starts a new instance whose `restore` runs. From `alarm` the platform passes
 `{ retryAlarm: false }`: the host retries an alarm whose handler threw, "up to 6 retries", and a
-defect is not a transient failure to retry. What becomes of the attached sockets on an abort is
-*owed*: slice (d) measures it, and `closed` is what a program sees if the host closes them. A
+defect is not a transient failure to retry. *Measured 2026-10-20 under
+workerd:* a throw in the class's `fetch` rejects the stub's call and leaves the object as it was,
+and a throw in `webSocketMessage` leaves the object and the socket as they were — which is why
+the platform calls `abort` itself; after `abort` every attached socket is closed, the client sees
+1006 with no reason and `wasClean` false, and the next event runs a new instance. A
 defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes on.
 
 **(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (PR #531, the
@@ -6579,8 +6593,11 @@ pub type AttachError
   (f)'s list) and a reason of at most 123 bytes, tested in beni; on a socket not open it does
   nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
   four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
-- **`buffered`** is *owed*: whether the host's `WebSocket` reports a send buffer is measured in
-  slice (d), and until then `buffered` answers 0. **`protocol`** is the host's `ws.protocol`.
+- **`buffered`** answers 0: the host's `WebSocket` has no `bufferedAmount` (*measured 2026-10-20:
+  `undefined`*), so a program on this platform cannot see back-pressure, which §9.11 (h) warns
+  of; the host's own advice is fewer, larger frames. **`protocol`** is the host's `ws.protocol`.
+  A close code the host refuses is its `InvalidAccessError` (*measured* for 1005), which the
+  check in beni keeps from being reached.
 - **`eq`** compares by identity, as §9.11 (a) says. Within one life of the object every event
   hands the same host object back, so a socket held in the state is equal to the one an event
   names; across hibernation the state is rebuilt from `sockets`, and `id` is what a program keeps
@@ -6616,6 +6633,8 @@ pub type PutError
   next reads.
 - **Limits are checked in beni before the host is called**: key and value together under
   2 MB, so no host exception needs catching; the host's failure past them is a defect.
+- The store is there from the constructor on (*measured*: `ctx.storage.kv` and `ctx.storage.sql`
+  are objects in the constructor), so `restore` may read it whenever it runs.
 - **A namespace that is not SQLite-backed** has no `ctx.storage.kv`. The platform finds that at
   the first event and throws an `Error` naming the class and `"storage": "sqlite"` ((i)): the
   configuration is wrong, nothing can run, and the message says what to write.
