@@ -109,6 +109,82 @@ pub preventDefault : Event → ⊤
 preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 
 
+-- What a pointer handler reads (`boundary.md` §9.8.20). A pointer event
+-- is handed as a `Pointer`, not an `Event`: its extractor runs while the
+-- event is dispatched to the handler's own element, so the position in
+-- that element's box is taken then, and stays right after the dispatch.
+
+--| A pointer event — a mouse, a pen or a touch — as a pointer handler is
+--| handed it.
+pub crossing foreign type Pointer
+
+
+-- What a pointer event's own listener hands its extractor: the event.
+-- Not `pub`, and no event hands a handler one, so no program can call
+-- `pointer`.
+foreign type Dispatched
+
+
+-- The extractor of every pointer event: the event, and its position in
+-- the box of the element whose listener runs (`currentTarget`). Called on
+-- another event, that element could be the document, which has no box.
+-- `pub` only because a lowering finds an extractor among the module's
+-- `pub` values (issue #532).
+pub foreign impure pointer : Dispatched → Pointer
+
+
+--| The pointer's identity: the same number from its first event to its
+--| `onPointerUp` or `onPointerCancel`, and a different one for each finger
+--| on a touch screen.
+pub pointerId : Pointer → Int
+pointerId p = Js.to (Js.get (Js.from (pointerEvent p)) "pointerId")
+
+
+--| What the pointer is: `"mouse"`, `"pen"` or `"touch"`, or `""` when the
+--| browser cannot say.
+pub pointerType : Pointer → String
+pointerType p = stringProp (pointerEvent p) "pointerType"
+
+
+--| Whether the pointer is the primary one of its type: the mouse, or the
+--| first finger of a touch.
+pub isPrimary : Pointer → Bool
+isPrimary p = boolProp (pointerEvent p) "isPrimary"
+
+
+--| The pointer's position from the left edge of the viewport, in CSS
+--| pixels.
+pub clientX : Pointer → Float
+clientX p = Js.to (Js.get (Js.from (pointerEvent p)) "clientX")
+
+
+--| The pointer's position from the top edge of the viewport, in CSS
+--| pixels.
+pub clientY : Pointer → Float
+clientY p = Js.to (Js.get (Js.from (pointerEvent p)) "clientY")
+
+
+--| The pointer's position from the left edge of the border box of the
+--| element whose handler runs, in CSS pixels, when the event was
+--| dispatched. Negative, or past the box's width, when a touch has moved
+--| out of the element.
+--|
+--|     <div style="touch-action: none" onPointerMove={λp → Aim (Html.localX p) (Html.localY p)}>
+pub localX : Pointer → Float
+localX p = Js.to (Js.get (Js.from p) "x")
+
+
+--| The pointer's position from the top edge of that box, in CSS pixels.
+pub localY : Pointer → Float
+localY p = Js.to (Js.get (Js.from p) "y")
+
+
+--| The pointer event as an `Event`, for the readers of an `Event`: the
+--| modifier keys and `preventDefault`.
+pub pointerEvent : Pointer → Event
+pointerEvent p = Js.to (Js.get (Js.from p) "ev")
+
+
 stringProp : Event, String → String
 stringProp event name =
     v = Js.get (Js.from event) name
@@ -1333,6 +1409,8 @@ pub attribute "accumulate" on "animate" "animateMotion" "animateTransform" : Str
 
 
 -- Events. A `delegated` event bubbles, so a lowering may listen for it once.
+-- The pointer events bubble too, but are not `delegated`: their extractor
+-- reads the box of the element whose own listener runs (§9.8.20).
 
 pub event "onBlur" : Event
 
@@ -1392,6 +1470,24 @@ pub event "onMouseOver" delegated : Event
 
 
 pub event "onMouseUp" delegated : Event
+
+
+pub event "onPointerCancel" via pointer : Pointer
+
+
+pub event "onPointerDown" via pointer : Pointer
+
+
+pub event "onPointerEnter" via pointer : Pointer
+
+
+pub event "onPointerLeave" via pointer : Pointer
+
+
+pub event "onPointerMove" via pointer : Pointer
+
+
+pub event "onPointerUp" via pointer : Pointer
 
 
 pub event "onScroll" : Event
