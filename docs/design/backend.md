@@ -8375,6 +8375,42 @@ copy edges' worklist, one pending join per var per batch. `emit/release/inline/S
 (29 children of six messages) costs 4 537M instructions before and 3 843M after, `SpreadWide`
 2 038M → 1 928M.
 
+**As built 2026-10-20 — a member read of a name reads its field summary** (issue #498, part of
+#464). A load cell of a name's property (var `v`, property `p`) no longer takes a copy edge from
+`p`'s var and from `any` of every site `v` may hold: it takes one from the var of `p` in `v`'s field
+summary and one from the summary's `any`, two edges per cell whatever `v` holds. A read of any
+other object expression keeps its cell per node, linked per site. What the per-site cell also did
+is now a mark on the summary, applied to the sites it folded, to the sites it folds later, and to
+the summaries that feed it, whose sites are a subset of `v`'s (`Pts.markRead`, a walk over the
+summaries' new `preds`): the read marks `p` read on each site (`Prop.read`), made when the site
+lacks it, as `load` made it; a site without the key, or with it uninitialised, sets the mark's
+`lacks`, which runs along `succs` and joins `undefined` into the cell; a folded site that escapes
+or is no object sets the summary's `escaped` or `unknown`, which make the cell `top`. **A summary
+holds only what is asked of it**: every property when a spread reads it whole (`Summary.whole`,
+which now carries what `foldSite` did to every site — `all_read` — and passes to the feeding
+summaries the same way), and otherwise only the properties a read marked (`Pts.demands`). Without
+that, a summary made for a read joined every field of every site and the dashboard N=64 build took
+14.1 s against 6.3 s; with it a read of one field of a wide record costs one edge per site in the
+one summary, and the marking costs nothing in facts — a read never marks a field it does not read,
+so the release build still drops unread fields. A summary's vars are `uncapped`, as a cell's is,
+since a summary now feeds reads as well as spreads and a cap there would escape sites no
+consumer's own var escapes. The links a summary takes across a copy edge are unchanged, so
+*Declared-type filtering of fact 3*'s rule holds as written: where it links no summary, the
+target's summary folds its sites one by one and the marks reach them there. Every `emit/release/`
+golden and release run hash is byte for byte the same; the safety build's shuffled-order check is
+green on the corpus with one change: a site written under an unknown key is not compared on its
+per-key `written` flags, which `neverWritten` never reads past `any_written`. A spread copies the
+keys its sources have, and the keys of a source that escaped are no fact; a read through a summary
+marks a site as it is folded, which in one order is before it escapes and in another after
+(`run/MarkupFieldIdentity`). Measured, ReleaseFast, `--release --no-cache --jobs=1`, dagon, every
+output byte-identical, before → after: `spec_pts_edges` per fact-3 run on the dashboard N=16
+29 196 → 11 519 (7 runs), N=64 4.52M → 4.37M (6 runs), N=64 without `withDefault` 418 837 → 91 818
+(6 runs); time and peak RSS N=16 0.15 s / 62 MB → 0.14 s / 61 MB, N=64 6.27 s / 961 MB → 6.05 s /
+961 MB, without `withDefault` 1.21 s / 317 MB → 0.82 s / 274 MB. Instructions of the gates' build:
+`emit/release/inline/SpreadArms` 3 846M → 2 613M, `SpreadWide` 1 927M → 1 593M, and the new
+`MemberReadsWide` (SpreadArms with 34 children) 5 124M → 3 445M. At N=64 with `withDefault` the
+edges are the merged sets of the degenerate case the 2026-10-19 note describes, not reads.
+
 #### Declared-type filtering of fact 3
 
 *Specified 2026-10-20 (issue #488, part of #464; the owner's decisions D1 and D2 in its safe form,
