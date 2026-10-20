@@ -1,0 +1,17 @@
+key #0 Basics.Int wild
+key #1 String.String wild
+key #2 { id : #0, name : #1 } wild
+key #3 List.List #2 wild
+key #4 { items : #3, total : #0 } wild
+key #5 { count : #0 }
+key #6 List.List #1 wild
+key #7 #4 → #0
+key #8 #2 → #0
+key #9 #5 → #5
+key #10 {}
+module Schemas
+  name m$1 #5
+  node object 33:10 #5
+  node arrow 33:10 #5
+  node object 37:53 #5
+  node array 37:24 #6

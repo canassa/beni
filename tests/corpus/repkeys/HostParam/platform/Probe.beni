@@ -1,0 +1,11 @@
+--! A host value under a name an application may write.
+
+import Js
+
+
+pub type alias Host =
+    Js.Value
+
+
+pub host : ⊤ → Host
+host ⊤ = Js.null

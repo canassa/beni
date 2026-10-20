@@ -3704,6 +3704,7 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .boundary = if (e.boundary) |*b| b else null,
             .live = &e.live,
+            .plans = e.session.checked.plans,
         });
     }
 

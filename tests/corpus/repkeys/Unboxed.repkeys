@@ -23,20 +23,18 @@ module Unboxed
   name q$1 #2
   name ps$1 #4
   name rest$3 #4
-  node arrow 27:5 #5
+  node arrow 27:5 #2
   node object 33:14 #2
-  node arrow 33:10 #16
+  node arrow 33:10 #2
   node object 37:11 #2
-  node arrow 37:11 #5
+  node arrow 37:11 #2
   node object 37:11 #2
-  node arrow 42:5 #5
+  node arrow 42:5 #2
   node object 48:16 #2
-  node arrow 48:8 #5
+  node arrow 48:8 #2
   node object 52:10 #6
-  node arrow 52:10 #12
-  node arrow 56:19 #13
+  node arrow 52:10 #6
   node object 60:27 #2
   node array 60:12 #4
-  node arrow 60:12 #14
-  node arrow 65:5 #15
+  node arrow 60:12 #4
   node array 76:9 #8

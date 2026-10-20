@@ -1,0 +1,28 @@
+-- repkeys: an arrow is keyed by what it returns (`backend.md` §9), so a
+-- function with a host-typed parameter and a closed result keeps its
+-- return key: `replace` takes `Host`, a `Js.Value`, and its arrow keys
+-- `Model`, though its whole type is wild. A var of function type is wild:
+-- `pick`'s `f` has no key, and neither does any function-typed local.
+import Node
+import Probe exposing (Host)
+
+
+type alias Model =
+    count : Int
+
+
+replace : Host, Model → Model
+replace h m = { m | count = m.count + 1 }
+
+
+pick : (Model → Model), Model → Model
+pick f m = f (f m)
+
+
+main : Node.Program
+main =
+    a = replace (Probe.host ⊤) { count = 1 }
+    b = replace (Probe.host ⊤) a
+    c = pick (λm → { m | count = m.count * 2 }) b
+    d = pick (λm → { m | count = m.count + 3 }) c
+    Node.printLines [ String.fromInt d.count ]

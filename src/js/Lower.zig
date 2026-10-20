@@ -759,6 +759,12 @@ pub fn lower(
     // names, a word never written wild.
     if (input.rep_keys != null) {
         ir.node_keys = try keyRows(gpa, l.node_keys.items);
+        std.mem.sort(Node.Index, l.closed_decls.items, {}, struct {
+            fn lessThan(_: void, x: Node.Index, y: Node.Index) bool {
+                return x.int() < y.int();
+            }
+        }.lessThan);
+        ir.closed_decls = try gpa.dupe(Node.Index, l.closed_decls.items);
         ir.name_key = try keyColumn(gpa, l.name_keys.items, ir.names.len);
     }
     const diagnostics = try l.diagnostics.toOwnedSlice(gpa);
@@ -1261,6 +1267,8 @@ pub const Lowerer = struct {
     /// `key_unset`, which `lower` writes as wild.
     name_keys: std.ArrayList(u32) = .empty,
     node_keys: std.ArrayList(u32) = .empty,
+    /// `JsIr.closed_decls` while it is filled (`noteClosedDecl`).
+    closed_decls: std.ArrayList(Node.Index) = .empty,
     /// How many functions enclose what is being lowered: 0 in a top-level
     /// constant, where a body written in place would need a called arrow.
     function_depth: u32 = 0,
@@ -2783,12 +2791,14 @@ pub const Lowerer = struct {
                 const params = l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, params, body, p, own_suspends);
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
-                // The declaration's own arrow takes its key (checker-v2.md §36,
-                // the declarations), so its return var has a filter: not a
-                // suspendable twin, nor an arrow evidence parameters lead.
-                if (variant == .direct and evidence == 0 and !own_suspends) if (l.in.rep_keys) |keys| try l.keyArrow(arrow, keys.declKey(l.in.module, index));
+                // The declaration's own arrow takes what it returns as its key
+                // (checker-v2.md §36, the declarations), its return var's
+                // filter: not a suspendable twin, nor an arrow evidence
+                // parameters lead, nor a function that may suspend.
+                if (variant == .direct and evidence == 0 and !own_suspends) if (l.in.rep_keys) |keys| try l.keyArrow(arrow, keys.declResult(l.in.module, index));
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, own_suspends))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
+                if (variant == .direct) try l.noteClosedDecl(out, index);
             },
             // §8's narrow rule: a `lambda` that is the ENTIRE body of a
             // parameterless declaration inherits its name, because `f x = e`
@@ -2801,11 +2811,12 @@ pub const Lowerer = struct {
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @fromBackingInt(@intCast(ld.rhs)), p, l.functionSuspends(body));
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
-                // The declaration's arrow, as `.params`' is: the lambda's
-                // type, which is the declaration's.
+                // The declaration's arrow, as `.params`' is: what the lambda
+                // returns, which is what the declaration does.
                 if (variant == .direct and evidence == 0) try l.keyNode(body, arrow, arrow.int());
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, l.functionSuspends(body)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
+                if (variant == .direct) try l.noteClosedDecl(out, index);
             },
             .applied => try l.constDecl(out, n, try l.appliedArrow(out, try l.variantBase(l.bir.symbol(d.name)), evidence, use.arity, body, p), decl_p),
             // `($m…) => value`, its value kept per evidence.
@@ -4780,14 +4791,27 @@ pub const Lowerer = struct {
             .object, .array, .arrow => {},
             else => return,
         }
-        // A function that may suspend answers a parked fiber where it
-        // stops, not a value of its result.
-        if (l.bir.instTag(inst) == .lambda and l.functionSuspends(inst)) return;
+        // An arrow is keyed by what it returns, which only a lambda's row
+        // says; a function that may suspend answers a parked fiber where
+        // it stops, not a value of its result.
+        if (l.b.tagOf(value) == .arrow) {
+            if (l.bir.instTag(inst) != .lambda or l.functionSuspends(inst)) return;
+            return l.setNodeKey(value, keys.lambdaResult(l.in.module, inst));
+        }
         try l.setNodeKey(value, keys.instKey(l.in.module, inst));
     }
 
-    /// A top-level declaration's own arrow takes its key: no instruction
-    /// makes it.
+    /// The `const` just written for top-level declaration `decl` is one
+    /// whose type the checker found closed (`JsIr.closed_decls`): `Copy`
+    /// keeps the keys of its body.
+    fn noteClosedDecl(l: *Lowerer, out: *const StmtList, decl: u32) !void {
+        const keys = l.in.rep_keys orelse return;
+        if (out.items.len == 0 or !keys.declClosed(l.in.module, decl)) return;
+        try l.closed_decls.append(l.scratch, out.items[out.items.len - 1]);
+    }
+
+    /// A top-level declaration's own arrow takes what the declaration
+    /// returns as its key: no instruction makes it.
     fn keyArrow(l: *Lowerer, arrow: Node.Index, key: JsIr.RepKey) !void {
         try l.setNodeKey(arrow, key);
     }

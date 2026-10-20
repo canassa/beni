@@ -1,0 +1,23 @@
+key #0 Basics.Int
+key #1 { count : #0 }
+key #2 #1 → #1
+key #3 String.String wild
+key #4 List.List #3 wild
+key #5 #2, #1 → #1
+module HostParam
+  name m$2 #1
+  name a$1 #1
+  name b$2 #1
+  name c$3 #1
+  name m$5 #1
+  name d$4 #1
+  name m$6 #1
+  node object 15:15 #1
+  node arrow 15:15 #1
+  node arrow 19:12 #1
+  node object 24:34 #1
+  node object 26:23 #1
+  node arrow 26:15 #1
+  node object 27:23 #1
+  node arrow 27:15 #1
+  node array 28:21 #4
