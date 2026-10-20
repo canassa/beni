@@ -249,7 +249,7 @@ withSink f work =
 -- what it printed.
 console : Entry → ⊤
 console entry =
-    text = entry.message ++ String.concat (List.map entry.spans spanText)
+    text = List.foldl entry.spans entry.message λeach line → "${line}${spanText each}"
     out = Js.global "console"
     name = methodOf entry.level
 
