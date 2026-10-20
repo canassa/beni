@@ -1902,7 +1902,8 @@ currentClock ⊤ =
 --| Run `work` with the calling fiber's clock slot set to `clock`, and put
 --| the old one back when `work` ends, returned or cancelled. Fibers `work`
 --| starts copy it. For core's `Clock.run`: a program has no `Js.Value` to
---| give it.
+--| give it. `withLogContext` is the same body for another slot: change
+--| the two together.
 pub withClock : Js.Value, (⊤ → a) → a
 withClock clock work =
     Js.write slotted True
@@ -1937,7 +1938,8 @@ currentLogContext ⊤ =
 --| and put the old one back when `work` ends, returned or cancelled, as
 --| `withClock` does. Fibers `work` starts copy it. For core's
 --| `Log.annotate`, `span`, `minimum` and `withSink`: a program has no
---| `Js.Value` to give it.
+--| `Js.Value` to give it. The body is `withClock`'s, with the slot's name
+--| written as a literal: change the two together.
 pub withLogContext : Js.Value, (⊤ → a) → a
 withLogContext context work =
     Js.write slotted True

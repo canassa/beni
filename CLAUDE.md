@@ -396,11 +396,12 @@ corpus, the two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` hav
 (`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
 input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with
 `zig build test-playground` in CI on every pull request; granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`).
-The `tests/blackbox/check_test.zig` case *ownership words: core's are catalogued* has 4 750M
-(`core_surface_budget_millions`): it runs the ownership stage on the whole of `core/`, so its count
-grows with every line of core, and the log context (#358) put it 10M over the 4 300M. Jayson Reis
-decided it on 2026-10-20 (dashboard `node-log-q2`); it goes when the case is back under 4 300M
-(#514). `world.withOwnBudget` holds both grants.
+Also outside the corpus, and also the owner's own grant, the `tests/blackbox/check_test.zig` case
+*ownership words: core's are catalogued* has 4 750M (`core_surface_budget_millions`): it runs the
+ownership stage on the whole of `core/`, so its count grows with every line of core, and the log
+context (#358) put it 10M over the 4 300M. Jayson Reis decided it on 2026-10-20 (dashboard
+`node-log-q2`); it goes when the case is back under 4 300M (#514). `world.withOwnBudget` holds both
+grants.
 
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)
