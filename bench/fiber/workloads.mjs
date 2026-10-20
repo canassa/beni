@@ -183,3 +183,23 @@ export async function sweep(budgets, effect, yields = 200_000, effectYields = yi
   out.push(await latency(`Effect v4 (default scheduler): ${effectYields} yieldNow`, () => effect.loopYielding(effectYields)));
   return out;
 }
+
+// The log (transparent-effects-proposal.md §17.11; `plans/effects-plan.md`
+// §8 P7): `node.mjs --group=log`.
+export async function log(beni, effect, sizes = {}, progress = () => {}) {
+  const b = sizes.below ?? 1_000_000;
+  const w = sizes.written ?? 200_000;
+  const pairs = [
+    [`${b} lines below the minimum`, b, () => inFiber(beni, () => beni.Bench$logBelow(b, 0)), () => effect.logBelow(b), b],
+    [`${w} lines written to a counting sink`, w, () => inFiber(beni, () => beni.Bench$logWritten(w)), () => effect.logWritten(w), w],
+    [`${w} lines written inside an annotation and a span`, w, () => inFiber(beni, () => beni.Bench$logInContext(w)), () => effect.logInContext(w), w],
+  ];
+  const out = [];
+  for (const [label, ops, run, e, expect] of pairs) {
+    out.push(await measure(`beni: ${label}`, ops, run, expect));
+    progress(out[out.length - 1].label);
+    out.push(await measure(`Effect v4: ${label}`, ops, e, expect));
+    progress(out[out.length - 1].label);
+  }
+  return out;
+}

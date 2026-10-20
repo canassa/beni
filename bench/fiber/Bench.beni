@@ -5,6 +5,7 @@
 import Clock
 import Deferred
 import Duration
+import Log
 import Ref exposing (Ref)
 import Schedule
 import Task exposing (Exit)
@@ -220,3 +221,41 @@ timeoutFast n acc =
     else
         got = Task.timeout (Duration.minutes 1) λ⊤ → 1
         timeoutFast (n - 1) (acc + Maybe.withDefault got 0)
+
+
+--| `n` lines at `Debug`, below the default minimum: each builds nothing.
+pub logBelow : Int, Int → Int
+logBelow n acc =
+    if n == 0 then
+        acc
+    else
+        Log.debug "below the minimum"
+        logBelow (n - 1) (acc + 1)
+
+
+--| `n` lines at `Info`, each handed to a sink that counts them. Answers the
+--| count.
+pub logWritten : Int → Int
+logWritten n =
+    count = Ref.make 0
+    Log.withSink (λ_ → Ref.update count λc → c + 1) λ⊤ → infoTimes n
+    Ref.get count
+
+
+--| `logWritten`, inside one annotation and one log span: each line carries
+--| both.
+pub logInContext : Int → Int
+logInContext n =
+    count = Ref.make 0
+    Log.withSink (λ_ → Ref.update count λc → c + 1) λ⊤ →
+        Log.annotate "user" "7" λ⊤ → Log.span "save" λ⊤ → infoTimes n
+    Ref.get count
+
+
+infoTimes : Int → ⊤
+infoTimes n =
+    if n == 0 then
+        ⊤
+    else
+        Log.info "written"
+        infoTimes (n - 1)

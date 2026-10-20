@@ -3,7 +3,7 @@
 // and documentation write them. Pinned to effect@4.0.0-rc.116, the version
 // references/effect is checked out at.
 
-import { Deferred, Effect, Fiber, Ref, Schedule } from "effect";
+import { Deferred, Effect, Fiber, Logger, Ref, Schedule } from "effect";
 import { TestClock } from "effect/testing";
 
 // `n` synchronous operations chained by `flatMap`: Effect's interpreter
@@ -177,3 +177,35 @@ export const timeoutFast = (n) =>
       return acc;
     }),
   );
+
+// `n` lines at `Debug`, below the default minimum (`Info`).
+export const logBelow = (n) =>
+  Effect.runSync(
+    Effect.gen(function* () {
+      let acc = 0;
+      for (let i = 0; i < n; i++) {
+        yield* Effect.logDebug("below the minimum");
+        acc += 1;
+      }
+      return acc;
+    }),
+  );
+
+// `n` lines at `Info`, each handed to a logger that counts them, in place of
+// the default one. Answers the count.
+const counted = (n, wrap) => {
+  let count = 0;
+  const counter = Logger.make(() => {
+    count += 1;
+  });
+  const lines = Effect.gen(function* () {
+    for (let i = 0; i < n; i++) yield* Effect.logInfo("written");
+  });
+  Effect.runSync(wrap(lines).pipe(Effect.provide(Logger.layer([counter]))));
+  return count;
+};
+
+export const logWritten = (n) => counted(n, (lines) => lines);
+
+// `logWritten`, inside one annotation and one log span.
+export const logInContext = (n) => counted(n, (lines) => lines.pipe(Effect.withLogSpan("save"), Effect.annotateLogs("user", "7")));
