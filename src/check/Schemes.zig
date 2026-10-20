@@ -143,10 +143,10 @@ pub const Writer = struct {
     /// identity it takes (checker-v2.md §33): their flag word gets the
     /// identity bit. Empty for everything else.
     identities: []const u16 = &.{},
-    /// The quantifiers of the scheme being written whose instantiations cross
-    /// into JavaScript (checker-v2.md §36): their flag word gets the
-    /// `crosses` bit. Empty for everything else.
-    crossing: []const u16 = &.{},
+    /// Per store variable, whether it is a quantifier whose instantiations
+    /// cross into JavaScript (checker-v2.md §36): its flag word gets the
+    /// `crosses` bit.
+    crossing: []const bool = &.{},
     /// Set when `max_depth` stopped the walk. The caller must REPORT and
     /// write `addError()` instead of the truncated body: an `err` term
     /// buried inside an otherwise concrete scheme is a hole that unifies
@@ -238,10 +238,6 @@ pub const Writer = struct {
         for (w.identities) |q| {
             const at = @as(usize, q) * Interface.Quantified.words;
             if (q < count and at < w.pending_flags.items.len) w.pending_flags.items[at] |= Interface.Quantified.identity_bit;
-        }
-        for (w.crossing) |q| {
-            const at = @as(usize, q) * Interface.Quantified.words;
-            if (q < count and at < w.pending_flags.items.len) w.pending_flags.items[at] |= Interface.Quantified.crosses_bit;
         }
         const flags_start: u32 = @intCast(w.extra.items.len);
         try w.extra.appendSlice(w.gpa, w.pending_flags.items);
@@ -730,6 +726,7 @@ pub const Writer = struct {
         const q: Interface.Quantified = .{
             .kind = @backingInt(flags.kind),
             .equatable = flags.equatable,
+            .crosses = root.int() < w.crossing.len and w.crossing[root.int()],
             // Into the interface's own column, never the interner's — see
             // `Interface.Quantified.name`.
             // A name that disagrees with the kind is not published: it was

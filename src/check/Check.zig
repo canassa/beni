@@ -212,6 +212,8 @@ pub const Options = struct {
     /// `plans/m4-plan.md` §8 risk 2 names the sidecar as where a silent
     /// miscompile can hide.
     roundtrip_dispatch: bool = false,
+    /// Compute the crossing bits (checker-v2.md §36; `Session.crossing`).
+    crossing: bool = true,
     /// One slot per graph module: the cache entry a serial pre-pass loaded
     /// for it, or null (`fast-compiler.md` §8). A non-null slot is a HIT —
     /// the whole of `Module.check` is skipped and the entry is installed

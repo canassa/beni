@@ -104,6 +104,8 @@ pub const Input = struct {
     plan: *SchemaPlan,
     roundtrip_interfaces: bool = false,
     roundtrip_dispatch: bool = false,
+    /// Compute the crossing bits (checker-v2.md §36).
+    crossing: bool = true,
     /// `ambiguous_method_receiver` is emitted (static-dispatch-spike.md §10.9).
     informational: bool = false,
     /// `unit_discarded` is emitted (checker-v2.md §34).
@@ -267,6 +269,8 @@ pub fn check(in: Input) Error!Check.Counters {
     // P4.
     var solver: Solve = undefined;
     solver.init(&cx, &report, retained);
+    // The crossing bits' records (checker-v2.md §36), when the run computes them.
+    solver.instantiate.track_crossing = in.crossing;
     defer solver.deinit();
     solver.decl_scheme = decl_scheme;
     solver.own_values = own_values;
@@ -403,7 +407,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // The type-key artifact (checker-v2.md §36), while the store is alive,
     // and before P8, which publishes each declaration's crossing
     // quantifiers.
-    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0) try TypeKeys.build(.{
+    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0 and (keyed or in.crossing)) try TypeKeys.build(.{
         .cx = &cx,
         .gpa = gpa,
         .scratch = scratch,
@@ -417,6 +421,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .decl_display = decl_display,
         .casts = solver.casts.items,
         .uses = solver.instantiate.crossing.items,
+        .copies = solver.instantiate.copies.items,
         .schemas = &schemas,
         .dispatch = in.dispatch,
         .keyed = keyed,

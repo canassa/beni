@@ -352,6 +352,11 @@ pub const OptionBits = struct {
     /// `--explain` (frontend.md §11.9): a module's cached warnings differ.
     explain: bool = false,
     pattern_budget: u32,
+    /// Whether the run computes the crossing bits (checker-v2.md §36): every
+    /// run that keys an app module, and the checked core'"'"'s. A run of core or
+    /// a platform alone does not, and its records carry no bit, so its key
+    /// says so and no run that reads the bits installs them.
+    crossing: bool = true,
 };
 
 /// Whether the run's informational switch reaches a module of `package`:
@@ -369,15 +374,18 @@ pub fn informationalReaches(informational: bool, explain: bool, package: SourceS
 
 /// Room for `core=0;platform=0;informational=0;explain=0;pattern_budget=` and ten
 /// digits, with slack.
-pub const options_buffer_len = 80;
+pub const options_buffer_len = 96;
 
 pub fn writeOptions(buffer: *[options_buffer_len]u8, bits: OptionBits) []const u8 {
-    return std.fmt.bufPrint(buffer, "core={d};platform={d};informational={d};explain={d};pattern_budget={d}", .{
+    // `crossing=0` only when it is off: a run that computes the bits keeps
+    // the option string it always had.
+    return std.fmt.bufPrint(buffer, "core={d};platform={d};informational={d};explain={d};pattern_budget={d}{s}", .{
         @intFromBool(bits.core),
         @intFromBool(bits.platform),
         @intFromBool(bits.informational),
         @intFromBool(bits.explain),
         bits.pattern_budget,
+        if (bits.crossing) "" else ";crossing=0",
     }) catch unreachable; // `options_buffer_len` is the bound, asserted below
 }
 
@@ -455,6 +463,8 @@ pub const Options = struct {
     informational: bool,
     explain: bool = false,
     pattern_budget: u32,
+    /// `OptionBits.crossing`, for every module of the run.
+    crossing: bool = true,
     /// Per FILE index: `Lower.Options`' two bits as that file's lowering
     /// actually ran with them.
     lower_core: []const bool,
@@ -555,6 +565,7 @@ fn ownTermsOf(
         .informational = informationalReaches(options.informational, options.explain, graph.modulePackage(m)),
         .explain = options.explain,
         .pattern_budget = options.pattern_budget,
+        .crossing = options.crossing,
     });
     // The markup term (`frontend.md` §9.8): a module that writes markup, and
     // the vocabulary module, are checked against the chain's markup

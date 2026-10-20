@@ -6047,15 +6047,20 @@ where its payloads hold them, `payload_params`, and a `foreign type` other than 
 `Js.Ref` holds none; the closed types the walk meets join the wild set by the same rule). A
 callee is an import, whose interface carries the bit (`Interface.Quantified.crosses`, bit 10 of the
 flag word, `iface_bytes` format 12 → 13); a declaration of the module; or a `let` function, the last
-two to a fixpoint over the module's own references, each reference looked at again only when its
-callee's bits grew. An import's crossing quantifiers are recorded as the module instantiates them
-(`Instantiate.crossing`); an own callee's are found by walking its scheme beside the reference's
-instance type (`inst_type`), a row variable standing for the whole record. A type variable met in a
-crossing type is mapped to its quantifier by identity (an unannotated declaration's or a `let`'s)
-or, for an annotation's rigid variable, by name; one no owner names makes every quantifier of the
-declaration and of its `let` functions cross. A method call that runs a declaration of the module
-with crossing quantifiers makes every type it reads or makes cross. P8 publishes each
-declaration's bits. Core and the platforms compute and publish them although their keys are wild.
+two to a fixpoint. Nothing walks the module a second time: the check records what the fixpoint
+needs as it instantiates. An import's crossing quantifiers are noted with the variables they were
+instantiated at (`Instantiate.crossing`), and every own scheme quantifier with its copy at each
+instantiation (`Instantiate.copies`, noted where the copy is made). A quantifier that comes to
+cross wakes its copies, which cross in the declaration that made them, in passes over the copies
+until none wakes. A type variable met in a crossing type that is generalised is a quantifier and
+crosses itself. An annotation's rigid variable stands for the scheme quantifier of its name, in the
+declaration or an annotated `let`; one no owner names makes all of them cross. A method call that
+runs a declaration of the module with crossing quantifiers makes every type it reads or makes
+cross. P8 publishes the bits, the writer setting each quantifier's from its variable. Core and the
+platforms compute and publish them although their keys are wild, in every run that keys an app
+module and when the checked core is made. A run of core or a platform alone has no reader for
+them and computes none. Its records carry no bit, and its keys say so (`crossing=0` in the option
+string, `cache/Key.zig`), so a run that reads the bits never installs them.
 
 **Where it is made.** After P7 and before P8, which publishes the bits, for every module checked
 aloud and with no error; instruction types are recorded for such a module whether or not the run
