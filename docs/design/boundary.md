@@ -4482,9 +4482,12 @@ removes `platforms/browser/Log.beni`, `Log.write` becomes **`Cmd.log : Log.Level
 in `browser`'s `Cmd`: the command form of core's `Log.log`, a body that calls `Log.log level line`
 when the command runs. A program writes `Cmd.log Log.Info line`. Core cannot hold the command,
 because `Cmd` is a `browser` type, and a `browser` module named `Log` would hide core's (§9.8.11 (a)).
-The level is core's `Log.Level`, so `Trace` and `Debug` lines can be commands too, and the log
-context of the fiber that runs the command applies to them. The other option was a module
-`Browser.Log` with `write`.
+The level is core's `Log.Level`. The other option was a module `Browser.Log` with `write`.
+*Amended 2026-10-20 (#547):* a command runs after `update` has returned, so its line has the
+default log context: no annotation, no span, and the minimum `Info`. An `annotate` or a `minimum`
+around the `update` arm that makes the command does not reach it, and a `Cmd.log Log.Trace` or
+`Cmd.log Log.Debug` is not written. A program-wide minimum that would let it be written is the
+owner's decision, #551.
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`

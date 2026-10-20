@@ -3010,7 +3010,10 @@ Each was taken here so the slices can proceed, and each is reversible until its 
 12. *Added 2026-10-20 (#358).* **An annotation keeps its place, whatever its key.** `Entry.annotations`
     is a list, so a key that is an integer index, such as `"1"`, stays where it was added. Effect's
     annotations are a JavaScript object, which puts such a key first (`Object.entries`). The list
-    is beni's ordinary order, and it does not depend on how a key is spelled.
+    is beni's ordinary order, and it does not depend on how a key is spelled. *Amended 2026-10-20
+    (#547):* the list and the `logfmt` line keep the order. The default sink's second argument is
+    a JavaScript object, as §17.11 says ("an object of strings"), so there an integer-index key
+    comes first, as in Effect.
 
 ### 17.13 What this section does not do
 
