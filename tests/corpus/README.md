@@ -322,6 +322,25 @@ project) against it, one step per line, `#` for a comment:
     fail <n>                    reject the `n`-th request with `new
                                 TypeError("Failed to fetch")`, the Fetch
                                 standard's network error
+    socket <n> open ["<protocol>"]
+                                the `n`-th WebSocket the page made opens,
+                                with that subprotocol (default none)
+    socket <n> message "<text>" the server sends a text message
+    socket <n> binary <bytes>   the server sends a binary message of that
+                                many bytes
+    socket <n> close <code> "<reason>"
+                                the server's close frame: `close`, clean
+    socket <n> fail             the connection fails: `error`, then `close`
+                                with 1006, not clean
+    socket <n> error-only       the connection fails as WebKit fails one:
+                                `error`, and no `close`
+    socket <n> buffered <bytes> what the page sent and the host did not:
+                                the socket's `bufferedAmount`
+    socket blocked              the next `new WebSocket` throws a
+                                `SecurityError`, as a browser's does for an
+                                insecure socket from an `https:` page
+    sockets                     log `(sockets: <n>)`, the sockets the page
+                                made and has not closed
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
@@ -405,6 +424,19 @@ aborted: <the reason's name>)`, so a cancelled `Restart` and a timeout are
 both visible. A `data:` URL goes to the host's own `fetch` and is neither
 numbered nor logged. A request still pending when the script ends fails the
 case, so no fixture forgets one.
+
+**The page's `WebSocket` is scripted** (`boundary.md` §9.11 (l)), as its
+`fetch` is, in both DOMs. Each `new WebSocket` is logged as it is made —
+`(socket <n>: <path> [<protocols>])`, the path alone when the socket's host
+is the page's — and stays connecting until a `socket <n> open` or `socket
+<n> fail` step answers it. What the page sends and closes is logged:
+`(socket <n> sent: "<text>")`, `(socket <n> close: <code> "<reason>")`, and
+`(socket <n> close)` for a close with no code. The constructor, `send` and
+`close` throw what the standard says they throw for what they are handed,
+so a platform that hands the host something it refuses meets the host's
+own exception. A message that arrives while the page closes the socket is
+dropped, as the host drops it, and logged. A socket still open when the
+script ends is not a failure: a page that keeps one is the normal case.
 
 **The page never leaves its document.** A navigation the page starts to
 another document — `location.assign`, `replace` or `reload`, a write to
