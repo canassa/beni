@@ -187,6 +187,8 @@ theorem flatInvariant_state_frame
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    tags := inv.tags
+    liveTyped := inv.liveTyped
     namingBound := by simpa only [heapSame] using inv.namingBound
     observers := by simpa only [heapSame, valueKept, heapKept] using inv.observers
   }
@@ -237,6 +239,8 @@ theorem flatInvariant_restrict_live
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := inv.bindingsTyped
+    tags := inv.tags
+    liveTyped := fun x p ty member => inv.liveTyped x p ty (included _ member)
     namingBound := inv.namingBound
     observers := inv.observers
   }
@@ -587,8 +591,9 @@ theorem allocated_integer_list_typed {heap : Heap} {root : Nat} {integers : List
     integer_list_observation_typed declarations integers⟩
   exact .ref allocated (integers_represented integers (observationDepth - 2))
 
-/-- The runtime shape of a flat binding: an integer, an allocated array, or a
-record of such values. -/
+/-- The runtime shape of a flat binding: an integer, an allocated array, a
+record of such values, or a result as both interpreters build it: a success
+`[1, 0, x]` or an error `[0, x, 0]` over such a payload. -/
 inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
   | int (integer : Int) : AllocatedFlatValue heap (.int integer) .int
   | list (root : Nat) : root < heap.size → AllocatedFlatValue heap (.ref root) (.list .int)
@@ -596,6 +601,10 @@ inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
       (∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → ts[i]? = some t →
         AllocatedFlatValue heap w t) →
       AllocatedFlatValue heap (.record ws) (.record ts)
+  | ok (error success : Ty) (w : Value) : AllocatedFlatValue heap w success →
+      AllocatedFlatValue heap (.record [.int 1, .int 0, w]) (.result error success)
+  | err (error success : Ty) (w : Value) : AllocatedFlatValue heap w error →
+      AllocatedFlatValue heap (.record [.int 0, w, .int 0]) (.result error success)
 
 theorem flatHeap_after_write {heap : Heap} {root : Nat} (flat : FlatHeap heap) (allocated : root < heap.size)
     (integers : List Int) : FlatHeap (heap.set! root (heapInts integers)) := by

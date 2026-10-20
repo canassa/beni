@@ -83,14 +83,18 @@ theorem described_flat_frame {next : Heap} {w w' : Value} {o : Observation} {gam
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (nextFlat : FlatHeap next) (size : hs.heap.size ≤ next.size)
     (namingSame : ∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin))
+    (use : (x, p) ∈ live)
     (binding : env.lookup x = some (o, w)) (abstractBinding : aenv.lookup x = some a)
     (valuePath : projectVal w p = some w') (described : Describes gamma hs.heap (a.atPath p) w') :
     Describes gamma' next (a.atPath p) w' := by
   obtain ⟨ty, declared, _, actualTyped⟩ := inv.bindingsTyped x o w binding
-  have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped
-  obtain ⟨t, at_p, shape'⟩ := allocated_project shape valuePath
-  have abs := flatAbstract_atPath (inv.abstractShapes x ty a declared abstractBinding) at_p
-  exact describes_flat_frame shape' abs inv.heapInts nextFlat size namingSame described
+  have tags := inv.tags x ty a o w declared abstractBinding binding
+  have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped tags
+  obtain ⟨t, at_p⟩ := inv.liveTyped x p ty use declared
+  have shape' := allocated_project shape at_p valuePath
+  have shape0 := inv.abstractShapes x ty a declared abstractBinding
+  exact describes_flat_frame shape' (flatAbstract_atPath shape0 at_p)
+    (resultTags_project tags shape0 at_p valuePath) inv.heapInts nextFlat size namingSame described
 
 /-- The immutable-path naming of every flat binding in any flat heap. -/
 theorem named_flat_frame {next : Heap} {w : Value} {o : Observation} {gamma : Naming} {gamma' : Naming}
@@ -102,6 +106,7 @@ theorem named_flat_frame {next : Heap} {w : Value} {o : Observation} {gamma : Na
     named gamma' (a.cellsAt q) c := by
   obtain ⟨ty, declared, _, actualTyped⟩ := inv.bindingsTyped x o w binding
   have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped
+    (inv.tags x ty a o w declared abstractBinding binding)
   obtain ⟨_, immutable, everywhere⟩ := arrayAt_flat (allocated_mono shape size) nextFlat located
   have old := inv.named x o w a binding abstractBinding q c immutable (everywhere hs.heap)
   exact named_same_of_naming namingSame (arrayAt_flat shape inv.heapInts (everywhere hs.heap)).1 old
@@ -157,6 +162,8 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := bindingsTyped_after_flat_heap inv nextFlat size
+    tags := inv.tags
+    liveTyped := fun x p ty member declared => inv.liveTyped x p ty (liveSub _ member) declared
     namingBound := bounded
     observers := ⟨footprint, framed⟩
   }
@@ -179,16 +186,20 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     obtain ⟨o', w', observationPath, valuePath, paired⟩ :=
       inv.bindings x p (liveSub _ use) o w binding
     obtain ⟨ty, declared, _, actualTyped⟩ := inv.bindingsTyped x o w binding
+    obtain ⟨a, abstractBinding⟩ :=
+      Ownership.FlatFragment.VariableFacts.lookup_exists_of_same_keys aenv env inv.abstractKeys.symm binding
     have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped
-    obtain ⟨t, _, shape'⟩ := allocated_project shape valuePath
+      (inv.tags x ty a o w declared abstractBinding binding)
+    obtain ⟨t, at_p⟩ := inv.liveTyped x p ty (liveSub _ use) declared
+    have shape' := allocated_project shape at_p valuePath
     refine ⟨o', w', observationPath, valuePath, ?_⟩
     refine corresponds_flat_frame shape' inv.heapInts ?_ paired
     intro q c located
     have bound := (arrayAt_flat shape' inv.heapInts located).1
     exact frame c bound (liveApart x p use o w w' binding valuePath q c located)
   · intro x p use o w a w' binding abstractBinding valuePath
-    exact described_flat_frame inv nextFlat size namingSame binding abstractBinding valuePath
-      (inv.described x p (liveSub _ use) o w a w' binding abstractBinding valuePath)
+    exact described_flat_frame inv nextFlat size namingSame (liveSub _ use) binding abstractBinding
+      valuePath (inv.described x p (liveSub _ use) o w a w' binding abstractBinding valuePath)
   · intro x o w a binding abstractBinding q c _ located
     exact named_flat_frame inv nextFlat size namingSame binding abstractBinding located
 

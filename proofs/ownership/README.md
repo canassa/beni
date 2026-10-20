@@ -270,7 +270,7 @@ The write diagnostics count actual runtime write events.
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
-| `FlatFragment/` | the first flat fragment: the strengthened relation, records and field paths (`Fields.lean`), its heap frame, the expression cases (`Branch.lean` for `branch`), and the trace corollary, in one import chain |
+| `FlatFragment/` | the first flat fragment: the strengthened relation, records and field paths (`Fields.lean`), its heap frame, the expression cases (`Branch.lean` for `branch`, `ResultCase.lean` for `resultCase`), and the trace corollary, in one import chain |
 | `LinkClauses.lean` | the invariant's link clauses under allocation, nonempty writes and view creation, and the per-link closure that gives the naming clause |
 | `StatementChecks/LinkSummary.lean` | the R1 witness, in allocation order: every old premise of `summary_sound` at a linked pre-state, the failed conclusion, and the new premise's refusal |
 | `StatementChecks/LinkedCallControl.lean` | the control of the written-storage premise: every premise of `summary_sound` at a reachable call with a link |
@@ -315,9 +315,9 @@ They establish no `CallSound.noNewHolders` clause or complete expression-evaluat
 All three general proof obligations remain open.
 
 [FlatFragment/Trace.lean](Ownership/FlatFragment/Trace.lean) proves `accepted_flat_anf_traces_agree`: the main theorem's conclusion for every accepted program whose main expression is in the first flat fragment.
-`FlatANF0` contains atoms, `let`, integer list literals, `push`, `length`, `shared`, the integer primitives `add`, `sub`, `eq` and `lt` on two atoms (`ScalarOp`), since 2026-10-18 (#165) the record constructor, and since 2026-10-19 `branch` over two fragment expressions.
-`FlatANF0` puts no condition on an atom: the theorem also needs `check`, and typing fixes every atom to an integer, a variable or a variable under a field path, the literal elements and the push item to `Int`, the `length` and `push` receivers to `List Int`, a variable or a variable under a field path (the push receiver since 2026-10-19), and the branch condition to `Int`.
-A binding holds an integer, an integer list, or a record of such values, nested (`FlatType`); the atoms read records through field paths, and a push writes through one.
+`FlatANF0` contains atoms, `let`, integer list literals, `push`, `length`, `shared`, the integer primitives `add`, `sub`, `eq` and `lt` on two atoms (`ScalarOp`), since 2026-10-18 (#165) the record constructor, since 2026-10-19 `branch` over two fragment expressions, and since 2026-10-20 `ok`, `err` and `resultCase` over two fragment arms.
+`FlatANF0` puts no condition on an atom: the theorem also needs `check`, and typing fixes every atom to an integer, a variable or a variable under a field path, the literal elements and the push item to `Int`, the `length` and `push` receivers to `List Int`, a variable or a variable under a field path (the push receiver since 2026-10-19), the branch condition to `Int`, and the case input to a `result`.
+A binding holds an integer, an integer list, a record of such values, or a result over them, nested (`FlatType`); the atoms read records through field paths, a push writes through one, and a case binds a result's live payload.
 The proof uses no `sorry` and none of the three pinned obligations.
 The generic theorem `flat_preserved` carries the strengthened relation `FlatInvariant` through every fragment expression, in both runtime directions, from the actual acceptance, typing, and shadow runs.
 The fragment excludes lists of lists, calls, closures, views, constructions, the case expressions (`resultCase`, `chainCase`), and scopes. The three general obligations remain open.

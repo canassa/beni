@@ -97,8 +97,8 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         rw [if_neg noDepth, if_neg noFuel] at run
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
-        obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2⟩ :=
-          armPreserved.success y s2 armValueRun
+        obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
+          tags2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -116,12 +116,17 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         have valueEq : value = y := (congrArg Prod.fst final).symm
         subst vsEq
         subst valueEq
-        have allocated := allocated_of_typed flatType typed2
+        have allocated := allocated_of_typed flatType typed2 tags2
         have describedJoin : Describes gamma2 hs2.heap result actual := by
           rcases joined with rfl | rfl
-          · exact describes_join allocated inv2.heapInts shapeArm shapeOther (Or.inl described2)
-          · exact describes_join allocated inv2.heapInts shapeOther shapeArm (Or.inr described2)
-        refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_⟩
+          · exact describes_join allocated inv2.heapInts shapeArm shapeOther (Or.inl ⟨described2, tags2⟩)
+          · exact describes_join allocated inv2.heapInts shapeOther shapeArm (Or.inr ⟨described2, tags2⟩)
+        have tagsJoin : ResultTags type result actual := by
+          rcases joined with rfl | rfl
+          · exact resultTags_join tags2 shapeArm shapeOther
+          · exact resultTags_join_right tags2 shapeOther shapeArm
+        refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_,
+          tagsJoin⟩
         · rw [heap_branch_eval_equation hs (heapEnv env) heapCond, taken]
           rw [if_neg noDepth, if_neg heapFuel]
           simp [armHeapRun, heapObserveRun, Except.bind, Except.pure, bind, pure]
