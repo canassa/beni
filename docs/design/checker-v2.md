@@ -6039,7 +6039,10 @@ closed part of either; and the subject type of every `?`. The merge adds unboxin
 and closes the set through named types' bodies (`backend.md` §9).
 
 **Crossing quantifiers.** A quantifier of a declaration crosses when the body instantiates
-`Js.from` at a type that mentions it, or instantiates a crossing quantifier of a callee at one. A
+`Js.from` at a type in whose representation it occurs, or instantiates a crossing quantifier of a
+callee at one (`backend.md` §9, *amended 2026-10-20*: a named type's arguments are walked only
+where its payloads hold them, `payload_params`, and a `foreign type` other than `List` and
+`Js.Ref` holds none; the closed types the walk meets join the wild set by the same rule). A
 callee is an import, whose interface carries the bit (`Interface.Quantified.crosses`, bit 10 of the
 flag word, `iface_bytes` format 12 → 13); a declaration of the module; or a `let` function, the last
 two to a fixpoint over the module's own references, each reference looked at again only when its

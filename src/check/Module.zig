@@ -404,6 +404,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // and before P8, which publishes each declaration's crossing
     // quantifiers.
     const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0) try TypeKeys.build(.{
+        .cx = &cx,
         .gpa = gpa,
         .scratch = scratch,
         .store = store,

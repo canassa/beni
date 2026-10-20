@@ -51,6 +51,9 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Dispatch = @import("Dispatch.zig");
 const Instantiate = @import("Instantiate.zig");
+const Context = @import("Context.zig");
+const Publish = @import("Publish.zig");
+const Interface = @import("../resolve/Interface.zig");
 const Schemes = @import("Schemes.zig");
 const Solve = @import("Solve.zig");
 const TypeStore = @import("TypeStore.zig");
@@ -168,6 +171,8 @@ pub const Artifact = struct {
 
 pub const Input = struct {
     gpa: Allocator,
+    /// The module's check, for the payloads of its own types.
+    cx: *const Context,
     scratch: Allocator,
     store: *TypeStore,
     types: *const Types,
@@ -204,9 +209,11 @@ pub fn build(in: Input) Error!Output {
         .store = in.store,
         .types = in.types,
         .interner = in.interner,
-        .memo = try in.scratch.alloc(u32, in.store.count()),
-        .named0 = try in.scratch.alloc(u32, in.types.count()),
-        .alias0 = try in.scratch.alloc(u32, in.types.count()),
+        // Only a keyed module keys a type: core's and a platform's check
+        // pays for its crossing quantifiers alone.
+        .memo = if (in.keyed) try in.scratch.alloc(u32, in.store.count()) else &.{},
+        .named0 = if (in.keyed) try in.scratch.alloc(u32, in.types.count()) else &.{},
+        .alias0 = if (in.keyed) try in.scratch.alloc(u32, in.types.count()) else &.{},
     };
     @memset(b.memo, unset);
     @memset(b.named0, unset);
@@ -742,6 +749,11 @@ const Crossing = struct {
     fields: std.ArrayList(TypeStore.Field) = .empty,
     other: std.ArrayList(TypeStore.Field) = .empty,
     refs: std.ArrayList(Ref) = .empty,
+    /// Per `TypeId`, where its held parameters start in `held_words`.
+    held_at: []u32 = &.{},
+    /// Per declaration, `worth`'s answer: 1, 0, or 2 for not yet asked.
+    worth_at: []u8 = &.{},
+    held_words: std.ArrayList(u32) = .empty,
 
     const Owner = struct {
         made: bool = false,
@@ -777,6 +789,7 @@ const Crossing = struct {
         c.fields.deinit(s);
         c.other.deinit(s);
         c.refs.deinit(s);
+        c.held_words.deinit(s);
     }
 
     fn run(c: *Crossing) Error!void {
@@ -788,13 +801,16 @@ const Crossing = struct {
         for (in.casts) |cast| {
             const func = Walk.function(in.store, cast.copy) orelse continue;
             switch (cast.which) {
-                .from => if (func.params.len == 1) try c.cross(func.params[0], cast.decl, true),
+                .from => if (func.params.len == 1 and try c.worth(cast.decl)) try c.cross(func.params[0], cast.decl, true),
                 // A `Js.to` adds its closed types to the wild set and crosses
                 // no quantifier (`backend.md` §9's table).
-                .to => try c.cross(func.result, cast.decl, false),
+                .to => if (in.keyed) try c.cross(func.result, cast.decl, false),
             }
         }
-        for (in.uses) |u| try c.cross(u.v, u.decl orelse declOf(bir, u.inst) orelse continue, true);
+        for (in.uses) |u| {
+            const decl = u.decl orelse declOf(bir, u.inst) orelse continue;
+            if (try c.worth(decl)) try c.cross(u.v, decl, true);
+        }
         // The module's own references, until nothing new crosses: a
         // reference is looked at again only when its callee's bits grew.
         var any = false;
@@ -809,13 +825,14 @@ const Crossing = struct {
             // A declaration's references are read once something it names
             // has crossing quantifiers: most of a module's never do.
             for (bir.decls, 0..) |d, di| {
-                if (collected[di] or !d.kind.isValue() or !c.relevant(d)) continue;
+                if (collected[di] or !d.kind.isValue() or !c.relevant(d) or !try c.worth(@intCast(di))) continue;
                 collected[di] = true;
                 try c.collectDecl(d, @intCast(di));
             }
             for (c.refs.items) |*r| {
                 const o = &c.owners[r.callee];
                 if (o.version == r.seen) continue;
+                if (r.kind == .method and !try c.worth(r.decl)) continue;
                 r.seen = o.version;
                 switch (r.kind) {
                     .instance => try c.instance(r.callee, r.scheme, r.inst, r.decl),
@@ -834,6 +851,64 @@ const Crossing = struct {
         /// The callee's `version` when this was last looked at.
         seen: u32 = 0,
     };
+
+    /// Whether a walk in declaration `decl` can change anything: in a keyed
+    /// module it adds to the wild set; elsewhere it only marks quantifiers, so
+    /// a declaration with none of its own and no `let` function has nothing
+    /// to mark.
+    fn worth(c: *Crossing, decl: u32) Error!bool {
+        if (c.in.keyed) return true;
+        const bir = c.in.bir;
+        if (decl >= bir.decls.len) return false;
+        if (c.worth_at.len == 0) {
+            c.worth_at = try c.in.scratch.alloc(u8, bir.decls.len);
+            @memset(c.worth_at, 2);
+        }
+        if (c.worth_at[decl] != 2) return c.worth_at[decl] == 1;
+        const d = bir.decls[decl];
+        var yes = false;
+        var l = d.locals_start;
+        while (!yes and l < d.locals_end) : (l += 1) yes = bir.locals[l].kind == .let;
+        if (!yes and d.kind.isValue()) if (c.in.decl_scheme[decl].unwrap()) |v| {
+            yes = try c.quantified(v);
+        };
+        c.worth_at[decl] = @intFromBool(yes);
+        return yes;
+    }
+
+    /// Whether `v`'s type holds a quantifier: a walk with no order to keep,
+    /// cheaper than reading the scheme's quantifiers.
+    fn quantified(c: *Crossing, v: Var) Error!bool {
+        const store = c.in.store;
+        const s = c.in.scratch;
+        const seen = store.nextMark();
+        c.todo.clearRetainingCapacity();
+        try c.todo.append(s, v);
+        while (c.todo.pop()) |next| {
+            const r = store.find(next);
+            if (store.mark(r) == seen) continue;
+            store.setMark(r, seen);
+            switch (store.content(r)) {
+                .flex, .rigid => return true,
+                .err => {},
+                .alias => |a| try c.todo.append(s, a.actual),
+                .structure => |st| switch (st) {
+                    .unit, .empty_record => {},
+                    .func => |f| {
+                        try c.todo.appendSlice(s, store.vars(f.params));
+                        try c.todo.append(s, f.result);
+                    },
+                    .app => |a| try c.todo.appendSlice(s, store.vars(a.args)),
+                    .tuple => |t| try c.todo.appendSlice(s, store.vars(t)),
+                    .record => |rec| {
+                        for (store.fields(rec.fields)) |f| try c.todo.append(s, f.value);
+                        try c.todo.append(s, rec.ext);
+                    },
+                },
+            }
+        }
+        return false;
+    }
 
     /// Whether declaration `d` names a declaration of this module, or has a
     /// `let` function, whose quantifiers cross.
@@ -1019,7 +1094,15 @@ const Crossing = struct {
                         try c.todo.appendSlice(s, store.vars(f.params));
                         try c.todo.append(s, f.result);
                     },
-                    .app => |a| try c.todo.appendSlice(s, store.vars(a.args)),
+                    .app => |a| {
+                        // Only the arguments its representation holds: a
+                        // phantom parameter puts no value in JavaScript's hands
+                        // (`backend.md` §9, amended 2026-10-20).
+                        const args_held = try c.held(a.type);
+                        for (store.vars(a.args), 0..) |x, i| {
+                            if (has(args_held, i)) try c.todo.append(s, x);
+                        }
+                    },
                     .tuple => |t| try c.todo.appendSlice(s, store.vars(t)),
                     .record => |rec| {
                         // By text: the order `keyOf` meets them in numbers nodes.
@@ -1149,6 +1232,60 @@ const Crossing = struct {
         return o;
     }
 
+    /// Which parameters of the named type `id` its representation holds
+    /// (`backend.md` §9, amended 2026-10-20): an `adt`'s are those that occur
+    /// in a constructor's payload (`Interface.Type.payload_params`, or
+    /// `Publish.payloadParams` for this module's own); a `foreign type`
+    /// holds nothing JavaScript can reach through it but `List`, an array of
+    /// its elements, and `Js.Ref`, a cell of one; null means every
+    /// parameter, the answer whenever the facts are not at hand.
+    fn held(c: *Crossing, id: TypeStore.TypeId) Error!Bits {
+        const in = c.in;
+        if (id == .none or id.int() >= in.types.entries.len) return null;
+        if (c.held_at.len == 0) {
+            c.held_at = try in.scratch.alloc(u32, in.types.entries.len);
+            @memset(c.held_at, unknown_held);
+        }
+        const slot = &c.held_at[id.int()];
+        if (slot.* == unknown_held) slot.* = try c.fillHeld(id);
+        if (slot.* == every_held) return null;
+        const len = (@as(usize, in.types.entry(id).arity) + 31) / 32;
+        return c.held_words.items[slot.*..][0..len];
+    }
+
+    fn fillHeld(c: *Crossing, id: TypeStore.TypeId) Error!u32 {
+        const in = c.in;
+        const entry = in.types.entry(id);
+        if (entry.arity == 0 or entry.schema_endpoint) return every_held;
+        const len = (@as(usize, entry.arity) + 31) / 32;
+        const start: u32 = @intCast(c.held_words.items.len);
+        if (entry.kind == .foreign) {
+            const wk = in.types.well_known;
+            const ref = entry.package == .core and std.mem.eql(u8, in.interner.slice(entry.module_name), "Js") and
+                std.mem.eql(u8, in.interner.slice(entry.name), "Ref");
+            if (id == wk.list or ref) return every_held;
+            try c.held_words.appendNTimes(in.scratch, 0, len);
+            return start;
+        }
+        if (entry.kind != .adt) return every_held;
+        if (entry.module == in.cx.module) {
+            var words: std.ArrayList(u32) = .empty;
+            try Publish.payloadParams(in.cx, entry.decl, entry.kind, entry.arity, &words);
+            defer words.deinit(in.cx.gpa);
+            if (words.items.len != len) return every_held;
+            try c.held_words.appendSlice(in.scratch, words.items);
+            return start;
+        }
+        if (entry.module.int() >= in.cx.interfaces.len) return every_held;
+        const iface = in.cx.iface(entry.module);
+        const facts = iface.typeFacts(in.interner, entry.name) orelse return every_held;
+        if (facts.payload_params == Interface.no_terms) return every_held;
+        const words = iface.range(facts.payload_params);
+        if (words.len != len) return every_held;
+        try c.held_words.appendSlice(in.scratch, words);
+        return start;
+    }
+
     /// Per declaration, its crossing quantifiers, for P8.
     fn published(c: *Crossing) Error![]const []const u16 {
         const decls = c.in.bir.decls.len;
@@ -1228,4 +1365,15 @@ fn byText(comptime T: type, interner: *const InternPool.Global, items: []T) void
 fn textBefore(interner: *const InternPool.Global, a: InternPool.Symbol, b: InternPool.Symbol) bool {
     if (interner.textRank(a)) |ra| if (interner.textRank(b)) |rb| return ra < rb;
     return std.mem.lessThan(u8, interner.slice(a), interner.slice(b));
+}
+
+/// A type's held parameters as bits (`Crossing.held`), or null for every one.
+const Bits = ?[]const u32;
+const unknown_held: u32 = std.math.maxInt(u32);
+const every_held: u32 = std.math.maxInt(u32) - 1;
+
+fn has(bits: Bits, i: usize) bool {
+    const words = bits orelse return true;
+    if (i / 32 >= words.len) return true;
+    return words[i / 32] & (@as(u32, 1) << @intCast(i % 32)) != 0;
 }
