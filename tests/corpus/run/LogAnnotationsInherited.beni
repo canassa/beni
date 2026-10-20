@@ -1,8 +1,11 @@
 -- run: `Log.annotate` (transparent-effects-proposal.md §17.11) puts a key
 -- and a value on every line of the function it runs, outermost first. An
 -- inner `annotate` of a key that is there replaces its value in its
--- place. A fiber started inside copies the annotations and keeps them
--- after `annotate` returns; the caller's lines have none again.
+-- place. A key that is an integer index keeps its place too, where a
+-- JavaScript object, Effect's, would put it first (§17.12 item 12); and
+-- `__proto__` is a key like any other. A fiber started inside copies the
+-- annotations and keeps them after `annotate` returns; the caller's lines
+-- have none again.
 import Io
 import Log exposing (Entry)
 import Node exposing (Program)
@@ -27,6 +30,8 @@ main = Io.run λ⊤ →
                 Log.annotate "request" "r2" λ⊤ → Log.info "the request replaced, in its place"
                 Log.info "the request back"
             Log.info "the user gone"
+            Log.annotate "1" "x" λ⊤ →
+                Log.annotate "__proto__" "p" λ⊤ → Log.info "an integer key, and __proto__"
         child = Log.annotate "fiber" "child" λ⊤ →
             Task.spawn λ⊤ →
                 Task.yieldNow ⊤

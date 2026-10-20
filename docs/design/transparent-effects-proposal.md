@@ -3007,6 +3007,10 @@ Each was taken here so the slices can proceed, and each is reversible until its 
     ±8.64 × 10¹⁵ ms as the nearest end of that range, and a time that is not a number as `NaN`.
     Effect has no such case, because its clock reads `Date.now()`; a beni virtual clock reads
     any `Int`, and `toISOString` throws for both (§17.1 item 4).
+12. *Added 2026-10-20 (#358).* **An annotation keeps its place, whatever its key.** `Entry.annotations`
+    is a list, so a key that is an integer index, such as `"1"`, stays where it was added. Effect's
+    annotations are a JavaScript object, which puts such a key first (`Object.entries`). The list
+    is beni's ordinary order, and it does not depend on how a key is spelled.
 
 ### 17.13 What this section does not do
 
