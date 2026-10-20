@@ -1,0 +1,3 @@
+the inner release [inner=i] {s=0ms}
+the outer release [] {}
+the parent, after the cancel [] {}
