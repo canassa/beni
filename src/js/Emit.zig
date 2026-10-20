@@ -4802,6 +4802,8 @@ const Emitter = struct {
         }
         var builtin: std.ArrayList(u32) = .empty;
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
+        var implicit: std.ArrayList(u32) = .empty;
+        for (Spec.implicit_host_keys) |n| if (props.get(n)) |id| try implicit.append(e.scratch, id);
         var makers: std.ArrayList(u32) = .empty;
         for (Spec.node_makers) |n| if (props.get(n)) |id| try makers.append(e.scratch, id);
         // Each property name's length, for the size of a read (slice 8).
@@ -4821,6 +4823,7 @@ const Emitter = struct {
             .prop_len = prop_len,
             .tag_prop = props.get("$") orelse Spec.none,
             .builtin_props = builtin.items,
+            .implicit_props = implicit.items,
             .node_makers = makers.items,
             .escaping = escaping.items,
             .entry = entry_call,

@@ -6900,6 +6900,32 @@ that its three values are not folded away.
   (`prototype_names`). The fold is fact 2's literal, so it folds on (`m.h === undefined`).
 - **A key goes from its literal, and a write of it from the program, only when its value is
   inert** (`inert`); a write whose value may do something keeps the value as a statement.
+  *Amended 2026-10-20.* Fact 3 counts a member expression as a read. The host also reads
+  some names with none. `implicit_host_keys` is that set. `keyUnread` and `neverRead` both
+  refuse it, so the key stays in its literal and a write of it stays.
+  `valueOf` and `toString` are the names `ToPrimitive` reads. The operators and templates
+  this compiler emits invoke it, and fact 3 records them as a primitive result.
+  `run/ReleaseImplicitKeys` prints `1` and `x5y` in both builds. A release build that
+  dropped the keys printed `0` and `x[object Object]y`.
+  `toJSON` is the name `JSON.stringify` reads. That read is not a member expression,
+  so the set refuses the name. A call the pass cannot see also escapes its object,
+  which keeps every key. `run/ReleaseImplicitKeys` does not stringify.
+  A well-known symbol is not a string name. `Symbol.toPrimitive`, `Symbol.iterator`,
+  `Symbol.toStringTag` and the other well-known symbols are read by the host the same
+  way. `Js.object` accepts identifier keys only, so none of them is a `.property` name.
+  `keyUnread` keeps a key it cannot name, and `dropKeys` removes only a string-named
+  `.property`.
+  `then` is not on the list. Promise code reads it when the value is an argument of a
+  call the pass cannot see, and that call escapes the object. An unread `then` on an
+  object that stays inside the program is data.
+  `constructor` is a name on `prototype_names`. That list is what `neverWritten` refuses,
+  so a missing `constructor` does not fold to `undefined`. It is not a name `ToPrimitive`
+  reads, and it is not on `implicit_host_keys`. An unread own `constructor` drops. A probe
+  whose only use was `&` printed `0` in both builds. Release wrote `({}&1)`.
+  `__proto__` is not a key of `Js.object`. The checker reports `invalid_js_object`
+  (`check/bad/core/JsObjectKey`). A `Js.set` of the name assigns `[[Prototype]]`. Release
+  dropped that assignment. Development printed `1` from `&`, because the prototype's
+  `valueOf` ran. Release printed `0`. That write is not this set, and it is unfixed.
 - **Rounds.** Facts are recomputed each round; a round is repeated only when the program shrank
   in a way the facts can see — a branch, a read or a parameter gone, or `prune` dropping a
   declaration — so a program with nothing to specialise pays one round.

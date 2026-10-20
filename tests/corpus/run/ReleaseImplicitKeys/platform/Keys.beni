@@ -1,0 +1,34 @@
+--! Keys the host reads with no member expression (`backend.md` §9, fact 3).
+--! An arrow is not `Js.method`, so the object does not escape. `pad` is an
+--! ordinary key nothing reads.
+
+import Js
+
+
+--| `ToPrimitive` on `&`. Development is `1`. A release build that drops
+--| `valueOf` is `0`.
+pub coerced : ⊤ → Int
+coerced ⊤ =
+    o = Js.object [ ( "valueOf", λ_ → 7 ), ( "pad", 1 ) ]
+    n : Int
+    n = Js.to o
+    Js.bitAnd n 1
+
+
+--| A template converts with `toString`. Development is `x5y`.
+pub shown : ⊤ → String
+shown ⊤ =
+    o = Js.object [ ( "toString", λ_ → "5" ), ( "pad", 1 ) ]
+    hole : String
+    hole = Js.to o
+    "x${hole}y"
+
+
+--| A write of `valueOf` after the literal. Same coercion as `coerced`.
+pub assigned : ⊤ → Int
+assigned ⊤ =
+    o = Js.object [ ( "pad", 1 ) ]
+    Js.set o "valueOf" (Js.from λ_ → 7)
+    n : Int
+    n = Js.to o
+    Js.bitAnd n 1
