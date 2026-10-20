@@ -7648,6 +7648,64 @@ With `List` in beni the case now fits the budget, 161 million under it, with no 
 Each step's output is byte for byte as before: every file `bench/size.mjs` builds, in both
 builds, and every release run hash.
 
+**As built — the structural passes keep their walks per statement** (*added 2026-10-20*, #492;
+`Mod.kept`, `Spec.within`, `Spec.NameScan`, `retract`, `extend`). *The combined solver*, below,
+leaves the structural passes as they are, so their walks need an incremental form of their own.
+A page's `update` holds every widget's call in **one** top-level statement, and its `view` holds
+every widget's view. Several walks went over that whole statement again after each function
+written into it: `inlineScan` (each candidate's mentions), `occurrences` (`namedIn`),
+`assignedIn`, and each binding `replaceScalars`, `onlyInspected` or `declCount` asked about.
+With the points-to sets small (`max_sites` at 48), they were 65% of `specialise` on the research
+dashboard at N = 64. The plan proposed caching `preorder` per statement and `Mod.version`. That
+cache already existed. It could not help, because every write in the module moved
+`Mod.version`, and the writes all land in the same statement. What is built instead is exact by
+construction, as the note above asks:
+
+- **A change is the statement's it is made in.** A pass that writes inside one top-level
+  statement says so (`within` … `leave`): `inlineAt`, each list sweep (`eachFunctionList`), each
+  of `inlineSmallPass`'s calls and each list `fuseAt` rewrites. Each `Mod.changed()` made while
+  a statement is named is that statement's. Any other change is the whole module's. A walk of
+  one statement, kept at the `epoch` it was made at, holds while neither moved past it
+  (`Mod.kept`). A name added to the module and made global changes no walk
+  (`Mod.namesChanged`). `preorder`, `scanOf` and `placeKept` (`fuseAt`'s places) keep their
+  walks this way.
+- **One scan answers every name.** `NameScan` holds, per name a statement names, its
+  declarations, `ident`s, assignments, the reads `x.k` (and `x.k.j`), writes `x.k = …`, method
+  calls `x.k(…)` and calls of it. It also keeps the whole-program names in the order the walk
+  first meets each. `inlineScan`, `occurrences`, `declCount`, `onlyInspected`, `atomArgument`,
+  `soleInit`, `foldAt` and `replaceScalars` read it instead of walking the statement. Names are
+  found by a sorted index, with no hash map keyed by a dense id.
+- **A change of subtrees updates the scan.** `retract` takes out what the replaced subtrees
+  counted, before the change. `extend` adds what the new ones count, after it. This covers a
+  call written as an expression or a statement (`inlineAt`, `inlineSmallAt`), the reads of a
+  scalar-replaced object, and the lists scalar replacement and `fuseAt` rewrite. A node's part
+  reads its children: a read `x.k` reads its object, an assignment its target, a call its
+  callee. So the update is refused, and the statement counted again, wherever a parent's part
+  would change too:
+  - a call written as a name or a member read where its parent reads it (`h(x).k`);
+  - a scalar-replaced object written to, called through or read two deep;
+  - a call the scan no longer counts. `inlineSmallPass` lists a statement's calls before it
+    writes any, and a copy of a call's root (`Copy.atom`) shares that call's callee.
+- **Checked.** A safety build checks every scan it updates, and every one it keeps across a
+  change, in a module of at most 3 000 nodes. It walks the statement again and compares the sum
+  of each node's `contribution` (its operands and what it reads of its child), the first name of
+  each whole-program name, and, for a statement of at most 32 nodes, every name. The whole corpus
+  passed with the checks unbounded.
+
+Measured on dagon, ReleaseFast, `build --release --no-cache --jobs=1`, master at `c5956dba9`
+before; output byte for byte the same in every row:
+
+| `specialise` (ms) | `max_sites` 48, before | after | 1 000, before | after |
+|---|--:|--:|--:|--:|
+| dashboard N = 16 | 58 | **43** | 92 | 75 |
+| dashboard N = 64 | 387 | **146** | 5 553 | 5 336 |
+| N = 64 without `withDefault` | 401 | **150** | 999 | 773 |
+
+At N = 64 with small sets, the structural passes went from 65% of `specialise` to about 30%
+(`inlineOnce` 18% of the whole build, the list sweeps and `fuseCalls` under 2% each). What remains is the facts (`rounds`), the points-to
+analysis's own track. `test-perf`'s *specialisation writes n calls of one statement in time
+linear in n* holds it: ratio 3.3 before, 2.1 after.
+
 **Slice 10 — a value read once at start-up** (*added 2026-10-15*; research 102 §6.1 item 2,
 `Spec.inlineReads`). A top-level binding whose value is made at start-up and read once, also at
 start-up, is written where it is read and not declared at all: direct's patch functions and
