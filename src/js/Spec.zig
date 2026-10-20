@@ -277,6 +277,9 @@ pub const Input = struct {
     /// The property-name ids of `implicit_host_keys`. A key of one is not
     /// unread. The host reads it with no member expression in the program.
     implicit_props: []const u32 = &.{},
+    /// The property-name id of `prototype_assign`, or `none` when the
+    /// program never names it. A write of it assigns `[[Prototype]]`.
+    proto_prop: u32 = none,
     /// The property-name ids of `node_makers`' names: a call of one on a
     /// value the program did not allocate is a node (fact 5's host fact).
     node_makers: []const u32 = &.{},
@@ -8779,11 +8782,24 @@ pub const implicit_host_keys = [_][]const u8{
     "toJSON", "toString", "valueOf",
 };
 
+/// The name whose assignment sets `[[Prototype]]` rather than storing an
+/// own data property (`backend.md` §9, fact 3). A host read is a different
+/// fact, so this name is not in `implicit_host_keys`.
+pub const prototype_assign = "__proto__";
+
 test "implicit_host_keys names toJSON, toString and valueOf" {
     try testing.expectEqual(@as(usize, 3), implicit_host_keys.len);
     try testing.expectEqualStrings("toJSON", implicit_host_keys[0]);
     try testing.expectEqualStrings("toString", implicit_host_keys[1]);
     try testing.expectEqualStrings("valueOf", implicit_host_keys[2]);
+}
+
+test "prototype_assign is __proto__ and not a host read" {
+    try testing.expectEqualStrings("__proto__", prototype_assign);
+    var on_prototype = false;
+    for (prototype_names) |n| on_prototype = on_prototype or std.mem.eql(u8, n, prototype_assign);
+    try testing.expect(on_prototype);
+    for (implicit_host_keys) |n| try testing.expect(!std.mem.eql(u8, n, prototype_assign));
 }
 
 /// The names `Object.prototype` has: an object literal that holds none of
@@ -11202,6 +11218,9 @@ const Pts = struct {
     }
 
     fn write(p: *Pts, obj: Val, id: u32, value: Val) Allocator.Error!void {
+        // `__proto__` assigns `[[Prototype]]`. Later reads and writes are
+        // not own data properties of a plain literal.
+        if (id != none and id == p.s.in.proto_prop) try p.escape(obj);
         if (p.holdsMethod(value)) {
             try p.escape(obj);
             try p.escape(value);
@@ -11237,6 +11256,14 @@ const Pts = struct {
         try p.progWrite(obj, none);
         if (obj.top or obj.prim) try p.escape(value);
         for (obj.sites) |site| try p.writeAnyOne(site, value);
+    }
+
+    /// `o["__proto__"] = v` when the key is the string literal `"__proto__"`
+    /// at the write site. A key from a `let` binding stays field-insensitive
+    /// (`backend.md` §9, fact 3, #519).
+    fn indexAssignsPrototype(p: *const Pts, mi: u32, key: Index) bool {
+        const ir = p.s.mods[mi].ir;
+        return ir.tag(key) == .string and std.mem.eql(u8, ir.bytes(key), prototype_assign);
     }
 
     // ---- The analysis --------------------------------------------------------
@@ -11786,7 +11813,11 @@ const Pts = struct {
                     // dashboard N=64 took 99.7M edges against 1.36M.
                     .ident => try p.join(try p.nodeVar(mi, target, @fromBackingInt(@intCast(td.lhs))), value),
                     .member => try p.write(vals[td.lhs], p.propId(mi, @fromBackingInt(@intCast(td.rhs))), value),
-                    .index_get => try p.writeAny(vals[td.lhs], value),
+                    .index_get => {
+                        const obj = vals[td.lhs];
+                        if (p.indexAssignsPrototype(mi, @fromBackingInt(@intCast(td.rhs)))) try p.escape(obj);
+                        try p.writeAny(obj, value);
+                    },
                     else => try p.escape(value),
                 }
             },
