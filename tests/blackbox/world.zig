@@ -163,7 +163,7 @@ pub fn withOwnBudget(comptime what: []const u8, millions: u64, comptime body: fn
     _ = timing.cases_spent.fetchAdd(spent, .monotonic);
     const limit = timing.caseLimit(millions);
     if (timing.budget_unit != .none and spent > limit) {
-        std.debug.print("FAIL: {d} {s}, over {s}'s own budget of {d}\n", .{
+        std.debug.print("FAIL: {d} {s}, over the budget granted to {s}, {d}\n", .{
             timing.describe(spent).value, timing.describe(spent).unit, what, timing.describe(limit).value,
         });
         return error.OverBudget;
