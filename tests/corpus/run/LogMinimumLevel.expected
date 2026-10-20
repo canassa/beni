@@ -1,0 +1,7 @@
+trace under Trace
+debug under Trace
+error under Error
+debug under Trace, again
+info under the default
+info under the default, while the child waits
+warn in a child started under Warn

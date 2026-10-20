@@ -1921,6 +1921,34 @@ putSlots fiber old value =
     value
 
 
+--| The calling fiber's log-context slot (§17.5): undefined for the default
+--| context, or one core's `Log` made. For core's `Log`, which is what a
+--| program calls; the `Js.Value` it answers is of no use anywhere else.
+pub currentLogContext : ⊤ → Js.Value
+currentLogContext ⊤ =
+    if Js.read slotted then
+        r = slotRecord ⊤
+        if Js.isNullish r then Js.undefined else Js.get r "logContext"
+    else
+        Js.undefined
+
+
+--| Run `work` with the calling fiber's log-context slot set to `context`,
+--| and put the old one back when `work` ends, returned or cancelled, as
+--| `withClock` does. Fibers `work` starts copy it. For core's
+--| `Log.annotate`, `span`, `minimum` and `withSink`: a program has no
+--| `Js.Value` to give it.
+pub withLogContext : Js.Value, (⊤ → a) → a
+withLogContext context work =
+    Js.write slotted True
+    fiber = here ⊤
+    old = Js.get fiber "slots"
+    next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
+    Js.set next "logContext" context
+    Js.set fiber "slots" next
+    putSlots fiber old (work (pushFinalizer ⊤ λ⊤ → Js.set fiber "slots" old))
+
+
 -- ---- The virtual clock (§17.6) ---------------------------------------------
 
 --| A virtual clock reading `epoch` milliseconds, with no sleepers: what

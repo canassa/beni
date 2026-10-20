@@ -1,0 +1,36 @@
+-- run: `Log.minimum` (transparent-effects-proposal.md §17.11) sets the
+-- least level written by the function it runs, and by every fiber that
+-- function starts; the old minimum comes back when the function returns.
+-- A line below the minimum reaches no sink. The default is `Info`.
+import Io
+import Log exposing (Entry, Level, Trace, Debug, Info, Warn, Error)
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+record : Ref (List String), Entry → ⊤
+record seen entry = Ref.update seen λlines → [ …lines, entry.message ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    Log.withSink (record seen _) λ⊤ →
+        Log.minimum Trace λ⊤ →
+            Log.trace "trace under Trace"
+            Log.debug "debug under Trace"
+            Log.minimum Error λ⊤ →
+                Log.warn "NOT WRITTEN: warn under Error"
+                Log.error "error under Error"
+            Log.debug "debug under Trace, again"
+        Log.debug "NOT WRITTEN: debug under the default"
+        Log.info "info under the default"
+        child = Log.minimum Warn λ⊤ →
+            Task.spawn λ⊤ →
+                Task.yieldNow ⊤
+                Log.info "NOT WRITTEN: info in a child started under Warn"
+                Log.warn "warn in a child started under Warn"
+        Log.info "info under the default, while the child waits"
+        Task.join child
+    Node.printLines (Ref.get seen)

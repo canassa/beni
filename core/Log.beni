@@ -11,16 +11,29 @@
 --! A line is text: a program that logs a value formats it, because
 --! `Debug.toString`'s text is not a promise.
 --!
---! **Levels.** `Trace < Debug < Info < Warn < Error`. A line below `Info`
---! is not written: the call builds nothing and costs one comparison.
+--! **Levels.** `Trace < Debug < Info < Warn < Error`. A line below the
+--! minimum, `Info` unless `minimum` changes it, is not written: the call
+--! builds nothing and costs one comparison.
 --!
---! **The sink.** A call makes an `Entry` — the level, the line and the time
---! on the calling fiber's clock — and hands it to the sink. The default
---! sink writes the line on the console at its level: `console.debug` for
---! `Trace` and `Debug`, then `console.info`, `console.warn` and
---! `console.error`. A platform replaces it with `setSink`: the `node`
---! platform's `Io.run` writes one `logfmt` line per entry to standard
---! error.
+--! **The sink.** A call makes an `Entry` — the level, the line, the
+--! annotations and log spans of the calling fiber, and the time on its
+--! clock — and hands it to the sink. The default sink writes the line on
+--! the console at its level: `console.debug` for `Trace` and `Debug`, then
+--! `console.info`, `console.warn` and `console.error`. A platform replaces
+--! it with `setSink`: the `node` platform's `Io.run` writes one `logfmt`
+--! line per entry to standard error.
+--!
+--! **The log context.** `annotate`, `span`, `minimum` and `withSink` change
+--! the context for the function they run, and for every fiber that
+--! function starts, and put it back when the function ends:
+--!
+--!     Log.annotate "user" (String.fromInt id) λ⊤ →
+--!         Log.span "save" λ⊤ →
+--!             _ = save id
+--!             Log.info "saved"
+--!
+--! On `node`, under `Io.run`, that line is
+--! `timestamp=… level=INFO message=saved save=12ms user=7`.
 --!
 --! Nothing here is `foreign`.
 
@@ -28,6 +41,7 @@ import Clock
 import Js
 import List
 import String
+import Task
 
 
 --| How much a line matters, least first: `Trace < Debug < Info < Warn <
@@ -79,11 +93,20 @@ error message = log Error message
 
 
 --| The line at `level`: an `Entry`, handed to the sink — unless `level` is
---| below `Info`, when nothing is built.
+--| below the minimum, when nothing is built.
 pub log : Level, String → ⊤
 log level message =
-    if rank level ≥ rank Info then
-        emit { level = level, message = message, annotations = [], spans = [], time = Clock.now ⊤ }
+    here = context ⊤
+
+    if rank level ≥ rank here.minimum then
+        now = Clock.now ⊤
+        emit here.sink
+            { level = level
+            , message = message
+            , annotations = here.annotations
+            , spans = List.map here.spans λ( label, began ) → ( label, now - began )
+            , time = now
+            }
 
 
 -- A level's place in the order.
@@ -112,23 +135,111 @@ sink : Js.Ref Js.Value
 sink = Js.ref Js.undefined
 
 
---| Make `f` the sink of every line the program writes from now on. It is
---| a platform's call, as `Task.onDefect` is: the `node` platform's
---| `Io.run` makes it. The last call wins. A sink runs during the call
---| that logs, so it must not suspend.
+--| Make `f` the sink of every line the program writes from now on, outside
+--| `withSink`. It is a platform's call, as `Task.onDefect` is: the `node`
+--| platform's `Io.run` makes it. The last call wins. A sink runs during
+--| the call that logs, so it must not suspend.
 pub setSink : sync (Entry → ⊤) → ⊤
 setSink f = Js.write sink (Js.from f)
 
 
--- Hand `entry` to the sink.
-emit : Entry → ⊤
-emit entry =
-    installed = Js.read sink
+-- Hand `entry` to the sink: `withSink`'s, else `setSink`'s, else the
+-- console.
+emit : Js.Value, Entry → ⊤
+emit scoped entry =
+    target = if Js.isUndefined scoped then Js.read sink else scoped
 
-    if Js.isUndefined installed then
+    if Js.isUndefined target then
         console entry
     else
-        Js.to (Js.apply installed [ Js.from entry ])
+        Js.to (Js.apply target [ Js.from entry ])
+
+
+-- ---- The log context (§17.5) ----------------------------------------------
+
+-- A fiber's log context: the annotations, outermost first; each log span
+-- with the time it began, innermost first; the minimum level; and the sink
+-- `withSink` gave it, undefined for none. It lives in the fiber's slot as a
+-- `Js.Value`, and a change makes a new one.
+type alias Context =
+    annotations : List (String × String)
+    spans : List (String × Int)
+    minimum : Level
+    sink : Js.Value
+
+
+-- The context of a fiber that no `annotate`, `span`, `minimum` or
+-- `withSink` changed.
+initial : Context
+initial = { annotations = [], spans = [], minimum = Info, sink = Js.undefined }
+
+
+-- The calling fiber's log context.
+context : ⊤ → Context
+context ⊤ =
+    slot = Task.currentLogContext ⊤
+    if Js.isUndefined slot then initial else Js.to slot
+
+
+-- Run `work` with the calling fiber's log context set to `next`.
+within : Context, (⊤ → a) → a
+within next work = Task.withLogContext (Js.from next) work
+
+
+--| Run `work` with the annotation `key` = `value` on every line it writes,
+--| and on every line the fibers it starts write: Effect's
+--| `annotateLogs`. When `key` is there already, the new value replaces
+--| the old one in its place.
+--|
+--|     Log.annotate "request" id λ⊤ →
+--|         Log.info "started"
+pub annotate : String, String, (⊤ → a) → a
+annotate key value work =
+    here = context ⊤
+    within { here | annotations = annotated here.annotations key value } work
+
+
+-- `annotations` with `key` set to `value`: in its place when the key is
+-- there, else last. A new list each time: the outer context still holds
+-- the old one.
+annotated : List (String × String), String, String → List (String × String)
+annotated annotations key value =
+    if List.any annotations λ( k, _ ) → k == key then
+        List.map annotations λ( k, v ) → if k == key then ( k, value ) else ( k, v )
+    else
+        List.push (List.copy annotations) ( key, value )
+
+
+--| Run `work` inside the log span `label`: every line it writes, and every
+--| line the fibers it starts write, carries `label` and the milliseconds
+--| since `span` began, on the calling fiber's clock: Effect's
+--| `withLogSpan`.
+pub span : String, (⊤ → a) → a
+span label work =
+    here = context ⊤
+    within { here | spans = [ ( label, Clock.now ⊤ ), …here.spans ] } work
+
+
+--| Run `work` with `level` as the minimum: a line below it, from `work` or
+--| from a fiber it starts, is not written. The minimum is `Info` until a
+--| call changes it.
+--|
+--|     Log.minimum Log.Debug λ⊤ →
+--|         Log.debug "written"
+pub minimum : Level, (⊤ → a) → a
+minimum level work =
+    here = context ⊤
+    within { here | minimum = level } work
+
+
+--| Run `work` with `f` as the sink of every line it writes, and of every
+--| line the fibers it starts write, in place of the program's: how a test
+--| reads what was logged. `f` runs during the call that logs, so it must
+--| not suspend.
+pub withSink : sync (Entry → ⊤), (⊤ → a) → a
+withSink f work =
+    here = context ⊤
+    within { here | sink = Js.from f } work
 
 
 -- The default sink: the console method for the level, given the message
