@@ -1593,7 +1593,7 @@ differently:
 
 - **What may follow a bare lambda.** "No operator or `?` follows" is read over lines, not on the
   `)`'s line only: an operator on a later line that begins a line right of the `λ`'s line would
-  continue the body too (§12.3). A pre-pass records, for each such application, the operator or
+  continue the body too (`language.md` §12.3). A pre-pass records, for each such application, the operator or
   `?` that follows it (`tail_op`); `chain` records, before printing an operand, where each of its
   operators lands (`op_place`). The lambda is bare when nothing follows, or when the operator
   begins a line at or left of the line the `λ` is printed on — a later stage of a vertical
@@ -1602,7 +1602,7 @@ differently:
   parser reads `f λx -> x` / `|> g` at an item's column that way — is printed in parentheses
   (`fmt/TrailingLambdaLayout`). So *"the lambda ends its line"* of `language.md` §12.5 is read as
   "nothing that would continue its body follows it": a closing bracket or a comma may, as in
-  §12.6's `List.length (List.filter model.todos λt -> not t.done)`.
+  `language.md` §12.6's `List.length (List.filter model.todos λt -> not t.done)`.
 - **Layout.** One line when the application fits with the lambda bare; else the callee and the
   other arguments on one line whatever breaks the source had, when they fit (the `λparams ->`
   head is not counted, as a pattern is never broken), `λparams ->` ending it and the body below
@@ -1682,7 +1682,7 @@ commit, whose diff outside `core/Debug.beni` is mechanical.
   switch on the lead byte and an exact match of the next one or two. Strings, characters, multiline
   strings, comments and markup text are scanned by their own states and never reach that check,
   which is what keeps the symbols out of them.
-- **Lookalikes.** A sequence in §12.7's lookalike table is reported as `invalid_character` with the
+- **Lookalikes.** A sequence in `language.md` §12.7's lookalike table is reported as `invalid_character` with the
   intended symbol in the message, and lexed as one token of a tenth new tag, **`lookalike`**,
   whose payload is the intended symbol's tag and whose length is re-derived from the UTF-8 sequence
   at `start`, as an identifier's is. The parser reads a `lookalike` as its payload's tag, so the
@@ -1736,7 +1736,7 @@ it with the re-parse's first diagnostic — a file that no longer parses.
   author wrote across lines is written on its first line, which is safe because a type holds no
   layout; one that holds a comment is left and named for a hand edit.
 - **Columns** shift on a rewritten line (`->` is two columns, `→` one; a tuple type shrinks), and
-  layout compares only line-start columns but for the `case` of §12.1, which the re-parse catches.
+  layout compares only line-start columns but for the `case` of `language.md` §12.1, which the re-parse catches.
 - The slice that runs it then runs plain `beni fmt` over the gate's scope, for a joined tuple type
   that now passes 100 columns; it is the one way the flag's output can fail the gate.
 
@@ -1806,7 +1806,7 @@ the order [`plans/syntax-batch.md`](../../plans/syntax-batch.md) slices 21–24 
 **The lexer.** Two tags, **`top`** (`⊤`, `E2 8A A4`) and **`bottom`** (`⊥`, `E2 8A A5`), beside
 §11.8's symbols, recognised by the same lead-byte switch (`Tokenizer.symbols`) and so never inside
 a string, character, multiline string, comment or markup text. Their lexemes are their bytes. The
-five lookalikes of §12.10 join `Token.lookalikes`, each reported as `invalid_character` and lexed
+five lookalikes of `language.md` §12.10 join `Token.lookalikes`, each reported as `invalid_character` and lexed
 as a `lookalike` whose payload is `top` or `bottom`; `Token.symbolName` names both. The frontend
 artifact's format version moves for the tags.
 
@@ -1814,11 +1814,11 @@ artifact's format version moves for the tags.
 in `parseTypeAtom`, `unit` in an expression atom, `pat_unit` in a pattern — with the `⊤` as its
 `main_token`, so the AST and BIR dumps of the two spellings are byte-identical but for the token
 column. Every set of tokens that may begin an atom, an argument, a pattern, a type atom or a
-block item (§12.2 B2) gains `top`; the type-atom set gains `bottom`. `⊥` builds the new leaf
+block item (`language.md` §12.2 B2) gains `top`; the type-atom set gains `bottom`. `⊥` builds the new leaf
 **`type_bottom`**; anywhere else it is `unexpected_token` (construct `bottom_outside_type`).
 
 `parseIf` reads its `else` only when the next token is `else` (§2's block rule already makes a
-token outside the `if`'s block invisible, which is what gives §12.10's layout reading); without
+token outside the `if`'s block invisible, which is what gives `language.md` §12.10's layout reading); without
 one it builds the new node **`if_then`**, `lhs` the condition and `rhs` the `then` body. The
 existing `if` node is untouched, so every consumer that handles it handles the old form as before.
 From the enforce step the parser reports `unit_spelling_removed` at the `(` of every unit leaf
@@ -1833,7 +1833,7 @@ instruction whose `lhs` is **1**, the mark that the checker reads as "the missin
 `if c then a else ⊤`'s. From the enforce step lowering reports `never_spelling_removed` at a type
 name `Never` that resolves to `Basics`' — through the prelude, an `exposing` list of an import of
 `Basics`, or `Basics.Never` — in any module but core's `Basics`, and resolves on. An unbound `T`
-gets §12.10's sentence from the texts of `unbound_type` and `unbound_constructor`. The BIR format
+gets `language.md` §12.10's sentence from the texts of `unbound_type` and `unbound_constructor`. The BIR format
 does not change (the mark is a value of a field the instruction already has).
 
 **The formatter** prints a unit leaf from its `main_token` — `⊤`, or `()` until the enforce step
@@ -1974,7 +1974,8 @@ the skill: before an agent writes or changes a `.beni` file, a `beni.json` or a 
 line. The body holds the rules an agent breaks first and one line per reference file: the
 file's relative path and what it holds. A harness loads a reference file only when `SKILL.md`
 names it (research 107 §3.6), so every file under `references/` is named there. `SKILL.md`
-stays under 500 lines.
+stays under 500 lines and under 8 000 bytes: Codex injects at most 8 000 bytes of it when a user
+names the skill and cuts the rest (research 107 §3.2), and `→`, `⊤` and `…` are three bytes each.
 
 **The topics**, one file each, each under 300 lines (the gate counts):
 
@@ -1994,9 +1995,23 @@ stays under 500 lines.
 A reference file is for a developer who writes beni, not for one who works on the compiler
 (`.claude/skills/` holds those). It states facts, in ASD-STE100, and names no plan item, slice
 or issue. Its last line is `Sources:` and the design sections the facts come from, so that a
-change to a section finds the file that quotes it. The generated files' exact bytes — a title
-line, one fixed paragraph that says how to read a type, and the dump in a `text` fence, the dump's
-own module order — are defined once, in the generator `tests/skill_api.zig`, and nowhere else.
+change to a section finds the file that quotes it.
+
+**The generated files are written in beni's notation, not the dump's.** `beni dump
+--stage=interface` prints effect classes, `foreign`, `markup`, `(equatable)`, a constructor's
+`/n` arity and `type Never`, none of which a program may write; an agent copies a signature from
+the most-read file, so the file holds only what beni accepts. The generator rewrites each line:
+it removes every effect class (`!e1`, `!(impure | e1)`, `!sync`), the words `foreign` and
+`markup`, the mark `(equatable)` and the `/n` arity, and writes `⊥` for `Never`. A value whose
+own result class is `impure` or `suspends` keeps that one fact as a trailing comment, `-- impure`
+or `-- suspends`; every other class is dropped, because the compiler infers them and a program
+never writes them. So `value map : List a, (a → b !e1) → List b !e1` becomes `value map : List
+a, (a → b) → List b`, and `value sleep : Duration → ⊤ !suspends` becomes `value sleep : Duration
+→ ⊤  -- suspends`. The exact bytes — a title line, one fixed paragraph, the rewritten dump in a
+`text` fence, in the dump's module order — are defined once, in the generator
+`tests/skill_api.zig`, and nowhere else. The files are one per package and not one per module:
+a reader finds a module by its `module <Name>` line, and `SKILL.md`'s list stays short under its
+byte cap. The 300-line cap does not apply to them.
 
 **Code blocks are checked, so they are complete.** A fenced block whose info string starts with
 `beni` is a whole module, exactly as a file on disk: imports first, then declarations. The info
@@ -2011,9 +2026,17 @@ string says what the gate does with it:
 A fragment — a type alone, an expression, a line of a block — is not a module and is written
 with another info string (`text`, `json`, `sh`), which nothing checks; so a reference file
 prefers a whole example. The info string `elm` is refused by the gate: beni is not Elm, and the
-highlighter would read `->` and `::` as correct. A block has no module header, as no beni file
+highlighter reads `->` and `::` as correct. A block has no module header, as no beni file
 has; the gate writes block *n* of the folder as `B<n>.beni` in its group's directory, so two
-blocks never share a module name and a block's diagnostics are matched to it by that file.
+blocks never share a module name and a block's diagnostics are matched to it by that file. A
+block imports no other block: `B<n>` is the gate's name, never a module a reference may use. A
+refused block shows one departure, because every error diagnostic of it must name its code:
+`x :: rest ->` is one `cons_removed` and two `ascii_symbol_removed`, so it is two blocks.
+
+What the gate does not check: inline code and `text` fragments, and the value an example claims.
+An info string for an expression or a `left == right` example that the gate wraps into a module
+and runs, as `tests/blackbox/docs_test.zig` runs core's doc examples, is a later slice (issue
+#529). Until then a reference states a value only in a whole module, or not at all.
 
 ### 12.2 Installed beside the binary
 
@@ -2024,8 +2047,8 @@ installs the same tree under `$out/share/beni/skills/beni/`.
 
 The parent is `skills/`, plural, because `<directory>/<name>/SKILL.md` is the shape every harness
 reads (research 107 §3): a user may point a harness at `<prefix>/share/beni/skills` as one more
-skills directory (Copilot CLI's `/skills add`, opencode's `skills` key, Codex's
-`[[skills.config]]`) and needs no copy at all.
+skills directory (Copilot CLI's `COPILOT_SKILLS_DIRS`, opencode's `skills` key in its
+configuration, `packages/schema/src/config.ts`) and needs no copy at all.
 
 ### 12.3 The command
 
@@ -2046,22 +2069,36 @@ harnesses agree on one and a cloud agent has none. The help text lists the direc
 107 §5 found, as examples. The steps:
 
 1. The folder must be present (above); otherwise the same message as `beni skill`, exit 2.
-2. `<dir>` is created with its missing parents, as `beni new` creates them.
-3. `<dir>/beni` must not exist. When it does — a directory, a file, or a symlink, a dangling one
+2. `<dir>` must not be the folder or lie inside it, or the copy writes the tree into itself and
+   a link points at its own path. Before anything is written, the command takes the real path of
+   `<dir>`'s nearest existing ancestor, joins the rest of `<dir>` to it, and refuses when that
+   path equals the folder's real path or begins with it: `beni: '<dir>' is inside the installed
+   skill`, exit 2.
+3. `<dir>` is created with its missing parents, as `beni new` creates them.
+4. `<dir>/beni` must not exist. When it does — a directory, a file, or a symlink, a dangling one
    included — the command stops: `beni: '<dir>/beni' exists; pass --force to replace it`,
-   exit 2, nothing written. With `--force` the entry is removed just before the new one is put in
-   its place (step 4): a symlink is unlinked and never followed, a symlink to a directory
-   included; a directory is deleted with everything in it; a file is deleted.
-4. Without `--link`, the folder is copied to `<dir>/.beni-new` first — every directory and file
-   at the same relative path, files as regular files — and renamed to `<dir>/beni` when it is
-   complete. So `<dir>/beni` is the old folder or the new one, never half of either, and a copy
-   that fails leaves the old one in place; the failed `.beni-new` is removed, and one left by an
-   interrupted run is removed before the copy starts. With `--link`, `<dir>/beni` is one symlink
-   whose target is the folder's absolute path; a linked skill follows every `zig build install`,
-   a copied one is refreshed with `--force`. A link into a Nix store path lasts as long as that
-   path does: a user who links a Nix-installed beni's skill accepts that, as with every link into
-   the store.
-5. On success stdout gets one line: `Installed the beni skill at <dir>/beni` or
+   exit 2, nothing written. **`--force` replaces a beni skill and nothing else**: a symlink,
+   whatever it points at, or a directory whose `SKILL.md` has a frontmatter line `name: beni`.
+   `beni` is also the name of this repository and a likely name of a user's own directory, so a
+   file, or a directory that is not such a skill, is refused with `--force` too: `beni:
+   '<dir>/beni' is not a beni skill; remove it yourself`, exit 2, nothing written. The entry
+   goes in step 5, after the new one is complete: a symlink is unlinked and never followed, a
+   symlink to a directory included; a directory is deleted with everything in it.
+5. Without `--link`, the folder is copied to `<dir>/.beni-new` first — every directory and file
+   at the same relative path, files as regular files. When the copy is complete, the old
+   `<dir>/beni`, if any, is renamed to `<dir>/.beni-old`, `.beni-new` is renamed to
+   `<dir>/beni`, and `.beni-old` is deleted. So `<dir>/beni` is the old folder or the new one,
+   never half of either: a copy that fails leaves the old one untouched, and a failure between
+   the two renames leaves the old one complete as `.beni-old`, which the message names. A
+   `.beni-new` or `.beni-old` left by an interrupted run is removed before the copy starts; a
+   harness that scans `<dir>` in that moment, and does not skip dot-directories, may list it
+   as a second skill until the next run. Between the two renames there is a moment with no
+   `<dir>/beni`; a harness that scans then sees none. With `--link`, `<dir>/beni` is one symlink
+   whose target is the folder's absolute path, written after the old entry is removed; a linked
+   skill follows every `zig build install`, a copied one is refreshed with `--force`. A link into
+   a Nix store path lasts as long as that path does: a user who links a Nix-installed beni's skill
+   accepts that, as with every link into the store.
+6. On success stdout gets one line: `Installed the beni skill at <dir>/beni` or
    `Linked the beni skill at <dir>/beni`. A harness loads it at its next start or on its reload
    command.
 
@@ -2075,9 +2112,18 @@ among the arguments, and a `--` ends the options, so a directory whose name begi
 follows it. The command takes none of §1's common options, because none of them means anything
 to it; each is the ordinary `unknown option`.
 
-The command's output depends on the executable's location and its arguments and on nothing
-else, so two runs print the same bytes (rule 5). It is specified for Linux and macOS, the hosts
-beni builds on; Windows is not a target of this section.
+The command's output depends on the executable's location, its arguments and the state of
+`<dir>`, and on nothing else: two runs from the same state print the same bytes (rule 5). It is
+specified for Linux and macOS, the hosts beni builds on; Windows is not a target of this section.
+
+**The help text.** `beni help` gains one line in its `commands:` block, `skill    print where
+the skill for coding agents is; skill install <dir> puts it into <dir>/beni`, and a block
+`skill options:` with `--link` ("skill install: a symlink to the installed folder instead of a
+copy"), `--force` ("skill install: replace a beni skill that is already at <dir>/beni") and two
+lines of examples: `<dir>` is a harness's skills directory, `~/.agents/skills` for Codex, Cursor,
+Gemini CLI, Copilot and opencode, and `~/.claude/skills` for Claude Code — one copy, and a link
+for the second directory (research 107 §5). The heading `options (all commands):` becomes
+`options (every command but skill):`, because `skill` refuses them.
 
 ### 12.4 Kept current
 
@@ -2090,7 +2136,8 @@ the same pull request. `CLAUDE.md` (which `AGENTS.md` links to) states it under 
 the edit lands with the folder.
 
 **The gate**, `tests/blackbox/skill_test.zig`, runs inside `test-blackbox` and so inside
-`zig build gates`, holds to the budget like every test, and fails when:
+`zig build gates`. It is one test per item below, and item 3 is one test per package, so that
+no test comes near the budget (the costs are at the end of this section). It fails when:
 
 1. a `beni` code block of any file under `skills/beni/` does not do what its info string says
    (§12.1). The accepted blocks of one platform are one group and one `beni check
@@ -2099,33 +2146,49 @@ the edit lands with the folder.
    diagnostics are matched to it by its file; the failure names the file and the line of the
    block, and for a formatting failure what `beni fmt` writes;
 2. a command name of `beni help`'s `commands:` block, or a `--flag` token anywhere in the help
-   text, is not in `references/cli.md` in backticks; or a `--flag` in `references/cli.md` is not
-   in the help text;
+   text, is not in `references/cli.md` in backticks; or a `--flag` in `references/cli.md` is
+   neither in the help text nor on the gate's list of hidden flags. That list holds the flags
+   `beni help` hides but a diagnostic tells the user to run — today `--migrate-cons`,
+   `--migrate-unicode`, `--migrate-top`, `--migrate-lambda`, `--migrate-let`, `--migrate-names`
+   and `--migrate-init` — and each of them must be in `references/cli.md` and must still be
+   accepted by `beni fmt` on a file that needs nothing (exit 0). `beni help` does not change:
+   §1's choice to hide them stands;
 3. a generated `references/api-*.md` differs from what `zig build skill-api` writes today. The
    generator is `tests/skill_api.zig`, built as the tool `zig-out/tools/beni-skill-api`; the
    step runs it on the gates' ReleaseSafe beni, over `core/` (`--core`) and over each platform
    directory (`--root=platforms/<name> --platform=<name>`), one `beni dump --stage=interface`
    per package, and writes the files into `skills/beni/references/`. The packages are a list in
    the generator — `core` and the five platforms a default build embeds — so a platform added
-   with `-Dplatform=` is not among them. The test runs the same tool with the binary under test
-   (the gates' ReleaseSafe beni; the LLVM one under `-Dllvm`) into a temporary directory and
-   compares byte for byte, and its message says to run the step; an `api-*.md` the generator
-   does not write fails it too;
+   with `-Dplatform=` is not among them, and a directory under `platforms/` that is not on the
+   list fails the test, so the list cannot fall behind. The test runs the same tool with the
+   binary under test (the gates' ReleaseSafe beni; the LLVM one under `-Dllvm`) into a temporary
+   directory and compares byte for byte, one test per package, and its message says to run the
+   step; an `api-*.md` the generator does not write fails it too;
 4. `SKILL.md`'s frontmatter is not `name: beni` and a `description` of 1 to 1 024 characters,
-   or `SKILL.md` has 500 lines or more, or a file under `references/` is not named in
-   `SKILL.md` as a backticked `references/<path>` token, or such a token names no file, or a
-   hand-written `references/*.md` has 300 lines or more;
-5. `zig-out/share/beni/skills/beni/` and `skills/beni/` differ in any file, name or byte;
+   or `SKILL.md` has 500 lines or more or 8 000 bytes or more, or a file under `references/` is
+   not named in `SKILL.md` as a backticked `references/<path>` token, or such a token names no
+   file, or a hand-written `references/*.md` has 300 lines or more;
+5. `zig-out/share/beni/skills/beni/` and `skills/beni/` differ in any file, name or byte. The
+   test's run step depends on the step that installs the folder (`build.zig`), so the tree is
+   there on a fresh clone and current after an edit;
 6. the command does not behave as §12.3 says, in a prefix the test builds under its own
    temporary directory: a copy of the installed binary at `<tmp>/bin/beni` beside a copy of the
    folder at `<tmp>/share/beni/skills/beni/`, so the path resolution, the missing-folder case,
-   the copy, the link, the refusal and `--force` are each one scenario with exact stdout, stderr
-   and exit code.
+   the copy, the link, the refusal, `--force` over a skill, `--force` over a directory that is
+   not one, and a `<dir>` inside the folder are each one scenario with exact stdout, stderr and
+   exit code.
 
-The gate's cost is counted the first time it runs under `zig build gates`, as every test's is
-(CLAUDE.md, *Every test has a budget*): one `check` per group, one `fmt --check` per accepted
-group, six dumps, and two copies of the binary. A test over the budget is split by package or by
-scenario, never granted an exemption.
+**What the gate cannot see.** A new piece of syntax, a new diagnostic or a new idiom reaches the
+folder through the rule and the reviewer only; the gate finds a stale signature, a missing flag
+and a block that no longer checks, not a sentence that is missing.
+
+**The cost**, measured by the review of #523 on the gates' ReleaseSafe beni at `4586e4fb0`
+(`perf stat -e instructions:u`, the budget's unit): the core dump 1 215M, the five platform
+dumps 656M (`browser`), 208M, 145M, 144M and 141M, one `check` of a one-line block 83M to 141M
+by platform, `fmt --check` 5M, `help` 1.5M. The six dumps together are 2 509M, 58% of one
+test's 4 300M, and the core dump grows with every core module: hence one test per package for
+item 3 and one test per item for the rest. A test over the budget is split further, never
+granted an exemption.
 
 ### 12.5 What is not here
 
