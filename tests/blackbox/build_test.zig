@@ -5450,6 +5450,57 @@ test "a program that suspends keeps Task.andThen, which core writes in beni" {
     try expectBuilt(r);
 }
 
+test "Io.run writes each log line to standard error as logfmt, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `boundary.md` §9.8.15 (b): `Io.run` installs a sink that writes one
+    // `Log.logfmt` line per entry to standard error, so standard output
+    // holds only what the `Program` prints. A virtual clock fixes the
+    // time (transparent-effects-proposal.md §17.11, *Fixtures*), and
+    // `Debug` is below the default minimum. `--release` keeps every call.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Clock
+        \\import Io
+        \\import Log
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    Clock.run (Clock.virtual 1760000000000) λ⊤ →
+        \\        Log.info "listening"
+        \\        Log.debug "not written"
+        \\        Log.warn "slow \"disk\""
+        \\        Log.error "failed"
+        \\    Node.print "done"
+        \\
+    );
+    const expected: world.Expected = .{
+        .stdout = "done\n",
+        .stderr = .{ .exact =
+        \\timestamp=2025-10-09T08:53:20.000Z level=INFO message=listening
+        \\timestamp=2025-10-09T08:53:20.000Z level=WARN message="slow \"disk\""
+        \\timestamp=2025-10-09T08:53:20.000Z level=ERROR message=failed
+        \\
+        },
+    };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dev = try w.buildAndRun(&.{"Main.beni"}, expected);
+    const release = try w.buildAndRun(&.{ "--release", "Main.beni" }, expected);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(dev);
+    try expectBuilt(release);
+}
+
 /// A program whose building loop's exit calls `List`'s core-private `close`,
 /// one of the values the emitter calls from other modules (`backend.md` §4,
 /// *The emitter's imports of the core-private exports*). Since the list

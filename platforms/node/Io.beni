@@ -17,6 +17,7 @@
 
 import Duration
 import Js
+import Log
 import Node exposing (Program)
 import Task exposing (Exit, Resume)
 
@@ -34,9 +35,14 @@ import Task exposing (Exit, Resume)
 --| for something nothing can ever answer, so that Node would simply stop,
 --| the program says so on standard error and exits 1 — never a silent exit
 --| 0 (`boundary.md` §9.8.15 (c)).
+--|
+--| **The log goes to standard error**: from the start, each line `Log`
+--| writes is one `Log.logfmt` line on standard error, so the program's own
+--| output on standard output stays clean (`boundary.md` §9.8.15 (b)).
 pub run : (⊤ → Program) → Program
 run body =
     ended = Js.ref False
+    Log.setSink logLine
 
     _ = Js.call (Js.global "process") "on" [ Js.from "beforeExit", Js.from λ_ → stranded ended ]
 
@@ -75,6 +81,13 @@ stranded ended =
 stuck : String
 stuck =
     "beni: the program cannot go on: every fiber is waiting for something that can never happen.\n"
+
+
+-- `Log`'s sink on Node: one `logfmt` line per entry on standard error.
+logLine : Log.Entry → ⊤
+logLine entry =
+    _ = Js.call (Js.get (Js.global "process") "stderr") "write" [ Js.from "${Log.logfmt entry}\n" ]
+    ⊤
 
 
 foreign impure finish : Exit Program → ⊤

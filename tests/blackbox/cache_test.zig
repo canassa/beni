@@ -2409,9 +2409,12 @@ test "a platform read from a directory is checked by the build, and an embedded 
     // The embedded `node` lazily reaches only what `Main` imports — `Node`,
     // `Random` and `Ssr` — so the platform's other modules (`Io`,
     // `Http.Server`) are not in its graph, and none of them is checked.
+    // Neither are the two core modules only `Io` reaches: `Log`, for the
+    // sink `Io.run` installs, and the `Clock` that `Log` reads.
     const unreached = node_modules - 3;
+    const unreached_core = 2;
     try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
-    try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached);
+    try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached + unreached_core);
 }
 
 test "--no-cache beside --cache-dir reads nothing and writes nothing" {

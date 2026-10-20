@@ -39,6 +39,8 @@ build_test.test.--release refuses a build that reaches Debug; the same program b
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 7e008c59f2bbef2c13cac3953d45ab623d14134e1b9230c38868c3c81b226f8f
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 777781e6080170d2aeaad962b2096f08a77d1cd74d5348895365c4ec7bdaaf1c
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
 build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 9cb2c32c97750a08fa0a3c54f6ebde9258e4cfc84ab219a60dff1c8274342be1
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
@@ -56,7 +58,7 @@ build_test.test.a non-zero exit code from the platform reaches the process #0 78
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
 build_test.test.a program computes something and prints the right answer #0 e1d0e7f9f165c352504d0ea3037ab0134d1a491768882a2d30c9c92e30cbd24f
-build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 057bae730be8c540b0e63b9950e250352aa59e2fd525daf54d33959ac683b21b
+build_test.test.a program that suspends keeps Task.andThen, which core writes in beni #0 06b8febedcc77b8b8b0258f87164a71e16a8bc8700b0bedc910b725fdea5645b
 build_test.test.a rebuild into the same --out holds exactly a fresh build's files, and a user's file survives #0 b7350c41206ccdd903daa449a4dc8f1fed403e6d4a468542c737f0df96cc0529
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
@@ -119,7 +121,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 82a5938b767f983bc3f3455cc4b414534c1e68af203b5bcf77ccba18cfeb6050
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 5cc397fe0c0bf78d56d06f7bb50102d81b5d984b0df700b7673cd822a37216ea
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 dfdb30b735cb3e7aa4fb830cdcaa3fc960c0d112a04548dd1151c76eff869bb3
