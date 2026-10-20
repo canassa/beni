@@ -1,0 +1,20 @@
+-- typekeys (core): quantifiers that cross into JavaScript (checker-v2.md
+-- §36). `toValue`'s `a` reaches a `Js.from`; `keep`'s `a` does and its `b`
+-- does not; `relay`'s `a` crosses through `toValue`'s, a declaration of this
+-- module, so the bit is a fixpoint over the module's own references. The
+-- interface publishes each bit, and `Use` reads it.
+import Js
+
+
+pub toValue : a → Js.Value
+toValue x = Js.from x
+
+
+pub keep : a, b → Js.Value
+keep x y =
+    _ = y
+    Js.from x
+
+
+pub relay : a → Js.Value
+relay x = toValue x

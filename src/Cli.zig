@@ -95,7 +95,10 @@ pub const DiagnosticsFormat = enum { text, json };
 /// record and not about a printer.
 /// `ownership` was hidden until the checker it reports became `check`'s and
 /// `build`'s on an in-place platform (`ownership-checker.md` §2.4, §28.3).
-pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership };
+/// `typekeys` is hidden, as `--stage=ownership`'s flags are: the checker's
+/// type keys (checker-v2.md §36), an artifact only the points-to analysis
+/// reads, printed for the corpus.
+pub const Stage = enum { tokens, ast, bir, interface, raw, types, graph, dispatch, writes, ownership, typekeys };
 
 /// Options every subcommand accepts.
 pub const Common = struct {
@@ -262,6 +265,12 @@ pub const Cache = struct {
     /// make the cutoff unsound toward a wrong answer. The other direction IS
     /// the cutoff, and what validates it is output identity.
     cutoff_compare: bool = false,
+    /// `--type-keys` — hidden, `check`'s alone. Print every source module's
+    /// type keys after the run, in path order, as `dump --stage=typekeys`
+    /// does (checker-v2.md §36). `dump` reads no cache, and this is how a
+    /// fixture asserts that a module installed from the cache has the keys a
+    /// fresh check gives it.
+    type_keys: bool = false,
 };
 
 pub const Check = struct {
@@ -761,6 +770,12 @@ const CheckSpecific = struct {
             self.consumed = true;
             return null;
         }
+        if (std.mem.eql(u8, name, "--type-keys")) {
+            if (value != null) return noValue(name);
+            self.cache.type_keys = true;
+            self.consumed = true;
+            return null;
+        }
         if (applyCache(&self.cache, &self.consumed, name, value)) |u| return u;
         return null;
     }
@@ -1238,7 +1253,7 @@ fn parseDump(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result 
 pub fn stageResolvesImports(stage: Stage) bool {
     return switch (stage) {
         .tokens, .ast, .bir => false,
-        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership => true,
+        .interface, .raw, .types, .graph, .dispatch, .writes, .ownership, .typekeys => true,
     };
 }
 

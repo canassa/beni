@@ -95,12 +95,18 @@ cast_copies: std.ArrayList(CastCopies) = .empty,
 /// records another cast.
 active_decl: ?u32 = null,
 active_casts: std.ArrayList(u32) = .empty,
+/// Every imported value's quantifier that crosses into JavaScript, as the
+/// variable this module instantiated it at (checker-v2.md §36): what
+/// `TypeKeys` follows once every type is final.
+crossing: std.ArrayList(CrossingUse) = .empty,
 
 pub const CastCopies = struct {
     decl: u32,
     root: Var.Optional = .none,
     vars: std.ArrayList(Var) = .empty,
 };
+
+pub const CrossingUse = struct { inst: Bir.Inst.Index, decl: ?u32, v: Var };
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
@@ -110,6 +116,7 @@ pub fn deinit(in: *Instantiate) void {
     for (in.cast_copies.items) |*c| c.vars.deinit(in.cx.gpa);
     in.cast_copies.deinit(in.cx.gpa);
     in.active_casts.deinit(in.cx.gpa);
+    in.crossing.deinit(in.cx.gpa);
 }
 
 /// A slot for the cast just appended to `Solve.casts`. `root` is null when
@@ -517,6 +524,13 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     // A value's summary, read from its record (transparent-effects-proposal.md
     // §14.3 rule 3): the use's classes get its rungs and dependencies now.
     if (which == .value) if (cx.effects) |e| try e.applyImported(iface, iface.schemes[@backingInt(scheme)], v, in.quantified.items, @backingInt(in.origin));
+    if (which == .value) {
+        const s = iface.schemes[@backingInt(scheme)];
+        for (in.quantified.items, 0..) |q, i| {
+            if (i >= s.quantified_count) break;
+            if (iface.quantified(s, @intCast(i)).crosses) try in.crossing.append(cx.gpa, .{ .inst = in.origin, .decl = in.decl, .v = q });
+        }
+    }
     return v;
 }
 

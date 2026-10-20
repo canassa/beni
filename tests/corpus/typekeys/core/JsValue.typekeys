@@ -1,0 +1,17 @@
+module JsValue
+  key #0 Basics.Int
+  key #1 { count : #0 }
+  key #2 #1 → #1
+  wild #0
+  wild #1
+  decl make
+    local n wild
+  decl out
+    local m #1
+  decl back
+    local v wild
+  decl bump
+    local m #1
+  inst 11 record wild
+  inst 35 record #1
+  inst 36 lambda #2 result #1

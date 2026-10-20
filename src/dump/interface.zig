@@ -355,12 +355,15 @@ pub fn writeRaw(
         try w.writeByte('\n');
         for (0..sch.quantified_count) |q| {
             const info = iface.quantified(sch, @intCast(q));
-            try w.print("  q {d} kind={d} equatable={} name={s} constraints={d}\n", .{
+            try w.print("  q {d} kind={d} equatable={} name={s} constraints={d}{s}\n", .{
                 q,
                 info.kind,
                 info.equatable,
                 quantifiedName(iface, interner, info),
                 info.constraints_len,
+                // What it is instantiated at crosses into JavaScript
+                // (checker-v2.md §36).
+                if (info.crosses) " crosses" else "",
             });
             // The `where` block of static-dispatch-spike.md §6.5, so the
             // `--jobs=1` vs `--jobs=8` byte comparison covers it.

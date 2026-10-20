@@ -1,0 +1,37 @@
+-- typekeys: the canonical form of a closed type (checker-v2.md §36). An
+-- alias is its expansion, so `origin`'s record literal, `shift`'s parameter
+-- written out and its update, `dot`'s constructor application, `pair`'s
+-- tuple, `all`'s list and `move`'s lambda all key `Point` as one node. A
+-- record's fields are ordered by text and a field is a node of its own.
+type alias Point =
+    y : Int
+    x : Int
+
+
+origin : Point
+origin = { x = 0, y = 0 }
+
+
+shift : { x : Int, y : Int } → Point
+shift p = { p | x = p.x + 1 }
+
+
+type Shape
+    = Circle Float
+    | Dot Point
+
+
+dot : Point → Shape
+dot p = Dot p
+
+
+pair : Point → Point × Int
+pair p = ( p, 1 )
+
+
+all : Point → List Point
+all p = [ p, origin ]
+
+
+move : Point → Point
+move = λp → { p | y = 0 }

@@ -110,6 +110,7 @@ pub const Module = struct {
 };
 
 const Effects = @import("Effects.zig");
+const TypeKeys = @import("TypeKeys.zig");
 
 /// Owned. The session-wide type table.
 types: Types,
@@ -126,10 +127,15 @@ modules: []Module,
 /// name that outlives the store.
 dispatch: []Dispatch,
 /// Resolved immutable schema plan per module.
+/// Owned. One per graph module, in module index order, beside `dispatch`:
+/// the type-key artifact the points-to analysis reads (checker-v2.md §36,
+/// `backend.md` §3), made on every build.
+type_keys: []TypeKeys.Artifact,
+/// Resolved immutable schema plan per module.
 plans: []SchemaPlan,
 counters: Counters,
 
-pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .plans = &.{}, .counters = .{} };
+pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .type_keys = &.{}, .plans = &.{}, .counters = .{} };
 
 pub fn deinit(check: *Check, gpa: Allocator) void {
     check.types.deinit(gpa);
@@ -139,6 +145,8 @@ pub fn deinit(check: *Check, gpa: Allocator) void {
     gpa.free(check.modules);
     for (check.dispatch) |*d| d.deinit(gpa);
     gpa.free(check.dispatch);
+    for (check.type_keys) |*k| k.deinit(gpa);
+    gpa.free(check.type_keys);
     for (check.plans) |*plan| plan.deinit(gpa);
     gpa.free(check.plans);
     check.* = empty;
@@ -338,6 +346,9 @@ pub fn run(
     const dispatch = try gpa.alloc(Dispatch, modules);
     @memset(dispatch, .empty);
     check.dispatch = dispatch;
+    const type_keys = try gpa.alloc(TypeKeys.Artifact, modules);
+    @memset(type_keys, .empty);
+    check.type_keys = type_keys;
     const plans = try gpa.alloc(SchemaPlan, modules);
     @memset(plans, .empty);
     check.plans = plans;
@@ -387,6 +398,7 @@ pub fn run(
         .counters = counters,
         .kept = if (options.keep_stores) kept.items else &.{},
         .dispatch = dispatch,
+        .type_keys = type_keys,
         .plans = plans,
         .coverage = coverage,
     };

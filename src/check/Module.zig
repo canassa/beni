@@ -47,6 +47,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
 const schema_plan_bytes = @import("../cache/schema_plan_bytes.zig");
+const type_keys_bytes = @import("../cache/type_keys_bytes.zig");
 const Check = @import("Check.zig");
 const Context = @import("Context.zig");
 const Publish = @import("Publish.zig");
@@ -74,6 +75,7 @@ const CallStyle = @import("CallStyle.zig");
 const Prepend = @import("Prepend.zig");
 const EffectPlan = @import("EffectPlan.zig");
 const Codec = @import("Codec.zig");
+const TypeKeys = @import("TypeKeys.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -97,6 +99,8 @@ pub const Input = struct {
     pattern_budget: u32 = Exhaustive.default_budget,
     /// This module's slots of the run's tables, written here.
     dispatch: *Dispatch,
+    /// The type-key artifact (checker-v2.md §36).
+    type_keys: *TypeKeys.Artifact,
     plan: *SchemaPlan,
     roundtrip_interfaces: bool = false,
     roundtrip_dispatch: bool = false,
@@ -149,9 +153,12 @@ pub fn check(in: Input) Error!Check.Counters {
     defer if (!tables_kept) gpa.free(decl_display);
     const local_type = try newTable(gpa, bir.locals.len);
     defer if (!tables_kept) gpa.free(local_type);
-    // Only a run that keeps the stores reads instruction types
-    // (`ownership-checker.md` §2.3); a build allocates nothing here.
-    const inst_type: []Var.Optional = if (in.keep != null) try newTable(gpa, bir.insts.len) else &.{};
+    // A run that keeps the stores reads instruction types
+    // (`ownership-checker.md` §2.3), and so does the type-key artifact of a
+    // module checked aloud (checker-v2.md §36): its crossing quantifiers in
+    // every package, its keys in an app's.
+    const keyed = in.graph.modulePackage(in.module) == .app;
+    const inst_type: []Var.Optional = if (in.keep != null or !quiet) try newTable(gpa, bir.insts.len) else &.{};
     defer if (!tables_kept) gpa.free(inst_type);
 
     var schemas = try Schema.State.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir);
@@ -393,6 +400,29 @@ pub fn check(in: Input) Error!Check.Counters {
         p.end(in.tid, exhaustive_token.?, .exhaustive, file.int(), 0);
     }
 
+    // The type-key artifact (checker-v2.md §36), while the store is alive,
+    // and before P8, which publishes each declaration's crossing
+    // quantifiers.
+    const type_keys: ?TypeKeys.Output = if (!quiet and report.errors == 0) try TypeKeys.build(.{
+        .gpa = gpa,
+        .scratch = scratch,
+        .store = store,
+        .types = in.types,
+        .interner = in.interner,
+        .bir = bir,
+        .local_type = local_type,
+        .inst_type = inst_type,
+        .decl_scheme = decl_scheme,
+        .casts = solver.casts.items,
+        .uses = solver.instantiate.crossing.items,
+        .dispatch = in.dispatch,
+        .keyed = keyed,
+    }) else null;
+    if (type_keys) |t| {
+        in.type_keys.deinit(gpa);
+        in.type_keys.* = t.artifact;
+    }
+
     // P8.
     const p8_token = if (in.profile) |p| p.begin() else null;
     const withheld = try Publish.fill(.{
@@ -406,6 +436,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .types = in.types,
         .contexts = &solver.contexts,
         .dispatch = in.dispatch,
+        .crossing = if (type_keys) |t| t.crossing else &.{},
     });
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
     if (in.profile) |p| p.end(in.tid, p8_token.?, .publish, file.int(), 0);
@@ -413,6 +444,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // P9.
     const p9_token = if (in.profile) |p| p.begin() else null;
     if (in.roundtrip_dispatch) try roundtripTable(in, &report);
+    if (in.roundtrip_dispatch) try roundtripKeys(in, &report);
     if (!quiet) {
         try Cycles.run(scratch, bir, in.dispatch, in.interner, report.staging());
         try report.flush();
@@ -999,6 +1031,24 @@ fn roundtripTable(in: Input, report: *Report) Error!void {
     in.dispatch.deinit(gpa);
     in.dispatch.* = loaded.table;
     loaded.table = .empty;
+    loaded.deinit(gpa);
+}
+
+/// The type-key artifact's round trip under the same flag (checker-v2.md
+/// §36): bytes, read back, resolved, in place.
+fn roundtripKeys(in: Input, report: *Report) Error!void {
+    const gpa = in.gpa;
+    const bytes = try type_keys_bytes.write(gpa, in.type_keys, in.types, in.interner);
+    defer gpa.free(bytes);
+    var loaded = type_keys_bytes.read(gpa, bytes, in.interner) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.BadSection => return report.internal(@fromBackingInt(@intCast(0)), "this module's type keys did not load back from their own bytes"),
+        error.UnknownSymbol => return report.internal(@fromBackingInt(@intCast(0)), "this module's type keys name a string the session's interner does not hold"),
+    };
+    type_keys_bytes.resolve(&loaded, in.graph, in.types);
+    in.type_keys.deinit(gpa);
+    in.type_keys.* = loaded.artifact;
+    loaded.artifact = .empty;
     loaded.deinit(gpa);
 }
 

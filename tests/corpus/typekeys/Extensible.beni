@@ -1,0 +1,13 @@
+-- typekeys: a record whose row is open is wild (checker-v2.md §36): `r` is
+-- every record with an `x`, so `getX`'s and `setX`'s parameter and the update
+-- are wild, while `useBoth`'s closed record literal is keyed.
+getX : { r | x : Int } → Int
+getX r = r.x
+
+
+setX : { r | x : Int } → { r | x : Int }
+setX r = { r | x = 0 }
+
+
+useBoth : Int
+useBoth = getX (setX { x = 1, name = "a" })

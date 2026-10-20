@@ -38,6 +38,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const Diagnostics = @import("Diagnostics.zig");
 const Dispatch = @import("Dispatch.zig");
+const TypeKeys = @import("TypeKeys.zig");
 const Types = @import("Types.zig");
 const SchemaPlan = @import("SchemaPlan.zig");
 const reads = @import("reads.zig");
@@ -66,6 +67,8 @@ counters: []Check.Counters,
 kept: []Module,
 /// One per module, written by the worker that checked it.
 dispatch: []Dispatch,
+/// One per module, beside `dispatch` (checker-v2.md §36).
+type_keys: []TypeKeys.Artifact,
 plans: []SchemaPlan,
 /// Per module, written by the worker that checked it before `finish`
 /// releases its dependents: whether an error reached it — its own (an
@@ -480,6 +483,7 @@ fn checkInner(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid
         .tid = tid,
         .pattern_budget = d.options.pattern_budget,
         .dispatch = &d.dispatch[m.int()],
+        .type_keys = &d.type_keys[m.int()],
         .plan = &d.plans[m.int()],
         .roundtrip_interfaces = d.options.roundtrip_interfaces,
         .roundtrip_dispatch = d.options.roundtrip_dispatch,

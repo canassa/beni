@@ -1,0 +1,24 @@
+module Records
+  key #0 Basics.Int
+  key #1 { x : #0, y : #0 }
+  key #2 Records.Shape
+  key #3 #1 × #0
+  key #4 List.List #1
+  key #5 #1 → #1
+  decl shift
+    local p #1
+  decl dot
+    local p #1
+  decl pair
+    local p #1
+  decl all
+    local p #1
+  decl move
+    local p #1
+  inst 6 record #1
+  inst 19 record_update #1
+  inst 28 call #2
+  inst 37 tuple #3
+  inst 46 list #4
+  inst 53 record_update #1
+  inst 54 lambda #5 result #1

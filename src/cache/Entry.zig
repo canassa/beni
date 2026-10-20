@@ -40,6 +40,7 @@ const entry_bytes = @import("entry_bytes.zig");
 const dispatch_bytes = @import("dispatch_bytes.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const schema_plan_bytes = @import("schema_plan_bytes.zig");
+const type_keys_bytes = @import("type_keys_bytes.zig");
 
 /// One entry, decoded and validated, waiting to be installed.
 ///
@@ -65,6 +66,9 @@ pub const Loaded = struct {
     /// Owned: the summary block (`ownership-checker.md` §28.4), copied out
     /// of `bytes`; empty when the entry has none.
     ownership: []u8 = &.{},
+    /// Owned: the type-key artifact (checker-v2.md §36), with its named nodes
+    /// still `type_refs` indices until `type_keys_bytes.resolve`.
+    type_keys: type_keys_bytes.Loaded = .empty,
 
     pub const empty: Loaded = .{
         .bytes = &.{},
@@ -81,6 +85,7 @@ pub const Loaded = struct {
         l.plan.deinit(gpa);
         gpa.free(@constCast(l.diagnostics));
         gpa.free(l.ownership);
+        l.type_keys.deinit(gpa);
         l.* = empty;
     }
 };
@@ -209,6 +214,19 @@ fn decode(
         },
     };
     out.ownership = try gpa.dupe(u8, entry.ownership);
+    // An empty section is a module whose keys are all wild.
+    if (entry.type_keys.len != 0) {
+        out.type_keys = (switch (interning) {
+            .grow => |pool| type_keys_bytes.readGrowing(gpa, entry.type_keys, pool),
+            .find => |pool| type_keys_bytes.read(gpa, entry.type_keys, pool),
+        }) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.BadSection, error.UnknownSymbol => {
+                out.deinit(gpa);
+                return null;
+            },
+        };
+    }
     if (!matchesShell(&out.record, shell)) {
         out.deinit(gpa);
         return null;

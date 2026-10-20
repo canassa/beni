@@ -1,0 +1,31 @@
+-- typekeys (core): `Js.Value` is the host's, so a type that holds one is
+-- wild (checker-v2.md §36): `make`'s record literal. A type that crosses a
+-- `Js.from` or `Js.to` joins the wild set (D2): `Model` through `out` and
+-- `back`, and its `Int` field. A closed lambda keys its own type and its
+-- result's.
+import Js
+
+
+type alias Cell =
+    node : Js.Value
+    count : Int
+
+
+type alias Model =
+    count : Int
+
+
+make : Js.Value → Cell
+make n = { node = n, count = 0 }
+
+
+out : Model → Js.Value
+out m = Js.from m
+
+
+back : Js.Value → Model
+back v = Js.to v
+
+
+bump : Model → Model
+bump = λm → { count = m.count + 1 }

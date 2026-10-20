@@ -1,0 +1,8 @@
+module Polymorphic
+  decl twice
+    local x wild
+  decl ones
+    local both wild
+    local y wild
+  inst 3 tuple wild
+  inst 11 tuple wild

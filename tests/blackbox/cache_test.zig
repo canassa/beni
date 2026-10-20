@@ -5315,3 +5315,98 @@ test "a dependency type edit redecides a cached nullary dot as a field and back"
     try expectSameTree(&w, arena, "cold", "restored");
     try w.expectProgram("restored/_main.mjs", .{ .stdout = "2\n" });
 }
+
+test "a module installed from the cache has the type keys a fresh check gives it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The type keys (checker-v2.md §36) ride in the dispatch sidecar, so a
+    // hit installs them instead of making them. `dump` reads no cache, so the
+    // hidden `check --type-keys` prints them. `Shapes` declares the types;
+    // `Use` keys them across the import, a record literal, an update, a
+    // constructor application, a tuple, a list and a lambda.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Shapes.beni",
+        \\pub type alias Point =
+        \\    x : Int
+        \\    y : String
+        \\
+        \\
+        \\pub type Shape
+        \\    = Dot Point
+        \\    | Line Point Point
+        \\
+    );
+    const use_source =
+        \\import Shapes exposing (Point, Shape, Dot, Line)
+        \\
+        \\
+        \\pub origin : Point
+        \\origin = { x = 0, y = "" }
+        \\
+        \\
+        \\pub moved : Point → Shape
+        \\moved p = Line p { p | x = p.x + 1 }
+        \\
+        \\
+        \\pub both : Point → List (Point × Shape)
+        \\both p = [ ( p, Dot p ) ]
+        \\
+        \\
+        \\pub shift : Point → Point
+        \\shift = λp → { p | y = "" }
+        \\
+    ;
+    try w.write("src/Use.beni", use_source);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const oracle = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "--type-keys", "src" }, "oracle.json");
+    const warm = try coldThenWarm(
+        &w,
+        arena,
+        &.{ "check", "--jobs=1", "--cache-dir=cache", "--type-keys", "src" },
+        &.{ "check", "--jobs=1", "--cache-dir=cache", "--type-keys", "src" },
+    );
+    // A comment in `Use`: it is checked again, against `Shapes` installed
+    // from the cache.
+    try w.write("src/Use.beni", "-- edited\n" ++ use_source);
+    const edited = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "--type-keys", "src" }, "edited.json");
+    const edited_oracle = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "--type-keys", "src" }, "edited-oracle.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+    try testing.expectEqualStrings(oracle.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(edited_oracle.result.stdout, edited.result.stdout);
+    // A module whose path sorts first names `Point`'s fields the other way
+    // round, so this session interns `y` before `x`: a key numbered or
+    // ordered by a symbol's id would print differently from the entry
+    // `Use` is installed from, and from a fresh check.
+    try w.write("src/Aaa.beni", "pub swap : { y : String, x : Int } → Int\nswap r = r.x\n");
+    const reordered = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--cache-dir=cache", "--type-keys", "src" }, "reordered.json");
+    const reordered_oracle = try runCounted(&w, arena, &.{ "check", "--jobs=1", "--no-cache", "--type-keys", "src" }, "reordered-oracle.json");
+    try testing.expectEqualStrings(reordered_oracle.result.stdout, reordered.result.stdout);
+    const use_block = std.mem.indexOf(u8, reordered.result.stdout, "module Use\n").?;
+    try testing.expectEqualStrings(edited.result.stdout[std.mem.indexOf(u8, edited.result.stdout, "module Use\n").?..], reordered.result.stdout[use_block..]);
+    // The keys are there to compare: `Use` keys `Point` through the import.
+    try testing.expect(std.mem.indexOf(u8, oracle.result.stdout, "module Use\n  key #0 ") != null);
+    try testing.expect(std.mem.indexOf(u8, oracle.result.stdout, "Shapes.Shape") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The warm run made no key: both modules were installed.
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try testing.expectEqual(@as(u64, 2), warm.counters.hits);
+    // The edited run checked `Use` alone.
+    try testing.expectEqual(@as(u64, 1), edited.counters.checked);
+    // The reordered run checked `Aaa` alone: `Use` came from the cache.
+    try testing.expectEqual(@as(u64, 1), reordered.counters.checked);
+}

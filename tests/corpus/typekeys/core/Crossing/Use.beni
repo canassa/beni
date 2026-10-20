@@ -1,0 +1,53 @@
+-- typekeys (core): what a module instantiates a crossing quantifier at joins
+-- the wild set, with its parts (checker-v2.md §36): `Sent` through an
+-- imported `toValue`, `Relayed` through `relay`, whose bit is `Wrap`'s own
+-- fixpoint, and `Kept` through `keep`'s `a` — but not `Other`, at `keep`'s
+-- `b`. `viaLet`'s `let` function crosses through `toValue` and makes `Local`
+-- wild where it is applied. The subject of a `?` is in the wild set too:
+-- `Result String Int`.
+import Js
+import Wrap
+
+
+type alias Sent =
+    sent : Int
+
+
+type alias Relayed =
+    relayed : Int
+
+
+type alias Kept =
+    kept : Int
+
+
+type alias Other =
+    other : Int
+
+
+type alias Local =
+    local : Int
+
+
+send : Sent → Js.Value
+send m = Wrap.toValue m
+
+
+forward : Relayed → Js.Value
+forward m = Wrap.relay m
+
+
+both : Kept, Other → Js.Value
+both k o = Wrap.keep k o
+
+
+viaLet : Local → Js.Value
+viaLet m =
+    go x = Wrap.toValue x
+    go m
+
+
+bump : Result String Int → Result String Int
+bump r =
+    n = r?
+    Ok (n + 1)
