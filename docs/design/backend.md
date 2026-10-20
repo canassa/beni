@@ -8297,6 +8297,22 @@ with byte-identical output, and `specialise` is then the structural passes (`pus
 helpers, or binding a non-atom argument to a local so the inliner may inline, are the owner's
 decisions (#464).
 
+**As built 2026-10-20 — the set table inside `Pts`** (issue #496, part of #464). The site sets of
+*Cells* are now what `Pts` stores: `Pts.Sets` holds every set a var takes and every union and
+difference `Pts` makes, once, content-addressed, with ids in solve order that no fact reads. A
+var's `sites` is an entry's own storage and a `Val`'s stays a slice, so every reader outside
+`Pts` is unchanged and a value read before a join keeps the set it was read as. `joinNow`'s batch
+is an entry, and each operation on two ids is made once (`Sets.ops`), so a var that holds what
+another held and takes the same batch takes the same grown set with no work; a filter of a set by
+a declared key, below, is one more such operation. Measured, ReleaseFast, `--release --no-cache
+--jobs=1`, dagon, every output byte-identical: `spec_pts_set_words` on the dashboard N=16
+1 764 840 → 89 023, N=64 175.6M → 1.50M, N=64 without `withDefault` 57.7M → 1.25M; peak RSS at
+N=64 1.13 GB → 0.96 GB and without `withDefault` 386 MB → 317 MB; time at N=64 about −10% and
+otherwise within noise. The words are no longer the cost: what is left of fact 3's time is the
+copy edges' worklist, one pending join per var per batch. `emit/release/inline/SpreadArms`
+(29 children of six messages) costs 4 537M instructions before and 3 843M after, `SpreadWide`
+2 038M → 1 928M.
+
 #### Declared-type filtering of fact 3
 
 *Specified 2026-10-20 (issue #488, part of #464; the owner's decisions D1 and D2 in its safe form,
