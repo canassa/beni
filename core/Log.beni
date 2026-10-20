@@ -279,9 +279,10 @@ methodOf level =
             "error"
 
 
--- The annotations as one object of strings, in their order. Made by
--- `Object.fromEntries`, which defines each key as its own property, so a
--- key such as `__proto__` is a key like any other.
+-- The annotations as one object of strings. Made by `Object.fromEntries`,
+-- which defines each key as its own property, so a key such as `__proto__`
+-- is a key like any other. The keys keep their order, but for an integer
+-- index such as `"1"`, which a JavaScript object puts first.
 annotationObject : List (String × String) → Js.Value
 annotationObject annotations =
     pairs = Js.array []
