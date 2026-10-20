@@ -5,7 +5,8 @@
 -- white space, `"` or `=` in it is quoted as `JSON.stringify` quotes it,
 -- and any other — the empty one too — is written as it is; in a key or a
 -- label each of those is `_`. A time outside a `Date`'s range is the
--- nearest end of it, never a throw.
+-- nearest end of it, and one that is not a number is `NaN`: never a
+-- throw.
 import Log exposing (Entry, Level, Trace, Debug, Info, Warn, Error)
 import Node exposing (Program)
 
@@ -18,6 +19,7 @@ main : Program
 main =
     late = entry Info "late"
     early = entry Info "early"
+    nan = entry Info "not a number"
     Node.printLines
         [ Log.logfmt (entry Trace "plain")
         , Log.logfmt (entry Debug "two words")
@@ -33,4 +35,5 @@ main =
             }
         , Log.logfmt { late | time = 9000000000000000 }
         , Log.logfmt { early | time = -9000000000000000 }
+        , Log.logfmt { nan | time = round (0 / 0) }
         ]

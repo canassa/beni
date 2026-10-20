@@ -2972,7 +2972,7 @@ taken from the Effect source that the section cites. None of them is a new choic
   what the JavaScript object of Effect's `annotateLogs` does (`Effect.ts:14001`).
 - **A time outside the range of a JavaScript `Date`**, ±8.64 × 10¹⁵ ms, is written as the nearest
   end of that range. `toISOString` throws for such a time, and a virtual clock can read any `Int`
-  (§17.1 item 4).
+  (§17.1 item 4). A time that is not a number, which `round (0 / 0)` can make, is written `NaN`.
 - **`browser-tea` does not name `Log` in its `"reexports"`.** A program sees every core module
   without a re-export, so the entry has no effect.
 

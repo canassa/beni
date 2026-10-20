@@ -223,12 +223,16 @@ levelName level =
 
 
 -- The time in ISO 8601, in UTC: `Date`'s `toISOString`, which throws for
--- a time outside a `Date`'s range, so such a time is first moved to the
--- nearest end of it.
+-- a time outside a `Date`'s range. Such a time is first moved to the
+-- nearest end of it, and one that is not a number — `round (0 / 0)` is an
+-- `Int` — is written `NaN`.
 timestamp : Int → String
 timestamp ms =
-    inRange = Basics.clamp ms (-8640000000000000) 8640000000000000
-    Js.to (Js.call (Js.construct (Js.global "Date") [ Js.from inRange ]) "toISOString" [])
+    if Basics.isNaN (Basics.toFloat ms) then
+        "NaN"
+    else
+        inRange = Basics.clamp ms (-8640000000000000) 8640000000000000
+        Js.to (Js.call (Js.construct (Js.global "Date") [ Js.from inRange ]) "toISOString" [])
 
 
 -- An annotation as ` key=value`.
