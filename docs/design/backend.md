@@ -5120,23 +5120,22 @@ placement, declares a `schema`, or owns a codec plan — has NO row at all (§9,
 before it requires both rows, and the exact post-lowering net
 (`Lower.Result.uses_markup_runtime`) fails the maker with the module named, because the check
 cannot see a refusal the static scan cannot. No embedded module is refused today, and every row
-is non-empty. The 128 emit rows are 64 keys — 57 modules, plus seven extra chain instances,
+is non-empty. The 116 emit rows are 58 keys — 55 modules, plus three extra chain instances,
 since a platform module that declares a `foreign` value carries both the lowering of its own
 chain layer and the build's in its key, and the vocabulary module carries the chain's facts
 (`cache/Key.zig`): a module has one row per distinct answer of the chains it can be checked in.
-`Html` is keyed five times (its own chain, `dom`, `direct`, `inline` and `ssr`, with `browser`
-and `browser-tea`'s `dom` one) and `Dom`, `Hosted` and `Browser.Events` twice (`dom` and
-`direct`). Equal bytes are stored once: the 64 keys hold 53 payloads totalling 2 486 126 bytes,
-because a key's two option rows, a module's extra chain instance and the five modules with no
-unit at all (`Js`, `Record`, `Url/Parser/Internal`, `Ssr` and `browser-inline`'s `Tea`) share
-their bytes.
+`Html` is keyed four times (its own chain, `dom`, `inline` and `ssr`, with `browser` and
+`browser-tea`'s `dom` one). Equal bytes are stored once: the 58 keys hold 51 payloads totalling
+2 081 276 bytes, because a key's two option rows, a module's extra chain instance and the five
+modules with no unit at all (`Js`, `Record`, `Url/Parser/Internal`, node's `Ssr` and
+`browser-inline`'s `Tea`) share their bytes.
 
 No build reads a row, so nothing the gates see moved: a master-against-branch `diff -r` of the
 three evidence trees is empty — 16, 43 and 62 files byte for byte, source maps included — the
 `emit/` goldens are what they were, no program ran under Node for want of a run hash, and the
-determinism test passes. `zig build gates` is green, 239/239 steps. What the
-rows cost is theirs to hold: the pack grows from 4 182 851 to 6 672 561 bytes (2 486 126 of
-payload in the 53 records, plus 3 584 of row table), and the maker's run is 1 s in every
+determinism test passes. `zig build gates` is green. What the
+rows cost is theirs to hold: the pack grows from 3 486 231 to 5 570 755 bytes (2 081 276 of
+payload in the 51 records, plus 3 248 of row table), and the maker's run is 1 s in every
 compiler build beside the 9 s its one compile adds. The playground's wasm embeds the same pack,
 so it grows too: the reviewer's two-pack proxy is brotli q11 883 409 → 1 260 000 B
 (+376 591 B). Of the medians of `perf stat -e instructions:u`, five runs
