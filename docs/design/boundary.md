@@ -5830,7 +5830,8 @@ renumbered.
    In either answer, programs share the handle operations and their logic as plain functions,
    not the code that reads: its types differ by platform.
 2. **`buffered` and `drain` are not shared.** Cloudflare's `WebSocket` has no `bufferedAmount` and
-   no back-pressure signal (workerd `web-socket.c++:900-903`), and an answer of 0 there is a
+   no back-pressure signal (workerd `v1.20260518.1`: `src/workerd/api/web-socket.h:360-393`, and
+   `send` queues into an unbounded table, `web-socket.c++:617-618`), and an answer of 0 there is a
    wrong answer. On `browser` and `node`, `buffered` is a back-pressure signal, not one unit: the
    page answers the host's `bufferedAmount`, the UTF-8 bytes of the text of messages not yet sent,
    with no frame headers, a count that changes only between tasks — and answers 0 itself once the
@@ -5845,7 +5846,8 @@ renumbered.
    standard). The `node` server: 1000–1003, 1007–1009, 1011–1014 and 3000–4999; 1010 is a
    client's code (RFC 6455 §7.4.1), so the server's set has no 1010. Workers: the same set as the
    `node` server, as §9.12 (g) (PR #533) says, less any code the host refuses; the host itself
-   takes 1000–4999 less 1004, 1005, 1006 and 1015 (workerd `web-socket.c++:919-926`), so it
+   takes 1000–4999 less 1004, 1005, 1006 and 1015 (workerd `v1.20260518.1`,
+   `src/workerd/api/web-socket.c++:642-643`), so it
    refuses none of the set. A shared module that needs one answer on every side sends 1000 or a
    code from 3000 to 4999.
 
