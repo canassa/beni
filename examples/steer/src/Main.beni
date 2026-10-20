@@ -1,0 +1,116 @@
+-- A dot steered toward the pointer (docs/design/boundary.md §9.8.20 (g)):
+-- the mouse and the touch screen through the one set of pointer events.
+-- `tests/corpus/browser/tea/PointerSteer` drives this program. A mouse aims
+-- the dot wherever it moves, with no button held, and leaving the arena
+-- keeps the last aim. A finger aims it while it touches: its down and its
+-- moves aim, and its up or a cancel — the browser taking the touch — stops
+-- the dot where it is. Each animation frame moves the dot toward its aim
+-- at 0.25 pixels a millisecond, never past it, and the page asks for
+-- frames only while the dot has somewhere to go. The arena fills the
+-- window, and its `touch-action: none` keeps the browser from scrolling or
+-- zooming under the finger.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Aim Float Float
+    | Release String
+    | Tick Float
+
+
+type alias Model =
+    x : Float
+    y : Float
+    aim : Maybe (Float × Float)
+
+
+speed : Float
+speed = 0.25
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Aim x y →
+            ( { model | aim = Just ( x, y ) }, Cmd.none )
+
+        Release kind →
+            if kind == "touch" then
+                ( { model | aim = Nothing }, Cmd.none )
+            else
+                ( model, Cmd.none )
+
+        Tick ms →
+            case model.aim of
+                Just ( ax, ay ) →
+                    ( step model ax ay (speed * ms), Cmd.none )
+
+                Nothing →
+                    ( model, Cmd.none )
+
+
+-- The dot moved `reach` pixels toward the aim, or onto it when it is
+-- nearer than that; on it, the dot has nowhere to go.
+step : Model, Float, Float, Float → Model
+step model ax ay reach =
+    dx = ax - model.x
+    dy = ay - model.y
+    far = sqrt (dx * dx + dy * dy)
+    if far ≤ reach then
+        { model | x = ax, y = ay, aim = Nothing }
+    else
+        { model | x = model.x + dx * reach / far, y = model.y + dy * reach / far }
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    case model.aim of
+        Just _ →
+            Browser.Events.onAnimationFrameDelta Tick
+
+        Nothing →
+            Sub.none
+
+
+aim : Html.Pointer → Msg
+aim p = Aim (Html.localX p) (Html.localY p)
+
+
+px : Float → String
+px v = "${String.fromInt (round v)}px"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div
+            id="arena"
+            style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none"
+            onPointerDown={aim}
+            onPointerMove={aim}
+            onPointerUp={λp → Release (Html.pointerType p)}
+            onPointerCancel={λp → Release (Html.pointerType p)}
+        >
+            <div
+                id="dot"
+                style={"position: absolute; left: ${px (model.x - 10)}; top: ${px (model.y - 10)}; width: 20px; height: 20px; border-radius: 10px; background: #c33"}
+            />
+            <p id="at" style="margin: 12px; color: #557">
+                {"Move the mouse, or touch and drag. The dot is at ${String.fromInt (round model.x)}, ${String.fromInt (round model.y)}."}
+            </p>
+        </div>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { x = 150, y = 100, aim = Nothing }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

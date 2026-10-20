@@ -32,6 +32,7 @@ import { fileURLToPath } from "node:url";
 const programs = [
   { name: "sternhalma" },
   { name: "bike-wars" },
+  { name: "steer" },
   // Conduit routes by path and calls the RealWorld API. Its `Deploy` module
   // says where both are: by default the root of the page's own origin, as
   // the corpus serves it. The copy here gets a module with this site's path
