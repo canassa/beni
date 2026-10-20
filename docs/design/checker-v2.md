@@ -5444,6 +5444,13 @@ and value names, as `js/JsIntrinsic.zig` is, never on a spelling a user can writ
 variable the copy was unified into and the declaration being solved. P6 walks each one once every
 type is final, beside the `appends` (§13.1), so no order of solving can change a row.
 
+*Amended 2026-10-20:* a `let` generalises an unconstrained cast before the body reads the value, so
+the variable noted above can still be a type variable when the record appears. `Instantiate.copy`
+records each later copy of a type variable reachable from that variable, made while the cast's
+declaration is being solved, and the walk reads those copies too. A copy made while a different
+declaration is solved is not recorded. The type variable stays opaque there (`boundary.md` §4).
+That case is [issue 503](https://github.com/canassa/beni/issues/503).
+
 **Order and determinism.** Rows are sorted by `decl`, then `kind`, then the field's TEXT or the
 type's `(package, module, name)`, and deduplicated: a `Symbol` id and a `TypeId` depend on
 `--jobs` (`InternPool`'s header), so neither orders anything (§17).

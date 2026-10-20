@@ -1,0 +1,14 @@
+-- An inferred record that crosses `Js.to`, and one that crosses `Js.from`
+-- through a `let`, keep their field names under `--release` (boundary.md §4).
+-- Both builds print the same lines.
+import Node
+import Probe
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Probe.missed ⊤
+        , Probe.buried ⊤
+        , Probe.throughFrom ⊤
+        ]

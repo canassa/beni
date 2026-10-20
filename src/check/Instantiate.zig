@@ -85,12 +85,43 @@ term_memo: Schemes.TermMemo = .{},
 record_owner: ?u32 = null,
 /// The quantifiers the last imported value read made, for its effect block.
 quantified: std.ArrayList(Var) = .empty,
+/// One entry per `Js.from` or `Js.to`, parallel to `Solve.casts`
+/// (checker-v2.md §28). `root` is the variable the cast was unified into.
+/// `vars` are later copies of type variables reachable from it, made while
+/// `decl` was solved. The boundary walk reads `vars` only.
+cast_copies: std.ArrayList(CastCopies) = .empty,
+/// `cast_copies` indexes whose `decl` is `active_decl`. Rebuilt when the
+/// declaration being solved changes, and extended when that declaration
+/// records another cast.
+active_decl: ?u32 = null,
+active_casts: std.ArrayList(u32) = .empty,
+
+pub const CastCopies = struct {
+    decl: u32,
+    root: Var.Optional = .none,
+    vars: std.ArrayList(Var) = .empty,
+};
 
 pub fn deinit(in: *Instantiate) void {
     in.copied.deinit(in.cx.gpa);
     in.made.deinit(in.cx.gpa);
     in.term_memo.deinit(in.cx.gpa);
     in.quantified.deinit(in.cx.gpa);
+    for (in.cast_copies.items) |*c| c.vars.deinit(in.cx.gpa);
+    in.cast_copies.deinit(in.cx.gpa);
+    in.active_casts.deinit(in.cx.gpa);
+}
+
+/// A slot for the cast just appended to `Solve.casts`. `root` is null when
+/// the copy is not a one-parameter `from` or a `to`.
+pub fn noteCastRoot(in: *Instantiate, decl: u32, root: ?Var) Error!void {
+    try in.cast_copies.append(in.cx.gpa, .{
+        .decl = decl,
+        .root = if (root) |v| v.toOptional() else .none,
+    });
+    if (in.active_decl == decl) {
+        try in.active_casts.append(in.cx.gpa, @intCast(in.cast_copies.items.len - 1));
+    }
 }
 
 /// `copy`, telling effect inference what the copy is a copy of: a
@@ -122,6 +153,78 @@ pub fn adoptSince(in: *Instantiate, mark: u32) Error!void {
 // ---------------------------------------------------------------------------
 // Copy
 // ---------------------------------------------------------------------------
+
+fn copyHasVar(in: *const Instantiate, start: usize) bool {
+    const store = in.cx.store;
+    for (in.copied.items[start..]) |src| {
+        switch (store.content(store.find(src))) {
+            .flex, .rigid => return true,
+            else => {},
+        }
+    }
+    return false;
+}
+
+fn castsForDecl(in: *Instantiate, decl: u32) Error!void {
+    if (in.active_decl == decl) return;
+    in.active_decl = decl;
+    in.active_casts.clearRetainingCapacity();
+    for (in.cast_copies.items, 0..) |c, i| {
+        if (c.decl == decl) try in.active_casts.append(in.cx.gpa, @intCast(i));
+    }
+}
+
+/// A `let` generalises an unconstrained `Js.to` or `Js.from` before the body
+/// reads the value, so the record shows up on a copy rather than on the
+/// variable the cast was unified into. Record that copy when this
+/// instantiation belongs to the cast's declaration.
+fn noteCastImages(in: *Instantiate, start: usize) Error!void {
+    const decl = in.decl orelse return;
+    if (in.cast_copies.items.len == 0 or !in.copyHasVar(start)) return;
+    try in.castsForDecl(decl);
+    const n = in.active_casts.items.len;
+    var i: usize = 0;
+    while (i < n) : (i += 1) try in.noteOneCast(in.active_casts.items[i], start);
+}
+
+fn noteOneCast(in: *Instantiate, index: u32, start: usize) Error!void {
+    const store = in.cx.store;
+    const gpa = in.cx.gpa;
+    const mark = store.nextMark();
+    // Pass 1 has emptied this stack, and the walk below does not call `copy`.
+    const stack = &in.stacks.vars;
+    stack.clearRetainingCapacity();
+    const copies = &in.cast_copies.items[index];
+    if (copies.root.unwrap()) |v| try stack.append(gpa, store.find(v));
+    for (copies.vars.items) |v| try stack.append(gpa, store.find(v));
+    while (stack.pop()) |next| {
+        const node = store.find(next);
+        if (store.mark(node) == mark) continue;
+        store.setMark(node, mark);
+        switch (store.content(node)) {
+            .flex, .rigid => {},
+            .err => continue,
+            else => {
+                var n: u32 = 0;
+                while (Walk.child(store, node, n, .payload)) |ch| : (n += 1) try stack.append(gpa, ch);
+                continue;
+            },
+        }
+    }
+    var fresh: std.ArrayList(Var) = .empty;
+    defer fresh.deinit(gpa);
+    for (in.copied.items[start..]) |src| {
+        const node = store.find(src);
+        if (store.mark(node) != mark) continue;
+        switch (store.content(node)) {
+            .flex, .rigid => {},
+            else => continue,
+        }
+        const img = store.copy(node).unwrap() orelse continue;
+        try fresh.append(gpa, img);
+    }
+    if (fresh.items.len != 0) try in.cast_copies.items[index].vars.appendSlice(gpa, fresh.items);
+}
 
 /// A fresh instance of `v` in the current frame: every generalised node is
 /// copied once, every other node is shared.
@@ -166,6 +269,8 @@ pub fn copy(in: *Instantiate, v: Var) Error!Var {
         in.record_owner = null;
         if (in.cx.effects) |e| try e.recordCopy(owner, root, in.copied.items[start..], @backingInt(in.origin));
     }
+    // While the memo still maps a generalised variable to its copy.
+    try in.noteCastImages(start);
     const result = store.copy(root).unwrap().?;
     for (in.copied.items[start..]) |r| store.setCopy(r, .none);
     in.copied.shrinkRetainingCapacity(start);

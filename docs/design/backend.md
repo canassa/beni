@@ -6007,8 +6007,12 @@ value only through the two doors the wall has (`boundary.md` §4):
    Box`) and reads one beni built. The backend reads the annotation from the declaration's `Bir`,
    as it already reads a record alias's body.
 2. **A use of `Js.from` or `Js.to` in a live declaration** — every field of the type the use was
-   INSTANTIATED at, by the same walk. `Js.from { p = parent, m = marker }` pins `p` and `m`;
-   `Js.to (Js.get m "n") : { h : Value }` pins `h`. Only the checker knows that type, and this is
+   INSTANTIATED at, by the same walk, including a copy the same declaration makes after a `let`
+   generalises the cast (`checker-v2.md` §28). A copy made while another declaration is solved is
+   not included ([issue 503](https://github.com/canassa/beni/issues/503)).
+   `Js.from { p = parent, m = marker }` pins `p` and `m`;
+   `Js.to (Js.get m "n") : { h : Value }` pins `h`, and so does `row = Js.to v` followed by `row.h`
+   with no annotation on `row`. Only the checker knows that type, and this is
    what `checker-v2.md` §28's artifact carries, per declaration, so elimination decides which rows
    count.
 
