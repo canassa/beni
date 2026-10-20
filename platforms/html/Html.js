@@ -10,7 +10,9 @@ export const targetChecked = (e) => e.target.checked;
 
 // A pointer event and its position in the border box of the element whose
 // own listener runs: read now, while the event is dispatched, since
-// `currentTarget` is null after it (boundary.md §9.8.20).
+// `currentTarget` is null after it (boundary.md §9.8.20). The key is `ev`,
+// not `e`: the release minifier keeps the spelling of a name that is ever a
+// key in this file, so a key `e` would keep every parameter `e` long.
 export const pointer = (v) => {
   const r = v.currentTarget.getBoundingClientRect();
   return { ev: v, x: v.clientX - r.left, y: v.clientY - r.top };
