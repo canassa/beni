@@ -273,7 +273,7 @@ holds the compiler's skills, not the language's.
    dump --stage=interface` over each package at master `4586e4fb0`, counted by the review of #523: 681 lines, 31 KB, for core and 837
    lines, 36 KB, for the five platforms): facts the compiler prints. Prose about when to use
    them is not. The generator rewrites the dump into beni's notation (`frontend.md` §12.1), so
-   the file holds nothing a program cannot write. Generated files are committed, so a reader on
+   every signature in the file is in beni's notation. Generated files are committed, so a reader on
    GitHub and a `gh skill install` see the same tree the build installs.
 
 ## 7. What this note did not settle
