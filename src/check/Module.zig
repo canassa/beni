@@ -413,6 +413,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .local_type = local_type,
         .inst_type = inst_type,
         .decl_scheme = decl_scheme,
+        .decl_display = decl_display,
         .casts = solver.casts.items,
         .uses = solver.instantiate.crossing.items,
         .dispatch = in.dispatch,
