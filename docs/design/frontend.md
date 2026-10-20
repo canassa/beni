@@ -1255,6 +1255,7 @@ defaults, so that inside a project `beni build` and `beni serve` need no argumen
 | `"build"."out"` | what `--out` would say | `out` |
 | `"build"."base"` | the URL path `--out` is served under: what the page shell writes before the entry file (`{{entry}}`) and for `{{base}}`, and what `serve` takes off a request's path (*amended 2026-10-01*). It ends in `/` and holds no quote, `<`, `>` or whitespace, or it is `beni: beni.json's "build" "base" must be a URL path ending in '/', not '<value>'`, exit 2. It has no flag | `/` |
 | `"html"` | the page shell, a file relative to the manifest's directory, in the platform's place (`backend.md` §2, *The page shell*) | the platform chain's |
+| `"exports"` | the entry file's named exports, a list of ECMAScript identifiers, each the answer of `run(main)`'s `exports(name)` (*added 2026-10-20*, `boundary.md` §5.2 and §9.12 (c)); read only when the platform chain declares `"exports": "program"`, and a name that is not an identifier, is `default` or is listed twice is `invalid_entry_export`, exit 1 | none |
 
 **The command line wins, field by field**: a `--platform`, a positional path or an `--out` replaces
 the manifest's value and nothing else. A manifest with no `"build"` — every manifest before this
