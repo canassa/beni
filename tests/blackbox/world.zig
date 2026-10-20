@@ -143,6 +143,33 @@ pub const RunOptions = struct {
     exe: ?[]const u8 = null,
 };
 
+/// Run `body` held to a budget of its own, `millions` million instructions,
+/// instead of the gates' budget: what it spends, its children included, is
+/// counted on a meter of its own and left out of the test's sum, as the
+/// corpus walker does for a case with a `.budget` file
+/// (`tests/corpus/README.md`, *Budgets*). Only for a grant the owner made
+/// (CLAUDE.md, *Every test has a budget*): the constant that holds
+/// `millions` says who decided it, when, why, and when it goes. `what`
+/// names the grant in the failure message.
+pub fn withOwnBudget(comptime what: []const u8, millions: u64, comptime body: fn () anyerror!void) !void {
+    const meter = timing.CaseMeter.open();
+    defer meter.close();
+    const start = meter.read();
+    // Counted on the way out of a failed body too, so that the test's own
+    // sum is right whichever way it ends.
+    errdefer _ = timing.cases_spent.fetchAdd(meter.read() -% start, .monotonic);
+    try body();
+    const spent = meter.read() -% start;
+    _ = timing.cases_spent.fetchAdd(spent, .monotonic);
+    const limit = timing.caseLimit(millions);
+    if (timing.budget_unit != .none and spent > limit) {
+        std.debug.print("FAIL: {d} {s}, over {s}'s own budget of {d}\n", .{
+            timing.describe(spent).value, timing.describe(spent).unit, what, timing.describe(limit).value,
+        });
+        return error.OverBudget;
+    }
+}
+
 /// The compiler `build.zig` builds with a variant core (`BENI_VARIANT_EXE`,
 /// absolute), set only on the runs that ask for it; null elsewhere.
 pub fn variantExePath(arena: Allocator) ?[]const u8 {

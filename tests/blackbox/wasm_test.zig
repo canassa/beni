@@ -56,27 +56,10 @@ fn wasmCompiler(w: *World) ![]const u8 {
 /// the shipped `.wasm` on the whole corpus.
 const wasm_budget_millions = 6_000;
 
-/// Run `body` held to `wasm_budget_millions` instead of the gates' budget:
-/// what it spends, its children included, is counted on a meter of its own
-/// and left out of the test's sum, as the corpus walker does for a case
-/// with a `.budget` file (`tests/corpus/README.md`, *Budgets*).
+/// Run `body` held to `wasm_budget_millions` instead of the gates' budget
+/// (`world.withOwnBudget`).
 fn withWasmBudget(comptime body: fn () anyerror!void) !void {
-    const meter = world.timing.CaseMeter.open();
-    defer meter.close();
-    const start = meter.read();
-    // Counted on the way out of a failed body too, so that the test's own
-    // sum is right whichever way it ends.
-    errdefer _ = world.timing.cases_spent.fetchAdd(meter.read() -% start, .monotonic);
-    try body();
-    const spent = meter.read() -% start;
-    _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
-    const limit = world.timing.caseLimit(wasm_budget_millions);
-    if (world.timing.budget_unit != .none and spent > limit) {
-        std.debug.print("FAIL: {d} {s}, over the .wasm tests' own budget of {d}\n", .{
-            world.timing.describe(spent).value, world.timing.describe(spent).unit, world.timing.describe(limit).value,
-        });
-        return error.OverBudget;
-    }
+    try world.withOwnBudget("the .wasm tests", wasm_budget_millions, body);
 }
 
 /// A project of four clean modules in `app/`, over three directories, so the
