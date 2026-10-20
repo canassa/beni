@@ -5679,7 +5679,7 @@ are the first bytes of the connection.
 
 **(f) The server: a session, and the protocol rules.** A session is `session socket`, in the
 fiber of the upgrade. The common surface works on `socket` as (a) says; the codes that the
-server may send with `close` are 1000 to 1003, 1007 to 1014 and 3000 to 4999 (RFC 6455 §7.4 and
+server may send with `close` are 1000 to 1003, 1007 to 1014 *(amended: no 1010, item 3 below)* and 3000 to 4999 (RFC 6455 §7.4 and
 the IANA registry), and `close` with any other code is `Err (InvalidCode code)`. The platform
 reads and writes RFC 6455 frames itself in `WebSocket.js`, a sibling of `node`'s `WebSocket`
 module, with `node:crypto` for the handshake and no package:
@@ -5729,10 +5729,11 @@ wait for its send buffer. A sender that can go faster than its peer reads sees i
 tick sends the newer state. The server has one more operation, which the page cannot have:
 
 ```elm
-pub drain : Socket → ⊤      -- node only: suspends until `buffered socket` is 0, or the connection has ended
+pub drain : Socket → ⊤      -- node only: suspends until the writes so far are flushed, or the end (amendment item 14)
 ```
 
-`drain` waits for Node's `drain` event of the socket. A sender of many messages writes and then
+`drain` waits for Node's `drain` event of the socket *(withdrawn: item 14 of the amendment
+below)*. A sender of many messages writes and then
 drains. The other direction is the platform's: when the messages that the server received and
 `read` did not take hold more than 64 KiB, the platform stops reading the TCP connection, and it
 reads again when `read` takes them. A slow session therefore slows its client through TCP, and
@@ -5806,7 +5807,8 @@ reported with its number.
   `write`, Effect's and the WHATWG `WebSocketStream`'s), so the names that a shared module uses
   are the same on both sides. *The other choice*: the direct forms take the host's names
   (`send`, `receive`), and the command takes a new name.
-- **`ws-q2`, the server's upgrade of (e).** *Recommended*: a second handler in `listenWith`,
+- **`ws-q2`, the server's upgrade of (e)** *(replaced by `ws-q3`, the server's reading style, on
+  2026-10-20; item 1 of the amendment below)*. *Recommended*: a second handler in `listenWith`,
   which answers `accept session` or `refuse response`. `Request`, `Response` and `listen` do not
   change. *The other choice*: a request handler accepts the upgrade itself, which needs a field
   in `Request` that names the connection, and so changes the record that #331 settled.
@@ -5823,19 +5825,28 @@ renumbered.
    or opens a WebSocket. The *reading style* is the platform's: `browser` and `node` read with a
    pull `read`; a host that delivers events to handlers, such as a hibernating Durable Object
    (#526), cannot keep a fiber waiting in `read`, since its memory is reset between events. Which
-   reading style a *server* shares across `node` and Cloudflare is the owner's question that
+   reading style a server uses on `node` and on Cloudflare is the owner's question `ws-q3`, which
    replaces `ws-q2` and `cf-workers-q2`; until it is answered, (e)–(h) stay as written for `node`.
+   In either answer, programs share the handle operations and their logic as plain functions,
+   not the code that reads: its types differ by platform.
 2. **`buffered` and `drain` are not shared.** Cloudflare's `WebSocket` has no `bufferedAmount` and
-   no back-pressure signal (workerd `web-socket.c++:900-903`), and an answer of 0 there would be a
+   no back-pressure signal (workerd `web-socket.c++:900-903`), and an answer of 0 there is a
    wrong answer. On `browser` and `node`, `buffered` is a back-pressure signal, not one unit: the
    page counts the bytes of the text of messages not yet sent, with no frame headers, and the
-   count changes only between tasks; the server counts the bytes that its socket holds, frame
-   headers included. On both it is 0 once the connection has ended: nothing more is sent.
+   count changes only between tasks; the server counts the bytes in Node's queue for the socket,
+   frame headers included, and **not the kernel's send buffer**, which Linux lets grow to 4 MiB
+   first (`tcp_wmem`; measured: 3 927 040 bytes on loopback before Node queued one byte). So a
+   tick that skips a player whose `buffered` is over a limit skips only after that much backlog,
+   about two minutes of 1 KiB states at 30 a second. A game that needs a shorter bound uses its
+   own acknowledgements, or the input timeout of item 20. On both sides `buffered` is 0 once the
+   connection has ended: nothing more is sent.
 3. **The codes that `close` may send are the side's.** The page: 1000 and 3000–4999 (the WHATWG
    standard). The `node` server: 1000–1003, 1007–1009, 1011–1014 and 3000–4999; 1010 is a
-   client's code (RFC 6455 §7.4.1), so the server's set has no 1010. Workers: 1000–4999 less 1004,
-   1005, 1006 and 1015 (workerd `web-socket.c++:919-926`). A shared module that needs one answer on
-   every side sends 1000 or a code from 3000 to 4999.
+   client's code (RFC 6455 §7.4.1), so the server's set has no 1010. Workers: the same set as the
+   `node` server, as §9.12 (g) (PR #533) says, less any code the host refuses; the host itself
+   takes 1000–4999 less 1004, 1005, 1006 and 1015 (workerd `web-socket.c++:919-926`), so it
+   refuses none of the set. A shared module that needs one answer on every side sends 1000 or a
+   code from 3000 to 4999.
 
 **The page (H4, M1, M2, M7, L1, L2, L4, L5, L10, L12).**
 
@@ -5879,33 +5890,47 @@ renumbered.
 
 14. **`drain` does not wait for Node's `drain` event.** Node emits `drain` only after a `write()`
     that returned `false`, so a program that wrote less than the high-water mark and then calls
-    `drain` would wait forever. `drain` answers at once when the socket holds nothing to send, or
-    the connection has ended. Otherwise it waits for the callback of the last write, which Node
-    calls when that chunk is flushed (callbacks run in order), or for the socket's `close`. A
-    callback's error — `ECANCELED` for a write pending at `destroy()`, or `ERR_STREAM_DESTROYED` —
-    ends the wait as the connection's end does.
-15. **One client's network failure ends that connection, never the process.** A socket's `error`
-    with `ECONNRESET`, `EPIPE`, `ETIMEDOUT`, `EHOSTUNREACH`, `ENETUNREACH` (Linux reports them in
-    place of `ETIMEDOUT` when an ICMP error arrived, tcp(7)), `ECONNABORTED` or `ENETDOWN` ends it
-    with 1006. Any other code is a defect, as (i) says. `ENOTCONN` is not in the list: Node ignores
-    it at shutdown (`net.js:684`), so a socket never emits it.
+    `drain` waits forever. `drain` answers at once when the socket holds nothing to send, or the
+    connection has ended. Otherwise it waits for the callback of the last write, which Node calls
+    when that chunk is flushed (callbacks run in order), or for the socket's `close`. A callback
+    that gets an error — any code of item 15 (a peer's reset gives `ECONNRESET` to every pending
+    write), `ECANCELED` for a write pending at `destroy()`, or `ERR_STREAM_DESTROYED` — ends the
+    wait. The connection itself ends through the socket's `error` event, or its `close`.
+15. **One client's network failure ends that connection, never the process.** On an
+    established socket, Linux keeps the error of each ICMP message it gets (`tcp_v4_err`,
+    `tcp_ipv6.c`), and when the retransmissions time out the socket ends with that error, or with
+    `ETIMEDOUT` when there is none (`tcp_timer.c`). The errors come from two kernel tables:
+    `icmp_err_convert` (IPv4) and `icmpv6_err_convert` (IPv6, which adds `EACCES` for a firewall's
+    "administratively prohibited"). So a socket's `error` with any of these codes, by the names
+    that Node gives them, ends that connection with 1006: `ECONNRESET`, `EPIPE`, `ETIMEDOUT`,
+    `ENETUNREACH`, `EHOSTUNREACH`, `EHOSTDOWN`, `ENONET`, `ENOPROTOOPT`, `ECONNREFUSED`, `ENOTSUP`
+    (libuv's name for errno 95, which the kernel calls `EOPNOTSUPP`), `EPROTO`, `EACCES`,
+    `ECONNABORTED` and `ENETDOWN`. Any other code is a defect, as (i) says. `ENOTCONN` is not in
+    the list: Node ignores it at shutdown (`net.js:684`), so a socket never emits it.
 16. **The platform adds its `error` listener in the `upgrade` event itself**, before it checks the
     handshake or calls the program's handler. An upgraded socket arrives with none, so a reset
-    while the handler decides would otherwise be an uncaught exception.
+    while the handler decides is otherwise an uncaught exception.
 17. **A client that ends TCP with no close frame ends the session.** An upgraded socket is half
     open (`allowHalfOpen: true`): after the client's FIN only `end` fires, and the socket stays
     writable. The platform destroys it on `end` and ends the connection with 1006.
 18. **After a close frame is sent or received, reading goes on and data frames are dropped.** A
-    paused socket sees no close frame, FIN or RST, so every close would otherwise end at the
-    5-second limit with 1006. Messages that arrive after this side sent its close frame are
+    paused socket sees no close frame, FIN or RST: without this rule, every such close ends at
+    the 5-second limit with 1006. Messages that arrive after this side sent its close frame are
     dropped on both sides: the page's host drops them, and the server does the same.
 19. **The memory of a paused connection.** `socket.pause()` does not stop Node at once: it reads
     on until its own buffer holds 64 KiB. So a connection holds about `maxMessage` and 128 KiB,
     and the kernel's buffer, not `maxMessage` and 64 KiB as (h) says.
-20. **The server turns TCP keep-alive on** for each upgraded socket, with the interval and the
-    count that Node 24.19 can set, so an idle connection whose client vanished ends with 1006 in
-    about a minute, not after the retransmission timeout (tcp(7): up to 20 minutes). Pings that
-    the server sends are #536.
+20. **The server turns TCP keep-alive on** for each upgraded socket:
+    `setKeepAlive(true, 30000, 10000, 3)`, a first probe after 30 seconds idle, then one every 10
+    seconds, and the end after 3 unanswered (Node 24.19 sets all three). So an idle connection
+    whose client vanished ends with 1006 in about a minute. **This does not cover a server that
+    sends all the time**: Linux sends no keep-alive probe while data is in flight
+    (`tcp_keepalive_timer`, `tcp_timer.c`), so the snake arena, which writes 30 states a second
+    to each player, finds a vanished player only at the retransmission timeout (about 15 minutes
+    with Linux's default `tcp_retries2`), and then with a code of item 15. Such a server finds a
+    dead client through its own timeout: a live player sends inputs 5 times a second, so the
+    session reads with `Task.timeout` around `read` and closes the connection when no input came
+    for a few seconds. Pings that the server sends are #536.
 21. **`Origin` is the program's.** `accept` checks nothing. A server whose clients use cookies
     checks `Server.header request "origin"` and answers `refuse` to a stranger (RFC 6455 §10.2):
     without the check, any page can open a socket with the user's cookies. (e)'s example now does.
@@ -5914,16 +5939,19 @@ renumbered.
     `connection: upgrade` is an ordinary request. Node does not check the method, the version of
     HTTP or the `host` header, so the platform does (RFC 6455 §4.2.1): `GET`, HTTP/1.1 or later,
     a `host` header, `sec-websocket-version: 13` (else 426 with `sec-websocket-version: 13`), and a
-    `sec-websocket-key` that is the base64 of 16 bytes; any other fault is 400. `upgrade` is a
+    `sec-websocket-key` that is the base64 of 16 bytes: exactly 24 characters, 22 of the base64
+    alphabet, the last of them `A`, `Q`, `g` or `w`, then `==`. The test is on the text, since
+    `Buffer.from(…, "base64")` skips other characters and accepts bad padding; two keys arrive
+    joined with `", "` and fail it. Any other fault is 400. `upgrade` is a
     comma list matched without case: a request reaches the `upgrade` handler when one of its tokens
     is `websocket`.
 23. **`protocols request`** splits each `sec-websocket-protocol` value at its commas, trims each
     entry, and drops an empty entry or one that is not a token, in the client's order.
     `acceptWith`'s protocol must be one of them, so it is a token and cannot split the response.
-24. **`maxMessage` below 0 is 0**: only empty messages, the nearest meaning
-    (`transparent-effects-proposal.md` §17.1 item 4). A frame's length past 2³² is over every
-    `maxMessage`, so the codec tests the high 32 bits first and never depends on a double's
-    precision.
+24. **`maxMessage` below 0 is 0**, only empty messages, and **above 2³² − 1 is 2³² − 1**, the
+    nearest meanings (`transparent-effects-proposal.md` §17.1 item 4). So a frame's length past
+    2³² is over every `maxMessage`: the codec tests the high 32 bits first and never depends on a
+    double's precision.
 25. **A ping flood is bounded.** While more than 64 KiB wait to be sent, the server answers no
     ping at once: it keeps the latest ping's data and answers that one when its buffer drains, as
     RFC 6455 §5.5.3 allows.
@@ -5932,13 +5960,15 @@ renumbered.
     carries the socket, the `head` bytes and the functions each side gives the other, as
     `Browser.js` reaches the render loop (§9.8.7).
 27. **One state, one encoding.** A server frame is not masked, so one state sent to every player
-    is the same bytes. `write` keeps the last text it encoded with its frame, and a `write` of the
-    same text reuses the frame, so a broadcast encodes once.
+    is the same bytes. The platform keeps one cache for the whole process, not one per socket: the
+    last text that `write` framed, and its frame. A `write` of the same text to any socket reuses
+    the frame, so a broadcast encodes once.
 28. **Smaller points.** UTF-8 is checked per whole message, not per fragment. An upgraded socket
     has no timer (`server.timeout` is 0, and the parser's timeouts end with the upgrade), so the
     platform sets none. A client that leaves while `upgrade` runs does not stop that handler
     (#337); its answer is dropped. An upgrade accepted after `Server.close` stays 101 and then
-    1001, so its session runs as every other one does. The closing timer is `unref`'d.
+    1001, so its session runs as every other one does. The 5-second closing timer starts when this
+    side sends its close frame (the 1001 for `Server.close`), and it is `unref`'d.
 
 **The rest (L6, L8, L11, L13).**
 
