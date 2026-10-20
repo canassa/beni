@@ -13,7 +13,8 @@
 // testable form): `listen:<code>[,<code>…]` makes the next `listen`s emit
 // `error` with those codes in turn instead of binding; `request:<code>`
 // makes the next request emit `error` with that code on `req` before its
-// body ends; `server:<code>` makes the server emit `error` once it listens.
+// body ends; `server:<code>` makes the server emit `error` once it listens;
+// `socket:<code>` makes a WebSocket emit `error` after its first bytes.
 
 import fs from "node:fs";
 import http from "node:http";
@@ -77,6 +78,24 @@ if (faultWhere === "request") {
       requestFaulted = true;
       const req = args[0];
       process.nextTick(() => req.emit("error", hostError(faultCode, "read")));
+    }
+    return result;
+  };
+}
+
+// `socket:<code>`: the first bytes a client sends on a WebSocket after its
+// upgrade are followed by an `error` with that code on the socket, a
+// failure of the connection the platform does not name (§9.11 (i)).
+if (faultWhere === "socket") {
+  const emit = http.Server.prototype.emit;
+  let socketFaulted = false;
+  http.Server.prototype.emit = function (event, ...args) {
+    const result = emit.call(this, event, ...args);
+    if (event === "upgrade" && !socketFaulted) {
+      socketFaulted = true;
+      const socket = args[1];
+      // As Node fails a socket: `error`, then `close`.
+      socket.once("data", () => process.nextTick(() => socket.destroy(hostError(faultCode, "read"))));
     }
     return result;
   };

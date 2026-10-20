@@ -146,6 +146,59 @@ never appears in the transcript**. The script is one JSON object per line,
                                 then the connection closes
     {"signal": "SIGTERM"}       the signal, to the program
 
+A script also drives WebSocket clients (`boundary.md` §9.11 (l)), each with a
+name, through the driver's own small RFC 6455 client, which prints the
+handshake and can send the frames no conforming client sends. What the server
+sends a socket is kept, in order, until a `receive` step takes it, and a close
+frame the server sends first is answered at once with the same code, as a
+browser answers one:
+
+    {"socket": "a", "path": "/arena", "protocols": ["v1"]}
+                                open socket `a`: `> (socket a) GET /arena
+                                ["v1"]`, then the answer as a response is
+                                printed, each line `< (socket a) …`, a 101's
+                                `sec-websocket-accept` checked and shown as
+                                `(the right key)`. Optional: `"method"`,
+                                `"http": "1.0"`, `"host": false` (no `host`
+                                header), `"upgrade"` (the header's value),
+                                `"version"`, `"key"`, `"headers"`, and
+                                `"wait": false`, which does not wait for the
+                                answer: an `answer` step prints it later
+    {"answer": "a"}             wait for, and print, the answer of a socket
+                                opened with `"wait": false`
+    {"send": "a", "text": "hi"} a text message: `> (socket a) "hi"`
+    {"send": "a", "repeat": 300, "bytes": 1024}
+                                300 messages of 1024 bytes, `<i> ` then `x`s,
+                                in one write
+    {"send": "a", "frame": {"opcode": 1, "text": "x", "fin": false, "mask": false, "rsv": 4, "hex": "…", "length": 9}}
+                                one frame as written, for a fault: the
+                                payload is `text` or `hex`, `length` the
+                                length the header declares
+    {"ping": "a", "text": "p"}  a ping; its pong is a message, `pong "p"`
+    {"close": "a", "code": 1000, "reason": "bye"}
+                                a close frame (no code when `code` is left out)
+    {"receive": "a"}            the next thing socket `a` got: `< (socket a)
+                                "text"`, `close 1000 "reason"`, `close (no
+                                code)`, `pong "…"`, `binary <n> bytes` or `(the
+                                connection ended)`; `(nothing arrived)` after
+                                5 s
+    {"receive": "a", "count": 128}
+                                the next 128 text messages, summed up as
+                                `128 messages, <bytes> bytes`
+    {"receive": "a", "until": "drained"}
+                                every message up to the first that is the
+                                text, which is printed after `… `
+    {"pause": "a"}, {"resume": "a"}
+                                stop and start reading the socket
+    {"drop": "a"}, {"reset": "a"}
+                                end the TCP connection, with a FIN or with a
+                                reset, and no close frame
+
+A `{"fault": "socket:EIO"}` step, first in a script, makes the first socket
+the program upgrades fail, as Node fails one (`error`, then `close`), with
+that code after the client's first bytes: how a fixture reaches a network
+failure, named or not.
+
 After the last step the driver waits up to 5 s for the program to exit, then
 prints `--- stdout ---`, `--- stderr ---` and `--- exit <code> ---` (or
 `--- exit signal <name> ---`, or, after a SIGKILL, `--- exit killed: still
