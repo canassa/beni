@@ -6640,15 +6640,18 @@ arena =
   `impure`, so a `sync` handler may call them, but an object has no fiber of its own: a fiber a
   handler started would run on the isolate's shared scheduler, keep the object from hibernating
   while it waits, and be lost at hibernation or eviction with no finaliser run — a `Task.bracket`
-  release that never runs, against §9.8.14 (a). **The runtime enforces it** (*amended 2026-10-21,
-  R2-6*): `Task.cleansUp ⊤` answers whether a fiber has ever been made in the isolate, and the
-  platform reads it before and after each handler; a handler that turned it from `False` to `True`
-  made a fiber, and the platform throws a defect naming the handler — which (f) turns into an
-  abort — before the fiber runs, since the queued fiber would run only on the next microtask. A
-  fiber made by a program's top-level value is refused the same way at the first event, since
-  `cleansUp` is already `True` then. So a `cloudflare` build of an object reaches no fiber
-  runtime. Work that must outlive a handler is an alarm, or a later slice's (j): fibers in an
-  object, with the scope the host's lifecycle allows them.
+  release that never runs, against §9.8.14 (a). **It is a hazard, not a rule** (*amended
+  2026-10-21, R3-1, replacing R2-6's check; rule 7*): nothing in the platform enforces it, and
+  issue #550 holds the two ways to: a core API the platform can call at once — a count of fibers
+  made and a public way to stop core's queue — which is a change to `core/Task.beni` coordinated
+  with #358, or (j)'s slice, fibers in an object with the scope the host's lifecycle allows them.
+  A check on `Task.cleansUp ⊤` was specified and withdrawn the same day: the fiber runs to its
+  first suspension before the defect's deferred abort (core's drain is a microtask, the abort a
+  timer), and `cleansUp`'s flag is never reset and is set by a `bracket` outside any fiber too,
+  so it would refuse a `Task.bracket` in a handler and, after one violation, the first event of
+  every new instance of the isolate. Until #550, a program that starts a fiber from a handler gets
+  what this paragraph names; a `cloudflare` build of an object that starts none reaches no fiber
+  runtime. Work that must outlive a handler is an alarm.
 - **A handler that throws is a defect, and the object stops** ((f)).
 - **Order and determinism.** Handlers run one at a time, in the order their events become ready
   — a request once its body is whole (`request` above), an alarm "concurrently with another
@@ -6907,7 +6910,7 @@ arenaOf path =
 
 **(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
 forwarded whole; an object reads its body through (e)); fibers started by an object's handler
-((e), M9); binary frames and `Bytes`; RPC methods on a stub and
+((e), M9, #550); binary frames and `Bytes`; RPC methods on a stub and
 `WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
 recovery; `ctx.waitUntil`; `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
 Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
