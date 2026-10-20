@@ -2953,8 +2953,9 @@ clock fixes the timestamp); the existing `browser/tea` logging page unchanged;
 `run/TraceSpansNested` (parent and child span names, ids and order across fibers);
 `run/TraceCancelledSpan` (a span whose work is cancelled is exported with `Cancelled`).
 
-*Amended 2026-10-20 (#358), before P7 was built: the details this section left open.* Each one is
-taken from the Effect source that the section cites. None of them is a new choice.
+*Amended 2026-10-20 (#358), before P7 was built: the details this section left open.* The first
+three are taken from the Effect source that the section cites. The fourth is beni's own, for
+§17.1 item 4, and §17.12 item 11 lists it as a choice.
 
 - **The `logfmt` line is Effect's `format(JSON.stringify)`** (`Logger.ts:404`) without its
   `fiber=` field, because beni has no fiber id (research 48, *Fork and join*). The fields are
@@ -2973,8 +2974,6 @@ taken from the Effect source that the section cites. None of them is a new choic
 - **A time outside the range of a JavaScript `Date`**, ±8.64 × 10¹⁵ ms, is written as the nearest
   end of that range. `toISOString` throws for such a time, and a virtual clock can read any `Int`
   (§17.1 item 4). A time that is not a number, which `round (0 / 0)` can make, is written `NaN`.
-- **`browser-tea` does not name `Log` in its `"reexports"`.** A program sees every core module
-  without a re-export, so the entry has no effect.
 
 ### 17.12 Choices this section made, for the owner to see
 
@@ -3001,6 +3000,10 @@ Each was taken here so the slices can proceed, and each is reversible until its 
    `logfmt` to standard error, installed by `Io.run`; spans are exported only when a program installs
    an exporter.
 10. **`RateLimiter`**, the one §6.5 primitive not specified here, waits for P9 with `Pool`.
+11. *Added 2026-10-20 (#358).* **A log time no `Date` can hold**: `logfmt` writes a time outside
+    ±8.64 × 10¹⁵ ms as the nearest end of that range, and a time that is not a number as `NaN`.
+    Effect has no such case, because its clock reads `Date.now()`; a beni virtual clock reads
+    any `Int`, and `toISOString` throws for both (§17.1 item 4).
 
 ### 17.13 What this section does not do
 
