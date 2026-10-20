@@ -1,17 +1,20 @@
 key #0 Basics.Int wild
 key #1 String.String wild
 key #2 { id : #0, name : #1 } wild
-key #3 List.List #2 wild
-key #4 { items : #3, total : #0 } wild
-key #5 { count : #0 }
-key #6 List.List #1 wild
-key #7 #4 → #0
-key #8 #2 → #0
-key #9 #5 → #5
-key #10 {}
+key #3 List.List #2
+key #4 { items : #3, total : #0 }
+key #5 Schemas.Event.Type wild
+key #6 { count : #0 }
+key #7 List.List #1 wild
+key #8 #4 → #0
+key #9 #2 → #0
+key #10 #5 → #0
+key #11 #6 → #6
+key #12 Schemas.Event.Encoded wild
+key #13 { label : #1, value : #0 } wild
 module Schemas
-  name m$1 #5
-  node object 33:10 #5
-  node arrow 33:10 #5
-  node object 37:53 #5
-  node array 37:24 #6
+  name m$1 #6
+  node object 46:10 #6
+  node arrow 46:10 #6
+  node object 50:53 #6
+  node array 50:24 #7
