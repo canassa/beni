@@ -207,7 +207,8 @@ prints `--- stdout ---`, `--- stderr ---` and `--- exit <code> ---` (or
 running after the last step ---`). Standard error goes through one filter,
 so a crash is deterministic: the project directory's absolute path becomes
 `<project>`, lines that start with `    at ` are dropped, and the
-`Node.js v…` line is dropped. The driver exits 0 whatever the program did;
+`Node.js v…` line is dropped. A `Log` line's time becomes
+`timestamp=<time>`, and an IPv4 address with its port `<address>:<port>`. The driver exits 0 whatever the program did;
 what it did is the transcript. A served fixture has no `.crash`: the crash
 is in the transcript.
 
