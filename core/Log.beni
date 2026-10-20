@@ -249,24 +249,17 @@ spanText ( label, ms ) = " ${labelText label}=${String.fromInt ms}ms"
 -- Effect's `formatLabel`.
 labelText : String → String
 labelText label =
-    Js.to (Js.call (Js.call (Js.from label) "split" [ labelBreak ]) "join" [ Js.from "_" ])
+    Js.to
+        (Js.call (Js.call (Js.from label) "split" [ Js.regExp "[\\s\"=]" "" ]) "join"
+            [ Js.from "_" ]
+        )
 
 
 -- A value as it is when it holds no white space, `"` or `=` (Effect's
 -- `textOnly`), and else quoted as `JSON.stringify` quotes a string.
 valueText : String → String
 valueText value =
-    if Js.to (Js.call textOnly "test" [ Js.from value ]) then
+    if Js.to (Js.call (Js.regExp "^[^\\s\"=]*$" "") "test" [ Js.from value ]) then
         value
     else
         Js.to (Js.call (Js.global "JSON") "stringify" [ Js.from value ])
-
-
--- The two patterns, made once rather than at each call. Neither has the
--- `g` or `y` flag, so neither keeps state from one call to the next.
-labelBreak : Js.Value
-labelBreak = Js.regExp "[\\s\"=]" ""
-
-
-textOnly : Js.Value
-textOnly = Js.regExp "^[^\\s\"=]*$" ""
