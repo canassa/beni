@@ -15,7 +15,7 @@ namespace Ownership.FlatFragment.Static
 open InPlaceSemantics Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Support Ownership.FlatFragment.Atoms
 open Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferLet Ownership.FlatFragment.Liveness Ownership.FlatFragment.Scope
 open Ownership.FlatFragment.InferBranch Ownership.FlatFragment.Shared Ownership.FlatFragment.InferResultCase
-open Ownership.FlatFragment.InferChainCase Ownership.FlatFragment.Chain
+open Ownership.FlatFragment.InferChainCase Ownership.FlatFragment.Chain Ownership.FlatFragment.ListPrimitives
 open Ownership.FlatFragment.Result Ownership.FlatFragment.NamingFacts Ownership.FlatFragment.Description
 
 local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
@@ -316,6 +316,22 @@ theorem flat_type_of_typed {declarations : List Decl} {self : Decl} {e : Expr} (
     intro tenv type types typed
     obtain ⟨t, _, endTyped, _⟩ := exprType_chainCase_success typed
     exact ihEnd tenv type types endTyped
+  | @atRead receiver index fallback =>
+    intro tenv type types typed
+    obtain ⟨_, _, _, rfl⟩ := exprType_at_success (fun _ _ h => atom_type_flat types h) typed
+    exact .int
+  | @set receiver index item =>
+    intro tenv type types typed
+    obtain ⟨_, _, _, rfl⟩ := exprType_set_success (fun _ _ h => atom_type_flat types h) typed
+    exact .listInt
+  | @copy receiver =>
+    intro tenv type types typed
+    obtain ⟨_, rfl⟩ := exprType_copy_success (fun _ _ h => atom_type_flat types h) typed
+    exact .listInt
+  | @prepend item receiver =>
+    intro tenv type types typed
+    obtain ⟨_, _, rfl⟩ := exprType_prepend_success (fun _ _ h => atom_type_flat types h) typed
+    exact .listInt
 
 /-- The static facts of an integer primitive: an `Int` result described as a
 scalar, and no new escape. -/
@@ -799,5 +815,151 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
         intro origin escaped
         rw [nextEq, join_escapes]
         exact escaped_mono _ (leftMono origin escaped)
+  | @atRead receiver index fallback =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨receiverTyped, indexTyped, fallbackTyped, intType⟩ :=
+      exprType_at_success (fun _ _ h => static_atom_type static h) typed
+    subst intType
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨ix, rest2, indexRun, restRun', shape2⟩ := except_mapM_cons_success restRun
+    obtain ⟨fb, rest3, fallbackRun, restRun'', shape3⟩ := except_mapM_cons_success restRun'
+    have restNil' := except_mapM_nil_success restRun''
+    subst shape1
+    subst shape2
+    subst shape3
+    subst restNil'
+    have fallbackFlat := static_atom_scalar static fallbackTyped fallbackRun
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_list static receiverTyped receiverRun with rfl |
+      ⟨roots, element, certificate, rfl, elementFlat⟩
+    · rw [primitive_at_bottom_run] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.int, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · rw [primitive_at_run] at run
+      have equal := Except.ok.inj run
+      have first : element.join fb = result := congrArg Prod.fst equal
+      have second : next = {before with facts := {before.facts with
+          reads := union before.facts.reads ((union roots element.cells).filter external)}} :=
+        (congrArg Prod.snd equal).symm
+      refine ⟨.int, ?_, ?_⟩
+      · rw [← first]
+        rcases flat_join_flat elementFlat fallbackFlat with joined | joined
+        · rw [joined]; exact .bottom _
+        · rw [joined]; exact .int
+      · rw [second]; exact fun _ escaped => escaped
+  | @set receiver index item =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨receiverTyped, indexTyped, itemTyped, listType⟩ :=
+      exprType_set_success (fun _ _ h => static_atom_type static h) typed
+    subst listType
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨ix, rest2, indexRun, restRun', shape2⟩ := except_mapM_cons_success restRun
+    obtain ⟨it, rest3, itemRun, restRun'', shape3⟩ := except_mapM_cons_success restRun'
+    have restNil' := except_mapM_nil_success restRun''
+    subst shape1
+    subst shape2
+    subst shape3
+    subst restNil'
+    have itemFlat := static_atom_scalar static itemTyped itemRun
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_list static receiverTyped receiverRun with rfl |
+      ⟨roots, element, certificate, rfl, elementFlat⟩
+    · rw [primitive_set_bottom_run] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.listInt, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · have demanded := primitive_set_demand_run run
+      rw [show ({ctx with escaped := union ctx.escaped before.facts.escapes} : Context).config = {} from
+        defaultConfig] at demanded
+      have escapesEq := demand_success_escapes demanded
+      obtain ⟨certificate', resultEq⟩ := primitive_set_result itemFlat run
+      refine ⟨.listInt, ?_, by rw [escapesEq]; exact fun _ escaped => escaped⟩
+      rw [resultEq]
+      rcases flat_join_flat elementFlat itemFlat with joined | joined
+      · rw [joined]; exact .listBottom _ _
+      · rw [joined]; exact .listScalar _ _
+  | @copy receiver =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨receiverTyped, listType⟩ :=
+      exprType_copy_success (fun _ _ h => static_atom_type static h) typed
+    subst listType
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨r, rest1, receiverRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    have restNil' := except_mapM_nil_success restRun
+    subst shape1
+    subst restNil'
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_list static receiverTyped receiverRun with rfl |
+      ⟨roots, element, certificate, rfl, elementFlat⟩
+    · rw [primitive_copy_bottom_run] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.listInt, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · obtain ⟨certificate', copyRun⟩ := primitive_copy_run
+        {ctx with escaped := union ctx.escaped before.facts.escapes} site roots element certificate
+        (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
+      rw [copyRun] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.list [.site site 0] element certificate' = result := congrArg Prod.fst equal
+      have second : next = {before with facts := {before.facts with
+          reads := union before.facts.reads (roots.filter external)}} := (congrArg Prod.snd equal).symm
+      refine ⟨.listInt, ?_, by rw [second]; exact fun _ escaped => escaped⟩
+      rw [← first]
+      rcases elementFlat with rfl | rfl
+      · exact .listBottom _ _
+      · exact .listScalar _ _
+  | @prepend item receiver =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨itemTyped, receiverTyped, listType⟩ :=
+      exprType_prepend_success (fun _ _ h => static_atom_type static h) typed
+    subst listType
+    obtain ⟨as, argsRun⟩ := infer_primitive_args_success defaultConfig accepted
+    obtain ⟨it, rest1, itemRun, restRun, shape1⟩ := except_mapM_cons_success argsRun
+    obtain ⟨r, rest2, receiverRun, restRun', shape2⟩ := except_mapM_cons_success restRun
+    have restNil' := except_mapM_nil_success restRun'
+    subst shape1
+    subst shape2
+    subst restNil'
+    have itemFlat := static_atom_scalar static itemTyped itemRun
+    obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig argsRun accepted
+    rcases static_atom_list static receiverTyped receiverRun with rfl |
+      ⟨roots, element, certificate, rfl, elementFlat⟩
+    · rw [primitive_prepend_bottom_run] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.bottom = result := congrArg Prod.fst equal
+      have second : next = before := (congrArg Prod.snd equal).symm
+      refine ⟨.listInt, ?_, ?_⟩
+      · rw [← first]; exact .bottom _
+      · rw [second]; exact fun _ escaped => escaped
+    · obtain ⟨certificate', prependRun⟩ := primitive_prepend_run
+        {ctx with escaped := union ctx.escaped before.facts.escapes} site it roots element certificate
+        (union (liveCellsWith ctx.config aenv after) ctx.pinned) before
+      rw [prependRun] at run
+      have equal := Except.ok.inj run
+      have first : Abstract.list (union [.site site 0] roots) (it.join element) certificate' = result :=
+        congrArg Prod.fst equal
+      have second : next = {before with facts := {before.facts with
+          reads := union before.facts.reads (roots.filter external)}} := (congrArg Prod.snd equal).symm
+      refine ⟨.listInt, ?_, by rw [second]; exact fun _ escaped => escaped⟩
+      rw [← first]
+      rcases flat_join_flat itemFlat elementFlat with joined | joined
+      · rw [joined]; exact .listBottom _ _
+      · rw [joined]; exact .listScalar _ _
 
 end Ownership.FlatFragment.Static

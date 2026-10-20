@@ -76,7 +76,10 @@ other type is flat, and a `resultCase` binds the payload of a result to one
 of two fragment arms. `endChain` and `link` build an integer chain, which
 typing fixes to `Chain Int` (the link's head to `Int`), and a `chainCase`
 runs one fragment arm on an empty chain or binds the head and the tail of a
-nonempty one in the other. -/
+nonempty one in the other. `at` reads an element of a list (an index and a
+fallback, both `Int`), `set` writes one in place, `copy` allocates a copy,
+and `prepend` allocates a copy with an item in front; typing fixes the
+receivers to `List Int` and the items to `Int`. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
@@ -95,6 +98,10 @@ inductive FlatANF0 : Expr → Prop where
   | link : FlatANF0 (.prim .link [head, tail])
   | chainCase : FlatANF0 onEnd → FlatANF0 onLink →
       FlatANF0 (.chainCase input head tail onEnd onLink)
+  | atRead : FlatANF0 (.prim .at [receiver, index, fallback])
+  | set : FlatANF0 (.prim .set [receiver, index, item])
+  | copy : FlatANF0 (.prim .copy [receiver])
+  | prepend : FlatANF0 (.prim .prepend [item, receiver])
 
 theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
     (run : lookup env key = .ok value) :
@@ -1026,6 +1033,17 @@ theorem uses_chainCase (input : Atom) (head tail : Var) (onEnd onLink : Expr) :
     uses (.chainCase input head tail onEnd onLink) =
       union (atomUses input) (union (uses onEnd) (removeVars [head, tail] (uses onLink))) := rfl
 
+theorem uses_at (receiver index fallback : Atom) :
+    uses (.prim .at [receiver, index, fallback]) = atomsUses [receiver, index, fallback] := rfl
+
+theorem uses_set (receiver index item : Atom) :
+    uses (.prim .set [receiver, index, item]) = atomsUses [receiver, index, item] := rfl
+
+theorem uses_copy (receiver : Atom) : uses (.prim .copy [receiver]) = atomsUses [receiver] := rfl
+
+theorem uses_prepend (item receiver : Atom) :
+    uses (.prim .prepend [item, receiver]) = atomsUses [item, receiver] := rfl
+
 theorem flatExpr_default_uses (flat : FlatANF0 expression) :
     usesWith ({} : Config) expression = uses expression := by
   induction flat with
@@ -1044,6 +1062,10 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | endChain => simp_all [usesWith, uses, usesArms, Config.has]
   | link => simp_all [usesWith, uses, usesArms, Config.has]
   | chainCase _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | atRead => simp_all [usesWith, uses, usesArms, Config.has]
+  | set => simp_all [usesWith, uses, usesArms, Config.has]
+  | copy => simp_all [usesWith, uses, usesArms, Config.has]
+  | prepend => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
 

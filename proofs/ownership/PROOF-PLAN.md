@@ -440,6 +440,11 @@ The heap runtime copies the tail into a fresh array, which the checker names by 
 The probes `chainOps`, `chainEnd` (the dead link arm), `chainAlias` and `chainResult` check it at build time.
 What stays out: lists of lists and nested literals, and views.
 
+As built (2026-10-20, #165, `at`, `set`, `copy`, `prepend`): `FlatANF0` contains the four remaining primitives on flat integer lists, each a proved case restated (`ListPrimitives` in `Primitives.lean`).
+`at` is `length` with a result: both runtimes read the element at the index, or the fallback for a negative or out-of-range index (`atResult`), and record it; the checker returns the join of the element abstract and the fallback's. `set` is `push` with the list after the write (`setResult`), unchanged for a negative or out-of-range index, when the counter does not move; its demand and frame are the push's (`primitive_set_demand_run`, `primitive_set_result`). `copy` is the literal case at the receiver's contents. `prepend` is the literal case with a read of the base on both sides (`valuePrepended`, `heapPrepended`, `prepend_post_invariant`) and a result the checker names by the fresh site root and the base's origins. A dead receiver returns bottom in the checker (`primitive_at_bottom_run` and its siblings), as the push does.
+The probes `atOps`, `setOps`, `setAlias`, `copyOps`, `prependOps` and `prependAlias` check them at build time.
+What stays out: lists of lists and nested literals (the real exclusivity certificates through nested arrays), constructions, builders and views.
+
 ## Complete case inventory
 
 The baseline contains 12 expression constructors and 25 primitive constructors.
