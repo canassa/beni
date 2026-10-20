@@ -7,6 +7,7 @@
 //!   zig build bench           ReleaseFast throughput harness over bench/corpus
 //!   zig build fmt-check       `zig fmt --check` over every Zig source tree
 //!   zig build beni-fmt-check  `beni fmt --check` over the .beni files, minus tests/fmt-exempt.txt
+//!   zig build skill-api       write skills/beni/references/api-*.md from `beni dump --stage=interface`
 //!   zig build gates           the gates above, in one build graph
 //!
 //! The black-box suites spawn a ReleaseSafe `beni` built by Zig's
@@ -338,6 +339,16 @@ pub fn build(b: *std.Build) void {
     });
     b.installArtifact(exe);
 
+    // The skill for coding agents (`docs/design/frontend.md` §12.2): the
+    // folder `skills/beni/` goes beside the binary, under
+    // `<prefix>/share/beni/skills/`, byte for byte, and never into it.
+    const skills_install = b.addInstallDirectory(.{
+        .source_dir = b.path("skills"),
+        .install_dir = .prefix,
+        .install_subdir = "share/beni/skills",
+    });
+    b.getInstallStep().dependOn(&skills_install.step);
+
     const run_step = b.step("run", "Build and run beni");
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -359,6 +370,18 @@ pub fn build(b: *std.Build) void {
 
     const beni_tests = b.addTest(.{ .name = "unit_test", .root_module = beni_mod, .test_runner = testRunner(b), .filters = test_filters });
     const diagnostic_tests = b.addTest(.{ .name = "diagnostic_test", .root_module = diagnostic_mod, .test_runner = testRunner(b), .filters = test_filters });
+    // The skill's API generator (`tests/skill_api.zig`): its rewrite of a
+    // dump line into beni's notation is tested here (`frontend.md` §12.1).
+    const skill_api_tests = b.addTest(.{
+        .name = "skill_api_test",
+        .filters = test_filters,
+        .test_runner = testRunner(b),
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/skill_api.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
     const gen_tests = b.addTest(.{
         .name = "bench_gen_test",
         .filters = test_filters,
@@ -395,6 +418,11 @@ pub fn build(b: *std.Build) void {
     }
     {
         const run = runTests(b, diagnostic_tests);
+        setBudget(run, budget_env);
+        test_step.dependOn(&run.step);
+    }
+    {
+        const run = runTests(b, skill_api_tests);
         setBudget(run, budget_env);
         test_step.dependOn(&run.step);
     }
@@ -1082,6 +1110,39 @@ pub fn build(b: *std.Build) void {
         const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
         run.setEnvironmentVariable("BENI_FMT_CHECK_EXE", installPath(b, "tools/beni-fmt-check"));
         run.step.dependOn(&b.addInstallArtifact(fmt_check_exe, tools).step);
+        step.dependOn(&run.step);
+        blackbox_step.dependOn(step);
+    }
+
+    // The skill for coding agents (`docs/design/frontend.md` §12.4):
+    // `tests/skill_api.zig` writes the generated API references from
+    // `beni dump --stage=interface`, `zig build skill-api` runs it into
+    // the repository, and `skill_test.zig` runs it into a temporary
+    // directory and compares, beside the rest of the folder's gate.
+    const skill_api_exe = b.addExecutable(.{
+        .name = "beni-skill-api",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/skill_api.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    const skill_api_step = b.step("skill-api", "Write skills/beni/references/api-*.md from `beni dump --stage=interface` on the gates' beni");
+    {
+        const run = b.addRunArtifact(skill_api_exe);
+        run.addArgs(&.{ beni_safe_path, ".", "skills/beni/references" });
+        run.setCwd(b.path("."));
+        run.has_side_effects = true;
+        run.step.dependOn(&safe_install.step);
+        skill_api_step.dependOn(&run.step);
+    }
+    {
+        const file = "tests/blackbox/skill_test.zig";
+        const step = bb.fileStep(file);
+        const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
+        run.setEnvironmentVariable("BENI_SKILL_API_EXE", installPath(b, "tools/beni-skill-api"));
+        run.step.dependOn(&b.addInstallArtifact(skill_api_exe, tools).step);
+        run.step.dependOn(&skills_install.step);
         step.dependOn(&run.step);
         blackbox_step.dependOn(step);
     }
