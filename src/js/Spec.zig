@@ -301,6 +301,10 @@ pub const Input = struct {
     /// The property-name id of `$`, a constructor's tag (slice 9), or
     /// `none`.
     tag_prop: u32 = none,
+    /// `--points-to-largest`, the hidden flag (`src/Cli.zig`): each var keeps
+    /// where it came from, so that `Stats.pts_largest` can name the var that
+    /// held `Stats.pts_max_set` sites. It changes no fact and no byte.
+    trace_largest: bool = false,
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -309,6 +313,41 @@ pub const Entry = struct {
     callee: u32,
     args: []const u32,
 };
+
+/// Where one of fact 3's vars came from (`Input.trace_largest`), for a
+/// person reading `--points-to-largest`'s line: what kind of var it is, the
+/// module (an index of `Input.modules`) and node it belongs to, its name and
+/// its property. A summary's var and a load cell of a var's property name
+/// the var they are of (`of`), by its kind, module, node and name.
+pub const VarOrigin = struct {
+    kind: Role,
+    /// `kind`'s, for a summary's var or a load cell of a var; else `kind`.
+    of: Role,
+    /// `none` for a global.
+    module: u32 = none,
+    /// The top-level statement of a local; the object, array or function a
+    /// site's var belongs to; the read of a load cell of an expression.
+    node: u32 = none,
+    /// That node's byte offset in its module's source, or `JsIr.Node.no_pos`.
+    pos: u32 = JsIr.Node.no_pos,
+    /// A local's name, as its module has it; a global's whole-program id is
+    /// `global`.
+    name: ?JsIr.Name = null,
+    global: u32 = none,
+    /// The property-name id of a site's, a summary's or a load cell's
+    /// property, `elem_prop` for an element; `none` else.
+    prop: u32 = none,
+    /// The property of the var it is of (`of`), when that is a site's.
+    of_prop: u32 = none,
+    /// How many sites it held.
+    sites: u32 = 0,
+
+    pub const Role = enum(u8) { global, local, site_any, site_prop, ret, summary_any, summary_prop, load };
+};
+
+/// One site of `Stats.pts_largest_sites`: the node that made it, in module
+/// `module` of `Input.modules`, and that node's byte offset in its source.
+pub const SiteOrigin = struct { module: u32, node: u32, pos: u32 };
 
 /// Every name `Input.escaping` lists, then the entry call's.
 fn eachRoot(in: Input, i: usize) ?u32 {
@@ -384,6 +423,20 @@ pub const Stats = struct {
     passes_capped: u64 = 0,
     init_capped: u64 = 0,
     inline_capped: u64 = 0,
+    /// Fact 3's sets (`plans/type-directed-points-to.md` slice 0), over
+    /// every fixpoint but a safety build's reference (`Pts.fixpoint`): the
+    /// most sites one var held at once; the site words its sets allocated
+    /// (every var's grown set, every union and difference that made a new
+    /// slice); the copy edges and the load cells it made.
+    pts_max_set: u64 = 0,
+    pts_set_words: u64 = 0,
+    pts_edges: u64 = 0,
+    pts_load_cells: u64 = 0,
+    /// Under `Input.trace_largest`: where the var that first held
+    /// `pts_max_set` sites came from.
+    pts_largest: ?VarOrigin = null,
+    /// And the sites it held then: what flowed into it.
+    pts_largest_sites: []const SiteOrigin = &.{},
 };
 
 pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
@@ -8113,6 +8166,9 @@ const Pts = struct {
     loads: std.ArrayList(Load) = .empty,
     load_cells: KeyMap(LoadKey, u32) = .empty,
     load_nodes: KeyMap(NodeKey, u32) = .empty,
+    /// Per var, where it came from (`VarOrigin`): kept only under
+    /// `Input.trace_largest`, and reset with `vars`.
+    origins: std.ArrayList(VarOrigin) = .empty,
     /// How many sweeps the fixpoint took.
     sweeps: u32 = 0,
     /// Every site number, so that a value of one site is a slice of it.
@@ -8333,6 +8389,8 @@ const Pts = struct {
         /// `any`, so what its properties hold no consumer can see: nothing
         /// more is folded into it.
         dead: bool = false,
+        /// The var it summarises.
+        of: VarId = none,
     };
 
     const SumProp = struct { id: u32, vals: VarId };
@@ -8428,7 +8486,48 @@ const Pts = struct {
     fn newVar(p: *Pts) Allocator.Error!VarId {
         const id: VarId = @intCast(p.vars.items.len);
         try p.vars.append(p.arena(), .{});
+        if (p.s.in.trace_largest) try p.origins.append(p.arena(), .{ .kind = .global, .of = .global });
         return id;
+    }
+
+    /// Var `v` came from `o` (`Input.trace_largest`; nothing else).
+    fn originAt(p: *Pts, v: VarId, o: VarOrigin) void {
+        if (!p.s.in.trace_largest) return;
+        var full = o;
+        if (full.module != none and full.node != none) full.pos = p.s.mods[full.module].ir.pos(@fromBackingInt(full.node));
+        p.origins.items[v] = full;
+    }
+
+    /// The origin of a var made of var `of`: a summary's, a load cell's.
+    fn originOf(p: *const Pts, of: VarId, kind: VarOrigin.Role, id: u32) VarOrigin {
+        var o = p.origins.items[of];
+        o.of = o.kind;
+        o.of_prop = o.prop;
+        o.kind = kind;
+        o.prop = id;
+        return o;
+    }
+
+    /// A new set of `len` sites was made for var `v` (`Stats.pts_*`); under
+    /// `Input.trace_largest`, a set larger than any before is noted with
+    /// where its var and each of its sites came from.
+    fn countSet(p: *Pts, v: VarId, len: usize) Allocator.Error!void {
+        const stats = &p.s.stats;
+        stats.pts_set_words += len;
+        if (len <= stats.pts_max_set) return;
+        stats.pts_max_set = len;
+        if (p.s.in.trace_largest) {
+            var o = p.origins.items[v];
+            o.sites = @intCast(len);
+            stats.pts_largest = o;
+            const held = p.vars.items[v].sites;
+            const sites = try p.arena().alloc(SiteOrigin, held.len);
+            for (sites, held) |*so, site| {
+                const st = p.sites.items[site];
+                so.* = .{ .module = st.module, .node = st.node.int(), .pos = p.s.mods[st.module].ir.pos(st.node) };
+            }
+            stats.pts_largest_sites = sites;
+        }
     }
 
     /// What var `v` holds now; a read the constraint being evaluated depends on.
@@ -8518,6 +8617,7 @@ const Pts = struct {
     fn addSite(p: *Pts, v: VarId, site: u32) Allocator.Error!void {
         const one = try p.tmp.allocator().alloc(u32, 1);
         one[0] = site;
+        p.s.stats.pts_set_words += 1;
         try p.join(v, .{ .sites = one });
     }
 
@@ -8617,6 +8717,7 @@ const Pts = struct {
                 }
             }
             p.vars.items[v].sites = grown;
+            try p.countSet(v, grown.len);
             p.varChanged(v);
             if (grown.len > max_sites and !p.vars.items[v].uncapped) try p.makeTop(v);
         } else if (!new_flags) return;
@@ -8634,6 +8735,7 @@ const Pts = struct {
         if (containsSites(b, a)) return &.{};
         var out: std.ArrayList(u32) = .empty;
         try out.ensureTotalCapacity(p.tmp.allocator(), a.len);
+        p.s.stats.pts_set_words += a.len;
         var at: usize = 0;
         for (a) |wanted| {
             if (at < b.len and b[at] < wanted) {
@@ -8671,6 +8773,7 @@ const Pts = struct {
         try p.edges.append(a, .{ .from = from, .to = to, .next_out = p.vars.items[from].succ, .next_in = p.vars.items[to].pred });
         p.vars.items[from].succ = at;
         p.vars.items[to].pred = at;
+        p.s.stats.pts_edges += 1;
         try p.edge_set.put(a, .{ .from = from, .to = to }, {});
         if (p.vars.items[to].summary != none) try p.linkSummaries(try p.summaryOf(from), p.vars.items[to].summary);
         const set = p.vars.items[from];
@@ -8708,7 +8811,9 @@ const Pts = struct {
     fn summaryOf(p: *Pts, v: VarId) Allocator.Error!u32 {
         if (p.vars.items[v].summary != none) return p.vars.items[v].summary;
         const id: u32 = @intCast(p.summaries.items.len);
-        try p.summaries.append(p.tmp.allocator(), .{ .any = try p.newVar(), .dead = p.vars.items[v].top });
+        const any = try p.newVar();
+        if (p.s.in.trace_largest) p.originAt(any, p.originOf(v, .summary_any, none));
+        try p.summaries.append(p.tmp.allocator(), .{ .any = any, .dead = p.vars.items[v].top, .of = v });
         p.vars.items[v].summary = id;
         if (p.vars.items[v].top) return id;
         var e = p.vars.items[v].pred;
@@ -8775,6 +8880,7 @@ const Pts = struct {
         const at = std.sort.lowerBound(SumProp, props.items, id, orderSumProp);
         if (at < props.items.len and props.items[at].id == id) return props.items[at].vals;
         const v = try p.newVar();
+        if (p.s.in.trace_largest) p.originAt(v, p.originOf(p.summaries.items[sum].of, .summary_prop, id));
         try p.summaries.items[sum].props.insert(p.tmp.allocator(), at, .{ .id = id, .vals = v });
         p.summaryChanged(sum);
         var k: usize = 0;
@@ -8866,6 +8972,7 @@ const Pts = struct {
         if (containsSites(large, small)) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
         var out: std.ArrayList(u32) = .empty;
         try out.ensureTotalCapacity(p.tmp.allocator(), a.sites.len + b.sites.len);
+        p.s.stats.pts_set_words += a.sites.len + b.sites.len;
         var i: usize = 0;
         var j: usize = 0;
         while (i < a.sites.len or j < b.sites.len) {
@@ -8920,7 +9027,10 @@ const Pts = struct {
     fn localVar(p: *Pts, mi: u32, n: NameIndex) Allocator.Error!VarId {
         if (p.cachedLocal(mi, p.top, n)) |v| return v;
         const gop = try p.locals.getOrPut(p.arena(), .{ .module = mi, .top = p.top.int(), .name = n.int() });
-        if (!gop.found_existing) gop.value_ptr.* = try p.newVar();
+        if (!gop.found_existing) {
+            gop.value_ptr.* = try p.newVar();
+            if (p.s.in.trace_largest) p.originAt(gop.value_ptr.*, .{ .kind = .local, .of = .local, .module = mi, .node = p.top.int(), .name = p.s.mods[mi].names.items[n.int()] });
+        }
         p.cacheLocal(mi, p.top, n, gop.value_ptr.*);
         return gop.value_ptr.*;
     }
@@ -9000,6 +9110,7 @@ const Pts = struct {
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
         try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .once = p.once_ctx, .any = try p.newVar() });
+        if (p.s.in.trace_largest) p.originAt(p.sites.items[id].any, .{ .kind = .site_any, .of = .site_any, .module = mi, .node = node.int() });
         // Keys written before anything can read them exist from the moment
         // the object does, as a literal's own do.
         if (kind == .object) if (p.extra_init.get(.{ .module = mi, .node = node.int() })) |ids| {
@@ -9020,6 +9131,7 @@ const Pts = struct {
         for (params, names) |*v, n| v.* = try p.localVar(mi, n);
         p.sites.items[site].params = params;
         p.sites.items[site].ret = try p.newVar();
+        if (p.s.in.trace_largest) p.originAt(p.sites.items[site].ret, .{ .kind = .ret, .of = .ret, .module = mi, .node = node.int() });
         return site;
     }
 
@@ -9029,6 +9141,7 @@ const Pts = struct {
         const at = std.sort.lowerBound(Prop, p.sites.items[site].props.items, id, orderProp);
         if (at < p.sites.items[site].props.items.len and p.sites.items[site].props.items[at].id == id) return &p.sites.items[site].props.items[at];
         const v = try p.newVar();
+        if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
         const st = &p.sites.items[site];
         try st.props.insert(p.arena(), at, .{ .id = id, .vals = v });
         // A new property: what read the site whole reads it too.
@@ -9103,11 +9216,17 @@ const Pts = struct {
             if (ir.tag(object) == .ident) {
                 const v = try p.nodeVar(mi, object, @fromBackingInt(@intCast(ir.data(object).lhs)));
                 const gop = try p.load_cells.getOrPut(p.tmp.allocator(), .{ .v = v, .id = id });
-                if (!gop.found_existing) gop.value_ptr.* = try p.newLoad();
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = try p.newLoad();
+                    if (p.s.in.trace_largest) p.originAt(p.loads.items[gop.value_ptr.*].out, p.originOf(v, .load, id));
+                }
                 li = gop.value_ptr.*;
             } else {
                 const gop = try p.load_nodes.getOrPut(p.tmp.allocator(), .{ .module = mi, .node = node.int() });
-                if (!gop.found_existing) gop.value_ptr.* = try p.newLoad();
+                if (!gop.found_existing) {
+                    gop.value_ptr.* = try p.newLoad();
+                    if (p.s.in.trace_largest) p.originAt(p.loads.items[gop.value_ptr.*].out, .{ .kind = .load, .of = .load, .module = mi, .node = node.int(), .prop = id });
+                }
                 li = gop.value_ptr.*;
             }
             if (p.cur != none) p.cons.items[p.cur].load = li;
@@ -9140,6 +9259,7 @@ const Pts = struct {
         const id: u32 = @intCast(p.loads.items.len);
         const out = try p.newVar();
         p.vars.items[out].uncapped = true;
+        p.s.stats.pts_load_cells += 1;
         try p.loads.append(p.tmp.allocator(), .{ .out = out });
         return id;
     }
@@ -9297,8 +9417,17 @@ const Pts = struct {
                 var prng: std.Random.DefaultPrng = .init(0x5EC5_0B1A ^ @as(u64, statements));
                 prng.random().shuffle(u32, order);
                 p.order = order;
+                // The reference is a check, not the build's work: what its
+                // sets cost is no counter's (`Stats.pts_*`).
+                const counted = p.s.stats;
                 try p.fixpointWith(true);
                 p.order = &.{};
+                p.s.stats.pts_max_set = counted.pts_max_set;
+                p.s.stats.pts_set_words = counted.pts_set_words;
+                p.s.stats.pts_edges = counted.pts_edges;
+                p.s.stats.pts_load_cells = counted.pts_load_cells;
+                p.s.stats.pts_largest = counted.pts_largest;
+                p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
                 std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &ref_tmp);
                 try p.fixpointWith(false);
@@ -9424,12 +9553,16 @@ const Pts = struct {
         p.ok = false;
         p.vars = .empty;
         p.sites = .empty;
+        p.origins = .empty;
         p.locals = .empty;
         p.decl_call = .empty;
         p.unknown_props = .empty;
         p.unknown_any = false;
         p.globals = try p.arena().alloc(VarId, s.globals);
-        for (p.globals) |*g| g.* = try p.newVar();
+        for (p.globals, 0..) |*g, i| {
+            g.* = try p.newVar();
+            if (s.in.trace_largest) p.originAt(g.*, .{ .kind = .global, .of = .global, .global = @intCast(i) });
+        }
         // What no module declares — an import of a hand-written file's
         // export — is anything at all.
         for (s.decl, p.globals) |d, g| if (d == null) try p.makeTop(g);

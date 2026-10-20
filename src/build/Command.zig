@@ -134,6 +134,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .schema_library = build.schema_library,
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,
+        .points_to_largest = build.points_to_largest,
         .source_maps = build.source_maps,
     }) catch |err| switch (err) {
         error.OutOfMemory => return fail(stderr, "beni: out of memory", .{}),
@@ -147,6 +148,8 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         },
     };
     defer result.deinit(gpa);
+    // `--points-to-largest`'s lines: a measuring instrument, not a diagnostic.
+    stderr.writeAll(result.points_to) catch return 2;
     session.profile.end(0, emit_token, .emit, beni_profile.Event.no_file, @intCast(result.bytes_written));
 
     // The one render of the stream: the emit phase's diagnostics and the

@@ -270,6 +270,15 @@ pub const Counter = enum {
     spec_passes_capped,
     spec_init_capped,
     spec_inline_capped,
+    /// Fact 3's sets (`plans/type-directed-points-to.md` slice 0), over
+    /// every fixpoint but a safety build's reference sweep: the most sites
+    /// one var held at once (the largest over the passes, not a sum), the
+    /// site words the sets allocated, the copy edges made and the load
+    /// cells made. A size the analysis is not linear in shows here first.
+    spec_pts_max_set,
+    spec_pts_set_words,
+    spec_pts_edges,
+    spec_pts_load_cells,
     /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
     /// edge lists were built, the walks over them, the lowerings of a module
     /// and the modules printed. A build builds each module's edge lists
@@ -423,6 +432,14 @@ pub fn end(profile: *Profile, tid: u32, token: Token, phase: Phase, file: u32, b
 pub fn addCounter(profile: *Profile, c: Counter, value: u64) void {
     if (!profile.enabled) return;
     profile.counters[@backingInt(c)] += value;
+}
+
+/// Raise a counter to `value` when it is below: a maximum over the
+/// calls, where `addCounter` is a sum. Serial use only.
+pub fn maxCounter(profile: *Profile, c: Counter, value: u64) void {
+    if (!profile.enabled) return;
+    const slot = &profile.counters[@backingInt(c)];
+    slot.* = @max(slot.*, value);
 }
 
 pub fn counter(profile: *const Profile, c: Counter) u64 {

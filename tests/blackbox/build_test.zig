@@ -5688,6 +5688,114 @@ test "the release specialiser counts a call chain deeper than its sweeps as a de
     try testing.expect(deep.analyses_declined >= 1);
 }
 
+test "the release specialiser counts fact 3's sets, edges and load cells, and names its largest set" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `plans/type-directed-points-to.md` slice 0: what fact 3's sets cost
+    // is four `--self-profile` counters — the most sites one var held, the
+    // site words the sets allocated, the copy edges and the load cells —
+    // and the hidden `--points-to-largest` names the var that held the
+    // most, so that a merge that is still there can be found in the
+    // source. Points through a record update, a member read and a
+    // `List.map`: a spread, a load cell and a copy each.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type alias Point =
+        \\    { x : Int, y : Int }
+        \\
+        \\
+        \\move : Point, Int → Point
+        \\move p d =
+        \\    { p | x = p.x + d }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.map [ { x = 1, y = 2 }, { x = 3, y = 4 } ] λp → String.fromInt (move p 5).x)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(&.{ "build", "--platform=node", "--out=plain", "--no-cache", "--release", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(plain);
+    const counters = try ptsCounters(&w);
+    const traced = try w.runWith(&.{ "build", "--platform=node", "--out=traced", "--no-cache", "--release", "--points-to-largest", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(counters.max_set >= 1);
+    // Every set of `max_set` sites was allocated, and more besides.
+    try testing.expect(counters.set_words >= counters.max_set);
+    try testing.expect(counters.edges >= 1);
+    try testing.expect(counters.load_cells >= 1);
+    // On stderr: a line that names the largest set by its size and a
+    // place in the program, then a line per file its sites were made in.
+    try testing.expectEqual(@as(u8, 0), traced.exit_code);
+    try testing.expectEqualStrings("", traced.stdout);
+    const head = try std.fmt.allocPrint(w.arena.allocator(), "beni: points-to: the largest set holds {d} sites: ", .{counters.max_set});
+    try testing.expect(std.mem.startsWith(u8, traced.stderr, head));
+    try testing.expect(std.mem.endsWith(u8, traced.stderr, "\n"));
+    var lines = std.mem.splitScalar(u8, traced.stderr[0 .. traced.stderr.len - 1], '\n');
+    var count: usize = 0;
+    while (lines.next()) |line| : (count += 1) try testing.expect(std.mem.startsWith(u8, line, "beni: points-to: "));
+    try testing.expect(count >= 2);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The instrument changes no byte.
+    try expectSameTree(&w, "plain", "traced");
+}
+
+const PtsCounters = struct { max_set: u64 = 0, set_words: u64 = 0, edges: u64 = 0, load_cells: u64 = 0 };
+
+/// Fact 3's counters from the `--self-profile` trace a build wrote to
+/// `trace.json`: all four must be there.
+fn ptsCounters(w: *World) !PtsCounters {
+    const Event = struct {
+        ph: []const u8,
+        args: struct {
+            spec_pts_max_set: ?u64 = null,
+            spec_pts_set_words: ?u64 = null,
+            spec_pts_edges: ?u64 = null,
+            spec_pts_load_cells: ?u64 = null,
+        } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var counters: PtsCounters = .{};
+    var seen: u32 = 0;
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.spec_pts_max_set) |v| {
+            counters.max_set = v;
+            seen += 1;
+        }
+        if (e.args.spec_pts_set_words) |v| {
+            counters.set_words = v;
+            seen += 1;
+        }
+        if (e.args.spec_pts_edges) |v| {
+            counters.edges = v;
+            seen += 1;
+        }
+        if (e.args.spec_pts_load_cells) |v| {
+            counters.load_cells = v;
+            seen += 1;
+        }
+    }
+    if (seen != 4) return error.NoCounter;
+    return counters;
+}
+
 test "a page build makes each module's edge lists once and prints each module once" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
