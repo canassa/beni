@@ -1,0 +1,11 @@
+-- A program cannot name the pointer extractor's parameter type
+-- (boundary.md §9.8.20 (d)): `Html.Dispatched` is not `pub`.
+import Html
+
+
+type Msg
+    = Aimed Html.Pointer
+
+
+pub aim : Html.Dispatched → Msg
+aim d = Aimed (Html.pointer d)

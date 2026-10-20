@@ -12,7 +12,8 @@
 -- leaves the arena still moves in it, at a negative point. `#zoom`
 -- changes the move handler, which the view writes in place: the next
 -- move is doubled. `#corner` is fixed at the viewport's corner, so its
--- `clientX` is its `localX` in Chrome too, and both DOMs print it.
+-- `clientX` is its `localX` in Chrome too, and both DOMs print it. A
+-- pointer the browser cannot name has the type "".
 import Html exposing (Html)
 import Tea
 
@@ -59,10 +60,10 @@ update msg model =
             }
 
         Entered kind →
-            { model | log = model.log ++ [ "enter ${kind}" ] }
+            { model | log = model.log ++ [ "enter \"${kind}\"" ] }
 
         Left kind →
-            { model | log = model.log ++ [ "leave ${kind}" ] }
+            { model | log = model.log ++ [ "leave \"${kind}\"" ] }
 
         Zoom →
             { model | scale = model.scale * 2 }

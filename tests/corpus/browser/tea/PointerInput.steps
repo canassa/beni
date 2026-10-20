@@ -18,3 +18,5 @@ click #zoom
 pointer #arena pointermove 10 15
 pointer #arena pointerleave 210 15
 pointer #corner pointerdown 3 4 type:pen
+# A pointer whose device the browser cannot name.
+pointer #arena pointerenter 0 0 id:9 type:none
