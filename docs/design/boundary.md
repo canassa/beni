@@ -2519,9 +2519,10 @@ pub map : Cmd a, k, (a → msg) → Cmd msg                         where k.comp
 pub afterRender : (Send msg → ⊤) → Cmd msg                     -- §9.8.6
 pub task : (⊤ → a), (a → msg) → Cmd msg                       -- perform λsend -> send (tag (work ()))
 pub do : (⊤ → ⊤) → Cmd msg                                    -- perform λ_ -> work ()
+pub log : Log.Level, String → Cmd msg                         -- perform λ_ -> Log.log level line (2026-10-20, §9.8.16 (b))
 ```
 
-*Amended 2026-10-12 (§9.8.16 (b)):* beside these, `Storage.save`, `Http.send` and `Log.write` are
+*Amended 2026-10-12 (§9.8.16 (b)):* beside these, `Storage.save`, `Http.send` and `Cmd.log` (`Log.write` until 2026-10-20) are
 commands that take the value they store, send or log; every constructor above stays, and §9.8.16 (c)
 says why each that takes a function does.
 
@@ -4472,7 +4473,8 @@ names what it does with `QuotaExceeded` and `Unavailable`. `Http.send` has no `t
 callback that runs while the request does, so a body that tracks progress calls `request` itself; its
 `credentials` are `request`'s, and a `riskySend` waits for a program that needs one. `Log.write` lives in
 `browser`'s `Log` beside the three direct forms; §9.8.15 (b)'s move of the direct forms into core is
-not built, and a command stays a `browser` module's either way, since `Cmd` is one. Each body is a
+not built, and a command stays a `browser` module's either way, since `Cmd` is one. *(Amended
+2026-10-20: the move is built, and the command is `Cmd.log`, below.)* Each body is a
 function of its arguments that never waits, so each command is `Now` (§9.8.11 (b)) but `Http.send`'s,
 which is `Perform`. Elm has no storage or log commands — a port is its answer — so there is no name to
 mirror but elm/http's.
@@ -4508,7 +4510,7 @@ longer writes a body over `request` or `riskyRequest`. A `send` written before t
 | `Sub.listen`, `Sub.on`, `Time.every`, `Browser.Events.on…`, `Navigation.onUrlRequest`, `onUrlChange` | a body or a listener and a tag | **stays**: a subscription is an effect that runs while its key is live |
 | `Storage.set`, `Http.request`, `Http.get`, `Http.post`, `Log.info`, `warn`, `error`, `Navigation.push`, … | values | direct forms, called in a body; they already take values (`Navigation.push` was `pushUrl` until §9.8.17) |
 | `Navigation.pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload` | values | **new**, §9.8.17 (b): commands over the direct forms |
-| `Storage.save`, `Http.send`, `Log.write` | values | **new**, (b) |
+| `Storage.save`, `Http.send`, `Cmd.log` (`Log.write` until 2026-10-20) | values | **new**, (b) |
 | `core/Task`'s `spawn`, `scope`, `bracket`, … | functions | not commands: the fiber runtime a body uses |
 
 *Amended 2026-10-14 (§9.8.19):* `Http.riskySend` takes values, as `send` does, and joins the row of
