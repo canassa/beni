@@ -1,0 +1,37 @@
+-- repkeys: a module that declares a schema keeps its other keys
+-- (`backend.md` §9, the wild set): only a schema's own `Type` and
+-- `Encoded` are wild, closed through their fields like any wild type.
+-- `Item`'s record and `Page Item`'s, matched against `Page a`'s plan, are
+-- in the wild set; `Model`, which no schema names, is not, and `step`'s
+-- `m`, its update and its arrow keep `Model`'s key.
+import Node
+
+
+schema Item =
+    id : Int
+    name : String
+
+
+schema Page a =
+    items : List a
+    total : Int
+
+
+type alias Model =
+    count : Int
+
+
+total : Page.Type Item.Type → Int
+total p = p.total
+
+
+first : Item.Type → Int
+first i = i.id
+
+
+step : Model → Model
+step m = { m | count = m.count + 1 }
+
+
+main : Node.Program
+main = Node.printLines [ String.fromInt (step (step { count = 1 })).count ]
