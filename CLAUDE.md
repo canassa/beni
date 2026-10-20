@@ -695,6 +695,28 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
    `gh pr merge --rebase --delete-branch`, so each slice keeps its own commits
    on `master`. Never force-push `master`.
 
+### The skill for coding agents is kept current — `skills/beni/`
+
+`skills/beni/` is the skill a developer's coding agent installs to write beni
+(`frontend.md` §12; `beni skill install <dir>` copies it from
+`<prefix>/share/beni/skills/beni/`). It is for a developer who **writes beni**,
+not for one who works on the compiler (that is `.claude/skills/`). **A pull
+request that adds or changes a feature a user sees — syntax, a core module's
+public surface, a platform's API, a diagnostic, a command or a flag — updates
+`skills/beni/` in the same pull request.** Rules:
+
+- Every `beni` code block in the folder is a whole module that `beni check`
+  accepts and `beni fmt --check` passes, or a `beni refused=<code>` block
+  that fails with exactly that code; a fragment is tagged `text`. The gate
+  `tests/blackbox/skill_test.zig` runs them against the binary of the commit.
+- `references/api-*.md` are generated: run `zig build skill-api` after a
+  change to a public signature of `core/` or a platform, and commit the
+  result. The gate fails while they are stale.
+- `references/cli.md` names every command and flag of `beni help`; the
+  gate fails when one is missing or one is gone.
+- Write it in ASD-STE100, short, facts only; name no plan item, slice or
+  issue. Each topic file ends with the design sections it comes from.
+
 ### Captain's log — `plans/diary/` (ADD AN ENTRY AFTER EVERY SESSION)
 
 `plans/diary/` is an **append-only** captain's log of all work on this repo,
