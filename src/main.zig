@@ -92,6 +92,7 @@ pub fn main(init: std.process.Init) u8 {
             return beni.devloop.Serve.run(gpa, io, stdout, stderr, sessionOptions(serve.build.common), serve);
         },
         .new => |new| return beni.devloop.New.run(io, stdout, stderr, new),
+        .skill => |skill| return beni.devloop.Skill.run(io, stdout, stderr, skill),
         .check => |check| return beni.check.Command.run(gpa, io, stdout, stderr, sessionOptions(check.common), check),
         .fmt => |fmt| {
             var options = sessionOptions(fmt.common);

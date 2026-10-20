@@ -7,6 +7,7 @@
 //!
 //! ```
 //! beni new    [--platform=browser-tea|node] <dir>
+//! beni skill  [install [--link] [--force] <dir>]
 //! beni build  [options] [--watch] [--platform=<name>] [<path>...]
 //! beni serve  [build options] [--port=<n>] [--host=<address>] [--no-reload] [<path>...]
 //! beni check  [options] [--platform=<name>] <path>...
@@ -24,6 +25,7 @@ pub const usage =
     \\
     \\commands:
     \\  new      make a project that builds and runs: beni new [--platform=browser-tea|node] <dir>
+    \\  skill    print where the skill for coding agents is; skill install <dir> puts it into <dir>/beni
     \\  build    compile to JavaScript for a platform; --watch rebuilds on every change
     \\  serve    build --watch, and serve the output over HTTP with live reload
     \\  check   parse, lower and resolve every module against core; report diagnostics
@@ -32,7 +34,7 @@ pub const usage =
     \\  version  print the version
     \\  help     print this text
     \\
-    \\options (all commands):
+    \\options (every command but skill):
     \\  --diagnostics=text|json   diagnostics on stderr as prose (default) or one JSON array
     \\  --self-profile=<path>     write a Chrome trace-event JSON file at exit
     \\  --jobs=<n>                worker threads (default: as many as the work keeps busy, at most the logical CPUs); output is identical for every n
@@ -70,6 +72,13 @@ pub const usage =
     \\
     \\new options:
     \\  --platform=browser-tea|node   which template (default: browser-tea)
+    \\
+    \\skill options:
+    \\  --link                    skill install: a symlink to the installed folder instead of a copy
+    \\  --force                   skill install: replace a beni skill that is already at <dir>/beni
+    \\                            <dir> is a harness's skills directory. One copy serves every harness:
+    \\                              beni skill install ~/.agents/skills        Codex, Cursor, Gemini CLI, Copilot, opencode
+    \\                              ln -s ~/.agents/skills/beni ~/.claude/skills/beni        Claude Code, the same copy
     \\
     \\fmt options:
     \\  --check                   exit 1 if any file would change; write nothing
@@ -390,6 +399,21 @@ pub const New = struct {
 
 pub const Template = enum { @"browser-tea", node };
 
+/// `beni skill` (frontend.md §12.3): print the installed skill folder's
+/// path, or put the folder into a harness directory the user names.
+pub const Skill = union(enum) {
+    locate,
+    install: SkillInstall,
+};
+
+pub const SkillInstall = struct {
+    dir: []const u8,
+    /// `--link`: a symlink to the installed folder instead of a copy.
+    link: bool = false,
+    /// `--force`: replace an existing `<dir>/beni`.
+    force: bool = false,
+};
+
 /// A project's `"build"` defaults (`frontend.md` §10.1), read from its
 /// `beni.json` by `main` before `parseWith`: what `build` and `serve` use for
 /// `--platform`, the paths and `--out` when the command line gives none.
@@ -477,6 +501,7 @@ pub const Command = union(enum) {
     dump: Dump,
     serve: Serve,
     new: New,
+    skill: Skill,
     version,
     help,
 };
@@ -546,6 +571,7 @@ pub fn parseWith(gpa: Allocator, args: []const [:0]const u8, defaults: Defaults)
     if (std.mem.eql(u8, sub, "build")) return parseBuild(gpa, rest, defaults);
     if (std.mem.eql(u8, sub, "serve")) return parseServe(gpa, rest, defaults);
     if (std.mem.eql(u8, sub, "new")) return parseNew(gpa, rest);
+    if (std.mem.eql(u8, sub, "skill")) return parseSkill(rest);
     if (std.mem.eql(u8, sub, "check")) return parseCheck(gpa, rest);
     if (std.mem.eql(u8, sub, "fmt")) return parseFmt(gpa, rest);
     if (std.mem.eql(u8, sub, "dump")) return parseDump(gpa, rest);
@@ -1029,6 +1055,50 @@ fn parseNew(gpa: Allocator, args: []const [:0]const u8) Allocator.Error!Result {
     } } };
 }
 
+/// `skill`, and `skill install [--link] [--force] <dir>` (frontend.md
+/// §12.3). It takes none of the common options, because none of them means
+/// anything to it, so each is the ordinary unknown option. No allocation:
+/// at most two positionals matter, and the third is already an error.
+fn parseSkill(args: []const [:0]const u8) Result {
+    var link = false;
+    var force = false;
+    var positionals: [2][]const u8 = undefined;
+    var count: usize = 0;
+    var only_positionals = false;
+    for (args) |arg| {
+        if (!only_positionals and arg.len >= 2 and arg[0] == '-') {
+            if (std.mem.eql(u8, arg, "--")) {
+                only_positionals = true;
+                continue;
+            }
+            const eq = std.mem.indexOfScalar(u8, arg, '=');
+            const name = if (eq) |i| arg[0..i] else arg;
+            if (std.mem.eql(u8, name, "--link")) {
+                if (eq != null) return .{ .usage = noValue(name) };
+                link = true;
+            } else if (std.mem.eql(u8, name, "--force")) {
+                if (eq != null) return .{ .usage = noValue(name) };
+                force = true;
+            } else {
+                return .{ .usage = .init("beni: unknown option '{s}'; run 'beni help' for usage", .{name}) };
+            }
+            continue;
+        }
+        if (count < positionals.len) positionals[count] = arg;
+        count += 1;
+    }
+    if (count == 0) {
+        if (link) return .{ .usage = .init("beni: --link needs skill install", .{}) };
+        if (force) return .{ .usage = .init("beni: --force needs skill install", .{}) };
+        return .{ .command = .{ .skill = .locate } };
+    }
+    if (!std.mem.eql(u8, positionals[0], "install")) {
+        return .{ .usage = .init("beni: skill has one subcommand, install, not '{s}'", .{positionals[0]}) };
+    }
+    if (count != 2) return .{ .usage = .init("beni: skill install needs exactly one directory", .{}) };
+    return .{ .command = .{ .skill = .{ .install = .{ .dir = positionals[1], .link = link, .force = force } } } };
+}
+
 const FmtSpecific = struct {
     consumed: bool = false,
     check: bool = false,
@@ -1249,7 +1319,7 @@ pub fn deinitCommand(gpa: Allocator, command: Command) void {
         .serve => |c| gpa.free(c.build.paths),
         .check => |c| gpa.free(c.paths),
         .fmt => |f| gpa.free(f.paths),
-        .dump, .new, .version, .help => {},
+        .dump, .new, .skill, .version, .help => {},
     }
 }
 
@@ -1739,6 +1809,21 @@ test "new: one directory and a template" {
     try expectUsage("beni: new needs exactly one directory", &.{"new"});
     try expectUsage("beni: new needs exactly one directory", &.{ "new", "a", "b" });
     try expectUsage("beni: new has templates for browser-tea and node, not 'browser'", &.{ "new", "--platform=browser", "a" });
+}
+
+test "skill: locate, and install with its two flags" {
+    try expectCommand(.{ .skill = .locate }, &.{"skill"});
+    try expectCommand(.{ .skill = .{ .install = .{ .dir = "x/skills" } } }, &.{ "skill", "install", "x/skills" });
+    try expectCommand(.{ .skill = .{ .install = .{ .dir = "x", .link = true, .force = true } } }, &.{ "skill", "--force", "install", "--link", "x" });
+    try expectCommand(.{ .skill = .{ .install = .{ .dir = "--odd" } } }, &.{ "skill", "install", "--", "--odd" });
+    try expectUsage("beni: skill install needs exactly one directory", &.{ "skill", "install" });
+    try expectUsage("beni: skill install needs exactly one directory", &.{ "skill", "install", "a", "b" });
+    try expectUsage("beni: skill has one subcommand, install, not 'remove'", &.{ "skill", "remove", "a" });
+    try expectUsage("beni: --link needs skill install", &.{ "skill", "--link" });
+    try expectUsage("beni: --force needs skill install", &.{ "skill", "--force" });
+    try expectUsage("beni: option '--link' does not take a value", &.{ "skill", "install", "--link=1", "a" });
+    // None of the common options: a flag that does nothing is refused.
+    try expectUsage("beni: unknown option '--jobs'; run 'beni help' for usage", &.{ "skill", "--jobs=1" });
 }
 
 test "the project root is --root, before --" {
