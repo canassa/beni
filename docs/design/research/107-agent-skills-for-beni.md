@@ -22,8 +22,8 @@ the recommendation in full.
 
 ## 2. The standard: Agent Skills
 
-The specification is <https://agentskills.io/specification> (Anthropic published it in December
-2025 as an open standard; the reference repository is <https://github.com/anthropics/skills>).
+The specification is <https://agentskills.io/specification>; the reference repository is
+<https://github.com/anthropics/skills>.
 What it fixes, each with the sentence that fixes it:
 
 | Rule | The specification's words |
@@ -57,14 +57,14 @@ Sources: <https://code.claude.com/docs/en/skills> (skills), <https://code.claude
 | Item | Finding |
 |---|---|
 | user directory | `~/.claude/skills/<skill-name>/SKILL.md` |
-| project directory | `.claude/skills/<skill-name>/SKILL.md`, "in the directory where you start it and in every parent directory up to the repository root"; nested `.claude/skills/` load on demand (2.1.178) |
+| project directory | `.claude/skills/<skill-name>/SKILL.md`, "in the directory where you start it and in every parent directory up to the repository root"; nested `.claude/skills/` load on demand (the changelog's 2.1.178 entry) |
 | also reads | plugin skills `<plugin>/skills/<name>/SKILL.md`; the enterprise managed directory. **Not `.agents/skills/`**: no line of the skills page, the plugin pages or the changelog names it, and the memory page says of `AGENTS.md` discovery "**Not read**: … anything under a `.agents/` directory" |
-| frontmatter | `name` optional ("Defaults to the directory name"), `description` "Recommended"; extra fields (`when_to_use`, `argument-hint`, `disable-model-invocation`, `user-invocable`, `allowed-tools`, `context`, `paths`, `hooks`) are Claude Code's own: "Outside Claude Code, you can use only the fields in the Agent Skills spec" |
+| frontmatter | `name` optional ("Defaults to the directory name"), `description` "Recommended"; extra fields (`when_to_use`, `argument-hint`, `disable-model-invocation`, `user-invocable`, `allowed-tools`, `context`, `paths`, `hooks`) are Claude Code's own: "Outside Claude Code, you can use only the fields in the Agent Skills spec", and a skill packaged with one of them "fails with a hard error instead of ignoring the field" |
 | extra files | yes: "letting Claude access detailed reference material only when needed"; "Reference supporting files from `SKILL.md` so Claude knows what each file contains and when to load it" |
-| size | "Keep `SKILL.md` under 500 lines"; the listing of all descriptions has a budget of "1% of the model's context window" (fallback 8 000 characters), raised by `skillListingBudgetFraction` or `SLASH_COMMAND_TOOL_CHAR_BUDGET`; a description is cut at 1 536 characters in the listing |
+| size | "Keep `SKILL.md` under 500 lines"; the listing of all descriptions has a budget of "1% of the model's context window" (fallback 8 000 characters), raised by `skillListingBudgetFraction` or `SLASH_COMMAND_TOOL_CHAR_BUDGET`; "the combined `description` and `when_to_use` text is truncated at 1,536 characters in the skill listing" |
 | symlinks | followed: "a `<skill-name>` entry in the enterprise, personal, or project location can be a symlink to a directory elsewhere on disk" |
-| install | copy or link the folder; `/reload-skills` re-scans without a restart (2.1.152); plugins through a marketplace |
-| instruction file | `CLAUDE.md` (`~/.claude/CLAUDE.md`, `./CLAUDE.md` or `./.claude/CLAUDE.md`, `CLAUDE.local.md`, parents at launch, subdirectories on demand); `@path` imports, relative or absolute, four hops; an import outside the project from a project file asks once; "target under 200 lines per CLAUDE.md file". `AGENTS.md` is read when no `CLAUDE.md` exists (2.1.277) |
+| install | copy or link the folder; `/reload-skills` re-scans without a restart (the changelog's 2.1.152 entry); plugins through a marketplace |
+| instruction file | `CLAUDE.md` (`~/.claude/CLAUDE.md`, `./CLAUDE.md` or `./.claude/CLAUDE.md`, `CLAUDE.local.md`, parents at launch, subdirectories on demand); `@path` imports, relative or absolute, four hops; an import outside the project from a project file asks once; "target under 200 lines per CLAUDE.md file". `AGENTS.md` is read when no `CLAUDE.md` exists (the changelog's 2.1.277 entry) |
 
 ### 3.2 Codex CLI
 
@@ -178,8 +178,9 @@ the specification's own, and the folder meets it:
 - `description` under 1 024 characters, and under Claude Code's 1 536-character listing cut.
 - `SKILL.md` under 500 lines; every other file one level down, in `references/`, and named from
   `SKILL.md` with a relative path, because VS Code loads only what `SKILL.md` names.
-- No field outside the specification in the frontmatter: Claude Code refuses to package a skill
-  that carries one for another client, and the others ignore or refuse unknown fields.
+- No field outside the specification in the frontmatter. Claude Code's page: "Outside Claude
+  Code, you can use only the fields in the Agent Skills spec", and a packaged skill that carries
+  another client's field "fails with a hard error instead of ignoring the field" (§3.1).
 - A `.beni` code block is Markdown to every harness; none of them runs anything in a skill
   unless the body asks for a script, and the beni skill ships none.
 
@@ -188,22 +189,7 @@ What one folder cannot do is choose its directory. Three names cover the six har
 | Directory | Read by |
 |---|---|
 | `~/.agents/skills/` and `.agents/skills/` | Codex CLI, opencode, Cursor, Gemini CLI, Copilot (all three surfaces) — every harness but Claude Code |
-| `~/.claude/skills/` and `.claude/skills/` | Claude Code, Cursor, Copilot in VS Code and the CLI Sources: <https://opencode.ai/docs/skills>, <https://opencode.ai/docs/rules>, and the source
-<https://github.com/anomalyco/opencode> (`packages/core/src/config/discovery.ts`,
-`packages/core/src/config/plugin/skill-scan.ts`, `packages/core/src/config/plugin/skill-file.ts`).
-
-| Item | Finding |
-|---|---|
-| user directory | "Global definitions are also loaded from `~/.config/opencode/skills/*/SKILL.md`, `~/.claude/skills/*/SKILL.md`, and `~/.agents/skills/*/SKILL.md`" |
-| project directory | `.opencode/skills/`, and "any matching `.claude/skills/*/SKILL.md` or `.agents/skills/*/SKILL.md` along the way", walking up "until it reaches the git worktree" |
-| also reads | the `skills` config key: more directories, or `http(s)` URLs |
-| frontmatter | "Each `SKILL.md` must start with YAML frontmatter"; `name` and `description` required; `name` matches `^[a-z0-9]+(-[a-z0-9]+)*$`, 1–64 characters, and must "Match the directory name that contains `SKILL.md`"; "`description` must be 1-1024 characters"; `license`, `compatibility`, `metadata` optional. The loader (`skill-file.ts`) is laxer than the page: a missing `name` falls back to the directory name |
-| the standard | the page names "the Agent Skills spec" and its fields |
-| extra files | the skill's directory is scanned and at most ten files are listed to the model ("file list is sampled"); the model reads them on demand |
-| size | the name and description limits above; nothing on the body |
-| symlinks | followed: `skill-scan.ts` `stat`s a symlink and treats it by its target's type; the scan goes six levels deep and skips dot-directories |
-| install | copy the folder; no install command |
-| instruction file | `AGENTS.md` in the project root, found by walking up; `~/.config/opencode/AGENTS.md`; `CLAUDE.md` as a fallback; the `instructions` key adds paths, globs and URLs. "opencode doesn't automatically parse file references in `AGENTS.md`" | |
+| `~/.claude/skills/` and `.claude/skills/` | Claude Code, opencode, Cursor, Copilot in VS Code and the CLI |
 | the harness's own: `~/.cursor/skills/`, `~/.copilot/skills/`, `.github/skills/`, `~/.config/opencode/skills/`, `.opencode/skills/`, `~/.gemini/skills/`, `.gemini/skills/`, `~/.codex/skills/` (deprecated) | that harness |
 
 An instruction file (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules/*.mdc`,
@@ -211,8 +197,9 @@ An instruction file (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.cursor/rules/*.mdc
 one for this content. It is always on, so every line costs context on every task, beni or not;
 each harness caps it (Codex stops at 32 KiB, Claude Code's target is 200 lines); it has a
 different name and frontmatter per harness, so there would be five files to keep in step; and
-it cannot point at a second file in a way all of them follow (Copilot CLI: "File references are
-not expanded in `GEMINI.md` or `*.instructions.md` files"). A skill is loaded when its description
+it cannot point at a second file in a way all of them follow (the Copilot CLI's instructions page,
+<https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/add-custom-instructions>:
+"File references are not expanded in `GEMINI.md` or `*.instructions.md` files"). A skill is loaded when its description
 matches the task and reads its references only as needed, which is what a language guide wants.
 
 ## 5. How a user installs it into each harness
@@ -220,9 +207,10 @@ matches the task and reads its references only as needed, which is what a langua
 The install is one operation everywhere: put the folder `beni/` into a skills directory. The
 compiler ships the folder beside the binary (`<prefix>/share/beni/skills/beni/`), and
 `beni skill install <dir>` copies it there — the user names `<dir>`, because no two machines
-agree on a home directory and a cloud agent has none. `--link` writes a symlink instead, which
-Claude Code documents as supported and the others do not mention; a linked skill follows every
-`zig build install`, a copied one is refreshed with `--force`.
+agree on a home directory and a cloud agent has none. `--link` writes a symlink instead: Claude
+Code and Codex document that they follow one, opencode's loader does, Gemini CLI writes one with
+`gemini skills link`, and Cursor and Copilot say nothing. A linked skill follows every
+`zig build install`; a copied one is refreshed with `--force`.
 
 | Harness | `<dir>` for one user | `<dir>` for one project |
 |---|---|---|
@@ -236,8 +224,8 @@ Claude Code documents as supported and the others do not mention; a linked skill
 
 Two installs cover every harness on one machine: `beni skill install ~/.agents/skills` and
 `beni skill install ~/.claude/skills`. Cursor, opencode and the two local Copilot surfaces read
-both, and load a skill once when the two are one folder (Claude Code: "loads the skill once even
-if several locations point at the same target").
+both. Claude Code documents what it does with two locations ("loads the skill once even if several
+locations point at the same target"); the other pages do not say what two copies of one skill do.
 
 After a copy, the harness picks the skill up at its next start, or on its reload command
 (Claude Code `/reload-skills`, Copilot CLI `/skills reload`, Gemini CLI `/skills reload`).
@@ -256,8 +244,8 @@ holds the compiler's skills, not the language's.
    Elm, calls and blocks, lists and ownership, static dispatch, effects and `Task`, schemas,
    markup, the platforms, the project file, the CLI — each short enough to read whole. The
    repository folder is named `skills/` and not `.agents/skills/` because the latter would make
-   every compiler agent load it, and because the GitHub and `skills` CLIs find a `SKILL.md`
-   under `skills/` in a repository.
+   every compiler agent load it, and because `skills/<name>/SKILL.md` is the layout a Claude Code
+   plugin uses for its skills (§3.1), so the repository can become one without moving the folder.
 2. **Install, not embed.** `zig build install` copies the folder to `<prefix>/share/beni/skills/beni/`
    byte for byte; the binary carries none of it. A Nix package puts the same tree under
    `$out/share/`.
@@ -269,10 +257,11 @@ holds the compiler's skills, not the language's.
    checked by the compiler of the same commit (a refused example must fail with the code it
    names), every command and flag of `beni help` is in the CLI file, and the API reference of
    core and of each platform is generated from `beni dump --stage=interface` and compared. The
-   rule in `AGENTS.md` says that a change a user sees updates the folder in the same PR.
-5. **Generate the API reference, write the rest by hand.** The signatures of about 650 core
-   declarations and 800 platform ones are facts the compiler prints; prose about when to use
-   them is not. Generated files are committed, so a reader on GitHub and a `gh skill install`
+   rule in `CLAUDE.md` (which `AGENTS.md` links to) says that a change a user sees updates the
+   folder in the same PR.
+5. **Generate the API reference, write the rest by hand.** The interface dumps are 647 lines for
+   core and 837 for the five platforms together (`beni dump --stage=interface` over each package,
+   2026-10-20): facts the compiler prints. Prose about when to use them is not. Generated files are committed, so a reader on GitHub and a `gh skill install`
    see the same tree the build installs.
 
 ## 7. What this note did not settle
