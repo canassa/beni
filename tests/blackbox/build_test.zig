@@ -5501,6 +5501,56 @@ test "Io.run writes each log line to standard error as logfmt, in both builds" {
     try expectBuilt(release);
 }
 
+test "a log line written just before a defect is on standard error before the defect's report" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The sink `Io.run` installs writes each line at once (`boundary.md`
+    // §9.8.15 (b)): a line that a buffer held would be lost when the defect
+    // stops the program, and the line that says what went wrong is the one
+    // a program writes last.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Clock
+        \\import Io
+        \\import Log
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main = Io.run λ⊤ →
+        \\    Clock.run (Clock.virtual 0) λ⊤ →
+        \\        Log.error "about to fail"
+        \\        Debug.todo "the defect"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--platform=node", "--out=" ++ world.default_out, "Main.beni" });
+    try expectBuilt(built);
+    const r = try w.nodeWith(world.entry_file, world.default_timeout_ms);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Node's report names the build's own paths and lines, so only the
+    // order of the two is asserted.
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expectEqualStrings("", r.stdout);
+    const line = std.mem.indexOf(u8, r.stderr, "timestamp=1970-01-01T00:00:00.000Z level=ERROR message=\"about to fail\"\n") orelse {
+        std.debug.print("no log line on standard error:\n{s}\n", .{r.stderr});
+        return error.LogLineMissing;
+    };
+    const report = std.mem.indexOf(u8, r.stderr, "TODO: the defect") orelse {
+        std.debug.print("no report of the defect on standard error:\n{s}\n", .{r.stderr});
+        return error.DefectReportMissing;
+    };
+    try testing.expect(line < report);
+}
+
 /// A program whose building loop's exit calls `List`'s core-private `close`,
 /// one of the values the emitter calls from other modules (`backend.md` §4,
 /// *The emitter's imports of the core-private exports*). Since the list

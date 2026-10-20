@@ -2,7 +2,8 @@
 -- sink for the whole program, and the last call wins: here it replaces the
 -- one `Io.run` installed. Each call hands the sink an `Entry` with its
 -- level, its line and the time on the calling fiber's clock — a virtual
--- one here — and no annotation or span. `Trace` and `Debug` are below the
+-- one here, and another for a child that runs on its own — and no
+-- annotation or span. `Trace` and `Debug` are below the
 -- default minimum, `Info`, and reach no sink. `--release` keeps every
 -- call, so its pass prints the same entries.
 import Clock
@@ -11,6 +12,7 @@ import Io
 import Log exposing (Entry, Level, Trace, Debug, Info, Warn, Error)
 import Node exposing (Program)
 import Ref exposing (Ref)
+import Task
 
 
 show : Entry → String
@@ -51,4 +53,6 @@ main = Io.run λ⊤ →
         Log.error "failed"
         Log.log Info "by level"
         Log.log Debug "by level, below the minimum"
+    child = Task.spawn λ⊤ → Clock.run (Clock.virtual 5000) λ⊤ → Log.info "from a child"
+    Task.join child
     Node.printLines (Ref.get seen)
