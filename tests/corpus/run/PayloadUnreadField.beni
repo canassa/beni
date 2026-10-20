@@ -1,0 +1,200 @@
+-- A variant payload's unread field is absent from the record a release
+-- build returns, and every field something reads is still there
+-- (`backend.md` §9, `emit/release/app/PayloadUnreadField`). `only` and
+-- `nested` read `keep`. A `drop` that is not an integer is still refused.
+-- `both` adds the two fields. `==` tells two payloads apart by `drop`.
+-- `Debug.toString` and `Schema.write` read the record whole, so both
+-- fields are in what they print. A record update reads `drop`. Two
+-- functions of one schema read one field each, so both stay.
+import Node
+import Schema
+
+
+schema Only tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Both tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Eqd tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Shown tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Printed tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Updated tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Shared tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Nested tagged "type" of
+    Wrap as "wrap"
+        inner : Inner
+
+
+schema Inner tagged "kind" of
+    Box as "box"
+        keep : Int
+        drop : Int
+
+
+host : String → Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            v
+
+        Err _ →
+            host "null"
+
+
+only : Schema.Value → Int
+only v =
+    case Schema.read (Only.schema ⊤) v of
+        Ok (Only.One r) →
+            r.keep
+
+        Err _ →
+            0
+
+
+both : Schema.Value → Int
+both v =
+    case Schema.read (Both.schema ⊤) v of
+        Ok (Both.One r) →
+            r.keep + r.drop
+
+        Err _ →
+            0
+
+
+eqLine : Schema.Value, Schema.Value → String
+eqLine a b =
+    case ( Schema.read (Eqd.schema ⊤) a, Schema.read (Eqd.schema ⊤) b ) of
+        ( Ok x, Ok y ) →
+            if x == y then "eq" else "ne"
+
+        _ →
+            "bad"
+
+
+shown : Schema.Value → String
+shown v =
+    case Schema.read (Shown.schema ⊤) v of
+        Ok (Shown.One r) →
+            Debug.toString r
+
+        Err _ →
+            "bad"
+
+
+printed : Schema.Value → String
+printed v =
+    case Schema.read (Printed.schema ⊤) v of
+        Ok x →
+            case Schema.write (Printed.schema ⊤) x of
+                Ok w →
+                    case Schema.print Schema.value w of
+                        Ok text →
+                            text
+
+                        Err _ →
+                            "print-bad"
+
+                Err _ →
+                    "write-bad"
+
+        Err _ →
+            "read-bad"
+
+
+updated : Schema.Value → Int
+updated v =
+    case Schema.read (Updated.schema ⊤) v of
+        Ok (Updated.One r) →
+            q = { r | keep = 1 }
+
+            q.drop
+
+        Err _ →
+            0
+
+
+sharedKeep : Schema.Value → Int
+sharedKeep v =
+    case Schema.read (Shared.schema ⊤) v of
+        Ok (Shared.One r) →
+            r.keep
+
+        Err _ →
+            0
+
+
+sharedDrop : Schema.Value → Int
+sharedDrop v =
+    case Schema.read (Shared.schema ⊤) v of
+        Ok (Shared.One r) →
+            r.drop
+
+        Err _ →
+            0
+
+
+nested : Schema.Value → Int
+nested v =
+    case Schema.read (Nested.schema ⊤) v of
+        Ok (Nested.Wrap w) →
+            case w.inner of
+                Inner.Box r →
+                    r.keep
+
+        Err _ →
+            0
+
+
+main : Node.Program
+main =
+    one = host "{\"type\":\"one\",\"keep\":3,\"drop\":4}"
+
+    bad = host "{\"type\":\"one\",\"keep\":3,\"drop\":true}"
+
+    nest = host "{\"type\":\"wrap\",\"inner\":{\"kind\":\"box\",\"keep\":7,\"drop\":8}}"
+
+    Node.printLines
+        [ String.fromInt (only one)
+        , String.fromInt (only bad)
+        , String.fromInt (both one)
+        , eqLine one one
+        , eqLine one (host "{\"type\":\"one\",\"keep\":3,\"drop\":9}")
+        , shown one
+        , printed one
+        , String.fromInt (updated one)
+        , String.fromInt (sharedKeep one)
+        , String.fromInt (sharedDrop one)
+        , String.fromInt (nested nest)
+        ]

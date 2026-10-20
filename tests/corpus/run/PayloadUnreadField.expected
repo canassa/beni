@@ -1,0 +1,11 @@
+3
+0
+7
+eq
+ne
+{ drop = 4, keep = 3 }
+{"type":"one","keep":3,"drop":4}
+4
+3
+4
+7

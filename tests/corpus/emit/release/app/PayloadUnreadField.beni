@@ -1,0 +1,74 @@
+-- emit/release/app: an unread field is left out of its object literal under
+-- `--release`, on a plain record and on a record that is a variant's payload
+-- (`backend.md` §9). `plain` and `beta` read `keep` only, so `drop` is not
+-- written into the record the worker returns. The host key is still tested.
+-- `both` reads `drop`, so that field stays. The values are
+-- `run/PayloadUnreadField`.
+import Node
+import Schema
+
+
+schema Alpha =
+    keep : Int
+    drop : Int
+
+
+schema Beta tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+schema Both tagged "type" of
+    One as "one"
+        keep : Int
+        drop : Int
+
+
+host : String → Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            v
+
+        Err _ →
+            host "null"
+
+
+plain : Schema.Value → Int
+plain v =
+    case Schema.read (Alpha.schema ⊤) v of
+        Ok r →
+            r.keep
+
+        Err _ →
+            0
+
+
+beta : Schema.Value → Int
+beta v =
+    case Schema.read (Beta.schema ⊤) v of
+        Ok (Beta.One r) →
+            r.keep
+
+        Err _ →
+            0
+
+
+both : Schema.Value → Int
+both v =
+    case Schema.read (Both.schema ⊤) v of
+        Ok (Both.One r) →
+            r.keep + r.drop
+
+        Err _ →
+            0
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (plain (host "{\"keep\":1,\"drop\":2}"))
+        , String.fromInt (beta (host "{\"type\":\"one\",\"keep\":3,\"drop\":4}"))
+        , String.fromInt (both (host "{\"type\":\"one\",\"keep\":5,\"drop\":6}"))
+        ]

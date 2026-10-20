@@ -1,0 +1,53 @@
+-- A let bound to a Result payload is later assigned a different record.
+-- The field read through that local after the assignment is the new
+-- record's field, so this prints 4 and not the host's 9
+-- (`backend.md` §9, `emit/release/app/PayloadReassign`).
+import Node
+import Schema
+
+
+schema Box =
+    keep : Int
+    drop : Int
+
+
+host : String → Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            v
+
+        Err _ →
+            host "null"
+
+
+type alias Rec =
+    keep : Int
+    drop : Int
+
+
+walk : Rec, Int → Int
+walk r n =
+    if n == 0 then
+        r.drop
+    else
+        walk { keep = 1, drop = 4 } (n - 1)
+
+
+taken : Schema.Value → Result (List Schema.Issue) Int
+taken v =
+    answer = walk ((Schema.read (Box.schema ⊤) v)?) 1
+
+    Ok answer
+
+
+main : Node.Program
+main =
+    one = host "{\"keep\":8,\"drop\":9}"
+
+    case taken one of
+        Ok n →
+            Node.print (String.fromInt n)
+
+        Err _ →
+            Node.print "bad"

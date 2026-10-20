@@ -8976,12 +8976,16 @@ const Pts = struct {
         pred: u32 = none,
         /// Its field summary (`summaryOf`), once a spread asked for one.
         summary: u32 = none,
-        /// A read's var (`load`): `top` is one flag beside its sites, as it
-        /// is in the value a read gives (`Val.top_val` beside the sites),
-        /// and never escapes them or clears them, and `max_sites` does not
-        /// apply — a consumer that joins the value into its own var makes
-        /// that var `top`, as the join of the read's value did.
+        /// A read's var (`load`). `top` is one flag beside its sites, as it
+        /// is in the value a read gives. The flag never escapes them or
+        /// clears them, and `max_sites` does not apply. A local bound to a
+        /// member read is uncapped too, so the read's `top` does not escape
+        /// the objects. That local is `limited`, so `max_sites` still caps it.
         uncapped: bool = false,
+        /// `max_sites` applies even when `uncapped` is set. A member binding
+        /// keeps the read's objects beside `top`, and a points-to set past
+        /// the cap still escapes (`makeTop`).
+        limited: bool = false,
         /// How many edges `succ` and `pred` list (`indexEdge`).
         succs: u32 = 0,
         preds: u32 = 0,
@@ -9079,11 +9083,12 @@ const Pts = struct {
         /// of the vars that copy into it, each of which feeds it.
         succs: std.ArrayList(u32) = .empty,
         preds: std.ArrayList(u32) = .empty,
-        /// The var is `top`: every site it held escaped, and every site
-        /// that joins it escapes (`makeTop`). A spread of it writes `top`
-        /// under every key, and a read of its result is `top` through
-        /// `any`, so what its properties hold no consumer can see: nothing
-        /// more is folded into it.
+        /// The var is `top` and capped: every site it held escaped, and
+        /// every site that joins it escapes (`makeTop`). A spread of it
+        /// writes `top` under every key, and a read of its result is `top`
+        /// through `any`, so what its properties hold no consumer can see:
+        /// nothing more is folded into it. An uncapped `top` var still
+        /// holds its sites, and its summary folds them.
         dead: bool = false,
         /// The var it summarises.
         of: VarId = none,
@@ -9321,15 +9326,22 @@ const Pts = struct {
 
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
         const set = &p.vars.items[v];
-        if (set.top) return;
-        // `top` implies the other three (`Val.top_val`).
-        set.top = true;
-        set.prim = true;
-        set.nul = true;
-        set.undef = true;
-        p.varChanged(v);
-        const held = set.sites;
-        set.sites = &.{};
+        // A later `top` join into a var that already holds nothing escapes
+        // its own sites at the call and does not walk the successors again.
+        // A member binding is already `top` while it still holds sites, so
+        // the same path has to escape those sites. `escapeSite` joins
+        // `top` into every load cell linked from the site.
+        if (set.top and set.sites.len == 0) return;
+        const became = !set.top;
+        if (became) set.top = true;
+        // `top` implies the other three (`Val.top_val`). The uncapped
+        // join sets `top` first and may not have set them yet.
+        if (!set.prim) set.prim = true;
+        if (!set.nul) set.nul = true;
+        if (!set.undef) set.undef = true;
+        if (became or p.vars.items[v].sites.len != 0) p.varChanged(v);
+        const held = p.vars.items[v].sites;
+        p.vars.items[v].sites = &.{};
         for (held) |site| try p.escapeSite(site);
         if (p.vars.items[v].summary != none) p.summaries.items[p.vars.items[v].summary].dead = true;
         var e = p.vars.items[v].succ;
@@ -9410,7 +9422,7 @@ const Pts = struct {
             p.vars.items[v].sites = grown;
             try p.countSet(v, grown.len);
             p.varChanged(v);
-            if (grown.len > max_sites and !p.vars.items[v].uncapped) try p.makeTop(v);
+            if (grown.len > max_sites and (!p.vars.items[v].uncapped or p.vars.items[v].limited)) try p.makeTop(v);
         } else if (!new_flags) return;
         flags.sites = added;
         var e = p.vars.items[v].succ;
@@ -9652,8 +9664,9 @@ const Pts = struct {
         var i = base;
         while (i < p.work.items.len) : (i += 1) {
             const x = p.work.items[i];
-            // A dead summary is fed nothing (`Summary.dead`).
-            if (p.vars.items[x].top) continue;
+            // A dead summary is fed nothing (`Summary.dead`). An uncapped
+            // `top` var still holds its sites, so its sources are fed too.
+            if (p.vars.items[x].top and !p.vars.items[x].uncapped) continue;
             var e = p.vars.items[x].pred;
             while (e != none) : (e = p.edges.items[e].next_in) {
                 const from = p.edges.items[e].from;
@@ -9670,7 +9683,8 @@ const Pts = struct {
         return p.vars.items[v].summary;
     }
 
-    /// A summary for var `v`, empty: dead when `v` is `top`. Its vars are
+    /// A summary for var `v`, empty: dead when `v` is `top` and capped.
+    /// An uncapped `top` var still holds its sites. Its vars are
     /// `uncapped`, as a load cell's: a summary is a join a read or a spread
     /// passes on, not a place a value is held, and a cap there would escape
     /// sites no consumer's own var escapes — a read's cell holds what it
@@ -9681,7 +9695,8 @@ const Pts = struct {
         const any = try p.newVar();
         p.vars.items[any].uncapped = true;
         if (p.s.in.trace_largest) p.originAt(any, p.originOf(v, .summary_any, none));
-        try p.summaries.append(p.tmp.allocator(), .{ .any = any, .dead = p.vars.items[v].top, .of = v });
+        const escaped_top = p.vars.items[v].top and !p.vars.items[v].uncapped;
+        try p.summaries.append(p.tmp.allocator(), .{ .any = any, .dead = escaped_top, .of = v });
         p.vars.items[v].summary = id;
     }
 
@@ -10632,7 +10647,16 @@ const Pts = struct {
             fn sameVar(c: @This(), a: VarId, b: VarId) bool {
                 const va = c.x.vars.items[a];
                 const vb = c.y.vars.items[b];
-                return va.top == vb.top and va.prim == vb.prim and va.nul == vb.nul and va.undef == vb.undef and c.sameSites(va.sites, vb.sites);
+                if (va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
+                // A `top` var may be uncapped (a load cell, or a local bound
+                // to a member read) and then keeps the sites it linked
+                // through an object that later escaped. Those sites are ⊤.
+                // The live ones are the fact, as for a node's value.
+                if (va.top) return c.sameVal(
+                    .{ .top = true, .prim = va.prim, .nul = va.nul, .undef = va.undef, .sites = va.sites },
+                    .{ .top = true, .prim = vb.prim, .nul = vb.nul, .undef = vb.undef, .sites = vb.sites },
+                );
+                return c.sameSites(va.sites, vb.sites);
             }
             fn sameSet(a: []const u32, b: []const u32) bool {
                 if (a.len != b.len) return false;
@@ -11002,6 +11026,17 @@ const Pts = struct {
                     if (!p.maybeNarrowed(mi, value)) {
                         return p.copy(try p.nodeVar(mi, value, @fromBackingInt(@intCast(ir.data(value).lhs))), target);
                     }
+                }
+                // The cell holds `top` beside the objects (`load`). This
+                // local is that read, so `top` does not escape the objects,
+                // and an unread field can drop. `limited` keeps `max_sites`.
+                // The flag is the statement's, so the two walks agree. The
+                // slot of a variant payload is one such read. `Result`'s
+                // `a` holds the payload and the `Err` list, so the read is
+                // `top`.
+                if (ir.tag(value) == .member) {
+                    p.vars.items[target].uncapped = true;
+                    p.vars.items[target].limited = true;
                 }
                 try p.join(target, vals[value.int()]);
             },
@@ -13090,6 +13125,60 @@ test "points-to joins preserve top escape and threshold wake order" {
     try testing.expect((try p.view(other)).top);
     try testing.expect(p.sites.items[fresh].escaped);
     try testing.expectEqualSlices(u32, &.{fresh}, &snapshot);
+}
+
+// A local bound to a member read is uncapped and limited. The read's
+// value is `top` beside its objects. Past `max_sites` that local's
+// sites escape. The same joins without `limited` keep every site.
+test "a limited member binding escapes its sites past the cap" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const count = Pts.max_sites + 1;
+    const ids = try arena.alloc(u32, count);
+    for (ids, 0..) |*id, i| {
+        id.* = @intCast(i);
+        const any = try p.newVar();
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(id.*), .any = any });
+    }
+    const open = try p.newVar();
+    p.vars.items[open].uncapped = true;
+    try p.join(open, .{ .top = true, .sites = ids });
+    const kept = try p.view(open);
+    try testing.expect(kept.top);
+    try testing.expectEqualSlices(u32, ids, kept.sites);
+    for (ids) |site| try testing.expect(!p.sites.items[site].escaped);
+
+    const under = try p.newVar();
+    p.vars.items[under].uncapped = true;
+    p.vars.items[under].limited = true;
+    try p.join(under, .{ .top = true, .sites = ids[0..1] });
+    const few = try p.view(under);
+    try testing.expect(few.top);
+    try testing.expectEqualSlices(u32, ids[0..1], few.sites);
+    try testing.expect(!p.sites.items[0].escaped);
+
+    const capped = try p.newVar();
+    p.vars.items[capped].uncapped = true;
+    p.vars.items[capped].limited = true;
+    const through = try p.newVar();
+    try p.copy(capped, through);
+    const li = try p.newLoad();
+    try p.sites.items[0].loads.append(arena, li);
+    try p.join(capped, .{ .top = true, .sites = ids });
+    const result = try p.view(capped);
+    try testing.expect(result.top and result.prim and result.nul and result.undef);
+    try testing.expectEqual(@as(usize, 0), result.sites.len);
+    for (ids) |site| try testing.expect(p.sites.items[site].escaped);
+    const reader = try p.view(p.loads.items[li].out);
+    try testing.expect(reader.top);
+    const copied = try p.view(through);
+    try testing.expect(copied.top and copied.prim and copied.nul and copied.undef);
+    try testing.expectEqual(@as(usize, 0), copied.sites.len);
 }
 
 // #464: a copy edge carries what joins its source to its target as it

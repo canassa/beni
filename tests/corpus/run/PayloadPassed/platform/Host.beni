@@ -1,0 +1,13 @@
+--! The host calls that a release build cannot see into. `same` returns
+--! its argument. `readDrop` is the only reader of `drop` for the value
+--! `Main` passes it.
+
+pub type alias Rec =
+    keep : Int
+    drop : Int
+
+
+pub foreign pure same : Rec → Rec
+
+
+pub foreign pure readDrop : Rec → Int

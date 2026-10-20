@@ -6,7 +6,8 @@
 -- knows `c.all` is `false` in an application that never asks for every
 -- error, and folds `!c.all` to `true`; the release peephole then writes
 -- the test as `f === c.fail`, since `x && true` is `x` wherever only its
--- truth is read. No `&&true` is left in the file.
+-- truth is read. No `&&true` is left in the file. `age` is unread, so the
+-- record the worker returns has `name` only. The host key is still tested.
 import Node exposing (Program)
 
 
