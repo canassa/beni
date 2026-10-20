@@ -8562,6 +8562,20 @@ in it is wild wherever it occurs, as a site's key or as a var's filter:
   parameters** (§4, *A nullary constructor is one object*), which is the same object at every
   instantiation.
 
+*Amended 2026-10-20 (issue #489):* **"mentions" means "occurs in the representation".** For a
+`Js.from` at type `T`, a quantifier `q` crosses exactly when `q` occurs in what a value of `T` is at
+run time: through an alias's expansion, a record's fields, a tuple's elements, a function type's
+parameters and result (a closure can hand an `a` out or take one in), and a named type's
+constructor payloads, transitively, by the parameters its payloads hold
+(`Interface.Type.payload_params`). A phantom parameter does not occur. A `foreign type` holds
+nothing JavaScript can reach through it, except `List`, an array of its elements, and `Js.Ref`, a
+cell holding one. The closed types the walk meets join the wild set by the same rule. It is
+sound because the filter only has to account for objects that reach JavaScript through the cast
+and come back at another type. An object of type `a` reaches JavaScript through a value of `T`
+only if the representation of `T` holds an `a`, and a phantom `a` holds none. So `Schema e a`,
+which is a host value, crosses at neither `e` nor `a`. Every other part of the rule is unchanged,
+the propagation through callees' crossing quantifiers included.
+
 **The rule.** Every var of `Pts` has a filter, `allow`. A local's and a parameter's is its name's
 `name_key`; a function's return var's is the result key of its arrow's `node_key`; every other var
 is wild: a site's property vars, `any`, summaries, load cells, the globals and every name the

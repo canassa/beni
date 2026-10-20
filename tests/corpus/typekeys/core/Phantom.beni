@@ -1,0 +1,48 @@
+-- typekeys (core): a quantifier crosses only where it occurs in the
+-- representation of what `Js.from` is applied to (`backend.md` §9, amended
+-- 2026-10-20; checker-v2.md §36). `Tagged`'s `a` is phantom, a host value
+-- underneath, so `useTagged` leaves `Kept` keyed and out of the wild set. A
+-- `List a` holds its `a`s, so `useList` puts `Listed` in the wild set; a
+-- record with an `a → ⊤` field hands one out, so `useHandler` puts `Handled`
+-- there too.
+import Js
+
+
+type Tagged a
+    = Tagged Js.Value
+
+
+type alias Kept =
+    kept : Int
+
+
+type alias Listed =
+    listed : Int
+
+
+type alias Handled =
+    handled : Int
+
+
+sendTagged : Tagged a → Js.Value
+sendTagged t = Js.from t
+
+
+sendList : List a → Js.Value
+sendList xs = Js.from xs
+
+
+sendHandler : { act : a → ⊤ } → Js.Value
+sendHandler h = Js.from h
+
+
+useTagged : Tagged Kept → Js.Value
+useTagged t = sendTagged t
+
+
+useList : List Listed → Js.Value
+useList xs = sendList xs
+
+
+useHandler : (Handled → ⊤) → Js.Value
+useHandler f = sendHandler { act = f }
