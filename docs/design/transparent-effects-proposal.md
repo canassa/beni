@@ -2958,7 +2958,8 @@ three are taken from the Effect source that the section cites. The fourth is ben
 §17.1 item 4, and §17.12 item 11 lists it as a choice.
 
 - **The `logfmt` line is Effect's `format(JSON.stringify)`** (`Logger.ts:404`) without its
-  `fiber=` field, because beni has no fiber id (research 48, *Fork and join*). The fields are
+  `fiber=` field, because beni has no fiber id (research 48, *Fork and join*), and without its
+  `cause=` field, because an `Entry` has no cause. The fields are
   `timestamp`, `level` and `message`, then one per span, then one per annotation. A value that
   holds no white space, no `"` and no `=` is written as it is, the empty value too (Effect's
   `textOnly`, `Logger.ts:386`). `JSON.stringify` quotes any other value. In a key or a span's
@@ -2970,7 +2971,9 @@ three are taken from the Effect source that the section cites. The fourth is ben
 - **`Entry.spans` is innermost first**, because Effect's `withLogSpan` puts a new span in front
   (`Effect.ts:14114`). `annotations` stays outermost first. When an inner `annotate` sets a key
   that an outer one set, the key keeps the outer one's place and takes the inner value. That is
-  what the JavaScript object of Effect's `annotateLogs` does (`Effect.ts:14001`).
+  what the JavaScript object of Effect's `annotateLogs` does (`Effect.ts:14001`) for a key that
+  is not an integer index; `Object.entries` puts a key such as `"1"` first, and beni's list does
+  not.
 - **A time outside the range of a JavaScript `Date`**, ±8.64 × 10¹⁵ ms, is written as the nearest
   end of that range. `toISOString` throws for such a time, and a virtual clock can read any `Int`
   (§17.1 item 4). A time that is not a number, which `round (0 / 0)` can make, is written `NaN`.
