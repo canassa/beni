@@ -188,6 +188,7 @@ theorem flatInvariant_state_frame
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
     tags := inv.tags
+    chains := inv.chains
     liveTyped := inv.liveTyped
     namingBound := by simpa only [heapSame] using inv.namingBound
     observers := by simpa only [heapSame, valueKept, heapKept] using inv.observers
@@ -240,6 +241,7 @@ theorem flatInvariant_restrict_live
     abstractShapes := inv.abstractShapes
     bindingsTyped := inv.bindingsTyped
     tags := inv.tags
+    chains := inv.chains
     liveTyped := fun x p ty member => inv.liveTyped x p ty (included _ member)
     namingBound := inv.namingBound
     observers := inv.observers
@@ -591,12 +593,31 @@ theorem allocated_integer_list_typed {heap : Heap} {root : Nat} {integers : List
     integer_list_observation_typed declarations integers⟩
   exact .ref allocated (integers_represented integers (observationDepth - 2))
 
-/-- The runtime shape of a flat binding: an integer, an allocated array, a
-record of such values, or a result as both interpreters build it: a success
-`[1, 0, x]` or an error `[0, x, 0]` over such a payload. -/
+/-- A chain of integers is observed as a list of integers. -/
+theorem integer_chain_observation_typed (declarations : List Decl) (integers : List Int) :
+    obsTyped declarations (.list (valueInts integers)) (.chain .int) = true := by
+  unfold obsTyped
+  change (valueInts integers).attach.all (fun item => obsTyped declarations item.val .int) = true
+  apply List.all_eq_true.mpr
+  intro item _
+  obtain ⟨integer, _, equal⟩ := List.mem_map.mp item.property
+  rw [← equal]
+  simp [obsTyped]
+
+theorem allocated_integer_chain_typed {heap : Heap} {root : Nat} {integers : List Int} (declarations : List Decl)
+    (allocated : heap[root]? = some (heapInts integers)) :
+    ValueTyped declarations heap (.ref root) (.chain .int) := by
+  refine ⟨observationDepth, .list (valueInts integers), [root], ?_,
+    integer_chain_observation_typed declarations integers⟩
+  exact .ref allocated (integers_represented integers (observationDepth - 2))
+
+/-- The runtime shape of a flat binding: an integer, an allocated array (a
+list or a chain), a record of such values, or a result as both interpreters
+build it: a success `[1, 0, x]` or an error `[0, x, 0]` over such a payload. -/
 inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
   | int (integer : Int) : AllocatedFlatValue heap (.int integer) .int
   | list (root : Nat) : root < heap.size → AllocatedFlatValue heap (.ref root) (.list .int)
+  | chain (root : Nat) : root < heap.size → AllocatedFlatValue heap (.ref root) (.chain .int)
   | record (ws : List Value) (ts : List Ty) : ws.length = ts.length →
       (∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → ts[i]? = some t →
         AllocatedFlatValue heap w t) →

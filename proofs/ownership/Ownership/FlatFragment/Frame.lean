@@ -163,6 +163,7 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     abstractShapes := inv.abstractShapes
     bindingsTyped := bindingsTyped_after_flat_heap inv nextFlat size
     tags := inv.tags
+    chains := inv.chains
     liveTyped := fun x p ty member declared => inv.liveTyped x p ty (liveSub _ member) declared
     namingBound := bounded
     observers := ⟨footprint, framed⟩

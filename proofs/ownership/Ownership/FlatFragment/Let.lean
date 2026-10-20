@@ -35,7 +35,7 @@ structure Preserved (declarations : List Decl) (depth : Nat)
       hs.heap.size ≤ hs'.heap.size ∧
       Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
       obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type ∧
-      ResultTags type result actual
+      ResultTags type result actual ∧ ChainTags type result value
   failure : ∀ message,
     (ValueSemantics.eval depth declarations none (valueEnv env) e).run vs = .error message →
     ∃ actualMessage,
@@ -66,7 +66,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
     (flatType : FlatType ty) (flatAbstract : FlatAbstract ty a)
     (observed : obsTyped declarations x ty = true)
     (valueTyped : ValueTyped declarations hs.heap w ty)
-    (tags : ResultTags ty a w)
+    (tags : ResultTags ty a w) (chains : ChainTags ty a x)
     (liveSub : ∀ use ∈ live', use.1 = v ∨ use ∈ live)
     (liveTyped : ∀ p, (v, p) ∈ live' → ∃ t, tyAt ty p = some t) :
     FlatInvariant declarations vs hs ((v, x, w) :: env) live' ((v, a) :: aenv) ((v, ty) :: tenv)
@@ -95,6 +95,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
     abstractShapes := ?_
     bindingsTyped := ?_
     tags := ?_
+    chains := ?_
     liveTyped := ?_
     namingBound := inv.namingBound
     observers := inv.observers
@@ -169,6 +170,16 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       exact tags
     · rw [lookup_cons_other _ _ _ same] at declared abstractBinding binding
       exact inv.tags key ty' a' o w' declared abstractBinding binding
+  · intro key ty' a' o w' declared abstractBinding binding
+    by_cases same : key = v
+    · subst same
+      rw [lookup_cons_same] at declared abstractBinding binding
+      cases Option.some.inj declared
+      cases Option.some.inj abstractBinding
+      cases Option.some.inj binding
+      exact chains
+    · rw [lookup_cons_other _ _ _ same] at declared abstractBinding binding
+      exact inv.chains key ty' a' o w' declared abstractBinding binding
   · intro key p ty' use declared
     by_cases same : key = v
     · subst same
@@ -229,6 +240,7 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
     abstractShapes := ?_
     bindingsTyped := ?_
     tags := ?_
+    chains := ?_
     liveTyped := ?_
     namingBound := inv.namingBound
     observers := inv.observers
@@ -263,6 +275,12 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
   · intro key ty' a' o w' declared abstractBinding binding
     have different := envOther key _ binding
     exact inv.tags key ty' a' o w'
+      (by rw [lookup_cons_other _ _ _ different]; exact declared)
+      (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding)
+      (by rw [lookup_cons_other _ _ _ different]; exact binding)
+  · intro key ty' a' o w' declared abstractBinding binding
+    have different := envOther key _ binding
+    exact inv.chains key ty' a' o w'
       (by rw [lookup_cons_other _ _ _ different]; exact declared)
       (by rw [lookup_cons_other _ _ _ different]; exact abstractBinding)
       (by rw [lookup_cons_other _ _ _ different]; exact binding)
@@ -478,10 +496,10 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
         | ok p1 =>
           rcases p1 with ⟨x, s1⟩
           rw [value_let_rhs_ok vs (valueEnv env) noDepth noFuel rhsValue] at run
-          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, size1, paired1, described1, observed1, typed1, tags1⟩ :=
-            rhsPreserved.success x s1 rhsValue
+          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, size1, paired1, described1, observed1, typed1, tags1,
+            chains1⟩ := rhsPreserved.success x s1 rhsValue
           have inv1' := flatInvariant_bind inv1 fresh paired1 described1 rhsFlatType rhsFlatAbstract
-            observed1 typed1 tags1 restLiveSub restLiveTyped
+            observed1 typed1 tags1 chains1 restLiveSub restLiveTyped
           have restPreserved := ihRest s1 hs1 ((v, x, w) :: env) (union (uses rest) after)
             ((v, a) :: aenv) ((v, rhsType) :: tenv) middle next gamma1 type (v :: bound) after
             (site ++ [1]) result childFuel (depth - 1) _ inv1' restTyped restShadow
@@ -489,7 +507,7 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           obtain ⟨p2, restValueRun, run⟩ := except_bind_success run
           rcases p2 with ⟨y, s2⟩
           obtain ⟨actual, hs2, gamma2, restHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-            tags2⟩ := restPreserved.success y s2 restValueRun
+            tags2, chains2⟩ := restPreserved.success y s2 restValueRun
           have restHeapRun' : (InPlaceSemantics.eval (depth - 1) declarations none
               ((v, w) :: heapEnv env) rest).run hs1 = .ok (actual, hs2) := restHeapRun
           try dsimp only at run
@@ -510,7 +528,7 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           subst vsEq
           subst valueEq
           refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_,
-            observed2, ?_, tags2⟩
+            observed2, ?_, tags2, chains2⟩
           · rw [heap_let_rhs_ok hs (heapEnv env) noDepth heapFuel rhsHeapRun]
             simp [restHeapRun', heapObserveRun, Except.bind, Except.pure, bind, pure]
           · rw [heapObserved_heap]
@@ -533,10 +551,10 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
         | ok p1 =>
           rcases p1 with ⟨x, s1⟩
           rw [value_let_rhs_ok vs (valueEnv env) noDepth noFuel rhsValue] at run
-          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, _, paired1, described1, observed1, typed1, tags1⟩ :=
-            rhsPreserved.success x s1 rhsValue
+          obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, _, paired1, described1, observed1, typed1, tags1,
+            chains1⟩ := rhsPreserved.success x s1 rhsValue
           have inv1' := flatInvariant_bind inv1 fresh paired1 described1 rhsFlatType rhsFlatAbstract
-            observed1 typed1 tags1 restLiveSub restLiveTyped
+            observed1 typed1 tags1 chains1 restLiveSub restLiveTyped
           have restPreserved := ihRest s1 hs1 ((v, x, w) :: env) (union (uses rest) after)
             ((v, a) :: aenv) ((v, rhsType) :: tenv) middle next gamma1 type (v :: bound) after
             (site ++ [1]) result childFuel (depth - 1) _ inv1' restTyped restShadow

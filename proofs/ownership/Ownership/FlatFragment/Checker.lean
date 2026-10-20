@@ -799,6 +799,153 @@ theorem infer_resultCase_success {ctx : Context} {aenv : Env Abstract} {input : 
 
 end Ownership.FlatFragment.InferResultCase
 
+/-! extraction of the actual default chain-case inference execution.
+The input's abstract is a list description: the checker infers the end arm
+from the incoming facts, restores them, infers the link arm under the head's
+element abstract and the tail's input abstract, and joins the arms' results
+and facts. -/
+
+namespace Ownership.FlatFragment.InferChainCase
+
+open Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferBranch
+
+theorem list_ne_bottom (roots : List Origin) (element : Abstract) (certificate : Certificate) :
+    ((Abstract.list roots element certificate) == .bottom) = false := by
+  simp [BEq.beq, Abstract.equal]
+
+/-- The input of an accepted chain case ran. -/
+theorem infer_chainCase_atom_success {ctx : Context} {aenv : Env Abstract} {input : Atom} {head tail : Var} {onEnd onLink : Expr} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.chainCase input head tail onEnd onLink) after site).run before =
+      .ok (result, next)) :
+    ∃ value, abstractAtom aenv input = .ok value := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      rw [inferExpr] at accepted
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+    | ok unit =>
+      cases unit
+      cases atomRun : abstractAtom aenv input with
+      | error problem =>
+        rw [inferExpr] at accepted
+        simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope, atomRun,
+          StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+      | ok value => exact ⟨value, rfl⟩
+
+/-- A chain case on a dead input (its abstract bottom) returns bottom and changes nothing. -/
+theorem infer_chainCase_bottom_success {ctx : Context} {aenv : Env Abstract} {input : Atom} {head tail : Var} {onEnd onLink : Expr} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (atomRun : abstractAtom aenv input = .ok .bottom)
+    (accepted : (inferExpr inferenceFuel ctx aenv (.chainCase input head tail onEnd onLink) after site).run before =
+      .ok (result, next)) :
+    result = .bottom ∧ next = before := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      rw [inferExpr] at accepted
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+    | ok unit =>
+      cases unit
+      rw [inferExpr] at accepted
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope, atomRun,
+        Ownership.FlatFragment.InferResultCase.bottom_beq_bottom,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+      exact ⟨accepted.1.symm, accepted.2.symm⟩
+
+theorem infer_chainCase_succ_equation {ctx : Context} {aenv : Env Abstract} {input : Atom} {head tail : Var} {onEnd onLink : Expr} {after : Live} {site : List Nat} {before : St} {fuel : Nat} {roots : List Origin} {element : Abstract} {certificate : Certificate}
+    (defaultConfig : ctx.config = {})
+    (atomRun : abstractAtom aenv input = .ok (.list roots element certificate)) :
+    let updated : Context := {ctx with escaped := union ctx.escaped before.facts.escapes}
+    (inferExpr (fuel + 1) ctx aenv (.chainCase input head tail onEnd onLink) after site).run before =
+      (liveScope aenv after >>= fun _ =>
+        (getFacts >>= fun incoming =>
+          inferExpr fuel updated aenv onEnd after (site ++ [0]) >>= fun left =>
+          getFacts >>= fun leftFacts => modifyFacts (fun _ => incoming) >>= fun _ =>
+          inferExpr fuel updated ((head, element) :: (tail, .list roots element certificate) :: aenv)
+            onLink after (site ++ [1]) >>= fun right =>
+          getFacts >>= fun rightFacts => modifyFacts (fun _ => leftFacts.join rightFacts) >>= fun _ =>
+          pure (left.join right)).run before) := by
+  dsimp only
+  rw [inferExpr]
+  cases scope : liveScope aenv after with
+  | error problem =>
+    simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+      StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw]
+  | ok unit =>
+    cases unit
+    simp [bridgeObserve, defaultConfig, Config.has, getFacts, modifyFacts, scope, atomRun, list_ne_bottom,
+      StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, modify, modifyGet, MonadStateOf.modifyGet]
+
+/-- Both arms run from the incoming facts; the results and the facts are joined. -/
+theorem infer_chainCase_success {ctx : Context} {aenv : Env Abstract} {input : Atom} {head tail : Var} {onEnd onLink : Expr} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel : Nat} {roots : List Origin} {element : Abstract} {certificate : Certificate}
+    (defaultConfig : ctx.config = {})
+    (atomRun : abstractAtom aenv input = .ok (.list roots element certificate))
+    (accepted : (inferExpr inferenceFuel ctx aenv (.chainCase input head tail onEnd onLink) after site).run before =
+      .ok (result, next)) :
+    ∃ (childFuel : Nat) (left : Abstract) (middle : St) (right : Abstract) (last : St),
+      inferenceFuel = childFuel + 1 ∧ liveScope aenv after = .ok () ∧
+      let updated : Context := {ctx with escaped := union ctx.escaped before.facts.escapes}
+      (inferExpr childFuel updated aenv onEnd after (site ++ [0])).run before = .ok (left, middle) ∧
+      (inferExpr childFuel updated ((head, element) :: (tail, .list roots element certificate) :: aenv)
+        onLink after (site ++ [1])).run {middle with facts := before.facts} = .ok (right, last) ∧
+      result = left.join right ∧ next = {last with facts := middle.facts.join last.facts} := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    rw [infer_chainCase_succ_equation defaultConfig atomRun] at accepted
+    obtain ⟨finished, scope, rest⟩ := except_bind_success accepted
+    cases finished
+    obtain ⟨incoming, before', incomingRun, rest⟩ := checkM_bind_success rest
+    have incomingEq : incoming = before.facts ∧ before = before' := by
+      have := Except.ok.inj incomingRun
+      exact ⟨(congrArg Prod.fst this).symm, congrArg Prod.snd this⟩
+    obtain ⟨rfl, rfl⟩ := incomingEq
+    obtain ⟨left, middle, leftRun, rest⟩ := checkM_bind_success rest
+    obtain ⟨leftFacts, middle', leftFactsRun, rest⟩ := checkM_bind_success rest
+    have leftEq : leftFacts = middle.facts ∧ middle = middle' := by
+      have := Except.ok.inj leftFactsRun
+      exact ⟨(congrArg Prod.fst this).symm, congrArg Prod.snd this⟩
+    obtain ⟨rfl, rfl⟩ := leftEq
+    obtain ⟨finished, restored, restoredRun, rest⟩ := checkM_bind_success rest
+    cases finished
+    rw [modifyFacts_run] at restoredRun
+    have restoredEq : restored = {middle with facts := before.facts} :=
+      (congrArg Prod.snd (Except.ok.inj restoredRun)).symm
+    subst restoredEq
+    obtain ⟨right, last, rightRun, rest⟩ := checkM_bind_success rest
+    obtain ⟨rightFacts, last', rightFactsRun, rest⟩ := checkM_bind_success rest
+    have rightEq : rightFacts = last.facts ∧ last = last' := by
+      have := Except.ok.inj rightFactsRun
+      exact ⟨(congrArg Prod.fst this).symm, congrArg Prod.snd this⟩
+    obtain ⟨rfl, rfl⟩ := rightEq
+    obtain ⟨finished, joined, joinedRun, rest⟩ := checkM_bind_success rest
+    cases finished
+    rw [modifyFacts_run] at joinedRun
+    have joinedEq : joined = {last with facts := middle.facts.join last.facts} :=
+      (congrArg Prod.snd (Except.ok.inj joinedRun)).symm
+    subst joinedEq
+    have final := Except.ok.inj rest
+    exact ⟨childFuel, left, middle, right, last, rfl, scope, leftRun, rightRun,
+      (congrArg Prod.fst final).symm, (congrArg Prod.snd final).symm⟩
+
+end Ownership.FlatFragment.InferChainCase
+
 /-! scope facts from the actual successful checker scope test.
 Shadow freshness and prefix key alignment exclude the let binder from the
 outer continuation. This derives the branch premise used by let extraction.
