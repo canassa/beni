@@ -1,0 +1,49 @@
+> (socket a) GET /ann
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket b) GET /bob
+< (socket b) 101
+< (socket b) upgrade: websocket
+< (socket b) connection: Upgrade
+< (socket b) sec-websocket-accept: (the right key)
+> (socket c) GET /cy
+< (socket c) 101
+< (socket c) upgrade: websocket
+< (socket c) connection: Upgrade
+< (socket c) sec-websocket-accept: (the right key)
+> (socket a) "up"
+< (socket a) "got up"
+> (socket b) "left"
+< (socket b) "got left"
+> GET /tick
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 22
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< tick 1: sent to 3 of 3
+< (socket a) "tick 1: ann=up bob=left cy=-"
+< (socket b) "tick 1: ann=up bob=left cy=-"
+< (socket c) "tick 1: ann=up bob=left cy=-"
+> (socket c) "down"
+< (socket c) "got down"
+> (socket b) close 1000 "bye"
+< (socket b) close 1000 ""
+< (socket b) (the connection ended)
+> GET /tick
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 22
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< tick 2: sent to 2 of 2
+< (socket a) "tick 2: ann=up cy=down"
+< (socket c) "tick 2: ann=up cy=down"
+> (signal SIGTERM)
+--- stdout ---
+--- stderr ---
+--- exit signal SIGTERM ---

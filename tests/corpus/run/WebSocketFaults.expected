@@ -1,0 +1,182 @@
+> (socket v12) GET /version (version 12)
+< (socket v12) 426
+< (socket v12) sec-websocket-version: 13
+< (socket v12) content-length: 0
+< (socket v12) connection: close
+> (socket key) GET /key (key c2hvcnQ=)
+< (socket key) 400
+< (socket key) content-length: 0
+< (socket key) connection: close
+> (socket post) POST /post
+< (socket post) 400
+< (socket post) content-length: 0
+< (socket post) connection: close
+> (socket http10) GET /http10 HTTP/1.0
+< (socket http10) 400
+< (socket http10) content-length: 0
+< (socket http10) connection: close
+> (socket nohost) GET /nohost (no host)
+< (socket nohost) 400
+< (socket nohost) content-length: 0
+< (socket nohost) connection: close
+> (socket list) GET /list (upgrade: h2c, WebSocket)
+< (socket list) 101
+< (socket list) upgrade: websocket
+< (socket list) connection: Upgrade
+< (socket list) sec-websocket-accept: (the right key)
+> (socket list) "listed"
+< (socket list) "read listed"
+> (socket frag) GET /frag
+< (socket frag) 101
+< (socket frag) upgrade: websocket
+< (socket frag) connection: Upgrade
+< (socket frag) sec-websocket-accept: (the right key)
+> (socket frag) frame {"fin":false,"opcode":1,"text":"par"}
+> (socket frag) ping "p"
+< (socket frag) pong "p"
+> (socket frag) frame {"fin":true,"opcode":0,"text":"ts"}
+< (socket frag) "read parts"
+> (socket unmasked) GET /unmasked
+< (socket unmasked) 101
+< (socket unmasked) upgrade: websocket
+< (socket unmasked) connection: Upgrade
+< (socket unmasked) sec-websocket-accept: (the right key)
+> (socket unmasked) "before"
+> (socket unmasked) frame {"opcode":1,"text":"x","mask":false}
+< (socket unmasked) "read before"
+< (socket unmasked) close 1002 ""
+< (socket unmasked) (the connection ended)
+> (socket rsv) GET /rsv
+< (socket rsv) 101
+< (socket rsv) upgrade: websocket
+< (socket rsv) connection: Upgrade
+< (socket rsv) sec-websocket-accept: (the right key)
+> (socket rsv) frame {"opcode":1,"text":"x","rsv":4}
+< (socket rsv) close 1002 ""
+> (socket opcode) GET /opcode
+< (socket opcode) 101
+< (socket opcode) upgrade: websocket
+< (socket opcode) connection: Upgrade
+< (socket opcode) sec-websocket-accept: (the right key)
+> (socket opcode) frame {"opcode":3,"text":"x"}
+< (socket opcode) close 1002 ""
+> (socket fragping) GET /fragping
+< (socket fragping) 101
+< (socket fragping) upgrade: websocket
+< (socket fragping) connection: Upgrade
+< (socket fragping) sec-websocket-accept: (the right key)
+> (socket fragping) frame {"fin":false,"opcode":9,"text":"x"}
+< (socket fragping) close 1002 ""
+> (socket longping) GET /longping
+< (socket longping) 101
+< (socket longping) upgrade: websocket
+< (socket longping) connection: Upgrade
+< (socket longping) sec-websocket-accept: (the right key)
+> (socket longping) frame {"opcode":9,"hex":"00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"}
+< (socket longping) close 1002 ""
+> (socket cont) GET /cont
+< (socket cont) 101
+< (socket cont) upgrade: websocket
+< (socket cont) connection: Upgrade
+< (socket cont) sec-websocket-accept: (the right key)
+> (socket cont) frame {"opcode":0,"text":"x"}
+< (socket cont) close 1002 ""
+> (socket inside) GET /inside
+< (socket inside) 101
+< (socket inside) upgrade: websocket
+< (socket inside) connection: Upgrade
+< (socket inside) sec-websocket-accept: (the right key)
+> (socket inside) frame {"fin":false,"opcode":1,"text":"a"}
+> (socket inside) frame {"opcode":1,"text":"b"}
+< (socket inside) close 1002 ""
+> (socket onebyte) GET /onebyte
+< (socket onebyte) 101
+< (socket onebyte) upgrade: websocket
+< (socket onebyte) connection: Upgrade
+< (socket onebyte) sec-websocket-accept: (the right key)
+> (socket onebyte) frame {"opcode":8,"hex":"03"}
+< (socket onebyte) close 1002 ""
+> (socket code) GET /code
+< (socket code) 101
+< (socket code) upgrade: websocket
+< (socket code) connection: Upgrade
+< (socket code) sec-websocket-accept: (the right key)
+> (socket code) frame {"opcode":8,"hex":"03ed"}
+< (socket code) close 1002 ""
+> (socket utf8) GET /utf8
+< (socket utf8) 101
+< (socket utf8) upgrade: websocket
+< (socket utf8) connection: Upgrade
+< (socket utf8) sec-websocket-accept: (the right key)
+> (socket utf8) frame {"opcode":1,"hex":"c328"}
+< (socket utf8) close 1007 ""
+> (socket reason) GET /reason
+< (socket reason) 101
+< (socket reason) upgrade: websocket
+< (socket reason) connection: Upgrade
+< (socket reason) sec-websocket-accept: (the right key)
+> (socket reason) frame {"opcode":8,"hex":"03e8c328"}
+< (socket reason) close 1007 ""
+> (socket big) GET /big
+< (socket big) 101
+< (socket big) upgrade: websocket
+< (socket big) connection: Upgrade
+< (socket big) sec-websocket-accept: (the right key)
+> (socket big) "sixteen bytes ok"
+< (socket big) "read sixteen bytes ok"
+> (socket big) "seventeen bytes!!"
+< (socket big) close 1009 ""
+> (socket zero) GET /zero
+< (socket zero) 101
+< (socket zero) upgrade: websocket
+< (socket zero) connection: Upgrade
+< (socket zero) sec-websocket-accept: (the right key)
+> (socket zero) ""
+< (socket zero) "read "
+> (socket zero) "a"
+< (socket zero) close 1009 ""
+> (socket binary) GET /binary
+< (socket binary) 101
+< (socket binary) upgrade: websocket
+< (socket binary) connection: Upgrade
+< (socket binary) sec-websocket-accept: (the right key)
+> (socket binary) frame {"opcode":2,"hex":"0102"}
+< (socket binary) close 1003 ""
+< (socket binary) (the connection ended)
+> (signal SIGTERM)
+--- stdout ---
+/list read: "listed"
+/frag read: "parts"
+/unmasked read: "before"
+/unmasked ended: { code = 1002, reason = "" }
+/rsv ended: { code = 1002, reason = "" }
+/opcode ended: { code = 1002, reason = "" }
+/fragping ended: { code = 1002, reason = "" }
+/longping ended: { code = 1002, reason = "" }
+/cont ended: { code = 1002, reason = "" }
+/inside ended: { code = 1002, reason = "" }
+/onebyte ended: { code = 1002, reason = "" }
+/code ended: { code = 1002, reason = "" }
+/utf8 ended: { code = 1007, reason = "" }
+/reason ended: { code = 1007, reason = "" }
+/big read: "sixteen bytes ok"
+/big ended: { code = 1009, reason = "" }
+/zero read: ""
+/zero ended: { code = 1009, reason = "" }
+/binary ended: { code = 1003, reason = "" }
+--- stderr ---
+beni: WebSocket: the connection to /unmasked failed with 1002: a frame from the client is not masked
+beni: WebSocket: the connection to /rsv failed with 1002: a frame sets a reserved bit
+beni: WebSocket: the connection to /opcode failed with 1002: a frame has the reserved opcode 3
+beni: WebSocket: the connection to /fragping failed with 1002: a control frame is fragmented
+beni: WebSocket: the connection to /longping failed with 1002: a control frame is longer than 125 bytes
+beni: WebSocket: the connection to /cont failed with 1002: a continuation frame has no message to continue
+beni: WebSocket: the connection to /inside failed with 1002: a new message starts before the last one is whole
+beni: WebSocket: the connection to /onebyte failed with 1002: a close frame holds one byte
+beni: WebSocket: the connection to /code failed with 1002: a close frame holds the code 1005
+beni: WebSocket: the connection to /utf8 failed with 1007: a text message is not valid UTF-8
+beni: WebSocket: the connection to /reason failed with 1007: a close frame's reason is not valid UTF-8
+beni: WebSocket: the connection to /big failed with 1009: a message is longer than 16 bytes
+beni: WebSocket: the connection to /zero failed with 1009: a message is longer than 0 bytes
+beni: WebSocket: the connection to /binary failed with 1003: a binary message, which this version cannot read
+--- exit signal SIGTERM ---

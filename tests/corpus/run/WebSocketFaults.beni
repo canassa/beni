@@ -1,0 +1,54 @@
+-- run: what the server refuses (boundary.md §9.11 (e), (f), (j), and the
+-- amendment's items 22 and 24). A handshake that fails a check never
+-- reaches the program: 426 for another version, 400 for a key that is not
+-- 16 bytes, a request that is not a `GET`, an HTTP/1.0 request, or one
+-- with no `host`; an `upgrade` header is a list, so `h2c, WebSocket`
+-- reaches `upgrade`. Each frame that breaks RFC 6455 fails its connection:
+-- 1002 for a frame that is not masked, a reserved bit, a reserved opcode,
+-- a control frame that is fragmented or longer than 125 bytes, a
+-- continuation with nothing to continue, a new message inside a
+-- fragmented one, a close frame of one byte or with a code no peer may
+-- send; 1007 for text or a close reason that is not UTF-8; 1009 for a
+-- message over `maxMessage`, and for any message when `maxMessage` is
+-- below 0, which is 0; and 1003 for a binary message. The session reads
+-- every message that came before the fault, then the end with the code
+-- the server sent, and the server writes one line on standard error. A
+-- fragmented message with a ping between its parts is read whole, and
+-- the ping is answered.
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+upgrade : Request → Upgrade
+upgrade request =
+    limit = if request.path == "/zero" then -5 else 16
+    Server.acceptWith { protocol = Nothing, maxMessage = limit } (session request.path _)
+
+
+session : String, Socket → ⊤
+session path socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = Debug.log "${path} read" text
+            _ = WebSocket.write socket "read ${text}"
+            session path socket
+
+        Err close →
+            _ = Debug.log "${path} ended" close
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = λ_ → Server.text 200 "plain", upgrade = upgrade }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

@@ -1,0 +1,31 @@
+> (socket a) GET /a
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) (stops reading)
+> (socket a) "flood"
+> (socket a) (reads again)
+< (socket a) 128 messages, 8388608 bytes
+> (socket b) GET /b
+< (socket b) 101
+< (socket b) upgrade: websocket
+< (socket b) connection: Upgrade
+< (socket b) sec-websocket-accept: (the right key)
+> (socket b) "hold"
+> (socket b) 300 messages of 1024 bytes, "<i> xx…"
+> GET /go
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 2
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< go
+< (socket b) "300 in order"
+> (signal SIGTERM)
+--- stdout ---
+more than 1 MiB waits to be sent: True
+after the drain, waiting to be sent: 0
+--- stderr ---
+--- exit signal SIGTERM ---

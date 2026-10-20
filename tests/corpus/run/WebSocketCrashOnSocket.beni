@@ -1,0 +1,35 @@
+-- run: a failure of a WebSocket connection that Node documents and the
+-- platform does not name is a defect (boundary.md §9.11 (i); §4.1's
+-- testable form): the socket's `error` with `EIO`, injected by the serve
+-- preload after the client's first bytes, is thrown again, and the
+-- process exits 1 with Node's report.
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+session : Socket → ⊤
+session socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = Debug.log "read" text
+            session socket
+
+        Err close →
+            _ = Debug.log "ended" close
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = λ_ → Server.text 404 "", upgrade = λ_ → Server.accept session }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

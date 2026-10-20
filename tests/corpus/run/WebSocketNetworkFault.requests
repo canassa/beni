@@ -1,0 +1,16 @@
+{"fault": "socket:EHOSTUNREACH"}
+{"socket": "a", "path": "/a"}
+{"send": "a", "text": "x"}
+{"receive": "a"}
+{"socket": "b", "path": "/b"}
+{"send": "b", "text": "y"}
+{"receive": "b"}
+# The program waits before it accepts; the client resets first.
+{"socket": "g", "path": "/gate", "wait": false}
+{"reset": "g"}
+{"answer": "g"}
+{"method": "GET", "path": "/open"}
+{"socket": "c", "path": "/c"}
+{"send": "c", "text": "z"}
+{"receive": "c"}
+{"signal": "SIGTERM"}

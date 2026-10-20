@@ -1,0 +1,87 @@
+-- run: back-pressure (boundary.md §9.11 (h)). `write` never waits: while
+-- the client does not read, what the session wrote stays in `buffered`,
+-- and `drain` returns once the client has read it all. The other way, a
+-- session that reads late loses nothing: the platform stops reading the
+-- connection while more than 64 KiB wait, and reads again as `read` takes
+-- them, so 300 messages of 1 KiB each arrive whole and in order.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+type alias Gates =
+    hold : Deferred ⊤
+
+
+plain : Gates, Request → Response
+plain gates request =
+    case request.path of
+        _ →
+            _ = Deferred.complete gates.hold ⊤
+            Server.text 200 "go"
+
+
+session : Gates, Socket → ⊤
+session gates socket =
+    case WebSocket.read socket of
+        Ok "flood" →
+            chunk = String.repeat "x" 65536
+            writeMany socket chunk 128
+            _ = Debug.log "more than 1 MiB waits to be sent" (WebSocket.buffered socket > 1048576)
+            WebSocket.drain socket
+            _ = Debug.log "after the drain, waiting to be sent" (WebSocket.buffered socket)
+            session gates socket
+
+        Ok "hold" →
+            Deferred.wait gates.hold
+            _ = WebSocket.write socket (readInOrder socket 1 300)
+            session gates socket
+
+        Ok _ →
+            session gates socket
+
+        Err _ →
+            ⊤
+
+
+writeMany : Socket, String, Int → ⊤
+writeMany socket text n =
+    if n > 0 then
+        _ = WebSocket.write socket text
+        writeMany socket text (n - 1)
+    else
+        ⊤
+
+
+-- Read `last` messages, each `<i> …` with `i` from `next`.
+readInOrder : Socket, Int, Int → String
+readInOrder socket next last =
+    if next > last then
+        "${String.fromInt last} in order"
+    else
+        case WebSocket.read socket of
+            Ok text →
+                if String.startsWith text "${String.fromInt next} " then
+                    readInOrder socket (next + 1) last
+                else
+                    "message ${String.fromInt next} is out of order"
+
+            Err _ →
+                "the connection ended at ${String.fromInt next}"
+
+
+main : Program
+main = Io.run λ⊤ →
+    gates = { hold = Deferred.make ⊤ }
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain gates _, upgrade = λ_ → Server.accept (session gates _) }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

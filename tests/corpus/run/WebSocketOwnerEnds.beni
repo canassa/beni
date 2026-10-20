@@ -1,0 +1,48 @@
+-- run: the fiber that called `listenWith` owns every session (boundary.md
+-- §9.11 (g)). When it ends, each session is cancelled — its `Task.onExit`
+-- cleanup runs — and each connection is destroyed at once, with no close
+-- frame, so the client sees the end of the connection and the process
+-- exits.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import Task
+import WebSocket exposing (Socket)
+
+
+plain : Deferred ⊤, Request → Response
+plain stop _ =
+    _ = Deferred.complete stop ⊤
+    Server.text 200 "the owner returns"
+
+
+session : String, Socket → ⊤
+session name socket = Task.onExit (λ⊤ → loop name socket) λ_ → Debug.log "${name} cleaned up" ⊤
+
+
+loop : String, Socket → ⊤
+loop name socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket "${name} ${text}"
+            loop name socket
+
+        Err close →
+            _ = Debug.log "${name} ended" close
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = plain stop _, upgrade = λr → Server.accept (session r.path _) }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok _ →
+            Deferred.wait stop
+            Node.print "the owner returns"

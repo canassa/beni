@@ -1,0 +1,14 @@
+{"socket": "c", "path": "/c"}
+{"pause": "c"}
+{"send": "c", "text": "small"}
+# Answered once the session waits in `drain`.
+{"method": "GET", "path": "/filled"}
+{"resume": "c"}
+{"receive": "c", "until": "drained"}
+{"socket": "d", "path": "/d"}
+{"send": "d", "text": "hold-close"}
+{"send": "d", "repeat": 300, "bytes": 1024}
+{"method": "GET", "path": "/go"}
+{"receive": "d"}
+{"receive": "d"}
+{"signal": "SIGTERM"}

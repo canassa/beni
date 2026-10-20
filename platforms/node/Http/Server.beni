@@ -23,6 +23,7 @@
 
 import Js
 import Task exposing (Resume, Scope)
+import WebSocket exposing (Socket)
 
 
 --| Where a server listens: `host` as Node's `listen` takes it (`"127.0.0.1"`,
@@ -90,6 +91,48 @@ pub opaque type Server
 foreign type Handle
 
 
+--| The two handlers of `listenWith`: `request` answers every request that
+--| is not a WebSocket upgrade, and `upgrade` every request whose `upgrade`
+--| header is `websocket`, once the platform has checked its handshake
+--| (`boundary.md` §9.11 (e)).
+pub type alias Handlers =
+    request : Request → Response
+    upgrade : Request → Upgrade
+
+
+--| The answer to a request for a WebSocket: `accept`, `acceptWith` or
+--| `refuse`.
+pub opaque type Upgrade
+    = Accept String Int (Socket → ⊤)
+    | Refuse Response
+
+
+--| Open the connection, and call `session socket` in the request's fiber.
+--| The connection lives as long as `session` runs: when it returns, an
+--| open connection is closed with 1000. No subprotocol is chosen, and a
+--| message longer than 1 MiB fails the connection with 1009.
+pub accept : (Socket → ⊤) → Upgrade
+accept session = Accept "" 1048576 session
+
+
+--| `accept`, with the subprotocol the server chooses — one of `protocols
+--| request`, or the answer is a 500 — and the largest message the session
+--| accepts, in bytes: below 0 is 0, only empty messages, and above
+--| 2³² − 1 is 2³² − 1.
+pub acceptWith : { protocol : Maybe String, maxMessage : Int }, (Socket → ⊤) → Upgrade
+acceptWith options session =
+    Accept
+        (Maybe.withDefault options.protocol "")
+        (Basics.min 4294967295 (Basics.max 0 options.maxMessage))
+        session
+
+
+--| Answer with `response`, and end the connection: no WebSocket opens.
+--| The rules of a handler's response apply.
+pub refuse : Response → Upgrade
+refuse response = Refuse response
+
+
 --| Bind `address` and serve each request with `handler`, in a fiber of its
 --| own: `Ok` with the server once it listens, or `Err` with why it cannot.
 --|
@@ -99,16 +142,36 @@ foreign type Handle
 --| that returns right after it serves nothing and ends. `close` is the
 --| graceful way to stop it.
 pub listen : Address, (Request → Response) → Result ListenError Server
-listen at handler =
+listen at handler = open at handler Nothing
+
+
+--| `listen`, with a second handler for requests that ask for a WebSocket
+--| (`boundary.md` §9.11 (e)). Every other request, with another `upgrade`
+--| header too, reaches `request`. Each session belongs to the server: when
+--| the server's owner ends, every connection is destroyed; `close` closes
+--| each with 1001.
+pub listenWith : Address, Handlers → Result ListenError Server
+listenWith at handlers = open at handlers.request (Just handlers.upgrade)
+
+
+open : Address, (Request → Response), Maybe (Request → Upgrade) → Result ListenError Server
+open at handler upgrade =
     if not (validPort at.port) then
         Err InvalidPort
     else
-        case Task.callback λresume → startListen at resume of
+        upgrades =
+            case upgrade of
+                Just _ →
+                    True
+
+                Nothing →
+                    False
+        case Task.callback λresume → startListen at upgrades resume of
             Err error →
                 Err error
 
             Ok handle →
-                _ = Task.spawn λ⊤ → serve handle handler
+                _ = Task.spawn λ⊤ → serve handle handler upgrade
                 -- Let the loop's fiber run until it parks, so that from here
                 -- on a cancellation of the caller, or its end, reaches the
                 -- loop's canceller and closes the server: a loop that never
@@ -121,21 +184,57 @@ validPort : Int → Bool
 validPort port = port ≥ 0 && port ≤ 65535
 
 
--- The accept loop: one handler fiber per complete request, in the order
--- they arrived, inside a scope that is cancelled with the loop's fiber.
--- `nextRequest` answers `null` once the server has closed.
-serve : Handle, (Request → Response) → ⊤
-serve handle handler = Task.scope λscope → loop handle scope handler
+-- The accept loop: one handler fiber per complete request, and one per
+-- upgrade, in the order they arrived, inside a scope that is cancelled
+-- with the loop's fiber. `nextRequest` answers `null` once the server has
+-- closed.
+serve : Handle, (Request → Response), Maybe (Request → Upgrade) → ⊤
+serve handle handler upgrade = Task.scope λscope → loop handle scope handler upgrade
 
 
-loop : Handle, Scope, (Request → Response) → ⊤
-loop handle scope handler =
+loop : Handle, Scope, (Request → Response), Maybe (Request → Upgrade) → ⊤
+loop handle scope handler upgrade =
     incoming = Task.callback λresume → nextRequest handle resume
     if Js.isNull incoming then
         ⊤
     else
-        _ = Task.spawnIn scope λ⊤ → write incoming (handler (requestOf incoming))
-        loop handle scope handler
+        _ = Task.spawnIn scope λ⊤ → answer incoming handler upgrade
+        loop handle scope handler upgrade
+
+
+answer : Js.Value, (Request → Response), Maybe (Request → Upgrade) → ⊤
+answer incoming handler upgrade =
+    case upgrade of
+        Just upgradeHandler →
+            if isUpgrade incoming then
+                upgradeWith incoming (upgradeHandler (requestOf incoming))
+            else
+                write incoming (handler (requestOf incoming))
+
+        Nothing →
+            write incoming (handler (requestOf incoming))
+
+
+-- §9.11 (e): a refusal is written as an HTTP response; an acceptance
+-- opens the connection and runs the session in this fiber, unless the
+-- subprotocol is not one the client offered, or the client went away.
+upgradeWith : Js.Value, Upgrade → ⊤
+upgradeWith incoming upgrade =
+    case upgrade of
+        Refuse response →
+            refuseUpgrade incoming response
+
+        Accept chosen limit session →
+            if chosen ≠ "" && not (List.member (protocols (requestOf incoming)) chosen) then
+                invalidUpgrade incoming "the protocol \"${chosen}\" is not one the client offered"
+            else
+                case WebSocket.upgraded incoming chosen limit of
+                    Nothing →
+                        ⊤
+
+                    Just ( socket, finish ) →
+                        session socket
+                        finish ⊤
 
 
 --| The address the server bound: with a `port` of 0 asked for, the one the
@@ -167,6 +266,28 @@ text status body =
     }
 
 
+--| The subprotocols a WebSocket client offered in its
+--| `sec-websocket-protocol` headers, in order: each value split at its
+--| commas and trimmed, an empty entry or one that is not a token dropped.
+--| So a protocol `acceptWith` chooses from them is a token.
+pub protocols : Request → List String
+protocols request =
+    named = List.filter request.headers λ( key, _ ) → key == "sec-websocket-protocol"
+    List.concatMap named λ( _, value ) → offered value
+
+
+offered : String → List String
+offered value =
+    trimmed = List.map (String.split value ",") λp → String.trim p
+    List.filter trimmed isToken
+
+
+-- RFC 9110's `token`: one or more `tchar`.
+isToken : String → Bool
+isToken entry =
+    Js.to (Js.call (Js.regExp "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" "") "test" [ Js.from entry ])
+
+
 --| The first value of the header named, in any case, or `Nothing`.
 pub header : Request, String → Maybe String
 header request name = find (String.toLower name) request.headers
@@ -185,13 +306,22 @@ find name headers =
                 find name rest
 
 
-foreign impure startListen : Address, Resume (Result ListenError Handle) → (⊤ → ⊤)
+foreign impure startListen : Address, Bool, Resume (Result ListenError Handle) → (⊤ → ⊤)
 
 
 foreign impure nextRequest : Handle, Resume Js.Value → (⊤ → ⊤)
 
 
 foreign pure requestOf : Js.Value → Request
+
+
+foreign pure isUpgrade : Js.Value → Bool
+
+
+foreign impure refuseUpgrade : Js.Value, Response → ⊤
+
+
+foreign impure invalidUpgrade : Js.Value, String → ⊤
 
 
 foreign impure write : Js.Value, Response → ⊤

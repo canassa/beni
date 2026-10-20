@@ -1,0 +1,39 @@
+> (socket c) GET /c
+< (socket c) 101
+< (socket c) upgrade: websocket
+< (socket c) connection: Upgrade
+< (socket c) sec-websocket-accept: (the right key)
+> (socket c) (stops reading)
+> (socket c) "small"
+> GET /filled
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 6
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< filled
+> (socket c) (reads again)
+< (socket c) … "drained"
+> (socket d) GET /d
+< (socket d) 101
+< (socket d) upgrade: websocket
+< (socket d) connection: Upgrade
+< (socket d) sec-websocket-accept: (the right key)
+> (socket d) "hold-close"
+> (socket d) 300 messages of 1024 bytes, "<i> xx…"
+> GET /go
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 2
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< go
+< (socket d) close 4002 "paused"
+< (socket d) (the connection ended)
+> (signal SIGTERM)
+--- stdout ---
+closed while paused, then: { code = 4002, reason = "paused" }
+--- stderr ---
+--- exit signal SIGTERM ---

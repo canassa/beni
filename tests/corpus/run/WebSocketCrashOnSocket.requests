@@ -1,0 +1,4 @@
+{"fault": "socket:EIO"}
+{"socket": "a", "path": "/a"}
+{"send": "a", "text": "x"}
+{"receive": "a"}

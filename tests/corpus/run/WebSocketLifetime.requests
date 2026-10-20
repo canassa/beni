@@ -1,0 +1,17 @@
+{"socket": "a", "path": "/a"}
+{"send": "a", "text": "hi"}
+{"receive": "a"}
+{"drop": "a"}
+{"socket": "r", "path": "/r"}
+{"reset": "r"}
+{"socket": "p", "path": "/protocol", "protocols": ["v1"]}
+{"socket": "i", "path": "/invalid"}
+{"socket": "b", "path": "/b"}
+# The program accepts this one only after `Server.close`.
+{"socket": "l", "path": "/late", "wait": false}
+{"method": "GET", "path": "/close"}
+{"receive": "b"}
+{"receive": "b"}
+{"answer": "l"}
+{"receive": "l"}
+{"receive": "l"}

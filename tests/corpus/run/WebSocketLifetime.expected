@@ -1,0 +1,54 @@
+> (socket a) GET /a
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) "hi"
+< (socket a) "/a hi"
+> (socket a) (drops the connection)
+> (socket r) GET /r
+< (socket r) 101
+< (socket r) upgrade: websocket
+< (socket r) connection: Upgrade
+< (socket r) sec-websocket-accept: (the right key)
+> (socket r) (resets the connection)
+> (socket p) GET /protocol ["v1"]
+< (socket p) 500
+< (socket p) content-length: 0
+< (socket p) connection: close
+> (socket i) GET /invalid
+< (socket i) 500
+< (socket i) content-length: 0
+< (socket i) connection: close
+> (socket b) GET /b
+< (socket b) 101
+< (socket b) upgrade: websocket
+< (socket b) connection: Upgrade
+< (socket b) sec-websocket-accept: (the right key)
+> (socket l) GET /late (not waited for)
+> GET /close
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 7
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< closing
+< (socket b) close 1001 ""
+< (socket b) (the connection ended)
+< (socket l) 101
+< (socket l) upgrade: websocket
+< (socket l) connection: Upgrade
+< (socket l) sec-websocket-accept: (the right key)
+< (socket l) close 1001 ""
+< (socket l) (the connection ended)
+--- stdout ---
+/a ended: { code = 1006, reason = "" }
+/r ended: { code = 1006, reason = "" }
+/b ended: { code = 1001, reason = "" }
+late ended: { code = 1001, reason = "" }
+the server has closed
+--- stderr ---
+beni: Http.Server: the answer to the WebSocket request GET /protocol is invalid: the protocol "v9" is not one the client offered
+beni: Http.Server: the answer to the WebSocket request GET /invalid is invalid: the response is invalid: status 1000 is not an integer from 200 to 999
+--- exit 0 ---

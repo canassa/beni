@@ -1,0 +1,157 @@
+--! WebSocket on the server (`docs/design/boundary.md` §9.11): a connection
+--! that `Http.Server` accepted, and text messages both ways. A program
+--! listens with `Server.listenWith`, whose `upgrade` handler answers
+--! `Server.accept session`; the platform then calls `session socket` in a
+--! fiber of its own, and the connection lives as long as `session` runs.
+--!
+--!     play : Arena, Socket → ⊤
+--!     play arena socket =
+--!         case WebSocket.read socket of
+--!             Ok text →
+--!                 Arena.input arena text
+--!                 play arena socket
+--!
+--!             Err _ →
+--!                 ⊤
+--!
+--! `read`, `write`, `close`, `buffered` and `protocol` are the same on the
+--! `browser` platform's `WebSocket`, so a module that uses only them checks
+--! on both. `write` never waits; `buffered` and `drain` are how a sender
+--! sees a client that reads slowly. The sibling `WebSocket.js` reads and
+--! writes the frames of RFC 6455.
+
+import Js
+import Task exposing (Resume)
+
+
+--| A connection. Two sockets are equal only when they are one connection.
+pub foreign type Socket
+
+
+--| Whether `a` and `b` are one connection: `==` on a value that holds a
+--| socket.
+pub eq : Socket, Socket → Bool
+eq a b = Js.same a b
+
+
+--| Why a connection ended: the close code and the reason text
+--| (`boundary.md` §9.11 (a), *What `Close` says*). 1000 is a normal close,
+--| 1001 a peer that goes away, 1005 a close frame with no code, 1006 an end
+--| with no close frame, and 4000–4999 are the application's own.
+pub type alias Close =
+    code : Int
+    reason : String
+
+
+--| Why `write` sent nothing: the connection is closing or closed.
+pub type WriteError
+    = NotOpen
+
+
+--| Why `close` sent nothing. A server may send 1000 to 1003, 1007 to
+--| 1009, 1011 to 1014 and 3000 to 4999 — 1010 is a client's code — and a
+--| reason of at most 123 bytes of UTF-8.
+pub type CloseError
+    = InvalidCode Int
+    | ReasonTooLong
+
+
+--| The oldest text message no one has read, waiting for one while there is
+--| none; `Err` with why the connection ended once it has, and every
+--| message before the end was read.
+pub read : Socket → Result Close String
+read socket = Task.callback λresume → next socket resume
+
+
+--| Send `text` as one message: `Err NotOpen` when the connection is not
+--| open. Never waits; `buffered` says what is not sent yet.
+pub write : Socket, String → Result WriteError ⊤
+write socket text = if send socket text then Ok ⊤ else Err NotOpen
+
+
+--| Start the closing handshake with that code and reason. Nothing is
+--| written after it. A connection that is closing or closed is left as it
+--| is.
+pub close : Socket, Close → Result CloseError ⊤
+close socket why =
+    if not (sendable why.code) then
+        Err (InvalidCode why.code)
+    else if utf8Length why.reason > 123 then
+        Err ReasonTooLong
+    else
+        begin socket why.code why.reason
+        Ok ⊤
+
+
+-- The codes a server may send (RFC 6455 §7.4, and the IANA registry);
+-- 1010 is a client's code.
+sendable : Int → Bool
+sendable code =
+    (code ≥ 1000 && code ≤ 1003)
+        || (code ≥ 1007 && code ≤ 1009)
+        || (code ≥ 1011 && code ≤ 1014)
+        || (code ≥ 3000 && code ≤ 4999)
+
+
+utf8Length : String → Int
+utf8Length text =
+    Js.to
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
+        )
+
+
+--| The bytes, frame headers included, that the socket holds and has not
+--| handed to the network yet; 0 once the connection has ended.
+pub buffered : Socket → Int
+buffered socket = unsent socket
+
+
+--| The subprotocol the server chose, or `""`.
+pub protocol : Socket → String
+protocol socket = chosen socket
+
+
+--| Wait until every `write` made so far is handed to the network, or the
+--| connection has ended: at once when that is so.
+pub drain : Socket → ⊤
+drain socket = Task.callback λresume → awaitDrain socket resume
+
+
+--| What `Http.Server` calls when a program accepts an upgrade: the socket,
+--| with the function to call when the session returns, or `Nothing` when
+--| the client went away first. A program has no `Js.Value` to give it.
+pub upgraded : Js.Value, String, Int → Maybe (Socket × (⊤ → ⊤))
+upgraded incoming chosenProtocol limit =
+    s = fromUpgrade incoming chosenProtocol limit
+    if Js.isNull s then
+        Nothing
+    else
+        socket : Socket
+        socket = Js.to s
+        Just ( socket, λ⊤ → finish socket )
+
+
+foreign impure fromUpgrade : Js.Value, String, Int → Js.Value
+
+
+foreign impure next : Socket, Resume (Result Close String) → (⊤ → ⊤)
+
+
+foreign impure send : Socket, String → Bool
+
+
+foreign impure begin : Socket, Int, String → ⊤
+
+
+foreign impure finish : Socket → ⊤
+
+
+foreign impure unsent : Socket → Int
+
+
+foreign impure chosen : Socket → String
+
+
+foreign impure awaitDrain : Socket, Resume ⊤ → (⊤ → ⊤)
