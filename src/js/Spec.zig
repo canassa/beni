@@ -624,6 +624,21 @@ const Mod = struct {
     /// Bumped by every change to what a walk of the module meets: a node
     /// rewritten, a list or the body replaced, a name made global.
     version: u32 = 0,
+    /// The count `version` is, never wrapping, and which top-level statement
+    /// each change was made in (#492). A pass that writes inside one
+    /// top-level statement says so (`Spec.within`), and its changes are
+    /// that statement's; any other change is the whole module's (`wide`).
+    /// A walk of one top-level statement, kept at the `epoch` it was made
+    /// at, still holds while neither moved past it (`kept`): the passes
+    /// that write one function into another one at a time no longer throw
+    /// away every walk of a module of many statements per function.
+    epoch: u64 = 0,
+    wide: u64 = 0,
+    /// The statement `Spec.within` names, and its last change while named.
+    scope: ?Index = null,
+    scope_last: u64 = 0,
+    /// Per node, for a top-level statement: the `epoch` of its last change.
+    top_changed: std.ArrayList(u64) = .empty,
     /// Per node: its place as the index last walked it (`Spec.placeIndexed`),
     /// and the walk that wrote it.
     place_at: std.ArrayList(Spec.PlaceEntry) = .empty,
@@ -631,6 +646,10 @@ const Mod = struct {
     /// Per top-level statement: the module's `version` when the index last
     /// walked it, or `none`.
     place_top: std.ArrayList(u32) = .empty,
+    /// Per top-level statement: the `epoch` and the walk of the index's
+    /// last walk of it for `Spec.placeKept`.
+    /// Per node, for a top-level statement; a walk of 0 is none.
+    place_kept: std.ArrayList(struct { epoch: u64 = 0, walk: u64 = 0 }) = .empty,
     /// `Spec.namedIn`'s answers for every whole-program id at once — the
     /// first name of it a walk of the module meets, or `none` — as of
     /// `occ_version` (`none`: never built, or thrown away).
@@ -655,6 +674,27 @@ const Mod = struct {
     fn changed(m: *Mod) void {
         m.version +%= 1;
         if (m.version == none) m.version = 0;
+        m.epoch += 1;
+        if (m.scope != null) m.scope_last = m.epoch else m.wide = m.epoch;
+    }
+
+    /// `changed` for a name added to the module and made global, which no
+    /// node names yet: what a walk of a statement meets is as it was.
+    fn namesChanged(m: *Mod) void {
+        m.version +%= 1;
+        if (m.version == none) m.version = 0;
+        m.epoch += 1;
+    }
+
+    /// Whether what a walk of top-level statement `top` met at `at` (an
+    /// `epoch`) is what it meets now: no change since was the module's
+    /// own or that statement's.
+    fn kept(m: *const Mod, top: Index, at: u64) bool {
+        if (at == m.epoch) return true;
+        if (at < m.wide) return false;
+        if (m.scope) |t| if (t == top and at < m.scope_last) return false;
+        if (top.int() < m.top_changed.items.len and at < m.top_changed.items[top.int()]) return false;
+        return true;
     }
 
     fn setNode(m: *Mod, node: Index, tag: Node.Tag, lhs: u32, rhs: u32) void {
@@ -844,10 +884,16 @@ const Spec = struct {
     io_scans: []InlineScan = &.{},
     io_refs: []u32 = &.{},
     io_assigned: []u32 = &.{},
-    /// `assignedIn`'s and `preorder`'s answers, per top-level statement,
-    /// with the `Mod.version` each is of.
-    assigns_in: KeyMap(NodeRef, KeptNames) = .empty,
+    /// `preorder`'s answers, per top-level statement, with the `Mod.epoch`
+    /// each is of.
     preorders: KeyMap(NodeRef, KeptNodes) = .empty,
+    /// `nameScan`'s answers, per top-level statement, and its scratch.
+    name_scans: KeyMap(NodeRef, *NameScan) = .empty,
+    ns_slot: []u32 = &.{},
+    /// `sameFirstNames`' columns, by whole-program name.
+    first_stamp: []u32 = &.{},
+    first_name: []u32 = &.{},
+    first_epoch: u32 = 0,
     /// `countTop`'s record of each top-level statement's count, and while
     /// it counts (`logging`), the names `count` touched, the whole-program
     /// names it read (each read once), and those it marked escaped or
@@ -879,11 +925,10 @@ const Spec = struct {
     site_deps: []u32 = &.{},
     site_seen: []u32 = &.{},
 
-    const KeptScan = struct { version: u32, scan: ?*const BodyScan };
+    const KeptScan = struct { epoch: u64, scan: ?*const BodyScan };
     const CountLog = struct { version: u32, names: []const NameCount, reads: []const u32, escaped: []const u32, assigned: []const u32 };
     const NameCount = struct { name: u32, decls: u32, uses: u32, assigned: bool };
-    const KeptNames = struct { version: u32, names: []const u32 };
-    const KeptNodes = struct { version: u32, nodes: []const Index };
+    const KeptNodes = struct { epoch: u64, nodes: []const Index };
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
     const Declined = struct { g: u32, lit: Lit };
@@ -3317,7 +3362,7 @@ const Spec = struct {
         while (m.global_list.items.len < at.int()) try m.global_list.append(s.arena, none);
         try m.global_list.append(s.arena, g);
         m.global = m.global_list.items;
-        m.changed();
+        m.namesChanged();
     }
 
     /// Slice 6: the value of a declaration's name, `name` and its id.
@@ -3370,7 +3415,7 @@ const Spec = struct {
                 while (m.global_list.items.len < at.int()) try m.global_list.append(s.arena, none);
                 try m.global_list.append(s.arena, g);
                 m.global = m.global_list.items;
-                m.changed();
+                m.namesChanged();
                 gop.value_ptr.* = at.int();
             };
         }
@@ -3912,11 +3957,7 @@ const Spec = struct {
                     if (try s.onlyInspected(m, top, x)) break :intoReturn;
                     if (try declCount(s, m, top, x) != 1) break :intoReturn;
                     if (firstUse(ir, re, x, 0) != .found) break :intoReturn;
-                    var reads: u32 = 0;
-                    for (try s.preorder(m, top)) |node| {
-                        if (ir.tag(node) == .ident and ir.data(node).lhs == x.int()) reads += 1;
-                    }
-                    if (reads != 1) break :intoReturn;
+                    if ((try s.usesOf(m, top, x)).?.idents != 1) break :intoReturn;
                     var c: Copy = .{
                         .s = s,
                         .src = m,
@@ -4050,32 +4091,8 @@ const Spec = struct {
     /// Whether every mention of local `x` in `top` is the object of a
     /// property read, and `top` declares it once and assigns it nowhere.
     fn onlyInspected(s: *Spec, m: *Mod, top: Index, x: NameIndex) Allocator.Error!bool {
-        const ir = m.ir;
-        if (try declCount(s, m, top, x) != 1) return false;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        try JsIr.pushOperand(s.arena, &stack, top);
-        while (JsIr.popOperand(&stack)) |node| {
-            const d = ir.data(node);
-            switch (ir.tag(node)) {
-                .ident => if (d.lhs == x.int()) return false,
-                .member => {
-                    const obj: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) continue;
-                },
-                .assign_stmt => {
-                    // A write of `x.k` is no inspection.
-                    const target: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (ir.tag(target) == .member) {
-                        const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
-                        if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) return false;
-                    }
-                },
-                else => {},
-            }
-            try pushChildren(s.arena, ir, node, &stack);
-        }
-        return true;
+        const u = try s.usesOf(m, top, x) orelse return false;
+        return u.decls == 1 and u.bare() == 0 and u.written.items.len == 0;
     }
 
     /// `small`'s body for a call in module `m` with `args`: each argument
@@ -4149,20 +4166,35 @@ const Spec = struct {
         var any = false;
         for (s.mods) |*m| {
             const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
-            for (body) |top| switch (m.ir.tag(top)) {
-                // An arrow called where it is made in a top-level binding's own
-                // value, outside any function: written in its place as
-                // `inlineIifesIn` writes one inside a function, the binding the
-                // declaration that scopes its names.
-                .const_decl, .let_decl => {
-                    if (s.list_mode == .iife and try s.inlineIifesIn(m, top, top)) any = true;
-                    if (try s.srBelow(m, top, top, 0)) any = true;
-                },
-                .func_decl => if (try s.srBelow(m, top, top, 0)) {
-                    any = true;
-                },
-                else => {},
-            };
+            for (body) |top| {
+                // Every list a mode rewrites is one of `top`'s.
+                within(m, top);
+                const did = s.eachListIn(m, top) catch |err| {
+                    m.scope = null;
+                    return err;
+                };
+                try s.leave(m);
+                if (did) any = true;
+            }
+        }
+        return any;
+    }
+
+    fn eachListIn(s: *Spec, m: *Mod, top: Index) Allocator.Error!bool {
+        var any = false;
+        switch (m.ir.tag(top)) {
+            // An arrow called where it is made in a top-level binding's own
+            // value, outside any function: written in its place as
+            // `inlineIifesIn` writes one inside a function, the binding the
+            // declaration that scopes its names.
+            .const_decl, .let_decl => {
+                if (s.list_mode == .iife and try s.inlineIifesIn(m, top, top)) any = true;
+                if (try s.srBelow(m, top, top, 0)) any = true;
+            },
+            .func_decl => if (try s.srBelow(m, top, top, 0)) {
+                any = true;
+            },
+            else => {},
         }
         return any;
     }
@@ -4289,10 +4321,21 @@ const Spec = struct {
             },
         }
         if (!changed) return any;
+        // Scalar replacement changes a list by the statements it drops and
+        // the bindings it writes in their place, and nothing else: what is
+        // kept of `top` follows those (`retract`, `extend`).
+        var delta: ?Retracted = null;
+        var added: []const u32 = &.{};
+        if (s.list_mode == .scalars) {
+            const removed = try s.multisetMinus(items, out.items);
+            added = try s.multisetMinus(out.items, items);
+            delta = try s.retract(m, top, removed);
+        }
         const start = try m.append(s.gpa, out.items);
         m.changed();
         m.extra.items[owner] = start;
         m.extra.items[owner + 1] = start + @as(u32, @intCast(out.items.len));
+        if (delta) |r| try s.extend(m, top, r, added);
         return true;
     }
 
@@ -4435,8 +4478,7 @@ const Spec = struct {
         const gf = ir.extraData(@fromBackingInt(@intCast(ir.data(made).lhs)), JsIr.Func);
         if (ir.extraSlice(gf.params(), NameIndex).len != 0) return null;
         if (try declCount(s, m, top, g) != 1) return null;
-        const names = try s.assignedIn(m, top);
-        if (std.mem.indexOfScalar(u32, names, g.int()) != null) return null;
+        if (try s.assignedInTop(m, top, g)) return null;
         return g;
     }
     /// `backend.md` §9, *A short `switch` is its `if`s*: `switch (k)` on a
@@ -4696,66 +4738,29 @@ const Spec = struct {
         @memset(called, false);
         const seen = try s.arena.alloc(bool, props.len);
         @memset(seen, false);
-        var decls: u32 = 0;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        try JsIr.pushOperand(s.arena, &stack, top);
-        var budget: u32 = 1 << 16;
-        while (JsIr.popOperand(&stack)) |node| {
-            if (budget == 0) return false;
-            budget -= 1;
-            const d = ir.data(node);
-            switch (ir.tag(node)) {
-                .ident => if (d.lhs == x.int()) return false,
-                .const_decl, .let_decl, .func_decl, .gen_decl, .for_of => if (d.lhs == x.int()) {
-                    decls += 1;
-                },
-                .member => {
-                    const obj: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) {
-                        const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs)));
-                        const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
-                        try members.append(s.arena, node);
-                        seen[k] = true;
-                        continue;
-                    }
-                },
-                .assign_stmt => {
-                    const target: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (ir.tag(target) == .member) {
-                        const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
-                        if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) {
-                            const id = s.pts.propId(m.index, @fromBackingInt(@intCast(ir.data(target).rhs)));
-                            const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
-                            written[k] = true;
-                        }
-                    }
-                },
-                .call => {
-                    const callee: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (ir.tag(callee) == .member) {
-                        const obj: Index = @fromBackingInt(@intCast(ir.data(callee).lhs));
-                        if (ir.tag(obj) == .ident and ir.data(obj).lhs == x.int()) {
-                            const id = s.pts.propId(m.index, @fromBackingInt(@intCast(ir.data(callee).rhs)));
-                            if (std.mem.indexOfScalar(u32, ids, id)) |k| called[k] = true;
-                        }
-                    }
-                },
-                else => {},
-            }
-            switch (ir.tag(node)) {
-                .arrow, .func_decl, .gen_decl => {
-                    const record: ExtraIndex = @fromBackingInt(@intCast(if (ir.tag(node) == .arrow) d.lhs else d.rhs));
-                    const f = ir.extraData(record, JsIr.Func);
-                    for (ir.extraSlice(f.params(), NameIndex)) |p| if (p == x) {
-                        decls += 1;
-                    };
-                },
-                else => {},
-            }
-            try pushChildren(s.arena, ir, node, &stack);
+        // What a walk of `top` meets of `x` (`nameScan`): a walk that does
+        // not go below a read `x.k`, of at most 2¹⁶ nodes, meeting `x`
+        // nowhere else, every key it reads or writes one of the literal's.
+        const scan = try s.nameScan(m, top);
+        const use = findUse(scan, x.int()) orelse return false;
+        if (scan.nodes - use.members.items.len > 1 << 16) return false;
+        if (use.bare() != 0) return false;
+        for (use.members.items) |node| {
+            const id = s.pts.propId(m.index, @fromBackingInt(@intCast(ir.data(node).rhs)));
+            const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
+            try members.append(s.arena, node);
+            seen[k] = true;
         }
-        if (decls != 1) return false;
+        for (use.written.items) |target| {
+            const id = s.pts.propId(m.index, @fromBackingInt(@intCast(ir.data(target).rhs)));
+            const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
+            written[k] = true;
+        }
+        for (use.called.items) |callee| {
+            const id = s.pts.propId(m.index, @fromBackingInt(@intCast(ir.data(callee).rhs)));
+            if (std.mem.indexOfScalar(u32, ids, id)) |k| called[k] = true;
+        }
+        if (use.decls != 1) return false;
         for (props, called) |p, c| {
             if (c and ir.tag(@fromBackingInt(@intCast(ir.data(p).rhs))) != .arrow) return false;
         }
@@ -4796,6 +4801,14 @@ const Spec = struct {
             try out.append(s.arena, decl.int());
             if (m.tables) |t| if (kept and !inert(m.ir, v)) try t.keep.append(s.arena, decl);
         }
+        // Each read becomes, where it stands, its key's name or atom: what
+        // is kept of `top` is brought up to date by those reads alone —
+        // unless what holds a read counts it (`x.k = v`, `x.k(…)`, `x.k.j`),
+        // when it is counted again.
+        const roots = try s.arena.alloc(u32, members.items.len);
+        for (roots, members.items) |*r, node| r.* = node.int();
+        const alone = use.written.items.len == 0 and use.called.items.len == 0 and use.deep.items.len == 0;
+        const delta = if (alone) try s.retract(m, top, roots) else null;
         for (members.items) |node| {
             // A node two parents share is met twice.
             if (m.ir.tag(node) != .member) continue;
@@ -4803,6 +4816,7 @@ const Spec = struct {
             const k = std.mem.indexOfScalar(u32, ids, id).?;
             if (atoms[k]) |a| m.copyNode(node, a) else m.setNode(node, .ident, names[k].int(), 0);
         }
+        if (delta) |r| try s.extend(m, top, r, roots);
         return true;
     }
 
@@ -5300,7 +5314,14 @@ const Spec = struct {
             }
             for (calls.items) |c| {
                 if (m.ir.tag(c.call) != .call) continue;
-                if (try s.inlineSmallAt(m, @intCast(mi), c.top, c.call, c.small, false)) any = true;
+                // Every change is to the call's statement.
+                within(m, c.top);
+                const did = s.inlineSmallAt(m, @intCast(mi), c.top, c.call, c.small, false) catch |err| {
+                    m.scope = null;
+                    return err;
+                };
+                try s.leave(m);
+                if (did) any = true;
             }
         }
         return any;
@@ -5496,7 +5517,10 @@ const Spec = struct {
             c.subst[pi] = a.toOptional();
         };
         const e = try c.expr(small.ret, 0);
+        // As `inlineAt` writes a call as an expression.
+        const delta = try s.retractCall(m, top, call, e);
         m.copyNode(call, e);
+        if (delta) |r| try s.extend(m, top, r, &.{call.int()});
         return true;
     }
 
@@ -5769,22 +5793,11 @@ const Spec = struct {
             @memset(sc.assigned, false);
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
-                for (try s.preorder(m, top)) |node| {
-                    const d = ir.data(node);
-                    const t = ir.tag(node);
-                    if (t == .ident) {
-                        if (m.globalOf(@fromBackingInt(@intCast(d.lhs)))) |g| sc.refs[g] += 1;
-                    } else if (t == .call) {
-                        const callee: Index = @fromBackingInt(@intCast(d.lhs));
-                        if (ir.tag(callee) == .ident) if (m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs)))) |g| {
-                            sc.sites[g] = .{ .module = @intCast(mi), .top = top, .call = node };
-                        };
-                    } else if (t == .assign_stmt) {
-                        const target: Index = @fromBackingInt(@intCast(d.lhs));
-                        if (ir.tag(target) == .ident) if (m.globalOf(@fromBackingInt(@intCast(ir.data(target).lhs)))) |g| {
-                            sc.assigned[g] = true;
-                        };
-                    }
+                for ((try s.nameScan(m, top)).uses.items) |*u| {
+                    const g = m.globalOf(@fromBackingInt(@intCast(u.name))) orelse continue;
+                    sc.refs[g] += u.idents;
+                    for (u.calls.items) |call| sc.sites[g] = .{ .module = @intCast(mi), .top = top, .call = call };
+                    if (u.assigns != 0) sc.assigned[g] = true;
                 }
             }
             for (sc.refs, sc.assigned, 0..) |r, a, g| {
@@ -5793,6 +5806,514 @@ const Spec = struct {
             }
             sc.version = m.version;
         }
+    }
+
+    // ---- What a statement says of each name it names (#492) ---------------
+    //
+    // `inlineScan`, `occurrences`, `declCount`, `onlyInspected`,
+    // `replaceScalars`, `foldAt` and `atomArgument` each asked one name, or
+    // every whole-program name, of a top-level statement by walking all of
+    // it. A page's `update`, every widget's update written in, is tens of
+    // thousands of nodes, asked once per binding in it and again after each
+    // function written into it. One walk answers every name, kept while the
+    // statement stands (`Mod.kept`); and a change that replaces subtrees of
+    // the statement, which `retract` and `extend` are told of, keeps it up
+    // to date by those subtrees alone.
+
+    /// Per name a top-level statement names, what a walk of it meets.
+    const NameScan = struct {
+        epoch: u64,
+        /// How many nodes the walk meets (`preorder`'s length).
+        nodes: u32 = 0,
+        /// Per name (`.none` too): in the order the walk first meets each
+        /// name, then those an update added.
+        uses: std.ArrayList(NameUse) = .empty,
+        /// The first `sorted.len` of `uses`, by name: places in `uses`.
+        sorted: []const u32 = &.{},
+        /// The places in `uses` of the whole-program names `ident`s name,
+        /// in the order the walk meets each first (`occurrences`) — while
+        /// `ordered`: an update that touched a whole-program name the module
+        /// names more than one way clears it, since which name the walk
+        /// meets first is then not known.
+        globals: std.ArrayList(u32) = .empty,
+        ordered: bool = true,
+        /// Each object of a member read, target of an assignment or callee
+        /// that is neither a name nor a member read: a child its parent
+        /// counts once it is one (`retractCall`).
+        sensitive: std.ArrayList(Index) = .empty,
+        /// The sum of each met node's `contribution`, which a safety build
+        /// compares with a walk's (`nameScan`).
+        fp: u64 = 0,
+    };
+
+    /// One name's part of a `NameScan`. Each list holds a node once for
+    /// each time the walk meets it, in no order that matters.
+    const NameUse = struct {
+        name: u32,
+        /// How many times the statement declares it, as `declCount` counts.
+        decls: u32 = 0,
+        /// `ident`s of it.
+        idents: u32 = 0,
+        /// Assignments to it.
+        assigns: u32 = 0,
+        /// In `NameScan.globals`.
+        listed: bool = false,
+        /// `x.k`, `x` an `ident` of it: the member node.
+        members: std.ArrayList(Index) = .empty,
+        /// `x.k = …`: the target.
+        written: std.ArrayList(Index) = .empty,
+        /// `x.k(…)`: the callee.
+        called: std.ArrayList(Index) = .empty,
+        /// `x.k.j`: the outer member, which a change of `x.k` changes too.
+        deep: std.ArrayList(Index) = .empty,
+        /// Calls whose callee is an `ident` of it.
+        calls: std.ArrayList(Index) = .empty,
+
+        /// Its `ident`s that are not the object of a property read: what a
+        /// walk that does not go below such a read meets. (`.member` pushes
+        /// its object alone, and an `ident` is a leaf.)
+        fn bare(u: *const NameUse) u32 {
+            return u.idents - @as(u32, @intCast(u.members.items.len));
+        }
+    };
+
+    /// `nameScan`'s check of a kept or updated scan: what a walk of the
+    /// statement meets, summed, and the first name of each whole-program
+    /// name; name by name for a small statement.
+    fn checkScan(s: *Spec, m: *Mod, top: Index, kept: *NameScan) Allocator.Error!void {
+        const nodes = try s.preorderWalk(m, top);
+        if (nodes.len > max_checked_walk) return;
+        var fp: u64 = 0;
+        for (nodes) |node| fp +%= contribution(m.ir, node);
+        std.debug.assert(fp == kept.fp and nodes.len == kept.nodes);
+        if (kept.ordered) std.debug.assert(try s.sameFirstNames(m, kept, nodes));
+        if (nodes.len <= max_compared_scan) std.debug.assert(try s.sameNames(m, kept, try s.scanNames(m, nodes)));
+    }
+
+    fn nameScan(s: *Spec, m: *Mod, top: Index) Allocator.Error!*NameScan {
+        const key: NodeRef = .{ .module = m.index, .node = top.int() };
+        if (s.name_scans.get(key)) |kept| if (m.kept(top, kept.epoch)) {
+            // Kept across a change elsewhere in the module, or brought up
+            // to date: in a safety build, a test-sized statement is walked
+            // again and must say the same. Either way it holds as of now.
+            if (std.debug.runtime_safety and kept.epoch != m.epoch and m.ir.nodes.len <= max_checked_module) try s.checkScan(m, top, kept);
+            kept.epoch = m.epoch;
+            return kept;
+        };
+        const scan = try s.scanNames(m, try s.preorder(m, top));
+        try s.name_scans.put(s.arena, key, scan);
+        return scan;
+    }
+
+    /// `nameScan`, its `globals` in the walk's order.
+    fn nameScanOrdered(s: *Spec, m: *Mod, top: Index) Allocator.Error!*NameScan {
+        const scan = try s.nameScan(m, top);
+        if (scan.ordered) return scan;
+        const fresh = try s.scanNames(m, try s.preorder(m, top));
+        try s.name_scans.put(s.arena, .{ .module = m.index, .node = top.int() }, fresh);
+        return fresh;
+    }
+
+    /// `n`'s uses in `top` (`.none` too, as `declCount` counted it), or
+    /// null for none.
+    fn usesOf(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!?*const NameUse {
+        return findUse(try s.nameScan(m, top), n.int());
+    }
+
+    /// Whether an assignment in top-level statement `top` assigns `n`.
+    fn assignedInTop(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!bool {
+        const u = try s.usesOf(m, top, n) orelse return false;
+        return u.assigns != 0;
+    }
+
+    /// The scan of the nodes a walk of a statement meets.
+    fn scanNames(s: *Spec, m: *Mod, nodes: []const Index) Allocator.Error!*NameScan {
+        const scan = try s.arena.create(NameScan);
+        scan.* = .{ .epoch = m.epoch };
+        // Per name: its place in `uses` plus one, 0 for none, while the walk
+        // is counted; cleared again below.
+        if (s.ns_slot.len < m.names.items.len) s.ns_slot = try growSlice(s.arena, u32, s.ns_slot, m.names.items.len, 0);
+        try s.countNames(m, scan, nodes, .fresh);
+        for (scan.uses.items) |u| if (u.name < s.ns_slot.len) {
+            s.ns_slot[u.name] = 0;
+        };
+        const sorted = try s.arena.alloc(u32, scan.uses.items.len);
+        for (sorted, 0..) |*x, i| x.* = @intCast(i);
+        std.mem.sortUnstable(u32, sorted, scan.uses.items, struct {
+            fn less(uses: []const NameUse, a: u32, b: u32) bool {
+                return uses[a].name < uses[b].name;
+            }
+        }.less);
+        scan.sorted = sorted;
+        return scan;
+    }
+
+    fn findUse(scan: *NameScan, n: u32) ?*NameUse {
+        const uses = scan.uses.items;
+        var lo: usize = 0;
+        var hi: usize = scan.sorted.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (uses[scan.sorted[mid]].name < n) lo = mid + 1 else hi = mid;
+        }
+        if (lo < scan.sorted.len and uses[scan.sorted[lo]].name == n) return &uses[scan.sorted[lo]];
+        for (uses[scan.sorted.len..]) |*u| if (u.name == n) return u;
+        return null;
+    }
+
+    /// `n`'s entry in `scan`, made when it has none (a pointer that the
+    /// next entry made may move).
+    fn useOf(s: *Spec, scan: *NameScan, n: u32, how: Count) Allocator.Error!*NameUse {
+        return &scan.uses.items[try s.useAt(scan, n, how)];
+    }
+
+    /// `useOf`'s place in `scan.uses`.
+    fn useAt(s: *Spec, scan: *NameScan, n: u32, how: Count) Allocator.Error!u32 {
+        if (how == .fresh and n < s.ns_slot.len) {
+            const slot = &s.ns_slot[n];
+            if (slot.* == 0) {
+                try scan.uses.append(s.arena, .{ .name = n });
+                slot.* = @intCast(scan.uses.items.len);
+            }
+            return slot.* - 1;
+        }
+        if (findUse(scan, n)) |u| return @intCast((@intFromPtr(u) - @intFromPtr(scan.uses.items.ptr)) / @sizeOf(NameUse));
+        try scan.uses.append(s.arena, .{ .name = n });
+        return @intCast(scan.uses.items.len - 1);
+    }
+
+    /// A fresh scan's walk, or an update's: a subtree's part taken away
+    /// before a change (`retract`), or a new subtree's added after it
+    /// (`extend`).
+    const Count = enum { fresh, take, add };
+
+    fn countNames(s: *Spec, m: *Mod, scan: *NameScan, nodes: []const Index, how: Count) Allocator.Error!void {
+        const ir = m.ir;
+        const take = how == .take;
+        if (take) scan.nodes -= @intCast(nodes.len) else scan.nodes += @intCast(nodes.len);
+        for (nodes) |node| {
+            if (take) scan.fp -%= contribution(ir, node) else scan.fp +%= contribution(ir, node);
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .const_decl, .let_decl, .for_of => try s.countDecl(scan, d.lhs, how),
+                .func_decl, .gen_decl, .arrow => {
+                    const t = ir.tag(node);
+                    if (t != .arrow) try s.countDecl(scan, d.lhs, how);
+                    const record: ExtraIndex = @fromBackingInt(@intCast(if (t == .arrow) d.lhs else d.rhs));
+                    for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| try s.countDecl(scan, p.int(), how);
+                },
+                .ident => {
+                    const at = try s.useAt(scan, d.lhs, how);
+                    const u = &scan.uses.items[at];
+                    if (take) u.idents -= 1 else u.idents += 1;
+                    if (m.globalOf(@fromBackingInt(@intCast(d.lhs)))) |g| {
+                        if (!u.listed and u.idents != 0) {
+                            u.listed = true;
+                            try scan.globals.append(s.arena, at);
+                        }
+                        // A whole-program name the module names more than
+                        // one way: which the walk meets first may have
+                        // changed.
+                        if (how != .fresh and scan.ordered and namedTwice(m, scan, g)) scan.ordered = false;
+                    }
+                },
+                .member => {
+                    const obj: Index = @fromBackingInt(@intCast(d.lhs));
+                    if (opaqueChild(ir, obj)) try s.countNode(&scan.sensitive, obj, take);
+                    if (objectName(ir, obj)) |x| {
+                        try s.countNode(&(try s.useOf(scan, x, how)).members, node, take);
+                    } else if (ir.tag(obj) == .member) if (objectName(ir, @fromBackingInt(@intCast(ir.data(obj).lhs)))) |x| {
+                        try s.countNode(&(try s.useOf(scan, x, how)).deep, node, take);
+                    };
+                },
+                .assign_stmt => {
+                    const target: Index = @fromBackingInt(@intCast(d.lhs));
+                    if (opaqueChild(ir, target)) try s.countNode(&scan.sensitive, target, take);
+                    switch (ir.tag(target)) {
+                        .member => if (objectName(ir, @fromBackingInt(@intCast(ir.data(target).lhs)))) |x| {
+                            try s.countNode(&(try s.useOf(scan, x, how)).written, target, take);
+                        },
+                        .ident => {
+                            const u = try s.useOf(scan, ir.data(target).lhs, how);
+                            if (take) u.assigns -= 1 else u.assigns += 1;
+                        },
+                        else => {},
+                    }
+                },
+                .call => {
+                    const callee: Index = @fromBackingInt(@intCast(d.lhs));
+                    if (opaqueChild(ir, callee)) try s.countNode(&scan.sensitive, callee, take);
+                    switch (ir.tag(callee)) {
+                        .member => if (objectName(ir, @fromBackingInt(@intCast(ir.data(callee).lhs)))) |x| {
+                            try s.countNode(&(try s.useOf(scan, x, how)).called, callee, take);
+                        },
+                        .ident => try s.countNode(&(try s.useOf(scan, ir.data(callee).lhs, how)).calls, node, take),
+                        else => {},
+                    }
+                },
+                else => {},
+            }
+        }
+    }
+
+    /// The largest statement a safety build compares name by name, beyond
+    /// the fingerprint every checked statement is compared by.
+    const max_compared_scan = 32;
+
+    /// Whether the first name of each whole-program name in `kept`'s
+    /// `globals` is the one a walk meeting `nodes` meets first: by two
+    /// columns indexed by whole-program name, stamped, never cleared.
+    fn sameFirstNames(s: *Spec, m: *Mod, kept: *const NameScan, nodes: []const Index) Allocator.Error!bool {
+        if (s.first_stamp.len < s.globals) {
+            s.first_stamp = try growSlice(s.arena, u32, s.first_stamp, s.globals, 0);
+            s.first_name = try growSlice(s.arena, u32, s.first_name, s.globals, 0);
+        }
+        s.first_epoch += 1;
+        var expected: u32 = 0;
+        for (kept.globals.items) |at| {
+            const u = &kept.uses.items[at];
+            if (u.idents == 0) continue;
+            const g = m.globalOf(@fromBackingInt(@intCast(u.name))).?;
+            if (s.first_stamp[g] == s.first_epoch) continue;
+            s.first_stamp[g] = s.first_epoch;
+            s.first_name[g] = u.name;
+            expected += 1;
+        }
+        s.first_epoch += 1;
+        var met: u32 = 0;
+        for (nodes) |node| {
+            if (m.ir.tag(node) != .ident) continue;
+            const n = m.ir.data(node).lhs;
+            const g = m.globalOf(@fromBackingInt(@intCast(n))) orelse continue;
+            if (s.first_stamp[g] == s.first_epoch) continue;
+            if (s.first_stamp[g] != s.first_epoch - 1 or s.first_name[g] != n) return false;
+            s.first_stamp[g] = s.first_epoch;
+            met += 1;
+        }
+        return met == expected;
+    }
+
+    /// What `countNames` reads of `node` — its own operands, and what it
+    /// reads of a child (`reachOf`) — hashed: summed over a
+    /// statement's walk, a fingerprint of everything a scan of it counts,
+    /// which a change misses the moment it leaves out a node whose part
+    /// changed.
+    fn contribution(ir: *const JsIr, node: Index) u64 {
+        var h: u64 = node.int();
+        h = mixNode(ir, h, node);
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .member, .assign_stmt, .call => h = h *% 0x100000001B3 +% reachOf(ir, @fromBackingInt(@intCast(d.lhs))),
+            .func_decl, .gen_decl, .arrow => {
+                const record: ExtraIndex = @fromBackingInt(@intCast(if (ir.tag(node) == .arrow) d.lhs else d.rhs));
+                for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| h = h *% 0x100000001B3 +% p.int();
+            },
+            else => {},
+        }
+        // One avalanche per node: the sum of these is the fingerprint.
+        h *%= 0xFF51AFD7ED558CCD;
+        h ^= h >> 33;
+        h *%= 0xC4CEB9FE1A85EC53;
+        return h ^ (h >> 33);
+    }
+
+    /// What `countNames` reads of a member's object, an assignment's target
+    /// or a call's callee: the name an `ident` is, or the name `x` of a read
+    /// `x.k`, each marked; 0 for anything else.
+    fn reachOf(ir: *const JsIr, child: Index) u64 {
+        switch (ir.tag(child)) {
+            .ident => return 1 << 32 | @as(u64, ir.data(child).lhs),
+            .member => if (objectName(ir, @fromBackingInt(@intCast(ir.data(child).lhs)))) |x| return 2 << 32 | @as(u64, x),
+            else => {},
+        }
+        return 0;
+    }
+
+    /// `h` and `node`'s tag and operands, multiplied in (`contribution`).
+    fn mixNode(ir: *const JsIr, h: u64, node: Index) u64 {
+        const d = ir.data(node);
+        return ((h *% 0x100000001B3 +% @backingInt(ir.tag(node))) *% 0x100000001B3 +% d.lhs) *% 0x100000001B3 +% d.rhs;
+    }
+
+    /// Whether `scan` names whole-program name `g` by more than one name
+    /// with an `ident` left: which the walk meets first is then not known.
+    fn namedTwice(m: *Mod, scan: *const NameScan, g: u32) bool {
+        var seen: ?u32 = null;
+        for (scan.globals.items) |at| {
+            const u = &scan.uses.items[at];
+            if (u.idents == 0 or m.globalOf(@fromBackingInt(@intCast(u.name))) != g) continue;
+            if (seen) |n| {
+                if (n != u.name) return true;
+            } else seen = u.name;
+        }
+        return false;
+    }
+
+    /// Whether `child`, the object of a member read, an assignment's target
+    /// or a callee, is neither a name nor a member read: what holds it
+    /// counts nothing of it, until it becomes one.
+    fn opaqueChild(ir: *const JsIr, child: Index) bool {
+        return ir.tag(child) != .ident and ir.tag(child) != .member;
+    }
+
+    /// `retract` for a call `copyNode` is about to make `e`, a node outside
+    /// the statement: null — counted again — when `e` is a name or a member
+    /// read and what holds the call reads it (`h(x).k`, `h(x)(y)`).
+    fn retractCall(s: *Spec, m: *Mod, top: Index, call: Index, e: Index) Allocator.Error!?Retracted {
+        const scan = s.name_scans.get(.{ .module = m.index, .node = top.int() }) orelse return null;
+        if (!m.kept(top, scan.epoch)) return null;
+        // A call the statement no longer reaches — `inlineSmallPass` lists
+        // a statement's calls before it writes any, and a body written in
+        // may have dropped one — changes nothing a walk of it meets.
+        if (!countedCall(m.ir, scan, call)) return null;
+        if (!opaqueChild(m.ir, e) and std.mem.indexOfScalar(Index, scan.sensitive.items, call) != null) return null;
+        return s.retract(m, top, &.{call.int()});
+    }
+
+    /// Whether `scan` counts `call`, by its callee's name listing it. A call
+    /// of anything else is not known to be counted: a copy of a call's root
+    /// (`Copy.atom`) shares the call's callee, so the callee alone cannot
+    /// say the call itself is still met.
+    fn countedCall(ir: *const JsIr, scan: *NameScan, call: Index) bool {
+        const callee: Index = @fromBackingInt(@intCast(ir.data(call).lhs));
+        if (ir.tag(callee) != .ident) return false;
+        const u = findUse(scan, ir.data(callee).lhs) orelse return false;
+        return std.mem.indexOfScalar(Index, u.calls.items, call) != null;
+    }
+
+    /// The name `obj` is, when it is an `ident`.
+    fn objectName(ir: *const JsIr, obj: Index) ?u32 {
+        return if (ir.tag(obj) == .ident) ir.data(obj).lhs else null;
+    }
+
+    fn countDecl(s: *Spec, scan: *NameScan, n: u32, how: Count) Allocator.Error!void {
+        const u = try s.useOf(scan, n, how);
+        if (how == .take) u.decls -= 1 else u.decls += 1;
+    }
+
+    fn countNode(s: *Spec, list: *std.ArrayList(Index), node: Index, take: bool) Allocator.Error!void {
+        if (!take) return list.append(s.arena, node);
+        _ = list.swapRemove(std.mem.lastIndexOfScalar(Index, list.items, node).?);
+    }
+
+    /// Whether `kept`, possibly brought up to date, says what `fresh`, a
+    /// walk's, does of every name: the same counts and nodes, each as many
+    /// times, and — while `kept` is ordered — the same first name of each
+    /// whole-program name (`nameScan`'s check).
+    fn sameNames(s: *Spec, m: *Mod, kept: *NameScan, fresh: *NameScan) Allocator.Error!bool {
+        if (kept.nodes != fresh.nodes or kept.sensitive.items.len != fresh.sensitive.items.len) return false;
+        {
+            const p = try s.arena.dupe(Index, kept.sensitive.items);
+            const q = try s.arena.dupe(Index, fresh.sensitive.items);
+            std.mem.sort(Index, p, {}, lessIndex);
+            std.mem.sort(Index, q, {}, lessIndex);
+            if (!std.mem.eql(Index, p, q)) return false;
+        }
+        const empty: NameUse = .{ .name = none };
+        for ([_][2]*NameScan{ .{ kept, fresh }, .{ fresh, kept } }) |pair| {
+            for (pair[0].uses.items) |*x| {
+                const y: *const NameUse = findUse(pair[1], x.name) orelse &empty;
+                if (x.decls != y.decls or x.idents != y.idents or x.assigns != y.assigns) return false;
+                for ([_][2][]const Index{ .{ x.members.items, y.members.items }, .{ x.written.items, y.written.items }, .{ x.called.items, y.called.items }, .{ x.calls.items, y.calls.items }, .{ x.deep.items, y.deep.items } }) |lists_| {
+                    if (lists_[0].len != lists_[1].len) return false;
+                    const p = try s.arena.dupe(Index, lists_[0]);
+                    const q = try s.arena.dupe(Index, lists_[1]);
+                    std.mem.sort(Index, p, {}, lessIndex);
+                    std.mem.sort(Index, q, {}, lessIndex);
+                    if (!std.mem.eql(Index, p, q)) return false;
+                }
+            }
+        }
+        if (!kept.ordered) return true;
+        // Each whole-program name's first name, as `occurrences` reads it.
+        const a = try s.firstNames(m, kept);
+        const b = try s.firstNames(m, fresh);
+        return std.mem.eql(u8, std.mem.sliceAsBytes(a), std.mem.sliceAsBytes(b));
+    }
+
+    /// Per whole-program name a scan's `globals` meets with an `ident` left,
+    /// the first name of it: (whole-program name, name), by the former.
+    fn firstNames(s: *Spec, m: *Mod, scan: *NameScan) Allocator.Error![]const [2]u32 {
+        var out: std.ArrayList([2]u32) = .empty;
+        for (scan.globals.items) |at| {
+            const u = &scan.uses.items[at];
+            if (u.idents == 0) continue;
+            const g = m.globalOf(@fromBackingInt(@intCast(u.name))).?;
+            for (out.items) |o| {
+                if (o[0] == g) break;
+            } else try out.append(s.arena, .{ g, u.name });
+        }
+        std.mem.sort([2]u32, out.items, {}, struct {
+            fn less(_: void, a: [2]u32, b: [2]u32) bool {
+                return a[0] < b[0];
+            }
+        }.less);
+        return out.items;
+    }
+
+    fn lessIndex(_: void, a: Index, b: Index) bool {
+        return a.int() < b.int();
+    }
+
+    /// What `retract` kept of a statement before a change replaces subtrees
+    /// of it: its scan, the subtrees' part taken out.
+    const Retracted = struct { scan: *NameScan };
+
+    /// Before a change inside top-level statement `top` that replaces the
+    /// subtrees at `roots` (each a node the walk of `top` meets, once for
+    /// each time it is listed): what is kept of `top`, less what the
+    /// subtrees contribute to it. Null when nothing is kept. Nothing but
+    /// that change may come between this and `extend`.
+    fn retract(s: *Spec, m: *Mod, top: Index, roots: []const u32) Allocator.Error!?Retracted {
+        const scan = s.name_scans.get(.{ .module = m.index, .node = top.int() }) orelse return null;
+        if (!m.kept(top, scan.epoch)) return null;
+        try s.countNames(m, scan, try s.walkFrom(m, roots), .take);
+        return .{ .scan = scan };
+    }
+
+    /// After that change, which wrote the subtrees at `roots` where those
+    /// `retract` was given stood: what was kept of `top`, with the new
+    /// subtrees' part, kept again as of now.
+    fn extend(s: *Spec, m: *Mod, top: Index, r: Retracted, roots: []const u32) Allocator.Error!void {
+        try s.countNames(m, r.scan, try s.walkFrom(m, roots), .add);
+        r.scan.epoch = m.epoch;
+        // A safety build checks the update at once: the statement may change
+        // again before anything asks for it.
+        if (std.debug.runtime_safety and m.ir.nodes.len <= max_checked_module) try s.checkScan(m, top, r.scan);
+    }
+
+    /// `a` less `b`, as multisets.
+    fn multisetMinus(s: *Spec, a: []const u32, b: []const u32) Allocator.Error![]const u32 {
+        const x = try s.arena.dupe(u32, a);
+        const y = try s.arena.dupe(u32, b);
+        std.mem.sort(u32, x, {}, std.sort.asc(u32));
+        std.mem.sort(u32, y, {}, std.sort.asc(u32));
+        var out: std.ArrayList(u32) = .empty;
+        var j: usize = 0;
+        for (x) |v| {
+            while (j < y.len and y[j] < v) j += 1;
+            if (j < y.len and y[j] == v) {
+                j += 1;
+                continue;
+            }
+            try out.append(s.arena, v);
+        }
+        return out.items;
+    }
+
+    /// Every node a walk from each of `roots` meets, as `preorder` does.
+    fn walkFrom(s: *Spec, m: *Mod, roots: []const u32) Allocator.Error![]const Index {
+        var nodes: std.ArrayList(Index) = .empty;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (roots) |root| {
+            try JsIr.pushOperand(s.arena, &stack, @fromBackingInt(root));
+            while (JsIr.popOperand(&stack)) |node| {
+                try JsIr.pushOperand(s.arena, &nodes, node);
+                try pushChildren(s.arena, m.ir, node, &stack);
+            }
+        }
+        return nodes.items;
     }
 
     fn inlineOne(s: *Spec) Allocator.Error!bool {
@@ -5846,7 +6367,18 @@ const Spec = struct {
                 if (in_candidate != inner) continue;
                 const decl = s.decl[g].?;
                 const value: Index = @fromBackingInt(@intCast(s.mods[decl.module].ir.data(decl.stmt).rhs));
-                if (try s.inlineAt(decl, value, site, assigned)) return true;
+                // Every change `inlineAt` makes is to the call's statement:
+                // the call, a list in it, or — the call a top-level
+                // binding's — the module's body around it; and to the
+                // module's names.
+                const cm = &s.mods[site.module];
+                within(cm, site.top);
+                const wrote = s.inlineAt(decl, value, site, assigned) catch |err| {
+                    cm.scope = null;
+                    return err;
+                };
+                try s.leave(cm);
+                if (wrote) return true;
             }
         }
         return false;
@@ -5882,19 +6414,34 @@ const Spec = struct {
         ok: bool = true,
     };
 
-    /// `scanBody` of function `value` of module `fm`, kept while nothing a
-    /// walk of the module meets has changed (`Mod.version`, which
-    /// `inlineScan` keeps its counts by too): `inlineOne` tries every
-    /// candidate again after each function it writes, and most callees are
-    /// where they were. Null when the body is too big or too deep.
-    fn scanOf(s: *Spec, fm: *Mod, value: Index, f: JsIr.Func) Allocator.Error!?*const BodyScan {
+    /// `scanBody` of function `value` of module `fm`, declared by top-level
+    /// statement `top`, kept while nothing changed that statement
+    /// (`Mod.kept`): `inlineOne` tries every candidate again after each
+    /// function it writes, and most callees are where they were. Null when
+    /// the body is too big or too deep.
+    fn scanOf(s: *Spec, fm: *Mod, top: Index, value: Index, f: JsIr.Func) Allocator.Error!?*const BodyScan {
         const gop = try s.body_scans.getOrPut(s.arena, .{ .module = fm.index, .node = value.int() });
-        if (!gop.found_existing or gop.value_ptr.version != fm.version) {
-            const scan = try s.arena.create(BodyScan);
-            scan.* = .{};
-            const ok = try s.scanBody(fm, f, scan);
-            gop.value_ptr.* = .{ .version = fm.version, .scan = if (ok) scan else null };
+        if (gop.found_existing and fm.kept(top, gop.value_ptr.epoch)) {
+            // As `preorder` checks what it keeps.
+            if (std.debug.runtime_safety and gop.value_ptr.epoch != fm.epoch and fm.ir.nodes.len <= max_checked_module) {
+                const kept = gop.value_ptr.scan;
+                const fresh = try s.arena.create(BodyScan);
+                fresh.* = .{};
+                const ok = try s.scanBody(fm, f, fresh);
+                std.debug.assert(ok == (kept != null));
+                if (kept) |k| std.debug.assert(k.nodes == fresh.nodes and k.returns == fresh.returns and k.valued == fresh.valued and
+                    k.final_return == fresh.final_return and std.mem.eql(u32, k.reads, fresh.reads) and
+                    std.mem.eql(bool, k.assigns, fresh.assigns) and std.mem.eql(bool, k.repeated, fresh.repeated) and
+                    std.mem.eql(u32, k.declared.items, fresh.declared.items) and std.mem.eql(u32, k.mentioned.items, fresh.mentioned.items));
+            }
+            gop.value_ptr.epoch = fm.epoch;
+            return gop.value_ptr.scan;
         }
+        const scan = try s.arena.create(BodyScan);
+        scan.* = .{};
+        const ok = try s.scanBody(fm, f, scan);
+        // `scanBody` does not touch the table `gop` points into.
+        gop.value_ptr.* = .{ .epoch = fm.epoch, .scan = if (ok) scan else null };
         return gop.value_ptr.scan;
     }
 
@@ -6059,46 +6606,69 @@ const Spec = struct {
         }
         const n: NameIndex = @fromBackingInt(@intCast(ir.data(a).lhs));
         if (m.globalOf(n)) |g| return !assigned[g];
-        const names = try s.assignedIn(m, top);
-        return std.mem.indexOfScalar(u32, names, n.int()) == null;
+        return !try s.assignedInTop(m, top, n);
     }
 
-    /// Every name an assignment in top-level statement `top` assigns, kept
-    /// while the module's `version` stands: `atomArgument` walked the whole
-    /// statement once per argument it asked about.
-    fn assignedIn(s: *Spec, m: *Mod, top: Index) Allocator.Error![]const u32 {
-        const gop = try s.assigns_in.getOrPut(s.arena, .{ .module = m.index, .node = top.int() });
-        if (gop.found_existing and gop.value_ptr.version == m.version) return gop.value_ptr.names;
-        const ir = m.ir;
-        var names: std.ArrayList(u32) = .empty;
-        for (try s.preorder(m, top)) |node| {
-            if (ir.tag(node) == .assign_stmt) {
-                const target: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
-                if (ir.tag(target) == .ident) try names.append(s.arena, ir.data(target).lhs);
-            }
-        }
-        // `preorder` may have grown the table `gop` points into.
-        try s.assigns_in.put(s.arena, .{ .module = m.index, .node = top.int() }, .{ .version = m.version, .names = names.items });
-        return names.items;
+    /// Name top-level statement `top` of `m` as the one every change to `m`
+    /// is made in until `leave` (`Mod.kept`). The caller answers for it: a
+    /// change elsewhere in the module while it is named would keep walks
+    /// of other statements that no longer hold, which a safety build's
+    /// check in `preorder` catches.
+    fn within(m: *Mod, top: Index) void {
+        std.debug.assert(m.scope == null);
+        m.scope = top;
+        m.scope_last = 0;
+    }
+
+    fn leave(s: *Spec, m: *Mod) Allocator.Error!void {
+        const top = m.scope.?;
+        m.scope = null;
+        if (m.scope_last == 0) return;
+        if (m.top_changed.items.len <= top.int()) try m.top_changed.appendNTimes(s.arena, 0, top.int() + 1 - m.top_changed.items.len);
+        m.top_changed.items[top.int()] = m.scope_last;
     }
 
     /// Every node of top-level statement `top` of module `m`, in the order a
-    /// walk from it meets them (`pushChildren`), kept while the module's
-    /// `version` stands: most walks of a statement visit every node of it,
-    /// and the passes walk the same unchanged statements over and over.
+    /// walk from it meets them (`pushChildren`), kept while nothing changed
+    /// the statement (`Mod.kept`): most walks of a statement visit every
+    /// node of it, and the passes walk the same unchanged statements over
+    /// and over.
     fn preorder(s: *Spec, m: *Mod, top: Index) Allocator.Error![]const Index {
-        const key: NodeRef = .{ .module = m.index, .node = top.int() };
-        if (s.preorders.get(key)) |kept| if (kept.version == m.version) return kept.nodes;
-        const ir = m.ir;
+        const gop = try s.preorders.getOrPut(s.arena, .{ .module = m.index, .node = top.int() });
+        if (gop.found_existing and m.kept(top, gop.value_ptr.epoch)) {
+            // Kept across a change the module made elsewhere: in a safety
+            // build, a test-sized statement is walked again, and must meet
+            // what it met. Either way it holds as of now.
+            const kept = gop.value_ptr;
+            if (std.debug.runtime_safety and kept.epoch != m.epoch and kept.nodes.len <= max_checked_walk and m.ir.nodes.len <= max_checked_module) {
+                std.debug.assert(std.mem.eql(Index, try s.preorderWalk(m, top), kept.nodes));
+            }
+            kept.epoch = m.epoch;
+            return kept.nodes;
+        }
+        // `preorderWalk` does not touch the table `gop` points into.
+        const nodes = try s.preorderWalk(m, top);
+        gop.value_ptr.* = .{ .epoch = m.epoch, .nodes = nodes };
+        return nodes;
+    }
+
+    /// The largest walk of a statement that a safety build checks when it
+    /// is kept across a change elsewhere in its module, and the largest
+    /// module whose statements it checks (a test-sized one: as the
+    /// worklist's check takes programs of at most 1 500 nodes).
+    const max_checked_walk = 2000;
+    const max_checked_module = 3000;
+
+    /// `preorder`'s walk.
+    fn preorderWalk(s: *Spec, m: *Mod, top: Index) Allocator.Error![]const Index {
         var nodes: std.ArrayList(Index) = .empty;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         try JsIr.pushOperand(s.arena, &stack, top);
         while (JsIr.popOperand(&stack)) |node| {
             try JsIr.pushOperand(s.arena, &nodes, node);
-            try pushChildren(s.arena, ir, node, &stack);
+            try pushChildren(s.arena, m.ir, node, &stack);
         }
-        try s.preorders.put(s.arena, key, .{ .version = m.version, .nodes = nodes.items });
         return nodes.items;
     }
 
@@ -6159,13 +6729,12 @@ const Spec = struct {
                 },
                 else => {},
             }
-            for (try s.preorder(m, top)) |node| {
-                if (ir.tag(node) == .ident) {
-                    const n: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
-                    if (m.globalOf(n)) |g| if (g < m.occ.len and m.occ[g] == none) {
-                        m.occ[g] = n.int();
-                    };
-                }
+            const scan = try s.nameScanOrdered(m, top);
+            for (scan.globals.items) |at| {
+                const u = &scan.uses.items[at];
+                if (u.idents == 0) continue;
+                const g = m.globalOf(@fromBackingInt(@intCast(u.name))).?;
+                if (g < m.occ.len and m.occ[g] == none) m.occ[g] = u.name;
             }
         }
         m.occ_version = m.version;
@@ -6479,6 +7048,28 @@ const Spec = struct {
         }
     };
 
+    /// `placeOf` through a walk of the call's statement kept while the
+    /// statement stands (`Mod.kept`): `fuseOne` asks every site of every
+    /// candidate again after each function it writes, and most statements
+    /// are as they were. (`placeIndexed`'s index holds within `inlineOnce`
+    /// by what `inlineAt` moves; this one by what changed at all.)
+    fn placeKept(s: *Spec, m: *Mod, site: CallSite) Allocator.Error!?Place {
+        const at = site.call.int();
+        const found = found: {
+            if (site.top.int() < m.place_kept.items.len) {
+                const k = m.place_kept.items[site.top.int()];
+                if (k.walk != 0 and m.kept(site.top, k.epoch) and at < m.place_walk.items.len and m.place_walk.items[at] == k.walk and m.place_at.items[at].top == site.top) break :found m.place_at.items[at].place;
+            }
+            try s.indexWalk(m, site.top, false);
+            if (m.place_kept.items.len <= site.top.int()) try m.place_kept.appendNTimes(s.arena, .{}, site.top.int() + 1 - m.place_kept.items.len);
+            m.place_kept.items[site.top.int()] = .{ .epoch = m.epoch, .walk = s.place_walks };
+            if (at < m.place_walk.items.len and m.place_walk.items[at] == s.place_walks and m.place_at.items[at].top == site.top) break :found m.place_at.items[at].place;
+            break :found null;
+        };
+        if (std.debug.runtime_safety) std.debug.assert(samePlace(try s.placeOf(m, site), found));
+        return found;
+    }
+
     fn placeOf(s: *Spec, m: *Mod, site: CallSite) Allocator.Error!?Place {
         if (try s.placeAmong(m, null, &.{site.top}, false, true, site.call, 0)) |p| return p;
         return null;
@@ -6596,7 +7187,7 @@ const Spec = struct {
         const args = try s.arena.dupe(Index, cm.ir.extraSlice(cm.ir.subRange(@fromBackingInt(@intCast(cm.ir.data(site.call).rhs))), Index));
         if (args.len != params.len) return false;
 
-        const scan = try s.scanOf(fm, value, f) orelse return false;
+        const scan = try s.scanOf(fm, decl.stmt, value, f) orelse return false;
         // A parameter declared again inside is not one name to substitute.
         for (params) |p| if (p.unwrap()) |i| if (scan.counts[i] > 1) return false;
         // Another module's function names nothing but its own locals and
@@ -6702,23 +7293,34 @@ const Spec = struct {
             } else c.subst[pi] = a.toOptional();
         }
 
+        // What is kept of the call's statement is brought up to date by the
+        // subtree the copy replaces and the ones it writes (`retract`,
+        // `extend`), not walked again: a module's every call may stand in
+        // one statement (a page's `update`, its `view`). Not when the
+        // module's body itself is spliced (`retractCall` for the rest).
+        var delta: ?Retracted = if (form == .expr or place.top_level) null else try s.retract(cm, site.top, &.{place.stmt.int()});
+        var new_roots: []const u32 = &.{};
         switch (form) {
             .expr => {
                 const ret: Index = @fromBackingInt(@intCast(fm.ir.data(body[0]).lhs));
                 const e = try c.expr(ret, 0);
+                delta = try s.retractCall(cm, site.top, site.call, e);
                 cm.copyNode(site.call, e);
+                new_roots = try s.arena.dupe(u32, &.{site.call.int()});
             },
             .ret => {
                 var out: std.ArrayList(u32) = .empty;
                 try out.appendSlice(s.arena, bindings.items);
                 for (body) |stmt| try out.append(s.arena, (try c.stmt(stmt, 0)).int());
                 try s.splice(cm, place, out.items, false);
+                new_roots = out.items;
             },
             .tail_stmt => {
                 var out: std.ArrayList(u32) = .empty;
                 try out.appendSlice(s.arena, bindings.items);
                 try out.appendSlice(s.arena, try copyTail(&c, cm, body, 0));
                 try s.splice(cm, place, out.items, false);
+                new_roots = out.items;
             },
             .stmt => {
                 var out: std.ArrayList(u32) = .empty;
@@ -6736,6 +7338,7 @@ const Spec = struct {
                     try out.append(s.arena, (try c.stmt(stmt, 0)).int());
                 }
                 try s.splice(cm, place, out.items, false);
+                new_roots = out.items;
             },
             .decl => {
                 var out: std.ArrayList(u32) = .empty;
@@ -6747,8 +7350,10 @@ const Spec = struct {
                 cm.setData(place.stmt, d.lhs, e.int());
                 try out.append(s.arena, place.stmt.int());
                 try s.splice(cm, place, out.items, true);
+                new_roots = out.items;
             },
         }
+        if (delta) |r| try s.extend(cm, site.top, r, new_roots);
         return true;
     }
 
@@ -6897,7 +7502,7 @@ const Spec = struct {
         const f = fm.ir.extraData(@fromBackingInt(@intCast(fm.ir.data(value).lhs)), JsIr.Func);
         const params = try s.arena.dupe(NameIndex, fm.ir.extraSlice(f.params(), NameIndex));
         const body = try s.arena.dupe(Index, fm.ir.extraSlice(f.body(), Index));
-        const scan = try s.scanOf(fm, value, f) orelse return false;
+        const scan = try s.scanOf(fm, decl.stmt, value, f) orelse return false;
         for (params) |p| if (p.unwrap()) |i| if (scan.counts[i] > 1) return false;
         for (scan.assigns) |a| if (a) return false;
         if (!try s.plainStmts(fm, body, true) or !allReturn(fm.ir, body, 0)) return false;
@@ -6908,7 +7513,7 @@ const Spec = struct {
         for (sites) |site| {
             if (site.module == decl.module and site.top == decl.stmt) return false;
             const cm = &s.mods[site.module];
-            const place = try s.placeOf(cm, site) orelse return false;
+            const place = try s.placeKept(cm, site) orelse return false;
             if (place.kind != .decl or place.top_level or place.owner == null) return false;
             if (cm.ir.tag(place.stmt) != .const_decl and cm.ir.tag(place.stmt) != .let_decl) return false;
             const x: NameIndex = @fromBackingInt(@intCast(cm.ir.data(place.stmt).lhs));
@@ -6990,16 +7595,30 @@ const Spec = struct {
             // Where the list is now: an earlier site of this module may have
             // been written into another list, never into this one, whose
             // range is stored where it was.
-            const place = try s.placeOf(cm, fit.site) orelse unreachable;
+            const place = try s.placeKept(cm, fit.site) orelse unreachable;
             const list = listAt(cm, place.owner.?);
             const at = std.mem.indexOfScalar(Index, list, place.stmt).?;
             var items: std.ArrayList(u32) = .empty;
             for (list[0..at]) |item| try items.append(s.arena, item.int());
             try items.appendSlice(s.arena, copy);
+            // The list is the site's statement's: the rest of it goes, the
+            // copy comes in its place (`retract`, `extend`).
+            const gone = try s.arena.alloc(u32, list.len - at);
+            for (gone, list[at..]) |*g_, item| g_.* = item.int();
+            within(cm, fit.site.top);
+            const delta = s.retract(cm, fit.site.top, gone) catch |err| {
+                cm.scope = null;
+                return err;
+            };
             const start = try cm.append(s.gpa, items.items);
             cm.changed();
             cm.extra.items[place.owner.?] = start;
             cm.extra.items[place.owner.? + 1] = start + @as(u32, @intCast(items.items.len));
+            if (delta) |r| s.extend(cm, fit.site.top, r, copy) catch |err| {
+                cm.scope = null;
+                return err;
+            };
+            try s.leave(cm);
         }
         return true;
     }
@@ -7337,8 +7956,7 @@ const Spec = struct {
     /// (or a `let` nothing assigns); null otherwise.
     fn soleInit(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!?Index {
         if (try declCount(s, m, top, n) != 1) return null;
-        const names = try s.assignedIn(m, top);
-        if (std.mem.indexOfScalar(u32, names, n.int()) != null) return null;
+        if (try s.assignedInTop(m, top, n)) return null;
         for (try s.preorder(m, top)) |node| {
             const t = m.ir.tag(node);
             if ((t == .const_decl or t == .let_decl) and m.ir.data(node).lhs == n.int()) {
@@ -11052,24 +11670,10 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
 }
 
 /// How many times `top` declares name `n`: a `const`, `let`, `function` or
-/// `for…of` binding, or a parameter of a function in it.
+/// `for…of` binding, or a parameter of a function in it (`Spec.nameScan`).
 fn declCount(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!u32 {
-    const ir = m.ir;
-    var count: u32 = 0;
-    for (try s.preorder(m, top)) |node| {
-        const d = ir.data(node);
-        const t = ir.tag(node);
-        if (t == .const_decl or t == .let_decl or t == .for_of) {
-            if (d.lhs == n.int()) count += 1;
-        } else if (t == .func_decl or t == .gen_decl or t == .arrow) {
-            if (t != .arrow and d.lhs == n.int()) count += 1;
-            const record: ExtraIndex = @fromBackingInt(@intCast(if (t == .arrow) d.lhs else d.rhs));
-            for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| if (p == n) {
-                count += 1;
-            };
-        }
-    }
-    return count;
+    const u = try s.usesOf(m, top, n) orelse return 0;
+    return u.decls;
 }
 
 /// Whether `Pts.combine` makes `node`'s value from its tag alone, reading
