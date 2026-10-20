@@ -68,6 +68,12 @@ node_keys: []const KeyedNode = &.{},
 /// A name past its end is wild.
 name_key: []const RepKey = &.{},
 
+/// Owned, `--release` only: the top-level `const` statements of the
+/// declarations whose type the checker found closed (checker-v2.md §36,
+/// the declarations), ascending. `Spec`'s `Copy` keeps the keys of a body
+/// it copies only from one of these (`backend.md` §9).
+closed_decls: []const Node.Index = &.{},
+
 /// One row of `node_keys`.
 pub const KeyedNode = struct { node: Node.Index, key: RepKey };
 
@@ -643,6 +649,7 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
     gpa.free(ir.string_bytes);
     gpa.free(ir.names);
     gpa.free(ir.node_keys);
+    gpa.free(ir.closed_decls);
     gpa.free(ir.name_key);
     ir.* = undefined;
 }

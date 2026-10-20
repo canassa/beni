@@ -9,7 +9,7 @@ module TopLevel
   name b$2 #1
   name c$3 #1
   node object 15:12 #1
-  node arrow 15:12 #2
-  node arrow 19:9 #2
+  node arrow 15:12 #1
+  node arrow 19:9 #1
   node object 28:20 #1
   node array 31:21 #4

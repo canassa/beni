@@ -609,6 +609,8 @@ const Mod = struct {
     /// unless `Copy` gives one its source's (`backend.md` §9,
     /// *Declared-type filtering of fact 3*).
     node_keys: std.ArrayList(JsIr.KeyedNode),
+    /// `JsIr.closed_decls`, a statement leaving it when it is rewritten.
+    closed_decls: std.ArrayList(Index),
     name_key: std.ArrayList(JsIr.RepKey),
     tables: ?*Tables,
     self: JsIr.Symbol.Optional,
@@ -716,6 +718,10 @@ const Mod = struct {
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
+        if (m.closed_decls.items.len != 0) if (std.sort.binarySearch(Index, m.closed_decls.items, node, orderIndex)) |at| {
+            _ = m.closed_decls.orderedRemove(at);
+            m.ir.closed_decls = m.closed_decls.items;
+        };
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -813,6 +819,11 @@ const Mod = struct {
         return at;
     }
 };
+
+/// `std.sort.binarySearch`'s order for node indices.
+fn orderIndex(a: Index, b: Index) std.math.Order {
+    return std.math.order(a.int(), b.int());
+}
 
 const Spec = struct {
     gpa: Allocator,
@@ -1083,6 +1094,7 @@ const Spec = struct {
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len, .pointer_stability = .{} },
                 .names = .{ .items = @constCast(ir.names), .capacity = ir.names.len, .pointer_stability = .{} },
                 .node_keys = .{ .items = @constCast(ir.node_keys), .capacity = ir.node_keys.len, .pointer_stability = .{} },
+                .closed_decls = .{ .items = @constCast(ir.closed_decls), .capacity = ir.closed_decls.len, .pointer_stability = .{} },
                 .name_key = .{ .items = @constCast(ir.name_key), .capacity = ir.name_key.len, .pointer_stability = .{} },
                 .tables = src.tables,
                 .self = src.self,
@@ -1173,6 +1185,7 @@ const Spec = struct {
             m.ir.names = try m.names.toOwnedSlice(s.gpa);
             // A development build's columns are empty and own nothing.
             if (m.node_keys.capacity != 0) m.ir.node_keys = try m.node_keys.toOwnedSlice(s.gpa);
+            if (m.closed_decls.capacity != 0) m.ir.closed_decls = try m.closed_decls.toOwnedSlice(s.gpa);
             if (m.name_key.capacity != 0) m.ir.name_key = try m.name_key.toOwnedSlice(s.gpa);
         }
     }
@@ -4884,18 +4897,13 @@ const Spec = struct {
 
     /// Whether a `Copy` of the body of top-level statement `stmt` of `m`
     /// keeps its keys (`Copy.keys`): `backend.md` §9 lets it only when the
-    /// declaration's type holds no type variable, which is when its key is
-    /// not wild (checker-v2.md §36, the declarations). Lowering gave that
-    /// key to the declaration's own arrow (`Lower.keyArrow`), so a function
-    /// whose arrow has none — polymorphic, led by evidence, one that may
-    /// suspend, or rewritten in place since — copies every node wild.
+    /// declaration's type holds no type variable, which is when the checker
+    /// keyed it (checker-v2.md §36, the declarations) and lowering listed
+    /// its statement in `JsIr.closed_decls`. A statement rewritten since has
+    /// left the list.
     fn keepsKeys(s: *const Spec, m: *const Mod, stmt: Index) bool {
         _ = s;
-        const ir = m.ir;
-        if (ir.tag(stmt) != .const_decl) return false;
-        const v: Index = @fromBackingInt(@intCast(ir.data(stmt).rhs));
-        if (ir.tag(v) != .arrow) return false;
-        return ir.nodeKey(v) != .wild;
+        return std.sort.binarySearch(Index, m.closed_decls.items, stmt, orderIndex) != null;
     }
 
     /// `keepsKeys` for the function a `Small` is: the top-level declaration

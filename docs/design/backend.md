@@ -8678,12 +8678,21 @@ by text, `{ r | … }` under a closed `r` its whole row, a host type wild); a ty
 through unboxing is wild. **`node_key` is sparse**: `JsIr.node_keys` holds a row (node, key) per
 keyed allocation, ascending, since only objects, arrays and arrows carry one, and a dense column was
 23 % of `JsIr`'s bytes on `bench/corpus`; `name_key` stays a dense column. **A key is the
-representation key itself**, wild for a type that makes no site; `RepKeys.isWild` answers for the wild set and `RepKeys.result` gives a function key's
-result, so the filter maps through the set where it reads. The wild set is as specified, the
-boundary's named types being every named type of constructors without integer tags; where its
-closure would have to go through a body this file cannot canonicalise as the checker does (a schema
-endpoint's, which is a plan), every key is wild (`all_wild`), since a key no checker key equals would
-be a filter that drops a site of its own type. Four things the specification did not foresee:
+representation key itself**, wild for a type that makes no site and for a function type: **an
+arrow is keyed by what it returns**, its return var's filter and the one thing its key is for, so a
+function with a host-typed parameter and a closed result (a widget's `replace`, taking
+`Schema.Value`) still filters its return, and a var of function type holds arrows of every key.
+`RepKeys.isWild` answers for the wild set where the filter reads. The wild set is as specified, the
+boundary's named types being every named type of constructors without integer tags. **A schema
+declaration adds its own `Type` and `Encoded` and nothing else** (their values come from `Js.to`):
+a record endpoint as its plan's term reads (an endpoint with parameters by matching every record of
+the table against that term), a tagged one as a named type of no integer tags, closed through its
+constructors' payloads (their interface schemes, or for a private schema its plan's variants when
+each payload is a primitive, a parameter or another schema). Where the closure would still have to
+go through a type this file cannot canonicalise as the checker does (a private tagged schema whose
+variant carries an inline record, say), every key is wild (`all_wild`), since a key no checker key
+equals would be a filter that drops a site of its own type. Three things the specification did not
+foresee:
 
 - **A name is a `NameIndex`, not a local.** Lowering numbers a local's disambiguator within its
   top-level declaration, so two declarations' `p$1` are one name. A name keeps a key while every
@@ -8691,14 +8700,13 @@ be a filter that drops a site of its own type. Four things the specification did
   top-level statement, so a per-statement key would recover what this loses, if the filter finds it
   matters. A local with no source name is not keyed: its `$p` name is one compiler-made parameters
   take too.
-- **A declaration's key is its arrow's.** The artifact keys each value declaration by its scheme
-  when closed (checker-v2.md §36). Lowering gives that key to the declaration's own arrow — not to a
-  suspendable twin, nor to an arrow evidence parameters lead, nor to any function that may suspend,
-  whose return is a parked fiber — so a top-level function's return var has a filter as a lambda's
-  does. `Copy`'s rule reads it there: `Spec.keepsKeys` keeps a body's keys only when the copied
-  declaration's arrow still has a key.
-- **A function type with one wild part is wild**, so a lambda of a generic parameter keys no
-  result although the artifact's `result` column has it.
+- **A declaration's arrow is keyed by what it returns.** The artifact keys each value declaration by
+  its scheme when closed (checker-v2.md §36); its arrow takes that scheme's result, or, when a
+  parameter makes the scheme wild, the result its annotation writes. Not a suspendable twin, an arrow
+  evidence parameters lead, nor any function that may suspend, whose return is a parked fiber. A
+  lambda's arrow takes the artifact's `result`. `Copy`'s rule reads the declaration's own key:
+  lowering lists the statements of closed declarations in `JsIr.closed_decls`, a statement leaving
+  the list when it is rewritten, and `Spec.keepsKeys` keeps a body's keys only from one of these.
 - The release peephole's two in-place rewrites clear a key as `Mod.setNode` does, though they run
   after the filter. The safety assertion is `JsIr.nodeKey`, which `Pts.siteOf` calls in a safety
   build.
