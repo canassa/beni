@@ -646,9 +646,6 @@ const Crossing = struct {
     fields: std.ArrayList(TypeStore.Field) = .empty,
     other: std.ArrayList(TypeStore.Field) = .empty,
     refs: std.ArrayList(Ref) = .empty,
-    /// Every `(node, declaration, quantifiers)` `cross` has walked: a type
-    /// met again crosses nothing new.
-    crossed: std.AutoHashMapUnmanaged(u64, void) = .empty,
 
     const Owner = struct {
         made: bool = false,
@@ -684,7 +681,6 @@ const Crossing = struct {
         c.fields.deinit(s);
         c.other.deinit(s);
         c.refs.deinit(s);
-        c.crossed.deinit(s);
     }
 
     fn run(c: *Crossing) Error!void {
@@ -708,10 +704,19 @@ const Crossing = struct {
         var any = false;
         for (c.owners) |*o| any = any or o.any();
         if (!any) return;
-        try c.collect();
+        try c.collectSites();
+        const collected = try in.scratch.alloc(bool, bir.decls.len);
+        @memset(collected, false);
         c.changed = true;
         while (c.changed) {
             c.changed = false;
+            // A declaration's references are read once something it names
+            // has crossing quantifiers: most of a module's never do.
+            for (bir.decls, 0..) |d, di| {
+                if (collected[di] or !d.kind.isValue() or !c.relevant(d)) continue;
+                collected[di] = true;
+                try c.collectDecl(d, @intCast(di));
+            }
             for (c.refs.items) |*r| {
                 const o = &c.owners[r.callee];
                 if (o.version == r.seen) continue;
@@ -734,14 +739,27 @@ const Crossing = struct {
         seen: u32 = 0,
     };
 
-    /// Every reference to a declaration or a `let` function of this module
-    /// with a scheme, and every method call that runs such a declaration.
-    fn collect(c: *Crossing) Error!void {
+    /// Whether declaration `d` names a declaration of this module, or has a
+    /// `let` function, whose quantifiers cross.
+    fn relevant(c: *const Crossing, d: Bir.Decl) bool {
+        const bir = c.in.bir;
+        for (bir.declRefs(d)) |r| {
+            if (r.kind == .top_value and r.a < bir.decls.len and c.owners[r.a].any()) return true;
+        }
+        var l = d.locals_start;
+        while (l < d.locals_end) : (l += 1) {
+            if (c.owners[bir.decls.len + l].any()) return true;
+        }
+        return false;
+    }
+
+    /// Every reference in `d` to a declaration or a `let` function of this
+    /// module with a scheme.
+    fn collectDecl(c: *Crossing, d: Bir.Decl, di: u32) Error!void {
         const in = c.in;
         const bir = in.bir;
         const tags = bir.insts.items(.tag);
-        for (bir.decls, 0..) |d, di| {
-            if (!d.kind.isValue()) continue;
+        {
             var at = d.inst_start.int();
             while (at < d.inst_end.int() and at < tags.len) : (at += 1) {
                 const inst: Bir.Inst.Index = @fromBackingInt(@intCast(at));
@@ -750,18 +768,24 @@ const Crossing = struct {
                         const callee = bir.instData(inst).lhs;
                         if (callee >= bir.decls.len) continue;
                         const scheme = in.decl_scheme[callee].unwrap() orelse continue;
-                        try c.refs.append(in.scratch, .{ .inst = inst, .callee = callee, .decl = @intCast(di), .scheme = scheme, .kind = .instance });
+                        try c.refs.append(in.scratch, .{ .inst = inst, .callee = callee, .decl = di, .scheme = scheme, .kind = .instance });
                     },
                     .local => {
                         const l = d.locals_start + bir.instData(inst).lhs;
                         if (l >= bir.locals.len or bir.locals[l].kind != .let) continue;
                         const t = in.local_type[l].unwrap() orelse continue;
-                        try c.refs.append(in.scratch, .{ .inst = inst, .callee = bir.decls.len + l, .decl = @intCast(di), .scheme = t, .kind = .instance });
+                        try c.refs.append(in.scratch, .{ .inst = inst, .callee = bir.decls.len + l, .decl = di, .scheme = t, .kind = .instance });
                     },
                     else => {},
                 }
             }
         }
+    }
+
+    /// Every method call that runs a declaration of this module.
+    fn collectSites(c: *Crossing) Error!void {
+        const in = c.in;
+        const bir = in.bir;
         for (in.dispatch.sites) |site| {
             const callee = site.callee.unwrap() orelse continue;
             const decl = switch (in.dispatch.term(callee)) {
@@ -866,12 +890,16 @@ const Crossing = struct {
     fn cross(c: *Crossing, v: Var, decl: u32, quantifiers: bool) Error!void {
         const store = c.in.store;
         const s = c.in.scratch;
+        // A fresh mark per walk: a type met twice in one walk is walked once.
+        // `quantifier` may read a scheme's order with marks of its own, which
+        // at worst walks a node of this type again.
+        const seen = store.nextMark();
         c.todo.clearRetainingCapacity();
         try c.todo.append(s, v);
         while (c.todo.pop()) |next| {
             const r = store.find(next);
-            const memo = (@as(u64, r.int()) << 33) | (@as(u64, decl) << 1) | @intFromBool(quantifiers);
-            if ((try c.crossed.getOrPut(s, memo)).found_existing) continue;
+            if (store.mark(r) == seen) continue;
+            store.setMark(r, seen);
             const content = store.content(r);
             switch (content) {
                 .flex, .rigid => {
