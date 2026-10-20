@@ -1,0 +1,16 @@
+module Decls
+  key #0 Basics.Int
+  key #1 { count : #0 }
+  key #2 #0, #1 → #1
+  decl zero #1
+  decl replace #2
+    local n #0
+    local m #1
+  decl keep wild
+    local x wild
+  decl pick wild
+    local x wild
+    local y wild
+  inst 4 record #1
+  inst 13 record_update #1
+  inst 23 tuple wild

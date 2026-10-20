@@ -9,7 +9,8 @@
 //!
 //! Columns: `nodes` (16 bytes a node: its kind, three zero bytes, a
 //! `type_refs` index for a named node or a record's first label in `labels`,
-//! and its range of `args`), `args`, `locals` and `wild` (4 bytes a key),
+//! and its range of `args`), `args`, `locals`, `decls` and `wild` (4 bytes a
+//! key),
 //! `labels` (a string offset each), `insts` (12
 //! bytes: the instruction, its key, a lambda's result key), `type_refs` (12
 //! bytes: package, declaring module's name, type's name) and `strings`.
@@ -43,6 +44,7 @@ const Column = enum(u32) {
     args,
     labels,
     locals,
+    decls,
     insts,
     wild,
     type_refs,
@@ -53,7 +55,7 @@ const Column = enum(u32) {
     fn width(c: Column) u32 {
         return switch (c) {
             .nodes => 16,
-            .args, .labels, .locals, .wild => 4,
+            .args, .labels, .locals, .decls, .wild => 4,
             .insts, .type_refs => 12,
             .strings => 1,
         };
@@ -146,6 +148,8 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
     for (a.labels, 0..) |l, i| std.mem.writeInt(u32, labels[i * 4 ..][0..4], try S.string(gpa, &strings, &seen, interner.slice(l)), .little);
     const locals = try keyColumn(gpa, a.locals);
     defer gpa.free(locals);
+    const decls = try keyColumn(gpa, a.decls);
+    defer gpa.free(decls);
     const wild = try keyColumn(gpa, a.wild);
     defer gpa.free(wild);
     const insts = try gpa.alloc(u8, a.insts.len * 12);
@@ -166,12 +170,13 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         std.mem.writeInt(u32, row[8..12], r[2], .little);
     }
 
-    const columns = [Column.count][]const u8{ nodes, args, labels, locals, insts, wild, type_refs, strings.items };
+    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, strings.items };
     const lengths = [Column.count]u32{
         @intCast(a.nodes.len),
         @intCast(a.args.len),
         @intCast(a.labels.len),
         @intCast(a.locals.len),
+        @intCast(a.decls.len),
         @intCast(a.insts.len),
         @intCast(a.wild.len),
         @intCast(refs.items.len),
@@ -306,6 +311,7 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         for (labels, 0..) |*l, i| l.* = try symbolAt(blob, std.mem.readInt(u32, in_bytes[i * 4 ..][0..4], .little), in) orelse return error.BadSection;
     }
     out.artifact.locals = try readKeys(gpa, col(bytes, offsets, .locals), lengths[@backingInt(Column.locals)]);
+    out.artifact.decls = try readKeys(gpa, col(bytes, offsets, .decls), lengths[@backingInt(Column.decls)]);
     out.artifact.wild = try readKeys(gpa, col(bytes, offsets, .wild), lengths[@backingInt(Column.wild)]);
     {
         const in_bytes = col(bytes, offsets, .insts);
@@ -354,6 +360,7 @@ pub fn verify(a: *const TypeKeys.Artifact) bool {
         }
     }
     for (a.locals) |k| if (!keyOk(a, k)) return false;
+    for (a.decls) |k| if (!keyOk(a, k)) return false;
     for (a.insts, 0..) |k, i| {
         if (i != 0 and a.insts[i - 1].inst.int() >= k.inst.int()) return false;
         if (!keyOk(a, k.key) or !keyOk(a, k.result)) return false;

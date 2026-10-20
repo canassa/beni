@@ -1,0 +1,21 @@
+-- typekeys: a top-level declaration's own key (checker-v2.md §36), which is
+-- what a top-level function's return var is filtered by. `replace`'s scheme
+-- is closed, so it is keyed, as `zero`'s is; `keep` quantifies `a` and is
+-- wild, and so is `pick`, whose `b` is inferred.
+type alias Model =
+    count : Int
+
+
+zero : Model
+zero = { count = 0 }
+
+
+replace : Int, Model → Model
+replace n m = { m | count = n }
+
+
+keep : a → a
+keep x = x
+
+
+pick x y = ( x, y )
