@@ -6187,7 +6187,7 @@ lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s
 |---|---|
 | `Worker` | `Program`, `program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, and their errors |
 | `Worker.Object` | `define`, `Context`, the handlers, `tick`, alarms, the attached sockets |
-| `WebSocket` | the server WebSocket: §9.11's common surface, `accept`, the attachment, `autoReply` |
+| `WebSocket` | the server WebSocket: §9.11 (a)'s shared handle operations, `accept`, the attachment, `autoReply` |
 | `Worker.Storage` | the object's key-value store, through schemas |
 
 `runtime.js` is the one file that defines a JavaScript class: the Durable Object classes the
@@ -6469,26 +6469,37 @@ the platform calls `abort` itself; after `abort` every attached socket is closed
 defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes on.
 
 **(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (PR #531, the
-`ws` worker's spec for the page and the `node` server): this platform's module is also named
-`WebSocket`, and it has §9.11 (a)'s common surface — `Socket`, `eq`, `Close`, `WriteError`,
-`CloseError`, `write`, `close`, `buffered`, `protocol` — with the same names, types and meaning,
-so a protocol module written over those checks under `browser`, `node` and `cloudflare` alike.
-Nothing of §9.11 (a) is defined a second time here. What differs is the Durable Object's hibernation,
-and it changes two things:
+`ws` worker's spec for the page and the `node` server) **where the host lets it be**: this
+platform's module is also named `WebSocket`, and it declares the part of §9.11 (a) that is a
+handle operation — `Socket`, `eq`, `Close`, `CloseError` (with this host's set of codes a server
+may send), `WriteError`, `write`, `close`, `protocol` — with the same names, types and meaning,
+and it answers an upgrade as §9.11 (e) does, with `accept` or a refusing response. Nothing of
+those is defined a second time here. **It does not declare `read`, `buffered` or `drain`**, and
+no protocol module may need them to check here; the review of #531 (its H1) found why, and this
+section follows it:
 
-- **There is no `read`.** §9.11 (a)'s `read` suspends the fiber that waits for the next message,
-  and §9.11 (e)'s `accept session` runs the session in a fiber. A hibernated object has no fiber:
-  its memory is discarded ((a) above), and the host delivers each message as an event to the class's
-  `webSocketMessage`. So a message reaches the program through the `message` handler of (e), a
-  close through `closed`, and `read` is not declared: a `sync` handler could not call it, and a
-  fiber that called it would not survive hibernation.
+- **The reading style is per event, not a pull.** §9.11 (a)'s `read` parks the fiber that waits
+  for the next message, and §9.11 (e)'s `accept session` runs the session in a fiber for as long
+  as the connection lives. Under hibernation an object's memory is discarded ((a) above), and
+  only the connection, its tags and an attachment of at most 16 384 bytes survive; a parked fiber
+  would either keep the object in memory — no hibernation — or be lost. The host's own shape is
+  one handler per event, `webSocketMessage`, `webSocketClose`, `webSocketError`, and that is (e)'s
+  `message`, `closed` and `failed`. So `read` is not declared: a `sync` handler could not call it,
+  and a fiber that called it would not survive hibernation.
+- **There is no back-pressure signal.** The host's `WebSocket` has no `bufferedAmount`
+  (*measured*, `undefined`), and `send` queues into an unbounded table (workerd,
+  `web-socket.c++:900-903`), so neither `buffered` nor `drain` can be implemented; answering 0
+  would be a silent wrong answer. A program bounds its own rate: the arena sends one state per
+  tick per player and no more, and the host's advice is fewer, larger frames.
 - **The upgrade is answered by the `request` handler**, not by a second handler: it returns the
-  `Response` that `accept` makes (§9.11 (e)'s `accept session`, with the handlers of (e) as the
-  session), or any other response (its `refuse response`). The host routes every request the
-  Worker forwards to the one `fetch` of the class, so there is no `listenWith` to split them.
+  `Response` that `accept` makes (§9.11 (e)'s `accept`, with the handlers of (e) as the session),
+  or any other response (its `refuse response`). The host routes every request the Worker
+  forwards to the one `fetch` of the class, so there is no `listenWith` to split them. A
+  subprotocol is a header of the 101 response on this host, so §9.11 (e)'s `acceptWith
+  { protocol }` fits when a program needs one; the first slice declares `accept` alone.
 
 ```elm
-module WebSocket   -- cloudflare: §9.11 (a)'s common surface, less `read`, plus these
+module WebSocket   -- cloudflare: the shared handle operations of §9.11 (a), plus these
 
 pub accept : Context, Request, List String → Result AcceptError (Socket × Response)
 pub id : Socket → String                 -- the platform's id, kept in the attachment: the same across hibernation
@@ -6522,15 +6533,14 @@ pub type AttachError
   a throw is a defect. From a handler it is a direct call with no runtime between the program and
   the host: the arena's twenty to thirty frames per second per player cost one `write` each. The
   host's own advice — fewer, larger frames — is the program's to take.
-- **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code the server may send (§9.11
-  (f)'s list) and a reason of at most 123 bytes, tested in beni; on a socket not open it does
+- **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code this host lets a server send
+  — 1000 to 1003, 1007 to 1014 and 3000 to 4999, the set §9.11 (f) gives `node`, less any the
+  host refuses (*owed*: measured in slice (d), and `InvalidCode` names the result) — and a
+  reason of at most 123 bytes, tested in beni; on a socket not open it does
   nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
   four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
-- **`buffered`** answers 0: the host's `WebSocket` has no `bufferedAmount` (*measured 2026-10-20:
-  `undefined`*), so a program on this platform cannot see back-pressure, which §9.11 (h) warns
-  of; the host's own advice is fewer, larger frames. **`protocol`** is the host's `ws.protocol`.
-  A close code the host refuses is its `InvalidAccessError` (*measured* for 1005), which the
-  check in beni keeps from being reached.
+- **`protocol`** is the host's `ws.protocol`. A close code the host refuses is its
+  `InvalidAccessError` (*measured* for 1005), which the check in beni keeps from being reached.
 - **`eq`** compares by identity, as §9.11 (a) says. Within one life of the object every event
   hands the same host object back, so a socket held in the state is equal to the one an event
   names; across hibernation the state is rebuilt from `sockets`, and `id` is what a program keeps
