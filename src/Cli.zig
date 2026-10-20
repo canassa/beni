@@ -356,6 +356,13 @@ pub const Build = struct {
     /// var that held the most sites and where in the source its node is.
     /// It changes no emitted byte.
     points_to_largest: bool = false,
+    /// `--rep-keys` — **hidden**, for `--allow-debug`'s reason: under
+    /// `--release`, the build writes to stdout the table of representation
+    /// keys it lowered with and, per module, the key of every name and node
+    /// lowering keyed (`backend.md` §9, *Declared-type filtering of fact 3*;
+    /// `js/RepKeys.zig`). What the corpus pins them by. It changes no
+    /// emitted byte.
+    rep_keys: bool = false,
     /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
     /// to the inputs until SIGINT.
     watch: bool = false,
@@ -820,6 +827,7 @@ const BuildSpecific = struct {
     schema_shapes: ?bool = null,
     fuzz: bool = false,
     points_to_largest: bool = false,
+    rep_keys: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
     cache: Cache = .{},
@@ -877,6 +885,11 @@ const BuildSpecific = struct {
             // A hidden flag (see `Build.points_to_largest`).
             if (value != null) return noValue(name);
             self.points_to_largest = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--rep-keys")) {
+            // A hidden flag (see `Build.rep_keys`).
+            if (value != null) return noValue(name);
+            self.rep_keys = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--watch")) {
             if (value != null) return noValue(name);
@@ -940,6 +953,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
         .points_to_largest = s.specific.points_to_largest,
+        .rep_keys = s.specific.rep_keys,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,
         .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,
@@ -1783,4 +1797,17 @@ test "--points-to-largest is build's, hidden, and takes no value" {
     try expectUsage("beni: option '--points-to-largest' does not take a value", &.{ "build", "--platform=node", "--points-to-largest=1", "src" });
     try expectUsage("beni: unknown option '--points-to-largest'; run 'beni help' for usage", &.{ "check", "--points-to-largest", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "points-to") == null);
+}
+
+test "--rep-keys is build's, hidden, and takes no value" {
+    // The corpus's window on the representation keys
+    // (`plans/type-directed-points-to.md` slice 3): `build`'s alone, since
+    // only a build lowers.
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .rep_keys = true, .source_maps = false, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--release", "--rep-keys", "src" },
+    );
+    try expectUsage("beni: option '--rep-keys' does not take a value", &.{ "build", "--platform=node", "--rep-keys=1", "src" });
+    try expectUsage("beni: unknown option '--rep-keys'; run 'beni help' for usage", &.{ "check", "--rep-keys", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "rep-keys") == null);
 }

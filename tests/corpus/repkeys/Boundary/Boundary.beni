@@ -1,0 +1,38 @@
+-- repkeys: a type that crosses into JavaScript is wild wherever it occurs
+-- (`backend.md` §9, the wild set): `Model` is instantiated at
+-- `Probe.send`'s crossing quantifier, so its key is in the wild set, and so
+-- is its field's `Tag` and the record `Tag` wraps; `Other`, which never
+-- crosses, is not. The columns still hold `Model`'s key: the filter, not
+-- lowering, reads the set.
+import Node
+import Probe
+
+
+type alias Model =
+    label : String
+    tag : Tag
+
+
+type Tag
+    = Tag { name : String }
+    | None
+
+
+type alias Other =
+    label : String
+    size : Int
+
+
+describe : Model → String
+describe m = Probe.send m
+
+
+size : Other → String
+size o = o.label ++ String.fromInt o.size
+
+
+main : Node.Program
+main =
+    m = { label = "a", tag = Tag { name = "t" } }
+    o = { label = "b", size = 2 }
+    Node.printLines [ describe m, size { o | size = 3 } ]

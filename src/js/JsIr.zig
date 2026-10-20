@@ -57,6 +57,30 @@ names: []const Name,
 /// first, then one declaration per emitted value, then one `export`.
 body: SubRange,
 
+/// Owned, `--release` only (`backend.md` §9, *Declared-type filtering of fact
+/// 3*): per node, the representation key of what an object, array or arrow
+/// node allocates (`js/RepKeys.zig`), `RepKey.wild` for every other node. A
+/// node past its end is wild: the column is as long as the nodes lowering
+/// made, and a node a later pass appends has no key.
+node_key: []const RepKey = &.{},
+/// Owned, `--release` only: per name, the representation key of the Bir
+/// local it names (`Lower.localName`), `RepKey.wild` for every other name.
+/// A name past its end is wild, as a node is.
+name_key: []const RepKey = &.{},
+
+/// A representation key (`js/RepKeys.zig`): an index into the build's table
+/// of canonical closed types, or `wild`, which filters nothing. Nothing reads
+/// one yet but the corpus dump; fact 3's filter will (`backend.md` §9,
+/// *Declared-type filtering of fact 3*).
+pub const RepKey = enum(u32) {
+    wild = std.math.maxInt(u32),
+    _,
+
+    pub inline fn int(k: RepKey) u32 {
+        return @backingInt(k);
+    }
+};
+
 pub const NodeList = std.MultiArrayList(Node);
 
 pub const Node = struct {
@@ -615,6 +639,8 @@ pub fn deinit(ir: *JsIr, gpa: Allocator) void {
     gpa.free(ir.extra);
     gpa.free(ir.string_bytes);
     gpa.free(ir.names);
+    gpa.free(ir.node_key);
+    gpa.free(ir.name_key);
     ir.* = undefined;
 }
 
@@ -664,6 +690,36 @@ pub fn isFieldRead(ir: *const JsIr, node: Node.Index) bool {
 pub fn setName(ir: *JsIr, index: NameIndex, n: Name) void {
     const names: []Name = @constCast(ir.names);
     names[index.int()] = n;
+}
+
+/// The representation key of what `node` allocates, or `wild`
+/// (`node_key`). A safety build asserts what fact 3 relies on when it reads
+/// one (`backend.md` §9, *Declared-type filtering of fact 3*): a keyed node
+/// is still an object, an array or an arrow, so no rewrite left a stale key
+/// on a node it made something else.
+pub inline fn nodeKey(ir: *const JsIr, node: Node.Index) RepKey {
+    if (node.int() >= ir.node_key.len) return .wild;
+    const k = ir.node_key[node.int()];
+    if (std.debug.runtime_safety and k != .wild) switch (ir.tag(node)) {
+        .object, .array, .arrow => {},
+        else => std.debug.panic("node {d} is a {t} and keeps the key #{d} of an allocation", .{ node.int(), ir.tag(node), k.int() }),
+    };
+    return k;
+}
+
+/// The representation key of the Bir local `index` names, or `wild`
+/// (`name_key`).
+pub inline fn nameKey(ir: *const JsIr, index: NameIndex) RepKey {
+    const i = index.unwrap() orelse return .wild;
+    return if (i < ir.name_key.len) ir.name_key[i] else .wild;
+}
+
+/// Clear `node`'s key: a pass that makes the node something else (`Spec`'s
+/// rewrites in place).
+pub fn clearNodeKey(ir: *JsIr, node: Node.Index) void {
+    if (node.int() >= ir.node_key.len) return;
+    const keys: []RepKey = @constCast(ir.node_key);
+    keys[node.int()] = .wild;
 }
 
 /// The bytes of a `number`, `string` or `template_chunk` node.

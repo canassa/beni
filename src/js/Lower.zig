@@ -59,6 +59,7 @@ const Lift = @import("Lift.zig");
 const SchemaValid = @import("SchemaValid.zig");
 const Fields = @import("Fields.zig");
 const Funnel = @import("Funnel.zig");
+const RepKeys = @import("RepKeys.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
@@ -311,6 +312,11 @@ pub const Input = struct {
     /// that sets it; every other lowering leaves it null and pays one null
     /// check per answer.
     record: ?*Funnel.Recorder = null,
+    /// `--release`: the build's representation keys (`RepKeys`), written
+    /// into `JsIr.name_key` and `JsIr.node_key` and read by nothing that
+    /// decides what is emitted (`backend.md` §3, *Amended 2026-10-20*).
+    /// Null: the columns stay empty.
+    rep_keys: ?*const RepKeys = null,
 };
 
 /// `core/List`'s core-private values the emitter calls from other modules
@@ -747,7 +753,14 @@ pub fn lower(
     }
 
     const range = try b.addRange(body.items);
-    const ir = try b.toOwned(range);
+    var ir = try b.toOwned(range);
+    errdefer ir.deinit(gpa);
+    // `--release`: the two key columns, as long as the nodes and the names,
+    // a word never written wild.
+    if (input.rep_keys != null) {
+        ir.node_key = try keyColumn(gpa, l.node_keys.items, ir.nodes.len);
+        ir.name_key = try keyColumn(gpa, l.name_keys.items, ir.names.len);
+    }
     const diagnostics = try l.diagnostics.toOwnedSlice(gpa);
     return .{
         .ir = ir,
@@ -768,6 +781,17 @@ pub fn lower(
         .tail_len = tail_len,
         .units = units.items,
     };
+}
+
+/// A key column of `len` words from what lowering wrote (`Lowerer.keyNode`,
+/// `Lowerer.keyName`): every word it did not write is wild.
+fn keyColumn(gpa: Allocator, written: []const u32, len: usize) Allocator.Error![]JsIr.RepKey {
+    const out = try gpa.alloc(JsIr.RepKey, len);
+    for (out, 0..) |*k, i| {
+        const w = if (i < written.len) written[i] else Lowerer.key_unset;
+        k.* = if (w == Lowerer.key_unset) .wild else @fromBackingInt(w);
+    }
+    return out;
 }
 
 /// Intern into the session's pool, before any module is lowered, every
@@ -1215,6 +1239,11 @@ pub const Lowerer = struct {
     /// function. `local_tag_next` is the next free base.
     local_tag_base: u32 = 0,
     local_tag_next: u32 = 0,
+    /// `in.rep_keys`' columns while they are filled (`keyName`,
+    /// `keyNode`): per name and per node, a `JsIr.RepKey` or
+    /// `key_unset`, which `lower` writes as wild.
+    name_keys: std.ArrayList(u32) = .empty,
+    node_keys: std.ArrayList(u32) = .empty,
     /// How many functions enclose what is being lowered: 0 in a top-level
     /// constant, where a body written in place would need a called arrow.
     function_depth: u32 = 0,
@@ -2751,6 +2780,9 @@ pub const Lowerer = struct {
                 const lambda_params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
                 const record = try l.functionOrLoop(n, .{ .top = index }, evidence, .none, lambda_params, @fromBackingInt(@intCast(ld.rhs)), p, l.functionSuspends(body));
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
+                // The lambda's own arrow, unless evidence parameters lead it
+                // and it is no longer a function of the lambda's type.
+                if (evidence == 0) try l.keyNode(body, arrow, arrow.int());
                 if (variant == .direct and (l.unobserved[index] or l.unitResult(index, l.functionSuspends(body)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 try l.constDecl(out, n, arrow, decl_p);
             },
@@ -4679,7 +4711,59 @@ pub const Lowerer = struct {
             .tag = l.local_tag_base + index + 1,
         }) else try l.fresh(l.well.param);
         l.local_names[index] = n;
+        if (l.in.rep_keys) |keys| if (local.name != .none) try l.keyName(n, l.localKeyOf(keys, index));
         return n;
+    }
+
+    /// A column's word that no key was written to yet.
+    const key_unset: u32 = std.math.maxInt(u32) - 1;
+
+    /// The representation key of local `index` of the declaration being
+    /// lowered: its row in the module's artifact, which numbers the
+    /// locals of every declaration in one list (`Bir.locals`).
+    fn localKeyOf(l: *const Lowerer, keys: *const RepKeys, index: u32) JsIr.RepKey {
+        const all = l.bir.locals;
+        const at = @intFromPtr(l.locals.ptr);
+        if (l.locals.len == 0 or at < @intFromPtr(all.ptr) or at >= @intFromPtr(all.ptr) + all.len * @sizeOf(Bir.Local)) return .wild;
+        const start = (at - @intFromPtr(all.ptr)) / @sizeOf(Bir.Local);
+        return keys.localKey(l.in.module, start + index);
+    }
+
+    /// `n` names a local of key `key` (`JsIr.name_key`). A name is a
+    /// `NameIndex`, which two top-level declarations share when each has a
+    /// local of one text at one index: their keys must agree, or the name
+    /// is wild (`backend.md` §9, *Declared-type filtering of fact 3*, *As
+    /// built*).
+    fn keyName(l: *Lowerer, n: JsIr.NameIndex, key: JsIr.RepKey) !void {
+        const i = n.unwrap() orelse return;
+        if (i >= l.name_keys.items.len) try l.name_keys.appendNTimes(l.scratch, key_unset, i + 1 - l.name_keys.items.len);
+        const slot = &l.name_keys.items[i];
+        if (slot.* == key_unset) {
+            slot.* = key.int();
+        } else if (slot.* != key.int()) slot.* = JsIr.RepKey.wild.int();
+    }
+
+    /// `value`, what allocating instruction `inst` lowered to, takes the
+    /// instruction's key (`JsIr.node_key`) when it is an object, an array
+    /// or an arrow the instruction itself made — a node at `from` or later
+    /// — and has no key yet: an inner allocation that is the whole value (a
+    /// type that is its field) keeps its own, which is the same.
+    fn keyNode(l: *Lowerer, inst: Inst.Index, value: Node.Index, from: usize) !void {
+        const keys = l.in.rep_keys orelse return;
+        switch (l.bir.instTag(inst)) {
+            .record, .record_update, .tuple, .list, .lambda, .call => {},
+            else => return,
+        }
+        if (value.int() < from) return;
+        switch (l.b.tagOf(value)) {
+            .object, .array, .arrow => {},
+            else => return,
+        }
+        const key = keys.instKey(l.in.module, inst);
+        if (key == .wild) return;
+        const i = value.int();
+        if (i >= l.node_keys.items.len) try l.node_keys.appendNTimes(l.scratch, key_unset, i + 1 - l.node_keys.items.len);
+        if (l.node_keys.items[i] == key_unset) l.node_keys.items[i] = key.int();
     }
 
     /// Every reference to a declaration of THIS module goes through here —
@@ -5285,7 +5369,9 @@ pub const Lowerer = struct {
         // it is this expression's height without one frame per node.
         const outer = l.expr_height;
         l.expr_height = 0;
+        const before = l.b.nodes.len;
         const value = try l.exprValue(out, inst);
+        try l.keyNode(inst, value, before);
         var height = l.expr_height +| l.exprWeight(inst);
         if (l.isAtom(value)) {
             height = 0;
@@ -5423,6 +5509,8 @@ pub const Lowerer = struct {
                 const record = try l.functionOf(0, .none, params, @fromBackingInt(@intCast(d.rhs)), suspends);
                 const body = l.expr_height;
                 const arrow = try l.add(.arrow, p, @backingInt(record), Node.Data.unused);
+                // Keyed here: a tall body binds the arrow and answers its name.
+                try l.keyNode(inst, arrow, arrow.int());
                 if (l.in.unit_results and !suspends and l.unitValued(@fromBackingInt(@intCast(d.rhs)))) try l.unobserved_arrows.append(l.scratch, arrow);
                 if (body < lambda_spill) {
                     l.expr_height = @max(height, body);

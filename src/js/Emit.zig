@@ -98,6 +98,7 @@ const SchemaValid = @import("SchemaValid.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaShare = @import("SchemaShare.zig");
 const Spec = @import("Spec.zig");
+const RepKeys = @import("RepKeys.zig");
 const Sibling = @import("Sibling.zig");
 const Minify = @import("Minify.zig");
 const Manifest = @import("Manifest.zig");
@@ -282,6 +283,10 @@ pub const Options = struct {
     /// release specialiser, one line naming the var of fact 3 that held the
     /// most sites (`Result.points_to`). No emitted byte changes.
     points_to_largest: bool = false,
+    /// `--rep-keys`, the hidden flag (`src/Cli.zig`): under `--release`, the
+    /// representation keys lowering wrote (`Result.rep_keys`). No emitted
+    /// byte changes.
+    rep_keys: bool = false,
     /// §11: a `.mjs.map` beside every module this build emits, and the
     /// `//# sourceMappingURL=` line that names it. On by default in a
     /// development build; under `release` only when asked for, and then
@@ -297,9 +302,12 @@ pub const Result = struct {
     bytes_written: u64,
     /// Owned. `Options.points_to_largest`'s lines, for stderr; empty else.
     points_to: []const u8 = &.{},
+    /// Owned. `Options.rep_keys`' text, for stdout; empty else.
+    rep_keys: []const u8 = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         gpa.free(r.points_to);
+        gpa.free(r.rep_keys);
         for (r.diagnostics) |d| gpa.free(d.message);
         gpa.free(r.diagnostics);
         r.* = undefined;
@@ -433,6 +441,7 @@ pub fn run(
         .files_written = e.files_written,
         .bytes_written = e.bytes_written,
         .points_to = try e.points_to.toOwnedSlice(gpa),
+        .rep_keys = try e.rep_key_text.toOwnedSlice(gpa),
     };
 }
 
@@ -1032,6 +1041,12 @@ const Emitter = struct {
     bytes_written: u64 = 0,
     /// `Result.points_to`, as it is written (gpa).
     points_to: std.ArrayList(u8) = .empty,
+    /// `Result.rep_keys`, as it is written (gpa).
+    rep_key_text: std.ArrayList(u8) = .empty,
+    /// `--release`: the build's representation keys (`RepKeys`), made
+    /// once before lowering from every module's type-key artifact and
+    /// read by every lowering.
+    rep_keys: ?RepKeys = null,
 
     /// One file the build will write. `origin` is the SOURCE file the
     /// output was produced for — a module's `.beni`, a sibling's or the
@@ -1047,6 +1062,7 @@ const Emitter = struct {
             .files_written = 0,
             .bytes_written = 0,
             .points_to = try e.points_to.toOwnedSlice(gpa),
+            .rep_keys = try e.rep_key_text.toOwnedSlice(gpa),
         };
     }
 
@@ -3665,6 +3681,32 @@ const Emitter = struct {
         if (e.boundary) |*b| try e.pinShapeFields(b);
     }
 
+    /// `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type
+    /// filtering of fact 3*: under `--release`, every module's type-key
+    /// artifact merged into one table of representation keys, in module
+    /// order on the calling thread, with the wild set closed
+    /// (`RepKeys.build`). Lowering writes them into its two key columns, and
+    /// nothing it emits depends on them.
+    fn buildRepKeys(e: *Emitter) !void {
+        e.rep_keys = null;
+        if (!e.options.release) return;
+        const count = e.graph().count();
+        const artifacts = e.session.checked.type_keys;
+        if (artifacts.len != count) return;
+        const birs = try e.scratch.alloc(*const Bir, count);
+        for (birs, 0..) |*b, i| b.* = e.bir(@fromBackingInt(@intCast(@as(u32, @intCast(i)))));
+        e.rep_keys = try RepKeys.build(.{
+            .arena = e.scratch,
+            .graph = e.graph(),
+            .birs = birs,
+            .artifacts = artifacts,
+            .types = &e.session.checked.types,
+            .interner = &e.session.interner,
+            .boundary = if (e.boundary) |*b| b else null,
+            .live = &e.live,
+        });
+    }
+
     /// `boundary.md` §4, *Types a shape reads keep their names*: every field
     /// of every record a live shape reads, through references and variants'
     /// payloads, keeps its source text, because the one generic reader
@@ -4139,6 +4181,9 @@ const Emitter = struct {
         // so a second lowering below reads the same answer — a superset of
         // what ships, which only ever keeps more names and more tags.
         try e.closeBoundary();
+        // `--release`: the representation keys, made once from the checker's
+        // artifacts and the boundary just closed, before any worker lowers.
+        try e.buildRepKeys();
         // A build with a runtime module lowers a second time when what the
         // first lowering used of the module reaches less than the coarse
         // roots did (`backend.md` §15.1, *The runtime module*).
@@ -4250,6 +4295,9 @@ const Emitter = struct {
         }
         e.dropEdges();
         defer for (slots) |*slot| slot.deinit(e.gpa);
+        // `--rep-keys` (hidden): what lowering keyed, before any pass
+        // rewrites a node.
+        if (e.options.rep_keys and lowered_clean) if (e.rep_keys) |*keys| try e.writeRepKeys(keys, slots, todo.items);
         const context: Task = .{ .e = e, .slots = slots, .entry = entry };
 
         var hoist: ?Hoist = null;
@@ -4503,6 +4551,7 @@ const Emitter = struct {
                 .schema_shapes = e.reach.schema_shapes and m.int() < e.edges_read.len and !e.edges_read[m.int()],
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,
+                .rep_keys = if (e.rep_keys) |*k| k else null,
             }) catch |err| switch (err) {
                 // No recorder is set here, so no ask can overflow one
                 // (`Funnel.Recorder`); the pack maker, the only caller that
@@ -5184,6 +5233,57 @@ const Emitter = struct {
         const lowered = &(slot.lowered orelse return);
         if (lowered.diagnostics.len != 0) return;
         for (slot.met) |n| _ = try e.globals.intern(e.scratch, try e.poolName(slot, n));
+    }
+
+    /// `--rep-keys`' text (`Options.rep_keys`): the table, then per module
+    /// that keyed anything, in module order, each keyed name by its text and
+    /// disambiguator and each keyed node by its tag and source line and
+    /// column, with its key.
+    fn writeRepKeys(e: *Emitter, keys: *const RepKeys, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        var text: std.Io.Writer.Allocating = .init(e.scratch);
+        e.writeRepKeysTo(&text.writer, keys, slots, todo) catch return error.OutOfMemory;
+        try e.rep_key_text.appendSlice(e.gpa, text.written());
+    }
+
+    fn writeRepKeysTo(e: *Emitter, w: *std.Io.Writer, keys: *const RepKeys, slots: []ModuleSlot, todo: []const u32) std.Io.Writer.Error!void {
+        try keys.writeTable(w);
+        for (todo) |i| {
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            const ir = &lowered.ir;
+            var any = false;
+            for (ir.node_key) |k| any = any or k != .wild;
+            for (ir.name_key) |k| any = any or k != .wild;
+            if (!any) continue;
+            const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
+            try w.print("module {s}\n", .{e.session.store.moduleName(file)});
+            const names: Print.Names = .fromOverlay(&slot.overlay);
+            for (ir.name_key, ir.names) |k, n| {
+                if (k == .wild) continue;
+                try w.print("  name {s}${d} #{d}\n", .{ names.text(n.base), n.tag, k.int() });
+            }
+            const starts = e.session.store.lineStarts(file);
+            for (ir.node_key, 0..) |k, n| {
+                if (k == .wild) continue;
+                const node: JsIr.Node.Index = @fromBackingInt(@intCast(n));
+                try w.print("  node {t} ", .{ir.tag(node)});
+                const p = ir.pos(node);
+                if (p == JsIr.Node.no_pos) {
+                    try w.writeAll("-");
+                } else {
+                    // The last line that starts at or before `p`.
+                    var lo: usize = 0;
+                    var hi: usize = starts.len;
+                    while (hi - lo > 1) {
+                        const mid = lo + (hi - lo) / 2;
+                        if (starts[mid] <= p) lo = mid else hi = mid;
+                    }
+                    const col = if (starts.len == 0) p else p - starts[lo];
+                    try w.print("{d}:{d}", .{ lo + 1, col + 1 });
+                }
+                try w.print(" #{d}\n", .{k.int()});
+            }
+        }
     }
 
     /// `--points-to-largest`'s lines (`Options`): what the var that held

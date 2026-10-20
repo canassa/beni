@@ -1,0 +1,76 @@
+-- repkeys: a type of one constructor with one field is its field
+-- (`backend.md` §9, `CtorRep.unboxed`), so `Wrap` and `Box Point` key as
+-- `Point` does: `unwrap`'s `w`, `boxed`'s `b`, and the literals built
+-- inside `Wrap` and `Box` all name `Point`'s record. A record update is a
+-- spread object keyed by its record, a lambda an arrow keyed by its
+-- function type, a list and a tuple key as theirs, and `Int` makes no site
+-- and needs no key. Nothing here hands a `Point` to a `List` function,
+-- whose crossing quantifiers would put it in the wild set.
+import Node
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+type Wrap
+    = Wrap Point
+
+
+type Box a
+    = Box a
+
+
+unwrap : Wrap → Point
+unwrap w =
+    case w of
+        Wrap p →
+            p
+
+
+make : Int → Box Point
+make n = Box { x = n, y = n + 1 }
+
+
+shift : Point → Point
+shift p = { p | x = p.x + 1 }
+
+
+boxed : Box Point → Point
+boxed b =
+    case b of
+        Box p →
+            shift p
+
+
+bump : Point → Point
+bump = λq → { q | y = q.y + 1 }
+
+
+pair : Point → Point × Int
+pair p = ( p, p.y )
+
+
+second : Point × Int → Int
+second ( _, n ) = n
+
+
+points : Int → List Point
+points n = [ unwrap (Wrap { x = n, y = 0 }), bump (boxed (make n)) ]
+
+
+total : List Point → Int
+total ps =
+    case ps of
+        [ p, …rest ] →
+            p.x + total rest
+
+        [] →
+            0
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (total (points 1)), String.fromInt (second (pair (boxed (make 2)))) ]
