@@ -1,9 +1,11 @@
 -- repkeys: a module that declares a schema keeps its other keys
 -- (`backend.md` §9, the wild set): only a schema's own `Type` and
--- `Encoded` are wild, closed through their fields like any wild type.
--- `Item`'s record and `Page Item`'s, matched against `Page a`'s plan, are
--- in the wild set; `Model`, which no schema names, is not, and `step`'s
--- `m`, its update and its arrow keep `Model`'s key.
+-- `Encoded` and its tagged variants' payloads are wild, which the checker
+-- lists in the artifact (checker-v2.md §36), closed through their fields
+-- like any wild type. `Item`'s record and the private tagged `Event`'s
+-- inline payload, `{ label, value }`, are in the wild set; `Model`, which
+-- no schema names, is not, and `step`'s `m`, its update and its arrow keep
+-- `Model`'s key.
 import Node
 
 
@@ -17,6 +19,13 @@ schema Page a =
     total : Int
 
 
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+        label : String
+    Reset as "reset"
+
+
 type alias Model =
     count : Int
 
@@ -27,6 +36,10 @@ total p = p.total
 
 first : Item.Type → Int
 first i = i.id
+
+
+ignore : Event.Type → Int
+ignore event = 0
 
 
 step : Model → Model
