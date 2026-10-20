@@ -12,6 +12,32 @@ No theorem below uses a pinned soundness obligation.
 The demand lemmas take successful executions of the actual default checker
 operation. They do not replace its test with an external permission oracle. -/
 
+namespace Ownership.FlatFragment.State
+
+/-- The binding types of the flat fragment: integers, integer lists, records
+of them and results over them, nested. A result's two types are flat, so a
+case on it binds a flat payload. -/
+inductive FlatType : Ty → Prop where
+  | int : FlatType .int
+  | listInt : FlatType (.list .int)
+  | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
+  | result (error success : Ty) : FlatType error → FlatType success →
+      FlatType (.result error success)
+
+end Ownership.FlatFragment.State
+
+namespace Ownership.FlatFragment.Fields
+
+/-- The type at a field path. -/
+def tyAt : Ty → Path → Option Ty
+  | t, [] => some t
+  | .record ts, .field i :: rest => match ts[i]? with
+    | some t => tyAt t rest
+    | none => none
+  | _, _ => none
+
+end Ownership.FlatFragment.Fields
+
 namespace Ownership.FlatFragment.Support
 
 open InPlaceSemantics HeapProof Soundness
@@ -43,7 +69,9 @@ each to an integer, a variable or a variable under a field path, the literal
 elements, the push item and the branch condition to `Int`, the length and
 push receivers to `List Int`. The push receiver may be a field path: a write
 through a field is in the fragment. A `branch` runs one of two fragment
-expressions on an integer condition. -/
+expressions on an integer condition. `ok` and `err` build a result whose
+other type is flat, and a `resultCase` binds the payload of a result to one
+of two fragment arms. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
@@ -54,6 +82,10 @@ inductive FlatANF0 : Expr → Prop where
   | scalar : ScalarOp op → FlatANF0 (.prim op [a, b])
   | record : FlatANF0 (.prim .record args)
   | branch : FlatANF0 yes → FlatANF0 no → FlatANF0 (.branch c yes no)
+  | ok : Ownership.FlatFragment.State.FlatType error → FlatANF0 (.prim (.ok error) [x])
+  | err : Ownership.FlatFragment.State.FlatType success → FlatANF0 (.prim (.err success) [x])
+  | resultCase : FlatANF0 onError → FlatANF0 onSuccess →
+      FlatANF0 (.resultCase input err ok onError onSuccess)
 
 theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
     (run : lookup env key = .ok value) :
@@ -485,17 +517,12 @@ namespace Ownership.FlatFragment.State
 
 open InPlaceSemantics HeapProof Soundness
 
-/-- The binding types of the flat fragment: integers, integer lists and
-records of them, nested. -/
-inductive FlatType : Ty → Prop where
-  | int : FlatType .int
-  | listInt : FlatType (.list .int)
-  | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
-
 /-- List descriptions retain bottom or scalar elements. Dead aliases keep
 their old element description after a write. The relation does not require
 uniqueness of a root or prohibit sharing between runtime bindings. A record
-is described field by field. -/
+is described field by field. A result is a record of a scalar tag and two
+payload slots; the checker's `ok` and `err` leave the other slot bottom, and
+a join fills what either side fills. -/
 inductive FlatAbstract : Ty → Abstract → Prop where
   | int : FlatAbstract .int .scalar
   | listBottom (roots : List Origin) (certificate : Certificate) :
@@ -505,6 +532,31 @@ inductive FlatAbstract : Ty → Abstract → Prop where
   | record (ts : List Ty) (as : List Abstract) : ts.length = as.length →
       (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a → FlatAbstract t a) →
       FlatAbstract (.record ts) (.record as)
+  | result (error success : Ty) (ae aa : Abstract) :
+      (ae ≠ .bottom → FlatAbstract error ae) → (aa ≠ .bottom → FlatAbstract success aa) →
+      (ae ≠ .bottom ∨ aa ≠ .bottom) →
+      FlatAbstract (.result error success) (.record [.scalar, ae, aa])
+
+/-- The tags of the result values of a binding agree with its abstract. Both
+interpreters build a success as `[1, 0, x]` and an error as `[0, x, 0]`. The
+checker builds `ok x` with a bottom error slot and `err x` with a bottom
+success slot, and skips a case arm whose slot is bottom; so a success is
+described with a success slot that is not bottom, an error with an error
+slot that is not bottom, through records and through the live payload. The
+relation reads no heap, so a write keeps it. -/
+inductive ResultTags : Ty → Abstract → Value → Prop where
+  | int (a : Abstract) (w : Value) : ResultTags .int a w
+  | listInt (a : Abstract) (w : Value) : ResultTags (.list .int) a w
+  | record (ts : List Ty) (as : List Abstract) (ws : List Value) : ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract) (w : Value),
+        ts[i]? = some t → as[i]? = some a → ws[i]? = some w → ResultTags t a w) →
+      ResultTags (.record ts) (.record as) (.record ws)
+  | ok (error success : Ty) (tag ae aa : Abstract) (w : Value) :
+      aa ≠ .bottom → ResultTags success aa w →
+      ResultTags (.result error success) (.record [tag, ae, aa]) (.record [.int 1, .int 0, w])
+  | err (error success : Ty) (tag ae aa : Abstract) (w : Value) :
+      ae ≠ .bottom → ResultTags error ae w →
+      ResultTags (.result error success) (.record [tag, ae, aa]) (.record [.int 0, w, .int 0])
 
 /-- An integer primitive types only at two `Int` operands, and its result is `Int`. -/
 theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership.FlatFragment.Support.ScalarOp op)
@@ -545,7 +597,9 @@ expansion of the current runtime value and therefore excludes dangling roots.
 The abstract and type environments have the exact runtime key sequence.
 Their descriptions have the flat shapes that real primitive inference needs.
 The permanent observer witness covers the complete current observer list at
-the runtime's actual observation depth.
+the runtime's actual observation depth. Every binding's result tags agree
+with its abstract (`ResultTags`), and every live use is a typed path of its
+binding, so a projection of a live use never enters a result.
 -/
 structure FlatInvariant (declarations : List Decl)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
@@ -566,6 +620,11 @@ structure FlatInvariant (declarations : List Decl)
       ∃ ty, tenv.lookup x = some ty ∧
         obsTyped declarations observation ty = true ∧
         ValueTyped declarations hs.heap actual ty
+  tags : ∀ x ty abstract observation actual,
+    tenv.lookup x = some ty → aenv.lookup x = some abstract →
+      env.lookup x = some (observation, actual) → ResultTags ty abstract actual
+  liveTyped : ∀ x p ty, (x, p) ∈ live → tenv.lookup x = some ty →
+    ∃ t, Ownership.FlatFragment.Fields.tyAt ty p = some t
   namingBound : NamingBound gamma hs.heap.size
   observers : ∃ footprint,
     RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint
@@ -652,6 +711,8 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
     types := ?_
     abstractShapes := ?_
     bindingsTyped := ?_
+    tags := ?_
+    liveTyped := ?_
     namingBound := emptyNaming_bound 0
     observers := ⟨[], RepresentsMany.nil⟩
   }
@@ -662,6 +723,10 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
   · intro x ty abstract present
     simp at present
   · intro x observation actual present
+    simp at present
+  · intro x ty abstract observation actual present
+    simp at present
+  · intro x p ty _ present
     simp at present
 
 /-- Initial emptiness follows from the runtime state constructors. It is
@@ -865,6 +930,15 @@ theorem uses_scalar {op : Prim} {a b : Atom} (sop : ScalarOp op) :
 
 theorem uses_record (args : List Atom) : uses (.prim .record args) = atomsUses args := rfl
 
+theorem uses_ok (error : Ty) (x : Atom) : uses (.prim (.ok error) [x]) = atomsUses [x] := rfl
+
+theorem uses_err (success : Ty) (x : Atom) : uses (.prim (.err success) [x]) = atomsUses [x] := rfl
+
+theorem uses_resultCase (input : Atom) (err ok : Var) (onError onSuccess : Expr) :
+    uses (.resultCase input err ok onError onSuccess) =
+      union (atomUses input)
+        (union (removeVars [err] (uses onError)) (removeVars [ok] (uses onSuccess))) := rfl
+
 theorem flatExpr_default_uses (flat : FlatANF0 expression) :
     usesWith ({} : Config) expression = uses expression := by
   induction flat with
@@ -877,6 +951,9 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | shared => simp_all [usesWith, uses, usesArms, Config.has]
   | record => simp_all [usesWith, uses, usesArms, Config.has]
   | branch _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | ok _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | err _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | resultCase _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
 
@@ -895,14 +972,6 @@ def atomRoot : Atom → Option (Var × Path)
   | .int _ => none
   | .var v => some (v, [])
   | .field a i => (atomRoot a).map fun (v, p) => (v, p ++ [.field i])
-
-/-- The type at a field path. -/
-def tyAt : Ty → Path → Option Ty
-  | t, [] => some t
-  | .record ts, .field i :: rest => match ts[i]? with
-    | some t => tyAt t rest
-    | none => none
-  | _, _ => none
 
 theorem atomRoot_field {a : Atom} {i : Nat} {k : Var} {p : Path}
     (root : atomRoot (.field a i) = some (k, p)) :

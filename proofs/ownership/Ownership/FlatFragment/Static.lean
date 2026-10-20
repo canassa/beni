@@ -14,7 +14,13 @@ namespace Ownership.FlatFragment.Static
 
 open InPlaceSemantics Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Support Ownership.FlatFragment.Atoms
 open Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferLet Ownership.FlatFragment.Liveness Ownership.FlatFragment.Scope
-open Ownership.FlatFragment.InferBranch Ownership.FlatFragment.Shared
+open Ownership.FlatFragment.InferBranch Ownership.FlatFragment.Shared Ownership.FlatFragment.InferResultCase
+open Ownership.FlatFragment.Result Ownership.FlatFragment.NamingFacts Ownership.FlatFragment.Description
+
+local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
+local instance stepLawfulBEq : LawfulBEq Step := LawfulBEq.mk (by deriving_LawfulEq_tactic)
+local instance originReflBEq : ReflBEq Origin := ⟨by deriving_ReflEq_tactic⟩
+local instance originLawfulBEq : LawfulBEq Origin := LawfulBEq.mk (by deriving_LawfulEq_tactic)
 open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.PrimitiveInference
 open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.FlatFragment.Shared Ownership.FlatFragment.Push Ownership.FlatFragment.AtomInference
 open Ownership.FlatFragment.Fields Ownership.FlatFragment.Record
@@ -377,5 +383,121 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
       exact (fields i t a types_i as_i).1
     · rw [← first]
       exact .record types as lenA.symm (fun i t a types_i as_i => (fields i t a types_i as_i).2)
+  | @ok error x flatError =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, atomTyped, rfl⟩ := exprType_ok_success typed
+    obtain ⟨a, run, shape⟩ := static_atom_abstract static atomTyped
+    have abstractAtoms : [x].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
+      except_mapM_cons run rfl
+    obtain ⟨childFuel, _, _, primRun⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
+    rw [primitive_ok_run] at primRun
+    have equal := Except.ok.inj primRun
+    have first : Abstract.record [.scalar, .bottom, a] = result := congrArg Prod.fst equal
+    have second : next = before := (congrArg Prod.snd equal).symm
+    refine ⟨.result error t flatError (static_atom_type static atomTyped), ?_,
+      by rw [second]; exact fun _ escaped => escaped⟩
+    rw [← first]
+    exact .result error t .bottom a (fun ne => absurd rfl ne) (fun _ => shape)
+      (Or.inr (flatAbstract_ne_bottom shape))
+  | @err success x flatSuccess =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    obtain ⟨t, atomTyped, rfl⟩ := exprType_err_success typed
+    obtain ⟨a, run, shape⟩ := static_atom_abstract static atomTyped
+    have abstractAtoms : [x].mapM (m := Except String) (abstractAtom aenv) = .ok [a] :=
+      except_mapM_cons run rfl
+    obtain ⟨childFuel, _, _, primRun⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
+    rw [primitive_err_run _ (show ({ctx with escaped := union ctx.escaped before.facts.escapes} :
+      Context).config = {} from defaultConfig)] at primRun
+    have equal := Except.ok.inj primRun
+    have first : Abstract.record [.scalar, a, .bottom] = result := congrArg Prod.fst equal
+    have second : next = before := (congrArg Prod.snd equal).symm
+    refine ⟨.result t success (static_atom_type static atomTyped) flatSuccess, ?_,
+      by rw [second]; exact fun _ escaped => escaped⟩
+    rw [← first]
+    exact .result t success a .bottom (fun _ => shape) (fun ne => absurd rfl ne)
+      (Or.inl (flatAbstract_ne_bottom shape))
+  | @resultCase onError onSuccess input err ok _ _ ihError ihSuccess =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed shadow boundKeys defaultConfig accepted
+    obtain ⟨e, a, inputTyped, errorTyped, b', successTyped, equalTypes⟩ :=
+      exprType_resultCase_success typed
+    obtain ⟨errFresh, okFresh, errorShadow, successShadow⟩ := shadowFree_resultCase_success shadow
+    obtain ⟨abstract, run, shape⟩ := static_atom_abstract static inputTyped
+    have inputFlat := static_atom_type static inputTyped
+    cases shape with
+    | result _ _ ae aa hE hS hLive =>
+      cases inputFlat with
+      | result _ _ flatE flatA =>
+        obtain ⟨childFuel, left, middle, right, last, _, _, leftRun, rightRun, resultEq, nextEq⟩ :=
+          infer_resultCase_success defaultConfig run accepted
+        have errorBoundKeys : ∀ x ∈ ((err, ae) :: aenv).map Prod.fst, x ∈ err :: bound := by
+          intro x member
+          simp only [List.map_cons, List.mem_cons] at member
+          rcases member with rfl | old
+          · simp
+          · exact List.mem_cons_of_mem _ (boundKeys x old)
+        have successBoundKeys : ∀ x ∈ ((ok, aa) :: aenv).map Prod.fst, x ∈ ok :: bound := by
+          intro x member
+          simp only [List.map_cons, List.mem_cons] at member
+          rcases member with rfl | old
+          · simp
+          · exact List.mem_cons_of_mem _ (boundKeys x old)
+        have escapesEq : next.facts.escapes = union middle.facts.escapes last.facts.escapes := by
+          rw [nextEq]; rfl
+        -- An inferred error arm.
+        have errorArm : (ae == .bottom) = false →
+            (inferExpr childFuel {ctx with escaped := union ctx.escaped before.facts.escapes}
+              ((err, ae) :: aenv) onError after (site ++ [0])).run before = .ok (left, middle) →
+            FlatType type ∧ FlatAbstract type left ∧
+              (∀ origin, Escaped before.facts.escapes origin → Escaped middle.facts.escapes origin) := by
+          intro bottom armRun
+          have neE : ae ≠ .bottom := fun h => by simp [h, BEq.beq, Abstract.equal] at bottom
+          exact ihError ((err, ae) :: aenv) ((err, e) :: tenv) before middle type (err :: bound) after
+            (site ++ [0]) left childFuel _ (static.bind err flatE (hE neE)) errorTyped errorShadow
+            errorBoundKeys (by exact defaultConfig) armRun
+        -- An inferred success arm.
+        have successArm : (aa == .bottom) = false →
+            (inferExpr childFuel {ctx with escaped := union ctx.escaped before.facts.escapes}
+              ((ok, aa) :: aenv) onSuccess after (site ++ [1])).run {middle with facts := before.facts} =
+              .ok (right, last) →
+            FlatType b' ∧ FlatAbstract b' right ∧
+              (∀ origin, Escaped before.facts.escapes origin → Escaped last.facts.escapes origin) := by
+          intro bottom armRun
+          have neS : aa ≠ .bottom := fun h => by simp [h, BEq.beq, Abstract.equal] at bottom
+          exact ihSuccess ((ok, aa) :: aenv) ((ok, a) :: tenv) {middle with facts := before.facts} last b'
+            (ok :: bound) after (site ++ [1]) right childFuel _ (static.bind ok flatA (hS neS))
+            successTyped successShadow successBoundKeys (by exact defaultConfig) armRun
+        rcases leftRun with ⟨bottomE, rfl, rfl⟩ | ⟨bottomE, leftRun⟩
+        · -- The error arm is skipped; the success arm is live.
+          rcases rightRun with ⟨bottomS, rfl, rfl⟩ | ⟨bottomS, rightRun⟩
+          · exfalso
+            rcases hLive with ne | ne
+            · exact ne (eq_bottom_of_beq bottomE)
+            · exact ne (eq_bottom_of_beq bottomS)
+          · obtain ⟨flatB, rightShape, rightMono⟩ := successArm bottomS rightRun
+            have sameType : type = b' := ty_equal_flat_right flatB equalTypes
+            subst sameType
+            refine ⟨flatB, ?_, ?_⟩
+            · rw [resultEq, join_bottom_left]; exact rightShape
+            · intro origin escaped
+              rw [escapesEq]
+              exact escaped_subset (fun x member => mem_union _ _ x (Or.inr member)) (rightMono origin escaped)
+        · obtain ⟨flatType, leftShape, leftMono⟩ := errorArm bottomE leftRun
+          rcases rightRun with ⟨bottomS, rfl, rfl⟩ | ⟨bottomS, rightRun⟩
+          · refine ⟨flatType, ?_, ?_⟩
+            · rw [resultEq, join_bottom_right]; exact leftShape
+            · intro origin escaped
+              rw [escapesEq]
+              exact escaped_mono _ (leftMono origin escaped)
+          · obtain ⟨_, rightShape, _⟩ := successArm bottomS rightRun
+            have sameType : type = b' := ty_equal_flat flatType equalTypes
+            subst sameType
+            refine ⟨flatType, ?_, ?_⟩
+            · rw [resultEq]; exact flatAbstract_join leftShape rightShape
+            · intro origin escaped
+              rw [escapesEq]
+              exact escaped_mono _ (leftMono origin escaped)
 
 end Ownership.FlatFragment.Static

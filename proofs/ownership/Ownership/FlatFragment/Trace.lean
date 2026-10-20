@@ -1,4 +1,4 @@
-import Ownership.FlatFragment.Branch
+import Ownership.FlatFragment.ResultCase
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
 
@@ -17,7 +17,7 @@ open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.Flat
 open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.VariableRuntime Ownership.FlatFragment.VariablePreservation
 open Ownership.FlatFragment.AtomPreservation Ownership.FlatFragment.Env Ownership.FlatFragment.LiveSets Ownership.FlatFragment.Liveness Ownership.FlatFragment.AtomRuntime
 open Ownership.FlatFragment.Fields Ownership.FlatFragment.Observe Ownership.FlatFragment.AtomInference
-open Ownership.FlatFragment.Branch
+open Ownership.FlatFragment.Branch Ownership.FlatFragment.ResultCase Ownership.FlatFragment.Result
 
 theorem heapAtomPost_heap (hs : State) (observations : List Observation) :
     (Ownership.FlatFragment.StateFrame.heapAtomPost hs observations).heap = hs.heap := by
@@ -97,7 +97,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     have covered : ∀ use ∈ atomUses a, use ∈ live :=
       fun use member => usesLive use (by simpa [uses, usesArms] using member)
     obtain ⟨o, w, abs, valueAtom, heapAtom, abstractRun, paired, described, observed, valueTyped,
-      _, _, _⟩ := flat_atom_values inv atomTyped covered
+      _, _, _, tags⟩ := flat_atom_values inv atomTyped covered
     obtain ⟨atomRun, checkerState⟩ := infer_atom_success defaultConfig accepted
     subst checkerState
     rw [abstractRun] at atomRun
@@ -117,7 +117,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
           refine ⟨w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
             Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
             Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), ?_, ?_,
-            observed, ?_⟩
+            observed, ?_, tags⟩
           · rw [heapAtomPost_heap]; exact paired
           · rw [heapAtomPost_heap]; exact described
           · rw [heapAtomPost_heap]; exact valueTyped
@@ -145,11 +145,11 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       literal_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
-      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
-        success value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped⟩
+        described, observed, valueTyped, tags⟩
     · exact failure
   | @push receiver item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -180,11 +180,11 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       length_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
-      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
-        success value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped⟩
+        described, observed, valueTyped, tags⟩
     · exact failure
   | @scalar op a b sop =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -206,11 +206,11 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         coveredA coveredB defaultConfig accepted
     constructor
     · intro value vs' run
-      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
-        success value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped⟩
+        described, observed, valueTyped, tags⟩
     · exact failure
   | @shared value =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -224,11 +224,11 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       shared_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value' vs' run
-      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
-        success value' vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success value' vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped⟩
+        described, observed, valueTyped, tags⟩
     · exact failure
 
   | @record args =>
@@ -244,12 +244,56 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         accepted
     constructor
     · intro value vs' run
-      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
-        success value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped⟩
+        described, observed, valueTyped, tags⟩
     · exact failure
+
+  | @ok error x flatError =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses x, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_ok]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨x, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      ok_preserved (depth := depth) inv flatError typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, tags⟩
+    · exact failure
+  | @err success x flatSuccess =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses x, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_err]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨x, by simp, useMember⟩
+    obtain ⟨_, _, _, success', failure⟩ :=
+      err_preserved (depth := depth) inv flatSuccess typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags⟩ := success' value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, tags⟩
+    · exact failure
+  | @resultCase onError onSuccess input err ok errorFlat successFlat ihError ihSuccess =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
+    exact resultCase_preserved errorFlat successFlat ihError ihSuccess inv typed shadow boundKeys usesLive
+      afterSub defaultConfig accepted
 
 /-- The public trace corollary for the fragment, with the exact conclusion
 of `accepted_traces_agree` and the one extra scope hypothesis. -/
@@ -307,7 +351,15 @@ record stays live at another field; it is accepted and both runs agree.
 test), and its two runs differ. `branchOps` pushes onto the result of a
 branch between two lists; it is accepted and both runs agree. `branchAlias`
 keeps one of the two lists live after that push and is rejected (the Dead
-test), and its two runs differ. -/
+test), and its two runs differ. `bothWrite` pushes in both arms of a branch
+on the condition `0`, so the `yes` arm runs; it is accepted and both runs
+agree. `bothWriteLive` reads the list after that branch and is rejected (the
+Dead test), and its two runs differ. `resultOps` wraps a list in `ok`, binds
+it in a result case and pushes onto the case's result; it is accepted and
+both runs agree. `resultAlias` reads the list after that push and is
+rejected (the Dead test), and its two runs differ. `errOps` wraps a list in
+`err` and pushes onto it in the error arm, while the checker skips the
+success arm; it is accepted and both runs agree. -/
 
 /-- `[5]`, an observer of it, `7`, `[7, 1]`, an in-place push onto it (its
     old binding 3 is dead and stale), a length read, and a variable result. -/
@@ -435,6 +487,62 @@ theorem branchAlias_flat : FlatANF0 branchAlias.main :=
   .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom)
     (.letE .push .length))))
 
+/-- `[1]`, a branch on the condition `0` whose both arms push onto it (the
+    `yes` arm runs): accepted, one in-place write, final value `[1, 5]`. -/
+def bothWrite : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.branch (.int 0) (.prim .push [.var 0, .int 5]) (.prim .push [.var 0, .int 7]))) }
+
+theorem bothWrite_flat : FlatANF0 bothWrite.main :=
+  .letE .literal (.branch .push .push)
+
+/-- The same branch with the list read afterwards: rejected by the Dead test;
+    the two runs differ. -/
+def bothWriteLive : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.branch (.int 0) (.prim .push [.var 0, .int 5]) (.prim .push [.var 0, .int 7]))
+  (.prim .length [.var 0]))) }
+
+theorem bothWriteLive_flat : FlatANF0 bothWriteLive.main :=
+  .letE .literal (.letE (.branch .push .push) .length)
+
+/-- `[1]`, `ok` of it, a result case that binds the list in the success arm
+    (the error arm builds `[2]`), and a push onto the case's result: accepted,
+    one in-place write, final value `[1, 9]`. The checker skips the error arm,
+    whose slot is bottom. -/
+def resultOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.ok .int) [.var 0])
+  (.letE 2 (.resultCase (.var 1) 3 4 (.prim (.literal .int) [.int 2]) (.atom (.var 4)))
+  (.prim .push [.var 2, .int 9])))) }
+
+theorem resultOps_flat : FlatANF0 resultOps.main :=
+  .letE .literal (.letE (.ok .int) (.letE (.resultCase .literal .atom) .push))
+
+/-- The same push with the list read afterwards: rejected by the Dead test;
+    the two runs differ. -/
+def resultAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.ok .int) [.var 0])
+  (.letE 2 (.resultCase (.var 1) 3 4 (.prim (.literal .int) [.int 2]) (.atom (.var 4)))
+  (.letE 5 (.prim .push [.var 2, .int 9])
+  (.prim .length [.var 0]))))) }
+
+theorem resultAlias_flat : FlatANF0 resultAlias.main :=
+  .letE .literal (.letE (.ok .int) (.letE (.resultCase .literal .atom) (.letE .push .length)))
+
+/-- `[3]`, `err` of it, and a result case that pushes onto the list in the
+    error arm (the success arm builds a list of its integer payload):
+    accepted, one in-place write, final value `[3, 4]`. The checker skips the
+    success arm, whose slot is bottom. -/
+def errOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 3])
+  (.letE 1 (.prim (.err .int) [.var 0])
+  (.resultCase (.var 1) 2 3 (.prim .push [.var 2, .int 4]) (.prim (.literal .int) [.var 3])))) }
+
+theorem errOps_flat : FlatANF0 errOps.main :=
+  .letE .literal (.letE (.err .int) (.resultCase .push .literal))
+
 set_option maxRecDepth 100000
 
 #guard (check every).isOk
@@ -501,5 +609,40 @@ set_option maxRecDepth 100000
       t.finalValue == .record [.list [.int 1, .int 7], .record [.list [.int 1], .int 7]] &&
       t'.finalValue == .record [.list [.int 1, .int 7], .record [.list [.int 1, .int 7], .int 7]]
   | _, _ => false
+#guard (check bothWrite).isOk
+#guard match ValueSemantics.run bothWrite 100, InPlaceSemantics.run bothWrite 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 1, .int 5] &&
+      t.reads.isEmpty && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount bothWrite 100 == 1
+#guard match check bothWriteLive with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run bothWriteLive 100, InPlaceSemantics.run bothWriteLive 100 with
+  | .ok t, .ok t' => t.reads == [.int 1] && t'.reads == [.int 2] &&
+      t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
+#guard (check resultOps).isOk
+#guard match ValueSemantics.run resultOps 100, InPlaceSemantics.run resultOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 1, .int 9] &&
+      t.reads.isEmpty && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount resultOps 100 == 1
+#guard match check resultAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run resultAlias 100, InPlaceSemantics.run resultAlias 100 with
+  | .ok t, .ok t' => t.reads == [.int 1] && t'.reads == [.int 2] &&
+      t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
+#guard (check errOps).isOk
+#guard match ValueSemantics.run errOps 100, InPlaceSemantics.run errOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 3, .int 4] &&
+      t.reads.isEmpty && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount errOps 100 == 1
 
 end Ownership.FlatFragment.Preservation

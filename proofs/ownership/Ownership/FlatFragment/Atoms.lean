@@ -128,6 +128,8 @@ theorem flatInvariant_state_frame
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    tags := inv.tags
+    liveTyped := inv.liveTyped
     namingBound := by simpa only [heapSame] using inv.namingBound
     observers := by simpa only [heapSame, valueKept, heapKept] using inv.observers
   }
