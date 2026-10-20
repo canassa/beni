@@ -6861,7 +6861,9 @@ fields gone. The program description the runtime reads `h` of is `Browser.progra
 hand-written on `beni-runtime`, so `m.h === undefined` does not fold on that page (it would with
 `program` written in beni). Fixtures: `emit/release/app/SpecFields` (a user record's unread
 fields), `run/SpecializeFields` (the same, beside a record `Debug.toString` reads whole, which keeps
-every field), `emit/release/split/EmptyPage`.
+every field), `emit/release/app/PayloadUnreadField` (the same rule for a variant payload),
+`run/PayloadUnreadField`, `emit/release/app/PayloadReassign` (a payload binding assigned again,
+its read field kept), `run/PayloadReassign`, `emit/release/split/EmptyPage`.
 
 **The entry's call is a call** (*added 2026-10-02*, `plans/runtime-in-beni.md` step 3). The entry
 file is the compiler's own output, and when the runtime module supplies `run` what it does is
@@ -8334,13 +8336,29 @@ constraint walk:
   the var's summary, one var per property fed by copy edges from the sites' property vars; a var
   that is a copy of another takes the other's summary through one edge per property, since a
   summary is a homomorphism of the union. Every record update of one record shares one summary. A
-  var that is `top` has a dead summary: its sites are escaped, nothing more is folded.
+  capped var that is `top` has a dead summary: its sites are escaped, nothing more is folded. An
+  uncapped `top` var still holds its sites, and a spread of it folds them.
 - **Load cells** (`Pts.Load`, the `load` constraint): a member read's value is its own var, fed by
   one copy edge from the property's var of each site, shared by every read of one property of
   one var (by node for any other object expression) and read by the reference sweep too. The var
   is never `top` by `max_sites` and keeps its sites beside `top`, as the value a read gives does.
   The sites it linked through an object that later escaped are kept and are escaped, so the
-  order check compares a `top` value on its live sites alone.
+  order check compares a `top` value on its live sites alone, and a `top` local the same way.
+  *Amended 2026-10-20.* A local bound to that read is uncapped too (`VSet.limited` still applies
+  `max_sites`). Joining the cell's `top` into a capped local escaped every object the read named,
+  so an unread field of a variant payload stayed in the literal. The slot is shared with `Result`'s
+  `Err` list and the read is `top`.   The binding keeps the objects beside `top`. The read sets `top`
+  before the set can grow. The cap calls `makeTop`, which returns only when the var is already
+  `top` and holds no sites. A member binding that is already `top` still has its sites escaped,
+  the other three flags of `top` set, its summary marked dead, and `top` joined into every
+  successor and every load cell of those sites (`escapeSite`). A use that cannot name a field
+  still escapes the sites. Fact 3 does not
+  split those payloads by the tag test, so a field read on any variant the binding may hold stays
+  on each of them (issue #507). A later assignment joins the same local, and a field read after
+  that assignment stays on the new record. Passing the binding to a host function escapes it the
+  same way, and the field that function reads stays. Fixtures: `emit/release/app/PayloadUnreadField`,
+  `run/PayloadUnreadField`, `emit/release/app/PayloadReassign`, `run/PayloadReassign`,
+  `run/PayloadPassed`.
 - Properties are sorted by id and found by binary search (`Pts.prop`).
 
 Measured, ReleaseFast, `--release --no-cache --jobs=1`, the research `unique-components`

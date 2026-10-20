@@ -1,0 +1,88 @@
+-- A release build keeps a field read after a payload binding is
+-- assigned again, and a field read only after the binding is passed on
+-- (`backend.md` §9). `fromMembers` assigns a second member read and
+-- prints that record's `drop` (6, not the first record's 9).
+-- `fromCall` assigns `Host.same`, which the build cannot see into, and
+-- prints 9. `handed` passes the binding to `Host.readDrop`, the only
+-- read of that field, and prints 9.
+import Host
+import Node
+import Schema
+
+
+schema Box =
+    keep : Int
+    drop : Int
+
+
+host : String → Schema.Value
+host text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            v
+
+        Err _ →
+            host "null"
+
+
+type alias Holder =
+    item : Host.Rec
+
+
+walkMembers : Holder, Host.Rec, Int → Int
+walkMembers held r n =
+    if n == 0 then
+        r.drop
+    else
+        walkMembers held held.item (n - 1)
+
+
+fromMembers : Schema.Value, Schema.Value → Result (List Schema.Issue) Int
+fromMembers a b =
+    held =
+        { item = (Schema.read (Box.schema ⊤) b)?
+        }
+
+    answer = walkMembers held ((Schema.read (Box.schema ⊤) a)?) 1
+
+    Ok answer
+
+
+walkSame : Host.Rec, Int → Int
+walkSame r n =
+    if n == 0 then
+        r.drop
+    else
+        walkSame (Host.same r) (n - 1)
+
+
+fromCall : Schema.Value → Result (List Schema.Issue) Int
+fromCall v =
+    answer = walkSame ((Schema.read (Box.schema ⊤) v)?) 1
+
+    Ok answer
+
+
+handed : Schema.Value → Result (List Schema.Issue) Int
+handed v =
+    r = (Schema.read (Box.schema ⊤) v)?
+
+    Ok (Host.readDrop r)
+
+
+main : Node.Program
+main =
+    one = host "{\"keep\":8,\"drop\":9}"
+
+    two = host "{\"keep\":2,\"drop\":6}"
+
+    case ( fromMembers one two, fromCall one, handed one ) of
+        ( Ok a, Ok b, Ok c ) →
+            Node.printLines
+                [ String.fromInt a
+                , String.fromInt b
+                , String.fromInt c
+                ]
+
+        _ →
+            Node.print "bad"

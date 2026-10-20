@@ -9,7 +9,9 @@
 -- integer field's missing key calls the latter. One integer is under the
 -- four calls `badInt` needs, so its type tests and their issues stay
 -- written in place. The root is read at depth 0, so specialisation folds
--- every depth test of this worker away, the helper's included.
+-- every depth test of this worker away, the helper's included. `email`,
+-- `bio` and `city` are unread, so the record the worker returns has
+-- `name` and `age` only. The host keys are still tested.
 import Node exposing (Program)
 
 
