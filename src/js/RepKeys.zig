@@ -250,6 +250,13 @@ pub fn instKey(r: *const RepKeys, m: Graph.Index, inst: Inst.Index) RepKey {
     return r.columnOf(m, row.key);
 }
 
+/// The key a column holds for top-level declaration `decl` of module `m`:
+/// its type when the checker found it closed (checker-v2.md §36), else wild.
+pub fn declKey(r: *const RepKeys, m: Graph.Index, decl: u32) RepKey {
+    if (m.int() >= r.columns.len) return .wild;
+    return r.columnOf(m, r.in.artifacts[m.int()].declKey(decl));
+}
+
 fn columnOf(r: *const RepKeys, m: Graph.Index, k: TypeKeys.TypeKey) RepKey {
     if (k == .wild) return .wild;
     const col = r.columns[m.int()];

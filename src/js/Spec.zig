@@ -4884,30 +4884,18 @@ const Spec = struct {
 
     /// Whether a `Copy` of the body of top-level statement `stmt` of `m`
     /// keeps its keys (`Copy.keys`): `backend.md` §9 lets it only when the
-    /// declaration's type holds no type variable. The artifact keys no
-    /// declaration, so this asks what it keys of one: a function each of
-    /// whose parameters names a local of a closed type. A declaration whose
-    /// type holds a variable in its result alone passes, and copies only
-    /// keys the checker made closed, which hold at every instantiation.
+    /// declaration's type holds no type variable, which is when its key is
+    /// not wild (checker-v2.md §36, the declarations). Lowering gave that
+    /// key to the declaration's own arrow (`Lower.keyArrow`), so a function
+    /// whose arrow has none — polymorphic, led by evidence, one that may
+    /// suspend, or rewritten in place since — copies every node wild.
     fn keepsKeys(s: *const Spec, m: *const Mod, stmt: Index) bool {
         _ = s;
         const ir = m.ir;
-        if (ir.name_key.len == 0) return false;
-        const d = ir.data(stmt);
-        const record: ExtraIndex = switch (ir.tag(stmt)) {
-            .func_decl, .gen_decl => @fromBackingInt(@intCast(d.rhs)),
-            .const_decl => blk: {
-                const v: Index = @fromBackingInt(@intCast(d.rhs));
-                if (ir.tag(v) != .arrow) return false;
-                break :blk @fromBackingInt(@intCast(ir.data(v).lhs));
-            },
-            else => return false,
-        };
-        const f = ir.extraData(record, JsIr.Func);
-        for (ir.extraSlice(f.params(), NameIndex)) |p| {
-            if (ir.nameKey(p) == .wild) return false;
-        }
-        return true;
+        if (ir.tag(stmt) != .const_decl) return false;
+        const v: Index = @fromBackingInt(@intCast(ir.data(stmt).rhs));
+        if (ir.tag(v) != .arrow) return false;
+        return ir.nodeKey(v) != .wild;
     }
 
     /// `keepsKeys` for the function a `Small` is: the top-level declaration

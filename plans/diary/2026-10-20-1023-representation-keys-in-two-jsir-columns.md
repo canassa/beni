@@ -20,13 +20,14 @@ the columns: every golden and run hash is unchanged.
   top-level declaration, so `p$1` of two declarations is one name. A
   conflicting key makes the name wild; fact 3 keys locals per top-level
   statement, so a per-statement key is the fix if precision suffers.
-- The artifact keys no declaration, so a top-level function's arrow has
-  no key and `Copy`'s rule can only be approximated from its parameters.
+- The first artifact keyed no declaration, so a top-level function's
+  arrow had no key; the checker added one per declaration the same day, and
+  the arrow now carries it, which is also what `Copy`'s rule reads.
 - An unannotated `let` of a constructor of a generic type, or of a lambda
   over an extensible record, is generalised and keys wild; `List`
   functions' crossing quantifiers make any element type wild. Fixtures
   have to avoid both to show a closed key.
 - Perl `s|…|…|` with `\|` in the pattern is an alternation, not a literal
   pipe: it silently rewrote two unrelated lines of `Emit.zig`.
-- Dense columns cost 23 % of `JsIr` bytes on `bench/corpus` and about 4 %
-  of lowering time; a sparse node column is the obvious saving if wanted.
+- A dense node column cost 23 % of `JsIr` bytes on `bench/corpus` for
+  words almost all wild; rows for the keyed allocations alone cost 3 %.
