@@ -5501,6 +5501,49 @@ test "Io.run writes each log line to standard error as logfmt, in both builds" {
     try expectBuilt(release);
 }
 
+test "a node program without Io.run logs Warn and Error to standard error, through the console" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A program that never calls `Io.run` logs through core's default sink
+    // (transparent-effects-proposal.md §17.11): the console method for the
+    // level. On Node, `console.info` writes standard output, and
+    // `console.warn` and `console.error` write standard error. `Debug` is
+    // below the default minimum. `--release` keeps every call.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Log
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Log.debug "not written"
+        \\    Log.info "an info line"
+        \\    Log.warn "a warning"
+        \\    Log.error "an error"
+        \\    Node.print "done"
+        \\
+    );
+    const expected: world.Expected = .{
+        .stdout = "an info line\ndone\n",
+        .stderr = .{ .exact = "a warning\nan error\n" },
+    };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dev = try w.buildAndRun(&.{"Main.beni"}, expected);
+    const release = try w.buildAndRun(&.{ "--release", "Main.beni" }, expected);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(dev);
+    try expectBuilt(release);
+}
+
 test "a log line written just before a defect is on standard error before the defect's report" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
