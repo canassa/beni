@@ -10472,10 +10472,9 @@ const Pts = struct {
         for (params, names) |*v, n| v.* = try p.localVar(mi, n);
         p.sites.items[site].params = params;
         p.sites.items[site].ret = try p.newVar();
-        // The arrow's result key filters what it returns; the key goes
-        // through the build's table as it is, so a wild function type
-        // gives a wild result (`RepKeys.result`).
-        if (p.s.in.rep_keys) |keys| p.vars.items[p.sites.items[site].ret].allow = p.closedKey(keys.result(ir.nodeKey(node)));
+        // An arrow is keyed by what it returns (`JsIr.node_keys`): that key
+        // filters its return var.
+        if (p.s.in.rep_keys != null) p.vars.items[p.sites.items[site].ret].allow = p.closedKey(ir.nodeKey(node));
         if (p.s.in.trace_largest) p.originAt(p.sites.items[site].ret, .{ .kind = .ret, .of = .ret, .module = mi, .node = node.int() });
         return site;
     }
