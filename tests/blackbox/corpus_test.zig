@@ -16,6 +16,8 @@
 //!   dispatch/X.beni   + X.dispatch  `dump --stage=dispatch` equals the golden
 //!   typekeys/X.beni   + X.typekeys  `check` exits 0 silently and `dump --stage=typekeys`
 //!                                   equals the golden (checker-v2.md §36)
+//!   repkeys/X.beni    + X.repkeys   `build --release --rep-keys` exits 0 silently and
+//!                                   its stdout equals the golden (`js/RepKeys.zig`)
 //!   check/good/X.beni + X.iface     `check` exits 0 and `dump --stage=interface`
 //!                                   equals the golden; an optional X.diag holds
 //!                                   the `warning`s it is allowed to print
@@ -123,6 +125,7 @@ const Kind = enum {
     bir,
     dispatch,
     typekeys,
+    repkeys,
     writes,
     ownership,
     check_good,
@@ -145,6 +148,7 @@ const Kind = enum {
             .bir => "bir",
             .dispatch => "dispatch",
             .typekeys => "typekeys",
+            .repkeys => "repkeys",
             .writes => "writes",
             .ownership => "ownership",
             .check_good => "check/good",
@@ -171,6 +175,7 @@ const Kind = enum {
             .bir => "bir",
             .dispatch => "dispatch",
             .typekeys => "typekeys",
+            .repkeys => "repkeys",
             .writes => "writes",
             .ownership => "ownership",
             .check_good => "iface",
@@ -188,7 +193,7 @@ const Kind = enum {
     /// Whether a subdirectory of the kind is a PROJECT fixture rather than
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
-        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .typekeys or kind == .writes or kind == .ownership or
+        return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .typekeys or kind == .repkeys or kind == .writes or kind == .ownership or
             kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser;
     }
 
@@ -211,7 +216,7 @@ const Kind = enum {
         return switch (kind) {
             .parse_good, .parse_bad, .fmt, .bir, .regress => .parse,
             .check_good, .check_bad, .check_args, .check_depth, .dispatch, .typekeys, .writes, .ownership => .check,
-            .build_bad, .build_bad_release, .emit => .build,
+            .build_bad, .build_bad_release, .emit, .repkeys => .build,
             .run => switch (pass) {
                 .dev, .dev_library, .dev_fiber => .run_dev,
                 .release, .release_library => .run_release,
@@ -259,6 +264,14 @@ test "corpus: dispatch" {
 // analysis will read (`plans/type-directed-points-to.md` slice 2).
 test "corpus: typekeys" {
     try walk(.typekeys);
+}
+
+// The representation keys a release build lowers with
+// (`js/RepKeys.zig`): the build's table, its wild
+// set, and per module the key of every name and node lowering keyed —
+// pinned here because nothing reads them yet, so no emitted byte can.
+test "corpus: repkeys" {
+    try walk(.repkeys);
 }
 
 // The write-set pass's dump (`write-sets.md` §8.1): per message key the
@@ -556,6 +569,15 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     // not exist, and the one that wanted to be one carried an unrelated
     // `foreign_outside_platform` in its golden.
     try collect(arena, core_dir, true, false, &fixtures, kind.hasProjects());
+    // `repkeys/inline/`: release applications built for `browser-inline`,
+    // whose lifted pieces are where a lifted arm's parameter takes its
+    // local's key.
+    if (kind == .repkeys) {
+        const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
+        const start = fixtures.items.len;
+        try collect(arena, inline_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-inline";
+    }
     // `markup/`: the fixtures that write markup, checked against the `html`
     // platform's vocabulary (`checker-v2.md` §25), which a module sees only
     // under `--platform`. The same mechanism as `core/`, for the check kinds.
@@ -1466,6 +1488,7 @@ const Case = struct {
             .bir => try c.lowering(),
             .dispatch => try c.dispatching(),
             .typekeys => try c.typeKeys(),
+            .repkeys => try c.repKeys(),
             .writes => try c.writeSets(),
             .ownership => try c.ownershipReport(),
             .check_good => try c.checkGood(),
@@ -3030,6 +3053,60 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=typekeys", path });
         try expectExit(0, r);
         try c.expectGolden("typekeys", r.stdout);
+    }
+
+    /// The representation keys of a release application
+    /// (`build --rep-keys`, `js/RepKeys.zig`): a
+    /// file or a project — with a `platform/` of its own, built for it, as
+    /// `emit/` builds one — that builds clean; its stdout is the golden.
+    fn repKeys(case: Case) !void {
+        var c = case;
+        var own: ?World = null;
+        defer if (own) |*w| w.deinit();
+        const own_platform = c.fixture.project and hasPlatformDir(try c.fixturePath());
+        if (own_platform) {
+            own = try World.init(testing.allocator, testing.io);
+            c.w = &own.?;
+            try c.w.copyTree(try c.fixturePath(), "_expected.");
+        }
+        var sources: std.ArrayList([]const u8) = .empty;
+        if (c.fixture.project) {
+            const dir_path = try c.fixturePath();
+            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+            defer dir.close(testing.io);
+            var it = dir.iterate();
+            while (try it.next(testing.io)) |entry| {
+                if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
+                try sources.append(c.arena, try c.arena.dupe(u8, entry.name));
+            }
+            std.mem.sort([]const u8, sources.items, {}, struct {
+                fn lessThan(_: void, a: []const u8, b: []const u8) bool {
+                    return std.mem.lessThan(u8, a, b);
+                }
+            }.lessThan);
+            for (sources.items) |name| {
+                const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+            }
+        } else {
+            const source = try Io.Dir.cwd().readFileAlloc(testing.io, try c.fixturePath(), c.arena, .limited(world.max_stream_bytes));
+            try c.w.write(c.fixture.name, source);
+            try sources.append(c.arena, c.fixture.name);
+        }
+        const platform = if (own_platform) "platform" else c.fixture.platform orelse "node";
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(c.arena, &.{ "build", try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform}), "--out=out", "--release", "--rep-keys" });
+        try args.appendSlice(c.arena, sources.items);
+        const built = try c.inProject(args.items);
+        if (built.exit_code != 0) {
+            detail("{s}: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stdout, built.stderr });
+            return error.BuildFailed;
+        }
+        if (built.stderr.len != 0) {
+            detail("{s}: a repkeys fixture must build with no diagnostics\n--- stderr ---\n{s}\n", .{ c.fixture.name, built.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        try c.expectGolden("repkeys", built.stdout);
     }
 
     /// The ownership report of a module or a project (`ownership-checker.md`

@@ -603,6 +603,13 @@ const Mod = struct {
     extra: std.ArrayList(u32),
     string_bytes: std.ArrayList(u8),
     names: std.ArrayList(JsIr.Name),
+    /// The IR's two key columns (`JsIr.node_key`, `JsIr.name_key`), as
+    /// lists `Copy` may extend. A node or a name past the end is wild, so a
+    /// node `addNode` appends and a name `addName` appends have no key
+    /// unless `Copy` gives one its source's (`backend.md` §9,
+    /// *Declared-type filtering of fact 3*).
+    node_key: std.ArrayList(JsIr.RepKey),
+    name_key: std.ArrayList(JsIr.RepKey),
     tables: ?*Tables,
     self: JsIr.Symbol.Optional,
     /// The next disambiguator no name of the module has (slice 5).
@@ -700,10 +707,33 @@ const Mod = struct {
         return true;
     }
 
+    /// Make `node` something else. Its key goes with what it was: a node
+    /// rewritten in place is no longer the allocation lowering keyed
+    /// (`backend.md` §9, *Declared-type filtering of fact 3*), and so
+    /// neither is a `copyNode` or a `foldTo`, which come through here.
     fn setNode(m: *Mod, node: Index, tag: Node.Tag, lhs: u32, rhs: u32) void {
         m.changed();
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
+        if (node.int() < m.node_key.items.len) m.node_key.items[node.int()] = .wild;
+    }
+
+    /// `node`, appended by a `Copy` that keeps its source's keys, takes
+    /// `key`.
+    fn setNodeKey(m: *Mod, gpa: Allocator, node: Index, key: JsIr.RepKey) Allocator.Error!void {
+        const i = node.int();
+        if (i >= m.node_key.items.len) try m.node_key.appendNTimes(gpa, .wild, i + 1 - m.node_key.items.len);
+        m.node_key.items[i] = key;
+        m.ir.node_key = m.node_key.items;
+    }
+
+    /// `n`, a name a `Copy` that keeps its source's keys made afresh, takes
+    /// `key`.
+    fn setNameKey(m: *Mod, gpa: Allocator, n: NameIndex, key: JsIr.RepKey) Allocator.Error!void {
+        const i = n.unwrap() orelse return;
+        if (i >= m.name_key.items.len) try m.name_key.appendNTimes(gpa, .wild, i + 1 - m.name_key.items.len);
+        m.name_key.items[i] = key;
+        m.ir.name_key = m.name_key.items;
     }
 
     fn setData(m: *Mod, node: Index, lhs: u32, rhs: u32) void {
@@ -755,7 +785,8 @@ const Mod = struct {
         return @fromBackingInt(@intCast(@as(u32, @intCast(list.len - 1))));
     }
 
-    /// Append a name, keeping the IR's view of the column current.
+    /// Append a name, keeping the IR's view of the column current. The name
+    /// is wild: it is past the end of `name_key`.
     fn addName(m: *Mod, gpa: Allocator, n: JsIr.Name) Allocator.Error!NameIndex {
         const at: u32 = @intCast(m.names.items.len);
         try m.names.append(gpa, n);
@@ -1050,6 +1081,8 @@ const Spec = struct {
                 .extra = .{ .items = @constCast(ir.extra), .capacity = ir.extra.len, .pointer_stability = .{} },
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len, .pointer_stability = .{} },
                 .names = .{ .items = @constCast(ir.names), .capacity = ir.names.len, .pointer_stability = .{} },
+                .node_key = .{ .items = @constCast(ir.node_key), .capacity = ir.node_key.len, .pointer_stability = .{} },
+                .name_key = .{ .items = @constCast(ir.name_key), .capacity = ir.name_key.len, .pointer_stability = .{} },
                 .tables = src.tables,
                 .self = src.self,
                 .memo = try arena.alloc(Lat, ir.nodes.len),
@@ -1137,6 +1170,9 @@ const Spec = struct {
             m.ir.extra = try m.extra.toOwnedSlice(s.gpa);
             m.ir.string_bytes = try m.string_bytes.toOwnedSlice(s.gpa);
             m.ir.names = try m.names.toOwnedSlice(s.gpa);
+            // A development build's columns are empty and own nothing.
+            if (m.node_key.capacity != 0) m.ir.node_key = try m.node_key.toOwnedSlice(s.gpa);
+            if (m.name_key.capacity != 0) m.ir.name_key = try m.name_key.toOwnedSlice(s.gpa);
         }
     }
 
@@ -3963,6 +3999,7 @@ const Spec = struct {
                     if ((try s.usesOf(m, top, x)).?.idents != 1) break :intoReturn;
                     var c: Copy = .{
                         .s = s,
+                        .keys = s.keepsKeys(m, top),
                         .src = m,
                         .dst = m,
                         .cross = false,
@@ -4025,6 +4062,7 @@ const Spec = struct {
                         const x2 = try s.freshLocal(m);
                         var copy: Copy = .{
                             .s = s,
+                            .keys = s.keepsKeys(m, top),
                             .src = m,
                             .dst = m,
                             .cross = false,
@@ -4119,6 +4157,7 @@ const Spec = struct {
         const cross = small.module != m.index;
         var c: Copy = .{
             .s = s,
+            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -4842,6 +4881,42 @@ const Spec = struct {
         }
     }
 
+    /// Whether a `Copy` of the body of top-level statement `stmt` of `m`
+    /// keeps its keys (`Copy.keys`): `backend.md` §9 lets it only when the
+    /// declaration's type holds no type variable. The artifact keys no
+    /// declaration, so this asks what it keys of one: a function each of
+    /// whose parameters names a local of a closed type. A declaration whose
+    /// type holds a variable in its result alone passes, and copies only
+    /// keys the checker made closed, which hold at every instantiation.
+    fn keepsKeys(s: *const Spec, m: *const Mod, stmt: Index) bool {
+        _ = s;
+        const ir = m.ir;
+        if (ir.node_key.len == 0) return false;
+        const d = ir.data(stmt);
+        const record: ExtraIndex = switch (ir.tag(stmt)) {
+            .func_decl, .gen_decl => @fromBackingInt(@intCast(d.rhs)),
+            .const_decl => blk: {
+                const v: Index = @fromBackingInt(@intCast(d.rhs));
+                if (ir.tag(v) != .arrow) return false;
+                break :blk @fromBackingInt(@intCast(ir.data(v).lhs));
+            },
+            else => return false,
+        };
+        const f = ir.extraData(record, JsIr.Func);
+        for (ir.extraSlice(f.params(), NameIndex)) |p| {
+            if (ir.nameKey(p) == .wild) return false;
+        }
+        return true;
+    }
+
+    /// `keepsKeys` for the function a `Small` is: the top-level declaration
+    /// it names, or none.
+    fn keepsKeysOf(s: *const Spec, small: Small) bool {
+        if (small.owner == none or small.owner >= s.decl.len) return false;
+        const d = s.decl[small.owner] orelse return false;
+        return s.keepsKeys(&s.mods[d.module], d.stmt);
+    }
+
     /// A local name no name of the module has.
     fn freshLocal(s: *Spec, m: *Mod) Allocator.Error!NameIndex {
         if (m.next_tag == 0) {
@@ -5093,6 +5168,7 @@ const Spec = struct {
         const cross = small.module != mi;
         var c: Copy = .{
             .s = s,
+            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -5491,6 +5567,7 @@ const Spec = struct {
         const cross = small.module != mi;
         var c: Copy = .{
             .s = s,
+            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -7266,6 +7343,7 @@ const Spec = struct {
 
         var c: Copy = .{
             .s = s,
+            .keys = s.keepsKeys(fm, decl.stmt),
             .src = fm,
             .dst = cm,
             .cross = cross,
@@ -7564,6 +7642,7 @@ const Spec = struct {
             const cont: Cont = .{ .x = fit.x, .rest = fit.rest, .top = fit.site.top, .call = fit.site.call, .inspected = inspected, .args = args, .assigned = assigned };
             var c: Copy = .{
                 .s = s,
+                .keys = s.keepsKeys(fm, decl.stmt),
                 .src = fm,
                 .dst = cm,
                 .cross = decl.module != fit.site.module,
@@ -7782,6 +7861,7 @@ const Spec = struct {
             try s.stableChain(m, cont, p);
         var k: Copy = .{
             .s = s,
+            .keys = s.keepsKeys(m, cont.top),
             .src = m,
             .dst = m,
             .cross = false,
@@ -8016,6 +8096,12 @@ const Spec = struct {
         /// While the rest of a fused site's list is copied for one `return
         /// P`: its binding `x` is known to be `p`, a node of the module.
         known: ?Known = null,
+        /// Every object, array and arrow copied as itself keeps its source's
+        /// key, and every local named afresh its source name's: set only
+        /// for the body of a declaration whose type holds no type variable
+        /// (`backend.md` §9, *Declared-type filtering of fact 3*;
+        /// `Spec.keepsKeys`). Else every copy is wild.
+        keys: bool = false,
 
         fn gpa(c: *Copy) Allocator {
             return c.s.gpa;
@@ -8209,6 +8295,10 @@ const Spec = struct {
             const at = try c.dst.addName(c.gpa(), name);
             if (global) try c.s.addGlobal(c.dst, at);
             c.renamed[n] = at.int();
+            if (c.keys and !global) {
+                const k = c.src.ir.nameKey(@fromBackingInt(@intCast(n)));
+                if (k != .wild) try c.dst.setNameKey(c.gpa(), at, k);
+            }
             if (c.src.tables) |t| if (std.mem.indexOfScalar(NameIndex, t.mutable.items, @fromBackingInt(@intCast(n))) != null) {
                 if (c.dst.tables) |dt| try dt.mutable.append(c.s.arena, at);
             };
@@ -8233,7 +8323,16 @@ const Spec = struct {
 
         fn node(c: *Copy, from: Index, tag: Node.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
             const pos: u32 = if (c.cross) c.site else c.src.ir.pos(from);
-            return c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
+            const to = try c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
+            // An allocation copied as itself is still one of its type.
+            if (c.keys and tag == c.src.ir.tag(from)) switch (tag) {
+                .object, .array, .arrow => {
+                    const k = c.src.ir.nodeKey(from);
+                    if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
+                },
+                else => {},
+            };
+            return to;
         }
 
         /// A copy of an argument: an atom of the destination.
@@ -10277,6 +10376,10 @@ const Pts = struct {
 
     fn siteOf(p: *Pts, mi: u32, node: Index, kind: SiteKind) Allocator.Error!u32 {
         if (p.siteAt(mi, node)) |site| return site;
+        // Where fact 3's filter will read a site's key (`backend.md` §9,
+        // *Declared-type filtering of fact 3*): a safety build checks that a
+        // keyed node is still an object, an array or an arrow.
+        if (std.debug.runtime_safety) _ = p.s.mods[mi].ir.nodeKey(node);
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
         try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .once = p.once_ctx, .any = try p.newVar() });
@@ -11893,6 +11996,7 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
                 if (flipped) |op| {
                     ir.nodes.items(.tag)[node.int()] = .binary;
                     ir.nodes.items(.data)[node.int()] = .{ .lhs = ir.data(inner).lhs, .rhs = @backingInt(op) };
+                    ir.clearNodeKey(node);
                     continue;
                 }
             }
@@ -11921,6 +12025,7 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
                         ir.nodes.items(.tag)[t.int()] = ir.tag(b.left);
                         ir.nodes.items(.data)[t.int()] = ir.data(b.left);
                         ir.nodes.items(.pos)[t.int()] = ir.pos(b.left);
+                        ir.clearNodeKey(t);
                         try tests.append(gpa, t);
                         continue;
                     }

@@ -5410,3 +5410,102 @@ test "a module installed from the cache has the type keys a fresh check gives it
     // The reordered run checked `Aaa` alone: `Use` came from the cache.
     try testing.expectEqual(@as(u64, 1), reordered.counters.checked);
 }
+
+test "a release build lowers the representation keys a cold check gives from a warm cache" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Lowering maps the checker's type keys to representation keys
+    // (`js/RepKeys.zig`), and
+    // a module installed from the cache carries the artifact a fresh check
+    // makes (checker-v2.md §36). The hidden `build --rep-keys` prints the
+    // table and every key lowering wrote. `Shapes` declares a record, a
+    // type that is its field and a type of two constructors; `Main` keys
+    // them across the import in a literal, an update, a constructor
+    // application, a tuple, a list and a lambda.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Shapes.beni",
+        \\pub type alias Point =
+        \\    x : Int
+        \\    y : String
+        \\
+        \\
+        \\pub type Wrap
+        \\    = Wrapped Point
+        \\
+        \\
+        \\pub type Shape
+        \\    = Dot Point
+        \\    | Line Point Point
+        \\
+    );
+    const main_source =
+        \\import Node
+        \\import Shapes exposing (Point, Shape, Dot, Line, Wrap, Wrapped)
+        \\
+        \\
+        \\moved : Point → Shape
+        \\moved p = Line p { p | x = p.x + 1 }
+        \\
+        \\
+        \\both : Point → List (Point × Shape)
+        \\both p = [ ( p, Dot p ) ]
+        \\
+        \\
+        \\open : Wrap → Point
+        \\open w =
+        \\    case w of
+        \\        Wrapped p → p
+        \\
+        \\
+        \\firstY : Point × Shape → String
+        \\firstY ( q, _ ) = q.y
+        \\
+        \\
+        \\main : Node.Program
+        \\main =
+        \\    p = open (Wrapped { x = 0, y = "a" })
+        \\    f = λq → { q | y = "b" }
+        \\    Node.printLines (List.map (both (f p)) firstY)
+        \\
+    ;
+    try w.write("Main.beni", main_source);
+    const build_args = [_][]const u8{ "build", "--platform=node", "--release", "--rep-keys", "--jobs=1", "--out=out" };
+    const sources = [_][]const u8{ "Main.beni", "Shapes.beni" };
+    const no_cache = build_args ++ [_][]const u8{"--no-cache"} ++ sources;
+    const cached = build_args ++ [_][]const u8{"--cache-dir=cache"} ++ sources;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const oracle = try runCounted(&w, arena, &no_cache, "oracle.json");
+    const warm = try coldThenWarm(&w, arena, &cached, &cached);
+    // A comment in `Main`: it is checked again, against `Shapes` installed
+    // from the cache.
+    try w.write("Main.beni", "-- edited\n" ++ main_source);
+    const edited = try runCounted(&w, arena, &cached, "edited.json");
+    const edited_oracle = try runCounted(&w, arena, &no_cache, "edited-oracle.json");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
+    try testing.expectEqualStrings(oracle.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(edited_oracle.result.stdout, edited.result.stdout);
+    // The keys are there to compare: `Main` keys names and nodes, and the
+    // table names `Shapes`' type.
+    try testing.expect(std.mem.indexOf(u8, oracle.result.stdout, "module Main\n  name ") != null);
+    try testing.expect(std.mem.indexOf(u8, oracle.result.stdout, "  node object ") != null);
+    try testing.expect(std.mem.indexOf(u8, oracle.result.stdout, "Shapes.Shape") != null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The warm run checked nothing; the edited run checked `Main` alone.
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try testing.expectEqual(@as(u64, 1), edited.counters.checked);
+}

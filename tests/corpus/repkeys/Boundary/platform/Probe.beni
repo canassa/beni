@@ -1,0 +1,9 @@
+--! A value handed to JavaScript through a type variable: `send`'s `a`
+--! crosses (checker-v2.md §36), so every closed type a caller instantiates
+--! it at joins the wild set.
+
+import Js
+
+
+pub send : a → String
+send value = Js.to (Js.get (Js.from value) "label")
