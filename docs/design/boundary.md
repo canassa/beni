@@ -806,7 +806,11 @@ server, its file API, its shell, its bundled SQLite, its foreign-function interf
 sparse-garden mistake of §1 repeated one level up, and this document exists to avoid it.
 
 So a Bun platform exposes what Bun offers, a Deno platform what Deno offers, and neither pretends to
-be Node. Code written against the Bun platform does not run on Node — which is honest, and which
+be Node.
+
+*Amended 2026-10-20:* "not a compiler change" held for every platform until the fifth, `cloudflare`
+(§9.12), whose host finds a Durable Object class by the entry module's export names: that needed
+one general output key, `"exports"` (§5.2), and nothing else. Code written against the Bun platform does not run on Node — which is honest, and which
 §5.3's per-platform compilation already reports as a resolution failure rather than a runtime
 surprise.
 
@@ -1188,6 +1192,9 @@ two:
 | `browser` | `html` | DOM capabilities, a low-level `Program` and its runtime, the `dom` lowering; re-exports `Html` |
 | `browser-tea` | `browser` | The Elm Architecture in beni over `browser`'s `Program`; re-exports `Html` and `browser`'s modules |
 | `node` | `html` | today's Node platform, plus the `ssr` lowering, so a `view` renders to a string under Node and `tests/corpus/run/` can test it (research 36 §5.5); re-exports `Html` |
+
+*Amended 2026-10-20:* a fifth platform ships, `cloudflare` (§9.12), which depends on no platform and
+declares no markup.
 
 **Why `html` is a platform of its own**, and not part of `browser` and `node` each: a view module
 must check once and build under both (§5.3's full-stack case, research 36 §5.5), and it can only if
@@ -6231,7 +6238,10 @@ Durable Object in beni, and how the object classes reach the entry file. The tex
 recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
 app's manifest — and (k) records the answers when they come. Every statement about the host cites
 Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
-`workerd`, and one marked* owed *has not been.*
+`workerd` (version 1.20260518.1, the one nixpkgs' `wrangler` 4.93.0 bundles; a source line cites
+that tag), and one marked* owed *has not been. Amended 2026-10-20 after the review of this
+section (`cf-workers-review`, its H1–H6, M1–M12 and L1–L7): each amendment is marked* amended
+2026-10-20 *where it stands.*
 
 **(a) The host, in beni's terms.** A Worker is an ES module whose default export has a `fetch`
 handler, called once per request with the request, the bindings (`env`) and an execution context
@@ -6246,8 +6256,12 @@ WebSocket message, a close, an error, an alarm — one at a time
 the in-memory state is discarded", and a hibernated object's WebSockets "stay connected"; the
 object hibernates "after 10 seconds of no incoming request or event" when no timer is set, no
 promise is pending and no request is in flight, and after 70 to 140 seconds of inactivity it is
-evicted; "an incoming request or event re-runs the `constructor()`"
+evicted; an incoming request or event while it is hibernated runs the `constructor()` again
 ([lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)).
+*Amended 2026-10-20 (M4):* what keeps an object from hibernating, by the same page, is a set
+timer, unfinished I/O or a promise given to `waitUntil`, an open outbound connection, a socket
+accepted with the standard `accept()` and its listeners, or an event in progress; a parked beni
+fiber is none of these, (g). A code deploy disconnects every WebSocket.
 A WebSocket accepted with `ctx.acceptWebSocket` is delivered to the class's `webSocketMessage`,
 `webSocketClose` and `webSocketError` methods and may hibernate; `serializeAttachment` keeps up to
 16 384 bytes with the socket across hibernation
@@ -6255,12 +6269,14 @@ A WebSocket accepted with `ctx.acceptWebSocket` is delivered to the class's `web
 [`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)). An object schedules one
 alarm at a time, delivered to `alarm()` at least once, and retried on an uncaught exception
 ([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)). A SQLite-backed object
-has a synchronous key-value store, `ctx.storage.kv`, whose writes are "fast and synchronous"
-([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)); its key and value
-together may hold 2 MB ([limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
+has a synchronous key-value store, `ctx.storage.kv`
+([storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)); its key and
+value together may hold 2 MB ([limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
 Each of these is one piece of the API below, and nothing else of the host is reached.
 
-**(b) The package.** `platforms/cloudflare/`, embedded like `node` (§5.3). Its manifest:
+**(b) The package.** `platforms/cloudflare/`, embedded like `node` (§5.3): a fifth platform in
+the binary, beside §9.1's four (*amended 2026-10-20, L5*; §5.1 and §9.1 carry a dated line each).
+Its manifest:
 
 ```json
 {
@@ -6278,10 +6294,15 @@ lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s
 
 | Module | Holds |
 |---|---|
-| `Worker` | `Program`, `program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, and their errors |
-| `Worker.Object` | `define`, `Context`, the handlers, `tick`, alarms, the attached sockets |
-| `WebSocket` | the server WebSocket: §9.11 (a)'s shared handle operations, `accept`, the attachment, `autoReply` |
-| `Worker.Storage` | the object's key-value store, through schemas |
+| `Worker` | every host type — `Program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, `Context`, `Definition` — with `program`, the request and response operations, the bindings and their errors. It imports no module of the platform |
+| `WebSocket` | the server WebSocket: §9.11 (a)'s shared handle operations, `accept`, the attachment, `autoReply`. It imports `Worker` |
+| `Worker.Object` | `define` and the handlers over `Worker.Definition` and `Worker.Context`, `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
+| `Worker.Storage` | the object's key-value store, through schemas. It imports `Worker` |
+
+*Amended 2026-10-20 (H1).* The host types all live in `Worker`, so the modules form no cycle
+(`fast-compiler.md` §3.1 forbids one): `WebSocket.accept` takes `Worker.Context` and
+`Worker.Request`, and `Worker.Object`'s handlers take `WebSocket.Socket` and `WebSocket.Close`.
+`Worker.Object.define` answers a `Worker.Definition`, the type `Worker.program`'s `objects` lists.
 
 `runtime.js` is the one file that defines a JavaScript class: the Durable Object classes the
 entry file exports, one per `Worker.Object.define`, each a subclass of `DurableObject` from
@@ -6301,26 +6322,36 @@ key; this is its whole contract.
   `unknown_exports_mode`, reported against the manifest at `1:1` with no excerpt, as
   `invalid_entry_file` is. Inherited first-found down the chain like every output key (§9.1).
 - **The app's `beni.json`** lists the names: `"exports": ["Arena"]` (`frontend.md` §10.1). Each
-  is an ASCII identifier — letters, digits, `_` and `$`, not beginning with a digit; the check is
-  ASCII only, as the entry name's is — that is not one of the words the sibling scanner refuses as
-  an export name (`src/js/Sibling.zig`'s `keyword_words`: ECMAScript's reserved words, the
-  strict-mode ones, `await`, `yield`, `undefined`), not `default`, and no name is listed twice;
-  otherwise `invalid_entry_export`, reported against the app's manifest at `1:1`, naming the
-  entry. With the key absent, the list is empty. A list on an app built for a chain that declares
-  no `"exports"` does nothing, and a list that does nothing is almost always a mistake, so it is
-  the warning `exports_ignored` (rule 7), naming the platform.
+  is an ASCII identifier name — letters, digits and `_`, not beginning with a digit; the check is
+  ASCII only, as the entry name's is — not `default`, and no name is listed twice; otherwise
+  `invalid_entry_export`, a diagnostic of the build reported during emit against the app's
+  manifest at `1:1`, naming the entry, as `invalid_entry_file` is (exit 1; a `"exports"` that is
+  not a list of strings is the manifest's exit-2 failure, as any key of the wrong JSON type is,
+  `frontend.md` §10.1). No reserved-word rule is needed (*amended 2026-10-20, M7*): a name is
+  written only as an export name, never as a binding. With the key absent, the list is empty. A
+  list on an app built for a chain that declares no `"exports"` does nothing, and a list that does
+  nothing is almost always a mistake, so it is the warning `exports_ignored` (rule 7), naming the
+  platform. Two `define`s of one name are `exports`'s to refuse at load, like a name defined by
+  none ((e)).
 - **The entry file** is, in a development build,
 
   ```js
   // Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
   // the platform's output shape asks for.
-  import { run } from "./_platform/runtime.foreign.mjs";
-  import { Main$main } from "./Main.mjs";
+  import { run as $run } from "./_platform/runtime.foreign.mjs";
+  import { Main$main as $main } from "./Main.mjs";
 
-  const program = run(Main$main);
-  export default program.default;
-  export const Arena = program.exports("Arena");
+  const $program = $run($main);
+  export default $program.default;
+  const $export0 = $program.exports("Arena");
+  export { $export0 as Arena };
   ```
+
+  *Amended 2026-10-20 (M7).* The entry's own bindings begin with `$`, which no listed name may
+  hold, and a listed name is written only in an `export { … as Name }` clause, where any
+  identifier name is legal — a reserved word included — so no name can collide with `run`,
+  `program`, `start`, `flush`, `stop`, the imported `main` or a release build's short name
+  (measured: `run`, `program` and `Main$main` as plain `export const` names broke the file).
 
   and under `--release` the same statements with the header and the whitespace gone, `Main$main`
   spelled as the exporting module spells it (§9 item 2 of `backend.md`). The names come in the
@@ -6347,7 +6378,7 @@ pub method : Request → String            -- upper case, as the host gives it
 pub url : Request → String               -- the full URL as the host gives it: "https://h/arena/x/ws?k=v"
 pub path : Request → String              -- its `pathname`, "/arena/x/ws"
 pub header : Request, String → Maybe String    -- the header's value, the name in any case; the host joins repeats with ", "
-pub headers : Request → List (String × String) -- names lower-cased, in the host's order
+pub headers : Request → List (String × String) -- names lower-cased, sorted by name as the host keeps them; repeats joined with ", "
 -- A Worker's `fetch` reads no body in this slice ((j)): the stream is the host's, forwarded whole.
 
 pub opaque type Response
@@ -6355,7 +6386,7 @@ pub text : Int, String → Response        -- `content-type: text/plain; charset
 pub html : Int, String → Response        -- `content-type: text/html; charset=utf-8`
 pub empty : Int → Response               -- no body
 pub withHeader : Response, String, String → Response   -- appended; a repeated name is written twice
-pub redirect : String, Int → Response    -- `location`, with 301, 302, 303, 307 or 308
+pub redirect : Request, String, Int → Response   -- `location`: the target resolved against the request's URL; 301, 302, 303, 307 or 308
 
 pub foreign type Env
 pub objects : Env, String → Maybe Namespace    -- the Durable Object binding of that name
@@ -6375,24 +6406,30 @@ pub stubId : Stub → String                     -- 64 hex digits
 pub stubName : Stub → Maybe String             -- the name `byName` was given; `Nothing` otherwise
 
 pub type StubError
-    = Overloaded                               -- "Durable Object is overloaded", the error's `overloaded` is true
-    | ConnectionLost                           -- "Network connection lost"
-    | Reset                                    -- "Durable Object reset …", "… exceeded timeout which caused object to be reset"
-    | RateLimited                              -- "Your account is generating too much load …", "… too many concurrent storage operations …"
+    = Overloaded                               -- the error's `overloaded` is true: send fewer, or spread the load
+    | Reset                                    -- `durableObjectReset` is true and the reason is not a beni defect ((f)): the object restarts; the call may be made again
+    | Transient                                -- `retryable` is true and neither of the above: the connection, a shutdown; the call may be made again
 
 pub foreign type Service
 pub callService : Service, Request → Result ServiceError Response   -- suspends: `env.ASSETS.fetch(request)`
-pub type ServiceError = ServiceUnavailable     -- "Network connection lost"
+pub type ServiceError = Unavailable            -- `retryable` is true: the call may be made again
 ```
 
 - **`fetch` runs in a fiber of its own per request**, started with `Task.start` from the host's
   `fetch` handler, which returns a promise resolved with the `Response` the fiber ends with. The
   handler may suspend: `forward`, `callService` and `Task.sleep` park it.
-  Nothing cancels it — the host has no event for a client that left, short of `request.signal`
-  behind a compatibility flag — so a fiber ends `Done`. A fiber that throws is a defect: the
-  promise rejects with the throw, and the host answers the client with its error 1101 "Worker threw
-  a JavaScript exception" ([errors](https://developers.cloudflare.com/workers/observability/errors/)).
-  That is (f)'s rule for a Worker: the request fails, the next one runs.
+  The host may cancel the request's tasks when the client disconnects or the response is complete
+  ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the fiber is not told, and
+  ends `Done` or not at all. A fiber that throws is a defect: the promise rejects with the throw,
+  and the host answers the client with its error 1101 "Worker threw a JavaScript exception"
+  ([errors](https://developers.cloudflare.com/workers/observability/errors/)). *Amended 2026-10-20
+  (H6):* that is not the end of it. A throw out of core's drain moves the scheduler to its stopped
+  phase (`core/Task.beni`, §9.8.14 (b)), after which every fiber started later is cancelled before
+  it runs; and one isolate serves many requests and every Durable Object of the Worker. So under
+  this form one defect in one request ends every later request of the isolate with `Cancelled`,
+  which the runtime would have to answer — a 500 — until the host makes a new isolate. The `sync`
+  form of (d)'s decision (`cf-workers-q4`, below) has no fiber and so none of this; it is the
+  recommended one for that reason as well.
 - **A fiber resumes in the request context it belongs to — and today it would not** (*measured
   2026-10-20 under workerd, Miniflare 4.20260518.0; the probe is
   `zig-out/scratch/probe/worker2.mjs` of the session, to become a fixture*). The host refuses to
@@ -6421,20 +6458,42 @@ pub type ServiceError = ServiceUnavailable     -- "Network connection lost"
   is opaque where `Http.Server`'s is a record (§9.10). `Request` is opaque for the same reason: the
   object the Worker forwards to a stub must be the one the host made, body stream and `Upgrade`
   header included.
-- **The host checks the status.** `text`, `html`, `empty` and `redirect` call the constructor with
-  what they are given; a status outside 200 to 599 is the host's `RangeError`, which the platform
-  does not catch: it is a defect, since every constructor here is called with a literal the program
-  wrote, and a status the program computed is the program's to bound. A status that takes no body
-  (204, 205, 304) is given none by `empty` and a body by `text`, which the host refuses the same
-  way. *(A `Response` that validates in beni as §9.10 (d) does, answering 500, is a later slice; the
-  two platforms will then agree.)*
+- **A `Response` is validated in beni before the host is called** (*amended 2026-10-20, H4; it
+  used to say the host checks the status*). The constructors take any `Int` and `String`, and the
+  host throws on ordinary values (measured, workerd v1.20260518.1): a `TypeError` for a relative
+  redirect target ("Unable to parse URL: /login"), for a header name that is not a token, for a
+  header value with a control character, and for a body on 204, 205 or 304; a `RangeError` for a
+  status outside 200 to 599; and `Response.redirect`'s headers are immutable, so `withHeader` on
+  one would throw. So the platform builds every response with `new Response(body, { status,
+  headers })` and checks first, as §9.10 (d) does on `node`: the status is an integer from 200 to
+  599; 204, 205 and 304 take an empty body; a header name is a token and a value holds no CR, LF
+  or NUL; and `redirect`'s target is resolved against the request's URL in beni (`new URL(target,
+  base)`, whose `TypeError` is caught from that call alone and is the fault). **An invalid
+  response is a 500 with an empty body and no header of the program's, and one `console.error`
+  line names the fault**, in both builds; it is not a defect, for §9.10 (d)'s reason. `withHeader`
+  appends to a response the platform built, so nothing is immutable.
 - **The log** keeps core's default sink, the console method of each level: the host's logs collect
   what `console` writes. `node`'s `logfmt` line on standard error has no equivalent here.
 - **Bindings are read by name and answer `Maybe`**: a binding the configuration does not declare
   is `undefined` on `env`, which is not an error the host throws but a mismatch between two files
   the program's author owns, so it is a value the program decides about — a 500, say — and never a
-  crash. `objects`, `service` and `var` read `env[name]` and test its shape: an object with
-  `getByName` and `idFromString`, an object with `fetch`, a string.
+  crash. `objects`, `service` and `var` read `env[name]` and test its shape. *Amended 2026-10-20
+  (M11):* a service binding and a stub answer every property name since the compatibility date
+  2024-04-03 (the host's wildcard properties), so a namespace is told apart by what it lacks: an
+  object whose `idFromName` is a function and whose `fetch` is `undefined`; a service is an object
+  whose `fetch` is a function; a variable is a string.
+- **What a stub's failure becomes** (*amended 2026-10-20, M3*). The texts the documentation
+  quotes ("Durable Object is overloaded", "Network connection lost", …) are the edge's, and workerd
+  carries none of them; what both set are four properties of the error, `overloaded`,
+  `retryable`, `remote` and `durableObjectReset` (workerd v1.20260518.1, `src/workerd/jsg/util.c++`).
+  `forward` and `callService` sort by them, in this order: `overloaded` is `Overloaded`;
+  `durableObjectReset` is `Reset`, unless the reason begins with (f)'s prefix `beni defect:` —
+  then it is the object's own defect, thrown again so the Worker's request is a defect too;
+  `retryable` is `Transient`; **anything else is thrown again**: an application error of the
+  object (`remote`, the object's own throw, which (f) turns into an abort first), CPU or memory
+  exceeded, an internal error. After a stub has failed, the host asks that it be made again; a
+  program calls `byName` again for the next request, which it does by writing `route` as (i)
+  shows.
 
 **(e) `Worker.Object`: a Durable Object.** An object is a name, a function that restores its state
 and the handlers it answers events with. Every handler is `sync`; the host delivers an object's
@@ -6494,34 +6553,57 @@ arena =
   author's, and (i)'s table says what to write.
 - **`restore` runs before the first event of each start.** The host runs the constructor on
   creation, on every wake from hibernation and after every eviction or restart, and the in-memory
-  state is gone each time ((a)). The platform calls `restore ctx` once per instance, on the first
-  event rather than in the constructor (the host asks for a light constructor), and holds the state
-  it returns; a program rebuilds it from `Storage` and from `sockets` with their attachments.
-  Nothing else of the previous life is visible.
+  state is gone each time ((a)). The platform calls `restore ctx` once per instance, at the start
+  of the first event's method, before that method waits for anything (the host's advice is to
+  minimise the constructor's work under hibernation), and holds the state it returns; a program
+  rebuilds it from `Storage` and from `sockets` with their attachments. Nothing else of the
+  previous life is visible.
 - **The state is the platform's to hold** between events; a handler is handed it and returns it.
   Nothing a handler returns is written anywhere by itself: what must survive a restart goes through
   `Storage`, incrementally, as the host recommends (no shutdown hook exists).
 - **`request`** answers a request the Worker's stub forwarded; `WebSocket.accept` is how it answers an
   upgrade ((g)). **The platform reads the body before it calls the handler** — the class's `fetch`
   awaits `request.text()`, then calls the `sync` handler with the whole text, which `body` answers
-  — so a handler that cannot suspend still reads a POST. A body over **1 MiB** is answered 413
-  before the handler runs, and a body whose read fails ("Network connection lost") is dropped:
-  there is no one to answer. The limit is a fixed number in this slice and will be a setting of
-  `define` with this default (rule 7, as §9.10 (c) owes #336); an upgrade request has no body. **`message`** is a text frame. A binary frame — `ArrayBuffer` — is not in this slice
+  — so a handler that cannot suspend still reads a POST. *Amended 2026-10-20 (M6):* that wait is
+  I/O that is not storage, during which the host delivers other events (measured: a WebSocket
+  message ran while a body was read), so **a request with a body takes its turn when its body is
+  whole**, after the events that arrived meanwhile; handlers still run one at a time, and `restore`
+  has run before the wait. A body over **1 MiB** — by `content-length` when the header is there,
+  else counted as it is read and stopped at the first byte over — is answered 413 before the
+  handler runs; invalid UTF-8 decodes to U+FFFD, as §9.11 (a) says of `write`. A body whose read
+  fails because the client went away rejects with the host's `Error` "Network connection lost."
+  (workerd `jsg/util.c++`), which the class's `fetch` catches by that message alone, answering
+  nothing — the request is dropped, there is no one to answer — and any other rejection is a
+  defect. The limit is a fixed number in this slice and will be a setting of `define` with this
+  default (rule 7, as §9.10 (c) owes #336); an upgrade request has no body.
+  **`message`** is a text frame. A binary frame — `ArrayBuffer` — is not in this slice
   ((j)): the platform closes the socket with 1003 "unsupported data", writes one line with
   `console.warn` naming the socket's id, in both builds, as §9.11 (j) does, and the program sees
   `closed` with 1003.
-  **`closed`** is the host's `webSocketClose`, with its code and reason as §9.11 (a)'s `Close`;
-  under a compatibility date of 2026-04-07 or later the host answers the close frame itself
-  (`web_socket_auto_reply_to_close`), so the platform calls nothing. **`failed`** is
-  `webSocketError`, with the error's message; the socket is closed by the host after it.
+  **`closed`** is the host's `webSocketClose`, with its code and reason mapped to §9.11 (a)'s
+  `Close` as (g) says. *Amended 2026-10-20 (H2):* the host does **not** answer a peer's close
+  frame on a hibernatable socket, whatever the compatibility date — `web_socket_auto_reply_to_close`
+  acts only in the read loop of a socket accepted with the standard `accept()` (workerd
+  v1.20260518.1, `src/workerd/api/web-socket.c++:1083-1099`; the hibernation read loop,
+  `io/hibernation-manager.c++:364-369`, sends none; measured: the client got no close event), so
+  the platform finishes the handshake itself: in `webSocketClose`, when the socket's `readyState`
+  is CLOSING, it calls `ws.close(code, reason)` with the peer's code, before `closed` runs (a
+  socket already closed ignores the call). **`failed`** is `webSocketError`, with the error's
+  message; no `webSocketClose` follows it and no close frame is sent (`io/hibernation-manager.c++:250-284`),
+  so the platform delivers `closed` itself right after `failed`, with 1006 and `""` ((g)).
   **`alarm`** is `alarm()`.
 - **`tick` is the timer, declared.** After `restore` and after every handler the platform calls
   `tick` on the new state. `Just d` keeps one host timer of `d` armed — set with `setTimeout`,
   re-armed from the moment it fires — and `ticked` runs when it fires; a different `d` re-arms from
   now; `Nothing` clears it. A set timer keeps the object from hibernating ((a)), which is what an
   active arena wants, and `Nothing` is how the program lets it sleep: "the game will stop its tick
-  when the arena is idle" (#526). The timer's callback runs `ticked` in the host's callback, in no
+  when the arena is idle" (#526). *Amended 2026-10-20 (M4):* a timer keeps the object from
+  **eviction** only from the compatibility date 2026-10-01, for up to 15 minutes per timer (the
+  changelog of that date; before it the host could shut an idle object down with a timer pending
+  and no client connected), and a timer does not reset the object's CPU allowance, which each
+  request or WebSocket message resets to 30 seconds. So an arena whose players are connected is
+  safe on any date; one that ticks with no client needs that date, which (i) asks for in
+  production, while the pinned local runtime refuses any date after its own build. The timer's callback runs `ticked` in the host's callback, in no
   fiber, as every handler runs. The same `d` returned again does not re-arm the timer, so a tick
   is not delayed by the events between ticks; within one life the ticks are re-armed as each
   fires, and across a restart there is no timer at all: **after an eviction or a restart the
@@ -6529,37 +6611,67 @@ arena =
   does not tick until a player sends — so a tick is not durable and `restore` arms it only when
   the first event has come. An alarm is the durable timer: it survives hibernation and eviction,
   fires once, and wakes the object; the program sets the next one in `alarm`. A `ticked` that
-  throws is (f)'s defect, and no timer survives it.
+  throws is (f)'s defect, and no timer survives it. *Amended 2026-10-20 (L4):* the sockets stay
+  connected across a restart that the host decides, not across an `abort` ((f), 1006) and not
+  across a code deploy, which disconnects them all.
+- **The ownership row** (*amended 2026-10-20, H5; the owner decides it, `cf-workers-q5`*).
+  `ownership-checker.md` §30.3 gives every program constructor a row, and a constructor with no
+  row leaves its functions pending, which is an error; `Worker.program` and `Handlers` are such
+  constructors. The row this section proposes: `restore` is like `init` — its result is owned by
+  the platform; each handler of `Handlers` is like `update` — the state it is handed is owned, so
+  it may edit a list of the state in place, and the state it returns is owned by the platform;
+  `tick` is like `view` — it borrows the state and may edit nothing; `request`'s `Response` and
+  every socket are escaped values. The runtime keeps P1–P4 and P7 by holding one state at a time:
+  after a handler returns, nothing of the runtime reads the state it was handed, the timer's
+  closure included, which reads the state the last handler returned. §30.3's table gains the rows
+  with the owner's answer; until then a program that edits its state in place is `pending` and
+  does not check, and `List.copy` is the way round it.
+- **A handler starts no fiber** (*amended 2026-10-20, M9*). `Task.spawn` and `Task.start` are
+  `impure`, so a `sync` handler may call them, but an object has no fiber of its own: a fiber a
+  handler started would run on the isolate's shared scheduler, keep the object from hibernating
+  while it waits, and be lost at hibernation or eviction with no finaliser run — a `Task.bracket`
+  release that never runs, against §9.8.14 (a). A `cloudflare` build of an object that follows
+  this reaches no fiber runtime. Work that must outlive a handler is an alarm, or a later slice's
+  (j): fibers in an object, with the scope the host's lifecycle allows them.
 - **A handler that throws is a defect, and the object stops** ((f)).
-- **Order and determinism.** Events are delivered in the host's order, one at a time; a `tick`
-  fires between events, never inside one. What a program observes depends on the events and the
-  state, never on a host timer's resolution — a fixture never ticks for real, (i).
+- **Order and determinism.** Handlers run one at a time, in the order their events become ready
+  — a request once its body is whole (`request` above), an alarm "concurrently with another
+  request" only in the host's sense that it is one more event in the queue; a `tick` fires between
+  events, never inside one. What a program observes depends on the events and the state, never on
+  a host timer's resolution — a fixture drives time as (k) says.
 
 **(f) A defect stops the object** (rule 9; `transparent-effects-proposal.md` §16.5; the owner's
 decision 1 of #331, applied here). A throw in a handler, in `restore`, in `ticked` or in a sibling
-leaves the host's method; nothing catches it. **The guard is `Js.finally`-shaped**: the class's
-method runs the handler inside `Js.finally` with a flag set after the body, as `core/Task.beni`'s
-drain does, and when the flag is not set on the way out it calls `ctx.abort(message)` with the
-error's message and lets the throw go on unchanged — no `catch`, nothing replaced, nothing
-swallowed. `restore` runs inside the first event's method, under that event's guard. `ticked`
-runs in the timer's callback, which has no host method to leave: the callback holds the same
-guard, so the throw reaches the host as an uncaught exception of a timer and `abort` is what
-resets the object. `ctx.abort(message)` "immediately resets the Durable Object and logs a JavaScript `Error`
-with the message", an error "application code cannot catch"
-([`ctx.abort`](https://developers.cloudflare.com/durable-objects/api/state/)): in-flight requests
-fail, the stub that called sees the error ((d): the Worker's request is a defect too), and the next
-event starts a new instance whose `restore` runs. From `alarm` the platform passes
-`{ retryAlarm: false }`: the host retries an alarm whose handler threw "using exponential
-backoff, starting at 2 second delays for up to 6 retries"
+leaves the host's method. *Amended 2026-10-20 (H3), the whole of this part.* Two host facts shape
+the guard: `ctx.abort` does not return — workerd terminates the running JavaScript (`src/workerd/api/actor-state.c++:1133-1153`)
+and the caller of the event sees `Error(reason)` with `remote` and `durableObjectReset` true, so
+an error thrown before `abort` never reaches anyone (measured: the original error, its message and
+its stack were gone) — and `Js.finally` sees no error, so a guard of that shape cannot say which
+defect it saw. **The guard is therefore one catch that catches everything, logs it, and aborts**:
+`Js.catchIf` whose test holds of every value and whose handler writes the error — its message and
+its stack — with `console.error`, then calls `ctx.abort("beni defect: " ++ message)`, which ends
+the method. It names nothing because it keeps nothing: no program code runs after it, no value is
+made of the error, and the object is reset — rule 9 forbids a catch that disguises a failure as an
+answer, and this one answers nothing. `restore` runs inside the first event's method, under that
+event's guard; `ticked` runs in the timer's callback, which holds the same guard, since a timer's
+throw would otherwise reach the host as an uncaught exception that resets nothing (measured: a
+throw in `webSocketMessage` left the object and the socket as they were, and a throw in the class's
+`fetch` rejected the stub's call and left the object as it was). `ctx.abort(message)` resets the
+Durable Object at once and the host logs an `Error` with the message
+([`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)): in-flight requests fail,
+the stub that called sees `Error("beni defect: …")` with `durableObjectReset` true — which (d)'s
+`forward` throws again by its prefix, so the Worker's request is a defect too — every attached
+socket is closed (measured: the client sees 1006 with no reason, `wasClean` false), and the next
+event starts a new instance whose `restore` runs. From `alarm` the guard first calls
+`ctx.storage.deleteAlarm()`, which "may prevent retries on a best-effort basis", then passes
+`{ retryAlarm: false }` to `abort`: the host retries an alarm whose handler threw "using
+exponential backoff, starting at 2 second delays for up to 6 retries"
 ([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)), and `abort`'s options
-"accept `retryAlarm` (boolean, default `true`)"; "passing `{ retryAlarm: false }` prevents the
-retry" ([`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)). A defect is not a
-transient failure to retry. *Measured 2026-10-20 under
-workerd:* a throw in the class's `fetch` rejects the stub's call and leaves the object as it was,
-and a throw in `webSocketMessage` leaves the object and the socket as they were — which is why
-the platform calls `abort` itself; after `abort` every attached socket is closed, the client sees
-1006 with no reason and `wasClean` false, and the next event runs a new instance. A
-defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes on.
+"accept `retryAlarm` (boolean, default `true`)" in production (the state page; the changelog of
+2026-08-25), while workerd v1.20260518.1 has `abort(reason)` alone and ignores the option
+(measured), so under (k)'s pinned tools only the delete acts, and the claim that no retry follows
+is *owed* to a newer runtime. A defect is not a transient failure to retry. A defect in the
+Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes on.
 
 **(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (PR #531, the
 `ws` worker's spec for the page and the `node` server) **where the host lets it be**: this
@@ -6580,8 +6692,9 @@ section follows it:
   `message`, `closed` and `failed`. So `read` is not declared: a `sync` handler could not call it,
   and a fiber that called it would not survive hibernation.
 - **There is no back-pressure signal.** The host's `WebSocket` has no `bufferedAmount`
-  (*measured*, `undefined`), and `send` queues into an unbounded table (workerd,
-  `web-socket.c++:900-903`), so neither `buffered` nor `drain` can be implemented; answering 0
+  (*measured*, `undefined`), and `send` inserts each message into an unbounded `outgoingMessages` map with no size check
+  (workerd v1.20260518.1, `src/workerd/api/web-socket.c++:617-618`), so neither `buffered` nor
+  `drain` can be implemented; answering 0
   would be a silent wrong answer. A program bounds its own rate: the arena sends one state per
   tick per player and no more, and the host's advice is fewer, larger frames.
 - **The upgrade is answered by the `request` handler**, not by a second handler: it returns the
@@ -6589,7 +6702,9 @@ section follows it:
   or any other response (its `refuse response`). The host routes every request the Worker
   forwards to the one `fetch` of the class, so there is no `listenWith` to split them. A
   subprotocol is a header of the 101 response on this host, so §9.11 (e)'s `acceptWith
-  { protocol }` fits when a program needs one; the first slice declares `accept` alone.
+  { protocol }` fits, and the first slice declares it (*amended 2026-10-20, M10*): a client that
+  offered subprotocols and is answered none fails its handshake (measured with Miniflare's client:
+  "Server sent no subprotocol"), and a page that passes protocols to §9.11's `connect` needs it.
 
 ```elm
 module WebSocket   -- cloudflare: the shared handle operations of §9.11 (a), plus these
@@ -6601,23 +6716,31 @@ pub attach : Socket, Schema e a, a → Result AttachError ⊤
 pub attachment : Socket, Schema e a → Result (List Schema.Issue) (Maybe a)
 pub autoReply : Context, String, String → ⊤   -- `setWebSocketAutoResponse`: answered without waking the object
 
+pub acceptWith : Context, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)
+
 pub type AcceptError
     = NotAnUpgrade                       -- no `Upgrade: websocket` header, or the method is not GET; nothing is accepted
     | TooManyTags                        -- more than 10, or one over 256 characters
+    | TooManySockets                     -- `getWebSockets()` already holds 32 768: the host's limit per object, tested first
+    | ProtocolNotOffered                 -- `acceptWith`'s `protocol` is not in the request's `sec-websocket-protocol`
 
 pub type AttachError
-    = TooLarge                           -- the printed value, with the platform's id, over 16 384 bytes
+    = TooLarge                           -- the attachment as the host serialises it over 16 384 bytes ((h)'s count)
     | Unprintable (List Schema.Issue)
 ```
 
 - **`accept ctx request tags`** checks the handshake as §9.11 (e) does — the method is `GET`
-  and `upgrade` is `websocket`, without case — makes a `WebSocketPair`, calls
-  `ctx.acceptWebSocket(server, tags)` and answers the socket and the 101 `Response` carrying the
-  client, which the `request` handler returns. The host checks the rest of the handshake before
-  the Worker runs. The platform writes the socket's id into the attachment first —
-  `{ id, data: null }` — so that `id` is the same after hibernation: `ctx.getWebSockets()` hands
-  the host's objects back, and `id` reads it from them. `attach` prints the value with its schema
-  and stores `{ id, data: text }`; `attachment` parses it back. The attachment is the one place a
+  and `upgrade` is `websocket`, without case — tests the socket count against the host's 32 768
+  (*M5*), makes a `WebSocketPair`, calls `ctx.acceptWebSocket(server, tags)` and answers the
+  socket and the 101 `Response` carrying the client, which the `request` handler returns.
+  `acceptWith` also writes the chosen `sec-websocket-protocol` on the 101, when `protocol` is one
+  the request offered. The host checks the rest of the handshake before the Worker runs. The
+  platform writes the socket's id and its protocol into the attachment first —
+  `{ id, protocol, data: null }` — so that both are the same after hibernation: `ctx.getWebSockets()`
+  hands the host's objects back, and `id` and `protocol` read them from there, since the server
+  socket's own `ws.protocol` is always `""` on this host (`src/workerd/api/web-socket.h:417`;
+  measured). `attach` prints the value with its schema and stores `{ id, protocol, data: text }`;
+  `attachment` parses it back. The attachment is the one place a
   value of the program's crosses a restart beside `Storage`, so it crosses as JSON text through a
   schema, (h). The host keeps attachments "as long as the WebSocket remains healthy" and drops
   them when either side closes.
@@ -6627,13 +6750,21 @@ pub type AttachError
   the host: the arena's twenty to thirty frames per second per player cost one `write` each. The
   host's own advice — fewer, larger frames — is the program's to take.
 - **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code this host lets a server send
-  — 1000 to 1003, 1007 to 1014 and 3000 to 4999, the set §9.11 (f) gives `node`, less any the
-  host refuses (*owed*: measured in slice (d), and `InvalidCode` names the result) — and a
-  reason of at most 123 bytes, tested in beni; on a socket not open it does
+  — 1000 to 1003, 1007 to 1014 and 3000 to 4999, the set §9.11 (f) gives `node`; workerd accepts
+  every code of it and refuses 1004, 1005, 1006 and 1015 (`src/workerd/api/web-socket.c++:636-643`,
+  measured) — and a reason of at most 123 bytes, tested in beni; on a socket not open it does
   nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
   four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
-- **`protocol`** is the host's `ws.protocol`. A close code the host refuses is its
+- **`protocol`** is the attachment's, as above. A close code the host refuses is its
   `InvalidAccessError` (*measured* for 1005), which the check in beni keeps from being reached.
+- **`Close`, from the host's events** (*amended 2026-10-20, M10*), by §9.11 (a)'s four rules: a
+  peer's close frame is its code and reason (rule 1); the object's own `close`, then the peer's
+  answer (rule 2); an end with no close frame is `webSocketClose(1006, "WebSocket disconnected
+  without sending Close frame.", false)` (`io/hibernation-manager.c++:257-262`), which the
+  platform delivers as 1006 and `""` (rule 4); a message over 32 MiB and any other fault the host
+  finds arrive as `webSocketError`, not as a close, and `failed` then `closed` with 1006 is what
+  the program sees — rule 3's code is not available from the host, and `failed`'s message says
+  what happened.
 - **`eq`** compares by identity, as §9.11 (a) says. Within one life of the object every event
   hands the same host object back, so a socket held in the state is equal to the one an event
   names; across hibernation the state is rebuilt from `sockets`, and `id` is what a program keeps
@@ -6657,7 +6788,8 @@ pub delete : Context, String → Bool     -- whether the key was there
 pub keys : Context, String → List String -- the keys with that prefix, in order
 
 pub type PutError
-    = TooLarge                          -- key and printed value over 2 000 000 bytes of UTF-8
+    = TooLarge                          -- key and value as the host serialises them over 2 000 000 bytes (the count below)
+    | Full                              -- the host's `Error` "database or disk is full: SQLITE_FULL": the object's 10 GB
     | Unprintable (List Schema.Issue)
 ```
 
@@ -6667,8 +6799,22 @@ pub type PutError
   value stored as the host sees it would not parse after a release. A schema names every field
   by text in every build (§4, *Types a shape reads keep their names*), so what one build wrote the
   next reads.
-- **Limits are checked in beni before the host is called**: key and value together under
-  2 MB, so no host exception needs catching; the host's failure past them is a defect.
+- **Limits are checked in beni before the host is called, counting what the host counts**
+  (*amended 2026-10-20, M2*): the host serialises a value as V8 does, one byte per code unit when
+  every unit of the string is at most U+00FF and two bytes per unit otherwise, plus a few bytes of
+  envelope; a count of UTF-8 bytes undercounts a string with an emoji by half (measured: a
+  1 100 004-byte UTF-8 value with one emoji threw `SQLITE_TOOBIG`, and a 9 004-byte attachment with
+  one emoji was refused at 18 028 host bytes). So `put` and `attach` count units by that rule,
+  with 64 bytes kept for the envelope and the platform's own fields, and refuse `TooLarge` before
+  the host is called. `Full` is the one host exception caught, from `kv.put` alone, by the
+  `SQLITE_FULL` in its message; any other throw is a defect.
+- **The output gate** (*amended 2026-10-20, M1*). A write holds every outgoing message of the
+  object until it is durable: a `write` on a socket after a `put` is queued behind the gate
+  (workerd `src/workerd/api/web-socket.c++:601`, `:617-618`), and a `Response` leaves after it.
+  A write that fails at the disk discards those messages, answers the callers with errors and
+  restarts the object from scratch (the glossary's rule): the program sees a new instance and
+  `restore`, and a client sees its request fail. Nothing of that is a value of the program's: a
+  failed durable write is the host's defect, and the platform maps nothing of it.
 - The store is there from the constructor on (*measured*: `ctx.storage.kv` and `ctx.storage.sql`
   are objects in the constructor), so `restore` may read it whenever it runs.
 - **A namespace that is not SQLite-backed** has no `ctx.storage.kv`. The platform finds that at
@@ -6686,9 +6832,9 @@ file — writes `out/_worker.mjs`, `out/_platform/runtime.foreign.mjs`, the modu
 {
   "name": "snake-arena",
   "main": "out/_worker.mjs",
-  "compatibility_date": "2026-05-18",
+  "compatibility_date": "2026-10-01",
   "durable_objects": { "bindings": [{ "name": "ARENAS", "class_name": "Arena" }] },
-  "exports": { "Arena": { "type": "durable-object", "storage": "sqlite" } },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Arena"] }],
   "assets": { "directory": "page/", "binding": "ASSETS", "run_worker_first": ["/arena/*"] }
 }
 ```
@@ -6696,9 +6842,9 @@ file — writes `out/_worker.mjs`, `out/_platform/runtime.foreign.mjs`, the modu
 | Key | Must be |
 |---|---|
 | `main` | the entry file, `out/_worker.mjs` |
-| `compatibility_date` | 2026-04-07 or later: the host then answers a close frame itself, and the platform's `closed` needs no `ws.close` of its own |
+| `compatibility_date` | in production, 2026-10-01 or later, so a set timer holds the object ((e), M4); locally, no later than the pinned workerd's own build date, which it refuses to exceed (`2026-05-18` for the tools of (k)) |
 | `durable_objects.bindings[].class_name` | a name in the app's `"exports"` list and a `Worker.Object.define` of the program |
-| `exports.<class>` | `"type": "durable-object"`, `"storage": "sqlite"`: the synchronous store (h) needs SQLite; the legacy `migrations` form with `new_sqlite_classes` is the same declaration |
+| `migrations[].new_sqlite_classes`, or `exports.<class>` | the class's storage is SQLite, which (h)'s synchronous store needs. The declarative `exports` form — `"exports": { "Arena": { "type": "durable-object", "storage": "sqlite" } }` — needs Wrangler 4.107.0 or later (*amended 2026-10-20, M12*); the pinned 4.93.0 reads `migrations` only, so this slice writes that form. The two "are mutually exclusive", and a Worker moved to `exports` does not move back |
 | `assets` | optional: the page, served by the host before the Worker unless `run_worker_first` names the paths the Worker takes |
 
 and the program:
@@ -6730,7 +6876,8 @@ arenaOf path =
 ```
 
 **(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
-forwarded whole; an object reads its body through (e)); binary frames and `Bytes`; RPC methods on a stub and
+forwarded whole; an object reads its body through (e)); fibers started by an object's handler
+((e), M9); binary frames and `Bytes`; RPC methods on a stub and
 `WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
 recovery; `ctx.waitUntil`; `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
 Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
@@ -6739,16 +6886,32 @@ Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not 
 it.
 
 **(k) The tests.** A Worker runs in `workerd`, which nixpkgs carries inside `wrangler` 4.93.0
-with Miniflare (`lib/packages/miniflare`, `workerd` 1.20260518.1 — 2.2 GB in the store). Putting
-`wrangler` in the dev shell is a `flake.nix` change, which is Cesar's to review and goes in a PR of
-its own. With it, a corpus kind `tests/corpus/workers/` runs each fixture — a project built for
-`cloudflare`, with its `wrangler.jsonc` — under Miniflare by `tests/workers/driver.mjs`, driven by
-a `.steps` script of requests, WebSocket opens, sends and closes, and compared as a transcript, with
-run hashes as `serve/`'s. Nothing is deployed, no account is used, and the listener is
-`127.0.0.1`. The budget (`AGENTS.md`, *Every test has a budget*) counts Node, Miniflare and
-`workerd` for each case; what a case costs is measured first, and a grant, if one is needed, is
-asked for with the number. Without the tool in the shell the step says so once and runs nothing,
-as `test-browser` does without Chromium.
+with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GB
+of disk in the store). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
+Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the design:*
+
+- **The driver is Miniflare's API, not a `wrangler` process**: `tests/workers/driver.mjs` imports
+  `Miniflare` from that path, builds the options from the fixture (Miniflare reads no
+  `wrangler.jsonc`; the driver maps `main`, the bindings and the SQLite classes), passes `cf:
+  false` so nothing is fetched from the network, keeps the object storage under the case's scratch
+  directory, listens on `127.0.0.1`, and disposes at the end. Nothing is deployed and no account is
+  used.
+- **The script** is a `.steps` file of requests, WebSocket opens, sends, reads and closes, and
+  the transcript after each step is the golden, with run hashes as `serve/`'s (§9.10 (h)).
+- **Time is driven, never waited for.** workerd has no test clock and Miniflare no alarm trigger
+  or fake timers, so a fixture that ticked for real would sleep for real. The platform's runtime
+  takes a test-only binding, `BENI_TEST` — set by the driver and never by a user's configuration —
+  under which the object answers two requests of the driver's: `/__beni/tick` runs `ticked` as the
+  timer would, and `/__beni/alarm` runs `alarm`; with the binding unset the paths are ordinary
+  requests. *The owner decides it* (`cf-workers-q6`, the recommended choice).
+- **The budget.** Measured with `perf stat -e instructions:u`: `node -e 0` is 112M, and one
+  Miniflare start, one request and its disposal 1 933M — 45% of the 4 300M budget before a build
+  runs — so a case starts Miniflare once, and the `run/` habit of a development and a `--release`
+  pass in one case does not fit. A `workers/` fixture is therefore **two cases**, `<name>` and
+  `<name>.release`, each one build and one Miniflare start over the same sources and script.
+- The probes behind every *measured* mark of this section — the cross-request scheduler, the
+  abort, the attachment and value sizes, the close handshake — become fixtures of the first code
+  slice under this driver; until then their result is what is cited, not a file.
 
 *The owner's answers, when they come, are recorded here.*
 
