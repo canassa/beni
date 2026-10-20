@@ -517,13 +517,19 @@ namespace Ownership.FlatFragment.State
 
 open InPlaceSemantics HeapProof Soundness
 
-/-- List descriptions retain bottom or scalar elements. Dead aliases keep
-their old element description after a write. The relation does not require
-uniqueness of a root or prohibit sharing between runtime bindings. A record
-is described field by field. A result is a record of a scalar tag and two
-payload slots; the checker's `ok` and `err` leave the other slot bottom, and
-a join fills what either side fills. -/
+/-- The static shapes of the fragment's abstracts. A bottom is the abstract
+of dead code: the checker binds it where it has no information (the head of
+a chain case whose chain is statically empty, the slot a result constructor
+leaves empty), and it flows through records, result slots and the joins of
+a skipped case; a runtime binding never holds one where its value is (the
+tags, `ResultTags`, say so). List descriptions retain bottom or scalar
+elements. Dead aliases keep their old element description after a write.
+The relation does not require uniqueness of a root or prohibit sharing
+between runtime bindings. A record is described field by field. A result is
+a record of a scalar tag and two payload slots, each the shape of its type
+or bottom. -/
 inductive FlatAbstract : Ty → Abstract → Prop where
+  | bottom (ty : Ty) : FlatAbstract ty .bottom
   | int : FlatAbstract .int .scalar
   | listBottom (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.list .int) (.list roots .bottom certificate)
@@ -533,11 +539,12 @@ inductive FlatAbstract : Ty → Abstract → Prop where
       (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a → FlatAbstract t a) →
       FlatAbstract (.record ts) (.record as)
   | result (error success : Ty) (ae aa : Abstract) :
-      (ae ≠ .bottom → FlatAbstract error ae) → (aa ≠ .bottom → FlatAbstract success aa) →
-      (ae ≠ .bottom ∨ aa ≠ .bottom) →
+      FlatAbstract error ae → FlatAbstract success aa →
       FlatAbstract (.result error success) (.record [.scalar, ae, aa])
 
-/-- The tags of the result values of a binding agree with its abstract. Both
+/-- The runtime shapes of a binding's abstract, and the tags of its result
+values. A binding that holds a value is live code, so its abstract is not
+bottom: an integer's is the scalar, a list's a list description. Both
 interpreters build a success as `[1, 0, x]` and an error as `[0, x, 0]`. The
 checker builds `ok x` with a bottom error slot and `err x` with a bottom
 success slot, and skips a case arm whose slot is bottom; so a success is
@@ -545,8 +552,9 @@ described with a success slot that is not bottom, an error with an error
 slot that is not bottom, through records and through the live payload. The
 relation reads no heap, so a write keeps it. -/
 inductive ResultTags : Ty → Abstract → Value → Prop where
-  | int (a : Abstract) (w : Value) : ResultTags .int a w
-  | listInt (a : Abstract) (w : Value) : ResultTags (.list .int) a w
+  | int (n : Int) : ResultTags .int .scalar (.int n)
+  | listInt (roots : List Origin) (element : Abstract) (certificate : Certificate) (w : Value) :
+      ResultTags (.list .int) (.list roots element certificate) w
   | record (ts : List Ty) (as : List Abstract) (ws : List Value) : ts.length = as.length →
       (∀ (i : Nat) (t : Ty) (a : Abstract) (w : Value),
         ts[i]? = some t → as[i]? = some a → ws[i]? = some w → ResultTags t a w) →
@@ -595,11 +603,13 @@ not match the current heap contents. `ValueTyped` supplies a complete finite
 expansion of the current runtime value and therefore excludes dangling roots.
 
 The abstract and type environments have the exact runtime key sequence.
-Their descriptions have the flat shapes that real primitive inference needs.
-The permanent observer witness covers the complete current observer list at
-the runtime's actual observation depth. Every binding's result tags agree
-with its abstract (`ResultTags`), and every live use is a typed path of its
-binding, so a projection of a live use never enters a result.
+Their descriptions have the flat shapes that real primitive inference needs
+(`FlatAbstract`, which admits the bottom of dead code). The permanent
+observer witness covers the complete current observer list at the runtime's
+actual observation depth. Every binding's result tags agree with its
+abstract (`ResultTags`), which also excludes a bottom where a value is, and
+every live use is a typed path of its binding, so a projection of a live use
+never enters a result.
 -/
 structure FlatInvariant (declarations : List Decl)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
@@ -1222,11 +1232,18 @@ theorem flatType_tyAt {tk ty : Ty} {p : Path} (flat : FlatType tk) (at_p : tyAt 
       cases flat with
       | record _ fields => exact ih (fields t' (List.mem_of_getElem? h)) at_p
 
+/-- The bottom of dead code has no path below it. -/
+theorem atPath_bottom (p : Path) : Abstract.bottom.atPath p = .bottom := by
+  cases p with
+  | nil => rfl
+  | cons step rest => cases step <;> rfl
+
 theorem flatAbstract_record {ts : List Ty} {a : Abstract} (shape : FlatAbstract (.record ts) a) :
-    ∃ as, a = .record as ∧ ts.length = as.length ∧
+    a = .bottom ∨ ∃ as, a = .record as ∧ ts.length = as.length ∧
       ∀ (i : Nat) (t : Ty) (a' : Abstract), ts[i]? = some t → as[i]? = some a' → FlatAbstract t a' := by
   cases shape with
-  | record _ as len fields => exact ⟨as, rfl, len, fields⟩
+  | bottom _ => exact Or.inl rfl
+  | record _ as len fields => exact Or.inr ⟨as, rfl, len, fields⟩
 
 theorem index_of_same_length {α β : Type} {xs : List α} {ys : List β} {i : Nat} {x : α}
     (len : xs.length = ys.length) (at_i : xs[i]? = some x) :
@@ -1254,10 +1271,11 @@ theorem atPath_snoc_of_tyAt {tk ty : Ty} {a : Abstract} {p : Path} {i : Nat}
     | none => simp [h] at at_p
     | some t' =>
       simp [h] at at_p
-      obtain ⟨as, rfl, len, fields⟩ := flatAbstract_record shape
-      obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields h
-      simp only [List.cons_append, Abstract.atPath, at_i, Option.getD_some]
-      exact ih shape' at_p
+      rcases flatAbstract_record shape with rfl | ⟨as, rfl, len, fields⟩
+      · rw [atPath_bottom, atPath_bottom, atPath_bottom]
+      · obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields h
+        simp only [List.cons_append, Abstract.atPath, at_i, Option.getD_some]
+        exact ih shape' at_p
 
 theorem flatAbstract_atPath {tk ty : Ty} {a : Abstract} {p : Path}
     (shape : FlatAbstract tk a) (at_p : tyAt tk p = some ty) : FlatAbstract ty (a.atPath p) := by
@@ -1273,31 +1291,10 @@ theorem flatAbstract_atPath {tk ty : Ty} {a : Abstract} {p : Path}
     | none => simp [h] at at_p
     | some t' =>
       simp [h] at at_p
-      obtain ⟨as, rfl, len, fields⟩ := flatAbstract_record shape
-      obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields h
-      simp only [Abstract.atPath, at_i, Option.getD_some]
-      exact ih shape' at_p
-
-theorem abstractAtom_of_root {aenv : Env Abstract} {a : Atom} {k : Var} {p : Path}
-    {a0 : Abstract} {tk ty : Ty}
-    (root : atomRoot a = some (k, p)) (found : aenv.lookup k = some a0)
-    (shape : FlatAbstract tk a0) (at_p : tyAt tk p = some ty) :
-    abstractAtom aenv a = .ok (a0.atPath p) := by
-  induction a generalizing k p ty with
-  | int n => simp [atomRoot] at root
-  | var v =>
-    simp [atomRoot] at root
-    obtain ⟨rfl, rfl⟩ := root
-    simp [abstractAtom, lookup, found, Abstract.atPath]
-  | field a i ih =>
-    obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
-    obtain ⟨fs, at_p0, at_i⟩ := tyAt_snoc_inv at_p
-    have run := ih inner found at_p0
-    have shape0 := flatAbstract_atPath shape at_p0
-    obtain ⟨as, eq, len, fields⟩ := flatAbstract_record shape0
-    obtain ⟨a', as_i, _⟩ := flatAbstract_record_field len fields at_i
-    rw [atPath_snoc_of_tyAt shape at_p, eq]
-    rw [eq] at run
-    simp [abstractAtom, run, as_i, Option.toExcept, Abstract.atPath]
+      rcases flatAbstract_record shape with rfl | ⟨as, rfl, len, fields⟩
+      · rw [atPath_bottom]; exact .bottom _
+      · obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields h
+        simp only [Abstract.atPath, at_i, Option.getD_some]
+        exact ih shape' at_p
 
 end Ownership.FlatFragment.Fields

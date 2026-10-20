@@ -72,22 +72,23 @@ theorem primitive_literal_run (ctx : Context) (site : List Nat) (xs : List Abstr
   unfold primitive
   rfl
 
-theorem scalar_fold_flat (atoms : List Atom) (start : Abstract)
-    (flat : start = .bottom ∨ start = .scalar) :
-    (atoms.map fun _ => Abstract.scalar).foldl Abstract.join start = .bottom ∨
-      (atoms.map fun _ => Abstract.scalar).foldl Abstract.join start = .scalar := by
-  induction atoms generalizing start with
+/-- The fold of scalars and bottoms (a dead operand) over a scalar or bottom. -/
+theorem flat_fold_flat (as : List Abstract) (flatAs : ∀ a ∈ as, a = .bottom ∨ a = .scalar)
+    (start : Abstract) (flat : start = .bottom ∨ start = .scalar) :
+    as.foldl Abstract.join start = .bottom ∨ as.foldl Abstract.join start = .scalar := by
+  induction as generalizing start with
   | nil => simpa using flat
-  | cons _ rest ih =>
-    simp only [List.map_cons, List.foldl_cons]
-    apply ih
-    rcases flat with rfl | rfl <;> simp [Abstract.join]
+  | cons a rest ih =>
+    simp only [List.foldl_cons]
+    apply ih (fun x member => flatAs x (List.mem_cons_of_mem _ member))
+    rcases flat with rfl | rfl <;> rcases flatAs a (by simp) with rfl | rfl <;> simp [Abstract.join]
 
 /-- The actual literal inference: a fresh site root, a flat element, and an
-unchanged checker state. -/
-theorem infer_literal_success {aenv : Env Abstract} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {args : List Atom}
+unchanged checker state. Every operand is a scalar or the bottom of dead code. -/
+theorem infer_literal_success {aenv : Env Abstract} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {args : List Atom} {as : List Abstract}
     (defaultConfig : ctx.config = {})
-    (argsRun : args.mapM (m := Except String) (abstractAtom aenv) = .ok (args.map fun _ => Abstract.scalar))
+    (argsRun : args.mapM (m := Except String) (abstractAtom aenv) = .ok as)
+    (flatAs : ∀ a ∈ as, a = .bottom ∨ a = .scalar)
     (accepted : (inferExpr inferenceFuel ctx aenv (.prim (.literal .int) args) after site).run before =
       .ok (result, next)) :
     next = before ∧ ∃ element certificate,
@@ -97,7 +98,7 @@ theorem infer_literal_success {aenv : Env Abstract} {inferenceFuel : Nat} {ctx :
   rw [primitive_literal_run] at run
   have equal := Except.ok.inj run
   refine ⟨(congrArg Prod.snd equal).symm, _, _, (congrArg Prod.fst equal).symm, ?_⟩
-  exact scalar_fold_flat args .bottom (Or.inl rfl)
+  exact flat_fold_flat as flatAs .bottom (Or.inl rfl)
 
 /-! ### The literal expression case -/
 
@@ -235,7 +236,8 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
   obtain ⟨integers, valueAtoms, heapAtoms, abstractAtoms⟩ :=
     flat_atoms_integers inv atomsTyped allInt covered
   obtain ⟨checkerState, element, certificate, resultShape, elementFlat⟩ :=
-    infer_literal_success defaultConfig abstractAtoms accepted
+    infer_literal_success defaultConfig abstractAtoms
+      (fun a member => by obtain ⟨_, _, rfl⟩ := List.mem_map.mp member; exact Or.inr rfl) accepted
   subst checkerState
   refine ⟨rfl, rfl, ⟨element, certificate, resultShape, elementFlat⟩, ?_, ?_⟩
   · intro value vs' run
@@ -256,7 +258,7 @@ theorem literal_preserved {declarations : List Decl} {vs : ValueSemantics.State}
             some (heapInts integers) := by
           rw [heapEq]; simp
         refine ⟨.ref hs.heap.size, heapObserved (heapAllocated hs integers) vs.kept.toList, gamma',
-          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, .listInt _ _⟩
+          heapRun, postInvariant, ?_, ?_, ?_, ?_, ?_, by rw [resultShape]; exact .listInt _ _ _ _⟩
         · rw [heapEq]; simp
         · exact corresponds_integer_ref lookupNew
         · rw [resultShape]
@@ -452,7 +454,7 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         cases run
         refine ⟨.int integers.length, heapRead hs (.int integers.length) vs.kept.toList, gamma,
           heapRun, ?_, ?_, Ownership.FlatFragment.AtomPreservation.integer_corresponds _, ?_, by simp [obsTyped],
-          ⟨1, .int integers.length, [], .int, by simp [obsTyped]⟩, .int _ _⟩
+          ⟨1, .int integers.length, [], .int, by simp [obsTyped]⟩, by rw [resultScalar]; exact .int _⟩
         · rw [nextEscapes]; exact read_post_invariant inv _
         · exact Nat.le_of_eq (by unfold heapRead; rw [heapObserved_heap])
         · rw [resultScalar]; exact Ownership.FlatFragment.AtomPreservation.integer_described _
@@ -605,7 +607,8 @@ theorem scalar_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         refine ⟨.int (scalarResult op x y),
           AtomPreservation.heapAtomPost hs vs.kept.toList, gamma,
           heapRun, ?_, ?_, AtomPreservation.integer_corresponds _, ?_,
-          by simp [obsTyped], ⟨1, .int (scalarResult op x y), [], .int, by simp [obsTyped]⟩, .int _ _⟩
+          by simp [obsTyped], ⟨1, .int (scalarResult op x y), [], .int, by simp [obsTyped]⟩,
+          by rw [resultScalar]; exact .int _⟩
         · rw [nextEscapes]; exact AtomPreservation.integer_atom_post_invariant inv
         · exact Nat.le_of_eq (by
             unfold AtomPreservation.heapAtomPost
@@ -1093,6 +1096,22 @@ theorem primitive_push_result {ctx : Context} {site : List Nat} {before : St} {n
   rw [← first]
   exact ⟨_, by simp [Abstract.grantExclusive] <;> rfl⟩
 
+/-- The same with a dead item (its abstract bottom), for the static facts. -/
+theorem primitive_push_result_flat {ctx : Context} {site : List Nat} {before : St} {next : St} {result : Abstract} {roots : List Origin} {later : List Origin} {element item : Abstract} {certificate : Certificate}
+    (flatI : item = .bottom ∨ item = .scalar)
+    (run : (primitive ctx site .push [.list roots element certificate, item] later).run before =
+      .ok (result, next)) :
+    ∃ certificate', result = .list roots (element.join item) certificate' := by
+  rcases flatI with rfl | rfl
+  · unfold primitive at run
+    obtain ⟨finished, middle, _, returned⟩ := checkM_bind_success run
+    cases finished
+    have equal := Except.ok.inj returned
+    have first : _ = result := congrArg Prod.fst equal
+    rw [← first]
+    exact ⟨_, by simp [Abstract.grantExclusive] <;> rfl⟩
+  · exact primitive_push_result run
+
 theorem liveCellsWith_default (env : Env Abstract) (l : Live) :
     liveCellsWith ({} : Config) env l = liveCells env l := by
   simp [liveCellsWith, default_has]
@@ -1100,6 +1119,20 @@ theorem liveCellsWith_default (env : Env Abstract) (l : Live) :
 theorem flat_join_scalar {element : Abstract} (flat : element = .bottom ∨ element = .scalar) :
     element.join .scalar = .scalar := by
   rcases flat with rfl | rfl <;> simp [Abstract.join]
+
+/-- The element after a push of a scalar or of a dead operand. -/
+theorem flat_join_flat {element item : Abstract} (flatE : element = .bottom ∨ element = .scalar)
+    (flatI : item = .bottom ∨ item = .scalar) :
+    element.join item = .bottom ∨ element.join item = .scalar := by
+  rcases flatE with rfl | rfl <;> rcases flatI with rfl | rfl <;> simp [Abstract.join]
+
+/-- A push onto a dead receiver: the checker returns bottom and changes nothing. -/
+theorem primitive_push_bottom_run (ctx : Context) (site : List Nat) (item : Abstract)
+    (later : List Origin) (before : St) :
+    (primitive ctx site .push [.bottom, item] later).run before = .ok (.bottom, before) := by
+  unfold primitive
+  simp [BEq.beq, Abstract.equal]
+  rfl
 
 theorem primType_push_success {type : Ty} {tR : Ty} {tI : Ty} (flatR : FlatType tR) (flatI : FlatType tI)
     (run : primType .push [tR, tI] = .ok type) :
@@ -1281,7 +1314,7 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
         refine ⟨.ref root, heapObserved (heapPushed hs root xs n) vs.kept.toList, gamma, heapRun, ?_,
           Nat.le_of_eq sizeEq.symm, corresponds_integer_ref lookupNew, ?_,
           integer_list_observation_typed declarations (xs ++ [n]),
-          allocated_integer_list_typed declarations lookupNew, .listInt _ _⟩
+          allocated_integer_list_typed declarations lookupNew, by rw [resultEq, joined]; exact .listInt _ _ _ _⟩
         · rw [escapesEq]
           refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
             ?_ ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
@@ -1715,15 +1748,14 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
   rw [nextEscapes]
   refine ⟨rfl, .result error t flatError flatT, ?_, ?_⟩
   · rw [resultEq]
-    exact .result error t .bottom a (fun ne => absurd rfl ne) (fun _ => shape)
-      (Or.inr (flatAbstract_ne_bottom shape))
+    exact .result error t .bottom a (.bottom _) shape
   · rw [resultEq]
     refine result_preserved_of_parts (value := .record [.int 1, .int 0, o])
       (actual := .record [.int 1, .int 0, w]) inv valueAtom heapAtom
       (fun s => value_ok_run error s o) (fun s => heap_ok_run error s w)
       (corresponds_ok paired) (describes_ok described) ?_
       (valueTyped_of_allocated (.ok error t w allocated) inv.heapInts)
-      (.ok error t _ _ _ w (flatAbstract_ne_bottom shape) tags)
+      (.ok error t _ _ _ w (resultTags_ne_bottom tags) tags)
     simpa [obsTyped] using observed
 
 theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {success : Ty} {x : Atom} {self : Decl} {type : Ty}
@@ -1767,15 +1799,14 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
   rw [nextEscapes]
   refine ⟨rfl, .result t success flatT flatSuccess, ?_, ?_⟩
   · rw [resultEq]
-    exact .result t success a .bottom (fun _ => shape) (fun ne => absurd rfl ne)
-      (Or.inl (flatAbstract_ne_bottom shape))
+    exact .result t success a .bottom shape (.bottom _)
   · rw [resultEq]
     refine result_preserved_of_parts (value := .record [.int 0, o, .int 0])
       (actual := .record [.int 0, w, .int 0]) inv valueAtom heapAtom
       (fun s => value_err_run success s o) (fun s => heap_err_run success s w)
       (corresponds_err paired) (describes_err described) ?_
       (valueTyped_of_allocated (.err t success w allocated) inv.heapInts)
-      (.err t success _ _ _ w (flatAbstract_ne_bottom shape) tags)
+      (.err t success _ _ _ w (resultTags_ne_bottom tags) tags)
     simpa [obsTyped] using observed
 
 end Ownership.FlatFragment.Result
