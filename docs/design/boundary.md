@@ -4373,7 +4373,9 @@ entry to standard error.** §9.8.10 (d) is superseded by this paragraph.
 context (`annotate`, `span`, `minimum`, `withSink`) is the next slice. **`platforms/browser/Log.beni`
 stays until §9.8.16 (b)'s `Log.write` has a home outside it**: a platform module shadows the core
 module of its name for the program and for the platform itself (§9.8.11 (a), §9.1), so a browser
-program still imports the browser's `Log`, and a `node` program imports core's.
+program still imports the browser's `Log`, and a `node` program imports core's. *Second part, the
+same day:* the log context (`annotate`, `span`, `minimum`, `withSink`) is built, in the fiber's
+log-context slot (§17.5), so a `node` line carries the fiber's spans and annotations.
 
 **(c) A Node program that can never wake ends, with exit 1** (§17.10; A8's "never a silent exit
 0"). `Io.run` sets the exit code to 1 when it starts its fiber, which the fiber's end overwrites as
