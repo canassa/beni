@@ -5815,6 +5815,45 @@ settings for the 5-second closing time and the 64 KiB read buffer; a WebSocket c
 `browser-inline` platform, which has no fibers, though `listen` needs none; and the Cloudflare
 Workers platform (#526), whose server side gives `upgrade` and the common surface the same shape.
 
+*As built, 2026-10-20, the page* (`platforms/browser/WebSocket.beni`, written over `Js` with no
+sibling; `browser-tea` re-exports it; `tests/browser/driver.mjs`'s scripted socket), as (b)–(d)
+and (j) say, with these readings:
+
+- **A socket is one object** that both forms share: the host's socket, the messages no one has
+  read, the fibers waiting in `read`, the open's waiter, the end, and the subscription's send.
+  `listen` hands every message to its subscription and none to `read`; `connect` queues them for
+  `read`. Its host listeners are added once, when it is made.
+- **An `error` ends the connection by itself**: 1006 once open, `Unreachable` before. The
+  standard fires `close` after every `error`, but WebKit fires `error` alone when a connection
+  fails, and a `connect` or a `read` that waited for `close` would wait forever. A `close` that
+  follows finds the connection ended and reports nothing more. The driver's `socket <n>
+  error-only` step fails a socket so, and `WebSocketChat` uses it before and after the open.
+- **A fragment is any `#` in the serialised URL**, so `"/chat#"`, whose `hash` is `""`, is
+  `BadUrl` too; the constructor's `SyntaxError` for it is never reached.
+- **`Blocked` is what a host reports at once**: Chrome's `SecurityError` for an insecure socket
+  from an `https:` page, and Safari's for one the page's CSP forbids. Firefox and Safari fail an
+  insecure socket later, which is `Unreachable`. Whether Firefox's refusal of a socket its CSP
+  forbids is a `SecurityError` is not checked yet (#542).
+- **`buffered` is 0 once the connection has ended**, though the host's `bufferedAmount` keeps
+  what was never sent: nothing more will be.
+- **The console's line for a binary message names the URL as the program wrote it**, not the
+  resolved one, so the line is the same on every host and port.
+- **The scripted socket** checks what the standard checks (the URL, its scheme and fragment, each
+  protocol; the codes and the reason of `close`; `send` while connecting), so a platform that
+  hands the host what it refuses meets the host's own exception. Its steps are `socket <n> open
+  ["<protocol>"]`, `message "<text>"`, `binary <bytes>`, `close <code> "<reason>"`, `fail`,
+  `error-only` and `buffered <bytes>`, then `socket blocked` (the next constructor throws `SecurityError`) and
+  `sockets` (those made and not closed); `tests/corpus/README.md` has them.
+- **Fixtures** (`tests/corpus/browser/tea/`): `WebSocketChat`, `WebSocketDirect`,
+  `WebSocketFailures` and `WebSocketLifetime`, each also run with its listeners in fibers
+  (`--fiber-page`), against the same golden.
+- **Measured** (`--release`, one file, brotli 11): a `Tea.element` page that uses `listen` and
+  `send` is 4 679 bytes, against 3 789 for a page with another `Sub.on` listener
+  (`Navigation.onUrlRequest`) and 1 152 for the empty `Tea.element`: the module costs about 890
+  bytes. One received message, each in a task of its own, costs about 3.5 µs from the host's
+  `message` event to `update` and the render, against about 7.2 µs for a click on the same page
+  (happy-dom in Node, 20 000 of each; the event's string reaches `update` as it is, with no copy).
+
 ## Appendix — what is deliberately not done
 
 - **User-writable `foreign`.** It has never been made safe in any of the fourteen languages surveyed,

@@ -1,0 +1,125 @@
+-- load
+(socket 1: /feed)
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol></ol>
+  </main>
+</body>
+-- socket 1 open
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 message "one"
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+      <li>"received one"</li>
+    </ol>
+  </main>
+</body>
+-- click #toggle
+(socket 1 close: 1000 "")
+(the DOM did not change)
+-- socket 1 message "dropped"
+(socket 1 is closing: the host drops the message)
+(the DOM did not change)
+-- socket 1 close 1000 ""
+(the DOM did not change)
+-- click #toggle
+(socket 2: /feed)
+(the DOM did not change)
+-- socket 2 open
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+      <li>"received one"</li>
+      <li>"opened"</li>
+    </ol>
+  </main>
+</body>
+-- socket 2 message "two"
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+      <li>"received one"</li>
+      <li>"opened"</li>
+      <li>"received two"</li>
+    </ol>
+  </main>
+</body>
+-- socket 2 binary 4
+console.warn: beni: WebSocket: a binary message arrived from /feed; this version reads text messages only, so the connection is closed (1003)
+(socket 2 close)
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+      <li>"received one"</li>
+      <li>"opened"</li>
+      <li>"received two"</li>
+      <li>"closed 1003 \"\""</li>
+    </ol>
+  </main>
+</body>
+-- socket 2 close 1005 ""
+(the DOM did not change)
+-- click #toggle
+(the DOM did not change)
+-- click #toggle
+(socket 3: /feed)
+(the DOM did not change)
+-- socket 3 open
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+      <li>"received one"</li>
+      <li>"opened"</li>
+      <li>"received two"</li>
+      <li>"closed 1003 \"\""</li>
+      <li>"opened"</li>
+    </ol>
+  </main>
+</body>
+-- throws click #crash
+(socket 3 close: 1000 "")
+(threw: Error: TODO: update threw)
+<body>
+  <main>
+    <button id="toggle">"toggle"</button>
+    <button id="crash">"crash"</button>
+    <ol>
+      <li>"opened"</li>
+      <li>"received one"</li>
+      <li>"opened"</li>
+      <li>"received two"</li>
+      <li>"closed 1003 \"\""</li>
+      <li>"opened"</li>
+    </ol>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: update threw"</div>
+</body>
+-- sockets
+(sockets: 0)
+(the DOM did not change)

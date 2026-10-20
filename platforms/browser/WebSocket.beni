@@ -1,0 +1,555 @@
+--! WebSocket in a page (`docs/design/boundary.md` §9.11): a connection to a
+--! server, and text messages both ways. A program opens one with `connect`
+--! in a fiber, or with the subscription `listen`, which hands `update` the
+--! socket in `Opened`:
+--!
+--!     subscriptions model =
+--!         WebSocket.listen "/arena" [] Socket
+--!
+--!     update msg model =
+--!         case msg of
+--!             Socket (WebSocket.Opened socket) →
+--!                 ( { model | link = Up socket }, Cmd.none )
+--!
+--!             Socket (WebSocket.Received text) →
+--!                 ( { model | lines = [ …model.lines, text ] }, Cmd.none )
+--!
+--!             …
+--!
+--! `read`, `write`, `close`, `buffered` and `protocol` are the same on the
+--! `node` platform's `WebSocket`, so a module that uses only them checks on
+--! both. A socket belongs to the call of `connect`, or to the key of
+--! `listen`, that opened it, and the platform closes it when that owner
+--! stops. Every operation on a closed socket is total, so a model may hold
+--! one.
+--!
+--! Written over `Js`. A socket is the object `{ w, q, r, o, e, l, k, opened }`:
+--! the host's `WebSocket`, the messages no one has read, the fibers waiting
+--! in `read`, the fiber waiting in `connect` for the open (or null), the end
+--! once there is one (or null), the subscription's send (or null), whether a
+--! subscription opened it, and whether it has opened.
+
+import Cmd exposing (Cmd)
+import Js
+import Sub exposing (Sub)
+import Task exposing (Resume)
+
+
+type alias V =
+    Js.Value
+
+
+--| A connection. Two sockets are equal only when they are one connection.
+pub foreign type Socket
+
+
+--| Whether `a` and `b` are one connection: `==` on a model that holds a
+--| socket.
+pub eq : Socket, Socket → Bool
+eq a b = Js.same a b
+
+
+--| Why a connection ended: the close code and the reason text
+--| (`boundary.md` §9.11 (a), *What `Close` says*). 1000 is a normal close,
+--| 1001 a peer that goes away, 1005 a close frame with no code, 1006 an end
+--| with no close frame, and 4000–4999 are the application's own.
+pub type alias Close =
+    code : Int
+    reason : String
+
+
+--| Why `write` sent nothing: the connection is closing or closed.
+pub type WriteError
+    = NotOpen
+
+
+--| Why `close` sent nothing. A page may send 1000 or a code from 3000 to
+--| 4999, and a reason of at most 123 bytes of UTF-8.
+pub type CloseError
+    = InvalidCode Int
+    | ReasonTooLong
+
+
+--| Why a connection did not open.
+--|
+--| - `BadUrl`: the URL does not parse relative to the page, its scheme is
+--|   not `ws`, `wss`, `http` or `https`, or it has a fragment.
+--| - `BadProtocol`: a subprotocol that is not a token, or one given twice.
+--| - `Blocked`: the host refused the connection at once, with a
+--|   `SecurityError`. Chrome does for an insecure `ws:` socket from an
+--|   `https:` page, and Safari for one that the page's CSP forbids; a
+--|   browser that refuses later gives `Unreachable` instead.
+--| - `Unreachable`: the connection failed before it opened. The host tells
+--|   a page no more: a server that is down, a refused handshake and a
+--|   blocked port are all this.
+pub type ConnectError
+    = BadUrl String
+    | BadProtocol String
+    | Blocked
+    | Unreachable
+
+
+--| What a subscription's connection reports, in order: `Opened` once,
+--| `Received` for each text message, then `Closed` — or `Failed` instead
+--| of all of them when it never opened.
+pub type Event
+    = Opened Socket
+    | Received String
+    | Closed Close
+    | Failed ConnectError
+
+
+-- ---------------------------------------------------------------------------
+-- The direct forms
+-- ---------------------------------------------------------------------------
+
+--| Open a connection to `url` (relative to the page; `http` is `ws` and
+--| `https` is `wss`) asking for `protocols`, wait until it is open, and
+--| answer `use socket`. The socket belongs to the call: when `use` returns,
+--| or the calling fiber is cancelled, an open socket is closed with 1000.
+pub connect : String, List String, (Socket → a) → Result ConnectError a
+connect url protocols use =
+    Task.bracket (λ⊤ → start url protocols False) (λstarted _ → stopped started) λstarted →
+        case started of
+            Err error →
+                Err error
+
+            Ok s →
+                opened = Task.callback λresume → waitOpen s resume
+                if opened then
+                    Ok (use (Js.to s))
+                else
+                    Err Unreachable
+
+
+--| The oldest text message no one has read, waiting for one while there is
+--| none; `Err` with why the connection ended once it has, and every
+--| message before the end was read. A subscription's socket hands every
+--| message to the subscription, so `read` on it answers only the end.
+pub read : Socket → Result Close String
+read socket = Task.callback λresume → take (Js.from socket) resume
+
+
+--| Send `text` as one message: `Err NotOpen` when the connection is not
+--| open. Never waits; `buffered` says what is not sent yet.
+pub write : Socket, String → Result WriteError ⊤
+write socket text =
+    s = Js.from socket
+    w = Js.get s "w"
+    if Js.isNull (Js.get s "e") && Js.to (Js.get w "readyState") == 1 then
+        _ = Js.call w "send" [ Js.from text ]
+        Ok ⊤
+    else
+        Err NotOpen
+
+
+--| Start the closing handshake with that code and reason. Nothing is
+--| written after it. A socket that is closing or closed is left as it is.
+pub close : Socket, Close → Result CloseError ⊤
+close socket why =
+    if not (why.code == 1000 || (why.code ≥ 3000 && why.code ≤ 4999)) then
+        Err (InvalidCode why.code)
+    else if utf8Length why.reason > 123 then
+        Err ReasonTooLong
+    else
+        w = Js.get (Js.from socket) "w"
+        if Js.to (Js.get w "readyState") ≤ 1 then
+            _ = Js.call w "close" [ Js.from why.code, Js.from why.reason ]
+            Ok ⊤
+        else
+            Ok ⊤
+
+
+--| The bytes `write` accepted that the host has not sent yet; 0 once the
+--| connection has ended, since nothing more will be sent.
+pub buffered : Socket → Int
+buffered socket =
+    s = Js.from socket
+    if Js.isNull (Js.get s "e") then Js.to (Js.get (Js.get s "w") "bufferedAmount") else 0
+
+
+--| The subprotocol the server chose, or `""`.
+pub protocol : Socket → String
+protocol socket = Js.to (Js.get (Js.get (Js.from socket) "w") "protocol")
+
+
+-- ---------------------------------------------------------------------------
+-- The Elm Architecture's forms
+-- ---------------------------------------------------------------------------
+
+type Key
+    = Connect String (List String)
+
+
+--| While this subscription is live, one connection to `url`: `Opened` with
+--| the socket once it opens, `Received` for each text message, and
+--| `Closed`, or `Failed` when it never opened. The key is the URL as
+--| written and the protocols; when it leaves the subscriptions, the socket
+--| is closed with 1000. The platform never opens a second connection by
+--| itself: to reconnect, leave the key out for a render, then put it back.
+pub listen : String, List String, (Event → msg) → Sub msg
+listen url protocols tag = Sub.on (Connect url protocols) (hold url protocols _) tag
+
+
+--| `write` when the command runs; `failed` hears only a failure.
+pub send : Socket, String, (WriteError → msg) → Cmd msg
+send socket text failed = Cmd.perform λemit →
+    case write socket text of
+        Ok ⊤ →
+            ⊤
+
+        Err error →
+            emit (failed error)
+
+
+--| `close` when the command runs; `failed` hears only a failure.
+pub disconnect : Socket, Close, (CloseError → msg) → Cmd msg
+disconnect socket why failed = Cmd.perform λemit →
+    case close socket why of
+        Ok ⊤ →
+            ⊤
+
+        Err error →
+            emit (failed error)
+
+
+-- The subscription's listener: open the socket and hand its events to
+-- `emit`, and answer what stops it.
+hold : String, List String, sync (Event → ⊤) → (⊤ → ⊤)
+hold url protocols emit =
+    case start url protocols True of
+        Err error →
+            emit (Failed error)
+            λ⊤ → ⊤
+
+        Ok s →
+            Js.set s "l" (Js.from emit)
+
+            λ⊤ →
+                Js.set s "l" Js.null
+                stop s
+
+
+-- ---------------------------------------------------------------------------
+-- The socket
+-- ---------------------------------------------------------------------------
+
+-- Steps 1–3 of §9.11 (c): the socket, open or opening, or why there is
+-- none. Each failure the standard documents is found by a test of the
+-- value, but `SecurityError`, which only the constructor reports.
+start : String, List String, Bool → Result ConnectError V
+start url protocols listened =
+    target = resolve url
+    if Js.isNull target then
+        Err (BadUrl url)
+    else
+        case scheme (Js.to (Js.get target "protocol")) of
+            Nothing →
+                Err (BadUrl url)
+
+            Just ws →
+                Js.set target "protocol" (Js.from ws)
+                href : String
+                href = Js.to (Js.get target "href")
+                if String.contains href "#" then
+                    Err (BadUrl url)
+                else
+                    case badProtocol protocols [] of
+                        Just p →
+                            Err (BadProtocol p)
+
+                        Nothing →
+                            case construct href protocols of
+                                Nothing →
+                                    Err Blocked
+
+                                Just w →
+                                    Ok (attach w url listened)
+
+
+-- The URL resolved against the page, or null: `URL.parse` answers null for
+-- what does not parse, and an engine without it has `new URL`, whose one
+-- documented failure is a `TypeError`.
+resolve : String → V
+resolve url =
+    constructor = Js.global "URL"
+    base = Js.get (Js.global "document") "baseURI"
+    if Js.isUndefined (Js.get constructor "parse") then
+        Js.catchIf
+            (λ⊤ → Js.construct constructor [ Js.from url, base ])
+            (λerror → Js.instanceOf error (Js.global "TypeError"))
+            λ_ → Js.null
+    else
+        Js.call constructor "parse" [ Js.from url, base ]
+
+
+-- The WebSocket scheme of a URL's scheme, as the standard maps it.
+scheme : String → Maybe String
+scheme given =
+    case given of
+        "ws:" →
+            Just "ws:"
+
+        "wss:" →
+            Just "wss:"
+
+        "http:" →
+            Just "ws:"
+
+        "https:" →
+            Just "wss:"
+
+        _ →
+            Nothing
+
+
+-- The first protocol that is not a token, or that came before.
+badProtocol : List String, List String → Maybe String
+badProtocol protocols seen =
+    case protocols of
+        [] →
+            Nothing
+
+        [ p, …rest ] →
+            if not (isToken p) || List.member seen p then
+                Just p
+            else
+                badProtocol rest [ …seen, p ]
+
+
+-- RFC 9110's `token`: one or more `tchar`.
+isToken : String → Bool
+isToken text =
+    Js.to (Js.call (Js.regExp "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$" "") "test" [ Js.from text ])
+
+
+-- The host's socket, or `Nothing` when the host refused it with a
+-- `SecurityError`. Anything else the constructor throws is a defect.
+construct : String, List String → Maybe V
+construct href protocols =
+    Js.catchIf
+        (λ⊤ →
+            Just
+                (Js.construct (Js.global "WebSocket")
+                    [ Js.from href, pushed (Js.array []) protocols ]
+                )
+        )
+        (λerror →
+            Js.instanceOf error (Js.global "DOMException")
+                && Js.same (Js.get error "name") (Js.from "SecurityError")
+        )
+        λ_ → Nothing
+
+
+-- `items` pushed onto the array `a`: what the host's constructor takes.
+pushed : V, List String → V
+pushed a items =
+    case items of
+        [] →
+            a
+
+        [ item, …rest ] →
+            _ = Js.call a "push" [ Js.from item ]
+            pushed a rest
+
+
+-- The socket's object, its listeners on the host's socket added. `url` is
+-- the address as the program wrote it, for the console's line.
+attach : V, String, Bool → V
+attach w url listened =
+    s =
+        Js.from
+            { w = w
+            , q = Js.array []
+            , r = Js.array []
+            , o = Js.null
+            , e = Js.null
+            , l = Js.null
+            , k = listened
+            , opened = False
+            , u = url
+            }
+    Js.set w "binaryType" (Js.from "arraybuffer")
+    _ = Js.call w "addEventListener" [ Js.from "open", Js.from λ_ → onOpen s ]
+    _ =
+        Js.call w "addEventListener"
+            [ Js.from "message", Js.from λevent → onMessage s (Js.get event "data") ]
+    _ = Js.call w "addEventListener" [ Js.from "close", Js.from λevent → onClose s event ]
+    _ = Js.call w "addEventListener" [ Js.from "error", Js.from λ_ → onError s ]
+    s
+
+
+onOpen : V → ⊤
+onOpen s =
+    Js.set s "opened" (Js.from True)
+    o = Js.get s "o"
+    if not (Js.isNull o) then
+        Js.set s "o" Js.null
+        Js.to (Js.apply o [ Js.from True ])
+    else
+        tell s (Opened (Js.to s))
+
+
+onMessage : V, V → ⊤
+onMessage s data =
+    if not (Js.isNull (Js.get s "e")) then
+        ⊤
+    else if Js.typeIs data "string" then
+        text : String
+        text = Js.to data
+        if Js.to (Js.get s "k") then
+            tell s (Received text)
+        else
+            r = Js.get s "r"
+            if Js.to (Js.get r "length") > 0 then
+                Js.to (Js.apply (Js.call r "shift" []) [ Js.from (Ok text) ])
+            else
+                Js.to (Js.call (Js.get s "q") "push" [ data ])
+    else
+        -- A binary message: §9.11 (j). The page may not send 1003, so it
+        -- closes with no code, and reports 1003 itself.
+        url : String
+        url = Js.to (Js.get s "u")
+        _ =
+            Js.call (Js.global "console") "warn"
+                [ Js.from
+                    "beni: WebSocket: a binary message arrived from ${url}; this version reads text messages only, so the connection is closed (1003)"
+                ]
+        _ = Js.call (Js.get s "w") "close" []
+        ended s { code = 1003, reason = "" }
+
+
+onClose : V, V → ⊤
+onClose s event =
+    if not (Js.isNull (Js.get s "e")) then
+        ⊤
+    else if Js.to (Js.get s "opened") then
+        ended s { code = Js.to (Js.get event "code"), reason = Js.to (Js.get event "reason") }
+    else
+        refused s
+
+
+-- The standard fires `close` after every `error`, with 1006, but WebKit
+-- fires `error` alone when a connection fails (§9.11, the amendment after
+-- the review of #531): so an `error` ends the connection by itself, with
+-- what its `close` would have said, and the `close` that may follow finds
+-- it ended.
+onError : V → ⊤
+onError s =
+    if not (Js.isNull (Js.get s "e")) then
+        ⊤
+    else if Js.to (Js.get s "opened") then
+        ended s { code = 1006, reason = "" }
+    else
+        refused s
+
+
+-- The connection failed before it opened.
+refused : V → ⊤
+refused s =
+    Js.set s "e" (Js.from { code = 1006, reason = "" })
+    o = Js.get s "o"
+    if not (Js.isNull o) then
+        Js.set s "o" Js.null
+        Js.to (Js.apply o [ Js.from False ])
+    else
+        tell s (Failed Unreachable)
+
+
+-- The connection ended, after it opened: the end is kept for `read`, each
+-- waiting reader is answered, and the subscription hears `Closed`.
+ended : V, Close → ⊤
+ended s why =
+    Js.set s "e" (Js.from why)
+    r = Js.get s "r"
+    Js.set s "r" (Js.array [])
+    Js.each r λresume → Js.to (Js.apply resume [ Js.from (endOf why) ])
+    tell s (Closed why)
+
+
+endOf : Close → Result Close String
+endOf why = Err why
+
+
+-- An event for the subscription, when one holds the socket.
+tell : V, Event → ⊤
+tell s event =
+    l = Js.get s "l"
+    if Js.isNull l then ⊤ else Js.to (Js.apply l [ Js.from event ])
+
+
+-- `connect`'s wait for the open: at once when the socket opened or ended
+-- already.
+waitOpen : V, Resume Bool → (⊤ → ⊤)
+waitOpen s resume =
+    if Js.to (Js.get s "opened") then
+        Task.resume resume True
+        λ⊤ → ⊤
+    else if not (Js.isNull (Js.get s "e")) then
+        Task.resume resume False
+        λ⊤ → ⊤
+    else
+        Js.set s "o" (Js.from resume)
+        λ⊤ → Js.set s "o" Js.null
+
+
+-- `read`'s wait: the oldest message, the end, or a place in the queue of
+-- readers, which a cancelled reader leaves.
+take : V, Resume (Result Close String) → (⊤ → ⊤)
+take s resume =
+    q = Js.get s "q"
+    if Js.to (Js.get q "length") > 0 then
+        text : String
+        text = Js.to (Js.call q "shift" [])
+        Task.resume resume (Ok text)
+        λ⊤ → ⊤
+    else if not (Js.isNull (Js.get s "e")) then
+        Task.resume resume (Err (Js.to (Js.get s "e")))
+        λ⊤ → ⊤
+    else
+        r = Js.get s "r"
+        waiter = Js.from resume
+        _ = Js.call r "push" [ waiter ]
+
+        λ⊤ →
+            i : Int
+            i = Js.to (Js.call r "indexOf" [ waiter ])
+            if i ≥ 0 then
+                Js.to (Js.call r "splice" [ Js.from i, Js.from 1 ])
+            else
+                ⊤
+
+
+-- The owner of a socket stopped: an open one is closed with 1000, one
+-- still opening is stopped.
+stopped : Result ConnectError V → ⊤
+stopped started =
+    case started of
+        Err _ →
+            ⊤
+
+        Ok s →
+            stop s
+
+
+stop : V → ⊤
+stop s =
+    w = Js.get s "w"
+    state : Int
+    state = Js.to (Js.get w "readyState")
+    if state == 0 then
+        Js.to (Js.call w "close" [])
+    else if state == 1 then
+        Js.to (Js.call w "close" [ Js.from 1000, Js.from "" ])
+    else
+        ⊤
+
+
+-- The length of `text` in UTF-8, after the host's `USVString` conversion.
+utf8Length : String → Int
+utf8Length text =
+    Js.to
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
+        )

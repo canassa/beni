@@ -1,0 +1,92 @@
+-- The direct form (boundary.md §9.11 (b), (d)): `connect` waits for the
+-- open and calls its function with the socket; `read` answers each
+-- message in order, then the end, and the same end when asked again; a
+-- `write` after the end answers `NotOpen`, and `buffered` is 0, whatever
+-- the host still counts. The socket belongs to the call: when the
+-- function returns, the platform closes it with 1000, and when a keyed
+-- `Restart` cancels the body, it closes an open socket the same way and
+-- stops one that is still connecting, with no code.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import WebSocket exposing (Socket)
+
+
+type Key
+    = Line
+
+
+type Msg
+    = Start String
+    | Got String
+    | Done (Result WebSocket.ConnectError String)
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Start path →
+            ( lines ++ [ "start ${path}" ]
+            , Cmd.keyed Line Cmd.Restart λemit →
+                emit (Done (WebSocket.connect path [] λsocket → session socket emit))
+            )
+
+        Got text →
+            ( lines ++ [ text ], Cmd.none )
+
+        Done (Ok text) →
+            ( lines ++ [ "done: ${text}" ], Cmd.none )
+
+        Done (Err _) →
+            ( lines ++ [ "failed" ], Cmd.none )
+
+
+-- Echo each message, until the server says "stop" or the connection ends.
+session : Socket, (Msg → ⊤) → String
+session socket emit =
+    case WebSocket.read socket of
+        Ok "stop" →
+            "stopped by the server"
+
+        Ok text →
+            emit (Got "read ${text}")
+            _ = WebSocket.write socket "echo ${text}"
+            session socket emit
+
+        Err close →
+            again =
+                case WebSocket.read socket of
+                    Err same →
+                        if same == close then "the same end" else "another end"
+
+                    Ok _ →
+                        "a message after the end"
+            late =
+                case WebSocket.write socket "late" of
+                    Ok ⊤ →
+                        "written"
+
+                    Err WebSocket.NotOpen →
+                        "not open"
+            left = WebSocket.buffered socket
+            "ended ${String.fromInt close.code} \"${close.reason}\", then ${again}, a write is ${late}, and ${String.fromInt left} bytes wait"
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <button id="a" onClick={Start "/a"}>a</button>
+        <button id="b" onClick={Start "/b"}>b</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,157 @@
+-- Every failure a page can meet is a value (boundary.md §9.11 (c)): a URL
+-- that does not parse, one with another scheme or with a fragment, a
+-- subprotocol that is not a token or that is given twice, and a socket
+-- the host blocks, each `Failed` with no socket made but the blocked one,
+-- and `Err` from `connect` the same way; `disconnect` with a code or a
+-- reason a page may not send; `send` once the socket is closing. The
+-- socket reports the subprotocol the server chose and what it has not sent.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import WebSocket exposing (Socket)
+
+
+type alias Model =
+    target : Maybe (String × List String)
+    socket : Maybe Socket
+    lines : List String
+
+
+type Msg
+    = Target String (List String)
+    | Connect String
+    | Socket WebSocket.Event
+    | Close Int String
+    | Say String
+    | Buffered
+    | Connected (Result WebSocket.ConnectError ⊤)
+    | NotClosed WebSocket.CloseError
+    | Unsent WebSocket.WriteError
+
+
+connectError : WebSocket.ConnectError → String
+connectError error =
+    case error of
+        WebSocket.BadUrl url →
+            "bad URL ${url}"
+
+        WebSocket.BadProtocol p →
+            "bad protocol ${p}"
+
+        WebSocket.Blocked →
+            "blocked"
+
+        WebSocket.Unreachable →
+            "unreachable"
+
+
+note : Model, String → Model × Cmd Msg
+note model line = ( { model | lines = model.lines ++ [ line ] }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Target url protocols →
+            ( { model | target = Just ( url, protocols ) }, Cmd.none )
+
+        Connect url →
+            ( model, Cmd.task (λ⊤ → WebSocket.connect url [] λ_ → ⊤) Connected )
+
+        Connected (Ok ⊤) →
+            note model "connected"
+
+        Connected (Err error) →
+            note model "connect: ${connectError error}"
+
+        Socket (WebSocket.Opened socket) →
+            note { model | socket = Just socket } "opened with \"${WebSocket.protocol socket}\""
+
+        Socket (WebSocket.Received text) →
+            note model "received ${text}"
+
+        Socket (WebSocket.Closed close) →
+            note
+                { model | socket = Nothing }
+                "closed ${String.fromInt close.code} \"${close.reason}\""
+
+        Socket (WebSocket.Failed error) →
+            note model "failed: ${connectError error}"
+
+        Close code reason →
+            case model.socket of
+                Just socket →
+                    ( model
+                    , WebSocket.disconnect socket { code = code, reason = reason } NotClosed
+                    )
+
+                Nothing →
+                    note model "no socket"
+
+        Say text →
+            case model.socket of
+                Just socket →
+                    ( model, WebSocket.send socket text Unsent )
+
+                Nothing →
+                    note model "no socket"
+
+        Buffered →
+            case model.socket of
+                Just socket →
+                    note model "buffered ${String.fromInt (WebSocket.buffered socket)}"
+
+                Nothing →
+                    note model "no socket"
+
+        NotClosed (WebSocket.InvalidCode code) →
+            note model "invalid code ${String.fromInt code}"
+
+        NotClosed WebSocket.ReasonTooLong →
+            note model "reason too long"
+
+        Unsent WebSocket.NotOpen →
+            note model "not open"
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    case model.target of
+        Just ( url, protocols ) →
+            WebSocket.listen url protocols Socket
+
+        Nothing →
+            Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="unparsed" onClick={Target "http://[" []}>unparsed</button>
+        <button id="scheme" onClick={Target "ftp://example.com/" []}>scheme</button>
+        <button id="fragment" onClick={Target "/chat#top" []}>fragment</button>
+        <button id="token" onClick={Target "/chat" [ "chat v1" ]}>token</button>
+        <button id="twice" onClick={Target "/chat" [ "v1", "v1" ]}>twice</button>
+        <button id="blocked" onClick={Target "/blocked" []}>blocked</button>
+        <button id="connect" onClick={Connect "mailto:a@example.com"}>connect</button>
+        <button id="good" onClick={Target "https://example.com/chat?room=1" [ "v1", "v2" ]}>
+            good
+        </button>
+        <button id="going" onClick={Close 1001 ""}>going</button>
+        <button id="long" onClick={Close 4000 (String.repeat "é" 62)}>long</button>
+        <button id="done" onClick={Close 4000 "done"}>done</button>
+        <button id="say" onClick={Say "late"}>say</button>
+        <button id="buffered" onClick={Buffered}>buffered</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { target = Nothing, socket = Nothing, lines = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

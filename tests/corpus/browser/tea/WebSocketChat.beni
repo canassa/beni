@@ -1,0 +1,119 @@
+-- A WebSocket subscription (boundary.md §9.11 (b)): `listen` opens one
+-- socket and hands `update` the socket in `Opened`; the server's messages
+-- arrive in order as `Received`; `send` writes through the socket the
+-- model holds, and a send while no socket is open answers nothing; the
+-- server's close is `Closed` with its code and reason. The program
+-- reconnects by leaving the key out while it waits, so the next socket is
+-- made only when the wait ends. A connection that never opens is `Failed
+-- Unreachable`, and one that fails once open is `Closed` with 1006, both
+-- when the host fires `error` and `close` and when it fires `error` alone,
+-- as WebKit does. The view compares the link with `==`, which a socket
+-- answers by identity.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+import WebSocket exposing (Socket)
+
+
+type Link
+    = Connecting
+    | Up Socket
+    | Waiting
+
+
+type alias Model =
+    link : Link
+    lines : List String
+    attempt : Int
+
+
+type Msg
+    = Socket WebSocket.Event
+    | Say String
+    | Retry
+    | Unsent WebSocket.WriteError
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Socket (WebSocket.Opened socket) →
+            ( { model | link = Up socket, lines = model.lines ++ [ "opened" ] }, Cmd.none )
+
+        Socket (WebSocket.Received text) →
+            ( { model | lines = model.lines ++ [ "received ${text}" ] }, Cmd.none )
+
+        Socket (WebSocket.Closed close) →
+            retry model "closed ${String.fromInt close.code} \"${close.reason}\""
+
+        Socket (WebSocket.Failed WebSocket.Unreachable) →
+            retry model "unreachable"
+
+        Socket (WebSocket.Failed _) →
+            retry model "refused"
+
+        Say text →
+            case model.link of
+                Up socket →
+                    ( model, WebSocket.send socket text Unsent )
+
+                _ →
+                    ( { model | lines = model.lines ++ [ "not connected" ] }, Cmd.none )
+
+        Retry →
+            ( { model | link = Connecting }, Cmd.none )
+
+        Unsent WebSocket.NotOpen →
+            ( { model | lines = model.lines ++ [ "unsent" ] }, Cmd.none )
+
+
+retry : Model, String → Model × Cmd Msg
+retry model line =
+    attempt = model.attempt + 1
+
+    ( { model | link = Waiting, attempt = attempt, lines = model.lines ++ [ line ] }
+    , Cmd.perform λemit →
+        Time.sleep (Time.millis (100 * attempt))
+        emit Retry
+    )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    case model.link of
+        Waiting →
+            Sub.none
+
+        _ →
+            WebSocket.listen "/chat" [] Socket
+
+
+state : Link → String
+state link =
+    if link == Connecting then
+        "connecting"
+    else if link == Waiting then
+        "waiting"
+    else
+        "up"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="state">{state model.link}</p>
+        <button id="say" onClick={Say "ping"}>say</button>
+        <ol><For each={model.lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { link = Connecting, lines = [], attempt = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

@@ -1,0 +1,18 @@
+click #a
+socket 1 open
+socket 1 message "x"
+# The function returns: the platform closes the socket with 1000.
+socket 1 message "stop"
+socket 1 close 1000 ""
+click #b
+# A `Restart` while socket 2 is still connecting stops it.
+click #a
+socket 3 open
+socket 3 message "y"
+# A `Restart` while the body waits in `read` closes socket 3 with 1000.
+click #b
+socket 3 close 1000 ""
+socket 4 open
+socket 4 buffered 7
+socket 4 close 4001 "gone"
+sockets

@@ -1,0 +1,24 @@
+# The subscription made socket 1 as the program loaded: a send before it
+# opens finds no socket in the model.
+click #say
+socket 1 open
+socket 1 message "hello"
+socket 1 message "world"
+click #say
+# The server's close: the key leaves while the program waits 100 ms.
+socket 1 close 4000 "bye"
+click #say
+sockets
+advance 99
+advance 1
+# Socket 2 never opens, and fails with `error` alone, as WebKit fails
+# one; the next wait is 200 ms.
+socket 2 error-only
+advance 200
+socket 3 open
+socket 3 message "again"
+# Socket 3 fails the same way once open: an end with 1006.
+socket 3 error-only
+advance 300
+socket 4 fail
+sockets

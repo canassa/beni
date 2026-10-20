@@ -1,0 +1,384 @@
+-- load
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #unparsed
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+    </ol>
+  </main>
+</body>
+-- click #scheme
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+    </ol>
+  </main>
+</body>
+-- click #fragment
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+    </ol>
+  </main>
+</body>
+-- click #token
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+    </ol>
+  </main>
+</body>
+-- click #twice
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+    </ol>
+  </main>
+</body>
+-- socket blocked
+(the DOM did not change)
+-- click #blocked
+(socket blocked: /blocked)
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+    </ol>
+  </main>
+</body>
+-- click #connect
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+    </ol>
+  </main>
+</body>
+-- click #good
+(socket 1: wss://example.com/chat?room=1 ["v1","v2"])
+(the DOM did not change)
+-- socket 1 open "v2"
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+      <li>"opened with \"v2\""</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 buffered 12
+(the DOM did not change)
+-- click #buffered
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+      <li>"opened with \"v2\""</li>
+      <li>"buffered 12"</li>
+    </ol>
+  </main>
+</body>
+-- click #going
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+      <li>"opened with \"v2\""</li>
+      <li>"buffered 12"</li>
+      <li>"invalid code 1001"</li>
+    </ol>
+  </main>
+</body>
+-- click #long
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+      <li>"opened with \"v2\""</li>
+      <li>"buffered 12"</li>
+      <li>"invalid code 1001"</li>
+      <li>"reason too long"</li>
+    </ol>
+  </main>
+</body>
+-- click #done
+(socket 1 close: 4000 "done")
+(the DOM did not change)
+-- click #say
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+      <li>"opened with \"v2\""</li>
+      <li>"buffered 12"</li>
+      <li>"invalid code 1001"</li>
+      <li>"reason too long"</li>
+      <li>"not open"</li>
+    </ol>
+  </main>
+</body>
+-- socket 1 close 4000 "done"
+<body>
+  <main>
+    <button id="unparsed">"unparsed"</button>
+    <button id="scheme">"scheme"</button>
+    <button id="fragment">"fragment"</button>
+    <button id="token">"token"</button>
+    <button id="twice">"twice"</button>
+    <button id="blocked">"blocked"</button>
+    <button id="connect">"connect"</button>
+    <button id="good">"good"</button>
+    <button id="going">"going"</button>
+    <button id="long">"long"</button>
+    <button id="done">"done"</button>
+    <button id="say">"say"</button>
+    <button id="buffered">"buffered"</button>
+    <ol>
+      <li>"failed: bad URL http://["</li>
+      <li>"failed: bad URL ftp://example.com/"</li>
+      <li>"failed: bad URL /chat#top"</li>
+      <li>"failed: bad protocol chat v1"</li>
+      <li>"failed: bad protocol v1"</li>
+      <li>"failed: blocked"</li>
+      <li>"connect: bad URL mailto:a@example.com"</li>
+      <li>"opened with \"v2\""</li>
+      <li>"buffered 12"</li>
+      <li>"invalid code 1001"</li>
+      <li>"reason too long"</li>
+      <li>"not open"</li>
+      <li>"closed 4000 \"done\""</li>
+    </ol>
+  </main>
+</body>
+-- sockets
+(sockets: 0)
+(the DOM did not change)
