@@ -69,6 +69,7 @@ pub const devloop = struct {
     pub const Watch = @import("devloop/Watch.zig");
     pub const Serve = @import("devloop/Serve.zig");
     pub const New = @import("devloop/New.zig");
+    pub const Skill = @import("devloop/Skill.zig");
 };
 pub const fmt = struct {
     pub const Format = @import("fmt/Format.zig");
