@@ -2,7 +2,9 @@
 -- §24.8), each pinned by a verdict that depends on it. `Html.Event` is
 -- `crossing`: a DOM event holds no beni list, so a message that carries one
 -- carries no cell, and `update`'s push onto `model.items` is accepted
--- `entry` (rejected `payload` while the event could stand for a list). The
+-- `entry` (rejected `payload` while the event could stand for a list).
+-- `Html.Pointer`, a pointer event and its point, is `crossing` too: without
+-- the word, `update`'s summary has the `Pointer` of `Aim` escape. The
 -- key of a keyed command is held by the command (`Hosted.keyOf`, `aliased`),
 -- not given to JavaScript: a command built and dropped leaves its key list
 -- unescaped, and `keys` writes it afterwards, accepted. On browser-tea every
@@ -20,6 +22,7 @@ type alias Model =
 
 type Msg
     = Key Html.Event
+    | Aim Html.Pointer
     | Typed String
 
 
@@ -33,6 +36,9 @@ update msg model =
             else
                 ( model, Cmd.none )
 
+        Aim p →
+            ( { model | items = List.push model.items (round (Html.localX p)) }, Cmd.none )
+
         Typed text →
             ( { model | draft = text }, Cmd.none )
 
@@ -40,7 +46,7 @@ update msg model =
 view : Model → Html Msg
 view model =
     <main>
-        <input onKeyDown={Key} onInput={Typed} />
+        <input onKeyDown={Key} onInput={Typed} onPointerDown={Aim} />
         <ul>
             <For each={model.items}>
                 {λn → <li>{String.fromInt n}</li>}

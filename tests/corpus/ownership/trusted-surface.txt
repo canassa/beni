@@ -55,6 +55,7 @@ core       String.indexes        ownership/Words.beni            -
 browser    Hosted.keyOf          ownership/WordsBrowser.beni     2:aliased>borrowed     Cmd.keyed
 # crossing is the unsafe end already: taking it away claims less
 html       Html.Event            ownership/WordsBrowser.beni     -
+html       Html.Pointer          ownership/WordsBrowser.beni     -
 # a fresh Program holds no list; fresh is the top for a result that holds none
 node       Node.print            ownership/Words.beni            -
 node       Node.printLines       ownership/Words.beni            -

@@ -7,3 +7,11 @@
 export const targetValue = (e) => e.target.value;
 
 export const targetChecked = (e) => e.target.checked;
+
+// A pointer event and its position in the border box of the element whose
+// own listener runs: read now, while the event is dispatched, since
+// `currentTarget` is null after it (boundary.md §9.8.20).
+export const pointer = (v) => {
+  const r = v.currentTarget.getBoundingClientRect();
+  return { ev: v, x: v.clientX - r.left, y: v.clientY - r.top };
+};
