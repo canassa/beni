@@ -176,6 +176,10 @@ pub const Input = struct {
     local_type: []const Var.Optional,
     inst_type: []const Var.Optional,
     decl_scheme: []const Var.Optional,
+    /// The type each declaration's body was checked against (an annotation's
+    /// rigid reading, an unannotated one's own variable), or none: it
+    /// shares its nodes with the locals', so it keys mostly from the memo.
+    decl_display: []const Var.Optional,
     casts: []const Solve.Cast,
     /// Every crossing quantifier of an import this module instantiated.
     uses: []const Instantiate.CrossingUse,
@@ -235,14 +239,17 @@ pub fn build(in: Input) Error!Output {
             try insts.append(in.scratch, row);
         }
         artifact.insts = try in.gpa.dupe(InstKey, insts.items);
-        // Each value declaration's scheme: a quantifier is a `flex` at the
-        // generalised rank, so a polymorphic scheme is wild.
+        // Each value declaration's type: the one its body was checked
+        // against, closed exactly when its scheme is (a quantifier is a rigid
+        // variable there, a generalised `flex` in the scheme), and made of the
+        // nodes the locals were keyed from.
         const decls = try in.gpa.alloc(TypeKey, in.bir.decls.len);
         artifact.decls = decls;
         for (decls, in.bir.decls, 0..) |*k, d, i| {
             k.* = .wild;
             if (!d.kind.isValue() or i >= in.decl_scheme.len) continue;
-            if (in.decl_scheme[i].unwrap()) |v| k.* = try b.keyOf(v);
+            const t = if (i < in.decl_display.len and in.decl_display[i] != .none) in.decl_display[i] else in.decl_scheme[i];
+            if (t.unwrap()) |v| k.* = try b.keyOf(v);
         }
     }
 
@@ -318,6 +325,10 @@ const Builder = struct {
     fields: std.ArrayList(TypeStore.Field) = .empty,
     keyed: std.ArrayList(Keyed) = .empty,
     names: std.ArrayList(InternPool.Symbol) = .empty,
+    /// `direct`'s own lists: it runs while `pushChildren` walks the others.
+    dfields: std.ArrayList(TypeStore.Field) = .empty,
+    dwords: std.ArrayList(u32) = .empty,
+    dnames: std.ArrayList(InternPool.Symbol) = .empty,
     /// Every record node's field labels, in text order (`KeyNode.value`).
     labels: std.ArrayList(InternPool.Symbol) = .empty,
     /// One per node: its hash, which the table rehashes by.
@@ -377,6 +388,9 @@ const Builder = struct {
         b.fields.deinit(b.scratch);
         b.keyed.deinit(b.scratch);
         b.names.deinit(b.scratch);
+        b.dfields.deinit(b.scratch);
+        b.dwords.deinit(b.scratch);
+        b.dnames.deinit(b.scratch);
         b.labels.deinit(b.gpa);
         b.hashes.deinit(b.gpa);
     }
@@ -387,6 +401,10 @@ const Builder = struct {
         const root = b.store.find(v);
         if (b.memo[root.int()] != unset and b.memo[root.int()] != pending) return @fromBackingInt(b.memo[root.int()]);
         if (try b.leaf(root)) |k| {
+            b.memo[root.int()] = k.int();
+            return k;
+        }
+        if (try b.direct(root)) |k| {
             b.memo[root.int()] = k.int();
             return k;
         }
@@ -434,7 +452,85 @@ const Builder = struct {
             b.memo[r.int()] = k.int();
             return;
         }
+        if (try b.direct(r)) |k| {
+            b.memo[r.int()] = k.int();
+            return;
+        }
         try b.stack.append(b.scratch, .{ .v = r, .expanded = false });
+    }
+
+    /// `v`'s key when it is already known or a leaf, else null.
+    fn known(b: *Builder, v: Var) Error!?TypeKey {
+        const r = b.store.find(v);
+        const m = b.memo[r.int()];
+        if (m != unset and m != pending) return @fromBackingInt(m);
+        const k = try b.leaf(r) orelse return null;
+        b.memo[r.int()] = k.int();
+        return k;
+    }
+
+    /// The key of a node whose children are all known or leaves, made without
+    /// a frame: one level of a type, the common case. Null when a child needs
+    /// a walk of its own.
+    fn direct(b: *Builder, r: Var) Error!?TypeKey {
+        const store = b.store;
+        switch (store.content(r)) {
+            .alias => |a| {
+                const k = try b.known(a.actual) orelse return null;
+                if (a.args.len == 0 and a.type.int() < b.alias0.len) b.alias0[a.type.int()] = k.int();
+                return k;
+            },
+            .structure => |s| switch (s) {
+                .func => |f| {
+                    b.dwords.clearRetainingCapacity();
+                    for (store.vars(f.params)) |p| {
+                        const k = try b.known(p) orelse return null;
+                        if (k == .wild) return .wild;
+                        try b.dwords.append(b.scratch, k.int());
+                    }
+                    const res = try b.known(f.result) orelse return null;
+                    if (res == .wild) return .wild;
+                    try b.dwords.append(b.scratch, res.int());
+                    return try b.intern(.function, 0, @ptrCast(b.dwords.items));
+                },
+                .app => |a| {
+                    if (!b.keyedNominal(a.type)) return .wild;
+                    b.dwords.clearRetainingCapacity();
+                    for (store.vars(a.args)) |x| {
+                        const k = try b.known(x) orelse return null;
+                        if (k == .wild) return .wild;
+                        try b.dwords.append(b.scratch, k.int());
+                    }
+                    return try b.intern(.named, a.type.int(), @ptrCast(b.dwords.items));
+                },
+                .tuple => |t| {
+                    b.dwords.clearRetainingCapacity();
+                    for (store.vars(t)) |x| {
+                        const k = try b.known(x) orelse return null;
+                        if (k == .wild) return .wild;
+                        try b.dwords.append(b.scratch, k.int());
+                    }
+                    return try b.intern(.tuple, 0, @ptrCast(b.dwords.items));
+                },
+                .record => |rec| {
+                    b.dfields.clearRetainingCapacity();
+                    if (!try b.closedRow(rec, &b.dfields)) return .wild;
+                    // By text, as `pushChildren` visits them (§36).
+                    byText(TypeStore.Field, b.interner, b.dfields.items);
+                    b.dwords.clearRetainingCapacity();
+                    b.dnames.clearRetainingCapacity();
+                    for (b.dfields.items) |f| {
+                        const k = try b.known(f.value) orelse return null;
+                        if (k == .wild) return .wild;
+                        try b.dwords.append(b.scratch, k.int());
+                        try b.dnames.append(b.scratch, f.name);
+                    }
+                    return try b.internLabelled(@ptrCast(b.dwords.items), b.dnames.items);
+                },
+                else => return null,
+            },
+            else => return null,
+        }
     }
 
     /// The key of a type with no children to key first, made without a
@@ -470,7 +566,7 @@ const Builder = struct {
                 .tuple => |t| for (store.vars(t)) |x| try b.pushChild(x),
                 .record => |rec| {
                     b.fields.clearRetainingCapacity();
-                    if (!try b.closedRow(rec)) return;
+                    if (!try b.closedRow(rec, &b.fields)) return;
                     // By text, so the nodes a walk makes are numbered by the
                     // input and never by a symbol's id (§36).
                     byText(TypeStore.Field, b.interner, b.fields.items);
@@ -491,9 +587,9 @@ const Builder = struct {
 
     /// The fields of a record's whole row into `fields`, and whether the row
     /// is closed.
-    fn closedRow(b: *Builder, rec: TypeStore.Structure.Record) Error!bool {
+    fn closedRow(b: *Builder, rec: TypeStore.Structure.Record, out: *std.ArrayList(TypeStore.Field)) Error!bool {
         const store = b.store;
-        try b.fields.appendSlice(b.scratch, store.fields(rec.fields));
+        try out.appendSlice(b.scratch, store.fields(rec.fields));
         var ext = rec.ext;
         var links: u32 = 0;
         while (true) {
@@ -504,7 +600,7 @@ const Builder = struct {
                 .alias => |a| ext = a.actual,
                 .structure => |s| switch (s) {
                     .record => |r| {
-                        try b.fields.appendSlice(b.scratch, store.fields(r.fields));
+                        try out.appendSlice(b.scratch, store.fields(r.fields));
                         ext = r.ext;
                     },
                     .empty_record => return true,
@@ -570,7 +666,7 @@ const Builder = struct {
                 },
                 .record => |rec| {
                     b.fields.clearRetainingCapacity();
-                    if (!try b.closedRow(rec)) return .wild;
+                    if (!try b.closedRow(rec, &b.fields)) return .wild;
                     b.keyed.clearRetainingCapacity();
                     for (b.fields.items) |f| {
                         const k = b.childKey(f.value);
