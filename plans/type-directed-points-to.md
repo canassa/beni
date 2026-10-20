@@ -252,6 +252,13 @@ Each slice is one PR with its own issue. `zig build gates` must be green on dago
 - **Measure.** `JsIr` bytes and lowering time.
 - **Risk.** A stale key after a rewrite, so every mutator must clear one. A safety-build assertion:
   a keyed node is still an object, array or arrow.
+- **As built (2026-10-20, #490).** `js/RepKeys.zig`, the two columns, `Spec`'s clears and
+  `Copy`'s rule, the assertion in `JsIr.nodeKey` read at `Pts.siteOf`; `backend.md` §9's *As
+  built* note has what the specification did not foresee (a `NameIndex` is shared by two
+  declarations' locals; the artifact keys no declaration). Every golden, run hash and the
+  determinism test unchanged. `bench/corpus` (`--release --library --jobs=1`, ReleaseFast,
+  median of 21): `JsIr` 478 162 bytes → 587 858 (+109 696, +23 %, the two dense columns over
+  24 724 nodes); lowering 3.21 ms → 3.36 ms (+4 %); the merge 0.06 ms.
 
 ### Slice 4 — The filter
 
