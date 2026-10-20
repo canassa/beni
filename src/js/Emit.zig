@@ -278,6 +278,10 @@ pub const Options = struct {
     /// program's messages reachable as values from outside the page
     /// (`beni_markup.Build.fuzz`). Nothing else changes.
     fuzz: bool = false,
+    /// `--points-to-largest`, the hidden flag (`src/Cli.zig`): after the
+    /// release specialiser, one line naming the var of fact 3 that held the
+    /// most sites (`Result.points_to`). No emitted byte changes.
+    points_to_largest: bool = false,
     /// §11: a `.mjs.map` beside every module this build emits, and the
     /// `//# sourceMappingURL=` line that names it. On by default in a
     /// development build; under `release` only when asked for, and then
@@ -291,8 +295,11 @@ pub const Result = struct {
     /// Files written, for the profile counter and the summary line.
     files_written: u32,
     bytes_written: u64,
+    /// Owned. `Options.points_to_largest`'s lines, for stderr; empty else.
+    points_to: []const u8 = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
+        gpa.free(r.points_to);
         for (r.diagnostics) |d| gpa.free(d.message);
         gpa.free(r.diagnostics);
         r.* = undefined;
@@ -425,6 +432,7 @@ pub fn run(
         .diagnostics = try e.diagnostics.toOwnedSlice(gpa),
         .files_written = e.files_written,
         .bytes_written = e.bytes_written,
+        .points_to = try e.points_to.toOwnedSlice(gpa),
     };
 }
 
@@ -1022,6 +1030,8 @@ const Emitter = struct {
     schema_graph: ?SchemaGraph = null,
     files_written: u32 = 0,
     bytes_written: u64 = 0,
+    /// `Result.points_to`, as it is written (gpa).
+    points_to: std.ArrayList(u8) = .empty,
 
     /// One file the build will write. `origin` is the SOURCE file the
     /// output was produced for — a module's `.beni`, a sibling's or the
@@ -1036,6 +1046,7 @@ const Emitter = struct {
             .diagnostics = try e.diagnostics.toOwnedSlice(gpa),
             .files_written = 0,
             .bytes_written = 0,
+            .points_to = try e.points_to.toOwnedSlice(gpa),
         };
     }
 
@@ -4657,6 +4668,9 @@ const Emitter = struct {
         // of its module, possibly in the module's overlay.
         var props: std.StringHashMapUnmanaged(u32) = .empty;
         var modules: std.ArrayList(Spec.Module) = .empty;
+        // Per module of `modules`, its slot: `--points-to-largest` names a
+        // module by its file.
+        var spec_slots: std.ArrayList(u32) = .empty;
         for (todo) |i| {
             const slot = &slots[i];
             const lowered = &(slot.lowered orelse continue);
@@ -4711,6 +4725,7 @@ const Emitter = struct {
                 .tables = tables,
                 .self = e.graph().moduleName(@fromBackingInt(@intCast(i))).toOptional(),
             });
+            try spec_slots.append(e.scratch, i);
         }
         // What files the pass cannot see read or call: the entry file's
         // `start` and `flush`, and what the markup runtime imports from the
@@ -4804,6 +4819,7 @@ const Emitter = struct {
             .escaping = escaping.items,
             .entry = entry_call,
             .one_scope = one_scope,
+            .trace_largest = e.options.points_to_largest,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
             .insert_before = if (props.get("insertBefore")) |id| .{
                 .insert_before = id,
@@ -4823,6 +4839,11 @@ const Emitter = struct {
         profile.addCounter(.spec_passes_capped, stats.passes_capped);
         profile.addCounter(.spec_init_capped, stats.init_capped);
         profile.addCounter(.spec_inline_capped, stats.inline_capped);
+        profile.maxCounter(.spec_pts_max_set, stats.pts_max_set);
+        profile.addCounter(.spec_pts_set_words, stats.pts_set_words);
+        profile.addCounter(.spec_pts_edges, stats.pts_edges);
+        profile.addCounter(.spec_pts_load_cells, stats.pts_load_cells);
+        if (stats.pts_largest) |o| try e.reportLargest(o, stats.pts_largest_sites, slots, spec_slots.items, &ids, &props);
         var k: usize = 0;
         for (todo) |i| {
             const slot = &slots[i];
@@ -5155,6 +5176,129 @@ const Emitter = struct {
         if (lowered.diagnostics.len != 0) return;
         for (slot.met) |n| _ = try e.globals.intern(e.scratch, try e.poolName(slot, n));
     }
+
+    /// `--points-to-largest`'s lines (`Options`): what the var that held
+    /// the most sites is and where its node is in the source; then where
+    /// those sites were made, a line per file, by source line (how many on
+    /// a line, when more than one).
+    fn reportLargest(
+        e: *Emitter,
+        o: Spec.VarOrigin,
+        sites: []const Spec.SiteOrigin,
+        slots: []ModuleSlot,
+        spec_slots: []const u32,
+        ids: *const std.AutoHashMapUnmanaged(Rename.Globals.Key, u32),
+        props: *const std.StringHashMapUnmanaged(u32),
+    ) Allocator.Error!void {
+        var text: std.Io.Writer.Allocating = .init(e.scratch);
+        e.writeLargest(&text.writer, o, sites, slots, spec_slots, ids, props) catch return error.OutOfMemory;
+        try e.points_to.appendSlice(e.gpa, text.written());
+    }
+
+    fn writeLargest(
+        e: *Emitter,
+        w: *std.Io.Writer,
+        o: Spec.VarOrigin,
+        sites: []const Spec.SiteOrigin,
+        slots: []ModuleSlot,
+        spec_slots: []const u32,
+        ids: *const std.AutoHashMapUnmanaged(Rename.Globals.Key, u32),
+        props: *const std.StringHashMapUnmanaged(u32),
+    ) !void {
+        try w.print("beni: points-to: the largest set holds {d} sites: ", .{o.sites});
+        switch (o.kind) {
+            .summary_any => try w.writeAll("what is written under an unknown key of the field summary of "),
+            .summary_prop => try w.print("property {f} of the field summary of ", .{PropName{ .id = o.prop, .props = props }}),
+            .load => try w.print("the read of {f} from ", .{PropName{ .id = o.prop, .props = props }}),
+            else => {},
+        }
+        const made_of = o.kind == .summary_any or o.kind == .summary_prop or o.kind == .load;
+        const kind = if (made_of) o.of else o.kind;
+        const prop = if (made_of) o.of_prop else o.prop;
+        switch (kind) {
+            .global => {
+                var it = ids.iterator();
+                while (it.next()) |kv| if (kv.value_ptr.* == o.global) {
+                    const module: JsIr.Symbol.Optional = @fromBackingInt(kv.key_ptr.module);
+                    try w.writeAll("top-level `");
+                    if (module.unwrap()) |m| try w.print("{s}$", .{e.session.interner.slice(m)});
+                    try w.print("{s}`", .{e.session.interner.slice(@fromBackingInt(kv.key_ptr.base))});
+                    break;
+                };
+            },
+            .local => {
+                const name = o.name.?;
+                try w.print("local `{s}", .{slots[spec_slots[o.module]].overlay.slice(name.base)});
+                if (name.tag != JsIr.Name.no_tag and name.tag != JsIr.Name.field) try w.print("${d}", .{name.tag});
+                try w.writeAll("` of the statement");
+            },
+            .site_any => try w.writeAll("what is written under an unknown key of the site"),
+            .site_prop => try w.print("property {f} of the site", .{PropName{ .id = prop, .props = props }}),
+            .ret => try w.writeAll("the return of the function"),
+            .summary_any, .summary_prop, .load => try w.writeAll("the expression"),
+        }
+        if (o.module != Spec.none) {
+            const file = e.graph().moduleFile(@fromBackingInt(@intCast(spec_slots[o.module])));
+            const store = &e.session.store;
+            try w.print(" at {s}", .{store.path(file)});
+            if (o.pos == JsIr.Node.no_pos) {
+                try w.print(" (node {d})", .{o.node});
+            } else {
+                const bytes = store.bytes(file);
+                const start = if (std.mem.lastIndexOfScalar(u8, bytes[0..@min(o.pos, bytes.len)], '\n')) |nl| nl + 1 else 0;
+                const column = 1 + (std.unicode.utf8CountCodepoints(bytes[start..@min(o.pos, bytes.len)]) catch 0);
+                try w.print(":{d}:{d}", .{ lineOf(bytes, o.pos), column });
+            }
+        }
+        try w.writeAll("\n");
+        const sorted = try e.scratch.dupe(Spec.SiteOrigin, sites);
+        std.mem.sortUnstable(Spec.SiteOrigin, sorted, {}, struct {
+            fn lessThan(_: void, a: Spec.SiteOrigin, b: Spec.SiteOrigin) bool {
+                if (a.module != b.module) return a.module < b.module;
+                if (a.pos != b.pos) return a.pos < b.pos;
+                return a.node < b.node;
+            }
+        }.lessThan);
+        var at: usize = 0;
+        while (at < sorted.len) {
+            var end = at;
+            while (end < sorted.len and sorted[end].module == sorted[at].module) end += 1;
+            const file = e.graph().moduleFile(@fromBackingInt(@intCast(spec_slots[sorted[at].module])));
+            const bytes = e.session.store.bytes(file);
+            try w.print("beni: points-to:   {d} made in {s}, on lines", .{ end - at, e.session.store.path(file) });
+            var k = at;
+            while (k < end) {
+                const line = lineOf(bytes, sorted[k].pos);
+                var same = k;
+                while (same < end and lineOf(bytes, sorted[same].pos) == line) same += 1;
+                if (line == 0) try w.writeAll(" ?") else try w.print(" {d}", .{line});
+                if (same - k > 1) try w.print(" (×{d})", .{same - k});
+                k = same;
+            }
+            try w.writeAll("\n");
+            at = end;
+        }
+    }
+
+    /// The line of byte `pos` of `bytes`, or 0 for a node with no position.
+    fn lineOf(bytes: []const u8, pos: u32) u32 {
+        if (pos == JsIr.Node.no_pos) return 0;
+        return @intCast(1 + std.mem.count(u8, bytes[0..@min(pos, bytes.len)], "\n"));
+    }
+
+    /// Property `id` of `props`, by its text.
+    const PropName = struct {
+        id: u32,
+        props: *const std.StringHashMapUnmanaged(u32),
+
+        pub fn format(n: PropName, w: *std.Io.Writer) std.Io.Writer.Error!void {
+            if (n.id == Spec.none) return w.writeAll("an unknown key");
+            // `Pts.elem_prop`: an array's elements.
+            if (n.id == std.math.maxInt(u32) - 1) return w.writeAll("an element");
+            var it = n.props.iterator();
+            while (it.next()) |kv| if (kv.value_ptr.* == n.id) return w.print("`{s}`", .{kv.key_ptr.*});
+        }
+    };
 
     /// A whole-program name of `slot`'s module, moved out of the module's
     /// overlay into the session's pool when the lowering invented it there:

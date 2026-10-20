@@ -340,6 +340,13 @@ pub const Build = struct {
     /// each mount's dispatcher is reachable as
     /// `globalThis.__beniFuzz.send(program, msg)`.
     fuzz: bool = false,
+    /// `--points-to-largest` — **hidden**, for `--allow-debug`'s reason: a
+    /// measuring instrument (`plans/type-directed-points-to.md` slice 0).
+    /// Under `--release` the specialiser's fact 3 remembers where each of its
+    /// vars came from, and the build writes one line to stderr naming the
+    /// var that held the most sites and where in the source its node is.
+    /// It changes no emitted byte.
+    points_to_largest: bool = false,
     /// `--watch` (`frontend.md` §10.3): build, then rebuild on every change
     /// to the inputs until SIGINT.
     watch: bool = false,
@@ -797,6 +804,7 @@ const BuildSpecific = struct {
     schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
+    points_to_largest: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
     cache: Cache = .{},
@@ -849,6 +857,11 @@ const BuildSpecific = struct {
             // The fifth hidden flag (see `Build.fuzz`).
             if (value != null) return noValue(name);
             self.fuzz = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--points-to-largest")) {
+            // A hidden flag (see `Build.points_to_largest`).
+            if (value != null) return noValue(name);
+            self.points_to_largest = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--watch")) {
             if (value != null) return noValue(name);
@@ -911,6 +924,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .schema_library = s.specific.schema_library,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
+        .points_to_largest = s.specific.points_to_largest,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,
         .poll_interval_ms = s.specific.poll_interval_ms orelse default_poll_interval_ms,
@@ -1742,4 +1756,16 @@ test "--checker is gone with v1: an unknown option" {
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "build", "--platform=node", "--checker=v1", "src" });
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "dump", "--stage=types", "--checker=v2", "M.beni" });
     try testing.expect(std.mem.indexOf(u8, usage, "--checker") == null);
+}
+
+test "--points-to-largest is build's, hidden, and takes no value" {
+    // A measuring instrument (`plans/type-directed-points-to.md` slice 0):
+    // `build`'s alone, since only a build runs the release specialiser.
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .points_to_largest = true, .source_maps = false, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--release", "--points-to-largest", "src" },
+    );
+    try expectUsage("beni: option '--points-to-largest' does not take a value", &.{ "build", "--platform=node", "--points-to-largest=1", "src" });
+    try expectUsage("beni: unknown option '--points-to-largest'; run 'beni help' for usage", &.{ "check", "--points-to-largest", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "points-to") == null);
 }
