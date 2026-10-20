@@ -18,7 +18,7 @@ open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.VariableRuntime
 open Ownership.FlatFragment.AtomPreservation Ownership.FlatFragment.Env Ownership.FlatFragment.LiveSets Ownership.FlatFragment.Liveness Ownership.FlatFragment.AtomRuntime
 open Ownership.FlatFragment.Fields Ownership.FlatFragment.Observe Ownership.FlatFragment.AtomInference
 open Ownership.FlatFragment.Branch Ownership.FlatFragment.ResultCase Ownership.FlatFragment.Result
-open Ownership.FlatFragment.ChainCase Ownership.FlatFragment.Chain
+open Ownership.FlatFragment.ChainCase Ownership.FlatFragment.Chain Ownership.FlatFragment.ListPrimitives
 
 theorem heapAtomPost_heap (hs : State) (observations : List Observation) :
     (Ownership.FlatFragment.StateFrame.heapAtomPost hs observations).heap = hs.heap := by
@@ -338,6 +338,105 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
     exact chainCase_preserved endFlat linkFlat ihEnd ihLink inv typed shadow boundKeys usesLive
       afterSub defaultConfig accepted
+  | @atRead receiver index fallback =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have coveredR : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_at]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    have coveredI : ∀ use ∈ atomUses index, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_at]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨index, by simp, useMember⟩
+    have coveredD : ∀ use ∈ atomUses fallback, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_at]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨fallback, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      at_preserved (depth := depth) inv typed coveredR coveredI coveredD defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags, chains⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, tags, chains⟩
+    · exact failure
+  | @set receiver index item =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have coveredR : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_set]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    have coveredI : ∀ use ∈ atomUses index, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_set]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨index, by simp, useMember⟩
+    have coveredV : ∀ use ∈ atomUses item, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_set]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨item, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      set_preserved (depth := depth) inv typed coveredR coveredI coveredV afterSub defaultConfig accepted
+    exact ⟨success, failure⟩
+  | @copy receiver =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_copy]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      copy_preserved (depth := depth) inv typed covered defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags, chains⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, tags, chains⟩
+    · exact failure
+  | @prepend item receiver =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have coveredI : ∀ use ∈ atomUses item, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_prepend]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨item, by simp, useMember⟩
+    have coveredR : ∀ use ∈ atomUses receiver, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_prepend]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨receiver, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      prepend_preserved (depth := depth) inv typed coveredI coveredR defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
+        tags, chains⟩ := success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped, tags, chains⟩
+    · exact failure
 
 /-- The public trace corollary for the fragment, with the exact conclusion
 of `accepted_traces_agree` and the one extra scope hypothesis. -/
@@ -411,7 +510,18 @@ arm the checker infers with a bottom head (dead code); it is accepted and
 both runs agree. `chainAlias` pushes in the link arm onto a list that is
 read afterwards and is rejected (the Dead test), and its two runs differ.
 `chainResult` wraps a chain in `ok`, binds it in a result case and takes the
-link arm of a chain case on it; it is accepted and both runs agree. -/
+link arm of a chain case on it; it is accepted and both runs agree. `atOps`
+reads an element, an out-of-range index and a negative index of a list, each
+with a fallback, and pushes their sum; it is accepted, both runs agree, and
+both record the three reads. `setOps` writes an element in place and then
+writes at an out-of-range and at a negative index, which change nothing; it
+is accepted with one counted write. `setAlias` reads the written list after
+the write and is rejected (the Dead test), and its two runs differ. `copyOps`
+pushes onto a copy while the original stays live; it is accepted and both
+runs agree. `prependOps` pushes onto a prepend's result, which the checker
+names by the base's origins; it is accepted, and both runs record the read
+of the base. `prependAlias` reads the base after that push and is rejected
+(the Dead test); the result's names are the base's. -/
 
 /-- `[5]`, an observer of it, `7`, `[7, 1]`, an in-place push onto it (its
     old binding 3 is dead and stale), a length read, and a variable result. -/
@@ -650,6 +760,77 @@ theorem chainResult_flat : FlatANF0 chainResult.main :=
   .letE .endChain (.letE .link (.letE (.ok .int)
     (.resultCase .literal (.chainCase .literal (.letE .literal .push)))))
 
+/-- `[4, 5]`, the element at `1` (fallback `0`), at `7` (out of range, so
+    the fallback `0`) and at `-1` (negative, so the fallback `3`), their sum
+    pushed onto the list: accepted, one in-place write, final value
+    `[4, 5, 8]`, the reads `5`, `0` and `3` on both sides. -/
+def atOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 4, .int 5])
+  (.letE 1 (.prim .at [.var 0, .int 1, .int 0])
+  (.letE 2 (.prim .at [.var 0, .int 7, .int 0])
+  (.letE 3 (.prim .at [.var 0, .int (-1), .int 3])
+  (.letE 4 (.prim .add [.var 1, .var 2])
+  (.letE 5 (.prim .add [.var 4, .var 3])
+  (.prim .push [.var 0, .var 5]))))))) }
+
+theorem atOps_flat : FlatANF0 atOps.main :=
+  .letE .literal (.letE .atRead (.letE .atRead (.letE .atRead
+    (.letE (.scalar .add) (.letE (.scalar .add) .push)))))
+
+/-- `[1, 2]`, `9` written at `0`, `7` at `5` (out of range: unchanged) and
+    `6` at `-1` (negative: unchanged): accepted, one counted write, final
+    value `[9, 2]`. -/
+def setOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2])
+  (.letE 1 (.prim .set [.var 0, .int 0, .int 9])
+  (.letE 2 (.prim .set [.var 1, .int 5, .int 7])
+  (.prim .set [.var 2, .int (-1), .int 6])))) }
+
+theorem setOps_flat : FlatANF0 setOps.main :=
+  .letE .literal (.letE .set (.letE .set .set))
+
+/-- The written list read after the write: rejected by the Dead test; the
+    two runs differ. -/
+def setAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1, .int 2])
+  (.letE 1 (.prim .set [.var 0, .int 0, .int 9])
+  (.prim .at [.var 0, .int 0, .int 0]))) }
+
+theorem setAlias_flat : FlatANF0 setAlias.main :=
+  .letE .literal (.letE .set .atRead)
+
+/-- `[1]`, a copy of it, a push onto the copy, and the length of the
+    original: accepted, one in-place write, final value `1`. -/
+def copyOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim .copy [.var 0])
+  (.letE 2 (.prim .push [.var 1, .int 2])
+  (.prim .length [.var 0])))) }
+
+theorem copyOps_flat : FlatANF0 copyOps.main :=
+  .letE .literal (.letE .copy (.letE .push .length))
+
+/-- `[2]`, `1` prepended, and a push onto the result: accepted, one in-place
+    write, final value `[1, 2, 9]`, the read of the base `[2]` on both sides. -/
+def prependOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 2])
+  (.letE 1 (.prim .prepend [.int 1, .var 0])
+  (.prim .push [.var 1, .int 9]))) }
+
+theorem prependOps_flat : FlatANF0 prependOps.main :=
+  .letE .literal (.letE .prepend .push)
+
+/-- The base read after that push: rejected by the Dead test, because the
+    result is named by the base's origins. -/
+def prependAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 2])
+  (.letE 1 (.prim .prepend [.int 1, .var 0])
+  (.letE 2 (.prim .push [.var 1, .int 9])
+  (.prim .length [.var 0])))) }
+
+theorem prependAlias_flat : FlatANF0 prependAlias.main :=
+  .letE .literal (.letE .prepend (.letE .push .length))
+
 set_option maxRecDepth 100000
 
 #guard (check every).isOk
@@ -779,5 +960,46 @@ set_option maxRecDepth 100000
       t.reads.isEmpty && t.externalReads.isEmpty
   | _, _ => false
 #guard InPlaceSemantics.writeCount chainResult 100 == 1
+#guard (check atOps).isOk
+#guard match ValueSemantics.run atOps 100, InPlaceSemantics.run atOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 4, .int 5, .int 8] &&
+      t.reads == [.int 5, .int 0, .int 3] && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount atOps 100 == 1
+#guard (check setOps).isOk
+#guard match ValueSemantics.run setOps 100, InPlaceSemantics.run setOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 9, .int 2] &&
+      t.reads.isEmpty && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount setOps 100 == 1
+#guard match check setAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run setAlias 100, InPlaceSemantics.run setAlias 100 with
+  | .ok t, .ok t' => t.reads == [.int 1] && t'.reads == [.int 9] &&
+      t.finalValue == .int 1 && t'.finalValue == .int 9
+  | _, _ => false
+#guard (check copyOps).isOk
+#guard match ValueSemantics.run copyOps 100, InPlaceSemantics.run copyOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 1 &&
+      t.reads == [.int 1] && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount copyOps 100 == 1
+#guard (check prependOps).isOk
+#guard match ValueSemantics.run prependOps 100, InPlaceSemantics.run prependOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 1, .int 2, .int 9] &&
+      t.reads == [.list [.int 2]] && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount prependOps 100 == 1
+#guard match check prependAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run prependAlias 100, InPlaceSemantics.run prependAlias 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.finalValue == t'.finalValue && t.finalValue == .int 1
+  | _, _ => false
 
 end Ownership.FlatFragment.Preservation

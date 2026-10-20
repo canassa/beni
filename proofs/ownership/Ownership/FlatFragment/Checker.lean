@@ -292,6 +292,18 @@ theorem primitive_push_demand_run
   have same : middle = after := congrArg Prod.snd (Except.ok.inj returned)
   exact same ▸ demanded
 
+/-- The same demand for a `set`: the index operand is not read. -/
+theorem primitive_set_demand_run
+    (run : (primitive ctx site .set [.list roots element certificate, index, value] later).run before =
+      .ok (result, after)) :
+    (demand ctx.config roots later (union element.cells value.cells)).run before =
+      .ok ((), after) := by
+  unfold primitive at run
+  obtain ⟨finished, middle, demanded, returned⟩ := checkM_bind_success run
+  cases finished
+  have same : middle = after := congrArg Prod.snd (Except.ok.inj returned)
+  exact same ▸ demanded
+
 /-- The explicit intermediate-state form is convenient for the generic
 expression induction and the checked demand support. -/
 theorem primitive_push_demand_witness

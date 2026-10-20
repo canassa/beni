@@ -2641,6 +2641,85 @@ theorem shadowFree_chainCase_success {bound : List Var} {input : Atom} {head tai
     obtain ⟨_, first, second⟩ := except_bind_success children
     exact ⟨freshHead, freshTail, different, first, second⟩
 
+/-! ### Typing of the remaining list primitives -/
+
+theorem primType_at_success {tR tI tD type : Ty} (flatR : FlatType tR) (flatD : FlatType tD)
+    (run : primType .at [tR, tI, tD] = .ok type) :
+    tR = .list .int ∧ tI = .int ∧ tD = .int ∧ type = .int := by
+  cases flatR <;> cases flatD <;> cases tI <;> simp [primType, BEq.beq, Ty.equal] at run <;>
+    (change Except.ok _ = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl, rfl⟩)
+
+theorem primType_set_success {tR tI tV type : Ty} (flatR : FlatType tR) (flatV : FlatType tV)
+    (run : primType .set [tR, tI, tV] = .ok type) :
+    tR = .list .int ∧ tI = .int ∧ tV = .int ∧ type = .list .int := by
+  cases flatR <;> cases flatV <;> cases tI <;> simp [primType, BEq.beq, Ty.equal] at run <;>
+    (change Except.ok _ = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl, rfl⟩)
+
+theorem primType_copy_success {tR type : Ty} (flatR : FlatType tR)
+    (run : primType .copy [tR] = .ok type) : tR = .list .int ∧ type = .list .int := by
+  cases flatR <;> simp [primType] at run <;>
+    (change Except.ok _ = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl⟩)
+
+theorem primType_prepend_success {tI tR type : Ty} (flatI : FlatType tI) (flatR : FlatType tR)
+    (run : primType .prepend [tI, tR] = .ok type) :
+    tI = .int ∧ tR = .list .int ∧ type = .list .int := by
+  cases flatI <;> cases flatR <;> simp [primType, BEq.beq, Ty.equal] at run <;>
+    (change Except.ok _ = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl⟩)
+
+theorem exprType_at_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {receiver index fallback : Atom} {type : Ty}
+    (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .at [receiver, index, fallback]) = .ok type) :
+    atomType tenv receiver = .ok (.list .int) ∧ atomType tenv index = .ok .int ∧
+      atomType tenv fallback = .ok .int ∧ type = .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tI, rest', indexTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  obtain ⟨tD, rest'', fallbackTyped, restTyped'', rfl⟩ := except_mapM_cons_success restTyped'
+  have restNil := except_mapM_nil_success restTyped''
+  subst restNil
+  obtain ⟨rfl, rfl, rfl, typeInt⟩ :=
+    primType_at_success (flatTypes receiver tR receiverTyped) (flatTypes fallback tD fallbackTyped) primTyped
+  exact ⟨receiverTyped, indexTyped, fallbackTyped, typeInt⟩
+
+theorem exprType_set_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {receiver index item : Atom} {type : Ty}
+    (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .set [receiver, index, item]) = .ok type) :
+    atomType tenv receiver = .ok (.list .int) ∧ atomType tenv index = .ok .int ∧
+      atomType tenv item = .ok .int ∧ type = .list .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tI, rest', indexTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  obtain ⟨tV, rest'', itemTyped, restTyped'', rfl⟩ := except_mapM_cons_success restTyped'
+  have restNil := except_mapM_nil_success restTyped''
+  subst restNil
+  obtain ⟨rfl, rfl, rfl, typeList⟩ :=
+    primType_set_success (flatTypes receiver tR receiverTyped) (flatTypes item tV itemTyped) primTyped
+  exact ⟨receiverTyped, indexTyped, itemTyped, typeList⟩
+
+theorem exprType_copy_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {receiver : Atom} {type : Ty}
+    (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .copy [receiver]) = .ok type) :
+    atomType tenv receiver = .ok (.list .int) ∧ type = .list .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tR, rest, receiverTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  have restNil := except_mapM_nil_success restTyped
+  subst restNil
+  obtain ⟨rfl, typeList⟩ := primType_copy_success (flatTypes receiver tR receiverTyped) primTyped
+  exact ⟨receiverTyped, typeList⟩
+
+theorem exprType_prepend_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {item receiver : Atom} {type : Ty}
+    (flatTypes : ∀ (atom : Atom) (t : Ty), atomType tenv atom = .ok t → FlatType t)
+    (typed : exprType declarations self tenv (.prim .prepend [item, receiver]) = .ok type) :
+    atomType tenv item = .ok .int ∧ atomType tenv receiver = .ok (.list .int) ∧ type = .list .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tI, rest, itemTyped, restTyped, rfl⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tR, rest', receiverTyped, restTyped', rfl⟩ := except_mapM_cons_success restTyped
+  have restNil := except_mapM_nil_success restTyped'
+  subst restNil
+  obtain ⟨rfl, rfl, typeList⟩ :=
+    primType_prepend_success (flatTypes item tI itemTyped) (flatTypes receiver tR receiverTyped) primTyped
+  exact ⟨itemTyped, receiverTyped, typeList⟩
+
 /-! ### The uses of a typed expression are typed paths -/
 
 theorem atom_use_typed {tenv : Env Ty} {a : Atom} {ty : Ty} {x : Var} {p : Path}
@@ -2780,5 +2859,21 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
         obtain ⟨tk, t', declared, at_p⟩ := ihLink _ b linkTyped x p filtered.1
         rw [lookup_cons_other _ _ _ notHead, lookup_cons_other _ _ _ notTail] at declared
         exact ⟨tk, t', declared, at_p⟩
+  | @atRead receiver index fallback =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @set receiver index item =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @copy receiver =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
+  | @prepend item receiver =>
+    intro tenv ty typed x p use
+    obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
+    exact atoms_use_typed atomsTyped use
 
 end Ownership.FlatFragment.Fields
