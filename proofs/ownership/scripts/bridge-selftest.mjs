@@ -61,7 +61,7 @@ try {
       assert.equal(record[5],true);
       const source=resolve(dir,`${name}.beni`),target=resolve(dir,`${name}-output`);
       await writeFile(source,translate(ds,main).source);
-      const built=spawnSync(resolve(options.compiler),['build','--library','--no-cache','--no-source-maps','--jobs=1','--platform=browser-direct',`--out=${target}`,source],{encoding:'utf8'});
+      const built=spawnSync(resolve(options.compiler),['build','--library','--no-cache','--no-source-maps','--jobs=1','--platform=browser-inline',`--out=${target}`,source],{encoding:'utf8'});
       assert.equal(built.status,0,built.stderr);
       const driver=resolve(dir,`${name}-driver.mjs`);
       await writeFile(driver,`import {${name}$run as run} from ${JSON.stringify(resolve(target,`${name}.mjs`))};console.log(JSON.stringify(run()));\n`);

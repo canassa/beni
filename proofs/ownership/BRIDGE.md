@@ -154,11 +154,11 @@ no unexpected diagnostic code or abnormal exit.
 Every translated program is built as part of a browser-tea batch and its
 normalized final value is compared with Lean, including agreements and precision
 differences. `valueChecked` must equal `translated`. Each wholly Zig-accepted
-lead is built as a real library under `browser-tea` and `browser-direct`, then executed under Node. The value build's final result
+lead is built as a real library under `browser-tea` and the in-place platform (`browser-inline` since 2026-10-20, #418; `browser-direct` before #423 retired it), then executed under Node. The value build's final result
 must equal Lean's value result. Final values do not establish heap identity or
 sharing fidelity: those rely on the stated public-operation translation
 contracts and source review. The whole-population value check is specifically
-for browser-tea; direct builds are paired only where enforcement permits them.
+for browser-tea; in-place builds are paired only where enforcement permits them.
 The two runs compare the final result, snapshots
 of explicit `length`/`at` reads, and exported shared roots. These are not all of
 Lean's internal trace events: traversal reads, focus reads and per-expression
@@ -168,7 +168,7 @@ external observations are outside this runtime observation contract.
 real compiler emits it, the driver wraps only its uniquely anchored binding to
 snapshot its argument. It does not replace writers or bypass enforcement.
 **The emitted library's `List.push` still uses the persistent core implementation,
-even under browser-direct.** An agreeing execution is therefore only an
+even under the in-place platform.** An agreeing execution is therefore only an
 unconfirmed lead; it is not evidence that an in-place ownership guarantee holds.
 The harness does not substitute a handwritten mutating runtime to manufacture
 confirmation. Runtime disagreements, should they occur, remain real compiler

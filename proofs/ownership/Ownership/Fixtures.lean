@@ -711,7 +711,7 @@ def initializedGridSet : Program := {
 
 Ports of `tests/corpus/ownership/CallbackKeeps.beni` (CK-251, issue #281) and
 `CallbackChain.beni` (CK-249, issue #271). Expected verdicts are the goldens'
-(`CallbackKeeps.browser-direct.ownership`, `CallbackChain.browser-direct.ownership`),
+(`CallbackKeeps.browser-inline.ownership`, `CallbackChain.browser-inline.ownership`),
 except where the Zig checker's rule is approximate by the spec's own words
 and the two interpreters agree: `writeFirst` (§16.4, "a callee that writes
 `πᵢ` before the call and only reads it after" is refused too, approximately)
