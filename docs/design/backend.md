@@ -6639,6 +6639,60 @@ specialisation cut a caller; a record-building helper taken into a `let`), `emit
 EmptyPage` (`slot`, `parentOf`, `drop` and `template`), `run/InlineAfterOrder` (argument and body
 order, a closure's cell, a `let` the body assigns, in both builds).
 
+**As built — one count writes every independent candidate** (*added 2026-10-21*, #576;
+`Spec.inlineOnce`, `inlineBatch`, `copyLimit`). The pass wrote one function per count of the
+program: after each write it counted every module that changed, rebuilt its per-name arrays and
+asked every candidate again, including each one it had just declined; and it stopped after 256
+writes (`max_inlines`), leaving the rest to the next structural pass and its analysis. On the
+research dashboard at N = 64 it wrote 256, 256 and 90 functions in three passes, with 2 430,
+23 582 and 9 981 attempts. Now:
+
+- **One count writes every candidate it finds**, in the order they were taken one at a time
+  (innermost first, then by whole-program id), except one a write before it in the same count
+  touched: a candidate whose call stood in a body just copied — it is now called twice, from the
+  copy and from the declaration `prune` drops only after the pass — or in a top-level statement a
+  write replaced. Such a candidate waits for the next count (`spec_inline_waits`). Nothing else a
+  write changes made another call a candidate: a write takes mentions away (the call's callee, an
+  argument whose parameter nothing reads) or copies mentions already counted, and `inlineAt` asks
+  the program as it stands for everything else. The one count it reads, whether a binding is read
+  anywhere (`nameRead`), is walked again for the names a write dropped (`io_dropped`). The pass
+  counts again while a count wrote anything.
+- **A call `inlineAt` declined is not asked again** within the pass while the callee's module and
+  the caller's keep their `Mod.version` (`Refusal`, `spec_inline_refusals_kept`).
+- **The bound is the nodes copied, not a number of functions**: a pass of `inlineOnce` or of
+  `fuseCalls` stops once the program has grown by `copy_budget` (4) times the nodes it began with,
+  or 65 536 for a small one (`copyLimit`), counted in `spec_inline_capped`. Each write leaves its
+  function with no call, so a pass ends without the bound; the bound only stops a runaway copy.
+  Neither the corpus nor the dashboard reaches it.
+
+The order of writes is the one-at-a-time order unless a candidate declined earlier in a count
+would have been accepted after a later write of the same count: one at a time, it was asked again
+at once; now it is asked again in the next count, after every other write of this one. **One
+output moved**: `browser/tea/DefectInFiber`'s release build, 8 760 → 8 762 raw bytes and 3 474 →
+3 471 brotli. `Cmd.batch` was declined, then, one at a time, accepted after the next write in its
+caller's statement, and the helper `List.map` calls stayed a function. Now the count first writes
+that helper into `batch`, whose parameter is then read five times, so `batch` is declined again
+and stays a function instead. Every `emit/` golden and every other run hash is as before,
+`bench/corpus` is 19 280 brotli bytes in `--release` before and after, and the dashboard at N = 16
+and N = 64 and `nowd` is byte for byte the same. Measured on dagon, ReleaseFast, `build --release
+--no-cache --jobs=1`, medians of 7, master at `468b76760` before:
+
+| | `inlineOnce` (ms) | `specialise` (ms) | whole build (ms) | functions written | counts |
+|---|--:|--:|--:|--:|--:|
+| N = 16 | 4.2 → **2.7** | 49.7 → 47.7 | 84.3 → 82.2 | 145 | 4 |
+| N = 64 | 39.6 → **15.6** | 271.1 → 252.9 | 373.2 → 355.2 | 601 | 4 |
+| `nowd` | 39.7 → **15.2** | 231.3 → 190.9 | 333.6 → 289.8 | 601 | 4 |
+
+At N = 64 and `nowd` the first count writes all 601 functions. `spec_passes` stays 3,
+`spec_passes_capped` 1 and `spec_analyses` as it was (7, 6 and 6): the second and third passes are
+no longer the inliner's but slice 9's (`constructors`), which folds a `return f(…, g(…))` again in
+statements it folded the pass before, each growing each time (#589). A program whose
+inlining alone needed the extra passes now takes one: `build_test`'s *writes every independent
+function called once in one count of the program* (260 functions called once: 2 passes and 3
+analyses before, 1 and 2 after). Its two companions pin a candidate left for the next pass
+(*leaves a function whose call a write just copied for the next pass*) and a refusal kept (*does
+not ask a declined call again while neither module changed*).
+
 **Amended 2026-10-02: a loop whose value is bound or discarded** (`Lower.boundLoop`,
 `inlineLoop`; `plans/runtime-in-beni.md`, step 4). A loop was written in place only at a tail
 call, so a runtime written in beni paid a call wherever hand-written JavaScript has a loop
