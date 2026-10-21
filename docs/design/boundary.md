@@ -6297,7 +6297,7 @@ lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s
 | Module | Holds |
 |---|---|
 | `Worker` | every host type — `Program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, `Context`, `Definition` — with `program`, the request and response operations, the bindings and their errors. It imports no module of the platform |
-| `WebSocket` | the server WebSocket: §9.11 (a)'s shared handle operations, `accept`, the attachment, `autoReply`. It imports `Worker` |
+| `WebSocket` | the server WebSocket: the handle operations §9.11's amendment (item 1) shares, `accept`, the attachment, `autoReply`. It imports `Worker` |
 | `Worker.Object` | `define` and the handlers over `Worker.Definition` and `Worker.Context`, `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
 | `Worker.Storage` | the object's key-value store, through schemas. It imports `Worker` |
 
@@ -6700,15 +6700,16 @@ pinned tools a defect in `alarm` is retried up to 6 times on fresh instances, ea
 shell. A defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes
 on.
 
-**(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (PR #531, the
-`ws` worker's spec for the page and the `node` server) **where the host lets it be**: this
-platform's module is also named `WebSocket`, and it declares the part of §9.11 (a) that is a
-handle operation — `Socket`, `eq`, `Close`, `CloseError` (with this host's set of codes a server
-may send), `WriteError`, `write`, `close`, `protocol` — with the same names, types and meaning,
-and it answers an upgrade as §9.11 (e) does, with `accept` or a refusing response. Nothing of
-those is defined a second time here. **It does not declare `read`, `buffered` or `drain`**, and
-no protocol module may need them to check here; the review of #531 (its H1) found why, and this
-section follows it:
+**(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (the `ws`
+worker's spec for the page and the `node` server) **where the host lets it be**: this platform's
+module is also named `WebSocket`, and it declares the *handle operations* that §9.11's amendment
+of 2026-10-20 shares (its item 1) — `Socket`, `eq`, `Close`, `CloseError` (with this host's set
+of codes a server may send, item 3), `WriteError`, `write`, `close`, `protocol` — with the same
+names, types and meaning, and it answers an upgrade as §9.11 (e) does, with `accept` or a
+refusing response. Nothing of those is defined a second time here. **It does not declare `read`,
+`buffered` or `drain`** — the *reading style* is the platform's (item 1), and `buffered` and
+`drain` are not shared (item 2) — and no protocol module may need them to check here; the review
+of #531 found why, and this section follows it:
 
 - **The reading style is per event, not a pull.** §9.11 (a)'s `read` parks the fiber that waits
   for the next message, and §9.11 (e)'s `accept session` runs the session in a fiber for as long
@@ -6778,9 +6779,9 @@ pub type AttachError
   the host: the arena's twenty to thirty frames per second per player cost one `write` each. The
   host's own advice — fewer, larger frames — is the program's to take.
 - **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code this host lets a server send
-  — 1000 to 1003, 1007 to 1009, 1011 to 1014 and 3000 to 4999, the `node` server's set, to agree
-  with #545 (its item 3; 1010 is a client's code, RFC 6455 §7.4.1, so neither server sends it;
-  *amended 2026-10-21*); workerd accepts every code of it and refuses 1004, 1005, 1006
+  — 1000 to 1003, 1007 to 1009, 1011 to 1014 and 3000 to 4999, the `node` server's set of
+  §9.11's amendment (item 3; 1010 is a client's code, RFC 6455 §7.4.1, so neither server sends
+  it; *amended 2026-10-21*); workerd accepts every code of it and refuses 1004, 1005, 1006
   and 1015 (`src/workerd/api/web-socket.c++:636-643`, measured) — and a reason of at most 123
   bytes, tested in beni; on a socket not open it does
   nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
