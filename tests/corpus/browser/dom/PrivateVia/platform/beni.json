@@ -1,0 +1,7 @@
+{
+  "platform": true,
+  "name": "probe",
+  "platforms": ["browser"],
+  "reexports": ["Html", "Browser"],
+  "markup": { "vocabulary": "Probe", "type": "Html.Html" }
+}

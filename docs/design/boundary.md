@@ -1419,6 +1419,11 @@ version of the lowering interface (§9.4.6).
 String` names `foreign targetValue : Event -> String` of the same module, which is bound to an
 export of the module's sibling and held to all four of §4's checks like any other. So the one piece
 of a vocabulary that runs JavaScript at an event is exactly as walled as everything else that does.
+*Amended 2026-10-21.* The `foreign` need not be `pub`. Visibility is about names (`language.md`
+§5). A program cannot call the extractor, and the event can. The vocabulary row stores the
+name. A build that reaches the event imports that name, and the vocabulary module exports the
+declaration, as it exports a core-private value. The runtime's `identity` stays the extractor
+of an event with no `via`.
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of

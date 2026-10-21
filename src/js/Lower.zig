@@ -3583,6 +3583,21 @@ pub const Lowerer = struct {
             if (d.is_pub or !l.emitterCalled(@intCast(i))) continue;
             if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
         }
+        // A payload extractor that is not `pub` is not an interface value,
+        // and the module that uses the event imports it by name. Export it
+        // when the event survived, which is when the declaration is live.
+        if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
+            const iface = &l.in.interfaces[l.in.module.int()];
+            for (l.bir.decls, 0..) |d, i| {
+                if (d.is_pub or d.kind != .foreign_value or !l.liveDecl(@intCast(i))) continue;
+                const symbol = l.bir.symbol(d.name);
+                const named = for (iface.events) |ev| {
+                    const via = ev.via.unwrap() orelse continue;
+                    if (@backingInt(via) < iface.symbols.len and iface.symbols[@backingInt(via)] == symbol) break true;
+                } else false;
+                if (named) try names.append(l.scratch, try l.topName(@intCast(i)));
+            }
+        };
         // `core/Schema`'s core-private values the specialised path calls
         // (`schema.md` §6), on the same terms.
         if (l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) == l.in.module) {
@@ -17548,9 +17563,10 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     /// An event's payload extractor, as a `foreign` of the vocabulary
-    /// module, imported as any other module's value is. Reachability keeps
-    /// it alive through the markup leg of `check/Edges.zig`
-    /// (`checker-v2.md` §25.7).
+    /// module. A `pub` one is an interface value. One that is not `pub` is
+    /// named by the vocabulary row and imported by that name, the way a
+    /// core-private value is (`checker-v2.md` §25.8, amended 2026-10-21).
+    /// Reachability keeps either alive.
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
@@ -17559,7 +17575,20 @@ const markup_vtable: beni_markup.VTable = struct {
         if (!st.built.tree.eventFacts(it.event).has_extractor) return null;
         const extractor_value = st.built.extractors[item_index];
         const module = l.in.graph.markup.vocabulary orelse return null;
-        if (extractor_value == Dispatch.Markup.no_row) return null;
+        if (extractor_value == Dispatch.Markup.no_row) {
+            if (item_index >= st.built.extractor_names.len) return null;
+            const symbol = st.built.extractor_names[item_index].unwrap() orelse return null;
+            if (module == l.in.module) {
+                for (l.bir.decls, 0..) |d, i| {
+                    if (d.kind != .foreign_value or l.bir.symbol(d.name) != symbol) continue;
+                    return expr(try l.ident(try l.topName(@intCast(i)), pos(l)));
+                }
+                return null;
+            }
+            const entry: Lowerer.Needed = .{ .module = module, .base = symbol.toOptional() };
+            try l.needName(entry);
+            return expr(try l.ident(try l.neededName(entry), pos(l)));
+        }
         try l.need(module, extractor_value);
         return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
     }
