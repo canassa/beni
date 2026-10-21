@@ -253,11 +253,9 @@ pub const Counter = enum {
     /// count does not grow with code the sweeps leave as it was.
     spec_lists_examined,
     /// The same pass's work and its caps (`Spec.Stats`, research 52 §0.2's
-    /// E3, kept): whole analyses, the sweeps of facts 1, 2, 4 and 5, fact
-    /// 3's fixpoints and their sweeps, and the structural passes that
-    /// changed the program.
+    /// E3, kept): whole analyses, fact 3's fixpoints and their sweeps, and
+    /// the structural passes that changed the program.
     spec_analyses,
-    spec_sweeps,
     spec_points_to_runs,
     /// Analyses that kept fact 3's last solve, nothing it reads having
     /// changed since (`Spec.fact3Kept`, #575): `spec_analyses` is
@@ -266,9 +264,8 @@ pub const Counter = enum {
     spec_points_to_sweeps,
     spec_passes,
     /// Each cap where it stopped work that would have gone on: a size
-    /// regression is traced to one of these first. An analysis that did
-    /// not converge rewrites nothing; a fact 3 that did not is not used.
-    spec_analyses_declined,
+    /// regression is traced to one of these first. A fact 3 that did not
+    /// converge is not used.
     spec_points_to_declined,
     spec_rounds_capped,
     spec_passes_capped,

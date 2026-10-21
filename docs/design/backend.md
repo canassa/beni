@@ -9526,6 +9526,18 @@ What pays is slice 6: one solve per structural pass in place of 4 to 6 analyses.
 `check/rules_test`'s scan of `src/js` now searches a file for a bit's name before its lines: it
 read every line five times and reached its instruction budget as `Spec.zig` grew.
 
+*Added 2026-10-22, the same issue — the sweeps go.* `sweeps`, `walkAll`, `checkedSweeps`,
+`checkedSolve`, `count_logs` and `max_sweeps` are deleted, with the check against them and the
+`spec_sweeps` and `spec_analyses_declined` counters: no analysis is declined any more. The
+rewrite's per-statement walk (`walkTop`, `evalStmt`, `combine`) stays for its walks of statements
+a patch made stale, until slice 6. Its count of a statement (`countTop`) now walks the statement
+each time, where `count_logs` replayed a count kept while the module's version stood; the
+analysis's counts are the extraction's. The check of copied statement constraints against a fresh
+extraction stays (`max_solve_checked_nodes`). Outputs are byte for byte as with the check. In
+instructions of the ReleaseSafe compiler against the solver with the check: TodoMVC 1 385M →
+1 394M, the 16 400 arms 2 892M → 2 918M (the rewrite's counts), the 100 000 lines 15 761M →
+15 704M; ReleaseFast times and peak RSS within noise.
+
 ### Compact statements
 
 ### Compact statements

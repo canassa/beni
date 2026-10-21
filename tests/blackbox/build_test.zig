@@ -5876,7 +5876,7 @@ test "the release specialiser solves a call chain deeper than the sweeps' old ca
     // 24 levels hit the cap of 24 sweeps: the first analysis rewrote
     // nothing. The combined solver (`backend.md` §9, *The combined
     // solver*, slice 4) has no sweep to run out of: 22 levels and 24 are
-    // alike, no analysis is declined, and no solve reaches its work budget.
+    // alike, and no solve reaches its work budget.
     const shallow = try specCounters(22);
     const deep = try specCounters(24);
 
@@ -5885,7 +5885,6 @@ test "the release specialiser solves a call chain deeper than the sweeps' old ca
     // └─────────────────────────────────────────┘
     for ([_]SpecCounters{ shallow, deep }) |c| {
         try testing.expect(c.analyses >= 1);
-        try testing.expectEqual(@as(u64, 0), c.analyses_declined);
         try testing.expect(c.constraints > 0);
         try testing.expectEqual(@as(u64, 0), c.budget_hit);
     }
@@ -6337,7 +6336,6 @@ fn emitCounters(w: *World) !EmitCounters {
 
 const SpecCounters = struct {
     analyses: u64 = 0,
-    analyses_declined: u64 = 0,
     constraints: u64 = 0,
     budget_hit: u64 = 0,
 };
@@ -6365,7 +6363,6 @@ fn specCounters(levels: usize) !SpecCounters {
         ph: []const u8,
         args: struct {
             spec_analyses: ?u64 = null,
-            spec_analyses_declined: ?u64 = null,
             spec_solve_constraints: ?u64 = null,
             spec_solve_budget_hit: ?u64 = null,
         } = .{},
@@ -6380,10 +6377,6 @@ fn specCounters(levels: usize) !SpecCounters {
             counters.analyses = v;
             seen += 1;
         }
-        if (e.args.spec_analyses_declined) |v| {
-            counters.analyses_declined = v;
-            seen += 1;
-        }
         if (e.args.spec_solve_constraints) |v| {
             counters.constraints = v;
             seen += 1;
@@ -6393,7 +6386,7 @@ fn specCounters(levels: usize) !SpecCounters {
             seen += 1;
         }
     }
-    if (seen != 4) return error.NoCounter;
+    if (seen != 3) return error.NoCounter;
     return counters;
 }
 
