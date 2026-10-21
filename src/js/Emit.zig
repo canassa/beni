@@ -7459,7 +7459,7 @@ const Emitter = struct {
             else if (std.mem.eql(u8, name, "default"))
                 "is the name of the entry file's default export"
             else if (std.mem.eql(u8, name, "flush"))
-                "is the name of the runtime's own `flush` export, which a release build writes beside it"
+                "is the name the entry file keeps for a runtime's `flush`, which a release build can write beside it"
             else if (listedBefore(p.entry_exports[0..i], name))
                 "is listed twice"
             else
