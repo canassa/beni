@@ -93,6 +93,7 @@ module Cmd
   value do : (⊤ → ⊤) → Cmd msg
   value items : Cmd msg → List (Item msg)
   value keyed : k, Policy, (Send msg → ⊤) → Cmd msg where k.compare : k, k → Order
+  value log : Level, String → Cmd msg
   value map : Cmd a, k, (a → msg) → Cmd msg where k.compare : k, k → Order  -- impure
   value none : Cmd msg
   value perform : (Send msg → ⊤) → Cmd msg
@@ -203,15 +204,6 @@ module Listen
   value each : ((a → ⊤) → (⊤ → ⊤)), (a → ⊤) → ⊤  -- suspends
   value on : String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
   value on2 : String, String, String, (Value → a), (a → ⊤) → (⊤ → ⊤)  -- impure
-module Log
-  type Level
-    Info
-    Warn
-    Error
-  value error : String → ⊤  -- impure
-  value info : String → ⊤  -- impure
-  value warn : String → ⊤  -- impure
-  value write : Level, String → Cmd msg
 module Random
   alias Generator a
   alias Seed
