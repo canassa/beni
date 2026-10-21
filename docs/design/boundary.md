@@ -908,9 +908,12 @@ Durable Object class, under Cloudflare Workers — declares `"exports": "program
 then takes what `run(main)` returns, writes its `default` as the default export, and writes one
 named export per name the app's `beni.json` lists under `"exports"` (`frontend.md` §10.1), each the
 answer of the result's `exports(name)`. The platform declares the mechanism and the app the names,
-as the app replaces the chain's `"html"` with its own. Any other value of the key is
-`unknown_exports_mode`, a name that is not an ASCII identifier, is a reserved word, is `default`
-or is listed twice is `invalid_entry_export`, both against the manifest that holds them at `1:1`;
+as the app replaces the chain's `"html"` with its own. Any other string, or a list, under the
+platform's key is `unknown_exports_mode`, and a value of another JSON type is the manifest's exit-2
+failure, as any key of the wrong type is; a name that is not an ASCII identifier name (letters,
+digits, `_` and `$`), is `default`, is `flush` or is listed twice is `invalid_entry_export`, both
+against the manifest that holds them at `1:1` (*amended 2026-10-21, P599-1, P599-3 and P599-5:
+`flush`, `$` and the wrong type; a reserved word is legal, §9.12 (c)*);
 a list on a chain that declares no `"exports"` is the warning `exports_ignored`. A chain that
 does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
 contract whole.
@@ -6325,12 +6328,21 @@ Wrangler configuration ([configuration](https://developers.cloudflare.com/worker
 so the names must be known when the entry file is written). §5.2's amendment of this date adds the
 key; this is its whole contract.
 
-- **The platform manifest** declares `"exports": "program"`. Any other value is
+- **The platform manifest** declares `"exports": "program"`. Any other string, or a list, is
   `unknown_exports_mode`, reported against the manifest at `1:1` with no excerpt, as
-  `invalid_entry_file` is. Inherited first-found down the chain like every output key (§9.1).
+  `invalid_entry_file` is; a value of another JSON type is the manifest's exit-2 failure, as any
+  key of the wrong JSON type is (*amended 2026-10-21, P599-5*). Inherited first-found down the
+  chain like every output key (§9.1).
 - **The app's `beni.json`** lists the names: `"exports": ["Arena"]` (`frontend.md` §10.1). Each
-  is an ASCII identifier name — letters, digits and `_`, not beginning with a digit; the check is
-  ASCII only, as the entry name's is — not `default`, and no name is listed twice; otherwise
+  is an ASCII identifier name — letters, digits, `_` and `$`, not beginning with a digit; the
+  check is ASCII only because the name is printed into the entry file without escaping, as the
+  entry name's is — not `default`, not `flush`, and no name is listed twice (*amended 2026-10-21,
+  P599-1 and P599-3: the hoisted release file re-exports the runtime's `flush` when the build
+  keeps it, `backend.md` §15.11, and a module that exports one name twice does not load, measured
+  in Node 24 as `SyntaxError: Duplicate export of 'flush'`; the refusal is static, the same in
+  both builds, where a test of the runtime's exports would follow reachability and differ between
+  them; `stop` is not refused, because only a runtime module supplies it and this key refuses a
+  runtime module*); otherwise
   `invalid_entry_export`, a diagnostic of the build reported during emit against the app's
   manifest at `1:1`, naming the entry, as `invalid_entry_file` is (exit 1; a `"exports"` that is
   not a list of strings is the manifest's exit-2 failure, as any key of the wrong JSON type is,
@@ -6356,7 +6368,9 @@ key; this is its whole contract.
   ```
 
   *Amended 2026-10-20 (M7); 2026-10-21, the names.* The entry's own bindings begin with `$`,
-  which no listed name may hold; `$beniProgram` and `$beniExport<N>` are longer than any short
+  which a listed name may hold too (*2026-10-21, P599-3: an export name is a namespace of its own
+  that no binding meets — measured in Node 24, a module that binds `$beniProgram` and writes
+  `export { $beniExport1 as $beniProgram }` loads*); `$beniProgram` and `$beniExport<N>` are longer than any short
   name the release renamer spells (`src/js/Rename.zig`: eight characters at most, from an alphabet
   that holds `$` and `_`, so a short `$p` is possible and `$beniProgram` is not), which matters in
   the hoisted release file where they stand among short names, while `$run` and `$main` are safe
@@ -6458,8 +6472,9 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   *What a stub's failure becomes* below. **Typed asks to an `Object.Ref msg` are ordinary waits**
   ((e.10)), under the same cycle rule. *Two names differ from the owners' words (R6-6): the owners
   wrote `Object.Ref msg`, and the type is `Worker.Ref msg`, because `Worker.forward` takes a ref
-  and `Worker` imports no other module of the platform (H1) — `Worker.Object` imports it, so
-  `Object.Ref msg` is the same type reached through that module; and the owner wrote
+  and `Worker` imports no other module of the platform (H1) — `Worker.Object` declares `pub type
+  alias Ref msg = Worker.Ref msg`, so `Object.Ref msg` names the same type (*R7-4*: importing a
+  type is not a re-export); and the owner wrote
   `Worker.forward stub req`, where this text writes `ref`, because q8 replaced stubs with typed
   refs.*
 - **Fibers that outlive the response** — spawned in the request's scope and still running when
@@ -6469,16 +6484,17 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   have not settled after 30 seconds, they are canceled"): what they do is delivered at most once.
   **The platform's deadline** (R6-3): the host says nothing of code after its cap, and
   continuations of an ended request context are dropped, so the platform itself closes the
-  request's scope **5 seconds before the cap** — at 25 seconds after the response — with
-  §9.8.14's teardown and its 1 000 ms deadline for cleanup that waits, and holds the teardown's
+  request's scope **5 seconds before the cap** — at 25 seconds after the response, a value #600's
+  measurement settles — with §9.8.14's teardown under the `cloudflare` platform's `deadline`,
+  1 000 ms, as `browser`'s (§9.8.14, choice 3) and `node`'s shutdown, and holds the teardown's
   promise in the same `waitUntil`; a finaliser therefore runs if it finishes within that
-  deadline, as §9.8.14 already says of every finaliser, and a fiber the platform cancels there has
-  its finalisers run before the host's cap. That the host honours the held teardown is a fact to
+  deadline, as §9.8.14 says of a finaliser that waits on every platform, and a fiber the platform
+  cancels there has its finalisers run before the host's cap (*wording, 2026-10-21, R7-6*). That the host honours the held teardown is a fact to
   establish (#600, (k)).
 - **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
   to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
   starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
-  … the client disconnects" — under the same 1 000 ms deadline. That the hold works after an
+  … the client disconnects" — under the same `deadline`. That the hold works after an
   abort is #600's second half.
 
 The example of (i) becomes:
@@ -6568,8 +6584,8 @@ with the block above, the block holds.*
     object wrote — status `508 Loop Detected` (RFC 5842) with the header `x-beni-cycle: 1` — and
   which `forward` and `ask` recognise by that status and that header together and answer `Err Cycle`
   (nothing is caught: it is a `Response` read by its fields; a 508 a program wrote itself has no
-  such header, because `withHeader` refuses every name that begins with `x-beni-` as an invalid
-  response — a 500 and a `console.error` line, (d)'s validation rule — and the Worker strips
+  such header, because `withHeader` refuses every name that begins with `x-beni-` in any case
+  (`X-Beni-Cycle` sets the same header, R7-5) as an invalid response — a 500 and a `console.error` line, (d)'s validation rule — and the Worker strips
   `x-beni-chain` on entry, so the `x-beni-` names are the platform's alone, R6-7); then
   `overloaded` is `Overloaded`; `durableObjectReset` is `Reset`; `retryable`
   is `Transient`; **anything else is thrown again**:
@@ -6596,7 +6612,8 @@ handler that waits runs as a fiber. The program's text is the same either way.
 ```elm
 module Worker.Object
 
--- `Definition` and `Ref msg` are `Worker`'s (b); this module imports them.
+-- `Definition` and `Ref msg` are `Worker`'s (b); this module imports them, and names the ref:
+pub type alias Ref msg = Worker.Ref msg  -- the same type, named here (R7-4: an import is no re-export)
 
 
 -- *Amended 2026-10-21 (q8, (e.10)): `define` takes the protocol's schema, `Context msg` carries the
@@ -6623,7 +6640,7 @@ pub foreign type Reply a                 -- the one-shot reply channel an `ask` 
 pub self : Context msg → Ref msg         -- this object's own typed reference, (e.10)
 pub post : Ref msg, msg → ⊤              -- fire-and-forget, (e.10)
 pub ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a   -- post and wait for the reply, (e.10)
-pub reply : Reply a, a → ⊤               -- answer an `ask`, once, from `received`
+pub reply : Reply a, a → ⊤               -- answer an `ask`, once, from `received` or a fiber it spawned (e.10)
 pub body : Request → String              -- the whole body as UTF-8 text, read by the platform before `request` runs; "" when there is none
 pub id : Context msg → String            -- `ctx.id.toString()`
 pub name : Context msg → Maybe String    -- `ctx.id.name`, when the object was reached by name; `Nothing` in an alarm's retried instance (measured), so `restore` never depends on it
@@ -6711,7 +6728,10 @@ when A calls B and B calls A back, as Orleans and Restate both document. The pla
 wrapper carries a **call-chain id** on every call between objects: the header `x-beni-chain` on
 `stub.fetch`, and the same id through an RPC stub when RPC comes ((j)). The id is unguessable
 (`crypto.randomUUID()`); a Worker's `forward` strips any `x-beni-chain` a client sent and starts
-a fresh chain, and an object's `forward` or `ask` passes its current chain on. An incoming event — a `forward`, an `ask` — whose chain
+a fresh chain, and an object's `forward` or `ask` passes its current chain on; a fiber inherits the
+chain of the handler that spawned it and keeps it after that handler returned (*amended 2026-10-21,
+R7-3*: safe, because once the handler has returned no handler with that chain is parked, so no
+false `Cycle` occurs). An incoming event — a `forward`, an `ask` — whose chain
 holds a handler already parked in this object is refused at once: the object answers `508 Loop
 Detected` with `x-beni-cycle: 1` and runs no handler, and the caller's `forward` or `ask` answers `Err Cycle`
 ((d)'s sorting); nothing hangs, and nothing is caught broadly (rule 9). That the id travels
@@ -6814,13 +6834,11 @@ to an object is typed by it.
 -- The typed reach to an object is `Worker`'s: `objects env name schema`, `byName`, `unique`,
 -- `byId`, `refId`, `refName` ((d)). `self`, `post`, `ask`, `reply` are `Worker.Object`'s (e.1).
 
-pub replySchema : Schema e a → Schema e (Reply a)   -- how a `Reply a` sits in a protocol's schema (R6-2)
+pub replySchema : Schema e a → Schema String (Reply a)   -- a `Reply a` on the wire is a correlation id; the argument is the reply's own schema, kept for `reply` (R6-2, R7-2)
 
 pub type AskError
-    = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))
-    | NoReply                                  -- `received` returned without a `reply`
-    | Unprintable (List Schema.Issue)          -- the message does not print by the protocol's schema
-    | Unreadable (List Schema.Issue)           -- the reply does not parse by its schema
+    = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))    | NoReply                                  -- nothing can reply any more: `received` returned without replying and no live fiber holds the `Reply` (e.10)
+    | Unprintable (List Schema.Issue)          -- the message does not print by the protocol's schema    | Unreadable (List Schema.Issue)           -- the reply does not parse by the asker's schema, or the message did not parse by the receiver's (its 422, (e.10))
 ```
 
 - **`received` is the one entry point for messages**, from this object or from any other;
@@ -6856,7 +6874,22 @@ pub type AskError
   would wait in the mailbox behind the asking handler, so no stub and no chain is consulted. It
   is subject to (e.3)'s cycle rule across objects, and every failure is a typed result: the host's
   four ((d)'s sorting), `NoReply`, and the two schema failures. A second `reply` on the same
-  `Reply` is ignored; a `Reply` is one-shot.
+  `Reply` is ignored; a `Reply` is one-shot. *Amended 2026-10-21 (R7-1; a choice the owners can
+  overturn, taken because q8 says "nothing hangs"): a `Reply` is valid only in the instance that
+  parsed it, while a running handler or a live fiber of that instance holds it. A `Reply` kept in
+  the state is held by neither, so the asker gets `NoReply` at once under the rule above, and a
+  `reply` that comes after `NoReply` was answered — from a later handler, or through a `Reply` kept
+  in the state — is not dropped in silence: the platform writes one `Log.warn` line naming the
+  object and the message. Printing a `Reply` into a message for any ref but `self` is
+  `Unprintable`: the correlation id names a request pending in this instance alone, and at another
+  object its `reply` would reach no one. The lobby that holds an asker until a second player comes
+  spawns a fiber from `received` that waits for the match and then replies ((e.4)); it does not
+  keep the `Reply` in the state. The other way — an ask that stays open until the reply or the end
+  of the instance — left an asker with no `Task.timeout` waiting on a dropped `Reply`. One shape
+  the self-cycle rule does not reach (R7-3): a handler that joins a fiber it spawned while that
+  fiber `ask`s `self` — the fiber's message waits behind the handler, and the handler waits for the
+  fiber. It is a hazard, bounded by `Task.timeout` on the join or on the ask, as (e.5)'s owed
+  checks are.*
 - **Delivery across objects is at most once.** The host confirms nothing beyond its own errors:
   a `post` the host could not deliver — overloaded, reset, connection lost — is lost, and the
   sender is not told; a program that must know asks instead, and gets the host's error as a typed
@@ -7129,9 +7162,9 @@ arenaOf path =
 
 **(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
 forwarded whole; an object reads its body through (e)); `Object.element`, The Elm Architecture over
-`send` and spawn ((e.8)); binary frames and `Bytes`; RPC methods on a stub and
+`post` and spawn ((e.8)); binary frames and `Bytes`; RPC methods on a stub and
 `WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
-recovery; `ctx.waitUntil`; `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
+recovery; a `waitUntil` for programs (the platform's own use is (d)'s); `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
 Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
 `setHibernatableWebSocketEventTimeout`; the `ssr` lowering for a Worker that renders markup; a
 `Response` validated in beni as §9.10 (d) validates one. Each gets an issue when a program needs
