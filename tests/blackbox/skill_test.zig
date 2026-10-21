@@ -771,17 +771,27 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     try testing.expectEqual(@as(u8, 2), other.exit_code);
     try testing.expectEqualStrings("beni: 'other/beni' is not a beni skill; remove it yourself\n", other.stderr);
     try testing.expectEqual(@as(u8, 2), inside.exit_code);
-    try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni/references/beni' is the installed skill, or lies inside it\n", inside.stderr);
+    try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni/references/beni' is the installed skill, holds it, or lies inside it\n", inside.stderr);
     try testing.expectEqual(@as(u8, 2), folder.exit_code);
-    try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni/beni' is the installed skill, or lies inside it\n", folder.stderr);
+    try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni/beni' is the installed skill, holds it, or lies inside it\n", folder.stderr);
     try testing.expectEqual(@as(u8, 2), itself.exit_code);
-    try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni' is the installed skill, or lies inside it\n", itself.stderr);
+    try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni' is the installed skill, holds it, or lies inside it\n", itself.stderr);
     try testing.expectEqual(@as(u8, 2), dotdot.exit_code);
-    try testing.expectEqualStrings("beni: 'nx/../prefix/share/beni/skills/beni' is the installed skill, or lies inside it\n", dotdot.stderr);
+    try testing.expectEqualStrings("beni: 'nx/../prefix/share/beni/skills/beni' is the installed skill, holds it, or lies inside it\n", dotdot.stderr);
     try testing.expectEqual(@as(u8, 2), through_link.exit_code);
-    try testing.expectEqualStrings("beni: 'nx/../lnk/beni' is the installed skill, or lies inside it\n", through_link.stderr);
+    try testing.expectEqualStrings("beni: 'nx/../lnk/beni' is the installed skill, holds it, or lies inside it\n", through_link.stderr);
     try testing.expectEqual(@as(u8, 2), through_link_up.exit_code);
-    try testing.expectEqualStrings("beni: 'nx/../lnkc/../beni' is the installed skill, or lies inside it\n", through_link_up.stderr);
+    try testing.expectEqualStrings("beni: 'nx/../lnkc/../beni' is the installed skill, holds it, or lies inside it\n", through_link_up.stderr);
+
+    // A `<dir>/beni` that is a beni skill and HOLDS a whole prefix: the
+    // binary of that prefix must not delete itself and its folder.
+    const inner_exe = try makePrefix(&w, "z/beni/px", true);
+    try w.write("z/beni/SKILL.md", "---\nname: beni\ndescription: a skill that holds a prefix\n---\n");
+    const holds = try skill(&w, inner_exe, &.{ "install", "--force", "z" });
+    try testing.expectEqual(@as(u8, 2), holds.exit_code);
+    try testing.expectEqualStrings("beni: 'z/beni' is the installed skill, holds it, or lies inside it\n", holds.stderr);
+    try testing.expect(w.exists("z/beni/px/bin/beni"));
+    try expectSameTree(arena, w.io, skill_root, try w.projectSubPath(arena, "z/beni/px/share/beni/skills/beni"));
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
