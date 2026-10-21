@@ -9216,6 +9216,7 @@ const Spec = struct {
                     if (d.lhs < c.subst.len) if (c.subst[d.lhs].unwrap()) |a| return c.atom(a);
                     return c.node(from, .ident, (try c.binding(@fromBackingInt(@intCast(d.lhs)))).int(), 0);
                 },
+                .field_name => return c.node(from, tag, (try c.property(@fromBackingInt(@intCast(d.lhs)))).int(), 0),
                 .number, .string, .template_chunk, .regex => return c.node(from, tag, try c.bytesOf(from), d.rhs),
                 .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return c.node(from, tag, 0, 0),
                 .template, .object, .array => {
@@ -9546,17 +9547,17 @@ fn TagSet(comptime tags: []const Node.Tag) [@typeInfo(Node.Tag).@"enum".field_na
 
 /// The leaves the evaluating walks (`Spec.eval`, `Pts.expr`) take without
 /// their stack.
-const value_leaves = TagSet(&.{ .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
+const value_leaves = TagSet(&.{ .field_name, .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
 
 inline fn isValueLeaf(t: Node.Tag) bool {
     return value_leaves[@backingInt(t)];
 }
 
 /// The leaves `Spec.patchStmt` has nothing to patch in.
-const patch_leaves = TagSet(&.{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
+const patch_leaves = TagSet(&.{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
 
 /// The leaves `Spec.countExpr` has nothing to count in: none is a name.
-const count_leaves = TagSet(&.{ .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
+const count_leaves = TagSet(&.{ .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
 
 /// Whether a node of `tag` is a literal, as `Spec.literalValue` reads one.
 fn isLiteralTag(tag: Node.Tag) bool {
@@ -15107,7 +15108,7 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
         // million times over a page, and one exhaustive `switch` is one
         // jump where an `else` prong first checks the tag in Zig's own
         // backend, and a second call checks it again.
-        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
         .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
         .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.rhs))),
@@ -15455,7 +15456,7 @@ fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
     if (depth > 32) return false;
     const d = ir.data(node);
     return switch (ir.tag(node)) {
-        .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
             .not, .type_of => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => false,
@@ -15505,7 +15506,7 @@ fn inertOf(ir: *const JsIr, root: Index, comptime field_reads: bool) bool {
         budget -= 1;
         const d = ir.data(node);
         switch (ir.tag(node)) {
-            .arrow, .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+            .arrow, .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @fromBackingInt(@intCast(d.rhs));
@@ -16013,7 +16014,7 @@ fn decidedTest(ir: *const JsIr, node: Index) ?bool {
 /// nothing, so a decided comparison may drop it.
 fn pureRead(ir: *const JsIr, node: Index) bool {
     return switch (ir.tag(node)) {
-        .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .member => memberBase(ir, node) != null,
         else => false,
     };

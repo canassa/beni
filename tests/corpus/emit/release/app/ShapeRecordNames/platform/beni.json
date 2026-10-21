@@ -1,0 +1,1 @@
+{ "platform": true, "name": "shape-host", "platforms": ["node"], "reexports": ["Node"] }

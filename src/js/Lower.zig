@@ -1579,6 +1579,10 @@ pub const Lowerer = struct {
         return l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.field });
     }
 
+    pub fn fieldString(l: *Lowerer, field: Symbol, p: u32) !Node.Index {
+        return l.add(.field_name, p, @backingInt(try l.fieldName(field)), 0);
+    }
+
     pub fn fieldMember(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         return l.add(.member, p, target.int(), @backingInt(try l.fieldName(field)));
     }
@@ -5400,7 +5404,7 @@ pub const Lowerer = struct {
     /// prong is a check against every tag first in Zig's own backend.
     const atom_literals = blk: {
         var set: [@typeInfo(Node.Tag).@"enum".field_names.len]bool = @splat(false);
-        for ([_]Node.Tag{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this }) |t| set[@backingInt(t)] = true;
+        for ([_]Node.Tag{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this }) |t| set[@backingInt(t)] = true;
         break :blk set;
     };
 
@@ -16343,7 +16347,7 @@ pub const Lowerer = struct {
                 try l.constDecl(out, n, value, l.pos(inst));
                 break :blk .{ .name = n };
             } else .{ .name = @fromBackingInt(@intCast(l.b.dataOf(value).lhs)) },
-            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
+            .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => .{ .node = value },
             else => blk: {
                 const n = try l.fresh(l.well.temp);
                 try l.constDecl(out, n, value, l.pos(inst));

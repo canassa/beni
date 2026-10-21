@@ -428,6 +428,27 @@ fields above are (`Fields`), so a field of that name keeps its name wherever the
 it. What JavaScript may read of these values is unchanged: the reader writes them, nothing
 outside beni reads them.
 
+**Amended 2026-10-22 (the owner's decision): shape-read records get release field
+names.** This supersedes the 2026-10-19 requirement that records read by shapes
+keep their source field names. A shape produces an internal beni record, as a
+validator worker does, and alone pins no field. Each record entry names the
+field it writes using the existing deterministic whole-program field assignment
+(`assignFields`), the same spelling every other use of the field gets.
+Slot 0 stays the host key. Slot 3 uses the existing `[key, shape, flag, name]`
+format: `["cups", shape]` can become `["cups", shape, 0, "z"]` in release.
+When the written name equals the host key, no name is added. Development
+entries and fields independently pinned by a real host boundary keep their
+existing format, including any `as "…"` output name. Optional fields retain
+flag 1, derived `Maybe` fields flag 2. This includes nested records, tagged
+payloads, references and Json codec shapes.
+
+The 2026-10-19 copy design stays: one shared copy loop, no `make` arrow, and
+a fresh object. Its four protections are unchanged: getters are read once,
+later host writes cannot change the record, no extra or inherited keys are
+copied, and beni's writes never land in the host object. Only the written name
+changes. T remains 29; [#655](https://github.com/canassa/beni/issues/655) tracks
+re-measuring the crossover with short names.
+
 **A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
 Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may
 store it, return it, compare it with `===`, and walk it reflectively — `Basics.eq`'s

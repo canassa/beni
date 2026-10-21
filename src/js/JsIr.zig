@@ -234,6 +234,9 @@ pub const Node = struct {
         /// A string literal: raw decoded bytes (`lhs` offset, `rhs`
         /// length). The printer escapes; the IR holds the value.
         string,
+        /// A record field spelling as a string, resolved by the printer
+        /// after whole-program field assignment. `lhs` is a field NameIndex.
+        field_name,
         /// `` `a${b}c` ``. Inline range of parts in order, exactly as
         /// `Bir.interp` holds them: a `template_chunk` is literal text,
         /// anything else is an interpolated expression.
@@ -819,7 +822,7 @@ pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayLis
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
-        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .arrow => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .arrow => {},
         .import_stmt, .export_stmt, .const_decl, .let_decl, .func_decl, .gen_decl, .assign_stmt, .return_stmt, .if_stmt, .while_true, .for_of, .break_stmt, .continue_stmt, .switch_stmt, .switch_case, .block_stmt, .expr_stmt, .throw_stmt, .try_stmt => {},
     }
 }
@@ -1027,8 +1030,8 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
             try ir.verifyRange(t.catchBody(), .statement);
         },
 
-        .ident => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false),
-        .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
+        .ident, .field_name => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false),
+        .field_name, .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
         .template => {
             const parts = inlineRange(d);
             if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
@@ -1437,7 +1440,7 @@ pub const Builder = struct {
                 }
             };
             switch (tags[at.node]) {
-                .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+                .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl => try Push.one(&stack, gpa, at, d.rhs, w.statement, 0),
                 .assign_stmt => {
@@ -1545,7 +1548,7 @@ pub const Builder = struct {
                 .ident => if (read != .none and d.lhs == read.int()) {
                     out.reads = true;
                 },
-                .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+                .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
                 .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
                 .const_decl, .property => try stack.append(gpa, d.rhs),
                 .assign_stmt, .index_get => try stack.appendSlice(gpa, &.{ d.lhs, d.rhs }),

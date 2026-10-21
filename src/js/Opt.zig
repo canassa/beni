@@ -700,7 +700,7 @@ const Opt = struct {
             const d = o.ir.data(n);
             switch (o.ir.tag(n)) {
                 .ident => return @fromBackingInt(@intCast(d.lhs)),
-                .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return .none,
+                .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return .none,
                 .member => n = @fromBackingInt(@intCast(d.lhs)),
                 else => return null,
             }
@@ -893,7 +893,7 @@ const Opt = struct {
         if (depth > 64) return null;
         const d = o.ir.data(node);
         switch (o.ir.tag(node)) {
-            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return .primitive,
+            .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return .primitive,
             .ident => {
                 // A name an earlier fold already wrote a value at is that
                 // value: `n = c.v; three = n == 3` judges `c.v == 3`.
