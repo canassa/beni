@@ -1,0 +1,20 @@
+(fault: socket:errno=ENETRESET)
+> (socket a) GET /a
+< (socket a) 101
+< (socket a) upgrade: websocket
+< (socket a) connection: Upgrade
+< (socket a) sec-websocket-accept: (the right key)
+> (socket a) "x"
+< (socket a) (the connection ended)
+> (socket b) GET /b
+< (socket b) 101
+< (socket b) upgrade: websocket
+< (socket b) connection: Upgrade
+< (socket b) sec-websocket-accept: (the right key)
+> (socket b) "y"
+< (socket b) "/b y"
+> (signal SIGTERM)
+--- stdout ---
+/a ended: { code = 1006, reason = "" }
+--- stderr ---
+--- exit signal SIGTERM ---

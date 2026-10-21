@@ -1,8 +1,18 @@
 {"socket": "a", "path": "/a"}
 {"pause": "a"}
 {"send": "a", "text": "flood"}
+# Answered once the session has written: the pings come after it.
+{"method": "GET", "path": "/written"}
+{"ping": "a", "text": "1"}
+{"ping": "a", "text": "2"}
+{"ping": "a", "text": "3"}
+{"ping": "a", "text": "4"}
+{"ping": "a", "text": "5"}
 {"resume": "a"}
 {"receive": "a", "count": 128}
+{"receive": "a"}
+{"send": "a", "text": "last"}
+{"receive": "a"}
 {"socket": "b", "path": "/b"}
 {"send": "b", "text": "hold"}
 {"send": "b", "repeat": 300, "bytes": 1024}

@@ -1,0 +1,38 @@
+-- run: a network reset ends one connection, never the server (boundary.md
+-- §9.11, the amendment's item 15). libuv has no name for `ENETRESET`, so
+-- Node's error carries only its number, as on macOS and the BSDs; the
+-- serve preload fails the first socket after its first bytes with such an
+-- error. That session ends with 1006, and the server serves the next
+-- client.
+import Http.Server as Server exposing (Request, Response, Upgrade)
+import Io
+import Node exposing (Program)
+import WebSocket exposing (Socket)
+
+
+session : String, Socket → ⊤
+session name socket =
+    case WebSocket.read socket of
+        Ok text →
+            _ = WebSocket.write socket "${name} ${text}"
+            session name socket
+
+        Err close →
+            _ = Debug.log "${name} ended" close
+            ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    case
+        Server.listenWith { host = "127.0.0.1", port = 0 }
+            { request = λ_ → Server.text 200 "plain"
+            , upgrade = λrequest → Server.accept (session request.path _)
+            }
+    of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Server.wait server
+            Node.done

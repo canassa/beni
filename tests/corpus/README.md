@@ -197,7 +197,9 @@ browser answers one:
 A `{"fault": "socket:EIO"}` step, first in a script, makes the first socket
 the program upgrades fail, as Node fails one (`error`, then `close`), with
 that code after the client's first bytes: how a fixture reaches a network
-failure, named or not.
+failure, named or not. `socket:errno=ENETRESET` gives the error only that
+number, with the `code` Node gives a number libuv does not name, as on
+macOS and the BSDs.
 
 After the last step the driver waits up to 5 s for the program to exit, then
 prints `--- stdout ---`, `--- stderr ---` and `--- exit <code> ---` (or

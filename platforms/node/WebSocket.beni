@@ -119,9 +119,11 @@ pub drain : Socket → ⊤
 drain socket = Task.callback λresume → awaitDrain socket resume
 
 
---| What `Http.Server` calls when a program accepts an upgrade: the socket,
---| with the function to call when the session returns, or `Nothing` when
---| the client went away first. A program has no `Js.Value` to give it.
+--| The platform's bridge from `Http.Server`, not an operation for a
+--| program: it is `pub` only because another module of the platform calls
+--| it, and a program has no `Js.Value` to give it. When a program accepts
+--| an upgrade, `Http.Server` gets the socket, with the function to call
+--| when the session returns, or `Nothing` when the client went away first.
 pub upgraded : Js.Value, String, Int → Maybe (Socket × (⊤ → ⊤))
 upgraded incoming chosenProtocol limit =
     s = fromUpgrade incoming chosenProtocol limit

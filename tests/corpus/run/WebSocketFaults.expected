@@ -53,6 +53,13 @@
 < (socket rsv) sec-websocket-accept: (the right key)
 > (socket rsv) frame {"opcode":1,"text":"x","rsv":4}
 < (socket rsv) close 1002 ""
+> (socket highbit) GET /highbit
+< (socket highbit) 101
+< (socket highbit) upgrade: websocket
+< (socket highbit) connection: Upgrade
+< (socket highbit) sec-websocket-accept: (the right key)
+> (socket highbit) frame {"opcode":1,"text":"x","length":"9223372036854775808"}
+< (socket highbit) close 1002 ""
 > (socket opcode) GET /opcode
 < (socket opcode) 101
 < (socket opcode) upgrade: websocket
@@ -60,6 +67,13 @@
 < (socket opcode) sec-websocket-accept: (the right key)
 > (socket opcode) frame {"opcode":3,"text":"x"}
 < (socket opcode) close 1002 ""
+> (socket control) GET /control
+< (socket control) 101
+< (socket control) upgrade: websocket
+< (socket control) connection: Upgrade
+< (socket control) sec-websocket-accept: (the right key)
+> (socket control) frame {"opcode":11,"text":"x"}
+< (socket control) close 1002 ""
 > (socket fragping) GET /fragping
 < (socket fragping) 101
 < (socket fragping) upgrade: websocket
@@ -103,6 +117,20 @@
 < (socket code) sec-websocket-accept: (the right key)
 > (socket code) frame {"opcode":8,"hex":"03ed"}
 < (socket code) close 1002 ""
+> (socket code1016) GET /code1016
+< (socket code1016) 101
+< (socket code1016) upgrade: websocket
+< (socket code1016) connection: Upgrade
+< (socket code1016) sec-websocket-accept: (the right key)
+> (socket code1016) frame {"opcode":8,"hex":"03f8"}
+< (socket code1016) close 1002 ""
+> (socket code2999) GET /code2999
+< (socket code2999) 101
+< (socket code2999) upgrade: websocket
+< (socket code2999) connection: Upgrade
+< (socket code2999) sec-websocket-accept: (the right key)
+> (socket code2999) frame {"opcode":8,"hex":"0bb7"}
+< (socket code2999) close 1002 ""
 > (socket utf8) GET /utf8
 < (socket utf8) 101
 < (socket utf8) upgrade: websocket
@@ -126,6 +154,14 @@
 < (socket big) "read sixteen bytes ok"
 > (socket big) "seventeen bytes!!"
 < (socket big) close 1009 ""
+> (socket sum) GET /sum
+< (socket sum) 101
+< (socket sum) upgrade: websocket
+< (socket sum) connection: Upgrade
+< (socket sum) sec-websocket-accept: (the right key)
+> (socket sum) frame {"fin":false,"opcode":1,"text":"0123456789"}
+> (socket sum) frame {"opcode":0,"text":"0123456789"}
+< (socket sum) close 1009 ""
 > (socket zero) GET /zero
 < (socket zero) 101
 < (socket zero) upgrade: websocket
@@ -150,33 +186,43 @@
 /unmasked read: "before"
 /unmasked ended: { code = 1002, reason = "" }
 /rsv ended: { code = 1002, reason = "" }
+/highbit ended: { code = 1002, reason = "" }
 /opcode ended: { code = 1002, reason = "" }
+/control ended: { code = 1002, reason = "" }
 /fragping ended: { code = 1002, reason = "" }
 /longping ended: { code = 1002, reason = "" }
 /cont ended: { code = 1002, reason = "" }
 /inside ended: { code = 1002, reason = "" }
 /onebyte ended: { code = 1002, reason = "" }
 /code ended: { code = 1002, reason = "" }
+/code1016 ended: { code = 1002, reason = "" }
+/code2999 ended: { code = 1002, reason = "" }
 /utf8 ended: { code = 1007, reason = "" }
 /reason ended: { code = 1007, reason = "" }
 /big read: "sixteen bytes ok"
 /big ended: { code = 1009, reason = "" }
+/sum ended: { code = 1009, reason = "" }
 /zero read: ""
 /zero ended: { code = 1009, reason = "" }
 /binary ended: { code = 1003, reason = "" }
 --- stderr ---
 beni: WebSocket: the connection to /unmasked failed with 1002: a frame from the client is not masked
 beni: WebSocket: the connection to /rsv failed with 1002: a frame sets a reserved bit
+beni: WebSocket: the connection to /highbit failed with 1002: a frame's length sets its highest bit
 beni: WebSocket: the connection to /opcode failed with 1002: a frame has the reserved opcode 3
+beni: WebSocket: the connection to /control failed with 1002: a frame has the reserved opcode 11
 beni: WebSocket: the connection to /fragping failed with 1002: a control frame is fragmented
 beni: WebSocket: the connection to /longping failed with 1002: a control frame is longer than 125 bytes
 beni: WebSocket: the connection to /cont failed with 1002: a continuation frame has no message to continue
 beni: WebSocket: the connection to /inside failed with 1002: a new message starts before the last one is whole
 beni: WebSocket: the connection to /onebyte failed with 1002: a close frame holds one byte
 beni: WebSocket: the connection to /code failed with 1002: a close frame holds the code 1005
+beni: WebSocket: the connection to /code1016 failed with 1002: a close frame holds the code 1016
+beni: WebSocket: the connection to /code2999 failed with 1002: a close frame holds the code 2999
 beni: WebSocket: the connection to /utf8 failed with 1007: a text message is not valid UTF-8
 beni: WebSocket: the connection to /reason failed with 1007: a close frame's reason is not valid UTF-8
 beni: WebSocket: the connection to /big failed with 1009: a message is longer than 16 bytes
+beni: WebSocket: the connection to /sum failed with 1009: a message is longer than 16 bytes
 beni: WebSocket: the connection to /zero failed with 1009: a message is longer than 0 bytes
 beni: WebSocket: the connection to /binary failed with 1003: a binary message, which this version cannot read
 --- exit signal SIGTERM ---

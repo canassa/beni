@@ -14,12 +14,16 @@
 // `error` with those codes in turn instead of binding; `request:<code>`
 // makes the next request emit `error` with that code on `req` before its
 // body ends; `server:<code>` makes the server emit `error` once it listens;
-// `socket:<code>` makes a WebSocket emit `error` after its first bytes.
+// `socket:<code>` makes a WebSocket emit `error` after its first bytes;
+// `socket:errno=<name>` gives that error only the number, as Node gives
+// one that libuv does not name (`ENETRESET`).
 
 import fs from "node:fs";
 import http from "node:http";
 import net from "node:net";
+import os from "node:os";
 import process from "node:process";
+import util from "node:util";
 
 const fault = process.env.BENI_SERVE_FAULT ?? "";
 const [faultWhere, faultCodes = ""] = fault.split(":");
@@ -86,6 +90,16 @@ if (faultWhere === "request") {
 // `socket:<code>`: the first bytes a client sends on a WebSocket after its
 // upgrade are followed by an `error` with that code on the socket, a
 // failure of the connection the platform does not name (§9.11 (i)).
+// `socket:errno=<name>`: the error carries that errno, and its `code` is
+// what Node makes of a number libuv has no name for.
+const socketError = (spec) => {
+  if (!spec.startsWith("errno=")) return hostError(spec, "read");
+  const errno = -os.constants.errno[spec.slice("errno=".length)];
+  const error = hostError(util.getSystemErrorName(errno), "read");
+  error.errno = errno;
+  return error;
+};
+
 if (faultWhere === "socket") {
   const emit = http.Server.prototype.emit;
   let socketFaulted = false;
@@ -95,7 +109,7 @@ if (faultWhere === "socket") {
       socketFaulted = true;
       const socket = args[1];
       // As Node fails a socket: `error`, then `close`.
-      socket.once("data", () => process.nextTick(() => socket.destroy(hostError(faultCode, "read"))));
+      socket.once("data", () => process.nextTick(() => socket.destroy(socketError(faultCode))));
     }
     return result;
   };
