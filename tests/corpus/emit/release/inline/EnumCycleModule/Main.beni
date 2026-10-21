@@ -1,0 +1,31 @@
+-- An enum cycle from Season.update must be written into the handler.
+import Browser
+import Html exposing (Html)
+import Season
+import Tea
+
+
+type alias Model =
+    n : Season.Model
+
+
+type Msg
+    = SeasonMsg Season.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SeasonMsg sub →
+            { model | n = Season.update sub model.n }
+
+
+view : Model → Html Msg
+view model = <div>{Html.map (Season.view model.n) SeasonMsg}</div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { n = Season.init ⊤ }, update = update, view = view })
+        "root"

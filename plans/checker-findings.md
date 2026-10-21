@@ -6148,6 +6148,10 @@ are under `tests/pending/{emit/release,browser,build/bad}/inline/`, written befo
 slice from tea-inline's output and the brief's hand-written targets (`plans/inline-s1/`);
 each moves into `tests/corpus/` with the commit that passes it.
 
+The enum-cycle golden moved on 2026-10-22 (#652): release lowers flat literal
+value cases to conditional chains, allowing the cross-module update arm piece
+to fuse into its handler. The other pending shapes remain tracked here.
+
 ## CK-254 — a parameter's folded levels are not checked (2026-10-18)
 
 Ownership soundness, issue #286 (`paramHole`, found in the review of #341). A

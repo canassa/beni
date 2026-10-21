@@ -11258,7 +11258,7 @@ pub const Lowerer = struct {
         l.case_depth += 1;
         defer l.case_depth = depth;
 
-        // The conditional-expression shape: no `switch`, no shared leaf,
+        // The conditional-expression shape: no shared leaf,
         // nothing bound, every leaf one expression — `a ? b : c` and nothing
         // more, exactly as today.
         c.nested_conds = l.in.unit_results;
@@ -11268,7 +11268,19 @@ pub const Lowerer = struct {
         if (try l.condChainPossible(&c)) {
             if (l.in.unit_results) early = if (into.name != .none) into.name else try l.fresh(l.well.temp);
             try l.lowerReadyInto(&c, early);
-            if (l.readyIsClean(&c)) return l.condChain(&c, c.tree.root);
+            if (l.readyIsClean(&c)) {
+                // A switch read its discriminant once; a literal chain tests
+                // it once per edge. Preserve that single evaluation before
+                // any leaf is evaluated.
+                if (literalCondFan(c.tree)) |fan| {
+                    if (fan.edgeCount() > 1 and !l.isRead(c.roots[0])) {
+                        const roots = try l.scratch.dupe(Node.Index, c.roots);
+                        roots[0] = try l.bindSubject(out, roots[0], c.p);
+                        c.roots = roots;
+                    }
+                }
+                return l.condChain(&c, c.tree.root);
+            }
         }
 
         const result = if (early != .none) early else if (into.name != .none) into.name else try l.fresh(l.well.temp);
@@ -11852,6 +11864,24 @@ pub const Lowerer = struct {
                 if (fan.labels() <= 1) {
                     return l.condChain(c, if (fan.default != Decision.no_node) fan.default else edges[0].child);
                 }
+                if (fan.labels() >= 3) {
+                    var remaining = edges.len;
+                    var alternate = if (fan.default != Decision.no_node)
+                        try l.condChain(c, fan.default)
+                    else blk: {
+                        remaining -= 1;
+                        break :blk try l.condChain(c, edges[remaining].child);
+                    };
+                    while (remaining > 0) {
+                        remaining -= 1;
+                        const edge = edges[remaining];
+                        const condition = try l.edgeTest(c, fan, edge);
+                        const consequent = try l.condChain(c, edge.child);
+                        const record = try l.b.addRecord(JsIr.Cond{ .consequent = consequent, .alternate = alternate });
+                        alternate = try l.add(.cond, l.edgePos(c, edge), condition.int(), @backingInt(record));
+                    }
+                    return alternate;
+                }
                 const condition = try l.edgeTest(c, fan, edges[0]);
                 const consequent = try l.condChain(c, edges[0].child);
                 const alternate = try l.condChain(c, if (fan.default != Decision.no_node)
@@ -12028,13 +12058,34 @@ pub const Lowerer = struct {
 
     // ---- Shapes and labels -------------------------------------------------
 
-    /// Whether the tree can be one conditional expression: no `switch`, no
-    /// shared leaf, nothing bound, and no branch body that is a `let`, a
+    /// One flat fan of literal equalities over a root, with expression
+    /// candidates at every leaf (backend.md §7, 2026-10-22 amendment).
+    fn literalCondFan(tree: Decision.Tree) ?Decision.Fan {
+        if (tree.fans.len != 1) return null;
+        const fan = switch (tree.node(tree.root)) {
+            .fan => |index| tree.fans[index],
+            .leaf => return null,
+        };
+        switch (fan.kind) {
+            .int, .char, .string => {},
+            else => return null,
+        }
+        if (tree.occs[fan.occ].parent != Decision.Occ.no_parent) return null;
+        if (fan.default == Decision.no_node or tree.node(fan.default) != .leaf) return null;
+        for (tree.edges[fan.edges_start..fan.edges_end]) |edge| {
+            if (tree.node(edge.child) != .leaf) return null;
+        }
+        return fan;
+    }
+
+    /// Whether the tree can be one conditional expression: no shared leaf,
+    /// nothing bound, and no branch body that is a `let`, a
     /// `case` or a tail self-call — the three that need statements of their
     /// own. Whether the bodies really lower without statements is only known
     /// after they are lowered, which is what `readyIsClean` answers.
     fn condChainPossible(l: *Lowerer, c: *Case) Allocator.Error!bool {
-        if (c.tree.hasSwitch() or c.tree.hasShared()) return false;
+        if (c.tree.hasShared()) return false;
+        if (c.tree.hasSwitch() and !(c.nested_conds and c.roots.len == 1 and literalCondFan(c.tree) != null)) return false;
         // A loop's exits whose tuples are written element by element: a
         // conditional would build the tuple.
         switch (c.sink) {
