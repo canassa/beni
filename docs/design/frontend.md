@@ -2084,12 +2084,15 @@ harnesses agree on one and a cloud agent has none. The help text gives the recip
 
 1. The folder must be present (above). Otherwise the command prints the same message as `beni
    skill`, exit 2.
-2. `<dir>/beni` must not be the folder, and must not lie inside it. Otherwise the copy writes the
-   tree into itself, and a link points at its own path. Before anything is written, the command
-   takes the real path of `<dir>`'s nearest existing ancestor and joins the rest of `<dir>` and
-   `beni` to it. When that path equals the folder's real path or lies under it, the command
-   refuses: `beni: '<dir>/beni' is the installed skill, or lies inside it`, exit 2. So a `<dir>`
-   that is the folder, one inside it, and the folder's parent are all refused.
+2. `<dir>/beni` must not be the folder, must not lie inside it, and must not hold it. Otherwise
+   the copy writes the tree into itself, a link points at its own path, or `--force` deletes the
+   installation that is running. Before anything is written, the command resolves `<dir>` one
+   component at a time: an existing component by its real path, so a symlink is followed where it
+   stands; a `..` as a step up from the physical path so far; a missing component as written. It
+   joins `beni` to the result. When that path equals the folder's real path, lies under it, or has
+   the folder under it, the command refuses: `beni: '<dir>/beni' is the installed skill, holds it,
+   or lies inside it`, exit 2. So a `<dir>` that is the folder, one inside it, the folder's parent,
+   a link to any of them, and a skill directory that holds the whole prefix are all refused.
 3. The command creates `<dir>` with its missing parents, as `beni new` creates them.
 4. `<dir>/beni` must not exist. When it does — a directory, a file, or a symlink, a dangling one
    included — the command stops: `beni: '<dir>/beni' exists; pass --force to replace it`,

@@ -58,16 +58,16 @@ fn locate(arena: Allocator, io: Io) ![]const u8 {
 fn installInto(arena: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, folder: []const u8, install: Cli.SkillInstall) u8 {
     const cwd = Io.Dir.cwd();
 
-    // `<dir>/beni` must not be the folder or lie inside it, or the copy
-    // writes the tree into itself and a link points at its own path
-    // (§12.3 step 2).
+    // `<dir>/beni` must not be the folder, lie inside it, or hold it: else
+    // the copy writes the tree into itself, a link points at its own path,
+    // or `--force` deletes the installation that is running (§12.3 step 2).
     const folder_real = cwd.realPathFileAlloc(io, folder, arena) catch |err|
         return fail(stderr, "beni: cannot read '{s}': {t}", .{ folder, err });
     const dir_real = resolveAsFarAsExists(arena, io, install.dir) catch |err|
         return fail(stderr, "beni: cannot read '{s}': {t}", .{ install.dir, err });
     const target_real = std.fs.path.join(arena, &.{ dir_real, "beni" }) catch return oom(stderr);
-    if (std.mem.eql(u8, target_real, folder_real) or isUnder(target_real, folder_real)) {
-        return fail(stderr, "beni: '{s}/beni' is the installed skill, or lies inside it", .{install.dir});
+    if (std.mem.eql(u8, target_real, folder_real) or isUnder(target_real, folder_real) or isUnder(folder_real, target_real)) {
+        return fail(stderr, "beni: '{s}/beni' is the installed skill, holds it, or lies inside it", .{install.dir});
     }
 
     // `<dir>` and its missing parents, as `beni new` makes them. An existing
