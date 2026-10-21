@@ -8954,6 +8954,10 @@ const Pts = struct {
     pending: std.ArrayList(VarId) = .empty,
     pending_head: usize = 0,
     draining: bool = false,
+    /// The sites a var took by no linking edge, each waiting to be folded
+    /// into the var's field summary at the end of the sweep (`joinNow`,
+    /// `foldWaiting`); of one fixpoint, in `tmp`.
+    folds: std.ArrayList(Fold) = .empty,
     /// The load cells: those of a var's property by var and property, and
     /// those of any other object expression's read by its node.
     loads: std.ArrayList(Load) = .empty,
@@ -9335,6 +9339,8 @@ const Pts = struct {
     };
 
     const SumProp = struct { id: u32, vals: VarId };
+    /// Site `site`, waiting to be folded into summary `sum` (`foldWaiting`).
+    const Fold = struct { sum: u32, site: u32 };
     /// A consumer a property without a var of its own fed on behalf of one
     /// site (`copyField`): the var it copied into, and the next of the site
     /// property's list.
@@ -9785,7 +9791,8 @@ const Pts = struct {
             const to = p.edges.items[e].to;
             try p.enqueue(to, flags, added, p.linksAcross(v, to));
         }
-        // What no linking edge brought is folded into `v`'s summary.
+        // What no linking edge brought is folded into `v`'s summary, at the
+        // end of the sweep (`foldWaiting`).
         if (added == 0 or d.fold == 0) return;
         const fresh = p.setSites(added);
         const all = d.fold == d.set;
@@ -9801,7 +9808,37 @@ const Pts = struct {
         if (p.vars.items[v].summary == none) return;
         const sum = p.vars.items[v].summary;
         for (fresh) |site| {
-            if (all or std.sort.binarySearch(u32, fold, site, orderU32) != null) try p.foldSite(sum, site);
+            if (all or std.sort.binarySearch(u32, fold, site, orderU32) != null) try p.folds.append(p.tmp.allocator(), .{ .sum = sum, .site = site });
+        }
+    }
+
+    /// Every site `joinNow` left to fold, folded (`foldSite`), with what
+    /// each fold joins drained, and every fold those make: at the end of a
+    /// sweep, after the constraints that wait were evaluated and after
+    /// `propagate`, never while a join is applied (#565). So a var that a
+    /// later evaluation, an escape or the cap makes `top` before the sweep
+    /// ends has a dead summary by then, which `foldSite` folds nothing into:
+    /// in the dashboard N=64, most of the edges into dead summaries were made
+    /// one drain or more before the `top` that killed them arrived, not in
+    /// the same batch (`joinNow` takes a batch's `top` before its sites).
+    /// A fold waiting is one more step of a fair order: what it would have
+    /// joined reaches the summary's vars, and wakes what read them, before
+    /// the sweep asks whether the fixpoint is reached, so the least fixpoint
+    /// is the same.
+    fn foldWaiting(p: *Pts) Allocator.Error!void {
+        while (p.folds.items.len != 0) {
+            // As a fold at the join was, inside a drain: what the folds'
+            // copy edges join waits in one queue, a var taking one batch
+            // for all of them, and no join queues another fold meanwhile.
+            {
+                std.debug.assert(!p.draining);
+                p.draining = true;
+                defer p.draining = false;
+                var i: usize = 0;
+                while (i < p.folds.items.len) : (i += 1) try p.foldSite(p.folds.items[i].sum, p.folds.items[i].site);
+            }
+            p.folds.clearRetainingCapacity();
+            try p.drain();
         }
     }
 
@@ -11713,6 +11750,7 @@ const Pts = struct {
         p.pending = .empty;
         p.pending_head = 0;
         p.draining = false;
+        p.folds = .empty;
         // A fresh table, not the old one cleared: a safety build's
         // reference (`fixpoint`) keeps its own, which `expectSame` reads.
         p.sets = .{};
@@ -11742,6 +11780,7 @@ const Pts = struct {
             try p.drain();
             if (s.in.entry) |e| try p.entryCall(e);
             try p.propagate();
+            try p.foldWaiting();
             if (std.debug.runtime_safety) std.debug.assert(p.pending.items.len == 0);
             if (!p.changed) {
                 p.ok = true;
@@ -11764,8 +11803,9 @@ const Pts = struct {
     /// asked. Every transfer function is the walk's own and monotone, so
     /// the fixpoint is the one least fixpoint `byUnits` reaches. A sweep
     /// here is the constraints that wait, in the order the walk made them,
-    /// then what files the pass cannot see read, the entry's call and
-    /// `propagate`; at most `max_pts_sweeps`, as before.
+    /// then what files the pass cannot see read, the entry's call,
+    /// `propagate` and the folds that wait (`foldWaiting`); at most
+    /// `max_pts_sweeps`, as before.
     fn byConstraints(p: *Pts) Allocator.Error!void {
         const s = p.s;
         const a = p.tmp.allocator();
@@ -11821,6 +11861,7 @@ const Pts = struct {
             try p.drain();
             if (s.in.entry) |e| try p.entryCall(e);
             try p.propagate();
+            try p.foldWaiting();
             if (std.debug.runtime_safety) std.debug.assert(p.pending.items.len == 0);
             if (!p.changed and p.waiting_count == 0) {
                 p.ok = true;
@@ -14263,14 +14304,14 @@ test "a field summary composes along a copy edge" {
     while (i < 3) : (i += 1) {
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
-        try p.drain();
+        try settle(p);
         try p.addSite(try fieldVar(p, i, 2), 200 + i);
-        try p.drain();
+        try settle(p);
     }
     const u = try p.newVar();
     const v = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
-    try p.drain();
+    try settle(p);
     try p.copy(u, v);
     // A second source, empty, so that `v` has a summary of its own: a var
     // that copies one var alone shares its summary (#568).
@@ -14279,7 +14320,7 @@ test "a field summary composes along a copy edge" {
     const sum_v = try p.summaryOf(v);
     // Read whole, as a spread reads it.
     try p.markWhole(sum_v);
-    try p.drain();
+    try settle(p);
     const sum_u = p.vars.items[u].summary;
     try testing.expect(sum_u != none and sum_u != sum_v);
     // `u`'s summary folds two sites of two properties (plus `any`), each
@@ -14292,10 +14333,10 @@ test "a field summary composes along a copy edge" {
     // A site joining `u` later reaches `v`'s summary; so does a property a
     // held site gains later.
     try p.addSite(u, 2);
-    try p.drain();
+    try settle(p);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(prop1.vals)).sites);
     try p.addSite(try fieldVar(p, 1, 3), 300);
-    try p.drain();
+    try settle(p);
     const prop3 = p.summaries.items[sum_v].props.items[2];
     try testing.expectEqual(@as(u32, 3), prop3.id);
     try testing.expectEqualSlices(u32, &.{300}, (try p.view(prop3.vals)).sites);
@@ -14398,14 +14439,14 @@ test "names that copy a load cell share one summary, which folds the field's sit
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         (try p.prop(i, 1)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
-        try p.drain();
+        try settle(p);
     }
     // `site_field` is a record's field, holding sites 0 to 2, and `field`
     // the summary's var of it; the cell copies `field`.
     const site_field = try p.newVar();
     p.vars.items[site_field].site_var = true;
     try p.join(site_field, .{ .sites = &.{ 0, 1, 2 } });
-    try p.drain();
+    try settle(p);
     const field = try p.newVar();
     try p.copy(site_field, field);
     const cell = p.loads.items[try p.newLoad()].out;
@@ -14425,13 +14466,13 @@ test "names that copy a load cell share one summary, which folds the field's sit
     try testing.expectEqual(@as(usize, 3), p.summaries.items[sum_field].sites.items.len);
     const li = try p.newLoad();
     try p.summaryLoad(sum_a, 1, li);
-    try p.drain();
+    try settle(p);
     const out = p.loads.items[li].out;
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
     for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.findProp(site, 1).?.read);
     try testing.expect(!p.findProp(3, 1).?.read);
     try p.addSite(site_field, 3);
-    try p.drain();
+    try settle(p);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102, 103 }, (try p.view(out)).sites);
     try testing.expect(p.findProp(3, 1).?.read);
     try testing.expectEqual(@as(usize, 4), p.summaries.items[sum_field].sites.items.len);
@@ -14462,21 +14503,21 @@ test "a field passed back to its own parameter makes finitely many summaries" {
         (try p.prop(i, 1)).init = true;
     }
     try p.addSite(try fieldVar(p, 0, 1), 1);
-    try p.drain();
+    try settle(p);
     try p.addSite(try fieldVar(p, 1, 1), 0);
-    try p.drain();
+    try settle(p);
     const param = try p.newVar();
     try p.addSite(param, 0);
-    try p.drain();
+    try settle(p);
     const li = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(param), 1, li);
-    try p.drain();
+    try settle(p);
     const cell = p.loads.items[li].out;
     // The call `f(x.next)`, and a read of `x.next.next` through the cell.
     try p.copy(cell, param);
     const again = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(cell), 1, again);
-    try p.drain();
+    try settle(p);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(param)).sites);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(cell)).sites);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(p.loads.items[again].out)).sites);
@@ -14507,10 +14548,10 @@ fn summaryOfLongChain() !void {
     try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = try p.newVar() });
     try p.sites.append(arena, .{ .kind = .func, .module = 0, .node = @fromBackingInt(1), .any = try p.newVar() });
     try p.addSite(try fieldVar(p, 0, 1), 0);
-    try p.drain();
+    try settle(p);
     const head = try p.newVar();
     try p.addSite(head, 0);
-    try p.drain();
+    try settle(p);
     var last = head;
     for (0..10_000) |_| {
         const next = try p.newVar();
@@ -14519,12 +14560,12 @@ fn summaryOfLongChain() !void {
     }
     const sum = try p.summaryOf(last);
     try p.markWhole(sum);
-    try p.drain();
+    try settle(p);
     try testing.expectEqual(@as(usize, 1), p.summaries.items[sum].props.items.len);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(p.summaries.items[sum].props.items[0].vals)).sites);
     // A property the head's site gains later, along every summary.
     try p.addSite(try fieldVar(p, 0, 2), 0);
-    try p.drain();
+    try settle(p);
     const later = p.summaries.items[sum].props.items[1];
     try testing.expectEqual(@as(u32, 2), later.id);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(later.vals)).sites);
@@ -14532,7 +14573,7 @@ fn summaryOfLongChain() !void {
     try p.markAnyWritten(0);
     try testing.expect(p.summaries.items[sum].any_written);
     try p.addSite(head, 1);
-    try p.drain();
+    try settle(p);
     try testing.expect(p.summaries.items[sum].unknown);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(last)).sites);
 }
@@ -14558,21 +14599,21 @@ test "a read through a field summary marks the property on the sites it holds an
         (try p.prop(i, 1)).init = true;
         (try p.prop(i, 2)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
-        try p.drain();
+        try settle(p);
     }
     // `u` holds sites 0 and 1 and copies into `v`, which holds site 2 too.
     const u = try p.newVar();
     const v = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
-    try p.drain();
+    try settle(p);
     try p.copy(u, v);
     try p.addSite(v, 2);
-    try p.drain();
+    try settle(p);
     const li = try p.newLoad();
     const edges = p.edges.items.len;
     const sum = try p.summaryOf(v);
     try p.summaryLoad(sum, 1, li);
-    try p.drain();
+    try settle(p);
     const out = p.loads.items[li].out;
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
     try testing.expect(!(try p.view(out)).undef and !(try p.view(out)).top);
@@ -14585,10 +14626,10 @@ test "a read through a field summary marks the property on the sites it holds an
     // A site joining the feeding var later, and one a var linked after the
     // read brings, are marked and read too; site 3 is in no var.
     try p.addSite(u, 4);
-    try p.drain();
+    try settle(p);
     const t = try p.newVar();
     try p.addSite(t, 5);
-    try p.drain();
+    try settle(p);
     try p.copy(t, v);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102, 104, 105 }, (try p.view(out)).sites);
     for ([_]u32{ 0, 1, 2, 4, 5 }) |site| try testing.expect(p.findProp(site, 1).?.read);
@@ -14626,38 +14667,38 @@ test "a read through a field summary is undefined or anything as its sites are" 
     const u = try p.newVar();
     const v = try p.newVar();
     try p.addSite(u, 0);
-    try p.drain();
+    try settle(p);
     try p.copy(u, v);
     const a = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(v), 1, a);
-    try p.drain();
+    try settle(p);
     try testing.expect(!(try p.view(p.loads.items[a].out)).undef);
     try p.addSite(u, 2);
-    try p.drain();
+    try settle(p);
     try testing.expect((try p.view(p.loads.items[a].out)).undef);
     try testing.expect(p.findProp(2, 1).?.read and !p.findProp(2, 1).?.init);
     try testing.expect(!(try p.view(p.loads.items[a].out)).top);
 
     const w = try p.newVar();
     try p.addSite(w, 1);
-    try p.drain();
+    try settle(p);
     const b = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(w), 1, b);
-    try p.drain();
+    try settle(p);
     try testing.expect(!(try p.view(p.loads.items[b].out)).top);
     try p.escapeSite(1);
-    try p.drain();
+    try settle(p);
     try testing.expect((try p.view(p.loads.items[b].out)).top);
 
     const x = try p.newVar();
     try p.addSite(x, 3);
-    try p.drain();
+    try settle(p);
     const c = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(x), 1, c);
-    try p.drain();
+    try settle(p);
     try testing.expect(!(try p.view(p.loads.items[c].out)).top);
     try p.addSite(x, 4);
-    try p.drain();
+    try settle(p);
     try testing.expect((try p.view(p.loads.items[c].out)).top);
 }
 
@@ -14688,26 +14729,26 @@ test "a spread's untouched field shares the summary's var until something else w
         (try p.prop(i, 1)).init = true;
         (try p.prop(i, 2)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
-        try p.drain();
+        try settle(p);
         try p.addSite(try fieldVar(p, i, 2), 200 + i);
-        try p.drain();
+        try settle(p);
     }
     const u = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
-    try p.drain();
+    try settle(p);
     const sum = try p.summaryOf(u);
     try p.markWhole(sum);
-    try p.drain();
+    try settle(p);
     const x1 = p.findSumProp(sum, 1).?;
     // A var holding both updates, read for property 1 before either
     // spread is evaluated: the read marks the property on both, which no
     // var holds yet.
     const w = try p.newVar();
     try p.join(w, .{ .sites = &.{ 2, 3 } });
-    try p.drain();
+    try settle(p);
     const li = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(w), 1, li);
-    try p.drain();
+    try settle(p);
     const out = p.loads.items[li].out;
     try testing.expect(p.findProp(3, 1).?.vals == none and p.findProp(3, 1).?.read);
     try testing.expectEqual(@as(usize, 0), (try p.view(out)).sites.len);
@@ -14754,7 +14795,7 @@ test "a spread's untouched field shares the summary's var until something else w
     // A write of more into site 3's field: its own var, fed by the
     // summary's and feeding the read's summary; site 2's stays shared.
     try p.write(.{ .sites = &.{3} }, 1, .{ .sites = &.{5} });
-    try p.drain();
+    try settle(p);
     const own = p.findProp(3, 1).?;
     try testing.expect(own.from == none and own.vals != shared);
     try testing.expectEqual(shared, p.findProp(2, 1).?.vals);
@@ -14763,7 +14804,7 @@ test "a spread's untouched field shares the summary's var until something else w
     try testing.expectEqualSlices(u32, &.{ 5, 100, 101 }, (try p.view(out)).sites);
     // What reaches the source later reaches both, and the read.
     try p.addSite(u, 4);
-    try p.drain();
+    try settle(p);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(shared)).sites);
     try testing.expectEqualSlices(u32, &.{ 5, 100, 101, 104 }, (try p.view(p.findProp(3, 1).?.vals)).sites);
     try testing.expectEqualSlices(u32, &.{ 5, 100, 101, 104 }, (try p.view(out)).sites);
@@ -14772,10 +14813,10 @@ test "a spread's untouched field shares the summary's var until something else w
     // own var too, holding both.
     const t = try p.newVar();
     try p.addSite(t, 4);
-    try p.drain();
+    try settle(p);
     const sum_t = try p.summaryOf(t);
     try p.markWhole(sum_t);
-    try p.drain();
+    try settle(p);
     try p.spreadSummary(2, sum_t, &.{});
     try testing.expect(p.findProp(2, 1).?.from == none);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(p.findProp(2, 1).?.vals)).sites);
@@ -14891,7 +14932,7 @@ test "a var that copies one var alone shares its field summary" {
     try aliasSites(p, arena_state.allocator(), 3);
     const u = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
-    try p.drain();
+    try settle(p);
     const v = try p.newVar();
     try p.copy(u, v);
     const w = try p.newVar();
@@ -14910,7 +14951,7 @@ test "a var that copies one var alone shares its field summary" {
     // two: nothing for either copy.
     try testing.expectEqual(edges + 2 + 2 + 2, p.edges.items.len);
     try p.addSite(u, 2);
-    try p.drain();
+    try settle(p);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
     for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.findProp(site, 1).?.read and !p.findProp(site, 2).?.read);
 }
@@ -15175,6 +15216,114 @@ test "the order of the worklist changes no fact on a small cycle" {
         try testing.expectEqualSlices(u32, a.sites, b.sites);
         try testing.expect(a.prim == b.prim and a.nul == b.nul);
         try testing.expectEqualSlices(u32, if (i == 3) &.{ 1, 2, 3, 4, 5 } else &.{ 1, 2, 3, 5 }, a.sites);
+    }
+}
+
+/// What waits, carried on as the end of a sweep carries it: the joins, then
+/// the folds into field summaries they left (`Pts.foldWaiting`, #565).
+fn settle(p: *Pts) Allocator.Error!void {
+    try p.drain();
+    try p.foldWaiting();
+}
+
+/// Two object sites, 0 and 1, each with properties 1 and 2 holding sites
+/// 100 + i and 200 + i, and an empty var with a field summary read whole,
+/// as a spread reads it: what #565's tests fold into.
+fn wholeSummaryVar(p: *Pts, arena: Allocator) Allocator.Error!Pts.VarId {
+    var i: u32 = 0;
+    while (i < 2) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.addSite(try fieldVar(p, i, 2), 200 + i);
+        try p.drain();
+    }
+    const v = try p.newVar();
+    try p.markWhole(try p.summaryOf(v));
+    return v;
+}
+
+/// How many copy edges end at one of summary `sum`'s vars.
+fn edgesInto(p: *const Pts, sum: u32) usize {
+    const sm = p.summaries.items[sum];
+    var n: usize = 0;
+    for (p.edges.items) |e| {
+        if (e.to == sm.any) n += 1;
+        for (sm.props.items) |sp| {
+            if (e.to == sp.vals) n += 1;
+        }
+    }
+    return n;
+}
+
+// #565: a batch that makes a var `top` is applied before the batch's sites,
+// whichever was joined first, and a site that joins a var already `top`
+// escapes: no site is folded into the summary that dies with it.
+test "a batch that makes a var top folds none of its sites" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    for (0..2) |order| {
+        var s = try emptySpec(testing.allocator, arena_state.allocator());
+        s.pts = .init(&s);
+        defer s.pts.deinit();
+        const p = &s.pts;
+        const v = try wholeSummaryVar(p, arena_state.allocator());
+        const sum = try p.summaryOf(v);
+        const edges = p.edges.items.len;
+        // The sites first and `top` after, or `top` first: one batch.
+        if (order == 0) {
+            try p.join(v, .{ .sites = &.{ 0, 1 } });
+            try p.join(v, Pts.Val.top_val);
+        } else {
+            try p.join(v, Pts.Val.top_val);
+            try p.join(v, .{ .sites = &.{ 0, 1 } });
+        }
+        try testing.expectEqual(@as(usize, 1), p.pending.items.len);
+        try p.drain();
+        try p.foldWaiting();
+        try testing.expect(p.summaries.items[sum].dead);
+        try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
+        try testing.expectEqual(edges, p.edges.items.len);
+        try testing.expect(p.sites.items[0].escaped and p.sites.items[1].escaped);
+    }
+}
+
+// #565: a site a var takes by no linking edge waits to be folded until the
+// end of the sweep (`foldWaiting`). A var made `top` in between — by a later
+// evaluation, an escape or the cap — has a dead summary by then, and the
+// fold makes no edge; a var still live has the site folded then, every
+// property of it linked, as the fold at the join did.
+test "a fold waits for the end of the sweep, and a summary dead by then takes none" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    for ([_]bool{ false, true }) |dies| {
+        var s = try emptySpec(testing.allocator, arena_state.allocator());
+        s.pts = .init(&s);
+        defer s.pts.deinit();
+        const p = &s.pts;
+        const v = try wholeSummaryVar(p, arena_state.allocator());
+        const sum = try p.summaryOf(v);
+        try p.addSite(v, 0);
+        try p.drain();
+        try testing.expectEqualSlices(u32, &.{0}, (try p.view(v)).sites);
+        try testing.expectEqual(@as(usize, 1), p.folds.items.len);
+        try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
+        try testing.expectEqual(@as(usize, 0), edgesInto(p, sum));
+        if (dies) try p.makeTop(v);
+        try p.foldWaiting();
+        try testing.expectEqual(@as(usize, 0), p.folds.items.len);
+        if (dies) {
+            try testing.expect(p.summaries.items[sum].dead);
+            try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
+            try testing.expectEqual(@as(usize, 0), edgesInto(p, sum));
+            try testing.expect(p.sites.items[0].escaped);
+        } else {
+            try testing.expectEqualSlices(u32, &.{0}, p.summaries.items[sum].sites.items);
+            // Two properties and `any`.
+            try testing.expectEqual(@as(usize, 3), edgesInto(p, sum));
+            try testing.expectEqualSlices(u32, &.{100}, (try p.view(p.findSumProp(sum, 1).?)).sites);
+            try testing.expectEqualSlices(u32, &.{200}, (try p.view(p.findSumProp(sum, 2).?)).sites);
+            try testing.expect(p.sites.items[0].all_read);
+        }
     }
 }
 
