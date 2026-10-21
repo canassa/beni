@@ -304,6 +304,10 @@ pub const Counter = enum {
     spec_solve_constraints,
     spec_solve_evaluations,
     spec_solve_budget_hit,
+    /// The top-level statements the solver's extractions walked, and those
+    /// whose constraints they kept from the last one.
+    spec_solve_stmts_walked,
+    spec_solve_stmts_kept,
     /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
     /// edge lists were built, the walks over them, the lowerings of a module
     /// and the modules printed. A build builds each module's edge lists
