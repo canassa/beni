@@ -13646,6 +13646,91 @@ const Pts = struct {
         try p.expectSame(&kept, true);
     }
 
+    const FactCheck = struct {
+        x: *const Pts,
+        y: *const Pts,
+        /// Per site of `x`, the site of `y` its node made.
+        map: []const u32,
+
+        fn fail(what: []const u8, at: usize) noreturn {
+            std.debug.panic("specialisation: fact 3 walked in another order reaches another fixpoint: {s} {d}", .{ what, at });
+        }
+        fn failKept(what: []const u8, at: usize) noreturn {
+            std.debug.panic("specialisation: fact 3 kept a state its solve does not reach: {s} {d}", .{ what, at });
+        }
+        fn sameSites(c: @This(), a: []const u32, b: []const u32) bool {
+            if (a.len != b.len) return false;
+            for (a) |site| if (std.sort.binarySearch(u32, b, c.map[site], orderU32) == null) return false;
+            return true;
+        }
+        /// A value that is `top` is compared on its live sites alone: a
+        /// read's cell keeps the sites it linked through an object that
+        /// later escaped or went `top`, where a walk from scratch never
+        /// sees them, and every such site is escaped — what it holds is
+        /// no fact (*an escaped site is ⊤*). That the extra sites are
+        /// indeed escaped is what the comparison then checks.
+        fn sameVal(c: @This(), a: Val, b: Val) bool {
+            if (a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
+            if (!a.top) return c.sameSites(a.sites, b.sites);
+            // The node-based map need not preserve numeric site order.
+            // Count live sites and compare membership, as `sameSites`
+            // does for a value without `top`.
+            var live_a: usize = 0;
+            var live_b: usize = 0;
+            for (a.sites) |site| {
+                if (c.x.sites.items[site].escaped) continue;
+                live_a += 1;
+                if (std.sort.binarySearch(u32, b.sites, c.map[site], orderU32) == null) return false;
+            }
+            for (b.sites) |site| if (!c.y.sites.items[site].escaped) {
+                live_b += 1;
+            };
+            return live_a == live_b;
+        }
+        fn sameVar(c: @This(), a: VarId, b: VarId) bool {
+            const va = c.x.vars.items[a];
+            const vb = c.y.vars.items[b];
+            if (va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
+            // A `top` var may be uncapped (a load cell, or a local bound
+            // to a member read) and then keeps the sites it linked
+            // through an object that later escaped. Those sites are ⊤.
+            // The live ones are the fact, as for a node's value.
+            if (va.top) return c.sameVal(
+                .{ .top = true, .prim = va.prim, .nul = va.nul, .undef = va.undef, .sites = va.sites },
+                .{ .top = true, .prim = vb.prim, .nul = vb.nul, .undef = vb.undef, .sites = vb.sites },
+            );
+            return c.sameSites(va.sites, vb.sites);
+        }
+        /// A property no var holds yet (`Prop`) holds nothing.
+        fn sameField(c: @This(), a: VarId, b: VarId) bool {
+            if (a != none and b != none) return c.sameVar(a, b);
+            const v = if (a != none) c.x.vars.items[a] else if (b != none) c.y.vars.items[b] else return true;
+            return !v.top and !v.prim and !v.nul and !v.undef and v.sites.len == 0;
+        }
+        /// An absent sparse entry is an empty property. A spread may
+        /// copy an empty key marked before its source escaped in only
+        /// one order; `any_written` already covers its written bit.
+        fn sameProp(c: @This(), a: ?Prop, b: ?Prop, any_written: bool, any_top: bool) bool {
+            const pa = a orelse Prop{ .id = none, .vals = none };
+            const pb = b orelse Prop{ .id = none, .vals = none };
+            if (pa.read != pb.read or pa.init != pb.init or (!any_written and pa.written != pb.written)) return false;
+            if (!any_top) return c.sameField(pa.vals, pb.vals);
+            // Every field read includes `any`. Its top subsumes the
+            // component flags and escaped sites a spread retained in
+            // just one order; live sites must still agree.
+            var va = Val.top_val;
+            var vb = Val.top_val;
+            if (pa.vals != none) va.sites = c.x.vars.items[pa.vals].sites;
+            if (pb.vals != none) vb.sites = c.y.vars.items[pb.vals].sites;
+            return c.sameVal(va, vb);
+        }
+        fn sameSet(a: []const u32, b: []const u32) bool {
+            if (a.len != b.len) return false;
+            for (a) |v| if (std.mem.indexOfScalar(u32, b, v) == null) return false;
+            return true;
+        }
+    };
+
     /// Panic unless the facts in `p` are the facts in `ref`, each site of
     /// `p` taken for the site of `ref` its node made (and, when `numbered`,
     /// numbered as it). Nothing is compared
@@ -13654,69 +13739,7 @@ const Pts = struct {
     /// fact is read.
     fn expectSame(p: *const Pts, ref: *const Pts, numbered: bool) Allocator.Error!void {
         if (!p.ok or !ref.ok) return;
-        const Check = struct {
-            x: *const Pts,
-            y: *const Pts,
-            /// Per site of `x`, the site of `y` its node made.
-            map: []const u32,
-
-            fn fail(what: []const u8, at: usize) noreturn {
-                std.debug.panic("specialisation: fact 3 walked in another order reaches another fixpoint: {s} {d}", .{ what, at });
-            }
-            fn failKept(what: []const u8, at: usize) noreturn {
-                std.debug.panic("specialisation: fact 3 kept a state its solve does not reach: {s} {d}", .{ what, at });
-            }
-            fn sameSites(c: @This(), a: []const u32, b: []const u32) bool {
-                if (a.len != b.len) return false;
-                for (a) |site| if (std.sort.binarySearch(u32, b, c.map[site], orderU32) == null) return false;
-                return true;
-            }
-            /// A value that is `top` is compared on its live sites alone: a
-            /// read's cell keeps the sites it linked through an object that
-            /// later escaped or went `top`, where a walk from scratch never
-            /// sees them, and every such site is escaped — what it holds is
-            /// no fact (*an escaped site is ⊤*). That the extra sites are
-            /// indeed escaped is what the comparison then checks.
-            fn sameVal(c: @This(), a: Val, b: Val) bool {
-                if (a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
-                if (!a.top) return c.sameSites(a.sites, b.sites);
-                var i: usize = 0;
-                var j: usize = 0;
-                while (true) {
-                    while (i < a.sites.len and c.x.sites.items[a.sites[i]].escaped) i += 1;
-                    while (j < b.sites.len and c.y.sites.items[b.sites[j]].escaped) j += 1;
-                    if (i == a.sites.len or j == b.sites.len) return i == a.sites.len and j == b.sites.len;
-                    if (c.map[a.sites[i]] != b.sites[j]) return false;
-                    i += 1;
-                    j += 1;
-                }
-            }
-            fn sameVar(c: @This(), a: VarId, b: VarId) bool {
-                const va = c.x.vars.items[a];
-                const vb = c.y.vars.items[b];
-                if (va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
-                // A `top` var may be uncapped (a load cell, or a local bound
-                // to a member read) and then keeps the sites it linked
-                // through an object that later escaped. Those sites are ⊤.
-                // The live ones are the fact, as for a node's value.
-                if (va.top) return c.sameVal(
-                    .{ .top = true, .prim = va.prim, .nul = va.nul, .undef = va.undef, .sites = va.sites },
-                    .{ .top = true, .prim = vb.prim, .nul = vb.nul, .undef = vb.undef, .sites = vb.sites },
-                );
-                return c.sameSites(va.sites, vb.sites);
-            }
-            /// A property no var holds yet (`Prop`) holds nothing.
-            fn sameField(c: @This(), a: VarId, b: VarId) bool {
-                if (a != none and b != none) return c.sameVar(a, b);
-                const v = if (a != none) c.x.vars.items[a] else if (b != none) c.y.vars.items[b] else return true;
-                return !v.top and !v.prim and !v.nul and !v.undef and v.sites.len == 0;
-            }
-            fn sameSet(a: []const u32, b: []const u32) bool {
-                if (a.len != b.len) return false;
-                for (a) |v| if (std.mem.indexOfScalar(u32, b, v) == null) return false;
-                return true;
-            }
-        };
+        const Check = FactCheck;
         const fail = if (numbered) &Check.failKept else &Check.fail;
         if (p.sites.items.len != ref.sites.items.len) fail("sites", 0);
         const map = try p.s.arena.alloc(u32, p.sites.items.len);
@@ -13761,20 +13784,17 @@ const Pts = struct {
                 } else fail("site caller", i);
             }
             if (!c.sameVar(a.any, b.any)) fail("site any", i);
-            if (a.props.items.len != b.props.items.len) fail("site props", i);
+            // Compare facts over the union of keys, not sparse storage:
+            // missing and empty entries mean the same thing. No read,
+            // initialisation or value is ignored; `any_written` subsumes
+            // the per-key written bit as in `neverWritten`.
             for (a.props.items) |pa| {
-                const pb = ref.findProp(j, pa.id) orelse fail("site prop", i);
-                // A site written under an unknown key has no per-key
-                // `written` fact: `neverWritten`, the one reader, answers
-                // from `any_written` first. And it is one only an escaped
-                // site's keys can make differ: a spread copies the keys its
-                // sources have, and which keys an escaped source has is no
-                // fact (above) — a read through a field summary marks a site
-                // as it is folded, which may be before it escapes in one
-                // order and after in another.
-                const written_differs = pa.written != pb.written and !a.any_written;
-                if (pa.read != pb.read or written_differs or pa.init != pb.init) fail("site prop flags", i);
-                if (!c.sameField(pa.vals, pb.vals)) fail("site prop value", i);
+                const pb = ref.findProp(j, pa.id);
+                if (!c.sameProp(pa, if (pb) |pr| pr.* else null, a.any_written, p.vars.items[a.any].top)) fail("site prop", i);
+            }
+            for (b.props.items) |pb| {
+                if (p.findProp(@intCast(i), pb.id) != null) continue;
+                if (!c.sameProp(null, pb, a.any_written, p.vars.items[a.any].top)) fail("site prop", i);
             }
         }
         for (p.vals, ref.vals, 0..) |a, b, mi| {
@@ -17711,4 +17731,57 @@ test "the edge check finds every edge made and no other" {
         }
     }
     try testing.expect(p.cold.items[0].succs > Pts.short_edges and p.cold.items[4].preds > Pts.short_edges);
+}
+
+// The check is itself a safety property: equal representations must pass,
+// but a live site, value bit or property flag must not disappear unnoticed.
+test "fact-3 comparison maps sets and compares effective sparse properties" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    var ref = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    ref.pts = .init(&ref);
+    defer s.pts.deinit();
+    defer ref.pts.deinit();
+    const p = &s.pts;
+    const r = &ref.pts;
+    for (0..3) |i| {
+        try p.sites.append(p.tmp.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(@intCast(i)), .any = none, .escaped = i == 2 });
+        try r.sites.append(r.tmp.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(@intCast(i)), .any = none, .escaped = i == 2 });
+    }
+    const c: Pts.FactCheck = .{ .x = p, .y = r, .map = &.{ 1, 0, 2 } };
+    var a = Pts.Val.top_val;
+    var b = Pts.Val.top_val;
+    a.sites = &.{ 0, 1, 2 };
+    b.sites = &.{ 0, 1 };
+    try testing.expect(c.sameVal(a, b));
+    b.sites = &.{0};
+    try testing.expect(!c.sameVal(a, b));
+    b.sites = &.{ 0, 1 };
+    b.nul = false;
+    try testing.expect(!c.sameVal(a, b));
+
+    const empty: Pts.Prop = .{ .id = 0, .vals = none, .written = true };
+    try testing.expect(c.sameProp(empty, null, true, false));
+    try testing.expect(c.sameProp(null, empty, true, false));
+    try testing.expect(!c.sameProp(empty, null, false, false));
+    var marked = empty;
+    marked.read = true;
+    try testing.expect(!c.sameProp(marked, null, true, true));
+    marked = empty;
+    marked.init = true;
+    try testing.expect(!c.sameProp(marked, null, true, true));
+
+    const v = try p.newVar();
+    try holdSites(p, v, &.{2});
+    const escaped: Pts.Prop = .{ .id = 0, .vals = v };
+    try testing.expect(c.sameProp(escaped, null, true, true));
+    try testing.expect(!c.sameProp(escaped, null, true, false));
+    try holdSites(p, v, &.{0});
+    try testing.expect(!c.sameProp(escaped, null, true, true));
+    try holdSites(p, v, &.{});
+    p.vars.items[v].prim = true;
+    try testing.expect(!c.sameProp(escaped, null, true, false));
 }

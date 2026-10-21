@@ -8083,6 +8083,33 @@ corrects the worklist note's *the order is kept on purpose* and its *Checked* bu
   1, 2, 4 and 5 keep the worklist-against-every-unit check until they move into the same
   solver.
 
+**Amended 2026-10-22 — compare facts independently of their storage** (issues #657, #658).
+The monotonicity premise above is unchanged. Two defects in its shuffled-order check compared
+representation choices instead of facts:
+
+- A `top` value's live sites are a **set** after mapping each site to the one made by the same
+  node. Site numbers follow the walk, so that map need not preserve their numeric order.
+  The check compares live-set cardinality and mapped membership, as it already does for a
+  value without `top`; it still checks every component flag and each site's escape state.
+- A site's property table is **sparse**. A missing entry means no values, no read, no definite
+  initialisation and no per-key write. Reading a missing property makes an empty entry; a
+  site is no longer marked once it escapes. A spread may therefore copy an empty key marked
+  before its source escaped in only one order. That copy marks the key written, but the
+  source's `any_written`, also copied, already subsumes the per-key written bit
+  (`neverWritten` checks it first). An empty, unread, uninitialised entry under `any_written`
+  is the same fact as its absence. The check compares the union of keys with those defaults,
+  retaining every read/initialisation bit and every write not covered by
+  `any_written`. It does not require equal numbers of storage entries.
+- A property read includes the site's unknown-key value (`any`). When `any` is top in
+  both runs, its component flags and the escaped sites retained by a transient spread
+  subsume the raw property's. The check compares the effective value, with top's flags
+  and the property's live sites. Every differing live site is still an error. Without
+  top in `any`, it compares the raw property values exactly as before.
+
+These corrections change no transfer, consumer, check limit or emitted JavaScript. They
+state the equivalence the safety check must test: live sites, initialised keys and every
+value or flag not subsumed by top remain facts that must agree.
+
 Every output is byte for byte as before — the `emit/release/` goldens, every release run hash,
 and all 411 release builds of research 52's E3 set compared file by file — so nothing in the
 corpus depended on the order the bits were gathered in. **`--self-profile`** counts the pass's
