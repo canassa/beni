@@ -6224,8 +6224,9 @@ session per accepted upgrade in the order the upgrades arrive, as it starts requ
   client's answer; the client hears the page join and speak; a socket from another site is
   refused; `/` is the page's shell and `/.env` is 404; the server shuts down and closes both
   sockets with 1001. The page then connects again after 1 s on its virtual clock, that attempt
-  fails, and the next one starts 2 s later. The page runs with `--wait-handshakes`. A second
-  script runs a page that fails, and pins the serve driver's waits and its end.
+  fails, and the next one starts 2 s later. The page runs with `--wait-handshakes`. Its last step
+  fails, and the script's last waits find no step and no page, so the same script pins the serve
+  driver's waits and its end.
 - **The scripted `open` follows the handshake** (#571). `socket <n> open "<protocol>"` fails the
   step when the page did not offer that protocol, and `socket <n> open` with no protocol fails it
   when the page offered some: a host fails both handshakes (RFC 6455 §4.1, the Fetch standard's
