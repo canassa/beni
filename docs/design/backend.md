@@ -8691,6 +8691,16 @@ the compiler before over every `run/` and `browser/` fixture and the `bench/todo
 8. **Calls with known results** (8a, above, approved); **cloning** (8b) is **dropped** (the owner,
    2026-10-04): no mainstream JavaScript compiler clones, and the engine specialises hot code itself.
 
+*Amended 2026-10-22 (issue #637).* **E1's cliff goes with slice 4, not slice 6.** It was
+`max_sweeps`, and the solver has no sweep to run out of, so `emit/release/app/SpecDeepChain` moves
+in slice 4: every `x` is `7`, every test folds, and the program prints what it printed. `build_test`'s
+*solves a call chain deeper than the sweeps' old cap* asserts that 22 levels and 24 converge alike
+with no analysis declined. Every other output of slice 4 is byte for byte the same. E2
+(`SpecSelfGuard`) and `run/DerivedPartTypedLater` wait for slice 6's executability, as written.
+And *Where it runs*' "a module whose `Mod.version` did not change keeps its arrays" is per
+statement since slice 4 (*As built 2026-10-22*, below): the rewrite patches nearly every module,
+so whole modules were never kept.
+
 **As built 2026-10-19 — copy edges, field summaries and load cells inside `Pts`** (issue #464; a
 step toward slice 5, not slice 5). A release build of the research dashboard with 64 widgets
 allocated tens of GiB and never finished: `Pts` evaluated a spread `{...model, w: v}` as one
@@ -9424,6 +9434,97 @@ Instructions of the gates' build: the new `emit/release/inline/SpreadCopiesLooku
 indexing of every lookup; what is left is the join machinery itself (`joinNow`, `enqueue`,
 `unionSets`, the set table's probes), the copies a fold makes, and `summaryPropAt`'s search past
 a gap in a summary's properties (about 4% of fact 3 at N = 64).
+
+**As built 2026-10-22 — slice 4: facts 1, 2, 4 and 5 by the solver** (issue #637, part of #464).
+`Spec.analyse` takes facts 1, 2, 4 and 5 and truthiness from one solve (`Spec.solve`) where the
+sweeps were: fact 3 is `Pts`, read as input, and every exec cell is true. What the rewrite reads
+is where it was (`memo`, `params`, `prop_lat`, `ret_lat`, `decided_conds`, the `escaped`,
+`assigned`, `reads`, `spread_sites` and `arg_effect` columns), so the rewrite and everything after
+it are unchanged. Where the code departs from the sections above:
+
+- **A constraint is a node's evaluation** (`Op`, `Extractor`). Extraction is one walk that does
+  what a sweep's walk does (`count`, then `evalStmt`) and, in place of each evaluation, emits the
+  constraint it would evaluate, in that order: one per node with its `combine`, plus a `store` per
+  `o.p = v` and a `ret` per `return` and per body that may run off its end. The *Extraction*
+  table's kinds are folded into them: `copy` is a `local` or `param` read, `σ` is that read's
+  flag (the guard is syntactic, `guardNames`), `op` is `unary`, `binary`, `cond` and `template`,
+  `alloc` and the literal's keys are `object`, `load` is `member`, and a `call`'s arguments join
+  the parameters of the function it names. Each transfer function is the one the walk used
+  (`unary`, `binary`, `identity`, `condValue`, `templateValue`, `memberValue`, `callValue`), its
+  operands read from cells, so the two agree by construction. A read of a local before its
+  declaration in the walk is ⊤, as the walk's `m.value` was.
+- **Cells.** A node's cell is its occurrence: its own index the first time the walk meets it,
+  `nodes + k` for a repeat (a node two parents share), and `memo` keeps the last, as the walk
+  left it. Then one cell per tracked parameter. Fields and returns are made as a write or a read
+  first reaches them, keyed by (site, property) and (module, function node) (`Solver.dynOf`), and
+  a field exists from its first write whatever the value, as `prop_lat`'s entries did, since
+  `tagValue` reads existence.
+- **The merge** numbers cells and constraints by prefix sums in module order, sums every module's
+  counts into `reads`, `escaped` and `assigned`, escapes a tracked function called with another
+  arity, writes every value fixed for the solve (literals interned in module order, names'
+  `globalValue`, a node's kind), finds each `param` read's cell, asks `effectFree` of each tracked
+  call's arguments (`arg_effect`) and marks spreads; then the parameters' readers index. A
+  module's own readers index is built with its extraction (`Extract.rd`).
+- **The worklist** is one first pass over every constraint in module and walk order, then a
+  first-in-first-out queue of the constraints the pass has passed whose reads changed. A field's
+  and a return's readers are registered as they read them. The work budget is the specified one
+  (64 evaluations per constraint and cell, `spec_solve_budget_hit`); no corpus program reaches it.
+- **The rewrite's dependency lists are the solve's**: `g_deps` from each statement's reads of
+  names, `site_deps` from `readsSite` as the transfers call it, `w_dirty` empty. The rewrite still
+  walks a statement again (`walkTop`) when a patch before it changed what it reads; that, `stale`
+  and the rounds go in slice 6.
+- **Extraction is kept per statement, not per module.** Measured on the dashboard, nearly every
+  module changed between analyses: the rewrite and `prune` changed modules wholesale. Their
+  changes are now made in the statement they touch (`within`), a new list of statements counts as
+  no change to any statement's nodes (`Mod.bodyChanged`, `Mod.keptNodes`), and an extraction
+  copies the constraints of each statement whose nodes stand (`Extractor.reuse`). On N = 64, 1 561
+  of 3 684 statement extractions are copies. The statements that change are the large ones (each
+  widget's handlers), so the time saved is small.
+- **Memory.** An extraction keeps 9 bytes a constraint (the kind and a flag in one byte, a cell or
+  node, an operand) and the pool, in an arena of the module's own. A solve's columns live in an
+  arena of their own (`Spec.solve_tmp`, emptied with `.keep_all`): in `Pts.tmp` they piled up
+  across the analyses that keep fact 3. Extraction runs on the emit workers, as many as its nodes
+  call for (`nodes_per_extractor`): one thread per module kept a scratch of the largest module in
+  each worker, and TodoMVC's safety build peaked 13% higher at 32 threads.
+- **Checked.** In a safety build of a program of at most `max_solve_checked_nodes` (1 500) nodes,
+  the sweeps run first (`checkedSweeps`), then the solver, which must agree on every node's value,
+  every parameter, field, return and decided conditional, and on the `escaped`, `assigned`,
+  `reads`, `spread_sites` and `arg_effect` columns; the panic names the node. A statement's copied
+  constraints are checked against a fresh extraction on the same programs (`Extract.expectSame`).
+  Both checks passed on the whole corpus run with no node limit (and no instruction budget), as a
+  measurement.
+
+Every `emit/release/` golden but `SpecDeepChain` (above), every run hash and the determinism
+test are as before. Measured on dagon (Ryzen 9 5950X, load about 1), master at `3fafb445c` before,
+outputs byte for byte the same. The facts 1, 2, 4 and 5 time is a throwaway `rdtsc` timer around
+the sweeps and around `solve` (extraction, merge and solve), minima of 11 interleaved runs, as are
+`specialise` and wall; peak RSS is the median:
+
+| ReleaseFast, `build --release --no-cache` | facts 1, 2, 4, 5 (ms) | `specialise` (ms) | wall (s) | peak RSS (MB) |
+|---|--:|--:|--:|--:|
+| N = 16, `--jobs=1` | 4.17 → 4.23 | 23.6 → 24.3 | 0.05 → 0.05 | 38.8 → 39.1 |
+| N = 64, `--jobs=1` | 10.09 → 11.56 | 84.1 → 83.9 | 0.15 → 0.15 | 98.2 → 100.9 |
+| N = 64 without `withDefault`, `--jobs=1` | 10.01 → 11.81 | 69.3 → 72.6 | 0.13 → 0.14 | 89.3 → 91.4 |
+| N = 16, `--jobs=32` | 4.28 → 3.93 | 24.0 → 24.2 | 0.05 → 0.05 | 37.4 → 38.5 |
+| N = 64, `--jobs=32` | 9.98 → 10.80 | 86.0 → 88.3 | 0.15 → 0.15 | 96.8 → 99.1 |
+| N = 64 without `withDefault`, `--jobs=32` | 10.44 → 10.70 | 72.1 → 74.0 | 0.13 → 0.13 | 87.7 → 90.3 |
+
+| ReleaseSafe (the tests' compiler) | instructions | peak RSS (MB) |
+|---|--:|--:|
+| `browser/tea/TodoMVC` | 1 360M → 1 385M (+1.9%) | 58.5 → 58.8 |
+| `abuse_wide_test`'s 16 400 arms | 2 786M → 2 892M (+3.8%) | 71.6 → 73.0 |
+| `bench --generate=100000`, `--library`, names migrated | 14 994M → 15 761M (+5.1%) | 332.8 → 343.3 (+3.2%) |
+
+**Slice 4 alone is slower, not faster.** At N = 64 and one thread the solve is about 4.4 ms of extraction,
+1.4 ms of merge and 6 ms of solving (one timed run), where the sweeps took 10.1 ms in all: the walk
+the sweeps made once per analysis is now an extraction and an evaluation, and the rewrite still
+re-extracts the large statements at every analysis. The solve itself is about one walk's worth of
+transfers (0.85 evaluations per constraint), since every transfer reads fact 3 as the walk did.
+What pays is slice 6: one solve per structural pass in place of 4 to 6 analyses.
+`spec_solve_extracted`, `spec_solve_kept`, `spec_solve_stmts_walked`, `spec_solve_stmts_kept`,
+`spec_solve_constraints`, `spec_solve_evaluations` and `spec_solve_budget_hit` count it.
+`check/rules_test`'s scan of `src/js` now searches a file for a bit's name before its lines: it
+read every line five times and reached its instruction budget as `Spec.zig` grew.
 
 ### Compact statements
 
