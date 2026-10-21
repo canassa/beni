@@ -3923,7 +3923,7 @@ const Spec = struct {
             if (ir.tag(prop) == .property) {
                 const d = ir.data(prop);
                 const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.lhs)));
-                if (s.pts.keyUnread(m.index, node, id) and inert(ir, @fromBackingInt(@intCast(d.rhs)))) {
+                if (s.pts.keyUnread(m.index, node, id) and try s.effectFree(m, @fromBackingInt(@intCast(d.rhs)))) {
                     dropped = true;
                     continue;
                 }
@@ -4224,7 +4224,13 @@ const Spec = struct {
                 changed = true;
                 budget -= 1;
                 if (budget == 0) s.stats.inline_capped += 1;
-                // The statements written in its place may fold again.
+                // The statements written in its place may fold again, and
+                // so may the one before them: the rules that read the
+                // statement after their own (`const x = e; return R`,
+                // `const x = c ? A : B; R`) now see a new one. Without the
+                // step back, a run of field bindings before a `return` was
+                // taken one binding per structural pass (#589).
+                if (i > 0) i -= 1;
                 continue;
             }
             i += 1;
