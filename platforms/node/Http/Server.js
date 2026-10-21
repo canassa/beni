@@ -232,6 +232,11 @@ export const requestOf = (incoming) => incoming.request;
 
 export const isUpgrade = (incoming) => incoming.res === null;
 
+// `acceptWith` named a protocol the client did not offer. The protocol is
+// the program's text, so the line quotes it: a newline in it cannot forge
+// another line.
+export const notOffered = (incoming, protocol) => invalidUpgrade(incoming, `the protocol ${JSON.stringify(protocol)} is not one the client offered`);
+
 // A refused upgrade: the program's response, checked as `write` checks
 // one, written on the socket, and the connection ended.
 export const refuseUpgrade = (incoming, response) => {
@@ -249,7 +254,7 @@ export const refuseUpgrade = (incoming, response) => {
 
 // An answer to an upgrade that the platform cannot give: 500, and a line on
 // standard error, as for an invalid response (§9.10 (d)).
-export const invalidUpgrade = (incoming, fault) => {
+const invalidUpgrade = (incoming, fault) => {
   const { req, socket } = incoming;
   process.stderr.write(`beni: Http.Server: the answer to the WebSocket request ${req.method} ${req.url} is invalid: ${fault}\n`);
   writeRaw(socket, 500, [], Buffer.alloc(0));

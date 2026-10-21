@@ -5,6 +5,7 @@
 {"socket": "r", "path": "/r"}
 {"reset": "r"}
 {"socket": "p", "path": "/protocol", "protocols": ["v1"]}
+{"socket": "n", "path": "/newline", "protocols": ["v1"]}
 {"socket": "i", "path": "/invalid"}
 {"socket": "b", "path": "/b"}
 # The program accepts this one only after `Server.close`.

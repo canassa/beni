@@ -2,9 +2,10 @@
 -- client that ends its TCP connection, or resets it (`ECONNRESET`), with
 -- no close frame ends `read` with 1006. A protocol the client did not
 -- offer, and an invalid refusal, are each answered 500 with a line on
--- standard error, and no session starts. `Server.close` closes every open
--- WebSocket with 1001; an upgrade the program accepts after it opens and
--- is closed with 1001 at once; and `Server.wait` returns once every
+-- standard error, and no session starts; the line quotes the protocol, so
+-- a newline in it cannot forge another line. `Server.close` closes every
+-- open WebSocket with 1001; an upgrade the program accepts after it opens
+-- and is closed with 1001 at once; and `Server.wait` returns once every
 -- connection has ended.
 import Deferred exposing (Deferred)
 import Http.Server as Server exposing (Request, Response, Upgrade)
@@ -34,6 +35,11 @@ upgrade gates request =
     case request.path of
         "/protocol" →
             Server.acceptWith { protocol = Just "v9", maxMessage = 100 } (session "protocol" _)
+
+        "/newline" →
+            Server.acceptWith
+                { protocol = Just "v1\nbeni: forged", maxMessage = 100 }
+                (session "newline" _)
 
         "/invalid" →
             Server.refuse { status = 1000, headers = [], body = "" }
