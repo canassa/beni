@@ -2553,7 +2553,9 @@ the pieces below. `browser-tea` re-exports `Cmd`, `Sub`, `Time`, `Dom`, `Http` a
 
 *Amended 2026-10-12 (§9.8.16):* `init` is a function the platform calls once per mount — `init :
 ⊤ → ( model, Cmd msg )` — on every program constructor, and `Storage`, `Http` and `Log` gain the
-commands `save`, `send` and `write`, which take the value they store, send or log.
+commands `save`, `send` and `write`, which take the value they store, send or log. *(Amended
+2026-10-21: since the browser's `Log` moved into core, the log's command is `Cmd.log`, in `Cmd`;
+§9.8.16 (b).)*
 
 `Tea.sandbox` stays `Browser.program`, and a page built on it reaches no byte of `Task` (R45 §7).
 
