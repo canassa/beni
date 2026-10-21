@@ -6236,8 +6236,8 @@ and (j) say, with these readings:
 and are asked on the dashboard (`cf-workers-q1` to `q3`): the platform's name, the shape of a
 Durable Object in beni, and how the object classes reach the entry file. The text below assumes the
 recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
-app's manifest — and (l) records the answers as they come: the name and the class names are
-decided (2026-10-21). Every statement about the host cites
+app's manifest — and (l) records the answers as they come: the name, the class names and the
+Worker handler's form are decided (2026-10-21). Every statement about the host cites
 Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
 `workerd` (version 1.20260518.1, the one nixpkgs' `wrangler` 4.93.0 bundles; a source line cites
 that tag), and one marked* owed *has not been. Amended 2026-10-20 after the review of this
@@ -6368,6 +6368,52 @@ key; this is its whole contract.
   `run`'s result is not read, as today.
 
 **(d) `Worker`: the program and the request handler.**
+
+*Amended 2026-10-21, the owner's answer to `cf-workers-q4` ((l)): the Worker's `fetch` is `sync`
+and answers an `Answer` the host runs.* The decided form, which replaces `fetch : Env, Request →
+Response`, `forward` and `callService` below (kept as the record of the question):
+
+```elm
+pub type Answer
+    = Respond Response                                     -- the host writes it
+    | Forward Stub Request (sync (StubError → Response))   -- the host runs `stub.fetch(request)` and writes what it answers
+    | Serve Service Request (sync (ServiceError → Response))  -- the host runs `service.fetch(request)`: an assets or service binding
+
+pub program : { fetch : sync (Env, Request → Answer), objects : List Definition } → Program
+```
+
+- **No fiber runs in a Worker.** The class's `fetch` calls the handler, which cannot suspend, and
+  returns at once: a `Response` for `Respond`, or the host's own promise for `Forward` and `Serve`
+  — `stub.fetch(request)` and `service.fetch(request)` — so the body stream and the 101 of an
+  upgrade pass through untouched. Nothing of core's scheduler is reached, so the cross-request
+  hazard and the isolate-wide stop below cannot arise, and a defect ends one request with 1101
+  and nothing else. `Task.sleep`, a `fetch` upstream and a body read are not available to a
+  Worker's handler in this slice ((j)); a suspending handler is a later slice over the same
+  `Answer`, through core's reserved scheduler slot, as (l) says.
+- **The recovery is the program's answer to a failed call.** When the host's promise rejects, the
+  runtime sorts the error as *What a stub's failure becomes* says — `Overloaded`, `Reset`,
+  `Transient`, or thrown again — and, for a sorted error, calls the `sync` recovery with it in a
+  reaction of the request's own promise, so in the request's context, and writes the `Response`
+  it returns; an error that sorts to nothing is thrown again, and the request fails with 1101.
+  So a program answers 503 for an arena that is overloaded, as (i)'s example does, and never
+  sees a bare 1101 for a failure the host documents (rule 9).
+- `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service` and their operations below are
+  unchanged; `Stub`'s and `Service`'s suspending calls are gone from this module.
+
+The example of (i) becomes:
+
+```elm
+route : Env, Request → Answer
+route env request =
+    case ( Worker.objects env "ARENAS", arenaOf (Worker.path request) ) of
+        ( Just arenas, Just name ) →
+            Worker.Forward (Worker.byName arenas name) request λ_ → Worker.text 503 "the arena is not available"
+
+        _ →
+            Worker.Respond (Worker.text 404 "no such page")
+```
+
+*The text below is the form the question was asked over, kept as written.*
 
 ```elm
 module Worker
@@ -6958,8 +7004,12 @@ the part of the section it settles keeps its text.
 - **`cf-workers-q3`, the class names** (Jayson Reis, 2026-10-21 11:28 UTC): **a list in the app's
   `beni.json`**, as (c) and §5.2's `"exports"` key write it; the recommended answer. The other
   choice, one fixed class per Worker, was not taken.
-- `cf-workers-q2` (the object shape), `q4` (the Worker handler's suspension), `q5` (the ownership
-  row), `q6` (the tests' time) and the joint `ws-q3` (the socket session) are open.
+- **`cf-workers-q4`, the Worker's `fetch`** (Jayson Reis, 2026-10-21 11:28 UTC): **B, a `sync`
+  handler that answers a value the host runs**; the recommended answer. (d)'s amendment of this
+  date writes the form. The other choice, fibers per request through core's reserved scheduler
+  slot, was not taken, and may follow as a later slice over the same `Answer`.
+- `cf-workers-q2` (the object shape), `q5` (the ownership row), `q6` (the tests' time) and the
+  joint `ws-q3` (the socket session) are open.
 
 ## Appendix — what is deliberately not done
 
