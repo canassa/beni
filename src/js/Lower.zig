@@ -4059,20 +4059,25 @@ pub const Lowerer = struct {
 
     /// The names `Suspend` writes, each core value imported the first time a
     /// function needs it: `Task.isWaiting` only for a loop's fast path.
+    ///
+    /// The names are cached for the module, the ASKS are not: a unit's record
+    /// must carry every name its text reads, even one an earlier unit asked
+    /// for first (`needName`, `backend.md` §9, *The funnel*) — a row taken
+    /// from a unit that did not ask would leave the rebuilt head without its
+    /// import, and the module would not load.
     fn fiberNames(l: *Lowerer, waiting: bool) !Suspend.Names {
-        var names = l.fiber_names orelse blk: {
-            const and_then = try l.coreValue(.Task, .andThen, Node.no_pos);
-            break :blk Suspend.Names{
-                .marker = try l.fixedName("$$suspend"),
-                .join = try l.fixedName("$$join"),
-                .joined = try l.fixedName("$$joined"),
-                .and_then = @fromBackingInt(@intCast(l.b.dataOf(and_then).lhs)),
-                .is_waiting = .none,
-            };
+        const and_then = try l.coreValue(.Task, .andThen, Node.no_pos);
+        var names = l.fiber_names orelse Suspend.Names{
+            .marker = try l.fixedName("$$suspend"),
+            .join = try l.fixedName("$$join"),
+            .joined = try l.fixedName("$$joined"),
+            .and_then = @fromBackingInt(@intCast(l.b.dataOf(and_then).lhs)),
+            .is_waiting = .none,
         };
-        if (waiting and names.is_waiting == .none) {
+        if (waiting) {
             const is_waiting = try l.coreValue(.Task, .isWaiting, Node.no_pos);
-            names.is_waiting = @fromBackingInt(@intCast(l.b.dataOf(is_waiting).lhs));
+            if (names.is_waiting == .none)
+                names.is_waiting = @fromBackingInt(@intCast(l.b.dataOf(is_waiting).lhs));
         }
         l.fiber_names = names;
         return names;
