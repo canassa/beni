@@ -4598,7 +4598,10 @@ The level is core's `Log.Level`. The other option was a module `Browser.Log` wit
 default log context: no annotation, no span, and the minimum `Info`. An `annotate` or a `minimum`
 around the `update` arm that makes the command does not reach it, and a `Cmd.log Log.Trace` or
 `Cmd.log Log.Debug` is not written. A program-wide minimum that would let it be written is the
-owner's decision, #551.
+owner's decision, #551. *Amended 2026-10-21 (#551, the owner's decision):* the default context's
+minimum is the program's, which `Log.setMinimum` sets (proposal §17.11), so after
+`Log.setMinimum Log.Debug` — in `init`, say — a `Cmd.log Log.Debug` is written. A command still
+does not see `update`'s `annotate` or `minimum`; that it should is #597.
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
