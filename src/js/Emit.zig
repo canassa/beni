@@ -144,6 +144,15 @@ pub const ExportsDecl = union(enum) { none, mode: []const u8, list };
 /// its named exports are what `run(main)` returns.
 pub const exports_program = "program";
 
+/// The entry file's own bindings under that mode (`boundary.md` §9.12 (c)):
+/// they begin with `$`, which no listed name may hold, and are longer than
+/// any short name `Rename` spells. A listed name is written only as an
+/// export name and inside `exports("…")`, where `exportNameIsLegal`'s ASCII
+/// identifier needs no escaping; widen the name rule and that call needs
+/// `jsString`.
+const entry_program_binding = "$beniProgram";
+const entry_export_binding = "$beniExport";
+
 /// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
 /// output key taken from the first package of the chain that declares it.
 pub const Platform = struct {
@@ -1269,6 +1278,12 @@ const Emitter = struct {
     /// (`src/platform.zig`), and this is the same honesty inside a
     /// diagnostic.
     fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
+        return e.reportInFileAs(code, .@"error", at, fmt, args);
+    }
+
+    /// `reportInFile` with the severity given: a `warning` never refuses
+    /// the build (`hasErrors`).
+    fn reportInFileAs(e: *Emitter, code: diagnostic.Code, severity: diagnostic.Severity, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{
@@ -1277,6 +1292,7 @@ const Emitter = struct {
             .token = 0,
             .message = message,
             .at = at,
+            .severity = severity,
         });
     }
 
@@ -6783,23 +6799,9 @@ const Emitter = struct {
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
         const start = try e.startData();
-        if (e.exportsProgram()) {
-            if (e.runtime_module != null) {
-                // A chain whose runtime is a module (`boundary.md` §9.2) has
-                // no `run` result the entry file could hold: not in this slice.
-                try e.reportInFile(
-                    .unknown_exports_mode,
-                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.exports_root, Manifest.file_name }) },
-                    \\This platform declares `"exports": "program"` and a runtime module, and the entry
-                    \\file of a runtime module exports nothing of `run`'s result yet
-                    \\(`docs/design/boundary.md` §9.12 (c)).
-                ,
-                    .{},
-                );
-                return;
-            }
-            return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
-        }
+        // `checkEntryExports` has refused the one chain this cannot serve,
+        // a runtime module, so `exportsProgram` here means a runtime file.
+        if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -6876,6 +6878,10 @@ const Emitter = struct {
     /// release build's short name, or a reserved word.
     fn emitEntryExporting(e: *Emitter, entry: Entry, runtime_path: []const u8, module_path: []const u8, imported: []const u8, start: ?StartData) !void {
         _ = entry;
+        // The bindings must be longer than any short name `Rename.spell`
+        // writes into its `[8]u8` buffer, since the hoisted release file
+        // puts them in one scope with the short names.
+        comptime std.debug.assert(entry_program_binding.len > 8 and entry_export_binding.len > 8);
         const release = e.options.release;
         var text: std.ArrayList(u8) = .empty;
         if (!release) try text.appendSlice(e.scratch,
@@ -7294,8 +7300,9 @@ const Emitter = struct {
         switch (p.exports) {
             .none => {
                 if (p.entry_exports.len == 0) return;
-                try e.reportInFile(
+                try e.reportInFileAs(
                     .exports_ignored,
+                    .warning,
                     .{ .path = try e.appManifestPath() },
                     \\This project lists {d} export{s} under `"exports"`, but the platform `{s}` declares no
                     \\`"exports"`, so the list does nothing.
@@ -7306,7 +7313,6 @@ const Emitter = struct {
                 ,
                     .{ p.entry_exports.len, if (p.entry_exports.len == 1) "" else "s", p.name },
                 );
-                e.diagnostics.items[e.diagnostics.items.len - 1].severity = .warning;
                 return;
             },
             .list => {
@@ -7334,6 +7340,22 @@ const Emitter = struct {
                     \\`"exports"` (`docs/design/boundary.md` §5.2).
                 ,
                     .{mode},
+                );
+                return;
+            } else if (p.lowering != null and p.markup_module != null) {
+                // A chain whose runtime is a module (`boundary.md` §9.2,
+                // amended 2026-10-02) has no `run` result the entry file could
+                // hold: not in this slice. Known from the chain alone, so
+                // `check`, a development build and a release build refuse it
+                // alike, before anything is built.
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = platform_manifest },
+                    \\This platform declares `"exports": "program"` and a runtime module, and the entry
+                    \\file of a runtime module exports nothing of `run`'s result yet
+                    \\(`docs/design/boundary.md` §9.12 (c)).
+                ,
+                    .{},
                 );
                 return;
             },

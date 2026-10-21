@@ -324,9 +324,17 @@ listed name is written only as an export name, where any identifier name is lega
 not an ASCII identifier name, is `default` or is listed twice is `invalid_entry_export`, against
 the app's manifest at `1:1`; any other mode is `unknown_exports_mode`, against the platform's; a
 list on a chain that declares no mode is the warning `exports_ignored`. A chain whose runtime is
-a module (`boundary.md` §9.2) may not declare the key yet. `run/EntryExports` pins the shape and
-the order, `build/bad/UnknownExportsMode` and `build/bad/InvalidEntryExport` the refusals,
-`run/ExportsIgnored` the warning.
+a module (`boundary.md` §9.2) may not declare the key yet: the same `unknown_exports_mode`, found
+from the chain alone, so `check`, a development build and a release build refuse it alike. A
+listed name is ASCII only — letters, digits and `_` — although an export name may be any
+identifier name: `$` is kept for the entry's own bindings, and a non-ASCII name buys no
+guarantee a program needs (rule 7 counts it a restriction, and a program that needs one says so).
+**The runtime's `exports(name)` must throw for a name the program does not define**, with a
+message that names it, never return `undefined`: the entry file calls it unguarded, once at load
+(rule 9), so a silent `undefined` would ship as `export { undefined as Name }`, and no check of
+the compiler's sees it. `run/EntryExports` pins the shape and the order,
+`build/bad/UnknownExportsMode`, `build/bad/ExportsListOnPlatform`, `build/bad/ExportsWithRuntimeModule`
+and `build/bad/InvalidEntryExport` the refusals, `run/ExportsIgnored` the warning.
 
 **Rule 2 — two output paths equal under case folding is a build error.** It is the backstop for
 whatever rule 1 does not reach, and one case is not exotic at all: two modules whose paths differ

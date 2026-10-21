@@ -292,6 +292,13 @@ test "exports: a mode on a platform, a list of names on an app" {
     try testing.expectEqualStrings("Arena", app.exports.names[0]);
     try testing.expectEqualStrings("Lobby", app.exports.names[1]);
     try testing.expectEqual(Exports.none, (try parse(arena.allocator(), "{}")).exports);
+    // An empty list lists nothing, and `null` is no key at all.
+    try testing.expectEqual(@as(usize, 0), (try parse(arena.allocator(),
+        \\{ "exports": [] }
+    )).exports.names.len);
+    try testing.expectEqual(Exports.none, (try parse(arena.allocator(),
+        \\{ "exports": null }
+    )).exports);
     // Any other shape is malformed, like every key of the wrong JSON type.
     try testing.expectError(error.Malformed, parse(arena.allocator(),
         \\{ "exports": true }
