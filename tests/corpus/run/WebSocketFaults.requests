@@ -24,9 +24,15 @@
 {"socket": "rsv", "path": "/rsv"}
 {"send": "rsv", "frame": {"opcode": 1, "text": "x", "rsv": 4}}
 {"receive": "rsv"}
+{"socket": "highbit", "path": "/highbit"}
+{"send": "highbit", "frame": {"opcode": 1, "text": "x", "length": "9223372036854775808"}}
+{"receive": "highbit"}
 {"socket": "opcode", "path": "/opcode"}
 {"send": "opcode", "frame": {"opcode": 3, "text": "x"}}
 {"receive": "opcode"}
+{"socket": "control", "path": "/control"}
+{"send": "control", "frame": {"opcode": 11, "text": "x"}}
+{"receive": "control"}
 {"socket": "fragping", "path": "/fragping"}
 {"send": "fragping", "frame": {"fin": false, "opcode": 9, "text": "x"}}
 {"receive": "fragping"}
@@ -46,6 +52,12 @@
 {"socket": "code", "path": "/code"}
 {"send": "code", "frame": {"opcode": 8, "hex": "03ed"}}
 {"receive": "code"}
+{"socket": "code1016", "path": "/code1016"}
+{"send": "code1016", "frame": {"opcode": 8, "hex": "03f8"}}
+{"receive": "code1016"}
+{"socket": "code2999", "path": "/code2999"}
+{"send": "code2999", "frame": {"opcode": 8, "hex": "0bb7"}}
+{"receive": "code2999"}
 {"socket": "utf8", "path": "/utf8"}
 {"send": "utf8", "frame": {"opcode": 1, "hex": "c328"}}
 {"receive": "utf8"}
@@ -57,6 +69,11 @@
 {"receive": "big"}
 {"send": "big", "text": "seventeen bytes!!"}
 {"receive": "big"}
+# Each fragment is under the limit; the two together are over it.
+{"socket": "sum", "path": "/sum"}
+{"send": "sum", "frame": {"fin": false, "opcode": 1, "text": "0123456789"}}
+{"send": "sum", "frame": {"opcode": 0, "text": "0123456789"}}
+{"receive": "sum"}
 {"socket": "zero", "path": "/zero"}
 {"send": "zero", "text": ""}
 {"receive": "zero"}

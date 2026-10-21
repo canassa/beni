@@ -1,0 +1,8 @@
+{"fault": "socket:errno=ENETRESET"}
+{"socket": "a", "path": "/a"}
+{"send": "a", "text": "x"}
+{"receive": "a"}
+{"socket": "b", "path": "/b"}
+{"send": "b", "text": "y"}
+{"receive": "b"}
+{"signal": "SIGTERM"}

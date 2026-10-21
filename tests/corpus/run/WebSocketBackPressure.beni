@@ -3,7 +3,9 @@
 -- and `drain` returns once the client has read it all. The other way, a
 -- session that reads late loses nothing: the platform stops reading the
 -- connection while more than 64 KiB wait, and reads again as `read` takes
--- them, so 300 messages of 1 KiB each arrive whole and in order.
+-- them, so 300 messages of 1 KiB each arrive whole and in order. Pings
+-- that come while more than 64 KiB wait to be sent are answered once, for
+-- the latest, when the socket drains (the amendment's item 25).
 import Deferred exposing (Deferred)
 import Http.Server as Server exposing (Request, Response, Upgrade)
 import Io
@@ -13,11 +15,16 @@ import WebSocket exposing (Socket)
 
 type alias Gates =
     hold : Deferred ⊤
+    written : Deferred ⊤
 
 
 plain : Gates, Request → Response
 plain gates request =
     case request.path of
+        "/written" →
+            Deferred.wait gates.written
+            Server.text 200 "written"
+
         _ →
             _ = Deferred.complete gates.hold ⊤
             Server.text 200 "go"
@@ -30,6 +37,7 @@ session gates socket =
             chunk = String.repeat "x" 65536
             writeMany socket chunk 128
             _ = Debug.log "more than 1 MiB waits to be sent" (WebSocket.buffered socket > 1048576)
+            _ = Deferred.complete gates.written ⊤
             WebSocket.drain socket
             _ = Debug.log "after the drain, waiting to be sent" (WebSocket.buffered socket)
             session gates socket
@@ -37,6 +45,10 @@ session gates socket =
         Ok "hold" →
             Deferred.wait gates.hold
             _ = WebSocket.write socket (readInOrder socket 1 300)
+            session gates socket
+
+        Ok "last" →
+            _ = WebSocket.write socket "last"
             session gates socket
 
         Ok _ →
@@ -74,7 +86,7 @@ readInOrder socket next last =
 
 main : Program
 main = Io.run λ⊤ →
-    gates = { hold = Deferred.make ⊤ }
+    gates = { hold = Deferred.make ⊤, written = Deferred.make ⊤ }
     case
         Server.listenWith { host = "127.0.0.1", port = 0 }
             { request = plain gates _, upgrade = λ_ → Server.accept (session gates _) }
