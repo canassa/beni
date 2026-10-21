@@ -6238,7 +6238,8 @@ Durable Object in beni, and how the object classes reach the entry file. The tex
 recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
 app's manifest — and (l) records the answers as they come. *Every question is answered
 (2026-10-21)*: (e) and (f) are rewritten to the owner's design for the object (handlers that may
-suspend, one event at a time, one fiber runtime per object), and the rest reads as decided. Every statement about the host cites
+suspend, one event at a time, one fiber runtime per object), (d) to his design for the Worker
+(q7: an ordinary handler with a scheduler and a scope per request), and the rest reads as decided. Every statement about the host cites
 Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
 `workerd` (version 1.20260518.1, the one nixpkgs' `wrangler` 4.93.0 bundles; a source line cites
 that tag), and one marked* owed *has not been. Amended 2026-10-20 after the review of this
@@ -6298,14 +6299,16 @@ lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s
 
 | Module | Holds |
 |---|---|
-| `Worker` | every host type — `Program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, `Context`, `Definition` — with `program`, the request and response operations, the bindings and their errors. It imports no module of the platform |
-| `WebSocket` | the server WebSocket: the handle operations §9.11's amendment (item 1) shares, `accept`, the attachment, `autoReply`. It imports `Worker` |
-| `Worker.Object` | `define` and the handlers over `Worker.Definition` and `Worker.Context`, the object's own messages (`send`), `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
-| `Worker.Storage` | the object's key-value store, through schemas. It imports `Worker` |
+| `Worker` | the host types a Worker and an object share — `Program`, `Request`, `Response`, `Env`, `Context` (a request's), `Namespace msg`, `Ref msg`, `Service`, `Definition` — with `program`, the request and response operations, the bindings, `forward`, `callService` and their errors. It imports no module of the platform. *Amended 2026-10-21 (q7, q8): `Stub` became `Ref msg`; the object's `Context msg` moved to `Worker.Object`* |
+| `WebSocket` | the server WebSocket: the handle operations §9.11's amendment (item 1) shares, `id`, `tags`, the attachment. It imports `Worker` |
+| `Worker.Object` | `define`, `Context msg`, the handlers over `Worker.Definition`, `self`, `post`, `ask`, `reply`, `accept` and `autoReply` for sockets, `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
+| `Worker.Storage` | the object's key-value store, through schemas. It imports `Worker` and `Worker.Object` |
 
-*Amended 2026-10-20 (H1).* The host types all live in `Worker`, so the modules form no cycle
-(`fast-compiler.md` §3.1 forbids one): `WebSocket.accept` takes `Worker.Context` and
-`Worker.Request`, and `Worker.Object`'s handlers take `WebSocket.Socket` and `WebSocket.Close`.
+*Amended 2026-10-20 (H1); 2026-10-21 (q8).* The modules form no cycle (`fast-compiler.md` §3.1
+forbids one): `Worker` holds the shared host types and imports nothing; `WebSocket` imports
+`Worker` for `Request` and `Response` and knows no object; `Worker.Object` imports both, takes
+`WebSocket.Socket` and `WebSocket.Close` in its handlers, and holds `accept` and `autoReply`,
+which need its `Context msg`; `Worker.Storage` takes `Worker.Object.Context msg`.
 `Worker.Object.define` answers a `Worker.Definition`, the type `Worker.program`'s `objects` lists.
 
 `runtime.js` is the one file that defines a JavaScript class: the Durable Object classes the
@@ -6376,58 +6379,59 @@ key; this is its whole contract.
 
 **(d) `Worker`: the program and the request handler.**
 
-*Amended 2026-10-21, the owner's answer to `cf-workers-q4` ((l)): the Worker's `fetch` is `sync`
-and answers an `Answer` the host runs.* **This is reading A of q4 and is open again as
-`cf-workers-q7`** (R5-4): whether a Worker's `fetch` may wait, as an object's handlers now may
-((e)), or stays `sync` as q4 decided; the text follows q4 until the owners answer. The form, which
-replaces `fetch : Env, Request → Response` below (kept as the record of the question). `Answer` is
-opaque and built by three functions, because `sync` is a marker only in a top-level or `foreign`
-signature (§4; `src/parse/Parse.zig`): written inside a `type` declaration it would be a type
-variable named `sync`, so the mark sits on the constructors' signatures, where the checker reads
-it, and on `program`'s own.
+*Amended 2026-10-21, twice. First Jayson's answer to `cf-workers-q4` ((l)): a `sync` `fetch` that
+answers an `Answer` value the host runs — the form `respond | forward … (StubError → Response) |
+serve …`, whose constructors carried the `sync` mark in their signatures, since the marker is
+legal only in a top-level or `foreign` signature (§4; `src/parse/Parse.zig`). Then Cesar's
+answer to `cf-workers-q7` (12:17 UTC), **B, the final design, which replaces q4's form**: the
+Worker's `fetch` is an ordinary beni function, as an object's handlers are ((e.1)).*
 
 ```elm
-pub opaque type Answer
-pub respond : Response → Answer                                    -- the host writes it
-pub forward : Stub, Request, sync (StubError → Response) → Answer  -- the host runs `stub.fetch(request)` and writes what it answers
-pub serve : Service, Request, sync (ServiceError → Response) → Answer  -- the host runs `service.fetch(request)`: an assets or service binding
+pub foreign type Context                 -- a request's: its bindings, its scope, `waitUntil`
+pub env : Context → Env
 
-pub program : { fetch : sync (Env, Request → Answer), objects : List Definition } → Program
+pub program : { fetch : Context, Request → Response, objects : List Definition } → Program
+
+pub forward : Ref msg, Request → Result StubError Response        -- waits; the host's Response, body stream untouched
+pub callService : Service, Request → Result ServiceError Response  -- waits; an assets or service binding
 ```
 
-- **No fiber runs in a Worker.** The class's `fetch` calls the handler, which cannot suspend, and
-  returns at once: a `Response` for `respond`, or the host's own promise for `forward` and `serve`
-  — `stub.fetch(request)` and `service.fetch(request)` — so the body stream and the 101 of an
-  upgrade pass through untouched. Nothing of core's scheduler is reached, so the cross-request
-  hazard and the isolate-wide stop below cannot arise, and a defect ends one request with 1101
-  and nothing else. `Task.sleep`, a `fetch` upstream and a body read are not available to a
-  Worker's handler in this slice ((j)); a suspending handler is a later slice over the same
-  `Answer`, through core's reserved scheduler slot, as (l) says.
-- **The recovery is the program's answer to a failed call.** When the host's promise rejects, the
-  runtime sorts the error as *What a stub's failure becomes* says — `Overloaded`, `Reset`,
-  `Transient`, or thrown again — and, for a sorted error, calls the `sync` recovery with it in a
-  reaction of the request's own promise, so in the request's context, and writes the `Response`
-  it returns; an error that sorts to nothing is thrown again, and the request fails with 1101.
-  So a program answers 503 for an arena that is overloaded, as (i)'s example does, and never
-  sees a bare 1101 for a failure the host documents (rule 9).
-- `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service` and their operations below are
-  unchanged. **The suspending calls stay, for an object's handlers** (*amended 2026-10-21, R5-2*):
-  `call : Stub, Request → Result StubError Response` (the record below names it `forward`; the
-  name moved to the `Answer` builder, so the waiting call is `call`) and `callService : Service,
-  Request → Result ServiceError Response`. A Worker's `sync` `fetch` cannot call them — the
-  checker refuses the suspension there — and an object's handler can ((e.9)).
+- **`fetch` is an ordinary handler, and its effects are inferred.** It may wait — on `forward`,
+  `callService`, an `Object.ask` ((e.10)), `Task.sleep`, a `Task.join` — and a `fetch` that never
+  waits runs to its end inside the host's handler at the cost of a plain call. No marker; the
+  `Answer` type is gone.
+- **One scheduler and one scope per request.** Each request runs on its own scheduler
+  (`Task.withScheduler`, #596) and in its own scope, so a fiber never resumes in another request's
+  I/O context — the measured hazard below cannot arise — and a defect fails only its own request:
+  the throw leaves the request's drain, the host answers the client with 1101, the request's scope
+  is closed (its fibers cancelled, their finalisers run), and no other request is touched. **The
+  Worker slice therefore depends on #596** before it can be built.
+- **`forward ref request` waits** and returns the host's `Response` with its body stream
+  untouched, so the 101 of an upgrade and a streamed body pass through; it carries the chain id
+  ((e.3)) — a fresh one, after stripping any `x-beni-chain` the client sent. Its failures are
+  *What a stub's failure becomes* below. **Typed asks to an `Object.Ref msg` are ordinary waits**
+  ((e.10)), under the same cycle rule.
+- **Fibers that outlive the response** — spawned in the request's scope and still running when
+  `fetch` returns — run under `ctx.waitUntil`, with the host's 30-second cap after the response
+  ([context](https://developers.cloudflare.com/workers/runtime-apis/context/)): what they do is
+  delivered at most once, and a fiber the cap cuts is cancelled, its finalisers run.
+- **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
+  to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
+  cancels the scope's fibers as §9.8.14's teardown does.
 
 The example of (i) becomes:
 
 ```elm
-route : Env, Request → Answer
-route env request =
-    case ( Worker.objects env "ARENAS", arenaOf (Worker.path request) ) of
+route : Worker.Context, Request → Response
+route ctx request =
+    case ( Worker.objects (Worker.env ctx) "ARENAS" arenaMessage, arenaOf (Worker.path request) ) of
         ( Just arenas, Just name ) →
-            Worker.forward (Worker.byName arenas name) request λ_ → Worker.text 503 "the arena is not available"
+            case Worker.forward (Worker.byName arenas name) request of
+                Ok response → response
+                Err _ → Worker.text 503 "the arena is not available"
 
         _ →
-            Worker.respond (Worker.text 404 "no such page")
+            Worker.text 404 "no such page"
 ```
 
 *The text below is the form the question was asked over, kept as written.*
@@ -6440,7 +6444,8 @@ pub foreign type Program
 pub program : { fetch : Env, Request → Response, objects : List Definition } → Program
 
 pub foreign type Definition              -- a Durable Object class, made by `Worker.Object.define`
-pub foreign type Context                 -- an object: its id, storage, sockets, alarm and timer, for `Worker.Object`'s operations
+pub foreign type Ref msg                 -- a typed reference to an object of protocol `msg`: `self`, or one from a `Namespace msg` ((e.10))
+
 
 pub foreign type Request                 -- the host's `Request`, read through these
 pub method : Request → String            -- upper case, as the host gives it
@@ -6470,7 +6475,7 @@ pub byId : Namespace, String → Result IdError Stub   -- `idFromString`: the id
 pub type IdError = InvalidId                   -- the host's `TypeError`, "Invalid Durable Object ID"
 
 pub foreign type Stub
-pub call : Stub, Request → Result StubError Response      -- suspends; the object's `request` handler answers (named `forward` when the question was asked; R5-2)
+pub forward : Stub, Request → Result StubError Response   -- suspends; the object's `request` handler answers
 pub stubId : Stub → String                     -- 64 hex digits
 pub stubName : Stub → Maybe String             -- the name `byName` was given; `Nothing` otherwise
 
@@ -6485,9 +6490,10 @@ pub callService : Service, Request → Result ServiceError Response   -- suspend
 pub type ServiceError = Unavailable            -- `retryable` is true: the call may be made again
 ```
 
-- **`fetch` runs in a fiber of its own per request**, started with `Task.start` from the host's
+- **`fetch` runs in a fiber of its own per request** *(the record; (d)'s amendment above says how,
+  with a scheduler and a scope per request)*, started with `Task.start` from the host's
   `fetch` handler, which returns a promise resolved with the `Response` the fiber ends with. The
-  handler may suspend: `call`, `callService` and `Task.sleep` park it.
+    handler may suspend: `forward`, `callService` and `Task.sleep` park it.
   The host may cancel the request's tasks when the client disconnects or the response is complete
   ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the fiber is not told, and
   ends `Done` or not at all. A fiber that throws is a defect: the promise rejects with the throw,
@@ -6497,9 +6503,8 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   phase (`core/Task.beni`, §9.8.14 (b)), after which every fiber started later is cancelled before
   it runs; and one isolate serves many requests and every Durable Object of the Worker. So under
   this form one defect in one request ends every later request of the isolate with `Cancelled`,
-  which the runtime would have to answer — a 500 — until the host makes a new isolate. The `sync`
-  form of (d)'s decision (`cf-workers-q4`, below) has no fiber and so none of this; it is the
-  recommended one for that reason as well.
+    which the runtime would have to answer — a 500 — until the host makes a new isolate. The
+  per-request scheduler of (d)'s amendment (q7, #596) confines the stop to the one request.
 - **A fiber resumes in the request context it belongs to — and today it would not** (*measured
   2026-10-20 under workerd, Miniflare 4.20260518.0; the probe becomes a fixture of the first code
   slice, (k)*). The host refuses to
@@ -6512,17 +6517,10 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   not read B's body, and could not build a `new Response` at all; resolving B's own promise from
   A's microtask with a `Response` built in B worked, and a promise made in B and resolved from A
   ran its `.then` in B's context (the host's `handle_cross_request_promise_resolution`). So the
-  hazard is real, and a per-request trampoline through a promise is a way out. **The decision is
-  the owner's** (`cf-workers-q4`): either a `sync` `fetch` that answers an `Answer` the host runs —
-  `Respond Response | Forward Stub Request | Serve Service Request`, the runtime returning
-  `stub.fetch(request)`'s promise itself, no fiber in a Worker, no core change, the recommended
-  first slice — or fibers per request, routed through the `scheduler` slot that
-  `transparent-effects-proposal.md` §17.5 reserves (`Task.withScheduler`, a change to
-  `core/Task.beni`, which is core's — specified in that document and coordinated with #358's
-  edits of the same file — not this platform's). Either way the first slice carries the probe as
-  a fixture, so the choice is gated by a test and not by a measurement alone. The first does not foreclose the second: a suspending handler returns the
-  same `Answer`. Until the answer, `forward` and `callService` above read as the suspending
-  form; (k) records what is taken.
+  hazard is real, and a per-request trampoline through a promise is a way out. **Decided**: q4 took
+  the `sync` form, and q7 replaced it with fibers per request through the `scheduler` slot
+  (`Task.withScheduler`, #596), as (d)'s amendment says; the probe becomes a fixture of the Worker
+  slice.
 - **A `Response` is the host's object**, built when the constructor is called, and a 101 answer
   carries the host's `webSocket` — the one value that cannot be plain data, which is why `Response`
   is opaque where `Http.Server`'s is a record (§9.10). `Request` is opaque for the same reason: the
@@ -6556,10 +6554,10 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   quotes ("Durable Object is overloaded", "Network connection lost", …) are the edge's, and workerd
   carries none of them; what both set are four properties of the error, `overloaded`,
   `retryable`, `remote` and `durableObjectReset` (workerd v1.20260518.1, `src/workerd/jsg/util.c++`).
-  `call`, `callService` and the recoveries of `forward` and `serve` sort by them, in this order:
+    `forward` and `callService` sort by them, in this order:
   first a **refused cycle** ((e.3)), which is not an error of the host but an answer the refusing
-  object wrote — status `508 Loop Detected` (RFC 5842) with the header `x-beni-cycle: 1` — and
-  which `call` recognises by that status and that header together and answers `Err Cycle`
+    object wrote — status `508 Loop Detected` (RFC 5842) with the header `x-beni-cycle: 1` — and
+  which `forward` and `ask` recognise by that status and that header together and answer `Err Cycle`
   (nothing is caught: it is a `Response` read by its fields; a 508 a program wrote itself has no
   such header); then `overloaded` is `Overloaded`; `durableObjectReset` is `Reset`; `retryable`
   is `Transient`; **anything else is thrown again**:
@@ -6586,33 +6584,48 @@ handler that waits runs as a fiber. The program's text is the same either way.
 ```elm
 module Worker.Object
 
--- `Definition` and `Context` are `Worker`'s (b); this module imports them, as `WebSocket` does.
+-- `Definition` and `Ref msg` are `Worker`'s (b); this module imports them.
 
-pub define : String, (Context → state), Handlers state msg → Worker.Definition
+
+-- *Amended 2026-10-21 (q8, (e.10)): `define` takes the protocol's schema, `Context msg` carries the
+-- protocol, and the owner's `send` is `post` on a `Ref msg`. `Context msg` is this module's,
+-- `Worker.Context` the request's (d).*
+pub foreign type Context msg             -- an object of protocol `msg`: its id, storage, sockets, alarm, timer and mailbox
+pub define : String, Schema e msg, (Context msg → state), Handlers state msg → Worker.Definition
+
 
 pub type alias Handlers state msg =
-    { request : Context, state, Request → state × Response
-    , message : Context, state, Socket, String → state
-    , closed : Context, state, Socket, Close → state          -- `Close` is `WebSocket.Close`, §9.11 (a)
-    , failed : Context, state, Socket, String → state
-    , alarm : Context, state → state
-    , received : Context, state, msg → state                  -- the object's own messages, (e.4)
+    { request : Context msg, state, Request → state × Response
+    , message : Context msg, state, Socket, String → state
+    , closed : Context msg, state, Socket, Close → state      -- `Close` is `WebSocket.Close`, §9.11 (a)
+    , failed : Context msg, state, Socket, String → state
+    , alarm : Context msg, state → state
+    , received : Context msg, state, msg → state              -- every message, from this object or another, (e.10)
     , tick : state → Maybe Duration                           -- reads the state; it may not wait, (e.5)
-    , ticked : Context, state → state
+    , ticked : Context msg, state → state
     }
 
 pub none : Handlers state msg            -- every handler leaves the state as it is; `request` answers 404; `tick` is `Nothing`
 
-pub send : Context, msg → ⊤              -- post a message to this object's own mailbox, (e.4); its typing is the owners' `cf-workers-q8` ((l)), and it is not built until they answer
+pub foreign type Reply a                 -- the one-shot reply channel an `ask` carries, (e.10)
+pub self : Context msg → Ref msg         -- this object's own typed reference, (e.10)
+pub post : Ref msg, msg → ⊤              -- fire-and-forget, (e.10)
+pub ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a   -- post and wait for the reply, (e.10)
+pub reply : Reply a, a → ⊤               -- answer an `ask`, once, from `received`
 pub body : Request → String              -- the whole body as UTF-8 text, read by the platform before `request` runs; "" when there is none
-pub id : Context → String                -- `ctx.id.toString()`
-pub name : Context → Maybe String        -- `ctx.id.name`, when the object was reached by name; `Nothing` in an alarm's retried instance (measured), so `restore` never depends on it
-pub sockets : Context → List Socket      -- every accepted socket still open, `ctx.getWebSockets()`
-pub socketsTagged : Context, String → List Socket
+pub id : Context msg → String            -- `ctx.id.toString()`
+pub name : Context msg → Maybe String    -- `ctx.id.name`, when the object was reached by name; `Nothing` in an alarm's retried instance (measured), so `restore` never depends on it
+pub sockets : Context msg → List Socket  -- every accepted socket still open, `ctx.getWebSockets()`
+pub socketsTagged : Context msg, String → List Socket
 
-pub alarmAt : Context, Int → ⊤           -- `setAlarm(ms since the epoch)`; replaces the one set
-pub alarmIn : Context, Duration → ⊤      -- `alarmAt` of `Clock.now ⊤` plus the duration
-pub cancelAlarm : Context → ⊤            -- `deleteAlarm`
+pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set
+pub alarmIn : Context msg, Duration → ⊤  -- `alarmAt` of `Clock.now ⊤` plus the duration
+pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`
+
+-- The socket operations that need the object ((g) has their meaning):
+pub accept : Context msg, Request, List String → Result AcceptError (Socket × Response)
+pub acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)
+pub autoReply : Context msg, String, String → ⊤   -- `setWebSocketAutoResponse`: answered without waking the object
 ```
 
 The program is written as `Worker.program`'s `objects` entry:
@@ -6620,7 +6633,7 @@ The program is written as `Worker.program`'s `objects` entry:
 ```elm
 arena : Worker.Definition
 arena =
-    Object.define "Arena" restore
+    Object.define "Arena" arenaMessage restore
         { Object.none
             | request = join
             , message = input
@@ -6645,11 +6658,10 @@ arena =
 - **The state is the platform's to hold** between events; a handler is handed it and returns it.
   Nothing a handler returns is written anywhere by itself: what must survive a restart goes through
   `Storage`, incrementally, as the host recommends (no shutdown hook exists).
-- **`send`'s message type** (*R5-1*): as the owner wrote it, `Context` carries no type parameter,
-  so `msg` is free at each call and a message of another type could reach `received` — a runtime
-  type error the checker cannot see. The owners decide the fix on the dashboard (`cf-workers-q8`:
-  a `Context msg` set by `define`, or a typed `Mailbox msg` that `define` hands to the handlers);
-  until then `send` is not built, and the signature above is the owner's text.
+- **`send`'s message type** (*R5-1*) was that, as the owner first wrote it, `Context` carried no
+  type parameter, so `msg` was free at each call. The owner settled it the same day
+  (`cf-workers-q8`, (e.10)): `Context msg` carries the protocol, and a message travels only
+  through a `Ref msg`.
 - **`define`'s shape** (*R5-6*): the owner's signature — `restore` positional, `Handlers` an alias
   — is what slice (b) builds. The ownership row of (e.7) does not need another shape: the checker
   change that q5 asks for gives `restore` the `init` role by its position and the alias's fields
@@ -6687,7 +6699,7 @@ when A calls B and B calls A back, as Orleans and Restate both document. The pla
 wrapper carries a **call-chain id** on every call between objects: the header `x-beni-chain` on
 `stub.fetch`, and the same id through an RPC stub when RPC comes ((j)). The id is unguessable
 (`crypto.randomUUID()`); a Worker's `forward` strips any `x-beni-chain` a client sent and starts
-a fresh chain, and an object's `call` passes its current chain on. An incoming event whose chain
+a fresh chain, and an object's `forward` or `ask` passes its current chain on. An incoming event — a `call`, an `ask`, a `forward` — whose chain
 holds a handler already parked in this object is refused at once: the object answers `508 Loop
 Detected` with `x-beni-cycle: 1` and runs no handler, and the caller's `call` answers `Err Cycle`
 ((d)'s sorting); nothing hangs, and nothing is caught broadly (rule 9). That the id travels
@@ -6700,13 +6712,13 @@ the object its result, which arrives as an event of `received` in the mailbox's 
 
 ```elm
 input ctx state socket text =
-    _ = Task.spawn λ⊤ → Object.send ctx (Scored socket (Leaderboard.submit text))
+    _ = Task.spawn λ⊤ → Object.post (Object.self ctx) (Scored socket (Leaderboard.submit text))
     state
 ```
 
-Holding the object or spawning is the program's choice, and both are safe (rule 7). `send` from
-outside a handler — from a spawned fiber, as here — queues the message; `send` from inside a
-handler queues it behind the events already waiting.
+Holding the object or spawning is the program's choice, and both are safe (rule 7). A `post` to
+`self` from outside a handler — from a spawned fiber, as here — queues the message; one from
+inside a handler queues it behind the events already waiting ((e.10)).
 
 **(e.5) Each object gets its own fiber runtime.**
 
@@ -6774,12 +6786,71 @@ as the question said (`ownership-checker.md` §30.3 gains the rows); until that 
 edit in a handler is `pending` and `List.copy` is the way round it.
 
 **(e.9) What a handler waits on, in this slice** (*R5-2*). An object's handler may park on:
-`Worker.call stub request` and `Worker.callService service request` ((d)), which carry the
-call-chain id ((e.3)); `Task.sleep`; `Task.join` of a fiber it or an earlier handler spawned; and
-nothing else — an upstream `fetch` is (j)'s, and a body read happens before the handler ((e.2)).
-Every wait keeps the object awake ((e.5)).
+`Object.ask` ((e.10)) and `Worker.forward ref request` ((d)), which carry the
+call-chain id ((e.3));
+`Worker.callService service request`; `Task.sleep`; `Task.join` of a fiber it or an earlier
+handler spawned; and nothing else — an upstream `fetch` is (j)'s, and a body read happens before
+the handler ((e.2)). Every wait keeps the object awake ((e.5)).
 
-**(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context,
+**(e.10) Messages from anywhere: the protocol, refs, `post` and `ask`** (*added 2026-10-21, the
+owner's answer to `cf-workers-q8`; (l)*). The object's message type is its **protocol**, typed
+from anywhere: `define` takes it with a schema for it, `Context msg` carries it, and a reference
+to an object is typed by it.
+
+```elm
+-- module Worker, the typed reach to an object
+pub objects : Env, String, Schema e msg → Maybe (Namespace msg)   -- the binding of that name, as objects of that protocol
+pub byName : Namespace msg, String → Ref msg
+pub unique : Namespace msg → Ref msg
+pub byId : Namespace msg, String → Result IdError (Ref msg)
+pub refId : Ref msg → String
+pub refName : Ref msg → Maybe String
+
+-- module Worker.Object (above): self, post, ask, reply
+
+pub type AskError
+    = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))
+    | NoReply                                  -- `received` returned without a `reply`
+    | Unprintable (List Schema.Issue)          -- the message does not print by the protocol's schema
+    | Unreadable (List Schema.Issue)           -- the reply does not parse by its schema
+```
+
+- **`received` is the one entry point for messages**, from this object or from any other;
+  `request` stays for HTTP — upgrades, browsers, a Worker's `forward` of a client's request. A message from another
+  object arrives as the protocol's value, parsed by the schema, in the mailbox's order ((e.2)).
+- **A ref is typed by the protocol.** `self ctx` is this object's; a Worker or another object gets
+  one from a `Namespace msg`, which `objects` makes from the binding and the protocol's schema
+  — the same schema `define` took, so the type is the program's claim and the schema is what
+  checks it on the wire. A name or an id reaches the object as before. A ref of the wrong
+  protocol is a program error the schema finds: a message that does not parse at the receiver is
+  refused (below), never delivered as another type.
+- **`post` is fire-and-forget.** To `self`, the message goes straight into the mailbox and is
+  delivered exactly once, in order with the events before it, while the instance lives ((e.6)).
+  To another object, the platform prints the message by the schema and sends it through the
+  ref's `stub.fetch` with the chain id ((e.3)); `post` waits for nothing and answers nothing.
+  Across isolates — and the platform cannot tell whether the other object shares the isolate, so
+  for every ref but `self` — the message is encoded through the schema; a value that does not
+  print is dropped and one `Log.warn` line names it, since a `post` has no result to carry it.
+- **`ask` posts and waits for the reply**, like any other host I/O: the message carries a `Reply
+  a`, the receiver's `received` answers through `reply`, once, and the asking handler parks until
+  the reply comes back, parsed by the reply's schema. It is subject to (e.3)'s cycle rule, and
+  every failure is a typed result: the host's four ((d)'s sorting), `NoReply` when the receiver's
+  handler returned without replying, and the two schema failures. A second `reply` on the same
+  `Reply` is ignored; a `Reply` is one-shot.
+- **Delivery across objects is at most once.** The host confirms nothing beyond its own errors:
+  a `post` the host could not deliver — overloaded, reset, connection lost — is lost, and the
+  sender is not told; a program that must know asks instead, and gets the host's error as a typed
+  `Err`. Within the receiving object a delivered message runs `received` once, under the
+  mailbox's order; a receiver that is evicted mid-handler loses it ((e.6)'s table). Durable work
+  therefore follows (e.6)'s pattern: write the intent to `Storage`, then finish it in `restore`
+  or `alarm`, with the message as the trigger and never as the record.
+- **Refused messages.** A message that does not parse by the receiver's schema — a ref of the
+  wrong protocol, an older deploy's shape — is answered with `422 Unprocessable Content` and the
+  header `x-beni-message: unparsed`, which the sender's `ask` reads as `Err (Unreadable issues)`
+  for its own reply and the platform logs for a `post`; `received` does not run. Nothing is
+  caught (rule 9): the refusal is a response read by its fields, as the cycle's is.
+
+**(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
 state, msg → state × Cmd msg` — sits over `send` and spawn, as §9.8.11 puts TEA over a direct
 form. It is optional, adds no capability, and is a later slice ((j)).
 
@@ -6826,8 +6897,8 @@ worker's spec for the page and the `node` server) **where the host lets it be**:
 module is also named `WebSocket`, and it declares the *handle operations* that §9.11's amendment
 of 2026-10-20 shares (its item 1) — `Socket`, `eq`, `Close`, `CloseError` (with this host's set
 of codes a server may send, item 3), `WriteError`, `write`, `close`, `protocol` — with the same
-names, types and meaning, and it answers an upgrade as §9.11 (e) does, with `accept` or a
-refusing response. Nothing of those is defined a second time here. **It does not declare `read`,
+names, types and meaning, and an object answers an upgrade as §9.11 (e) does, with
+`Object.accept` or a refusing response. Nothing of those is defined a second time here. **It does not declare `read`,
 `buffered` or `drain`** — the *reading style* is the platform's (item 1), and `buffered` and
 `drain` are not shared (item 2) — and no protocol module may need them to check here; the review
 of #531 found why, and this section follows it:
@@ -6851,8 +6922,8 @@ of #531 found why, and this section follows it:
   would be a silent wrong answer. A program bounds its own rate: the arena sends one state per
   tick per player and no more, and the host's advice is fewer, larger frames.
 - **The upgrade is answered by the `request` handler**, not by a second handler: it returns the
-  `Response` that `accept` makes (§9.11 (e)'s `accept`, with the handlers of (e) as the session),
-  or any other response (its `refuse response`). The host routes every request the Worker
+    `Response` that `Object.accept` makes (§9.11 (e)'s `accept`, with the handlers of (e) as the
+  session), or any other response (its `refuse response`). The host routes every request the Worker
   forwards to the one `fetch` of the class, so there is no `listenWith` to split them. A
   subprotocol is a header of the 101 response on this host, so a form like §9.11 (e)'s `acceptWith
   { protocol }` fits — this one takes `{ protocol, tags }` and no session — and the first slice
@@ -6863,14 +6934,13 @@ of #531 found why, and this section follows it:
 ```elm
 module WebSocket   -- cloudflare: the handle operations §9.11's amendment shares (item 1), plus these
 
-pub accept : Context, Request, List String → Result AcceptError (Socket × Response)
+-- *Amended 2026-10-21 (q8): `accept`, `acceptWith` and `autoReply` take the object's `Context msg`
+-- and live in `Worker.Object` ((e.1)); their meaning is below. This module knows no object.*
 pub id : Socket → String                 -- the platform's id, kept in the attachment: the same across hibernation
 pub tags : Socket → List String          -- `ctx.getTags(ws)`
 pub attach : Socket, Schema e a, a → Result AttachError ⊤
 pub attachment : Socket, Schema e a → Result (List Schema.Issue) (Maybe a)
-pub autoReply : Context, String, String → ⊤   -- `setWebSocketAutoResponse`: answered without waking the object
 
-pub acceptWith : Context, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)
 
 pub type AcceptError
     = NotAnUpgrade                       -- no `Upgrade: websocket` header, or the method is not GET; nothing is accepted
@@ -6938,10 +7008,11 @@ every operation returns before the handler goes on, which is what lets a `sync` 
 ```elm
 module Worker.Storage
 
-pub get : Context, Schema e a, String → Result (List Schema.Issue) (Maybe a)
-pub put : Context, Schema e a, String, a → Result PutError ⊤
-pub delete : Context, String → Bool     -- whether the key was there
-pub keys : Context, String → List String -- the keys with that prefix, in order
+-- `Context msg` is `Worker.Object`'s ((e.1)).
+pub get : Context msg, Schema e a, String → Result (List Schema.Issue) (Maybe a)
+pub put : Context msg, Schema e a, String, a → Result PutError ⊤
+pub delete : Context msg, String → Bool     -- whether the key was there
+pub keys : Context msg, String → List String -- the keys with that prefix, in order
 
 pub type PutError
     = TooLarge                          -- key and value as the host serialises them over 2 000 000 bytes (the count below)
@@ -7002,6 +7073,7 @@ file — writes `out/_worker.mjs`, `out/_platform/runtime.foreign.mjs`, the modu
 |---|---|
 | `main` | the entry file, `out/_worker.mjs` |
 | `compatibility_date` | in production, 2026-10-01 or later, so a set timer holds the object ((e), M4); locally, no later than the pinned workerd's own build date, which it refuses to exceed (`2026-05-18` for the tools of (k)) |
+| `compatibility_flags` | `["enable_request_signal"]`, so a client's disconnect interrupts the request's scope ((d)); without it the scope ends with the response |
 | `durable_objects.bindings[].class_name` | a name in the app's `"exports"` list and a `Worker.Object.define` of the program |
 | `migrations[].new_sqlite_classes`, or `exports.<class>` | the class's storage is SQLite, which (h)'s synchronous store needs. The declarative `exports` form — `"exports": { "Arena": { "type": "durable-object", "storage": "sqlite" } }` — needs Wrangler 4.107.0 or later (*amended 2026-10-20, M12*); the pinned 4.93.0 reads `migrations` only, so this slice writes that form. The two "are mutually exclusive", and a Worker moved to `exports` does not move back |
 | `assets` | optional: the page, served by the host before the Worker unless `run_worker_first` names the paths the Worker takes |
@@ -7086,10 +7158,9 @@ the part of the section it settles keeps its text.
 - **`cf-workers-q3`, the class names** (Jayson Reis, 2026-10-21 11:28 UTC): **a list in the app's
   `beni.json`**, as (c) and §5.2's `"exports"` key write it; the recommended answer. The other
   choice, one fixed class per Worker, was not taken.
-- **`cf-workers-q4`, the Worker's `fetch`** (Jayson Reis, 2026-10-21 11:28 UTC): **B, a `sync`
-  handler that answers a value the host runs**; the recommended answer. (d)'s amendment of this
-  date writes the form. The other choice, fibers per request through core's reserved scheduler
-  slot, was not taken, and may follow as a later slice over the same `Answer`.
+- **`cf-workers-q4`, the Worker's `fetch`** (Jayson Reis, 2026-10-21 11:28 UTC): B, a `sync`
+  handler that answers a value the host runs. **Replaced by `cf-workers-q7`** the same day, below;
+  (d) keeps its form as the record.
 - **`cf-workers-q2`, the object shape** (Cesar Canassa, 2026-10-21 11:50 UTC, on PR #533):
   **neither option as offered — handlers that may suspend, run one at a time**, the end state:
   no `sync` marker and effects inferred; one mailbox per object with the state passed from one
@@ -7108,10 +7179,26 @@ the part of the section it settles keeps its text.
 - **`ws-q3`, the socket session** (Cesar Canassa, 2026-10-21 11:52 UTC): **each host style** —
   `node` keeps the pull `read` session, Cloudflare uses event handlers so an object can hibernate
   ((g)).
-- **Open:** `cf-workers-q7` — may a Worker's `fetch` wait, as an object's handlers may, or does it
-  stay `sync` as q4 decided? (d) follows q4 until the answer. `cf-workers-q8` — `send`'s message
-  type: a `Context msg` set by `define` (recommended), or a typed `Mailbox msg`? `send` is not
-  built until the answer ((e.1)).
+- **`cf-workers-q8`, the message type** (Cesar Canassa, 2026-10-21 12:16 UTC): neither option as
+  offered — **the object's message type is its protocol, typed from anywhere**: `define` takes
+  the protocol with a schema for it; `Context msg` carries the type; `Object.self : Context msg →
+  Ref msg` and `Object.post : Ref msg, msg → ⊤`; the Worker and other objects get typed refs from
+  a `Namespace msg`, by name or id, and a post across isolates encodes through the schema;
+  `received` is the one entry point for messages from anywhere, and `request` stays for HTTP; a
+  post to another object is fire-and-forget; an ask waits like any other host I/O under (e.3)'s
+  cycle error; delivery across objects is at most once, with the host's errors as typed results
+  ((e.10)).
+- **`cf-workers-q7`, may a Worker's `fetch` wait** (Cesar Canassa, 2026-10-21 12:17 UTC): **B,
+  as the final design, and it replaces q4's form** (Jayson is told): the Worker's `fetch` is an
+  ordinary beni function, `Context, Request → Response`, effects inferred, as an object's
+  handlers are; each request runs on its own scheduler (`Task.withScheduler`, #596) and in its own
+  scope, so a fiber never resumes in another request's I/O context and a defect fails only its
+  own request (1101); `Answer` goes; `Worker.forward ref request` waits and returns the host's
+  `Response` with its body stream untouched; typed asks to an `Object.Ref msg` are ordinary waits;
+  fibers that outlive the response run under `ctx.waitUntil` with the host's 30-second cap and
+  are delivered at most once; a client disconnect interrupts the request's scope, so finalisers
+  run ((d)).
+- No question of this section is open.
 
 ## Appendix — what is deliberately not done
 
