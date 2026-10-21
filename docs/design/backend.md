@@ -9116,6 +9116,45 @@ drop the parameter's local; that is a separate change, with its own check. `buil
 fact 3 for an analysis after a change fact 3 does not read* pins the counter on
 `run/ReleaseReadAcrossWrite`.
 
+**As built 2026-10-21 — a dropped parameter keeps fact 3** (issue #582, part of #499; this
+amends the note above, whose *every change asks for a solve* named a dropped parameter). A
+parameter every call passes the same literal, or that nothing reads, goes with its arguments
+(`rewrite`, `rewriteCalls`). Fact 3's state takes that drop without a solve when a solve of the
+program without the parameter would differ from the kept state only in what the parameter
+held, and nothing read that:
+
+- **The parameter** (`Spec.keepDrop`): its var holds no object of the program and is not `top`,
+  so no site escaped, was linked or was folded through it; it is the parameter's local of the
+  declaration's statement; and no identifier of the statement names it any more (each read was
+  written as its literal, `fact3Neutral`, or there was none). `rewrite` drops only a parameter
+  declared once in its statement, so no other function shares the local.
+- **The arguments** (`Spec.keepArgs`): each dropped one is a literal or a name, a leaf whose
+  value only joined the parameter. Anything else — a member read marks its property read, an
+  object makes a site — asks for a solve, as before.
+- **What changes in the state** (`Spec.applyKeptDrops`, only when the next analysis keeps it,
+  so every pass between the rewrite and that analysis reads the state it read before): the
+  function site's `params` lose the parameter, its local goes from `locals` and the name cache,
+  and each dropped argument's node takes `Val.top_val`, the value `Pts.reset` gives a node no
+  walk reaches. The parameter's var stays, fed by edges no fact reads.
+
+The safety build's re-solve and compare (`Pts.checkKept`) holds on every corpus program of at
+most 1 500 nodes that keeps a state. **The identifier-to-literal exception now admits a node with
+a type key**: fact 3 reads a node's key only where the node makes a site (`siteOf`,
+`funcSite`), and `JsIr.nodeKey` asserts a keyed node is an object, an array or an arrow, so an
+identifier's row is `wild` if it has one; `Mod.setNode` making it `wild` moves nothing fact 3
+reads.
+
+Measured, ReleaseFast, `--release --no-cache --jobs=1`, dagon, median of five, every output byte
+for byte the same, before (#575) → after: `spec_points_to_runs`/`spec_points_to_reused` on the
+dashboard N = 16 7/0 → 7/0, N = 64 6/0 → **5/1**, N = 64 without `withDefault` 6/0 → **5/1**
+(the third analysis, whose solve repeated the second's: `spec_pts_edges` falls by 28 775 at
+N = 64, one run's worth); time 84 → 81 ms, 352 → **322 ms** and 306 → **281 ms**. Of the 453
+`run/` programs built under `--release`, 81 now keep a state at least once (3 before), 87
+analyses in all; the solves over the set fall from 1 769 to 1 685. Fixtures: the unit tests *a
+dropped parameter that held a primitive leaves fact 3 to be kept* and *… that held an object
+makes fact 3 solve again*; `build_test`'s counter on `run/ReleaseReadAcrossWrite` now counts two
+kept analyses.
+
 ### Compact statements
 
 ### Compact statements
