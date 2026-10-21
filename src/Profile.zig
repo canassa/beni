@@ -317,6 +317,14 @@ pub const Counter = enum {
     reach_walks,
     modules_lowered,
     modules_printed,
+    /// Emit rows (`backend.md` §9, *The join*): the units a development
+    /// build spliced from a row, and the units it lowered while a row was
+    /// available. `emit_units_lowered` counts a unit no declaration took
+    /// (a nullary constant, a synthesised value, a declaration whose facts
+    /// differed), so a row read and wholly refused shows up as zero
+    /// embedded and every unit lowered.
+    emit_units_embedded,
+    emit_units_lowered,
 
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };

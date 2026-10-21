@@ -21,6 +21,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Lower = @import("Lower.zig");
 const Lowerer = Lower.Lowerer;
+const Funnel = @import("Funnel.zig");
 const JsIr = @import("JsIr.zig");
 const Bir = @import("../bir/Bir.zig");
 const Graph = @import("../resolve/Graph.zig");
@@ -182,10 +183,26 @@ pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
 
 // ---- One declaration --------------------------------------------------------
 
+/// One part of a schema declaration's statements: where it begins in the
+/// declaration's `out`, and the funnel record of the run it is. The units a
+/// declaration is cut into are these parts (issue #349; `backend.md` §9,
+/// *The unit list*: the description, the root, each direction, each
+/// member's workers). Each part's index is fixed by the schema's structure
+/// (`0` the `via`s, `1` the description, `2` the shape, `3 + op` an
+/// operation's workers and wrapper, `3 + all_ops.len` the root), so a part
+/// that writes nothing in one build does not renumber the others.
+pub const UnitPart = struct {
+    at: u32,
+    record: u32,
+};
+
 /// Everything declaration `decl` emits that survived elimination, in the
 /// order its own bindings read each other: the `via`s, the description,
-/// then each direction.
-pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
+/// then each direction. Each part is its own funnel record, and `parts`
+/// lists its boundaries — the units `Lower.declarations` cuts. A part that
+/// writes nothing is not listed (and its record is dropped, as one no unit
+/// reaches).
+pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(UnitPart)) !void {
     const sg = l.in.schemas orelse return;
     const def = sg.definition(l.in.module, decl) orelse return;
     const ref: SchemaGraph.Ref = .{ .module = l.in.module, .decl = decl };
@@ -205,21 +222,47 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
     // compiler-made names count from 1 (`backend.md` §4, *A compiler-made
     // name is numbered within its top-level declaration*). A derived codec
     // has no `via`.
-    if (!codec and l.liveDecl(decl)) {
-        l.restartNames();
-        try g.vias(out);
+    //
+    // **Every gating question is asked INSIDE its part's record** (the
+    // `liveSchema` and `liveDecl` answers, and `schema_library`): the part's
+    // row unit has to carry the answer that decides it exists, or a build
+    // that would not write it could take the unit (issue #349, #432).
+    if (!codec) {
+        const at: u32 = @intCast(out.items.len);
+        const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 0));
+        if (l.liveDecl(decl)) {
+            l.restartNames();
+            try g.vias(out);
+        }
+        try l.recEnd(record, null);
+        if (out.items.len > at) try parts.append(l.scratch, .{ .at = at, .record = record });
     }
-    if (l.liveSchema(ref, .description)) {
-        l.restartNames();
-        try g.description(out);
+    {
+        const at: u32 = @intCast(out.items.len);
+        const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 1));
+        if (l.liveSchema(ref, .description)) {
+            l.restartNames();
+            try g.description(out);
+        }
+        try l.recEnd(record, null);
+        if (out.items.len > at) try parts.append(l.scratch, .{ .at = at, .record = record });
     }
-    if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
-        l.restartNames();
-        try g.constDecl(out, try g.own("shape"), try g.shapeOf(g.def.root));
+    {
+        const at: u32 = @intCast(out.items.len);
+        const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 2));
+        if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
+            l.restartNames();
+            try g.constDecl(out, try g.own("shape"), try g.shapeOf(g.def.root));
+        }
+        try l.recEnd(record, null);
+        if (out.items.len > at) try parts.append(l.scratch, .{ .at = at, .record = record });
     }
     // Each operation's worker set, and for `parse` and `print` the root
-    // wrappers after it, in one naming scope.
-    for (all_ops) |op| {
+    // wrappers after it, in one naming scope: the wrapper names the
+    // worker's bindings, so the two are one unit.
+    for (all_ops, 0..) |op, op_i| {
+        const at: u32 = @intCast(out.items.len);
+        const record = try l.recBegin(Funnel.Selector.schemaPart(decl, @intCast(3 + op_i)));
         const own_set = sg.hostAliased(ref, Member.worker(op)) == null;
         const worker = !l.schemaLibrary() and own_set and l.liveSchema(ref, Member.worker(op));
         const wrapper = switch (op) {
@@ -227,14 +270,23 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
             .print => l.liveSchema(ref, .print),
             else => false,
         };
-        if (!worker and !wrapper) continue;
-        l.restartNames();
-        if (worker) try g.workers(out, op);
-        if (wrapper) try g.wrappers(out, op);
+        if (worker or wrapper) {
+            l.restartNames();
+            if (worker) try g.workers(out, op);
+            if (wrapper) try g.wrappers(out, op);
+        }
+        try l.recEnd(record, null);
+        if (out.items.len > at) try parts.append(l.scratch, .{ .at = at, .record = record });
     }
-    if (l.liveSchema(ref, .root)) {
-        l.restartNames();
-        try g.root(out);
+    {
+        const at: u32 = @intCast(out.items.len);
+        const record = try l.recBegin(Funnel.Selector.schemaPart(decl, @intCast(3 + all_ops.len)));
+        if (l.liveSchema(ref, .root)) {
+            l.restartNames();
+            try g.root(out);
+        }
+        try l.recEnd(record, null);
+        if (out.items.len > at) try parts.append(l.scratch, .{ .at = at, .record = record });
     }
 }
 

@@ -94,6 +94,7 @@ const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const EdgePack = @import("EdgePack.zig");
+const EmitPack = @import("EmitPack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaValid = @import("SchemaValid.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
@@ -4573,6 +4574,13 @@ const Emitter = struct {
         effect_keep: []const JsIr.Node.Index = &.{},
         pure_discards: []const JsIr.Node.Index = &.{},
         mutable: []const JsIr.NameIndex = &.{},
+        /// Units this module spliced from its emit row, and units it lowered
+        /// while the row was available (`Lower.Result`, `backend.md` §9,
+        /// *What the counters say*). Kept here because a development build
+        /// frees the lowering after printing; tallied in module order by
+        /// `countLowered`.
+        embedded_units: u32 = 0,
+        lowered_units: u32 = 0,
         /// The module's bytes, gpa-owned until `produceOwned` takes them.
         text: ?[]u8 = null,
         rename_failure: ?Rename.Failure = null,
@@ -4664,10 +4672,49 @@ const Emitter = struct {
     /// A module whose first lowering the second took (`ModuleSlot.adopted`)
     /// is not lowered again, and is not counted again (#608).
     fn countLowered(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) void {
+        var embedded: u64 = 0;
+        var lowered: u64 = 0;
         for (todo) |i| {
-            if (!slots[i].adopted) e.session.profile.addCounter(.modules_lowered, 1);
+            if (!slots[i].adopted) {
+                e.session.profile.addCounter(.modules_lowered, 1);
+                embedded += slots[i].embedded_units;
+                lowered += slots[i].lowered_units;
+            }
             if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
         }
+        e.session.profile.addCounter(.emit_units_embedded, embedded);
+        e.session.profile.addCounter(.emit_units_lowered, lowered);
+    }
+
+    /// One unit spliced from an emit row (`backend.md` §9, *The join*): its
+    /// text and marks are the row's; its name identities are numbered into
+    /// the module's one map here, in the order printing the unit would have
+    /// numbered them (the marks' order, then any identity only the row's
+    /// `introduced` list names).
+    fn cachedPiece(context: *Print.Context, lowered: *const Lower.Result, at: u32, scratch: Allocator) Allocator.Error!Join.Piece {
+        const row = lowered.row.?;
+        const unit = row.units[at];
+        // Number the names in the order the unit prints them. A source map
+        // mark names the declaration whose name the printer gave, so the
+        // mark order is the first-occurrence order the uncached module
+        // numbers in; `introduced` is the same list (Context's name delta),
+        // and the second loop catches a name that has no mark this build
+        // prints. Numbering `introduced` first would put a name whose
+        // canonical first unit is dead behind one whose first unit is still
+        // here, and the map's `names` array would not be byte-identical.
+        const marks = try scratch.alloc(SourceMap.Mapping, unit.marks.len);
+        for (marks, unit.marks) |*mark, encoded| {
+            mark.* = .{
+                .generated = encoded.generated,
+                .source = encoded.source,
+                .name = if (encoded.name == EmitPack.no_name)
+                    SourceMap.Mapping.no_name
+                else
+                    try context.numberName(lowered.row_names[encoded.name]),
+            };
+        }
+        for (unit.introduced) |ident| _ = try context.numberName(lowered.row_names[ident]);
+        return .{ .text = row.text[unit.start..][0..unit.len], .mappings = marks };
     }
 
     /// What a worker runs per module.
@@ -4701,9 +4748,11 @@ const Emitter = struct {
                 const first = &slot.lowered.?;
                 return t.printDevelopment(w, i, first, slot.units, slot.head_len, slot.tail_len, slot.unobserved);
             }
-            slot.lowered = try t.lowerModule(scratch, i, &slot.overlay);
+            slot.lowered = try t.lowerModule(scratch, i, &slot.overlay, true);
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;
+            slot.embedded_units = lowered.embedded_units;
+            slot.lowered_units = lowered.lowered_units;
             slot.uses_runtime = lowered.uses_runtime;
             slot.uses_markup_runtime = lowered.uses_markup_runtime;
             const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
@@ -4729,6 +4778,9 @@ const Emitter = struct {
                     slot.head_len = lowered.head_len;
                     slot.tail_len = lowered.tail_len;
                     slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+                    // The counters were set above, from this lowering; the
+                    // second round counts an adopted slot once (its first
+                    // lowering), not again (`countLowered`).
                     return;
                 }
                 return t.printDevelopment(w, i, lowered, lowered.units, lowered.head_len, lowered.tail_len, lowered.unobserved);
@@ -4754,7 +4806,7 @@ const Emitter = struct {
             const scratch = w.module.allocator();
             var overlay: InternPool.Overlay = .init(&e.session.interner);
             defer overlay.deinit(e.gpa);
-            var again = try t.lowerModule(scratch, i, &overlay);
+            var again = try t.lowerModule(scratch, i, &overlay, false);
             defer again.deinit(e.gpa);
             const kept = &slot.lowered.?;
             const same = again.diagnostics.len == 0 and kept.diagnostics.len == 0 and
@@ -4775,12 +4827,34 @@ const Emitter = struct {
             });
         }
 
-        /// `Bir` → `JsIr` for module `i`, into `overlay`.
-        fn lowerModule(t: Task, scratch: Allocator, i: u32, overlay: *InternPool.Overlay) Allocator.Error!Lower.Result {
+        /// `Bir` → `JsIr` for module `i`, into `overlay`. `read_rows` is
+        /// false for a lowering made only to compare with the one the build
+        /// took (`crossCheck`): it must have the same fresh units.
+        fn lowerModule(t: Task, scratch: Allocator, i: u32, overlay: *InternPool.Overlay, read_rows: bool) Allocator.Error!Lower.Result {
             const e = t.e;
             const slot = &t.slots[i];
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
+            // A development build reads the row the binary carries for this
+            // module, if it has one (`backend.md` §9, *The join*). A
+            // release build reads no row: its bytes come from the release
+            // optimiser, not from development text.
+            var reuse: ?*const EmitPack.Row = null;
+            // Walk 1 is untouched (`lower_only`): its one purpose is what
+            // the module uses of the runtime module, and it prints nothing.
+            // The cross-check (`crossCheck`) lowers a module again only to
+            // compare trees, so it reads no row either: its units are fresh
+            // and must compare with the first lowering's.
+            if (read_rows and !t.lower_only and !e.options.release and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+                const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
+                if (e.session.pack.find(.emit, key)) |bytes| {
+                    if (try EmitPack.decode(scratch, bytes)) |decoded| {
+                        const row = try scratch.create(EmitPack.Row);
+                        row.* = decoded;
+                        reuse = row;
+                    }
+                }
+            }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
                 .birs = e.reach.birs,
@@ -4809,6 +4883,7 @@ const Emitter = struct {
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,
                 .rep_keys = if (e.rep_keys) |*k| k else null,
+                .reuse = reuse,
             }) catch |err| switch (err) {
                 // No recorder is set here, so no ask can overflow one
                 // (`Funnel.Recorder`); the pack maker, the only caller that
@@ -4844,7 +4919,15 @@ const Emitter = struct {
             var pieces: std.ArrayList(Join.Piece) = .empty;
             try pieces.ensureTotalCapacity(scratch, units.len + 2);
             pieces.appendAssumeCapacity(try context.printRange(0, head_len));
-            for (units) |unit| pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
+            for (units) |unit| {
+                // A unit the plan took whole is the row's bytes and marks;
+                // every other one is printed from this lowering.
+                if (unit.row) |at| {
+                    pieces.appendAssumeCapacity(try cachedPiece(&context, lowered, at, scratch));
+                } else {
+                    pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
+                }
+            }
             const body = context.bodyLen();
             pieces.appendAssumeCapacity(try context.printRange(body - tail_len, body));
             const joined = try Join.join(e.gpa, scratch, pieces.items, slot.map_footer);

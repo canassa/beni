@@ -6063,6 +6063,8 @@ test "a page build makes each module's edge lists once and lowers and prints eac
         .reach_walks = 2,
         .modules_lowered = maps,
         .modules_printed = maps,
+        .emit_units_embedded = counters.emit_units_embedded,
+        .emit_units_lowered = counters.emit_units_lowered,
     }, counters);
 }
 
@@ -6146,8 +6148,33 @@ test "a program builds the same with the edge lists the binary carries as with l
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"});
-    try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" });
+    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
+    try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" }, false);
+}
+
+test "a development build's cached units write the same source maps as a core built here" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The join splices a cached unit's text and its marks, and numbers the
+    // row's name identities into this module's one source map. A map that
+    // differs from the one the same module lowers to is the finding: the
+    // names array's order is first-occurrence order, so a dead canonical
+    // unit must not put a name behind a live one. `--core-root=mycore`
+    // moves only the source path (`beni:///mycore/…`); the helper normalizes
+    // that one word.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/run/Arithmetic.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectSameWithBuiltEdges(&w, "--platform=node", "maps", &.{"Main.beni"}, true);
 }
 
 test "a program that suspends builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6168,7 +6195,7 @@ test "a program that suspends builds the same with the edge lists the binary car
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"});
+    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
 }
 
 test "a page builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6189,7 +6216,7 @@ test "a page builds the same with the edge lists the binary carries as with list
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"});
+    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"}, false);
 }
 
 test "a page builds the same under --release with the edge lists the binary carries as with lists it builds" {
@@ -6211,7 +6238,7 @@ test "a page builds the same under --release with the edge lists the binary carr
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" });
+    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" }, false);
 }
 
 test "a browser-inline page builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6232,7 +6259,7 @@ test "a browser-inline page builds the same with the edge lists the binary carri
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"});
+    try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"}, false);
 }
 
 /// One fixture of the corpus, copied into the project at `to`.
@@ -6249,7 +6276,7 @@ fn copyFixture(w: *World, from: []const u8, to: []const u8) !void {
 /// builds every module's lists. The one-thread build holds the rows and the
 /// walk to CLAUDE.md rule 5: workers read rows in whatever order they take
 /// modules, and the tree must not show it.
-fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8) !void {
+fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8, mapped: bool) !void {
     const arena = w.arena.allocator();
     const hows = [_][]const u8{ "embedded", "jobs1", "built" };
     var dirs: [hows.len][]const u8 = undefined;
@@ -6257,7 +6284,8 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
     for (hows, &dirs, &stderrs) |how, *dir, *stderr| {
         dir.* = try std.fmt.allocPrint(arena, "{s}-{s}", .{ out, how });
         var argv: std.ArrayList([]const u8) = .empty;
-        try argv.appendSlice(arena, &.{ "build", platform, "--no-cache", "--no-source-maps", "--self-profile=trace.json" });
+        try argv.appendSlice(arena, &.{ "build", platform, "--no-cache", "--self-profile=trace.json" });
+        if (!mapped) try argv.append(arena, "--no-source-maps");
         try argv.append(arena, try std.fmt.allocPrint(arena, "--out={s}", .{dir.*}));
         if (std.mem.eql(u8, how, "jobs1")) try argv.append(arena, "--jobs=1");
         if (std.mem.eql(u8, how, "built")) try argv.append(arena, "--core-root=mycore");
@@ -6267,10 +6295,23 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
         try testing.expectEqualStrings("", r.stdout);
         stderr.* = r.stderr;
         const counters = try emitCounters(w);
+        const release = blk: {
+            for (args) |a| if (std.mem.eql(u8, a, "--release")) break :blk true;
+            break :blk false;
+        };
         if (std.mem.eql(u8, how, "built")) {
             try testing.expectEqual(@as(u64, 0), counters.edge_lists_embedded);
+            try testing.expectEqual(@as(u64, 0), counters.emit_units_embedded);
         } else {
             try testing.expect(counters.edge_lists_embedded != 0);
+            // A development build prints the units of the rows it reads; a
+            // release build's bytes come from the release optimiser, so it
+            // reads none (`backend.md` §9, *The join*).
+            if (release) {
+                try testing.expectEqual(@as(u64, 0), counters.emit_units_embedded);
+            } else {
+                try testing.expect(counters.emit_units_embedded != 0);
+            }
         }
     }
     const want = try w.listFiles(dirs[0]);
@@ -6283,7 +6324,15 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
             try testing.expectEqualStrings(a, b);
             const want_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[0], a }));
             const got_bytes = try w.read(try std.fs.path.join(arena, &.{ dir, b }));
-            testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
+            // A source map names the core's path, and `--core-root=mycore`
+            // moves it. That one word is the only expected difference; the
+            // rest — every generated position, every mapping and the whole
+            // `names` array — must be byte-identical, cached units included.
+            const comparable = if (mapped and std.mem.endsWith(u8, b, ".mjs.map"))
+                try std.mem.replaceOwned(u8, arena, got_bytes, "mycore", "core")
+            else
+                got_bytes;
+            testing.expectEqualStrings(want_bytes, comparable) catch |err| {
                 std.debug.print("{s} differs between {s} and {s}\n", .{ a, dirs[0], dir });
                 return err;
             };
@@ -6299,6 +6348,8 @@ const EmitCounters = struct {
     reach_walks: u64 = 0,
     modules_lowered: u64 = 0,
     modules_printed: u64 = 0,
+    emit_units_embedded: u64 = 0,
+    emit_units_lowered: u64 = 0,
 };
 
 /// Reachability's and lowering's counters (`backend.md` §9, §15.1) from
@@ -6315,6 +6366,8 @@ fn emitCounters(w: *World) !EmitCounters {
             reach_walks: ?u64 = null,
             modules_lowered: ?u64 = null,
             modules_printed: ?u64 = null,
+            emit_units_embedded: ?u64 = null,
+            emit_units_lowered: ?u64 = null,
         } = .{},
     };
     const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });

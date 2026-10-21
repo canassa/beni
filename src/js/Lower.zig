@@ -60,6 +60,7 @@ const SchemaValid = @import("SchemaValid.zig");
 const Fields = @import("Fields.zig");
 const Funnel = @import("Funnel.zig");
 const RepKeys = @import("RepKeys.zig");
+const EmitPack = @import("EmitPack.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
@@ -150,6 +151,19 @@ pub const Result = struct {
     /// `ir.body[head_len..len-tail_len]` in order, with no gaps (`Unit`,
     /// `backend.md` §9). In the caller's scratch arena.
     units: []const Unit = &.{},
+    /// The emit row the module was spliced from, when a development build
+    /// read one (`Input.reuse`): its text, marks and units are the join's
+    /// pieces. Null when the module was lowered whole.
+    row: ?*const EmitPack.Row = null,
+    /// The IR name each of `row.idents` was interned as, aligned with the
+    /// row's idents: a cached unit's marks and introduced lists name these
+    /// (`Print.Context.numberName`). In the caller's scratch arena.
+    row_names: []const JsIr.NameIndex = &.{},
+    /// Units spliced from `row`, and units this build lowered while the row
+    /// was available (`backend.md` §9, *What the counters say*). Summed by
+    /// the emitter after the workers join.
+    embedded_units: u32 = 0,
+    lowered_units: u32 = 0,
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         r.ir.deinit(gpa);
@@ -176,6 +190,32 @@ pub const Unit = struct {
     /// a build's answers against (`backend.md` §9, *The funnel*). The maker
     /// reads it; every other caller leaves it be.
     record: u32 = Funnel.no_record,
+    /// The row unit this one splices (`row.units[row]`), when a development
+    /// build took it from its emit row; `start`/`end` are then 0 and the log
+    /// does not come from the IR. Null: the unit is the range above.
+    row: ?u32 = null,
+};
+
+/// The plan a development build makes from an emit row (`backend.md` §9,
+/// *The join*): which declarations it takes whole, and the row's module
+/// table resolved to this build's graph. Built after the reach walk and
+/// before the first declaration is lowered, so a taken declaration's bytes
+/// never enter the build's IR.
+const Reuse = struct {
+    row: *const EmitPack.Row,
+    /// Row module slot k (1-based; slot 0 is this module) → this build's
+    /// module, or null when the build's graph does not have it. A
+    /// declaration whose units name a missing module is not taken.
+    modules: []const ?Graph.Index,
+    /// Per declaration, its row units in the row's order.
+    units: []std.ArrayList(u32),
+    /// Whether the declaration's whole unit set is taken: its live set and
+    /// every fact match. A declaration not taken is lowered whole.
+    take: []bool,
+    /// The order the join visits declarations in: `emissionOrder`'s
+    /// restricted walk, replayed from the row's per-unit edges (issue #328,
+    /// `backend.md` §9, *The join*). Never a canonical order filtered.
+    order: []const u32,
 };
 
 /// One top-level statement on its own: appended to the body, then recorded as
@@ -301,6 +341,13 @@ pub const Input = struct {
     /// choice (`Reach.Input.schema_shapes`), false for a module whose edges
     /// came from the embedded pack.
     schema_shapes: bool = false,
+    /// The emit row this module may be spliced from (`backend.md` §9, *The
+    /// join*): set only by a development build whose edges came from the
+    /// pack, for a module whose row the pack covers. The lowering resolves
+    /// the row's module table against this build's graph; if it cannot, or
+    /// a unit's facts differ, it lowers what it must and says so in
+    /// `Result.lowered_units`.
+    reuse: ?*const EmitPack.Row = null,
     /// Per `core_private_values`, whether the build's `core/List` declares
     /// it (`corePrivateDeclared`). The embedded core declares all five; a
     /// `--core-root` core that does not is refused where a module needs
@@ -670,8 +717,10 @@ pub fn lower(
     l.directHasPieces();
     // `schema.md` §6: the runs that compile to a validator. The shape
     // choice (`l.in.schema_shapes`) reaches a shape run's printed bytes and
-    // has no funnel fact yet (issue #432), so the maker's canonical lowering
-    // takes its default; it must become a fact before a build reads rows.
+    // is a funnel fact (`EmitPack.Question.schema_shapes`, issue #432):
+    // every unit that reads `valid_sites` asks it where it branches
+    // (`referenceName`, `callExpr`, `jsonValidatorCall`), because these
+    // prep asks are before the first unit and belong to none.
     l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
     // Reachability found the module's validator runs from its own dispatch
     // table (`Reach.Result.dispatch`); the runs this lowering writes must be
@@ -679,6 +728,15 @@ pub fn lower(
     if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
         const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
         if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
+    };
+    // What a development build can splice from its emit row (`Input.reuse`,
+    // `backend.md` §9): the plan, the constants its taken units name, and
+    // the identities its marks number. After the walk, before any
+    // declaration is lowered, so a taken declaration asks nothing.
+    if (input.reuse) |row| if (try l.planReuse(row)) |plan| {
+        l.reuse = plan;
+        if (l.reuse) |*at| try l.seedReuse(at);
+        l.row_names = try l.internRowNames(row);
     };
 
     // Declarations first: the import list is what lowering DISCOVERS (the
@@ -740,24 +798,36 @@ pub fn lower(
     }
     const decl_base: u32 = @intCast(body.items.len);
     try body.appendSlice(scratch, declarations.items);
-    for (decl_units.items) |unit| try units.append(scratch, .{ .start = decl_base + unit.start, .end = decl_base + unit.end, .record = unit.record });
+    for (decl_units.items) |unit| try units.append(scratch, .{
+        .start = if (unit.row == null) decl_base + unit.start else 0,
+        .end = if (unit.row == null) decl_base + unit.end else 0,
+        .record = unit.record,
+        .row = unit.row,
+    });
     const tail_len: u32 = @intCast(tail.items.len);
     try body.appendSlice(scratch, tail.items);
 
     // The cover a cached build splices by: the units are contiguous,
     // nonempty, and exactly `[head_len, len − tail_len)` — the tail is
-    // statements too, but never a unit. Compiled away outside a safety
-    // build; slice 3 splices by these positions, so drift is a bug the day
-    // the edit is written, not the day a program misbehaves.
+    // statements too, but never a unit. A row unit has no statements here.
+    // Compiled away outside a safety build; slice 3 splices by these
+    // positions, so drift is a bug the day the edit is written, not the day
+    // a program misbehaves.
     if (std.debug.runtime_safety) {
         var at = head_len;
         for (units.items) |unit| {
+            if (unit.row != null) continue;
             std.debug.assert(unit.start == at);
             std.debug.assert(unit.end > unit.start);
             at = unit.end;
         }
         std.debug.assert(at == @as(u32, @intCast(body.items.len - tail_len)));
     }
+    var embedded_units: u32 = 0;
+    var lowered_units: u32 = 0;
+    if (l.in.reuse != null) for (units.items) |unit| {
+        if (unit.row != null) embedded_units += 1 else lowered_units += 1;
+    };
 
     const range = try b.addRange(body.items);
     var ir = try b.toOwned(range);
@@ -793,6 +863,10 @@ pub fn lower(
         .head_len = head_len,
         .tail_len = tail_len,
         .units = units.items,
+        .row = if (l.reuse) |re| re.row else null,
+        .row_names = l.row_names,
+        .embedded_units = embedded_units,
+        .lowered_units = lowered_units,
     };
 }
 
@@ -1161,6 +1235,13 @@ pub const Lowerer = struct {
     /// `schema.md` §6: the callees of the module's validator runs
     /// (`SchemaValid`), which are `Schema.readValid`.
     valid_sites: SchemaValid.Sites = .{},
+    /// The emit row this module is being spliced from (`Input.reuse`), and
+    /// the plan built from it: which declarations are taken whole. Null when
+    /// there is no row or its module table does not resolve.
+    reuse: ?Reuse = null,
+    /// The IR name each of the row's idents was interned as (`Reuse`), for
+    /// `Result.row_names`; empty without a row.
+    row_names: []const JsIr.NameIndex = &.{},
     /// Per declaration, whether the program hook consumed it: a `view` or
     /// `update` a program record names and nothing else does, which is not
     /// emitted — the hook compiles what it needs of it where the program
@@ -2169,14 +2250,15 @@ pub const Lowerer = struct {
     }
 
     /// Opens a unit's record; `Funnel.no_record` when nobody is recording.
-    fn recBegin(l: *Lowerer, selector: Funnel.Selector) !u32 {
+    /// Public because `SchemaLower` opens one per schema part (issue #349).
+    pub fn recBegin(l: *Lowerer, selector: Funnel.Selector) !u32 {
         const r = l.in.record orelse return Funnel.no_record;
         return r.begin(l.scratch, selector);
     }
 
     /// Closes the unit `record`; `decl`, for a declaration's unit, is the
     /// declaration whose edges the record then carries.
-    fn recEnd(l: *Lowerer, record: u32, decl: ?u32) !void {
+    pub fn recEnd(l: *Lowerer, record: u32, decl: ?u32) !void {
         if (record == Funnel.no_record) return;
         const r = l.in.record.?;
         try r.end(record);
@@ -2280,7 +2362,7 @@ pub const Lowerer = struct {
     // ---- Module structure -------------------------------------------------
 
     fn declarations(l: *Lowerer, out: *StmtList, units: *std.ArrayList(Unit)) !void {
-        const order = try l.emissionOrder();
+        const order = if (l.reuse) |re| re.order else try l.emissionOrder();
         // Every declaration is lowered where it stands, a function called
         // from one place (`findInlines`) too: whether its call takes it in
         // is known only once its caller is lowered, and lowering it here
@@ -2290,7 +2372,20 @@ pub const Lowerer = struct {
         // a call did take it in; what they referenced, the body written in
         // place references too.
         const parts = try l.scratch.alloc(Part, order.len);
-        for (order, parts) |index, *part| part.* = try l.declarationPart(index);
+        for (order, parts) |index, *part| {
+            // A declaration the plan took whole asks nothing: what it would
+            // have asked is the row's (`replayReuse`), at this same point in
+            // the walk, so the rebuilt head's import order is the one the
+            // taken bytes expect.
+            if (l.reuse) |*re| {
+                if (re.take[index]) {
+                    try l.replayReuse(re, index);
+                    part.* = .{ .items = &.{} };
+                    continue;
+                }
+            }
+            part.* = try l.declarationPart(index);
+        }
         // A declaration the program hook consumed that its code names after
         // all (`wanted`) is lowered now, in its place — and what it names in
         // turn, until nothing more is wanted.
@@ -2298,6 +2393,9 @@ pub const Lowerer = struct {
         while (again) {
             again = false;
             for (order, parts) |index, *part| {
+                if (l.reuse) |*re| {
+                    if (re.take[index]) continue;
+                }
                 const wanted = index < l.wanted.len and l.wanted[index];
                 l.askSelf(.wanted, wanted, 0, index);
                 if (!wanted) continue;
@@ -2311,10 +2409,38 @@ pub const Lowerer = struct {
         }
         for (order, parts) |index, part| {
             if (index < l.inlined.len and l.inlined[index] and !l.name_used[index]) continue;
+            if (l.reuse) |*re| {
+                if (re.take[index]) {
+                    for (re.units[index].items) |ui| {
+                        try units.append(l.scratch, .{
+                            .start = 0,
+                            .end = 0,
+                            .record = Funnel.no_record,
+                            .row = @intCast(ui),
+                        });
+                    }
+                    continue;
+                }
+            }
             const at: u32 = @intCast(out.items.len);
             try out.appendSlice(l.scratch, part.items);
             if (part.items.len == 0) continue;
             const end: u32 = @intCast(out.items.len);
+            // A schema declaration is cut at the parts `SchemaLower`
+            // recorded, each its own unit (issue #349). They cover the
+            // whole declaration, so the twin/lift split below does not
+            // apply.
+            if (part.records.schema.len != 0) {
+                for (part.records.schema, 0..) |sp, si| {
+                    const next: u32 = if (si + 1 < part.records.schema.len)
+                        part.records.schema[si + 1].at
+                    else
+                        @intCast(part.items.len);
+                    std.debug.assert(next > sp.at);
+                    try units.append(l.scratch, .{ .start = at + sp.at, .end = at + next, .record = sp.record });
+                }
+                continue;
+            }
             // A declaration's statements are several units where the
             // lowering drew a boundary: its direct body, its `$s` twin
             // (`transparent-effects-proposal.md` §16.2), one able to
@@ -2409,6 +2535,393 @@ pub const Lowerer = struct {
         try l.constDecl(out, n, try l.arrowOf(params, stmts.items, p), p);
     }
 
+    // ---- Reading a cached row -------------------------------------------
+    //
+    // A development build whose edges came from the pack may splice the
+    // units of an emit row (`backend.md` §9, *The join*). The plan is
+    // declaration at a time: the row is canonical (every root live), the
+    // build's set is what reachability kept, and a declaration is carried
+    // over only when the two unit sets agree and every fact the row's units
+    // asked still answers the same. Otherwise the whole declaration is
+    // lowered here; a half-taken declaration would order its call sites by
+    // two different walks. Units no declaration owns (nullary constants,
+    // synthesised values, the head and the tail) are always rebuilt.
+
+    /// The plan for `row`, or null when it cannot be used at all. Built
+    /// before the first declaration is lowered, so what a taken declaration
+    /// would have asked is replayed from the row instead.
+    fn planReuse(l: *Lowerer, row: *const EmitPack.Row) Allocator.Error!?Reuse {
+        const r = l.in.live orelse return null;
+        // A schema declaration's units are its parts (#349), and a virtual
+        // codec has no `Bir.Decl` for the row's positions to name; neither
+        // can be taken, and the order replay below cannot describe the
+        // schema walk. Such a module falls back whole (the maker refuses to
+        // write a row for one today, so this is a guard, not a case).
+        for (row.units) |unit| {
+            if (unit.selector.kind == .schema) return null;
+        }
+        if (l.codecCount() != 0) return null;
+        // A schema declaration whose every part is empty writes no unit, so
+        // the check above cannot see it; its root still takes a place in
+        // `emissionOrder`, which the row's edges do not describe.
+        for (l.bir.decls) |d| {
+            if (d.kind == .schema) return null;
+        }
+        const modules = try l.scratch.alloc(?Graph.Index, row.modules.len);
+        for (row.modules, modules) |ref, *slot| {
+            const module_name = l.interner.global.find(row.strings[ref.name]) orelse {
+                slot.* = null;
+                continue;
+            };
+            slot.* = l.in.graph.lookup(ref.package, module_name);
+        }
+        const count = l.bir.decls.len;
+        const units = try l.scratch.alloc(std.ArrayList(u32), count);
+        for (units) |*list| list.* = .empty;
+        for (row.units, 0..) |unit, at| {
+            if (unit.selector.kind != .decl) continue;
+            const decl = unit.selector.a;
+            if (decl >= count) return null;
+            if (!l.bir.decls[decl].kind.isValue()) return null;
+            try units[decl].append(l.scratch, @intCast(at));
+        }
+        const take = try l.scratch.alloc(bool, count);
+        @memset(take, false);
+        for (0..count) |decl| {
+            if (units[decl].items.len == 0) continue;
+            const a: u32 = @intCast(decl);
+            // What this build would write for it, in the row's order: the
+            // direct body, the `$s` twin, then each surviving lifted piece.
+            var want: std.ArrayList(u32) = .empty;
+            const consumed = a < l.consumed.len and l.consumed[a];
+            if (!consumed and r.decl(l.in.module, a)) try want.append(l.scratch, EmitPack.Selector.direct);
+            if (!consumed and l.in.dispatch.effectDecl(a).twin and r.twin(l.in.module, a))
+                try want.append(l.scratch, EmitPack.Selector.twin);
+            if (l.in.direct) |d| for (d.lifts, 0..) |piece, gi| {
+                if (piece.module != l.in.module.int() or piece.decl != a or piece.in_place) continue;
+                if (r.of(l.in.module).lift(gi)) try want.append(l.scratch, EmitPack.Selector.part_lift + @as(u32, @intCast(gi)));
+            };
+            if (units[decl].items.len != want.items.len) continue;
+            var same = true;
+            for (units[decl].items, want.items) |ui, part| {
+                // A lifted piece's selector names an index in the build's
+                // own `direct.lifts`, and the row does not carry the
+                // piece's identity (its site, its captures). Taking one on
+                // an index alone could splice another piece's body, so a
+                // declaration with a lift is lowered here until the row
+                // carries that identity. The maker's canonical lowering has
+                // no `direct` handle, so no row has a lift today.
+                if (part >= EmitPack.Selector.part_lift or row.units[ui].selector.b != part) {
+                    same = false;
+                    break;
+                }
+            }
+            if (!same) continue;
+            var ok = true;
+            for (units[decl].items) |ui| {
+                const unit = row.units[ui];
+                for (unit.facts) |fact| {
+                    if (!l.reuseFact(row, modules, fact) or !l.reuseNullary(row, modules, fact)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (!ok) break;
+                for (unit.needed) |needed| {
+                    if (needed.module != EmitPack.self_slot) {
+                        if (needed.module == 0 or needed.module - 1 >= modules.len or modules[needed.module - 1] == null) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                    // A value's interface slot must exist on the other side:
+                    // the row is keyed by this module alone, and a malformed
+                    // or stale row must fall back, never import a name that
+                    // is not there (`neededName` would report and spell a
+                    // placeholder).
+                    // One of the two forms must be there (`Needed`).
+                    if (needed.value == EmitPack.no_value and needed.base == EmitPack.no_string) {
+                        ok = false;
+                        break;
+                    }
+                    if (needed.value != EmitPack.no_value) {
+                        const m2: Graph.Index = if (needed.module == EmitPack.self_slot)
+                            l.in.module
+                        else
+                            modules[needed.module - 1].?;
+                        if (m2.int() >= l.in.interfaces.len or needed.value >= l.in.interfaces[m2.int()].values.len) {
+                            ok = false;
+                            break;
+                        }
+                    }
+                }
+                if (!ok) break;
+            }
+            take[decl] = ok;
+        }
+        const order = try l.replayOrder(row, units) orelse return null;
+        return .{ .row = row, .modules = modules, .units = units, .take = take, .order = order };
+    }
+
+    /// `emissionOrder`'s restricted walk, replayed from the row's per-unit
+    /// edges (issue #328, `backend.md` §9, *The join*): the roots are the
+    /// declarations this build kept, in module order, and each one's
+    /// outgoing edges are the row's canonical positions. Null when the row
+    /// cannot describe the walk — a virtual codec, a schema declaration, a
+    /// live declaration with no unit, or an edge outside the declaration
+    /// table — and the module is then lowered whole.
+    fn replayOrder(l: *Lowerer, row: *const EmitPack.Row, units: []const std.ArrayList(u32)) Allocator.Error!?[]const u32 {
+        const count = l.bir.decls.len;
+        if (l.codecCount() != 0) return null;
+        const r = l.in.live orelse return null;
+        const edges = try l.scratch.alloc([]const u32, count);
+        for (0..count) |decl| {
+            if (units[decl].items.len == 0) {
+                edges[decl] = &.{};
+                continue;
+            }
+            const first = row.units[units[decl].items[0]].edges;
+            for (units[decl].items[1..]) |ui| {
+                if (!std.mem.eql(u32, first, row.units[ui].edges)) return null;
+            }
+            for (first) |next| if (next >= count) return null;
+            edges[decl] = first;
+        }
+        const state = try l.scratch.alloc(u8, count);
+        @memset(state, 0);
+        var order: std.ArrayList(u32) = .empty;
+        try order.ensureTotalCapacity(l.scratch, count);
+        const ReplayFrame = struct { decl: u32, next: usize };
+        var stack: std.ArrayList(ReplayFrame) = .empty;
+        for (0..count) |root| {
+            if (!l.liveAny(r, @intCast(root))) continue;
+            // A live declaration with no unit emits nothing. The row has no
+            // edges for it, so the walk may use it only when this build's
+            // declaration has nothing to reach either: no instructions and
+            // no `top_value` reference. A value with instructions but no
+            // statement (none is known) would make the row's empty edge
+            // list a lie, so the module falls back.
+            if (units[root].items.len == 0) {
+                const d = l.bir.decls[root];
+                if (d.inst_start.int() != d.inst_end.int()) return null;
+                for (l.bir.refs[d.refs_start..d.refs_end]) |ref| {
+                    if (ref.kind == .top_value) return null;
+                }
+            }
+            if (state[root] != 0) continue;
+            try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0 });
+            state[root] = 1;
+            while (stack.items.len != 0) {
+                const frame = &stack.items[stack.items.len - 1];
+                const list = edges[frame.decl];
+                if (frame.next < list.len) {
+                    const next = list[frame.next];
+                    frame.next += 1;
+                    if (next >= count or state[next] != 0) continue;
+                    state[next] = 1;
+                    try stack.append(l.scratch, .{ .decl = next, .next = 0 });
+                    continue;
+                }
+                state[frame.decl] = 2;
+                order.appendAssumeCapacity(frame.decl);
+                _ = stack.pop();
+            }
+        }
+        return order.items;
+    }
+
+    /// `emissionOrder`'s root predicate: a declaration in any form the
+    /// build kept (`liveDecl`, `liveTwin`, a surviving lift). Schema
+    /// declarations never reach a row, which `replayOrder` refuses.
+    fn liveAny(l: *Lowerer, r: *const Reach.Result, decl: u32) bool {
+        if (r.decl(l.in.module, decl) or r.twin(l.in.module, decl)) return true;
+        if (l.in.direct) |d| for (d.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.decl != decl or piece.in_place) continue;
+            if (r.of(l.in.module).lift(gi)) return true;
+        };
+        return false;
+    }
+
+    /// Whether one fact the row asked still answers the same in this build.
+    /// `false` is a legitimate difference (the declaration is lowered); a
+    /// malformed or unanswerable fact is also `false`, because a reader that
+    /// cannot check a row must not take it.
+    fn reuseFact(l: *Lowerer, row: *const EmitPack.Row, modules: []const ?Graph.Index, fact: EmitPack.Fact) bool {
+        _ = row;
+        const r = l.in.live orelse return false;
+        const m: Graph.Index = if (fact.module == EmitPack.self_slot) l.in.module else blk: {
+            if (fact.module == 0 or fact.module - 1 >= modules.len) return false;
+            break :blk modules[fact.module - 1] orelse return false;
+        };
+        const answer: bool = switch (fact.question) {
+            .decl => r.decl(m, fact.index),
+            .derived => r.derivedRow(m, fact.index),
+            .twin => r.twin(m, fact.index),
+            .ctor => if (m == l.in.module) r.ctor(m, fact.index) else r.extCtor(m, fact.index),
+            .schema => blk: {
+                const member_index = fact.index % SchemaGraph.Member.count;
+                if (member_index >= SchemaGraph.Member.count) break :blk false;
+                const which: SchemaGraph.Member = @fromBackingInt(@intCast(member_index));
+                break :blk r.schema(m, fact.index / SchemaGraph.Member.count, which);
+            },
+            .lift => if (m == l.in.module) r.of(m).lift(fact.index) else return false,
+            .arm_dead => blk: {
+                if (fact.index >= l.dead_arms.bit_length) break :blk false;
+                break :blk l.dead_arms.isSet(fact.index);
+            },
+            .probe => blk: {
+                if (fact.where >= l.probe_dead.len) break :blk false;
+                const dead = &l.probe_dead[fact.where];
+                if (fact.index >= dead.bit_length) break :blk false;
+                break :blk dead.isSet(fact.index);
+            },
+            .development => l.in.development,
+            .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
+            .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
+            .nullary, .primitive, .steps => return fact.answer,
+            .entry => l.in.entry_decl != null,
+            .schema_library => l.in.schema_library,
+            .core_private => blk: {
+                if (fact.where >= l.in.core_private.len) return false;
+                break :blk l.in.core_private[fact.where];
+            },
+            .debug => l.in.debug != null,
+            .markup => false,
+            .direct => l.direct_pieces,
+            .schema_shapes => l.in.schema_shapes,
+        };
+        return answer == fact.answer;
+    }
+
+    /// Whether a `nullary` or `primitive` fact can be rebuilt from the
+    /// build's own BIR and interfaces: a nullary is not a schema's (the fact
+    /// does not carry the owner), and the constructor it names exists on
+    /// this side; a primitive's `where` is one of the three comparators.
+    fn reuseNullary(l: *Lowerer, row: *const EmitPack.Row, modules: []const ?Graph.Index, fact: EmitPack.Fact) bool {
+        _ = row;
+        if (fact.question == .primitive) return fact.where <= 2;
+        if (fact.question != .nullary) return true;
+        if (fact.where & EmitPack.Selector.nullary_schema != 0) return false;
+        const ext = fact.where & EmitPack.Selector.nullary_ext != 0;
+        if (!ext) return fact.module == EmitPack.self_slot and fact.index < l.bir.ctors.len;
+        if (fact.module == 0 or fact.module - 1 >= modules.len) return false;
+        const module = modules[fact.module - 1] orelse return false;
+        if (module.int() >= l.in.interfaces.len) return false;
+        return fact.index < l.in.interfaces[module.int()].ctors.len;
+    }
+
+    /// Replays the row's import and nullary asks for a declaration taken
+    /// whole, in the row's order, where `declarationPart` would have asked.
+    fn replayReuse(l: *Lowerer, re: *const Reuse, decl: u32) !void {
+        for (re.units[decl].items) |ui| {
+            for (re.row.units[ui].needed) |needed| {
+                const module = if (needed.module == EmitPack.self_slot)
+                    l.in.module
+                else
+                    re.modules[needed.module - 1].?;
+                var entry: Needed = .{ .module = module };
+                if (needed.value != EmitPack.no_value) entry.value = needed.value;
+                if (needed.base != EmitPack.no_string) {
+                    entry.base = (try l.interner.getOrPut(l.gpa, re.row.strings[needed.base])).toOptional();
+                }
+                try l.needName(entry);
+            }
+        }
+    }
+
+    /// Seeds what a taken unit's bytes reached, so the rebuilt head and the
+    /// rebuilt nullary constants match them: the runtime exports, the
+    /// primitive comparators, and every nullary constant the unit named.
+    fn seedReuse(l: *Lowerer, re: *const Reuse) !void {
+        for (re.take, 0..) |taken, decl| {
+            if (!taken) continue;
+            for (re.units[decl].items) |ui| {
+                const unit = re.row.units[ui];
+                if (unit.runtime & EmitPack.runtime_deep != 0) l.needs.deep = true;
+                if (unit.runtime & EmitPack.runtime_list_eq != 0) l.needs.list_eq = true;
+                if (unit.runtime & EmitPack.runtime_list_compare != 0) l.needs.list_compare = true;
+                for (unit.facts) |fact| switch (fact.question) {
+                    .primitive => switch (fact.where) {
+                        0 => l.needs.eq_prim = true,
+                        1 => l.needs.compare_prim = true,
+                        2 => l.needs.compare_char = true,
+                        else => unreachable,
+                    },
+                    .nullary => {
+                        const ext = fact.where & EmitPack.Selector.nullary_ext != 0;
+                        const module = if (ext) re.modules[fact.module - 1].? else l.in.module;
+                        if (!try l.nullaryFromFact(module, fact.index, ext)) unreachable;
+                    },
+                    else => {},
+                };
+            }
+        }
+    }
+
+    /// Rebuilds a nullary constant the row's unit named, from the build's
+    /// own BIR (this module's constructor) or interface (another's). The
+    /// name and base are `nullaryConstant`'s, so the taken text's existing
+    /// reference resolves.
+    fn nullaryFromFact(l: *Lowerer, module: Graph.Index, ctor: u32, ext: bool) !bool {
+        if (!ext) {
+            if (ctor >= l.bir.ctors.len) return false;
+            const c = l.bir.ctors[ctor];
+            _ = try l.putNullary(
+                .{ .ext = false, .module = 0, .ctor = ctor },
+                l.ctorRepLocal(ctor),
+                l.bir.symbol(c.name),
+            );
+            return true;
+        }
+        if (module.int() >= l.in.interfaces.len) return false;
+        const iface = &l.in.interfaces[module.int()];
+        if (ctor >= iface.ctors.len) return false;
+        const c = iface.ctors[ctor];
+        _ = try l.putNullary(
+            .{ .ext = true, .module = module.int(), .ctor = ctor },
+            l.ctorRepExternal(module, ctor),
+            iface.symbols[@backingInt(c.name)],
+        );
+        return true;
+    }
+
+    /// The module constant for `key`, written once (`nullaryConstant`,
+    /// `schemaNullary`). Its base spelling is the maker's: `<tag>` for this
+    /// module's constructor, `<Module>$<tag>` for an imported one, the
+    /// module path's dots doubled into `$`.
+    fn putNullary(l: *Lowerer, key: NullaryKey, rep: CtorRep, tag: Symbol) !JsIr.NameIndex {
+        const slot = try l.nullary.getOrPut(l.scratch, key);
+        if (slot.found_existing) return slot.value_ptr.name;
+        const base = if (key.ext) blk: {
+            const path = l.text(l.in.graph.moduleName(@fromBackingInt(@intCast(key.module))));
+            const out = try std.fmt.allocPrint(l.scratch, "{s}${s}", .{ path, l.text(tag) });
+            for (out[0..path.len]) |*c| {
+                if (c.* == '.') c.* = '$';
+            }
+            break :blk out;
+        } else l.text(tag);
+        slot.value_ptr.* = .{ .base = base, .name = try l.synthesisedName(base), .rep = rep, .tag = tag };
+        return slot.value_ptr.name;
+    }
+
+    /// Interns every identity the row's marks can name into this module's
+    /// IR, returning the IR index of each, aligned with `row.idents`. The
+    /// interned identity is the maker's (`core_pack_main.ident`), so a
+    /// cached unit's `introduced` and mark names resolve to the same name
+    /// this build would print.
+    fn internRowNames(l: *Lowerer, row: *const EmitPack.Row) ![]const JsIr.NameIndex {
+        const out = try l.scratch.alloc(JsIr.NameIndex, row.idents.len);
+        for (row.idents, out) |row_ident, *slot| {
+            const base = try l.interner.getOrPut(l.gpa, row.strings[row_ident.base]);
+            const module: Symbol.Optional = if (row_ident.module == EmitPack.no_string)
+                .none
+            else
+                (try l.interner.getOrPut(l.gpa, row.strings[row_ident.module])).toOptional();
+            slot.* = try l.b.intern(.{ .module = module, .base = base, .tag = row_ident.tag });
+        }
+        return out;
+    }
+
     /// One declaration's statements: what `declaration` appended for it, and
     /// where its twin and its lifted pieces begin, when it wrote any.
     const Part = struct {
@@ -2433,6 +2946,10 @@ pub const Lowerer = struct {
             direct: u32 = Funnel.no_record,
             twin: u32 = Funnel.no_record,
             pieces: []const u32 = &.{},
+            /// A schema declaration's parts (issue #349), each with its own
+            /// record: the units `declarations` cuts instead of the two
+            /// above.
+            schema: []const SchemaLower.UnitPart = &.{},
         };
     };
 
@@ -2696,9 +3213,9 @@ pub const Lowerer = struct {
     fn declaration(l: *Lowerer, out: *StmtList, index: u32, twin_at: *?u32, records: *Part.Records) !void {
         // A derived codec (`schema.md` §12.10): a virtual declaration.
         if (index >= l.bir.decls.len) {
-            records.direct = try l.recBegin(Funnel.Selector.schemaPart(index, Funnel.Selector.direct));
-            try SchemaLower.declaration(l, out, index);
-            try l.recEnd(records.direct, null);
+            var parts: std.ArrayList(SchemaLower.UnitPart) = .empty;
+            try SchemaLower.declaration(l, out, index, &parts);
+            records.schema = parts.items;
             return;
         }
         const d = l.bir.decls[index];
@@ -2709,11 +3226,11 @@ pub const Lowerer = struct {
             // has no runtime existence at all.
             .type, .type_alias, .foreign_type => return,
             // Its `via`s, description and directions, each as it survived
-            // (`schema.md` §6).
+            // (`schema.md` §6), and each its own unit (issue #349).
             .schema => {
-                records.direct = try l.recBegin(Funnel.Selector.schemaPart(index, Funnel.Selector.direct));
-                try SchemaLower.declaration(l, out, index);
-                try l.recEnd(records.direct, null);
+                var parts: std.ArrayList(SchemaLower.UnitPart) = .empty;
+                try SchemaLower.declaration(l, out, index, &parts);
+                records.schema = parts.items;
                 return;
             },
             // A vocabulary declaration is data for the checker and the
@@ -5926,7 +6443,11 @@ pub const Lowerer = struct {
             return l.coreSchemaValue("readValid", p);
         }
         // A shape run calls the shared validator (`schema.md` §6, *A
-        // validator run is a shape that one shared validator reads*).
+        // validator run is a shape that one shared validator reads*). The
+        // shape choice is asked BEFORE the branch, so a unit that took the
+        // other side records the fork too (`EmitPack.Question.schema_shapes`,
+        // issue #432).
+        l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int())) {
             // `shape_callees` is filled only outside the library
             // (`SchemaValid.sites`), so the unit carries the answer
@@ -8805,8 +9326,11 @@ pub const Lowerer = struct {
     noinline fn jsonValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, p: u32) !?Node.Index {
         // Both runner sets are empty under `--schema-library` and the call
         // lowers as an ordinary one, so the unit carries the answer
-        // (`EmitPack.Question.schema_library`).
+        // (`EmitPack.Question.schema_library`). The shape choice changes
+        // which set has the call (`EmitPack.Question.schema_shapes`, issue
+        // #432), so it is asked here too.
         l.askSelf(.schema_library, l.in.schema_library, 0, 0);
+        l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         const d = l.bir.instData(inst);
         const shape = l.valid_sites.shapeCodecOfCall(inst.int());
         const k = shape orelse l.valid_sites.codecOfCall(inst.int()) orelse return null;
@@ -8955,6 +9479,10 @@ pub const Lowerer = struct {
         // build whose module does have one lowers this unit itself
         // (`backend.md` §9, *The funnel*; `EmitPack.Question.markup`).
         l.askSelf(.markup, l.mk != null, 0, 0);
+        // The shape choice changes which validator set a call is in
+        // (`EmitPack.Question.schema_shapes`, issue #432); every unit that
+        // lowers a call records it, whichever side it takes.
+        l.askSelf(.schema_shapes, l.in.schema_shapes, 0, 0);
         // A program constructor's call is the program hook's (`boundary.md`
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.

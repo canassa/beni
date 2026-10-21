@@ -266,6 +266,24 @@ pub const Context = struct {
         return @intCast(c.ir.extraSlice(c.ir.body, Index).len);
     }
 
+    /// Number one name a piece of text did NOT print: a unit spliced from a
+    /// row carries the maker's marks and identities, and the join puts its
+    /// names in the module's first-use order here (`backend.md` §9, *The
+    /// join*). Same dedupe and same `$` rule as `mapName`; the caller calls
+    /// this for the unit's `introduced` list in that list's order, before
+    /// the unit's piece, which is exactly where printing it would have put
+    /// those names.
+    pub fn numberName(c: *Context, index: JsIr.NameIndex) Allocator.Error!u32 {
+        if (!c.record_marks) return SourceMap.Mapping.no_name;
+        var marks: SourceMap.Marks = .init(c.arena);
+        marks.names = c.names_out;
+        marks.src = c.names_src;
+        const result = try mapNameIn(c.ir, c.names, false, &c.map_names, c.arena, &marks, index);
+        c.names_out = marks.names;
+        c.names_src = marks.src;
+        return result;
+    }
+
     /// Print `ir.body[from..to]` — one run of top-level statements — as one
     /// piece. The bytes and the marks come from the arena and live until
     /// the caller's join has copied them.
@@ -537,20 +555,7 @@ const Printer = struct {
     /// `--release` no binding is printed as written: a local's short name
     /// gets its beni name too (`backend.md` §11.2, item 5).
     fn mapName(p: *Printer, marks: *SourceMap.Marks, index: JsIr.NameIndex) Allocator.Error!u32 {
-        const n = p.ir.name(index);
-        if (p.rename == null and n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
-        if (std.mem.startsWith(u8, p.names.text(n.base), "$")) return SourceMap.Mapping.no_name;
-        if (p.map_names.len == 0) {
-            p.map_names = try p.spelled.alloc(u32, p.ir.names.len);
-            @memset(p.map_names, SourceMap.Mapping.no_name);
-        }
-        const slot = &p.map_names[index.int()];
-        if (slot.* == SourceMap.Mapping.no_name) {
-            slot.* = @intCast(marks.names.items.len);
-            try marks.names.append(marks.allocator, n.base);
-            try marks.src.append(marks.allocator, index.int());
-        }
-        return slot.*;
+        return mapNameIn(p.ir, p.names, p.rename != null, &p.map_names, p.spelled, marks, index);
     }
 
     // ---- Bytes out ---------------------------------------------------------
@@ -4185,4 +4190,32 @@ test "generated: the recursive and the iterative printer agree at every switch-o
             try testing.expectEqualStrings(whole, text);
         }
     }
+}
+
+/// `mapName` without a `Printer`: what `Context.numberName` needs to number
+/// a name whose unit is not printed here. `rename` is `--release`'s short
+/// names; a development build (the only reader of rows) passes false.
+fn mapNameIn(
+    ir: *const JsIr,
+    names: Names,
+    rename: bool,
+    map_names: *[]u32,
+    spelled: Allocator,
+    marks: *SourceMap.Marks,
+    index: JsIr.NameIndex,
+) Allocator.Error!u32 {
+    const n = ir.name(index);
+    if (!rename and n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
+    if (std.mem.startsWith(u8, names.text(n.base), "$")) return SourceMap.Mapping.no_name;
+    if (map_names.len == 0) {
+        map_names.* = try spelled.alloc(u32, ir.names.len);
+        @memset(map_names.*, SourceMap.Mapping.no_name);
+    }
+    const slot = &map_names.*[index.int()];
+    if (slot.* == SourceMap.Mapping.no_name) {
+        slot.* = @intCast(marks.names.items.len);
+        try marks.names.append(marks.allocator, n.base);
+        try marks.src.append(marks.allocator, index.int());
+    }
+    return slot.*;
 }
