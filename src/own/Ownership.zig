@@ -457,9 +457,11 @@ pub const Prov = struct {
     /// literal's, an update's, a record of numbers; printed with `◦`. No
     /// list's fact reads it.
     obj: bool = false,
+    /// Spike: a condition on this containing value, never an allocation.
+    condition_only: bool = false,
 
     fn eql(x: Prov, y: Prov) bool {
-        return x.kind == y.kind and x.a == y.a and x.b == y.b and x.path == y.path and x.taken == y.taken and x.obj == y.obj;
+        return x.kind == y.kind and x.a == y.a and x.b == y.b and x.path == y.path and x.taken == y.taken and x.obj == y.obj and x.condition_only == y.condition_only;
     }
 
     fn less(x: Prov, y: Prov) bool {
@@ -468,6 +470,7 @@ pub const Prov = struct {
         if (x.b != y.b) return x.b < y.b;
         if (x.path != y.path) return x.path < y.path;
         if (x.taken != y.taken) return @intFromBool(x.taken) < @intFromBool(y.taken);
+        if (x.condition_only != y.condition_only) return @intFromBool(x.condition_only) < @intFromBool(y.condition_only);
         return @intFromBool(x.obj) < @intFromBool(y.obj);
     }
 };
@@ -5513,6 +5516,8 @@ const Cell = struct {
     /// the cell's key: it is set when the cell is first made, and a cell
     /// projected from one inherits it.
     nonlist: bool = false,
+    /// Spike: value-scoped condition transported by the spatial marker.
+    condition_only: bool = false,
 };
 
 /// §18.2: an atom of a condition in the walk's vocabulary — cells that
@@ -6195,13 +6200,13 @@ const Walker = struct {
         // `nonlist` is in the key: a record object a definition names on
         // purpose (a top-level record's, `Record.copy`'s) is never the cell
         // a summary's result made at the same place, whichever comes first.
-        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9), c.a, c.b, c.path };
+        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9) | (@as(u32, @intFromBool(c.condition_only)) << 10), c.a, c.b, c.path };
         const gop = try w.cell_map.getOrPut(w.a, key);
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(w.cells.items.len);
         gop.value_ptr.* = id;
         var made = c;
-        made.nonlist = c.nonlist or c.kind == .except or w.isRecordCell(c) or try w.holdsOnlyRecords(c);
+        made.nonlist = !c.condition_only and (c.nonlist or c.kind == .except or w.isRecordCell(c) or try w.holdsOnlyRecords(c));
         try w.cells.append(w.a, made);
         try w.cell_cond.append(w.a, none);
         try w.cell_rcond.append(w.a, none);
@@ -6368,6 +6373,7 @@ const Walker = struct {
                 // What the value's deep condition says of the pair before the
                 // fold, which no deep condition can say after it.
                 if (try w.nested(before[i], before[j])) continue;
+                if (w.cells.items[e.cell].condition_only or w.cells.items[f.cell].condition_only) continue;
                 const ke = w.cells.items[e.cell].kind;
                 const kf = w.cells.items[f.cell].kind;
                 if (ke == .closure or ke == .func or kf == .closure or kf == .func) continue;
@@ -6412,6 +6418,7 @@ const Walker = struct {
     /// A symbolic cell one step further down (§4.3).
     fn projCell(w: *Walker, c: u32, s: Step, ty: ?Var) Allocator.Error!?u32 {
         const x = w.cells.items[c];
+        if (x.condition_only) return null;
         // §30.10: a schema's slot. A callee with a summary named every cell
         // it put there; a call with none may have put anything.
         if (s.kind == .schema_decoded or s.kind == .schema_encoded) if (x.kind == .result) {
@@ -6849,6 +6856,7 @@ const Walker = struct {
     /// the definition, pair by pair, which `spineAt` computes through an
     /// index. Kept to check it under runtime safety.
     fn spineAtPairwise(w: *Walker, av: AV, target: Entry) Allocator.Error!u32 {
+        if (w.cells.items[target.cell].condition_only) return cond_yes;
         var k = try w.cellSpine(target.cell);
         for (av) |other| {
             if (other.path == target.path) continue;
@@ -6932,6 +6940,7 @@ const Walker = struct {
     /// result; an arrived cell with every arrived cell, and a callback's
     /// result with the cells made here too.
     fn spineAt(w: *Walker, idx: *const SpineIndex, target: Entry) Allocator.Error!u32 {
+        if (w.cells.items[target.cell].condition_only) return cond_yes;
         if (std.sort.binarySearch(u32, idx.multi, target.cell, orderU32) != null) return cond_lost;
         var acc: CondAcc = .{};
         try acc.add(w, try w.cellSpine(target.cell));
@@ -7078,6 +7087,7 @@ const Walker = struct {
     }
 
     fn sepSpines(w: *Walker, x: u32, y: u32, exact: bool) Allocator.Error!u32 {
+        if (w.cells.items[x].condition_only or w.cells.items[y].condition_only) return cond_yes;
         const cx = w.cells.items[x];
         if (x == y and w.inCoreDict()) switch (cx.kind) {
             .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellSpine(x),
@@ -7161,6 +7171,7 @@ const Walker = struct {
     /// The record object a record demand reads for `c` (§31.3): an `except`
     /// cell is the object it was written over.
     fn recordObject(w: *const Walker, c: u32) ?u32 {
+        if (w.cells.items[c].condition_only) return null;
         const x = w.cells.items[c];
         return if (x.kind == .except) x.a else c;
     }
@@ -7173,6 +7184,7 @@ const Walker = struct {
     }
 
     fn atomCell(w: *Walker, c_in: u32) Allocator.Error!?u32 {
+        if (w.cells.items[c_in].condition_only) return null;
         const c = w.listFacing(c_in) orelse return null;
         if (w.cells.items[c].ty.unwrap()) |v| if (!try w.listTrackedVar(v)) return null;
         return c;
@@ -7242,6 +7254,7 @@ const Walker = struct {
 
     /// Whether two cells share no cell (§18.2).
     fn sepCells(w: *Walker, x: u32, y: u32, exact: bool) Allocator.Error!u32 {
+        if (w.cells.items[x].condition_only or w.cells.items[y].condition_only) return cond_yes;
         const cx = w.cells.items[x];
         const cy = w.cells.items[y];
         if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
@@ -7528,6 +7541,7 @@ const Walker = struct {
 
     /// Whether two cells share no record object.
     fn rsepCells(w: *Walker, x_in: u32, y_in: u32, exact: bool) Allocator.Error!u32 {
+        if (w.cells.items[x_in].condition_only or w.cells.items[y_in].condition_only) return cond_yes;
         const x = try w.rbase(x_in);
         const y = try w.rbase(y_in);
         const cx = w.cells.items[x];
@@ -9059,7 +9073,8 @@ const Walker = struct {
                 const avs = try w.evalOperands(items, false);
                 w.popPending(avs.len);
                 try w.consume(items, w.token(inst));
-                var parts = try w.a.alloc(AV, avs.len);
+                var parts = try w.a.alloc(AV, avs.len + 1);
+                parts[avs.len] = try w.containingCondition(inst, avs);
                 for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .tuple, .arg = @intCast(i) });
                 const out = try w.unionOf(parts);
                 try w.sight(out, .{ .pending = "it is stored in a tuple" }, w.token(inst));
@@ -9092,7 +9107,7 @@ const Walker = struct {
                 // Its fields being a stored construction's (§18.2), each
                 // exclusive and pairwise apart, is the record demand's condition
                 // (§31.4 item 6); a list's reads the fields themselves.
-                var parts = try w.a.alloc(AV, avs.len + 1);
+                var parts = try w.a.alloc(AV, avs.len + 2);
                 parts[0] = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst) });
                 // A field of a crossing type holds no cell (§4.4), whatever
                 // its value's abstract value says — a `Js.to` answers `⊤` at
@@ -9101,6 +9116,7 @@ const Walker = struct {
                     const crossing = if (w.instType(f.value)) |v| !try w.trackedVar(v) else false;
                     parts[i + 1] = if (crossing) &.{} else try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
                 }
+                parts[avs.len + 1] = try w.containingCondition(inst, parts[1 .. avs.len + 1]);
                 const out = try w.unionOf(parts);
                 if (inst.int() != w.entry_arg) try w.sight(out, .{ .pending = "it is stored in a record" }, w.token(inst));
                 return out;
@@ -10130,7 +10146,8 @@ const Walker = struct {
                 const avs = try w.evalOperands(args, false);
                 w.popPending(avs.len);
                 try w.consume(args, w.token(inst));
-                var parts = try w.a.alloc(AV, avs.len);
+                var parts = try w.a.alloc(AV, avs.len + 1);
+                parts[avs.len] = try w.containingCondition(inst, avs);
                 for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .ctor, .arg = try w.o.ctorStep(c, @intCast(i)) });
                 try w.storedBeside(parts);
                 const out = try w.unionOf(parts);
@@ -10262,12 +10279,19 @@ const Walker = struct {
                 }
                 continue;
             }
-            const c: Cell = switch (r.prov.kind) {
+            var c: Cell = switch (r.prov.kind) {
                 .fresh, .esc => .{ .kind = .shared, .a = t.m, .b = t.d, .path = r.path, .made = true, .ty = if (r.path == eps) w.instTypeOpt(inst) else .none },
                 .shared => .{ .kind = .shared, .a = r.prov.a, .b = r.prov.b, .path = r.prov.path },
                 else => .{ .kind = .top, .a = if (s.limit != .none or r.prov.a == 1) 1 else if (r.prov.kind == .top) r.prov.a else 0 },
             };
-            try out.append(w.a, .{ .path = r.path, .cell = try w.cell(c), .approx = if (r.approx) inst.int() + 1 else 0 });
+            c.condition_only = r.prov.condition_only;
+            const cell_id = try w.cell(c);
+            if (r.prov.condition_only) {
+                const ctx: InstCtx = .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 };
+                try w.initCond(cell_id, try w.instXSum(r.xc, ctx));
+                try w.rinitCond(cell_id, try w.rinstXSum(r.rxc, ctx));
+            }
+            try out.append(w.a, .{ .path = r.path, .cell = cell_id, .approx = if (r.approx) inst.int() + 1 else 0 });
         }
         // §31.7: the records it holds, as cells no list's fact reads: what
         // the definition made is shared, what another top-level value holds
@@ -12026,6 +12050,7 @@ const Walker = struct {
     /// one, else its copy with `nonlist`, which the cell key tells apart
     /// and which escapes with it (`escKey` does not read the flag).
     fn nonlistOf(w: *Walker, c: u32) Allocator.Error!u32 {
+        std.debug.assert(!w.cells.items[c].condition_only);
         const x = w.cells.items[c];
         // An updated record's cell faces its base's lists (`listFacing`):
         // its object alone.
@@ -12034,6 +12059,15 @@ const Walker = struct {
         var y = x;
         y.nonlist = true;
         return w.cell(y);
+    }
+
+    fn objectView(w: *Walker, cells: AV) Allocator.Error!AV {
+        var own: std.ArrayList(Entry) = .empty;
+        for (cells) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
+            try own.append(w.a, .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown });
+        }
+        return own.items;
     }
 
     fn instRes(w: *Walker, s: *const Summary, ctx: InstCtx) Allocator.Error!AV {
@@ -12094,8 +12128,7 @@ const Walker = struct {
         // reads (an object alone, a record of numbers).
         for (s.objs) |r| {
             const cells = try w.instProv(r.prov, ctx);
-            const own = try w.a.alloc(Entry, cells.len);
-            for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown };
+            const own = try w.objectView(cells);
             if (ctx.conds) try w.instRecordCond(r, own, ctx, &rmemo);
             // No list's fact may read what `objs` names.
             if (std.debug.runtime_safety) for (own) |x| std.debug.assert(w.listFacing(x.cell) == null);
@@ -12227,6 +12260,20 @@ const Walker = struct {
     }
 
     fn instProv(w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
+        if (p.condition_only) {
+            var q = p;
+            q.condition_only = false;
+            const values = try w.instProv(q, ctx);
+            const out = try w.a.alloc(Entry, values.len);
+            for (values, out) |e, *x| {
+                var c = w.cells.items[e.cell];
+                c.condition_only = true;
+                c.nonlist = false;
+                x.* = e;
+                x.cell = try w.cell(c);
+            }
+            return out;
+        }
         // §31.7: a record's object alone — what the provenance names, its
         // cells at ε made objects, which project nothing below.
         if (p.obj) {
@@ -12234,7 +12281,7 @@ const Walker = struct {
             q.obj = false;
             var out: std.ArrayList(Entry) = .empty;
             for (try w.instProv(q, ctx)) |e| {
-                if (e.path != eps) continue;
+                if (e.path != eps or w.cells.items[e.cell].condition_only) continue;
                 try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, &.{}, true), .approx = e.approx, .grown = e.grown });
             }
             return w.norm(out.items);
@@ -13039,7 +13086,12 @@ const Walker = struct {
         for (binds, k.binds) |*b, kb| {
             var parts: std.ArrayList(AV) = .empty;
             for (kb.provs) |r| {
-                var av = try w.under(try w.instProv(r.prov, inner), r.path);
+                const cells = try w.instProv(r.prov, inner);
+                if (r.prov.condition_only) for (cells) |e| if (e.path == eps) {
+                    try w.initCond(e.cell, try w.instXSum(r.xc, inner));
+                    try w.rinitCond(e.cell, try w.rinstXSum(r.rxc, inner));
+                };
+                var av = try w.under(cells, r.path);
                 if (r.approx) av = try w.approxAll(av, ctx.inst);
                 try parts.append(w.a, av);
             }
@@ -13120,7 +13172,7 @@ const Walker = struct {
                     if (kind == .closure or kind == .func) return null;
                     var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
                     prov.taken = false;
-                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown });
+                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), 0, params, none) else .{}, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), 0, params, none) else .{} });
                 }
                 try cbinds.append(ckeep, .{ .local = b.local, .path = b.path, .provs = provs.items });
             }
@@ -13145,7 +13197,7 @@ const Walker = struct {
                 if (kind == .closure or kind == .func) return null;
                 var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
                 prov.taken = false;
-                try provs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown });
+                try provs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), 0, params, none) else .{}, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), 0, params, none) else .{} });
             }
             try binds.append(keep, .{ .local = cap.local, .path = cap.path, .provs = provs.items });
         }
@@ -13309,8 +13361,7 @@ const Walker = struct {
             for (s.rsupply) |e| {
                 if (e.fun != j) continue;
                 const raw = try w.instProv(e.prov, ictx);
-                const cells = try w.a.alloc(Entry, raw.len);
-                for (raw, cells) |x, *y| y.* = .{ .path = x.path, .cell = try w.nonlistOf(x.cell), .approx = x.approx, .grown = x.grown };
+                const cells = try w.objectView(raw);
                 const from: u32 = if (e.prov.kind == .param) e.prov.a else none;
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
@@ -13849,6 +13900,11 @@ const Walker = struct {
             try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_a });
             try res.append(keep, .{ .path = try w.o.child(eps, .ctor, try w.o.ctorStep(c, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
+        var separation: std.ArrayList(XAtom) = .empty;
+        for (res.items, 0..) |r, i| for (res.items[i + 1 ..]) |other| {
+            try separation.append(keep, .{ .kind = .sep, .a = r.prov, .b = other.prov });
+        };
+        if (separation.items.len != 0) try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1, .condition_only = true }, .xc = .{ .atoms = separation.items }, .rxc = .{ .atoms = separation.items } });
         const out = try w.a.create(Summary);
         // A constructor has exactly this primitive row, so unseen callback
         // calls cannot bypass its need check (including a variable-held one).
@@ -14226,7 +14282,7 @@ const Walker = struct {
         // lists (an open row, a type parameter), named whole in `res` at ε,
         // its object with it.
         var at_root: std.ArrayList(ResEntry) = .empty;
-        for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
+        for (c.res) |r| if (r.path == eps and !r.prov.condition_only) try at_root.append(w.a, r);
         for ([_][]const ResEntry{ c.objs, at_root.items }) |entries| for (entries) |r| {
             // The objects the caller writes: the answer's own, at ε, and the
             // one at the path written. A record below the one written is
@@ -14388,6 +14444,8 @@ const Walker = struct {
             for (c.res) |r| std.debug.print("   {s} {s}\n", .{ try w.o.pathText(r.path), try w.o.provText(r.prov) });
         }
         for (c.res) |r| {
+            // A condition annotation is not an allocation whose spine is returned.
+            if (r.prov.condition_only) continue;
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
             if (within != eps and !w.o.overlap(r.path, within)) continue;
             // A list from JavaScript is a limit of the analysis, not sharing
@@ -14637,6 +14695,22 @@ const Walker = struct {
     /// a node's value and its subtree's values — are kept apart: what is
     /// stored at a representative shares no cell with what is there. One cell
     /// met twice is one arrival's positions, which its own condition covers.
+    fn containingCondition(w: *Walker, inst: Inst.Index, avs: []const AV) Allocator.Error!AV {
+        var acc: CondAcc = .{};
+        var racc: RAcc = .{};
+        for (avs, 0..) |av, i| for (avs[i + 1 ..]) |other| {
+            try acc.add(w, try w.sepValues(av, other));
+            try racc.add(w, try w.rsepValues(av, other));
+        };
+        const k = try w.condAndAll(&acc);
+        const rk = try racc.done(w);
+        if (k == cond_yes and rk == cond_yes) return &.{};
+        const guard = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst), .condition_only = true });
+        try w.initCond(guard[0].cell, k);
+        try w.rinitCond(guard[0].cell, rk);
+        return guard;
+    }
+
     fn storedBeside(w: *Walker, parts: []const AV) Allocator.Error!void {
         var filled: usize = 0;
         for (parts) |p| if (p.len > 0) {
@@ -14696,6 +14770,7 @@ const Walker = struct {
     /// `covers`, saying whether the hold is approximate: one of the places
     /// a region's marker stands for (§16.7).
     fn coversAt(w: *Walker, outer: u32, inner: u32) Allocator.Error!?Cover {
+        if (w.cells.items[outer].condition_only or w.cells.items[inner].condition_only) return null;
         if (outer == inner) return .{ .rest = eps };
         const o = w.cells.items[outer];
         const i = w.cells.items[inner];
@@ -14790,6 +14865,7 @@ const Walker = struct {
         var cells: std.ArrayList(Entry) = .empty;
         const any = try w.o.child(eps, .any, 0);
         for (spec.base) |e_in| {
+            if (w.cells.items[e_in.cell].condition_only) continue;
             // §31.2: a record's object is no list's; the record demand of
             // §31.3 is the one that reads it.
             const e = Entry{ .path = e_in.path, .cell = (if (spec.fields != null) w.recordObject(e_in.cell) else w.listFacing(e_in.cell)) orelse continue, .approx = e_in.approx, .grown = e_in.grown };
@@ -16061,6 +16137,12 @@ const Walker = struct {
 
     /// The provenance a cell is read off as (thesis §4.4).
     fn provOf(w: *Walker, cell_id: u32, frame: u32, params: []const Inst.Index, fresh: Fresh) Allocator.Error!?Prov {
+        var p = (try w.provOfRaw(cell_id, frame, params, fresh)) orelse return null;
+        p.condition_only = w.cells.items[cell_id].condition_only;
+        return p;
+    }
+
+    fn provOfRaw(w: *Walker, cell_id: u32, frame: u32, params: []const Inst.Index, fresh: Fresh) Allocator.Error!?Prov {
         const c = w.cells.items[cell_id];
         switch (c.kind) {
             .param => {
