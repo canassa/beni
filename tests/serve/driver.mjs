@@ -486,11 +486,21 @@ const opening = (port, step, name, say) => {
               readFrames(ws);
             }
           } else {
-            const body = rest.toString("utf8");
-            if (body !== "") {
-              say(`< (socket ${name})`);
-              for (const line of body.split("\n")) say(`< (socket ${name}) ${line}`);
-            }
+            // A refusal ends the connection after its body, which can come in
+            // more than one chunk: read to the end.
+            let body = rest;
+            socket.on("data", (chunk) => {
+              body = Buffer.concat([body, chunk]);
+            });
+            socket.once("close", () => {
+              const text = body.toString("utf8");
+              if (text !== "") {
+                say(`< (socket ${name})`);
+                for (const line of text.split("\n")) say(`< (socket ${name}) ${line}`);
+              }
+              resolve();
+            });
+            return;
           }
           resolve();
         };
