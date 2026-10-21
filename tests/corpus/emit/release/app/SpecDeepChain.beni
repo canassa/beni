@@ -1,14 +1,13 @@
 -- emit: a chain of 24 functions, each passing its own parameter on to the
--- next (research 52, E1), pinned at what the release specialiser writes
--- today. `main` calls `f1 7`, so every `x` is `7` and every test
--- `x * 3 > 1000` is `false` — but fact 1 runs from caller to callee and the
--- sweeps walk the program in the order it is written, callee first, so each
--- level of the chain costs a sweep, and 24 levels reach the cap of 24
--- sweeps. A round that does not converge rewrites nothing, so nothing is
--- specialised anywhere, not even `7 * 3 > 1000` in `main`. With 23
--- functions every parameter folds and goes. A worklist of facts rather than
--- of ordered sweeps has no such cap (research 52 §4, slices 4–6), and this
--- golden then moves.
+-- next (research 52, E1). `main` calls `f1 7`, so every `x` is `7` and every
+-- test `x * 3 > 1000` is `false`. Fact 1 runs from caller to callee, and the
+-- sweeps walked the program in the order it is written, callee first, so
+-- each level of the chain cost a sweep; 24 levels reached the cap of 24
+-- sweeps, and a round that did not converge rewrote nothing. The combined
+-- solver (`backend.md` §9, *The combined solver*, slice 4) has no sweep to
+-- run out of: every parameter is `7`, every test folds and every `x` goes,
+-- down to `c=()=>216`. What stays is each call: nothing yet writes a call
+-- whose result is known as that result (*Calls with known results*, 8a).
 import Node exposing (Program)
 
 

@@ -5866,27 +5866,29 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     try testing.expect(runs.? >= analyses.? - reused.?);
 }
 
-test "the release specialiser counts a call chain deeper than its sweeps as a declined analysis" {
+test "the release specialiser solves a call chain deeper than the sweeps' old cap" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // Research 52's E1 (`emit/release/app/SpecDeepChain`): each function
     // passes its parameter to the next, fact 1 runs from caller to callee
-    // and the sweeps walk callees first, so each level costs a sweep. 22
-    // levels converge within the cap of 24 sweeps in every analysis; 24 do
-    // not in the first, which then rewrites nothing. `--self-profile` says
-    // which cap stopped what (`backend.md` §9), so the cliff is a counter,
-    // not a guess.
+    // and the sweeps walked callees first, so each level cost a sweep, and
+    // 24 levels hit the cap of 24 sweeps: the first analysis rewrote
+    // nothing. The combined solver (`backend.md` §9, *The combined
+    // solver*, slice 4) has no sweep to run out of: 22 levels and 24 are
+    // alike, no analysis is declined, and no solve reaches its work budget.
     const shallow = try specCounters(22);
     const deep = try specCounters(24);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expect(shallow.analyses >= 1);
-    try testing.expectEqual(@as(u64, 0), shallow.analyses_declined);
-    try testing.expect(shallow.sweeps >= 22);
-    try testing.expect(deep.analyses_declined >= 1);
+    for ([_]SpecCounters{ shallow, deep }) |c| {
+        try testing.expect(c.analyses >= 1);
+        try testing.expectEqual(@as(u64, 0), c.analyses_declined);
+        try testing.expect(c.constraints > 0);
+        try testing.expectEqual(@as(u64, 0), c.budget_hit);
+    }
 }
 
 test "the release specialiser counts fact 3's sets, edges and load cells, and names its largest set" {
@@ -6335,8 +6337,9 @@ fn emitCounters(w: *World) !EmitCounters {
 
 const SpecCounters = struct {
     analyses: u64 = 0,
-    sweeps: u64 = 0,
     analyses_declined: u64 = 0,
+    constraints: u64 = 0,
+    budget_hit: u64 = 0,
 };
 
 /// The specialiser's counters of a `--release` build of research 52's E1
@@ -6362,8 +6365,9 @@ fn specCounters(levels: usize) !SpecCounters {
         ph: []const u8,
         args: struct {
             spec_analyses: ?u64 = null,
-            spec_sweeps: ?u64 = null,
             spec_analyses_declined: ?u64 = null,
+            spec_solve_constraints: ?u64 = null,
+            spec_solve_budget_hit: ?u64 = null,
         } = .{},
     };
     const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
@@ -6376,16 +6380,20 @@ fn specCounters(levels: usize) !SpecCounters {
             counters.analyses = v;
             seen += 1;
         }
-        if (e.args.spec_sweeps) |v| {
-            counters.sweeps = v;
-            seen += 1;
-        }
         if (e.args.spec_analyses_declined) |v| {
             counters.analyses_declined = v;
             seen += 1;
         }
+        if (e.args.spec_solve_constraints) |v| {
+            counters.constraints = v;
+            seen += 1;
+        }
+        if (e.args.spec_solve_budget_hit) |v| {
+            counters.budget_hit = v;
+            seen += 1;
+        }
     }
-    if (seen != 3) return error.NoCounter;
+    if (seen != 4) return error.NoCounter;
     return counters;
 }
 

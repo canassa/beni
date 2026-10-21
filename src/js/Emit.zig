@@ -5056,7 +5056,9 @@ const Emitter = struct {
         const declared_before = try e.scratch.alloc(bool, ids.count());
         @memset(declared_before, false);
         for (modules.items) |mod| topDeclared(mod.ir, mod.global, declared_before);
+        var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
+            .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
@@ -5101,6 +5103,11 @@ const Emitter = struct {
         profile.addCounter(.spec_pts_load_cells, stats.pts_load_cells);
         profile.addCounter(.spec_pts_joins, stats.pts_joins);
         profile.addCounter(.spec_pts_joins_empty, stats.pts_joins_empty);
+        profile.addCounter(.spec_solve_extracted, stats.solve_extracted);
+        profile.addCounter(.spec_solve_kept, stats.solve_kept);
+        profile.addCounter(.spec_solve_constraints, stats.solve_constraints);
+        profile.addCounter(.spec_solve_evaluations, stats.solve_evaluations);
+        profile.addCounter(.spec_solve_budget_hit, stats.solve_budget_hit);
         if (stats.pts_largest) |o| try e.reportLargest(o, stats.pts_largest_sites, slots, spec_slots.items, &ids, &props);
         var k: usize = 0;
         for (todo) |i| {
@@ -6348,6 +6355,31 @@ const Emitter = struct {
         const by_work = std.math.divCeil(usize, work, per) catch unreachable;
         return @max(@as(usize, if (e.session.options.size_by_work) 1 else 2), by_work);
     }
+
+    /// `Spec.Parallel` on the emit workers: the combined solver's
+    /// extraction (`backend.md` §9, *The combined solver — Where it runs*),
+    /// one module per item, in the worker's `module` arena.
+    const SpecWorkers = struct {
+        e: *Emitter,
+
+        fn run(
+            context: *anyopaque,
+            items: []const u32,
+            task: *const anyopaque,
+            call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
+        ) Allocator.Error!void {
+            const sw: *SpecWorkers = @ptrCast(@alignCast(context));
+            const Job = struct {
+                task: *const anyopaque,
+                call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
+
+                fn each(j: @This(), w: *Worker, item: u32) Allocator.Error!void {
+                    return j.call(j.task, w.module.allocator(), item);
+                }
+            };
+            try sw.e.pool.run(items, Job{ .task = task, .call = call }, Job.each, items.len);
+        }
+    };
 
     /// One emit worker's own memory. Nothing in it is shared: a worker
     /// reads the session and writes the slot of the item it took.
