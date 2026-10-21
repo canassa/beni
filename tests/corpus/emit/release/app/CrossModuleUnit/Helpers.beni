@@ -1,0 +1,2 @@
+pub init : ⊤ → { cups : Int }
+init ⊤ = { cups = -1 }

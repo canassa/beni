@@ -2867,6 +2867,12 @@ amended the same day: a sibling may leave out a `foreign`'s trailing `()` parame
 passes `null` for them all the same. Fixture: `emit/UnitParameters`, and `run/ForeignUnitParameters`
 for the sibling.
 
+*Amended 2026-10-22: calls across modules.* A direct call of another module's beni
+function also omits trailing unit literals in positions its JavaScript declaration does not
+write. Lowering reads the callee's immutable declaration patterns through interface provenance,
+with the same rule for a whole-body lambda. A foreign sibling still receives every argument;
+a reference used as a value is unchanged. These facts are available before parallel lowering.
+
 ## 7. Pattern matching
 
 Decision trees, Scott and Ramsey's heuristics, compiled to a native `switch` for multi-way tests on

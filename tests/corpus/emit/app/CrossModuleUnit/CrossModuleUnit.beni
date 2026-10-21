@@ -1,0 +1,30 @@
+-- Direct imported calls omit only trailing unit literals matched by unit
+-- patterns. A bare imported function stays a value; a named unit parameter
+-- and a unit before a written parameter still receive null (backend.md §6).
+import Helpers
+import Node exposing (Program)
+import Probe
+
+
+pub result = { model = Helpers.init ⊤, pair = Helpers.pair 7 ⊤ ⊤, lambda = Helpers.lambda ⊤ }
+
+
+pub reference = Helpers.init
+
+
+pub kept = { named = Helpers.named ⊤, first = Helpers.first ⊤ 9 }
+
+
+pub foreignResult = Probe.one ⊤
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt result.model.cups
+        , String.fromInt result.pair
+        , String.fromInt result.lambda
+        , String.fromInt (reference ⊤).cups
+        , String.fromInt kept.first
+        , String.fromInt foreignResult
+        ]

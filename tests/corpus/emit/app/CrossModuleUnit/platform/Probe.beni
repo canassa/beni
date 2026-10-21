@@ -1,0 +1,2 @@
+-- The sibling reads its unit argument: calls must retain null.
+pub foreign pure one : ⊤ → Int
