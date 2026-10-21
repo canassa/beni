@@ -34,7 +34,8 @@ const testing = std.testing;
 // waits for the answer of the driver's own client. When the server shuts
 // down, the page waits 1 s and connects again; that fails, as the server is
 // gone, and the page waits 2 s before the next attempt. The waits are on
-// the page's virtual clock.
+// the page's virtual clock. The last step fails, as no element matches it,
+// so the transcript shows how the serve driver reports a page that fails.
 const steps =
     \\socket 1 wait open
     \\input #draft "hello"
@@ -45,11 +46,21 @@ const steps =
     \\socket 2 wait closed
     \\advance 1000
     \\advance 1000
+    \\click #missing
     \\
 ;
 
 // The driver's own client joins first, as guest1; the page is guest2. The
-// shutdown waits until the page has the client's answer.
+// shutdown waits until the page has the client's answer. The second wait
+// for `click #say` finds no second such step, and stops when the page
+// ends: a wait uses the lines up to the one it found. The second
+// `page-end` finds no page.
+//
+// The bound of a run whose page hangs: 5 s for each step that waits for
+// the page (two `receive`s and three `page-wait`s) and 20 s for `page-end`,
+// 45 s in all, below the 60 s of `world.default_timeout_ms`. So such a run
+// still prints the transcript that shows the cause. A new waiting step
+// adds 5 s to that sum.
 const requests =
     \\{"socket": "a", "path": "/chat"}
     \\{"page": "../page/out/_main.mjs", "steps": "chat.steps", "wait": false, "wait-handshakes": true}
@@ -63,32 +74,9 @@ const requests =
     \\{"path": "/.env"}
     \\{"method": "POST", "path": "/api/shutdown"}
     \\{"receive": "a"}
-    \\{"page-end": true}
-    \\
-;
-
-// A page that does not do what the script waits for: it says two empty
-// lines, then fails at a step whose element does not exist.
-const failing_steps =
-    \\socket 1 wait open
-    \\click #say
-    \\click #say
-    \\click #missing
-    \\
-;
-
-// A third wait for `click #say` waits for a third such step, and a wait
-// for a step the page never runs stops when the page ends. The second
-// `page-end` finds no page.
-const failing_requests =
-    \\{"page": "../page/out/_main.mjs", "steps": "failing.steps", "wait": false}
     \\{"page-wait": "click #say"}
-    \\{"page-wait": "click #say"}
-    \\{"page-wait": "click #say"}
-    \\{"page-wait": "click #missing"}
     \\{"page-end": true}
     \\{"page-end": true}
-    \\{"method": "POST", "path": "/api/shutdown"}
     \\
 ;
 
@@ -118,8 +106,6 @@ test "the chat page and the chat server talk over a real WebSocket" {
     );
     try w.write("server/chat.steps", steps);
     try w.write("server/chat.requests", requests);
-    try w.write("server/failing.steps", failing_steps);
-    try w.write("server/failing.requests", failing_requests);
     const arena = w.arena.allocator();
     const page_dir = try w.projectSubPath(arena, "page");
     const server_dir = try w.projectSubPath(arena, "server");
@@ -161,7 +147,9 @@ test "the chat page and the chat server talk over a real WebSocket" {
     // one line. The page shows "connecting" until `socket 1 wait open`,
     // although its open arrived before the load's snapshot. After the close
     // it connects again at 1 s, socket 2 fails at once, and socket 3 starts
-    // only 2 s after that. The HTML ends in a newline, so its last line is
+    // only 2 s after that. The second wait for `click #say` stops when the
+    // page ends, the page driver's failure ends the page's transcript, and
+    // the second `page-end` finds no page. The HTML ends in a newline, so its last line is
     // `< ` with a space: a string of its own, which no editor strips (with
     // the newline before it, which a multiline literal's last line lacks).
     const expected =
@@ -215,6 +203,7 @@ test "the chat page and the chat server talk over a real WebSocket" {
         \\<
         \\< stopping
         \\< (socket a) close 1001 ""
+        \\| (the page ended before it reached "click #say")
         \\| -- load
         \\| (socket 1: /chat)
         \\| <body>
@@ -325,6 +314,9 @@ test "the chat page and the chat server talk over a real WebSocket" {
         \\|     <button id="say">"say"</button>
         \\|   </main>
         \\| </body>
+        \\| -- click #missing
+        \\| (the page driver exited 1: chat.steps:10: click #missing: no element matches `#missing`)
+        \\| (no page runs: a `page` step with `"wait": false` starts one)
         \\--- stdout ---
         \\chat server stopped
         \\--- stderr ---
@@ -336,97 +328,4 @@ test "the chat page and the chat server talk over a real WebSocket" {
     }
     try testing.expectEqualStrings(expected, ran.stdout);
     try testing.expectEqual(@as(u8, 0), ran.exit_code);
-
-    // ┌─────────────────────────────────────────┐
-    // │ EXECUTE: a page that fails              │
-    // └─────────────────────────────────────────┘
-    // The serve driver's page steps when the page does not do what the
-    // script waits for, against the same two builds.
-    const failed = try world.spawnAndCapture(
-        arena,
-        testing.allocator,
-        testing.io,
-        &.{ node, harness.driver, "out/_main.mjs", "failing.requests" },
-        .{ .path = server_dir },
-        world.default_timeout_ms,
-    );
-
-    // ┌─────────────────────────────────────────┐
-    // │ VERIFY OUTPUT                           │
-    // └─────────────────────────────────────────┘
-    // The first two waits for `click #say` find the page's two such steps.
-    // The third finds none, and stops when the page ends: a wait uses the
-    // lines up to the one it found. The wait for `click #missing` stops
-    // too, since the page failed at that step. The first `page-end` prints
-    // the page and its failure; the second finds no page and says so. Then
-    // the driver ends, as after any script.
-    const failed_expected =
-        \\> (page) ../page/out/_main.mjs failing.steps (not waited for)
-        \\| (the page ended before it reached "click #say")
-        \\| (the page ended before it reached "click #missing")
-        \\| -- load
-        \\| (socket 1: /chat)
-        \\| <body>
-        \\|   <main>
-        \\|     <p id="status">"connecting"</p>
-        \\|     <ol id="lines"></ol>
-        \\|     <input id="draft" .value="">
-        \\|     <button id="say">"say"</button>
-        \\|   </main>
-        \\| </body>
-        \\| -- socket 1 wait open
-        \\| <body>
-        \\|   <main>
-        \\|     <p id="status">"connected"</p>
-        \\|     <ol id="lines"></ol>
-        \\|     <input id="draft" .value="">
-        \\|     <button id="say">"say"</button>
-        \\|   </main>
-        \\| </body>
-        \\| -- click #say
-        \\| (socket 1 sent: "say ")
-        \\| <body>
-        \\|   <main>
-        \\|     <p id="status">"connected"</p>
-        \\|     <ol id="lines">
-        \\|       <li>"you: "</li>
-        \\|     </ol>
-        \\|     <input id="draft" .value="">
-        \\|     <button id="say">"say"</button>
-        \\|   </main>
-        \\| </body>
-        \\| -- click #say
-        \\| (socket 1 sent: "say ")
-        \\| <body>
-        \\|   <main>
-        \\|     <p id="status">"connected"</p>
-        \\|     <ol id="lines">
-        \\|       <li>"you: "</li>
-        \\|       <li>"you: "</li>
-        \\|     </ol>
-        \\|     <input id="draft" .value="">
-        \\|     <button id="say">"say"</button>
-        \\|   </main>
-        \\| </body>
-        \\| -- click #missing
-        \\| (the page driver exited 1: failing.steps:4: click #missing: no element matches `#missing`)
-        \\| (no page runs: a `page` step with `"wait": false` starts one)
-        \\> POST /api/shutdown
-        \\< 200
-        \\< content-type: text/plain; charset=utf-8
-        \\< connection: close
-        \\< content-length: 8
-        \\<
-        \\< stopping
-        \\--- stdout ---
-        \\chat server stopped
-        \\--- stderr ---
-        \\--- exit 0 ---
-        \\
-    ;
-    if (!std.mem.eql(u8, failed_expected, failed.stdout)) {
-        std.debug.print("the failing page's transcript differs\n--- got ---\n{s}\n--- stderr ---\n{s}\n", .{ failed.stdout, failed.stderr });
-    }
-    try testing.expectEqualStrings(failed_expected, failed.stdout);
-    try testing.expectEqual(@as(u8, 0), failed.exit_code);
 }
