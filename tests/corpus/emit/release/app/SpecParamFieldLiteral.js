@@ -1,0 +1,1 @@
+import process from"node:process";const d=a=>{if(a.out.length!==0)process.stdout.write(a.out);process.exitCode=a.code};const e=b=>(Array.isArray(b)?b:b.$plain());const a=d=>{let c=e(d);return{code:0,out:c.length===0?"":`${c.join("\n")}\n`}};const b=a=>"upward"===a.a,c=(()=>{let e={a:"upward"},f={a:"sideways"};return a([b(e)?"same":"different",b(f)?"same":"different"])})();d(c);

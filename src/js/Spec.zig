@@ -3595,6 +3595,18 @@ const Spec = struct {
         }
     }
 
+    /// Whether member read `node` reads a property of a parameter of the
+    /// declaration being rewritten that nothing else in it reads or assigns.
+    fn lastParamRead(s: *Spec, m: *Mod, node: Index) bool {
+        const object: Index = @fromBackingInt(@intCast(m.ir.data(node).lhs));
+        if (m.ir.tag(object) != .ident) return false;
+        const n: NameIndex = @fromBackingInt(@intCast(m.ir.data(object).lhs));
+        if (m.globalOf(n) != null) return false;
+        const i = n.unwrap() orelse return false;
+        if (i >= m.stamp.len or m.stamp[i] != s.current) return false;
+        return m.param[i] != none and m.uses[i] == 1 and !m.assigned[i];
+    }
+
     /// Write `node` as the literal `v`, when the rule allows. A name read is
     /// replaced only under `substitutes`; anything else that folded is
     /// written as its value (it is at least as long as the literal, but for
@@ -3606,7 +3618,9 @@ const Spec = struct {
         // than 5 bytes, and never as the object of another read. Fact 3's
         // `undefined` is written wherever it folds, as before.
         if (ir.tag(node) == .member and lit.kind != .undefined_lit) {
-            if (printedLen(lit) > 5) return false;
+            // Longer, when the read is a parameter's only one: the
+            // parameter then goes, and its argument at every call.
+            if (printedLen(lit) > 5 and !s.lastParamRead(m, node)) return false;
             if (object_position and (lit.kind == .null_lit)) return false;
         }
         if (ir.tag(node) == .ident) {

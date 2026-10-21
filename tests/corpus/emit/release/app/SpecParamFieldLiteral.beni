@@ -1,0 +1,29 @@
+-- emit: a parameter whose one read is a field every call passes the same
+-- literal in is read as that literal, however long, and goes with its
+-- argument (`backend.md` §9, fact 4's reads, *As built — a parameter's last
+-- read*, #601). `same` is called only with `up` as `a`, so `a.name` is
+-- `"upward"`. A read was written as its literal only when that is at most
+-- five bytes, which kept `a` and `up`: `b=(a,c)=>a.a===c.a`, called as
+-- `b(d,e)` with `d={a:"upward"}`. Now `b=a=>"upward"===a.a`, and `up` is
+-- not made.
+import Node exposing (Program)
+
+
+type alias Tag =
+    name : String
+    rank : Int
+
+
+same : Tag, Tag → Bool
+same a b = a.name == b.name
+
+
+main : Program
+main =
+    up = { name = "upward", rank = 1 }
+    down = { name = "upward", rank = 2 }
+    other = { name = "sideways", rank = 3 }
+    Node.printLines
+        [ if same up down then "same" else "different"
+        , if same up other then "same" else "different"
+        ]
