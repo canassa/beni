@@ -1,0 +1,1103 @@
+-- #564: SpreadArms with 42 children of six messages each. Every handler the
+-- `inline` lowering emits copies the model (`const $before = $model`) and
+-- spreads the copy, so each of the 252 record updates spreads a summary of
+-- its own, linked to the model's. Points-to gave each update a var per field,
+-- fed by an edge from that summary, and every summary that folds the updates
+-- an edge per update and field, which put this build past the gates'
+-- instruction budget. A field only the spread writes now shares the var of
+-- the root of those copies, the model summary's, until something else
+-- writes it. The golden was written by the compiler before the change.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Child =
+    a : Int
+    b : Int
+    c : Int
+
+
+type ChildMsg
+    = M1
+    | M2
+    | M3
+    | M4
+    | M5
+    | M6
+
+
+type alias Model =
+    w1 : Child
+    w2 : Child
+    w3 : Child
+    w4 : Child
+    w5 : Child
+    w6 : Child
+    w7 : Child
+    w8 : Child
+    w9 : Child
+    w10 : Child
+    w11 : Child
+    w12 : Child
+    w13 : Child
+    w14 : Child
+    w15 : Child
+    w16 : Child
+    w17 : Child
+    w18 : Child
+    w19 : Child
+    w20 : Child
+    w21 : Child
+    w22 : Child
+    w23 : Child
+    w24 : Child
+    w25 : Child
+    w26 : Child
+    w27 : Child
+    w28 : Child
+    w29 : Child
+    w30 : Child
+    w31 : Child
+    w32 : Child
+    w33 : Child
+    w34 : Child
+    w35 : Child
+    w36 : Child
+    w37 : Child
+    w38 : Child
+    w39 : Child
+    w40 : Child
+    w41 : Child
+    w42 : Child
+
+
+type Msg
+    = W1 ChildMsg
+    | W2 ChildMsg
+    | W3 ChildMsg
+    | W4 ChildMsg
+    | W5 ChildMsg
+    | W6 ChildMsg
+    | W7 ChildMsg
+    | W8 ChildMsg
+    | W9 ChildMsg
+    | W10 ChildMsg
+    | W11 ChildMsg
+    | W12 ChildMsg
+    | W13 ChildMsg
+    | W14 ChildMsg
+    | W15 ChildMsg
+    | W16 ChildMsg
+    | W17 ChildMsg
+    | W18 ChildMsg
+    | W19 ChildMsg
+    | W20 ChildMsg
+    | W21 ChildMsg
+    | W22 ChildMsg
+    | W23 ChildMsg
+    | W24 ChildMsg
+    | W25 ChildMsg
+    | W26 ChildMsg
+    | W27 ChildMsg
+    | W28 ChildMsg
+    | W29 ChildMsg
+    | W30 ChildMsg
+    | W31 ChildMsg
+    | W32 ChildMsg
+    | W33 ChildMsg
+    | W34 ChildMsg
+    | W35 ChildMsg
+    | W36 ChildMsg
+    | W37 ChildMsg
+    | W38 ChildMsg
+    | W39 ChildMsg
+    | W40 ChildMsg
+    | W41 ChildMsg
+    | W42 ChildMsg
+
+
+init : ⊤ → Model
+init ⊤ =
+    { w1 = { a = 0, b = 1, c = 2 }
+    , w2 = { a = 0, b = 1, c = 2 }
+    , w3 = { a = 0, b = 1, c = 2 }
+    , w4 = { a = 0, b = 1, c = 2 }
+    , w5 = { a = 0, b = 1, c = 2 }
+    , w6 = { a = 0, b = 1, c = 2 }
+    , w7 = { a = 0, b = 1, c = 2 }
+    , w8 = { a = 0, b = 1, c = 2 }
+    , w9 = { a = 0, b = 1, c = 2 }
+    , w10 = { a = 0, b = 1, c = 2 }
+    , w11 = { a = 0, b = 1, c = 2 }
+    , w12 = { a = 0, b = 1, c = 2 }
+    , w13 = { a = 0, b = 1, c = 2 }
+    , w14 = { a = 0, b = 1, c = 2 }
+    , w15 = { a = 0, b = 1, c = 2 }
+    , w16 = { a = 0, b = 1, c = 2 }
+    , w17 = { a = 0, b = 1, c = 2 }
+    , w18 = { a = 0, b = 1, c = 2 }
+    , w19 = { a = 0, b = 1, c = 2 }
+    , w20 = { a = 0, b = 1, c = 2 }
+    , w21 = { a = 0, b = 1, c = 2 }
+    , w22 = { a = 0, b = 1, c = 2 }
+    , w23 = { a = 0, b = 1, c = 2 }
+    , w24 = { a = 0, b = 1, c = 2 }
+    , w25 = { a = 0, b = 1, c = 2 }
+    , w26 = { a = 0, b = 1, c = 2 }
+    , w27 = { a = 0, b = 1, c = 2 }
+    , w28 = { a = 0, b = 1, c = 2 }
+    , w29 = { a = 0, b = 1, c = 2 }
+    , w30 = { a = 0, b = 1, c = 2 }
+    , w31 = { a = 0, b = 1, c = 2 }
+    , w32 = { a = 0, b = 1, c = 2 }
+    , w33 = { a = 0, b = 1, c = 2 }
+    , w34 = { a = 0, b = 1, c = 2 }
+    , w35 = { a = 0, b = 1, c = 2 }
+    , w36 = { a = 0, b = 1, c = 2 }
+    , w37 = { a = 0, b = 1, c = 2 }
+    , w38 = { a = 0, b = 1, c = 2 }
+    , w39 = { a = 0, b = 1, c = 2 }
+    , w40 = { a = 0, b = 1, c = 2 }
+    , w41 = { a = 0, b = 1, c = 2 }
+    , w42 = { a = 0, b = 1, c = 2 }
+    }
+
+
+update1 : ChildMsg, Child → Child
+update1 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 101 }
+        M2 →
+            { child | c = child.c + 102 }
+        M3 →
+            { child | a = child.a + 103 }
+        M4 →
+            { child | b = child.b + 104 }
+        M5 →
+            { child | c = child.c + 105 }
+        M6 →
+            { child | a = child.a + 106 }
+
+
+update2 : ChildMsg, Child → Child
+update2 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 201 }
+        M2 →
+            { child | c = child.c + 202 }
+        M3 →
+            { child | a = child.a + 203 }
+        M4 →
+            { child | b = child.b + 204 }
+        M5 →
+            { child | c = child.c + 205 }
+        M6 →
+            { child | a = child.a + 206 }
+
+
+update3 : ChildMsg, Child → Child
+update3 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 301 }
+        M2 →
+            { child | c = child.c + 302 }
+        M3 →
+            { child | a = child.a + 303 }
+        M4 →
+            { child | b = child.b + 304 }
+        M5 →
+            { child | c = child.c + 305 }
+        M6 →
+            { child | a = child.a + 306 }
+
+
+update4 : ChildMsg, Child → Child
+update4 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 401 }
+        M2 →
+            { child | c = child.c + 402 }
+        M3 →
+            { child | a = child.a + 403 }
+        M4 →
+            { child | b = child.b + 404 }
+        M5 →
+            { child | c = child.c + 405 }
+        M6 →
+            { child | a = child.a + 406 }
+
+
+update5 : ChildMsg, Child → Child
+update5 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 501 }
+        M2 →
+            { child | c = child.c + 502 }
+        M3 →
+            { child | a = child.a + 503 }
+        M4 →
+            { child | b = child.b + 504 }
+        M5 →
+            { child | c = child.c + 505 }
+        M6 →
+            { child | a = child.a + 506 }
+
+
+update6 : ChildMsg, Child → Child
+update6 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 601 }
+        M2 →
+            { child | c = child.c + 602 }
+        M3 →
+            { child | a = child.a + 603 }
+        M4 →
+            { child | b = child.b + 604 }
+        M5 →
+            { child | c = child.c + 605 }
+        M6 →
+            { child | a = child.a + 606 }
+
+
+update7 : ChildMsg, Child → Child
+update7 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 701 }
+        M2 →
+            { child | c = child.c + 702 }
+        M3 →
+            { child | a = child.a + 703 }
+        M4 →
+            { child | b = child.b + 704 }
+        M5 →
+            { child | c = child.c + 705 }
+        M6 →
+            { child | a = child.a + 706 }
+
+
+update8 : ChildMsg, Child → Child
+update8 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 801 }
+        M2 →
+            { child | c = child.c + 802 }
+        M3 →
+            { child | a = child.a + 803 }
+        M4 →
+            { child | b = child.b + 804 }
+        M5 →
+            { child | c = child.c + 805 }
+        M6 →
+            { child | a = child.a + 806 }
+
+
+update9 : ChildMsg, Child → Child
+update9 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 901 }
+        M2 →
+            { child | c = child.c + 902 }
+        M3 →
+            { child | a = child.a + 903 }
+        M4 →
+            { child | b = child.b + 904 }
+        M5 →
+            { child | c = child.c + 905 }
+        M6 →
+            { child | a = child.a + 906 }
+
+
+update10 : ChildMsg, Child → Child
+update10 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1001 }
+        M2 →
+            { child | c = child.c + 1002 }
+        M3 →
+            { child | a = child.a + 1003 }
+        M4 →
+            { child | b = child.b + 1004 }
+        M5 →
+            { child | c = child.c + 1005 }
+        M6 →
+            { child | a = child.a + 1006 }
+
+
+update11 : ChildMsg, Child → Child
+update11 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1101 }
+        M2 →
+            { child | c = child.c + 1102 }
+        M3 →
+            { child | a = child.a + 1103 }
+        M4 →
+            { child | b = child.b + 1104 }
+        M5 →
+            { child | c = child.c + 1105 }
+        M6 →
+            { child | a = child.a + 1106 }
+
+
+update12 : ChildMsg, Child → Child
+update12 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1201 }
+        M2 →
+            { child | c = child.c + 1202 }
+        M3 →
+            { child | a = child.a + 1203 }
+        M4 →
+            { child | b = child.b + 1204 }
+        M5 →
+            { child | c = child.c + 1205 }
+        M6 →
+            { child | a = child.a + 1206 }
+
+
+update13 : ChildMsg, Child → Child
+update13 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1301 }
+        M2 →
+            { child | c = child.c + 1302 }
+        M3 →
+            { child | a = child.a + 1303 }
+        M4 →
+            { child | b = child.b + 1304 }
+        M5 →
+            { child | c = child.c + 1305 }
+        M6 →
+            { child | a = child.a + 1306 }
+
+
+update14 : ChildMsg, Child → Child
+update14 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1401 }
+        M2 →
+            { child | c = child.c + 1402 }
+        M3 →
+            { child | a = child.a + 1403 }
+        M4 →
+            { child | b = child.b + 1404 }
+        M5 →
+            { child | c = child.c + 1405 }
+        M6 →
+            { child | a = child.a + 1406 }
+
+
+update15 : ChildMsg, Child → Child
+update15 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1501 }
+        M2 →
+            { child | c = child.c + 1502 }
+        M3 →
+            { child | a = child.a + 1503 }
+        M4 →
+            { child | b = child.b + 1504 }
+        M5 →
+            { child | c = child.c + 1505 }
+        M6 →
+            { child | a = child.a + 1506 }
+
+
+update16 : ChildMsg, Child → Child
+update16 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1601 }
+        M2 →
+            { child | c = child.c + 1602 }
+        M3 →
+            { child | a = child.a + 1603 }
+        M4 →
+            { child | b = child.b + 1604 }
+        M5 →
+            { child | c = child.c + 1605 }
+        M6 →
+            { child | a = child.a + 1606 }
+
+
+update17 : ChildMsg, Child → Child
+update17 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1701 }
+        M2 →
+            { child | c = child.c + 1702 }
+        M3 →
+            { child | a = child.a + 1703 }
+        M4 →
+            { child | b = child.b + 1704 }
+        M5 →
+            { child | c = child.c + 1705 }
+        M6 →
+            { child | a = child.a + 1706 }
+
+
+update18 : ChildMsg, Child → Child
+update18 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1801 }
+        M2 →
+            { child | c = child.c + 1802 }
+        M3 →
+            { child | a = child.a + 1803 }
+        M4 →
+            { child | b = child.b + 1804 }
+        M5 →
+            { child | c = child.c + 1805 }
+        M6 →
+            { child | a = child.a + 1806 }
+
+
+update19 : ChildMsg, Child → Child
+update19 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 1901 }
+        M2 →
+            { child | c = child.c + 1902 }
+        M3 →
+            { child | a = child.a + 1903 }
+        M4 →
+            { child | b = child.b + 1904 }
+        M5 →
+            { child | c = child.c + 1905 }
+        M6 →
+            { child | a = child.a + 1906 }
+
+
+update20 : ChildMsg, Child → Child
+update20 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2001 }
+        M2 →
+            { child | c = child.c + 2002 }
+        M3 →
+            { child | a = child.a + 2003 }
+        M4 →
+            { child | b = child.b + 2004 }
+        M5 →
+            { child | c = child.c + 2005 }
+        M6 →
+            { child | a = child.a + 2006 }
+
+
+update21 : ChildMsg, Child → Child
+update21 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2101 }
+        M2 →
+            { child | c = child.c + 2102 }
+        M3 →
+            { child | a = child.a + 2103 }
+        M4 →
+            { child | b = child.b + 2104 }
+        M5 →
+            { child | c = child.c + 2105 }
+        M6 →
+            { child | a = child.a + 2106 }
+
+
+update22 : ChildMsg, Child → Child
+update22 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2201 }
+        M2 →
+            { child | c = child.c + 2202 }
+        M3 →
+            { child | a = child.a + 2203 }
+        M4 →
+            { child | b = child.b + 2204 }
+        M5 →
+            { child | c = child.c + 2205 }
+        M6 →
+            { child | a = child.a + 2206 }
+
+
+update23 : ChildMsg, Child → Child
+update23 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2301 }
+        M2 →
+            { child | c = child.c + 2302 }
+        M3 →
+            { child | a = child.a + 2303 }
+        M4 →
+            { child | b = child.b + 2304 }
+        M5 →
+            { child | c = child.c + 2305 }
+        M6 →
+            { child | a = child.a + 2306 }
+
+
+update24 : ChildMsg, Child → Child
+update24 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2401 }
+        M2 →
+            { child | c = child.c + 2402 }
+        M3 →
+            { child | a = child.a + 2403 }
+        M4 →
+            { child | b = child.b + 2404 }
+        M5 →
+            { child | c = child.c + 2405 }
+        M6 →
+            { child | a = child.a + 2406 }
+
+
+update25 : ChildMsg, Child → Child
+update25 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2501 }
+        M2 →
+            { child | c = child.c + 2502 }
+        M3 →
+            { child | a = child.a + 2503 }
+        M4 →
+            { child | b = child.b + 2504 }
+        M5 →
+            { child | c = child.c + 2505 }
+        M6 →
+            { child | a = child.a + 2506 }
+
+
+update26 : ChildMsg, Child → Child
+update26 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2601 }
+        M2 →
+            { child | c = child.c + 2602 }
+        M3 →
+            { child | a = child.a + 2603 }
+        M4 →
+            { child | b = child.b + 2604 }
+        M5 →
+            { child | c = child.c + 2605 }
+        M6 →
+            { child | a = child.a + 2606 }
+
+
+update27 : ChildMsg, Child → Child
+update27 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2701 }
+        M2 →
+            { child | c = child.c + 2702 }
+        M3 →
+            { child | a = child.a + 2703 }
+        M4 →
+            { child | b = child.b + 2704 }
+        M5 →
+            { child | c = child.c + 2705 }
+        M6 →
+            { child | a = child.a + 2706 }
+
+
+update28 : ChildMsg, Child → Child
+update28 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2801 }
+        M2 →
+            { child | c = child.c + 2802 }
+        M3 →
+            { child | a = child.a + 2803 }
+        M4 →
+            { child | b = child.b + 2804 }
+        M5 →
+            { child | c = child.c + 2805 }
+        M6 →
+            { child | a = child.a + 2806 }
+
+
+update29 : ChildMsg, Child → Child
+update29 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 2901 }
+        M2 →
+            { child | c = child.c + 2902 }
+        M3 →
+            { child | a = child.a + 2903 }
+        M4 →
+            { child | b = child.b + 2904 }
+        M5 →
+            { child | c = child.c + 2905 }
+        M6 →
+            { child | a = child.a + 2906 }
+
+
+update30 : ChildMsg, Child → Child
+update30 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3001 }
+        M2 →
+            { child | c = child.c + 3002 }
+        M3 →
+            { child | a = child.a + 3003 }
+        M4 →
+            { child | b = child.b + 3004 }
+        M5 →
+            { child | c = child.c + 3005 }
+        M6 →
+            { child | a = child.a + 3006 }
+
+
+update31 : ChildMsg, Child → Child
+update31 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3101 }
+        M2 →
+            { child | c = child.c + 3102 }
+        M3 →
+            { child | a = child.a + 3103 }
+        M4 →
+            { child | b = child.b + 3104 }
+        M5 →
+            { child | c = child.c + 3105 }
+        M6 →
+            { child | a = child.a + 3106 }
+
+
+update32 : ChildMsg, Child → Child
+update32 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3201 }
+        M2 →
+            { child | c = child.c + 3202 }
+        M3 →
+            { child | a = child.a + 3203 }
+        M4 →
+            { child | b = child.b + 3204 }
+        M5 →
+            { child | c = child.c + 3205 }
+        M6 →
+            { child | a = child.a + 3206 }
+
+
+update33 : ChildMsg, Child → Child
+update33 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3301 }
+        M2 →
+            { child | c = child.c + 3302 }
+        M3 →
+            { child | a = child.a + 3303 }
+        M4 →
+            { child | b = child.b + 3304 }
+        M5 →
+            { child | c = child.c + 3305 }
+        M6 →
+            { child | a = child.a + 3306 }
+
+
+update34 : ChildMsg, Child → Child
+update34 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3401 }
+        M2 →
+            { child | c = child.c + 3402 }
+        M3 →
+            { child | a = child.a + 3403 }
+        M4 →
+            { child | b = child.b + 3404 }
+        M5 →
+            { child | c = child.c + 3405 }
+        M6 →
+            { child | a = child.a + 3406 }
+
+
+update35 : ChildMsg, Child → Child
+update35 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3501 }
+        M2 →
+            { child | c = child.c + 3502 }
+        M3 →
+            { child | a = child.a + 3503 }
+        M4 →
+            { child | b = child.b + 3504 }
+        M5 →
+            { child | c = child.c + 3505 }
+        M6 →
+            { child | a = child.a + 3506 }
+
+
+update36 : ChildMsg, Child → Child
+update36 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3601 }
+        M2 →
+            { child | c = child.c + 3602 }
+        M3 →
+            { child | a = child.a + 3603 }
+        M4 →
+            { child | b = child.b + 3604 }
+        M5 →
+            { child | c = child.c + 3605 }
+        M6 →
+            { child | a = child.a + 3606 }
+
+
+update37 : ChildMsg, Child → Child
+update37 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3701 }
+        M2 →
+            { child | c = child.c + 3702 }
+        M3 →
+            { child | a = child.a + 3703 }
+        M4 →
+            { child | b = child.b + 3704 }
+        M5 →
+            { child | c = child.c + 3705 }
+        M6 →
+            { child | a = child.a + 3706 }
+
+
+update38 : ChildMsg, Child → Child
+update38 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3801 }
+        M2 →
+            { child | c = child.c + 3802 }
+        M3 →
+            { child | a = child.a + 3803 }
+        M4 →
+            { child | b = child.b + 3804 }
+        M5 →
+            { child | c = child.c + 3805 }
+        M6 →
+            { child | a = child.a + 3806 }
+
+
+update39 : ChildMsg, Child → Child
+update39 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 3901 }
+        M2 →
+            { child | c = child.c + 3902 }
+        M3 →
+            { child | a = child.a + 3903 }
+        M4 →
+            { child | b = child.b + 3904 }
+        M5 →
+            { child | c = child.c + 3905 }
+        M6 →
+            { child | a = child.a + 3906 }
+
+
+update40 : ChildMsg, Child → Child
+update40 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 4001 }
+        M2 →
+            { child | c = child.c + 4002 }
+        M3 →
+            { child | a = child.a + 4003 }
+        M4 →
+            { child | b = child.b + 4004 }
+        M5 →
+            { child | c = child.c + 4005 }
+        M6 →
+            { child | a = child.a + 4006 }
+
+
+update41 : ChildMsg, Child → Child
+update41 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 4101 }
+        M2 →
+            { child | c = child.c + 4102 }
+        M3 →
+            { child | a = child.a + 4103 }
+        M4 →
+            { child | b = child.b + 4104 }
+        M5 →
+            { child | c = child.c + 4105 }
+        M6 →
+            { child | a = child.a + 4106 }
+
+
+update42 : ChildMsg, Child → Child
+update42 msg child =
+    case msg of
+        M1 →
+            { child | b = child.b + 4201 }
+        M2 →
+            { child | c = child.c + 4202 }
+        M3 →
+            { child | a = child.a + 4203 }
+        M4 →
+            { child | b = child.b + 4204 }
+        M5 →
+            { child | c = child.c + 4205 }
+        M6 →
+            { child | a = child.a + 4206 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1 childMsg →
+            { model | w1 = update1 childMsg model.w1 }
+        W2 childMsg →
+            { model | w2 = update2 childMsg model.w2 }
+        W3 childMsg →
+            { model | w3 = update3 childMsg model.w3 }
+        W4 childMsg →
+            { model | w4 = update4 childMsg model.w4 }
+        W5 childMsg →
+            { model | w5 = update5 childMsg model.w5 }
+        W6 childMsg →
+            { model | w6 = update6 childMsg model.w6 }
+        W7 childMsg →
+            { model | w7 = update7 childMsg model.w7 }
+        W8 childMsg →
+            { model | w8 = update8 childMsg model.w8 }
+        W9 childMsg →
+            { model | w9 = update9 childMsg model.w9 }
+        W10 childMsg →
+            { model | w10 = update10 childMsg model.w10 }
+        W11 childMsg →
+            { model | w11 = update11 childMsg model.w11 }
+        W12 childMsg →
+            { model | w12 = update12 childMsg model.w12 }
+        W13 childMsg →
+            { model | w13 = update13 childMsg model.w13 }
+        W14 childMsg →
+            { model | w14 = update14 childMsg model.w14 }
+        W15 childMsg →
+            { model | w15 = update15 childMsg model.w15 }
+        W16 childMsg →
+            { model | w16 = update16 childMsg model.w16 }
+        W17 childMsg →
+            { model | w17 = update17 childMsg model.w17 }
+        W18 childMsg →
+            { model | w18 = update18 childMsg model.w18 }
+        W19 childMsg →
+            { model | w19 = update19 childMsg model.w19 }
+        W20 childMsg →
+            { model | w20 = update20 childMsg model.w20 }
+        W21 childMsg →
+            { model | w21 = update21 childMsg model.w21 }
+        W22 childMsg →
+            { model | w22 = update22 childMsg model.w22 }
+        W23 childMsg →
+            { model | w23 = update23 childMsg model.w23 }
+        W24 childMsg →
+            { model | w24 = update24 childMsg model.w24 }
+        W25 childMsg →
+            { model | w25 = update25 childMsg model.w25 }
+        W26 childMsg →
+            { model | w26 = update26 childMsg model.w26 }
+        W27 childMsg →
+            { model | w27 = update27 childMsg model.w27 }
+        W28 childMsg →
+            { model | w28 = update28 childMsg model.w28 }
+        W29 childMsg →
+            { model | w29 = update29 childMsg model.w29 }
+        W30 childMsg →
+            { model | w30 = update30 childMsg model.w30 }
+        W31 childMsg →
+            { model | w31 = update31 childMsg model.w31 }
+        W32 childMsg →
+            { model | w32 = update32 childMsg model.w32 }
+        W33 childMsg →
+            { model | w33 = update33 childMsg model.w33 }
+        W34 childMsg →
+            { model | w34 = update34 childMsg model.w34 }
+        W35 childMsg →
+            { model | w35 = update35 childMsg model.w35 }
+        W36 childMsg →
+            { model | w36 = update36 childMsg model.w36 }
+        W37 childMsg →
+            { model | w37 = update37 childMsg model.w37 }
+        W38 childMsg →
+            { model | w38 = update38 childMsg model.w38 }
+        W39 childMsg →
+            { model | w39 = update39 childMsg model.w39 }
+        W40 childMsg →
+            { model | w40 = update40 childMsg model.w40 }
+        W41 childMsg →
+            { model | w41 = update41 childMsg model.w41 }
+        W42 childMsg →
+            { model | w42 = update42 childMsg model.w42 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section>
+            <p>{model.w1.a} {model.w1.b} {model.w1.c}</p><button onClick={W1 M1}>1</button><button onClick={W1 M2}>2</button><button onClick={W1 M3}>3</button><button onClick={W1 M4}>4</button><button onClick={W1 M5}>5</button><button onClick={W1 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w2.a} {model.w2.b} {model.w2.c}</p><button onClick={W2 M1}>1</button><button onClick={W2 M2}>2</button><button onClick={W2 M3}>3</button><button onClick={W2 M4}>4</button><button onClick={W2 M5}>5</button><button onClick={W2 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w3.a} {model.w3.b} {model.w3.c}</p><button onClick={W3 M1}>1</button><button onClick={W3 M2}>2</button><button onClick={W3 M3}>3</button><button onClick={W3 M4}>4</button><button onClick={W3 M5}>5</button><button onClick={W3 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w4.a} {model.w4.b} {model.w4.c}</p><button onClick={W4 M1}>1</button><button onClick={W4 M2}>2</button><button onClick={W4 M3}>3</button><button onClick={W4 M4}>4</button><button onClick={W4 M5}>5</button><button onClick={W4 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w5.a} {model.w5.b} {model.w5.c}</p><button onClick={W5 M1}>1</button><button onClick={W5 M2}>2</button><button onClick={W5 M3}>3</button><button onClick={W5 M4}>4</button><button onClick={W5 M5}>5</button><button onClick={W5 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w6.a} {model.w6.b} {model.w6.c}</p><button onClick={W6 M1}>1</button><button onClick={W6 M2}>2</button><button onClick={W6 M3}>3</button><button onClick={W6 M4}>4</button><button onClick={W6 M5}>5</button><button onClick={W6 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w7.a} {model.w7.b} {model.w7.c}</p><button onClick={W7 M1}>1</button><button onClick={W7 M2}>2</button><button onClick={W7 M3}>3</button><button onClick={W7 M4}>4</button><button onClick={W7 M5}>5</button><button onClick={W7 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w8.a} {model.w8.b} {model.w8.c}</p><button onClick={W8 M1}>1</button><button onClick={W8 M2}>2</button><button onClick={W8 M3}>3</button><button onClick={W8 M4}>4</button><button onClick={W8 M5}>5</button><button onClick={W8 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w9.a} {model.w9.b} {model.w9.c}</p><button onClick={W9 M1}>1</button><button onClick={W9 M2}>2</button><button onClick={W9 M3}>3</button><button onClick={W9 M4}>4</button><button onClick={W9 M5}>5</button><button onClick={W9 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w10.a} {model.w10.b} {model.w10.c}</p><button onClick={W10 M1}>1</button><button onClick={W10 M2}>2</button><button onClick={W10 M3}>3</button><button onClick={W10 M4}>4</button><button onClick={W10 M5}>5</button><button onClick={W10 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w11.a} {model.w11.b} {model.w11.c}</p><button onClick={W11 M1}>1</button><button onClick={W11 M2}>2</button><button onClick={W11 M3}>3</button><button onClick={W11 M4}>4</button><button onClick={W11 M5}>5</button><button onClick={W11 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w12.a} {model.w12.b} {model.w12.c}</p><button onClick={W12 M1}>1</button><button onClick={W12 M2}>2</button><button onClick={W12 M3}>3</button><button onClick={W12 M4}>4</button><button onClick={W12 M5}>5</button><button onClick={W12 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w13.a} {model.w13.b} {model.w13.c}</p><button onClick={W13 M1}>1</button><button onClick={W13 M2}>2</button><button onClick={W13 M3}>3</button><button onClick={W13 M4}>4</button><button onClick={W13 M5}>5</button><button onClick={W13 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w14.a} {model.w14.b} {model.w14.c}</p><button onClick={W14 M1}>1</button><button onClick={W14 M2}>2</button><button onClick={W14 M3}>3</button><button onClick={W14 M4}>4</button><button onClick={W14 M5}>5</button><button onClick={W14 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w15.a} {model.w15.b} {model.w15.c}</p><button onClick={W15 M1}>1</button><button onClick={W15 M2}>2</button><button onClick={W15 M3}>3</button><button onClick={W15 M4}>4</button><button onClick={W15 M5}>5</button><button onClick={W15 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w16.a} {model.w16.b} {model.w16.c}</p><button onClick={W16 M1}>1</button><button onClick={W16 M2}>2</button><button onClick={W16 M3}>3</button><button onClick={W16 M4}>4</button><button onClick={W16 M5}>5</button><button onClick={W16 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w17.a} {model.w17.b} {model.w17.c}</p><button onClick={W17 M1}>1</button><button onClick={W17 M2}>2</button><button onClick={W17 M3}>3</button><button onClick={W17 M4}>4</button><button onClick={W17 M5}>5</button><button onClick={W17 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w18.a} {model.w18.b} {model.w18.c}</p><button onClick={W18 M1}>1</button><button onClick={W18 M2}>2</button><button onClick={W18 M3}>3</button><button onClick={W18 M4}>4</button><button onClick={W18 M5}>5</button><button onClick={W18 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w19.a} {model.w19.b} {model.w19.c}</p><button onClick={W19 M1}>1</button><button onClick={W19 M2}>2</button><button onClick={W19 M3}>3</button><button onClick={W19 M4}>4</button><button onClick={W19 M5}>5</button><button onClick={W19 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w20.a} {model.w20.b} {model.w20.c}</p><button onClick={W20 M1}>1</button><button onClick={W20 M2}>2</button><button onClick={W20 M3}>3</button><button onClick={W20 M4}>4</button><button onClick={W20 M5}>5</button><button onClick={W20 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w21.a} {model.w21.b} {model.w21.c}</p><button onClick={W21 M1}>1</button><button onClick={W21 M2}>2</button><button onClick={W21 M3}>3</button><button onClick={W21 M4}>4</button><button onClick={W21 M5}>5</button><button onClick={W21 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w22.a} {model.w22.b} {model.w22.c}</p><button onClick={W22 M1}>1</button><button onClick={W22 M2}>2</button><button onClick={W22 M3}>3</button><button onClick={W22 M4}>4</button><button onClick={W22 M5}>5</button><button onClick={W22 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w23.a} {model.w23.b} {model.w23.c}</p><button onClick={W23 M1}>1</button><button onClick={W23 M2}>2</button><button onClick={W23 M3}>3</button><button onClick={W23 M4}>4</button><button onClick={W23 M5}>5</button><button onClick={W23 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w24.a} {model.w24.b} {model.w24.c}</p><button onClick={W24 M1}>1</button><button onClick={W24 M2}>2</button><button onClick={W24 M3}>3</button><button onClick={W24 M4}>4</button><button onClick={W24 M5}>5</button><button onClick={W24 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w25.a} {model.w25.b} {model.w25.c}</p><button onClick={W25 M1}>1</button><button onClick={W25 M2}>2</button><button onClick={W25 M3}>3</button><button onClick={W25 M4}>4</button><button onClick={W25 M5}>5</button><button onClick={W25 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w26.a} {model.w26.b} {model.w26.c}</p><button onClick={W26 M1}>1</button><button onClick={W26 M2}>2</button><button onClick={W26 M3}>3</button><button onClick={W26 M4}>4</button><button onClick={W26 M5}>5</button><button onClick={W26 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w27.a} {model.w27.b} {model.w27.c}</p><button onClick={W27 M1}>1</button><button onClick={W27 M2}>2</button><button onClick={W27 M3}>3</button><button onClick={W27 M4}>4</button><button onClick={W27 M5}>5</button><button onClick={W27 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w28.a} {model.w28.b} {model.w28.c}</p><button onClick={W28 M1}>1</button><button onClick={W28 M2}>2</button><button onClick={W28 M3}>3</button><button onClick={W28 M4}>4</button><button onClick={W28 M5}>5</button><button onClick={W28 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w29.a} {model.w29.b} {model.w29.c}</p><button onClick={W29 M1}>1</button><button onClick={W29 M2}>2</button><button onClick={W29 M3}>3</button><button onClick={W29 M4}>4</button><button onClick={W29 M5}>5</button><button onClick={W29 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w30.a} {model.w30.b} {model.w30.c}</p><button onClick={W30 M1}>1</button><button onClick={W30 M2}>2</button><button onClick={W30 M3}>3</button><button onClick={W30 M4}>4</button><button onClick={W30 M5}>5</button><button onClick={W30 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w31.a} {model.w31.b} {model.w31.c}</p><button onClick={W31 M1}>1</button><button onClick={W31 M2}>2</button><button onClick={W31 M3}>3</button><button onClick={W31 M4}>4</button><button onClick={W31 M5}>5</button><button onClick={W31 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w32.a} {model.w32.b} {model.w32.c}</p><button onClick={W32 M1}>1</button><button onClick={W32 M2}>2</button><button onClick={W32 M3}>3</button><button onClick={W32 M4}>4</button><button onClick={W32 M5}>5</button><button onClick={W32 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w33.a} {model.w33.b} {model.w33.c}</p><button onClick={W33 M1}>1</button><button onClick={W33 M2}>2</button><button onClick={W33 M3}>3</button><button onClick={W33 M4}>4</button><button onClick={W33 M5}>5</button><button onClick={W33 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w34.a} {model.w34.b} {model.w34.c}</p><button onClick={W34 M1}>1</button><button onClick={W34 M2}>2</button><button onClick={W34 M3}>3</button><button onClick={W34 M4}>4</button><button onClick={W34 M5}>5</button><button onClick={W34 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w35.a} {model.w35.b} {model.w35.c}</p><button onClick={W35 M1}>1</button><button onClick={W35 M2}>2</button><button onClick={W35 M3}>3</button><button onClick={W35 M4}>4</button><button onClick={W35 M5}>5</button><button onClick={W35 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w36.a} {model.w36.b} {model.w36.c}</p><button onClick={W36 M1}>1</button><button onClick={W36 M2}>2</button><button onClick={W36 M3}>3</button><button onClick={W36 M4}>4</button><button onClick={W36 M5}>5</button><button onClick={W36 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w37.a} {model.w37.b} {model.w37.c}</p><button onClick={W37 M1}>1</button><button onClick={W37 M2}>2</button><button onClick={W37 M3}>3</button><button onClick={W37 M4}>4</button><button onClick={W37 M5}>5</button><button onClick={W37 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w38.a} {model.w38.b} {model.w38.c}</p><button onClick={W38 M1}>1</button><button onClick={W38 M2}>2</button><button onClick={W38 M3}>3</button><button onClick={W38 M4}>4</button><button onClick={W38 M5}>5</button><button onClick={W38 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w39.a} {model.w39.b} {model.w39.c}</p><button onClick={W39 M1}>1</button><button onClick={W39 M2}>2</button><button onClick={W39 M3}>3</button><button onClick={W39 M4}>4</button><button onClick={W39 M5}>5</button><button onClick={W39 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w40.a} {model.w40.b} {model.w40.c}</p><button onClick={W40 M1}>1</button><button onClick={W40 M2}>2</button><button onClick={W40 M3}>3</button><button onClick={W40 M4}>4</button><button onClick={W40 M5}>5</button><button onClick={W40 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w41.a} {model.w41.b} {model.w41.c}</p><button onClick={W41 M1}>1</button><button onClick={W41 M2}>2</button><button onClick={W41 M3}>3</button><button onClick={W41 M4}>4</button><button onClick={W41 M5}>5</button><button onClick={W41 M6}>6</button>
+        </section>
+        <section>
+            <p>{model.w42.a} {model.w42.b} {model.w42.c}</p><button onClick={W42 M1}>1</button><button onClick={W42 M2}>2</button><button onClick={W42 M3}>3</button><button onClick={W42 M4}>4</button><button onClick={W42 M5}>5</button><button onClick={W42 M6}>6</button>
+        </section>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root"
