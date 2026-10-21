@@ -1212,15 +1212,9 @@ const Page = struct {
         else
             try std.fmt.allocPrint(cx.arena, "key `{s}`", .{spelled});
         switch (key.star_kind) {
-            // It opens the sentence: `Key …`, `Every message …`.
-            .whole_record => return cx.programReport(.update, .program_shape, try std.fmt.allocPrint(cx.arena,
-                \\{s} writes the whole model, a record of several fields, in one value, which hides
-                \\which of its fields changed, so no binding of the page can be chosen for it:
-                \\`browser-inline` writes only the bindings a key's writes reach, and never checks the
-                \\whole page again (`docs/design/browser-inline.md` §8.7; §5, class 3). Write the fields
-                \\the arm changes, as a record update of the model — `{{ model | field = … }}` — or, for
-                \\a replacement of the whole model, a declared `replace` once the language has one.
-            , .{try capital(cx.arena, name)})),
+            // Exact record writes have already expanded to model-field
+            // value writes at the consumer; no whole-page pass is needed.
+            .whole_record => {},
             .precision => {
                 const lost = key.lost orelse return cx.programReport(.update, .not_implemented, try std.fmt.allocPrint(cx.arena,
                     \\A limit of the compiler: the write-set pass lost track of what {s} writes{s}, and
@@ -2157,14 +2151,14 @@ const Page = struct {
     /// Key `k`'s write pass (§8.3): the binding functions the key's writes
     /// reach — from the groups the pass says they conflict with, each
     /// function found by its groups — and those of the controls its events
-    /// are on, each once, in document order. There is no coarse pass: a `*`
-    /// key reaches here only for a model of one value (`refuseKey`), whose
-    /// whole write is that value, and the groups it reaches are the ones the
-    /// pass found for it like any other key's (`programGroupsOf`).
+    /// are on, each once, in document order. Exact whole-record writes are
+    /// value writes of every model field at the consumer; a single-value
+    /// model keeps its exact whole-value write. Both select the groups
+    /// their writes reach through programGroupsOf, never a coarse pass.
     fn passOf(pg: *Page, k: u32, the: m.Program.Key) m.Error![]const u32 {
-        // By construction: `refuseKey` ran for this key before its handler,
-        // and refuses every `*` key but one of a model of one value.
-        if (the.star) std.debug.assert(the.star_kind == .single_value);
+        // By construction: refuseKey already rejected lost precision.
+        // Exact records were expanded to field writes at the consumer.
+        if (the.star) std.debug.assert(the.star_kind == .single_value or the.star_kind == .whole_record);
         // Null only for a program the pass did not analyse, whose keys
         // `refuseKey` refused (`.none`); refused here too, so no build mode
         // writes a handler without its pass.

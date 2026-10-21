@@ -1,0 +1,79 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <output>"0"</output>
+      <p>"start"</p>
+      <aside>"outside"</aside>
+      <button data-role="inc">"+1"</button>
+      <button data-role="field">"Field"</button>
+      <button data-role="restore">"Restore"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <output>"1"</output>
+      <p>"start"</p>
+      <aside>"outside"</aside>
+      <button data-role="inc">"+1"</button>
+      <button data-role="field">"Field"</button>
+      <button data-role="restore">"Restore"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=field]
+<body>
+  <div id="root">
+    <main>
+      <output>"4"</output>
+      <p>"field"</p>
+      <aside>"outside"</aside>
+      <button data-role="inc">"+1"</button>
+      <button data-role="field">"Field"</button>
+      <button data-role="restore">"Restore"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <output>"5"</output>
+      <p>"field"</p>
+      <aside>"outside"</aside>
+      <button data-role="inc">"+1"</button>
+      <button data-role="field">"Field"</button>
+      <button data-role="restore">"Restore"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=restore]
+<body>
+  <div id="root">
+    <main>
+      <output>"8"</output>
+      <p>"whole"</p>
+      <aside>"replaced"</aside>
+      <button data-role="inc">"+1"</button>
+      <button data-role="field">"Field"</button>
+      <button data-role="restore">"Restore"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <output>"9"</output>
+      <p>"whole"</p>
+      <aside>"replaced"</aside>
+      <button data-role="inc">"+1"</button>
+      <button data-role="field">"Field"</button>
+      <button data-role="restore">"Restore"</button>
+    </main>
+  </div>
+</body>

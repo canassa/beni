@@ -95,20 +95,24 @@ temporary: every such message begins *"A limit of the compiler"*, may say *"yet"
 the slice in its area (a suspending command, a set of subscriptions that changes, `lazy`, an
 analysis cap). **Language rules** — class 3 — are permanent departures from Elm, and their text
 never says *"not yet"*: an opaque `update` or `view`, a tagger that gives no message constructor, a
-markup site that cannot be numbered, a `*` key that is not a declared `replace`, and, from S2, a
+markup site that cannot be numbered, and, from S2, a
 structural write to a `List` of rows, whose error names `Dict.update`: **`Dict` is the keyed
 collection** (#294). The messages keep the split between an idiom to write instead, a value meant
 to be global, and a cap of the compiler.
 
-*Amended 2026-10-17 (the owner): a `*` key is one of three.* A `*` that comes from lost precision —
-a cap of the write-set pass cut the key, or the pass wrote the whole model as an approximation: an
-opaque call's result, an application through a parameter, a record of a type it could not read
-(`write-sets.md`, amended 2026-10-18, `Write.lost`) — is a limit of the compiler, class 4, to be
-closed. Only an exact inferred write of the whole model, when its type is a record of more than
-one field, with no declared `replace`, is the language rule, class 3: the rule forbids a write
-that hides which fields changed. A model that is a single value — not a record of several fields,
-by its type — hides nothing: it is written exactly, and accepted.
-(`Program.Key.star_kind`, `boundary.md` §9.4.6 1.15; §8.7.)
+*Amended 2026-10-21 (the owner, reversing the 2026-10-17 whole-record refusal):*
+an exact whole-model write (`Program.Key.star_kind == .whole_record`) is accepted. Its exact
+write set is a value write of every field of the model's complete record type. A value write of
+a nested record field covers every leaf below it. Its handler calls the existing binding groups
+that read those fields; other keys keep their own narrower write sets. This is field-set
+compilation, never an unconditional whole-page pass. No declaration or new syntax is required.
+
+A `*` that comes from lost precision (`.precision`) remains a compiler limit, class 4: a cap
+cut the key, the pass approximated an opaque call or an application through a parameter, or the
+model's complete type could not be read (`write-sets.md`, `Write.lost`). These refusals and
+causes do not change. An exact write of a model of one value (`.single_value`) remains accepted.
+The consumer uses these existing facts, not a second classifier
+(`boundary.md` §9.4.6 version 1.15; §8.7).
 
 1. **Not compiled yet** (a compiler limit) — a construct a later slice of
    `plans/direct-rewrite.md` §5 adds (S1: events and holes beyond the one text binding; S2:
@@ -362,9 +366,11 @@ binding functions of the page whose groups the key's writes reach (`programCalls
 document order; then the key's command (§4). There is no scheduler and no microtask: two events in
 one task are two passes. *Measured against tea-inline's microtask flush in S1's report.*
 
-*Amended 2026-10-18 (the owner): there is no coarse pass.* No key's pass calls every binding of
-the page: a `*` key reaches the lowering only for a model of one value, whose whole write is that
-value, and its pass is the groups the write-set pass found for it, as any key's
+*Amended 2026-10-18 (the owner): there is no coarse pass.* A handler calls only groups selected
+by its write set. *Amended 2026-10-21 (the owner):* an exact whole-record write is expanded to
+value writes of all model fields before conflicts are consumed. This may select every group
+that reads model fields, but never unconditionally selects every page binding. Narrow keys
+remain narrow; single-value models keep their existing exact whole-value behavior
 (`browser/inline/SingleValueModel`).
 
 *Amended 2026-10-19 (the review of #389):* the first text said a program the pass does not know
@@ -516,6 +522,12 @@ the keyed collection** (§5, class 3, from S2).
 
 ### 8.7 What S1 refuses
 
+*Amended 2026-10-21 (the owner):* an exact inferred whole-model record write is accepted,
+including an unannotated update whose complete model record is known from init. Its existing
+`.whole_record` fact expands to a value write of each model field before the consumer selects
+binding groups. Replacing a record field covers all its nested leaves. This reverses the former
+class 3 refusal; it adds no replacement declaration, syntax, warning or coarse repaint path.
+
 The texts, each in `build/bad/inline/` (§5's classes; a limit of the compiler begins *"A limit of
 the compiler"*, a language rule never says *"yet"*):
 
@@ -524,7 +536,7 @@ the compiler"*, a language rule never says *"yet"*):
 | an `update` computed when the page runs: *"… cannot write each message's arm into the handler of its key: a handler is the arm itself, with no message made … Name a function of the program's modules as `update`, or write a lambda whose body chooses the arm."* | 3 | the record's `update` | `OpaqueUpdate/` |
 | an `Html.map` whose function is not a constructor: *"… which key each of those messages reaches cannot be known when the program is built … Map with a constructor … and decide in `update` what the message means."* | 3 | the map's hole | `MapNotCtor/` |
 | markup held as a value — in the model, a record, a list — at the hole that shows it and at the markup itself: *"… its elements cannot be numbered when the program is built … Keep in the model the data the markup shows, and write the markup in `view` or in a function `view` calls."* | 3 | each | `MarkupValue/` |
-| a `*` key (`write-sets.md` §3.4) of an exact inferred whole write of a model whose type is a record of more than one field — by `update`'s annotation, or else by the record literal `init` makes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"Key `Restore` writes the whole model, a record of several fields, in one value, which hides which of its fields changed … Write the fields the arm changes …, or … a declared `replace` once the language has one"* (*decided 2026-10-17, the owner*; `StarUnannotated/` without the annotation). A `*` of lost precision — a cap cut the key, the pass marked the whole write an approximation, or neither the annotation nor `init` gives the model's type — is a limit of the compiler, class 4, reported at the first approximation in source order, which it quotes and says how many more there are (`StarOpaque/`: `f model`; `StarParameter/`: `g m`; `StarRecord/`: `{ next | count = 0 }`; `StarPrecision/`: the cap and its call); a model of one value (an `Int`, a record of one field) is written exactly and accepted, its pass the groups the write-set pass found for that whole write (*amended 2026-10-18, the owner*: no pass calls every binding of the page, and the lowering asserts it; `SingleValueModel`). A key is named as the program spells it, never `(any)` | 3 / 4 | the record's `update`; the approximation | `StarNotReplace/`, `StarUnannotated/`, `StarOpaque/`, `StarParameter/`, `StarRecord/`, `StarPrecision/` |
+| a `*` key of lost precision (`.precision`): a cap cut the key, the pass approximated an opaque call or an application through a parameter, or the model type could not be read. The first approximation is reported in source order, with its text and the number of further causes. Exact whole-record (`.whole_record`) and single-value (`.single_value`) writes are accepted; a key is named as the program spells it, never `(any)` | 4 | the approximation; the record's `update` when no approximation site exists | `StarOpaque/`, `StarParameter/`, `StarRecord/`, `StarPrecision/` |
 | a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
 | a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
 | a message wrapped in a constructor of several fields, a field of which the arm binds: *"… wraps another in a constructor of more than one field, and a handler is handed only the inner message's fields …"* | 4 | the field's pattern | `ArmWideWrapper/` |

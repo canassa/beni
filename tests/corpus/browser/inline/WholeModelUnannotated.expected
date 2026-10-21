@@ -1,0 +1,45 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <output>"0"</output>
+      <p>"start"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="restore">"Restore"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <output>"1"</output>
+      <p>"start"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="restore">"Restore"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=restore]
+<body>
+  <div id="root">
+    <div>
+      <output>"0"</output>
+      <p>"saved"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="restore">"Restore"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <output>"1"</output>
+      <p>"saved"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="restore">"Restore"</button>
+    </div>
+  </div>
+</body>

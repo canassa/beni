@@ -1,0 +1,57 @@
+-- Replacing stats writes every leaf below that field. Replacing the model
+-- also updates the independent other field; Inc remains count-only.
+import Browser
+import Html exposing (Html)
+import Tea
+import Types
+
+
+type Msg
+    = Inc
+    | RestoreStats (Types.Stats String)
+    | Restore (Types.Model String)
+
+
+update : Msg, Types.Model String → Types.Model String
+update msg model =
+    case msg of
+        Inc →
+            stats = model.stats
+            { model | stats = { stats | count = stats.count + 1 } }
+
+        RestoreStats saved →
+            { model | stats = saved }
+
+        Restore saved →
+            saved
+
+
+view : Types.Model String → Html Msg
+view model =
+    <main>
+        <output>{model.stats.count}</output>
+        <p>{model.stats.label}</p>
+        <aside>{model.other}</aside>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="field" onClick={RestoreStats { count = 4, label = "field" }}>
+            Field
+        </button>
+        <button
+            data-role="restore"
+            onClick={Restore { stats = { count = 8, label = "whole" }, other = "replaced" }}
+        >
+            Restore
+        </button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { stats = { count = 0, label = "start" }, other = "outside" }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
