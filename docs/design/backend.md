@@ -8864,6 +8864,52 @@ each handler's summary of `$before` still has a var per property, fed by the mod
 carries the model's sets once per handler (about 22k of the 49k edges of a `nowd` run). A
 summary that is a copy of another's would remove them. That is a separate change.
 
+**As built 2026-10-21 — a var that copies one var has that var's summary** (issue #568, part
+of #464). Each `browser-inline` handler's `const $before = $model` had a field summary of its
+own, linked to the model's, with one var per property it was asked for, each fed by one edge
+from the model summary's and holding what that one holds: 349 such copies at N=64. The summary
+of a var with one source and nothing of its own is the source's, Σ of a union of one, so `Pts`
+no longer makes it (`Pts.aliasSummary`, the same move #564 made for a spread target's fields,
+one level up). A var shares its source `u`'s summary when it has exactly one copy edge in, the
+edge links summaries (`linksAcross`, so *Summaries across a filter* is the condition here too:
+its filter is wild or `u`'s, and it holds every site `u` holds), every site it holds is one `u`
+holds, it is not a capped `top` var, `u`'s summary is not dead, and `u` is at its depth, so the
+summary's vars link as its own would. `summaryOf` decides such a var after its source, through a
+chain of them, and answers the root's summary (`resolve`, cached until the next split); a var
+that can never share one (no source, several, or a capped `top`) is given its own when the walk
+finds it, so a cycle of copies is fed as before. **It splits into its own summary** (`split`)
+when a second copy edge reaches it (`copy`), when sites the edge did not bring join it
+(`joinNow`: a join from a constraint, or an edge that does not link), or when it is about to be
+`top` (`makeTop`): its own is made as `summaryOf` makes one, linked from each source's and
+folding what none of them holds. A var whose summary is about to die splits each var sharing it
+first (`splitKids`), since an uncapped copy keeps its sites beside `top` and its summary alive.
+
+**What held the shared summary is listed, not redirected.** A summary id is held in many places
+(a site's `summaries`, the summaries' `succs` and `preds`, a constraint's local while it spreads),
+so every read through an aliased var is recorded on it as it is made (`Alias`): a load cell of
+it (`nameLoad`), a summary it feeds (`linkFrom`), and the constraints that spread it
+(`seeAlias`, a dependency list). At a split each of those of the var, and of every var sharing
+its summary through it, is applied to the new summary — the cell reads it (`summaryLoad`), the
+link is made, and the spread is evaluated again, so that its untouched fields take vars fed by
+the new summary (`ownField`) — and each keeps what it took from the old one. That is a subset of
+what the new one holds, since the var held every site of its source, so no consumer holds more
+than it would have had the var never shared a summary. A forwarding id read on every access
+would have put a lookup in every hot path and still needed the spread woken. A mark's load
+cell became a list (`Mark.load`, `mark_loads`), since one summary now has the cells of every
+var sharing it. Every `emit/release/` golden and release run hash is byte for byte the same,
+and the safety build's shuffled-order check is green on the corpus. Measured, ReleaseFast,
+`--release --no-cache --jobs=1`, dagon, median of five, every output byte-identical, before →
+after: `spec_pts_edges` (7, 6 and 6 runs) on the dashboard N=16 52 747 → 40 509, N=64 509 708
+→ 360 868, N=64 without `withDefault` 269 424 → 151 994; `specialise` 55 → 50 ms, 369 → 284 ms
+and 289 → 229 ms; time and peak RSS N=16 0.08 s / 56 MB → 0.08 s / 55 MB, N=64 0.45 s / 209 MB
+→ **0.37 s / 179 MB**, without `withDefault` 0.37 s / 181 MB → **0.31 s / 159 MB**. Instructions
+of the gates' build: the new `emit/release/inline/SpreadCopiesWide` (SpreadCopies with 46
+children) 4 750M → 3 852M, `SpreadCopies` 4 108M → 3 355M, `MemberReadsWide` 2 924M → 2 438M,
+`SpreadArms` 2 236M → 1 890M, `MergedChildren` 3 125M → 2 973M and `SpreadWide` 1 370M →
+1 202M. The 2026-10-21 note above on a spread target's fields describes the chain of copies
+`shareField` follows; with this change a handler's spread reads the model's summary itself, so
+the chain is the summary's own var unless a copy has split.
+
 ### Compact statements
 
 ### Compact statements
