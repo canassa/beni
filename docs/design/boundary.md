@@ -6294,19 +6294,65 @@ answer to `cf-workers-q7` (12:17 UTC), **B, the final design, which replaces q4'
 Worker's `fetch` is an ordinary beni function, as an object's handlers are ((e.1)).*
 
 ```elm
-pub foreign type Context                 -- a request's: its bindings, its scope, `waitUntil`
-pub env : Context → Env
+module Worker   -- the one live declaration of the module (R6-1)
 
+pub foreign type Program
 pub program : { fetch : Context, Request → Response, objects : List Definition } → Program
 
+pub foreign type Context                 -- a request's: its bindings, its scope, `waitUntil`
+pub env : Context → Env
+pub foreign type Definition              -- a Durable Object class, made by `Worker.Object.define`
+pub foreign type Ref msg                 -- a typed reference to an object of protocol `msg`: `Object.self`, or one from a `Namespace msg` ((e.10))
+
+pub foreign type Request                 -- the host's `Request`, read through these
+pub method : Request → String            -- upper case, as the host gives it
+pub url : Request → String               -- the full URL as the host gives it: "https://h/arena/x/ws?k=v"
+pub path : Request → String              -- its `pathname`, "/arena/x/ws"
+pub header : Request, String → Maybe String    -- the header's value, the name in any case; the host joins repeats with ", "
+pub headers : Request → List (String × String) -- names lower-cased, sorted by name as the host keeps them; repeats joined with ", "
+-- A Worker's `fetch` reads no body in this slice ((j)): the stream is the host's, forwarded whole.
+
+pub opaque type Response
+pub text : Int, String → Response        -- `content-type: text/plain; charset=utf-8`
+pub html : Int, String → Response        -- `content-type: text/html; charset=utf-8`
+pub empty : Int → Response               -- no body
+pub withHeader : Response, String, String → Response   -- appended; a repeated name is written twice; an `x-beni-` name is an invalid response (R6-7)
+pub redirect : Request, String, Int → Response   -- `location`: the target resolved against the request's URL; 301, 302, 303, 307 or 308
+
+pub foreign type Env
+pub objects : Env, String, Schema e msg → Maybe (Namespace msg)   -- the Durable Object binding of that name, as objects of that protocol ((e.10))
+pub service : Env, String → Maybe Service      -- a service or assets binding: anything with `fetch`
+pub var : Env, String → Maybe String           -- a plain-text variable or secret
+
+pub foreign type Namespace msg
+pub byName : Namespace msg, String → Ref msg   -- `getByName`: the one object of that name
+pub unique : Namespace msg → Ref msg           -- `newUniqueId`, then `get`: a fresh object; its id is `refId`
+pub byId : Namespace msg, String → Result IdError (Ref msg)   -- `idFromString`: the id a `unique` ref reported through `refId`
+pub refId : Ref msg → String                   -- 64 hex digits
+pub refName : Ref msg → Maybe String           -- the name `byName` was given; `Nothing` otherwise
+
+pub type IdError = InvalidId                   -- the host's `TypeError`, "Invalid Durable Object ID"
+
 pub forward : Ref msg, Request → Result StubError Response        -- waits; the host's Response, body stream untouched
+pub type StubError
+    = Overloaded                               -- the error's `overloaded` is true: send fewer, or spread the load
+    | Reset                                    -- `durableObjectReset` is true: the host reset the object; the call may be made again
+    | Transient                                -- `retryable` is true and neither of the above: the connection, a shutdown; the call may be made again
+    | Cycle                                    -- the call's chain already holds a handler parked in the object called ((e.3)); the call is refused at once
+
+pub foreign type Service
 pub callService : Service, Request → Result ServiceError Response  -- waits; an assets or service binding
+pub type ServiceError = Unavailable            -- `retryable` is true: the call may be made again
 ```
 
 - **`fetch` is an ordinary handler, and its effects are inferred.** It may wait — on `forward`,
   `callService`, an `Object.ask` ((e.10)), `Task.sleep`, a `Task.join` — and a `fetch` that never
-  waits runs to its end inside the host's handler at the cost of a plain call. No marker; the
-  `Answer` type is gone.
+  waits runs to its end inside the host's handler at the cost of a plain call. No marker.
+- **The form q4 took, as the record** (replaced by q7, above): a `sync` `fetch : Env, Request →
+  Answer`, where `Answer` was an opaque value built by `respond`, `forward` and `serve`, each
+  carrying a `sync` recovery (`StubError → Response`) in its top-level signature, since the
+  marker is legal only there; the runtime returned the host's promise itself and no fiber ran in
+  a Worker. It is prose here and no declaration, so the module is declared once.
 - **One scheduler and one scope per request.** Each request runs on its own scheduler
   (`Task.withScheduler`, #596) and in its own scope, so a fiber never resumes in another request's
   I/O context — the measured hazard below cannot arise — and a defect fails only its own request:
@@ -6317,14 +6363,30 @@ pub callService : Service, Request → Result ServiceError Response  -- waits; a
   untouched, so the 101 of an upgrade and a streamed body pass through; it carries the chain id
   ((e.3)) — a fresh one, after stripping any `x-beni-chain` the client sent. Its failures are
   *What a stub's failure becomes* below. **Typed asks to an `Object.Ref msg` are ordinary waits**
-  ((e.10)), under the same cycle rule.
+  ((e.10)), under the same cycle rule. *Two names differ from the owners' words (R6-6): the owners
+  wrote `Object.Ref msg`, and the type is `Worker.Ref msg`, because `Worker.forward` takes a ref
+  and `Worker` imports no other module of the platform (H1) — `Worker.Object` imports it, so
+  `Object.Ref msg` is the same type reached through that module; and the owner wrote
+  `Worker.forward stub req`, where this text writes `ref`, because q8 replaced stubs with typed
+  refs.*
 - **Fibers that outlive the response** — spawned in the request's scope and still running when
   `fetch` returns — run under `ctx.waitUntil`, with the host's 30-second cap after the response
-  ([context](https://developers.cloudflare.com/workers/runtime-apis/context/)): what they do is
-  delivered at most once, and a fiber the cap cuts is cancelled, its finalisers run.
+  ([context](https://developers.cloudflare.com/workers/runtime-apis/context/): work may run "for
+  up to 30 seconds after the response is sent or the client disconnects", and "if any Promises
+  have not settled after 30 seconds, they are canceled"): what they do is delivered at most once.
+  **The platform's deadline** (R6-3): the host says nothing of code after its cap, and
+  continuations of an ended request context are dropped, so the platform itself closes the
+  request's scope **5 seconds before the cap** — at 25 seconds after the response — with
+  §9.8.14's teardown and its 1 000 ms deadline for cleanup that waits, and holds the teardown's
+  promise in the same `waitUntil`; a finaliser therefore runs if it finishes within that
+  deadline, as §9.8.14 already says of every finaliser, and a fiber the platform cancels there has
+  its finalisers run before the host's cap. That the host honours the held teardown is a fact to
+  establish (#600, (k)).
 - **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
   to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
-  cancels the scope's fibers as §9.8.14's teardown does.
+  starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
+  … the client disconnects" — under the same 1 000 ms deadline. That the hold works after an
+  abort is #600's second half.
 
 The example of (i) becomes:
 
@@ -6341,61 +6403,8 @@ route ctx request =
             Worker.text 404 "no such page"
 ```
 
-*The text below is the form the question was asked over, kept as written.*
-
-```elm
-module Worker
-
-pub foreign type Program
-
-pub program : { fetch : Env, Request → Response, objects : List Definition } → Program
-
-pub foreign type Definition              -- a Durable Object class, made by `Worker.Object.define`
-pub foreign type Ref msg                 -- a typed reference to an object of protocol `msg`: `self`, or one from a `Namespace msg` ((e.10))
-
-
-pub foreign type Request                 -- the host's `Request`, read through these
-pub method : Request → String            -- upper case, as the host gives it
-pub url : Request → String               -- the full URL as the host gives it: "https://h/arena/x/ws?k=v"
-pub path : Request → String              -- its `pathname`, "/arena/x/ws"
-pub header : Request, String → Maybe String    -- the header's value, the name in any case; the host joins repeats with ", "
-pub headers : Request → List (String × String) -- names lower-cased, sorted by name as the host keeps them; repeats joined with ", "
--- A Worker's `fetch` reads no body in this slice ((j)): the stream is the host's, forwarded whole.
-
-pub opaque type Response
-pub text : Int, String → Response        -- `content-type: text/plain; charset=utf-8`
-pub html : Int, String → Response        -- `content-type: text/html; charset=utf-8`
-pub empty : Int → Response               -- no body
-pub withHeader : Response, String, String → Response   -- appended; a repeated name is written twice
-pub redirect : Request, String, Int → Response   -- `location`: the target resolved against the request's URL; 301, 302, 303, 307 or 308
-
-pub foreign type Env
-pub objects : Env, String → Maybe Namespace    -- the Durable Object binding of that name
-pub service : Env, String → Maybe Service      -- a service or assets binding: anything with `fetch`
-pub var : Env, String → Maybe String           -- a plain-text variable or secret
-
-pub foreign type Namespace
-pub byName : Namespace, String → Stub          -- `getByName`: the one object of that name
-pub unique : Namespace → Stub                  -- `newUniqueId`, then `get`: a fresh object; its id is `Stub.id`
-pub byId : Namespace, String → Result IdError Stub   -- `idFromString`: the id a `unique` stub reported through `stubId`
-
-pub type IdError = InvalidId                   -- the host's `TypeError`, "Invalid Durable Object ID"
-
-pub foreign type Stub
-pub forward : Stub, Request → Result StubError Response   -- suspends; the object's `request` handler answers
-pub stubId : Stub → String                     -- 64 hex digits
-pub stubName : Stub → Maybe String             -- the name `byName` was given; `Nothing` otherwise
-
-pub type StubError
-    = Overloaded                               -- the error's `overloaded` is true: send fewer, or spread the load
-    | Reset                                    -- `durableObjectReset` is true: the host reset the object; the call may be made again
-    | Transient                                -- `retryable` is true and neither of the above: the connection, a shutdown; the call may be made again
-    | Cycle                                    -- the call's chain already holds a handler parked in the object called ((e.3)); the call is refused at once
-
-pub foreign type Service
-pub callService : Service, Request → Result ServiceError Response   -- suspends: `env.ASSETS.fetch(request)`
-pub type ServiceError = Unavailable            -- `retryable` is true: the call may be made again
-```
+*The bullets below are the record of the first text and its amendments; where one disagrees
+with the block above, the block holds.*
 
 - **`fetch` runs in a fiber of its own per request** *(the record; (d)'s amendment above says how,
   with a scheduler and a scope per request)*, started with `Task.start` from the host's
@@ -6466,7 +6475,10 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
     object wrote — status `508 Loop Detected` (RFC 5842) with the header `x-beni-cycle: 1` — and
   which `forward` and `ask` recognise by that status and that header together and answer `Err Cycle`
   (nothing is caught: it is a `Response` read by its fields; a 508 a program wrote itself has no
-  such header); then `overloaded` is `Overloaded`; `durableObjectReset` is `Reset`; `retryable`
+  such header, because `withHeader` refuses every name that begins with `x-beni-` as an invalid
+  response — a 500 and a `console.error` line, (d)'s validation rule — and the Worker strips
+  `x-beni-chain` on entry, so the `x-beni-` names are the platform's alone, R6-7); then
+  `overloaded` is `Overloaded`; `durableObjectReset` is `Reset`; `retryable`
   is `Transient`; **anything else is thrown again**:
   an application error of the object — the object's own throw, which reaches the stub's caller
   unchanged with `remote` true and no `durableObjectReset`, since (f)'s abort comes after it
@@ -6606,9 +6618,9 @@ when A calls B and B calls A back, as Orleans and Restate both document. The pla
 wrapper carries a **call-chain id** on every call between objects: the header `x-beni-chain` on
 `stub.fetch`, and the same id through an RPC stub when RPC comes ((j)). The id is unguessable
 (`crypto.randomUUID()`); a Worker's `forward` strips any `x-beni-chain` a client sent and starts
-a fresh chain, and an object's `forward` or `ask` passes its current chain on. An incoming event — a `call`, an `ask`, a `forward` — whose chain
+a fresh chain, and an object's `forward` or `ask` passes its current chain on. An incoming event — a `forward`, an `ask` — whose chain
 holds a handler already parked in this object is refused at once: the object answers `508 Loop
-Detected` with `x-beni-cycle: 1` and runs no handler, and the caller's `call` answers `Err Cycle`
+Detected` with `x-beni-cycle: 1` and runs no handler, and the caller's `forward` or `ask` answers `Err Cycle`
 ((d)'s sorting); nothing hangs, and nothing is caught broadly (rule 9). That the id travels
 through both kinds of stub is a fact to establish (#594, (k)).
 
@@ -6688,9 +6700,10 @@ socket are escaped values. A spawned fiber's closure that captures the state mak
 escape, so an in-place edit after the spawn is refused and the error offers `List.copy`. The
 runtime keeps P1–P4 and P7 by holding one state at a time: after a handler returns, nothing of
 the runtime reads the state it was handed, the timer's closure included. The row needs new field
-roles in the ownership checker and a `define` over a record written out, with `restore` a field,
-as the question said (`ownership-checker.md` §30.3 gains the rows); until that lands, an in-place
-edit in a handler is `pending` and `List.copy` is the way round it.
+roles in the ownership checker, which reads them through the `Handlers` alias and gives the
+positional `restore` the `init` role, so the owner's `define` signature stands ((e.1), R5-6;
+`ownership-checker.md` §30.3 gains the rows); until that lands, an in-place edit in a handler is
+`pending` and `List.copy` is the way round it.
 
 **(e.9) What a handler waits on, in this slice** (*R5-2*). An object's handler may park on:
 `Object.ask` ((e.10)) and `Worker.forward ref request` ((d)), which carry the
@@ -6705,15 +6718,10 @@ from anywhere: `define` takes it with a schema for it, `Context msg` carries it,
 to an object is typed by it.
 
 ```elm
--- module Worker, the typed reach to an object
-pub objects : Env, String, Schema e msg → Maybe (Namespace msg)   -- the binding of that name, as objects of that protocol
-pub byName : Namespace msg, String → Ref msg
-pub unique : Namespace msg → Ref msg
-pub byId : Namespace msg, String → Result IdError (Ref msg)
-pub refId : Ref msg → String
-pub refName : Ref msg → Maybe String
+-- The typed reach to an object is `Worker`'s: `objects env name schema`, `byName`, `unique`,
+-- `byId`, `refId`, `refName` ((d)). `self`, `post`, `ask`, `reply` are `Worker.Object`'s (e.1).
 
--- module Worker.Object (above): self, post, ask, reply
+pub replySchema : Schema e a → Schema e (Reply a)   -- how a `Reply a` sits in a protocol's schema (R6-2)
 
 pub type AskError
     = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))
@@ -6739,10 +6747,22 @@ pub type AskError
   for every ref but `self` — the message is encoded through the schema; a value that does not
   print is dropped and one `Log.warn` line names it, since a `post` has no result to carry it.
 - **`ask` posts and waits for the reply**, like any other host I/O: the message carries a `Reply
-  a`, the receiver's `received` answers through `reply`, once, and the asking handler parks until
-  the reply comes back, parsed by the reply's schema. It is subject to (e.3)'s cycle rule, and
-  every failure is a typed result: the host's four ((d)'s sorting), `NoReply` when the receiver's
-  handler returned without replying, and the two schema failures. A second `reply` on the same
+  a`, the receiver answers through `reply`, once, and the asking handler parks until the reply
+  comes back. **How a `Reply a` crosses the wire** (R6-2): the protocol's schema places it with
+  `replySchema aSchema`, so the receiver's schema knows the reply's shape; on the wire a `Reply a`
+  is a correlation id, and when the receiver calls `reply handle value` the platform prints
+  `value` with the schema `replySchema` captured as it parsed the message, and answers the asker's
+  waiting request with it. `ask`'s own `Schema e a` is the asker's side of the same shape: it
+  parses the reply back, and a mismatch between the two is the program's claim the schemas find
+  (`Unreadable`). **A reply may come later**: `received` may reply before it returns, or hand the
+  `Reply` to a fiber it spawns ((e.4)) which replies when its work is done; the asker waits until
+  the reply, until the asked instance ends (the host's error, as (d) sorts it), or until its own
+  `Task.timeout`. `NoReply` is answered when nothing can reply any more: `received` returned
+  without replying and the object's scope holds no live fiber, or the last live fiber ended with
+  the `Reply` unused. **An `ask` to `self` from a handler is `Err Cycle` at once**: the message
+  would wait in the mailbox behind the asking handler, so no stub and no chain is consulted. It
+  is subject to (e.3)'s cycle rule across objects, and every failure is a typed result: the host's
+  four ((d)'s sorting), `NoReply`, and the two schema failures. A second `reply` on the same
   `Reply` is ignored; a `Reply` is one-shot.
 - **Delivery across objects is at most once.** The host confirms nothing beyond its own errors:
   a `post` the host could not deliver — overloaded, reset, connection lost — is lost, and the
@@ -6752,13 +6772,14 @@ pub type AskError
   therefore follows (e.6)'s pattern: write the intent to `Storage`, then finish it in `restore`
   or `alarm`, with the message as the trigger and never as the record.
 - **Refused messages.** A message that does not parse by the receiver's schema — a ref of the
-  wrong protocol, an older deploy's shape — is answered with `422 Unprocessable Content` and the
+  wrong protocol, an older deploy's shape —   is answered with `422 Unprocessable Content` and the
   header `x-beni-message: unparsed`, which the sender's `ask` reads as `Err (Unreadable issues)`
-  for its own reply and the platform logs for a `post`; `received` does not run. Nothing is
+  for its own reply and the platform logs for a `post`; `received` does not run. The header is
+  the platform's alone, as every `x-beni-` name is ((d)'s `withHeader`). Nothing is
   caught (rule 9): the refusal is a response read by its fields, as the cycle's is.
 
 **(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
-state, msg → state × Cmd msg` — sits over `send` and spawn, as §9.8.11 puts TEA over a direct
+state, msg → state × Cmd msg` — sits over `post` and spawn, as §9.8.11 puts TEA over a direct
 form. It is optional, adds no capability, and is a later slice ((j)).
 
 **(f) A defect closes the object's scope, then aborts** (rule 9; `transparent-effects-proposal.md`
@@ -7054,7 +7075,8 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   slice under this driver; until then their result is what is cited, not a file. Three facts of
   (e.5) and (e.3) are to establish the same way, each with its issue: the live-fiber timer
   prevents hibernation (#593), the call-chain id travels through `stub.fetch` and an RPC stub
-  (#594), and two objects in one isolate stay isolated (#595).
+  (#594), two objects in one isolate stay isolated (#595), and a request's scope teardown runs
+  under `waitUntil` at the platform's deadline and after a client disconnect (#600).
 
 **(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
 the part of the section it settles keeps its text.
