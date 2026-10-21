@@ -7648,6 +7648,42 @@ make (red before: two left after three passes). `build_test`'s *folds a run of b
 return in one structural pass* (1 pass and 2 analyses; 3 passes, capped, and 4 before), and *still
 folds in a second pass what the first pass's scalar replacement made* (2 passes, no cap).
 
+**As built — a parameter's last read** (*added 2026-10-21*, #601; `Spec.patchLiteral`,
+`lastParamRead`). Of the four `run/` programs the note above names, only `BasicsEqOwnEq` had lost
+a fact. `Handler.eq`'s parameter `a` is always `up`, so `a.a` is `"step"`. Fact 4 writes a read as
+its literal only when the literal is at most five bytes, and `"step"` is six. Before #589 the read
+was the initialiser of a binding read once, which takes any literal (`substitutes`). The binding
+went, then the parameter, then `up`. Folded into `return a.a === b.a`, the read stayed. A read of a
+property of a parameter is now written as its literal whatever its length when it is the
+parameter's only mention in the declaration (`m.param`, one use, never assigned): the parameter
+then goes, and its argument at every call. `BasicsEqOwnEq` is 3 627 raw and 1 387 brotli bytes
+again, as before #589.
+
+The other three lost nothing. Every difference from the output before #589 is shorter text that
+brotli codes in a few more bytes: a binding folded into its literal, an unread key dropped, a
+function of one value specialised. `SchemaErrorUnreadShapes` is 47 111 → 47 063 raw and 9 823 →
+9 827 brotli. `SchemaValidatorGeneric` is 8 547 → 8 533 raw and 2 418 → 2 420 brotli.
+`ApiAndRoutes` is 42 928 → 42 960 raw and 14 381 → 14 388 brotli. In `ApiAndRoutes` one fact was
+lost: a schema failure's `received` parameter, read only by a key that `dropKeys` drops, is no
+longer trimmed. Reporting a dropped key that read a local name as a change, so that another round
+runs, gets it back (42 899 raw, 14 386 brotli). But it adds rounds wherever a key goes, and in
+`SchemaValidator` it drops such a parameter, which makes `y` small enough for `inlineSmall` to
+write at every call, 5 547 → 5 619 raw. The release total then grew by 167 raw bytes, so it was
+not taken. That cost belongs to `inlineSmall`'s size model, not to the key.
+
+Measured against the build before (#589), `bench/size.mjs`: six `run/` programs moved, five
+smaller (`BasicsEqOwnEq` 1 389 → 1 387, `DerivedEqThroughCustom` 654 → 649,
+`ReleaseFieldsAcrossJs` 454 → 451, `SchemaDeclTagged` 3 892 → 3 884, `WebSocketDrain` 9 777 →
+9 762 brotli). `TaskShutdownCutBracket` is 9 450 raw bytes both ways and 3 576 → 3 578 brotli: its
+`Ia(100000)` thunk is the same code, now declared after the bindings that follow it. Two `browser/tea`
+pages are smaller under `--release` (`ApiLogin` 28 174 → 28 077 raw and 9 488 → 9 481 brotli,
+`HttpRequestShape` 19 094 → 19 084 and 7 026 → 7 020). The release total is 1 005 242 → 1 005 211
+brotli and 2 911 740 → 2 911 622 raw. Development output, `bench/corpus` and every
+`emit/` golden are as before. The dashboard is byte for byte the same, with 1 pass and 4
+analyses at N = 64 and `nowd`, and 5 at N = 16. `specialise` is 163.6 → 162.9 ms at N = 64 and
+142.7 → 142.1 ms for `nowd` (medians of 7), which is noise. Fixture:
+`emit/release/app/SpecParamFieldLiteral` (red before: `b=(a,c)=>a.a===c.a` and the object made).
+
 **A variable nothing reads** (*amended 2026-10-02*). Fact 3 drops a write of a property no read
 reaches; a write of a *variable* nothing reads stayed, and so did the variable: the fiber runtime's
 `expired`, set by the teardown's deadline and read only where a finaliser is (`finalising`), was
