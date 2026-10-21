@@ -5022,7 +5022,8 @@ three comparator flags — whether anything the build lowers asks for `eq$prim`,
 for the same reason (`uses_runtime` is the or of its three): a live declaration's evidence sets
 one exactly as a row's does, and the comparator constants of the unit list are selected by them;
 the markup and direct handles; the entry declaration; the schema plans and `--schema-library`;
-`core_private`; and the `debug` context. Two module-fixed reads go through the funnel as well, so
+the shapes fork's `schema_shapes` (`schema.md` §6: whether a module takes shape runs or workers,
+a module-level answer); `core_private`; and the `debug` context. Two module-fixed reads go through the funnel as well, so
 that a row can record them: the `Js.maySuspend` probe answers a `$s` body consumed, and whether a
 derived row's synthesis appended its `$$steps` helper (the helper is a unit of its own).
 Lowering reads each of them through **one accessor**, and the maker records, with each unit, the
@@ -5039,17 +5040,24 @@ accessor is a **defect of the same class as writing an output byte outside the p
 missed optimisation — and *What holds it*'s two trees, byte-identical with `emit_units_embedded`
 above zero, are the test that finds it.
 
-Two answers decide how much is reused, and both are measured when the slices land:
+Two answers decide how much is reused, and both are measured now that the slices have landed:
 
-- **A core unit's answers are canonical in every build.** Core's constructors are all live by
-  decree (`Reach.exempt`: core is exempt in every application build, and everything is in a
-  library or a schema build), so `patternDead` is `false` there whatever the program builds, and
-  every other fact on the list is a function of the module's own check. The maker's canonical
-  answers — everything live — are therefore every build's answers, and every core unit is reused.
+- **A core unit's answers are canonical in every build — except the effect facts.** Core's
+  constructors are all live by decree (`Reach.exempt`: core is exempt in every application build,
+  and everything is in a library or a schema build), so `patternDead` is `false` there whatever
+  the program builds, and every other fact on the list is a function of the module's own check —
+  except `probe` and the `arm_dead` bits of a `Js.maySuspend` site. **Which functions may suspend
+  is the whole program's inference** (`transparent-effects-proposal.md`), so that module's
+  dispatch table is not a function of its own check alone. A core unit is therefore reused unless
+  this program's effects answer one of its probe arms differently from the maker's core-only
+  world. Measured on the slice: `Task`'s row is 232 units and 227 of them ask `probe`; a program
+  that suspends differently lowers almost all of `Task` (`run/ForEachOrder` 175 lowered units,
+  `Task.forEach` with a pure callback 142, `run/BracketRelease` 143), while one whose answers
+  match takes them (`Io.run λ⊤ → Node.print "1"` 113 embedded and 10 lowered). The trees are
+  byte-identical either way; *As built (slice 3)*, below, has the rest.
 - **A platform unit's are not.** A `case` arm over a constructor an application never builds is
-  not printed, and which arms those are differs per program; such a unit falls back. Measured when
-  the slices land, not before: about a tenth of the platform modules' statement bytes vary across
-  the corpus.
+  not printed, and which arms those are differs per program; such a unit falls back. Measured on
+  the slice: the `browser-tea` page `ApiItems` lowers 41 units and `Hello` 3.
 
 **The maker** lowers each embedded module once with **canonical facts** — every declaration,
 derived row, twin, constructor and schema member live, every question answered as the world where
@@ -5201,10 +5209,11 @@ are §9's list: the six survivor sets (asked as `decl`, `derived`, `twin`, `ctor
 runtime exports, which are a module-level or (`orRuntime`). The asks made before the first unit
 — the reach walk, `findDeadArms`, the `wanted`/`consumed` loop, the entry declaration, the head
 imports and a lift — are recorded and belong to no unit, so a build that would answer one
-differently is a unit that falls back, never a refusal. One read escapes the list today: the
-shapes fork landed in `Lower` after the list was written, and its `schema_shapes` (`schema.md`
-§6) decides whether a module takes shape runs or workers; issue #432 carries its question, the
-maker's canonical answer and the fixture that proves the boundary.
+differently is a unit that falls back, never a refusal. One read escaped the list when this note was
+written: the shapes fork landed in `Lower` after the list was written, and its `schema_shapes`
+(`schema.md` §6) decides whether a module takes shape runs or workers. Slice 3 added it to §9's
+list, with issue #432's question, the maker's canonical answer and the fixture that proves the
+boundary (below).
 
 `src/js/EmitPack.zig` is the row (`Kind.emit`, pack `version` 3, the row format's v1): keyed by
 SipHash-1-3 over `"BENIEMIT"`, the format version, the module key and one byte of
@@ -5250,6 +5259,92 @@ so it grows too: the reviewer's two-pack proxy is brotli q11 736 366 → 1 054 6
 each, `acccea6a3` against the slice: `run/Dictionaries` 158.81M → 159.34M (+0.33%),
 `browser/tea/ApiItems` 531.97M → 536.51M (+0.85%) and `bench/corpus` as one `--library` build
 421.97M → 425.21M (+0.77%) — the funnel's asks, on the builds that answer them.
+
+*As built (slice 3, 2026-10-21).* A development build reads the row the binary carries.
+`Emit.Task.lowerModule` takes a row for a module whose file `Session.packCovers` and whose key is
+cacheable, and `Lower.lower` plans it before the first declaration is lowered; a release build
+reads none (its bytes are the release optimiser's), walk 1 reads none (`lower_only` prints
+nothing, §9 *What it does not do*) and the cross-check's second lowering reads none (it must
+compare fresh units with the first). The counters count only when a row was available, so a
+module whose first lowering was walk 1 contributes nothing rather than its units to
+`emit_units_lowered`.
+
+The plan is declaration at a time. A declaration is taken whole only when the row's units for it
+are exactly this build's — the direct body, the `$s` twin when this build gives the declaration
+one, and each surviving lift — and every fact those units asked answers the same, and every module
+their `Needed` entries name resolves, and every value slot they name exists on this side.
+Otherwise the whole declaration is lowered: a half-taken one would order its call sites by two
+different walks. A lifted piece is never taken (`planReuse` refuses a part at or above
+`Selector.part_lift`): the row does not carry the piece's identity — its site and captures — and
+the maker's canonical lowering has no direct handle, so no row has a lift today. A row with any
+`.schema` unit, any `schema` declaration or a virtual codec is refused whole: a schema walk has no
+`Bir.Decl` for the row's positions to name, and a schema declaration whose parts are all empty
+still takes a place in `emissionOrder` that the row's edges do not describe. Units no declaration
+owns — the nullary constants, the markup hoists, the synthesised values, the head and the tail —
+are always rebuilt by the build.
+
+A taken declaration asks nothing; what it would have asked is the row's. `seedReuse` seeds the
+runtime exports and the primitive comparators its units read and rebuilds every nullary constant
+they name, and `replayReuse` replays the row's `Needed` entries in the row's ask order at the same
+point of the walk, so the rebuilt head's import statements and their order, the rebuilt constants
+and the spliced bytes agree. The head, the tail and the footer are the build's, never the row's.
+
+`emissionOrder` is replayed, not filtered (#328). Each row unit records its outgoing edges as
+canonical positions; `replayOrder` runs the same depth-first walk over the declarations this build
+kept, in module order, and the units are written in that walk's order. A live declaration with no
+unit may join the walk only when it has no instructions and no `top_value` reference: the row has
+no edges for it, and an empty edge list is a lie about a body that reaches anything.
+
+A schema declaration is cut at the parts `SchemaLower.declaration` records (#349): the `via`s at
+`0`, the description at `1`, the shape at `2`, each operation's workers and wrapper at `3 + op`
+and the root at `3 + all_ops.len`. The indices are fixed by the schema's structure, so a part the
+build leaves empty does not renumber the later ones, and each part is its own funnel record and
+its own unit.
+
+`schema_shapes` joined the fact list (#432) and is asked where a shape run's printed bytes branch
+— `referenceName`, `callExpr` and `jsonValidatorCall`. The two `SchemaValid.sites` asks in the
+lowering's prep are before the first unit and belong to none, so they do not ask; every unit whose
+bytes read the answer asks at its own branch. The maker's canonical answer is `false`, and no row
+can carry the true side today: the build's answer is
+`e.reach.schema_shapes and m < edges_read.len and !edges_read[m]`, and the maker has neither a walk
+nor edge lists. `tests/corpus/run/SchemaShapeThreshold.beni` is thirty
+syntactic `Json.decodeValue` sites of one record type in one module, one more than
+`SchemaValid.shape_threshold`'s 29, so the default build takes the shape run and
+`--schema-shapes=never` does not; the test builds each tree against the core the binary carries
+and against a copy under `--core-root`, requires both pairs equal, and requires the two trees to
+differ — a fixture that no longer crosses the threshold would otherwise pass vacuously.
+
+Two things the differential tests caught. The first is a defect this slice introduced:
+`fiberNames` answered a cross-module name from its cache without asking the funnel on every call,
+so a unit taken from a later position in the walk carried no `Needed` entry for the import its
+text reads, and the rebuilt head of embedded `core/List` omitted
+`import { Task$andThen, Task$isWaiting } from "../_core/Task.mjs"` — the two trees differed by
+that line and nothing else. It now asks on every call, names still cached; every other
+cross-module name block already did. The second is the comparison, not the compiler: an embedded
+core's map names its sources `beni:///core/…`, a core read through `--core-root=mycore` the
+relative path to `mycore/…`, and the manifest hashes every map; the test normalizes both
+spellings on the two sides and masks the manifest's map lines, because the maps themselves are
+compared byte for byte after the normalization.
+
+Measured, `--self-profile`, `--no-cache`, the gate's ReleaseSafe beni: `Debug.toString 1` embeds
+23 units and lowers 1 (a nullary constant), `Io.run λ⊤ → Node.print "1"` 113 and 10,
+`Task.forEach` with a pure callback 39 and 142, `run/ForEachOrder` 41 and 175,
+`run/SuspendLoopClosure` 140 and 12, `run/ReleaseEverything` 64 and 12, `run/Dictionaries` 41 and
+15, `run/BracketRelease` 40 and 143; the `browser-tea` pages `Hello` 123 and 3,
+`SettlesManyFibers` 146 and 9 and `ApiItems` 309 and 41.
+
+The page numbers are the other side of the claim: `ApiItems` lowers 41 units — a platform unit
+falls back — and the tree still matches. The core side did not hold as §9 first said. The maker's `Task` row is 232 units — 205 direct, 22 twins, 2 nullary constants
+and 3 synthesised values — and 227 of them ask the `probe` (and the matching `arm_dead`) facts of
+the `Js.maySuspend` sites they contain; the whole-program effect inference answers those, not the
+module's own check. A program that suspends differently from the maker's core-only world therefore
+lowers almost all of `Task` (the 175, 142 and 143 above), while one whose answers match takes it
+(`Io.run` with a pure callback takes 113 and lowers 10). The trees are byte-identical in every
+case, so no unit is reused that the build cannot prove; what failed is the "every" — §9's two
+answers bullets now say what was measured. Making those units reusable is issue #629: a maker that
+writes the effect variants a program can ask for, keyed like the chain a module is checked in,
+because one differing arm changes a unit's bytes and the row's canonical text cannot serve a
+different answer.
 
 ### The release optimiser — items 1, 2, 3 and 5
 
