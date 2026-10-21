@@ -193,6 +193,16 @@ browser answers one:
     {"drop": "a"}, {"reset": "a"}
                                 end the TCP connection, with a FIN or with a
                                 reset, and no close frame
+    {"page": "<entry.mjs>", "steps": "<file.steps>"}
+                                run a page program under the page driver
+                                (happy-dom), opened from this server with
+                                `--server`, and print its transcript, each
+                                line `| …`; with `"wait": false` it runs
+                                beside the next steps
+    {"page-wait": "<step>"}     wait, 5 s at most, until the page has run
+                                that line of its script
+    {"page-end": true}          wait for the page to end, and print its
+                                transcript
 
 A `{"fault": "socket:EIO"}` step, first in a script, makes the first socket
 the program upgrades fail, as Node fails one (`error`, then `close`), with
@@ -414,7 +424,10 @@ project) against it, one step per line, `#` for a comment:
                                 standard's network error
     socket <n> open ["<protocol>"]
                                 the `n`-th WebSocket the page made opens,
-                                with that subprotocol (default none)
+                                with that subprotocol (default none); the
+                                protocol must be one the page offered, and a
+                                page that offered some must get one, since a
+                                host fails any other handshake
     socket <n> message "<text>" the server sends a text message
     socket <n> binary <bytes>   the server sends a binary message of that
                                 many bytes
@@ -431,6 +444,11 @@ project) against it, one step per line, `#` for a comment:
                                 insecure socket from an `https:` page
     sockets                     log `(sockets: <n>)`, the sockets the page
                                 made and has not closed
+    socket <n> wait <k>|open|closed
+                                with `--server` only: wait, 5 s at most in
+                                real time, until the socket has received
+                                `k` messages in all, has opened, or has
+                                closed
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
@@ -529,6 +547,18 @@ dropped, as the host drops it, and logged. A socket still open when the
 script ends is not a failure: a page that keeps one is the normal case. Chrome ends a connection whose
 network dropped with `close` 1006 and no `error`; a script writes that as `socket <n> close 1006
 ""`, which is clean, since the page module does not read `wasClean`.
+
+**A page against a real server.** With `--server=127.0.0.1:<port>`
+(happy-dom only), the page driver opens the page from that address and gives
+it happy-dom's own `WebSocket` (which wraps the `ws` library) in place of the
+scripted one, so a socket the page opens to `/chat` reaches the server there.
+Node's `WebSocket` (undici) cannot serve, because it calls `unref` on what
+`setTimeout` returns, and the page's virtual clock returns a number. Each socket is still
+numbered and logged, the scripted `socket` steps are refused, and `socket
+<n> wait` waits for it in real time. The line of each step the driver has
+run goes to file descriptor 3. The serve driver's `page` steps start it so,
+with the program under test's port (`tests/blackbox/chat_example_test.zig`,
+`boundary.md` §9.11 (l)).
 
 **The page never leaves its document.** A navigation the page starts to
 another document — `location.assign`, `replace` or `reload`, a write to
