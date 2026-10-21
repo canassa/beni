@@ -1107,6 +1107,32 @@ pub const Builder = struct {
                     try decl_targets.append(b.scratch, .{ .node = node, .chain = chain });
                 }
             }
+            // A `via` that is not `pub` has no interface index, so the
+            // markup leg above does not name it. The vocabulary row still
+            // holds the name (`checker-v2.md` §25.8).
+            if (b.in.vocabulary) |vocabulary| if (vocabulary.int() < b.in.interfaces.len) {
+                const iface = &b.in.interfaces[vocabulary.int()];
+                const vbir = b.in.birOf(vocabulary);
+                const start_inst = d.inst_start.int();
+                const end_inst = d.inst_end.int();
+                for (dispatch.markup) |row| {
+                    if (row.kind != .event or row.extractor != Dispatch.Markup.no_row) continue;
+                    const at = row.root.int();
+                    if (at < start_inst or at >= end_inst or b.cut(m, at)) continue;
+                    if (row.row >= iface.events.len) continue;
+                    const via = iface.events[row.row].via.unwrap() orelse continue;
+                    if (@backingInt(via) >= iface.symbols.len) continue;
+                    const symbol = iface.symbols[@backingInt(via)];
+                    for (vbir.decls, 0..) |decl, di| {
+                        if (decl.kind != .foreign_value or vbir.symbol(decl.name) != symbol) continue;
+                        try decl_targets.append(b.scratch, .{
+                            .node = .{ .module = vocabulary, .kind = .decl, .index = @intCast(di) },
+                            .chain = guards.at(at),
+                        });
+                        break;
+                    }
+                }
+            };
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
             try b.listEdges(m, bir, d, &decl_targets);
