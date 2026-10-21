@@ -8754,6 +8754,67 @@ what would let it is a choice for the owner, not this slice: keys through schema
 function's result key independent of its parameters', a narrower D2 for `Schema`'s own `toHost`,
 and slice 5's property filters.
 
+**As built 2026-10-21 — a binding or an argument that is a member read is a copy of its load
+cell** (issue #562, part of #464). In the dashboard N=64, 609 field summaries folded 182–202
+sites each, one by one. They are not copies of `$model`: those take its summary through one edge
+per property, as the 2026-10-19 note says. They are the parameters of the `inline` lowering's
+bind wrappers (`const $bind$72 = ($p$73, $p$74) => { Widget$W1$view$$bind$0$0($p$73, $p$74); }`),
+which every handler that changes the widget calls with a read of the model
+(`$bind$72($elements$8, $model$5.w1)`), and the locals a handler binds to a read of a field
+(`const $t$345 = $model$5.w4`, `const $t = $before.w1`). An argument or a binding whose value was
+a member read was joined with the read's value. Its var then held the field's records as a set
+of its own, every widget's at N=64 (`withDefault` merges them: the 2026-10-19 note's degenerate
+case), and its summary folded each record. The sites are records made in `Main`, where the
+inliner copied the widgets' arms, so "`Main.Model` sites" in the issue was a misreading. The
+parameters go `top` when the host's JSON escapes them, so most of that folding was for summaries
+that die. What `Pts` does now, every `emit/release/` golden and release run hash byte for byte
+and the safety build's shuffled-order check green on the corpus:
+
+- **A member read nothing narrows is a copy source** (`Pts.copySource`), as a name already was:
+  a binding, a call argument or a `return` of it is a copy edge from the read's load cell, found
+  as `load` found it (by the object's var and the property for a name, by the node for any other
+  object). The cell's var is `uncapped`, so `top` arrives as a flag. A capped target
+  (`makeTop`) escapes its sites as the join did, whether the cell turns `top` before the edge is
+  made or after, and a member binding (`uncapped`, `limited`) holds the objects beside `top`.
+  Every name that copies one read of one property of one var then shares the cell's summary.
+- **A summary is not linked across a site's own var, nor across a var two summaries deep**
+  (`VSet.site_var`, `VSet.depth`, `Pts.linksAcross`). Once a cell can have a summary, a summary
+  can be made of the summary var that a read's cell copies, and linking went on from there: to the
+  property's var of every site those summaries folded, and to every var feeding those. The first
+  build, which linked them all (and copied assignments), made 7 796 summaries for N=16 against
+  388, and N=64 took 3.13 s against 1.89 s. The summary at the summaries' vars now folds the
+  sites the field holds, once per field, and every cell and name that copies the field links it.
+  Depth stops a regress that the corpus found (`run/UrlParser` ran out of memory): where a
+  function passes a field of its parameter back to itself, each summary's var of `next` would
+  feed a summary one level deeper, without end. So every summary is of a name's var, a cell, or
+  one of their summaries' vars, and there are as many as the program has names, reads and
+  properties. Linking or folding is cost alone and no fact.
+- **An assignment stays a join.** `$model = $result.a` reads a cell no other read shares, since
+  each handler has its own `$result`. As a copy, the model's summary would be linked to 349
+  cells' summaries, so each field summary of the model, which the reads of `$model.wK` link,
+  would be fed by 349 per-handler field summaries, and each of those folds the field's records
+  again. Measured with it, every other rule the same: `spec_pts_edges` at N=16 79 000 → 346 880,
+  at N=64 1.36M → 99.7M (28.7 s, 6.1 GB), without `withDefault` 663 029 → 4.48M. Folding each
+  record into the model's summary once, as the join does, is the cheap side.
+- **Nothing is built for a binding under a guard.** No binding, argument or `return` of the three
+  programs is refused a copy because a guard narrows it: the diagnostic counted no fold from one.
+  A copy that narrowed would carry `nul` and `undef` only while the guard lives. A guard dies once
+  a read between its push and the read goes `top` (`Narrow.kills`), so the edge would have to
+  start passing them then. Nothing measured asks for that.
+- *Summaries across a filter* holds as written: a cell is wild, so it links only into a wild
+  target. `Main$pushed`'s model parameter, keyed `Main.Model`, still folds the 349 records
+  `$before`, a wild compiler-made name, passes it.
+
+Measured, ReleaseFast, `--release --no-cache --jobs=1`, dagon, median of five, every output
+byte-identical, before → after: `spec_pts_edges` (over 7, 6 and 6 runs) on the dashboard N=16
+89 482 → 79 000, N=64 7.54M → 1.36M, N=64 without `withDefault` 680 243 → 663 029; time and peak
+RSS N=16 0.09 s / 56 MB either way, N=64 2.03 s / 623 MB → **0.69 s / 247 MB**, without
+`withDefault` 0.54 s / 198 MB → 0.52 s / 198 MB. Instructions of the gates' build: the new
+`emit/release/inline/MergedChildren` (14 child modules of their own fields, merged by
+`Maybe.withDefault`) 5 077M → 3 417M; `SpreadWide` 1 470M → 1 486M, `SpreadArms` 2 508M →
+2 536M and `MemberReadsWide` 3 294M → 3 339M, which bind reads of seven records each, where a
+chain of linked summaries costs a little more than folding seven sites.
+
 ### Compact statements
 
 ### Compact statements
