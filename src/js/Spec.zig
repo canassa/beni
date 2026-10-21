@@ -8904,6 +8904,18 @@ const Pts = struct {
     linking: bool = false,
     work: std.ArrayList(u32) = .empty,
     summaries: std.ArrayList(Summary) = .empty,
+    /// The vars whose field summary is another var's (`VSet.alias`, #568):
+    /// per such var, the var it copies and what was asked of the summary
+    /// through it, which its own summary takes when it splits (`split`);
+    /// the lists of those, of the vars aliasing each var, and of the load
+    /// cells each mark of a summary feeds (`Mark.load`). `split_epoch`
+    /// counts the splits, which are what changes a var's summary
+    /// (`resolve`). Of one fixpoint, in `tmp`.
+    aliases: std.ArrayList(Alias) = .empty,
+    alias_reqs: std.ArrayList(AliasReq) = .empty,
+    alias_kids: std.ArrayList(AliasKid) = .empty,
+    mark_loads: std.ArrayList(MarkLoad) = .empty,
+    split_epoch: u32 = 0,
     /// The consumers shared fields fed (`Prop.outs`), and an object
     /// literal's own keys, sorted, while a spread in it is evaluated
     /// (`spreadSummary`). Of one fixpoint, in `tmp`.
@@ -9138,7 +9150,37 @@ const Pts = struct {
         /// is a copy of one other var (`Sharer`, `unshare`).
         shared: VarId = none,
         sharers: u32 = none,
+        /// Its field summary is that of the one var that copies into it
+        /// (`Alias`, in `aliases`; #568): it holds what that var holds and
+        /// nothing of its own, so the summary it would have is the other's,
+        /// a homomorphism of a union of one. `summary` is `none` meanwhile.
+        alias: u32 = none,
+        /// The vars whose summary is this one's (`AliasKid`, in
+        /// `alias_kids`): one that has split since is listed still, with
+        /// `alias` `none`.
+        kids: u32 = none,
+        /// Found by `summaryOf`'s walk, and not yet given a summary or an
+        /// alias.
+        sum_pending: bool = false,
     };
+
+    /// A var whose summary is that of var `of` (`VSet.alias`): what was
+    /// asked of the summary through it — load cells and summary links
+    /// (`reqs`), and the constraints that spread it (`deps`, `seen`) — and
+    /// the summary `resolve` found while `split_epoch` was `epoch`.
+    const Alias = struct {
+        of: VarId,
+        reqs: u32 = none,
+        deps: u32 = none,
+        seen: u32 = 0,
+        cache: u32 = none,
+        epoch: u32 = 0,
+    };
+    /// What an aliased var's summary was asked: a load cell reading
+    /// property `id` (`summaryLoad`), or to feed summary `a` (`linkFrom`).
+    const AliasReq = struct { kind: enum(u8) { cell, link }, a: u32, id: u32 = none, next: u32 };
+    const AliasKid = struct { v: VarId, next: u32 };
+    const MarkLoad = struct { cell: u32, next: u32 };
 
     const Pending = struct { v: VarId, val: Val, folded: bool };
 
@@ -9254,8 +9296,10 @@ const Pts = struct {
     const Sharer = struct { site: u32, id: u32, next: u32 };
     /// A property read through a summary: some site it holds lacks the
     /// key, or has it with no initialiser, so the read may be `undefined`
-    /// (`lacks`); and the load cell of the summary's var and this property,
-    /// if one reads it (`load`).
+    /// (`lacks`); and the load cells that read this property through the
+    /// summary (`load`, the head of a list in `mark_loads`): the cell of the
+    /// summary's var, and those of the vars whose summary this is
+    /// (`VSet.alias`).
     const Mark = struct { id: u32, lacks: bool = false, load: u32 = none };
     const SumLink = struct { src: u32, dst: u32 };
 
@@ -9504,13 +9548,18 @@ const Pts = struct {
     }
 
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
-        const set = &p.vars.items[v];
         // A later `top` join into a var that already holds nothing escapes
         // its own sites at the call and does not walk the successors again.
         // A member binding is already `top` while it still holds sites, so
         // the same path has to escape those sites. `escapeSite` joins
         // `top` into every load cell linked from the site.
-        if (set.top and set.sites.len == 0) return;
+        if (p.vars.items[v].top and p.vars.items[v].sites.len == 0) return;
+        // Its summary dies below, so it is its own first; and the summary
+        // of a var aliasing it, which a var that is not `top` keeps, is
+        // that var's own (#568).
+        if (p.vars.items[v].alias != none) try p.split(v);
+        if (p.vars.items[v].kids != none) try p.splitKids(v);
+        const set = &p.vars.items[v];
         const became = !set.top;
         if (became) set.top = true;
         // `top` implies the other three (`Val.top_val`). The uncapped
@@ -9612,7 +9661,11 @@ const Pts = struct {
             const to = p.edges.items[e].to;
             try p.enqueue(to, flags, p.linksAcross(v, to));
         }
-        if (!folded and p.vars.items[v].summary != none) for (added) |site| try p.foldSite(p.vars.items[v].summary, site);
+        if (folded or added.len == 0) return;
+        // A site of its own: a var whose summary is another's has its own
+        // from now on (#568), which folds what the other lacks.
+        if (p.vars.items[v].alias != none) try p.split(v);
+        if (p.vars.items[v].summary != none) for (added) |site| try p.foldSite(p.vars.items[v].summary, site);
     }
 
     /// The sites of `sites` a var whose filter is `allow` holds: those whose
@@ -9839,7 +9892,11 @@ const Pts = struct {
         // Across a stricter filter `to`'s summary folds what joins it, as
         // it does a site no edge brought (`linksAcross`).
         const links = p.linksAcross(from, to);
-        if (links and p.vars.items[to].summary != none) try p.linkSummaries(try p.summaryOf(from), p.vars.items[to].summary);
+        // A second source: a var whose summary was its one source's has its
+        // own now (#568), which `split` links to this source's too.
+        if (p.vars.items[to].alias != none) {
+            try p.split(to);
+        } else if (links and p.vars.items[to].summary != none) try p.linkFrom(from, p.vars.items[to].summary);
         const set = p.vars.items[from];
         try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, links);
         try p.drain();
@@ -9910,12 +9967,22 @@ const Pts = struct {
     /// of copies is as long as the program makes it. Then each is fed and
     /// folded, the farthest from `v` first, so that a summary has what its
     /// sources hold before it feeds the next. The order changes no fact.
+    ///
+    /// A var with one source, a copy edge that links summaries, and no site
+    /// that source lacks gets no summary of its own: its summary is the
+    /// source's (`aliasSummary`, #568), so a chain of such copies — every
+    /// `browser-inline` handler's `const $before = $model` — costs nothing
+    /// per property. Such a var is decided after its source, and is given a
+    /// summary only when it cannot share one; the vars whose summary is
+    /// made at once are those that never can, so a cycle of copies is fed
+    /// as before, from summaries that all exist.
     fn summaryOf(p: *Pts, v: VarId) Allocator.Error!u32 {
         if (p.vars.items[v].summary != none) return p.vars.items[v].summary;
+        if (p.vars.items[v].alias != none) return p.resolve(v);
         const a = p.tmp.allocator();
         const base = p.work.items.len;
         defer p.work.shrinkRetainingCapacity(base);
-        try p.newSummary(v);
+        try p.pendSummary(v);
         try p.work.append(a, v);
         var i = base;
         while (i < p.work.items.len) : (i += 1) {
@@ -9926,17 +9993,175 @@ const Pts = struct {
             var e = p.vars.items[x].pred;
             while (e != none) : (e = p.edges.items[e].next_in) {
                 const from = p.edges.items[e].from;
-                if (p.vars.items[from].summary != none or !p.linksAcross(from, x)) continue;
-                try p.newSummary(from);
+                const f = p.vars.items[from];
+                if (f.summary != none or f.alias != none or f.sum_pending or !p.linksAcross(from, x)) continue;
+                try p.pendSummary(from);
                 try p.work.append(a, from);
             }
         }
         var j = p.work.items.len;
         while (j > base) {
             j -= 1;
-            try p.feedSummary(p.work.items[j]);
+            const x = p.work.items[j];
+            // Decided already, by a `summaryOf` a feed below called.
+            if (!p.vars.items[x].sum_pending) continue;
+            p.vars.items[x].sum_pending = false;
+            if (p.vars.items[x].summary == none) {
+                if (try p.aliasSummary(x)) continue;
+                try p.newSummary(x);
+            }
+            // A source still to be decided is given its summary now, so
+            // that feeding `x` never starts another walk.
+            var e = p.vars.items[x].pred;
+            while (e != none) : (e = p.edges.items[e].next_in) {
+                const from = p.edges.items[e].from;
+                const f = p.vars.items[from];
+                if (f.sum_pending and f.summary == none and p.linksAcross(from, x)) try p.newSummary(from);
+            }
+            try p.feedSummary(x);
         }
-        return p.vars.items[v].summary;
+        return p.resolve(v);
+    }
+
+    /// Var `x`, found by `summaryOf`'s walk: given its summary now unless it
+    /// may share its one source's (`aliasSummary`), which is decided once
+    /// the source is.
+    fn pendSummary(p: *Pts, x: VarId) Allocator.Error!void {
+        p.vars.items[x].sum_pending = true;
+        const vx = p.vars.items[x];
+        if (vx.preds != 1 or (vx.top and !vx.uncapped)) try p.newSummary(x);
+    }
+
+    /// The summary var `v` has: its own, or that of the var it copies
+    /// (`VSet.alias`), transitively, found again only after a split.
+    fn resolve(p: *Pts, v: VarId) u32 {
+        if (p.vars.items[v].summary != none) return p.vars.items[v].summary;
+        const al = p.vars.items[v].alias;
+        if (p.aliases.items[al].epoch == p.split_epoch and p.aliases.items[al].cache != none) return p.aliases.items[al].cache;
+        var x = v;
+        while (p.vars.items[x].summary == none) x = p.aliases.items[p.vars.items[x].alias].of;
+        p.aliases.items[al].cache = p.vars.items[x].summary;
+        p.aliases.items[al].epoch = p.split_epoch;
+        return p.vars.items[x].summary;
+    }
+
+    /// Whether var `x`, which has no summary, takes that of its one source
+    /// `u` (#568): `x` holds what `u` holds and nothing more — one edge in,
+    /// which links summaries (`linksAcross`: a wild or equal filter, so `x`
+    /// holds every site `u` does), and every site of `x` is one `u` holds —
+    /// so the summary `x` would have, fed by `u`'s through one edge per
+    /// property and folding nothing, holds what `u`'s holds. `u` is decided
+    /// already, with a summary that is not dead, at `x`'s depth, so that
+    /// the summary's vars link as `x`'s own would. Otherwise `false`, and
+    /// `x` is given its own.
+    fn aliasSummary(p: *Pts, x: VarId) Allocator.Error!bool {
+        const vx = p.vars.items[x];
+        if (vx.preds != 1 or (vx.top and !vx.uncapped)) return false;
+        const u = p.edges.items[vx.pred].from;
+        const vu = p.vars.items[u];
+        if (vu.sum_pending or (vu.summary == none and vu.alias == none) or vu.depth != vx.depth or !p.linksAcross(u, x)) return false;
+        const r = p.resolve(u);
+        if (p.summaries.items[r].dead or !containsSites(vu.sites, vx.sites)) return false;
+        const al: u32 = @intCast(p.aliases.items.len);
+        try p.aliases.append(p.tmp.allocator(), .{ .of = u, .cache = r, .epoch = p.split_epoch });
+        p.vars.items[x].alias = al;
+        const kid: u32 = @intCast(p.alias_kids.items.len);
+        try p.alias_kids.append(p.tmp.allocator(), .{ .v = x, .next = p.vars.items[u].kids });
+        p.vars.items[u].kids = kid;
+        return true;
+    }
+
+    /// Summary `dst` holds what var `u`'s summary holds (`linkSummaries`).
+    /// When `u`'s is another var's (`VSet.alias`), the link is listed on
+    /// `u`, before it is made, so that `u`'s own summary feeds `dst` too if
+    /// `u` splits — while it is made, or later.
+    fn linkFrom(p: *Pts, u: VarId, dst: u32) Allocator.Error!void {
+        const src = try p.summaryOf(u);
+        if (p.vars.items[u].alias != none) try p.addReq(p.vars.items[u].alias, .{ .kind = .link, .a = dst, .next = none });
+        try p.linkSummaries(src, dst);
+    }
+
+    fn addReq(p: *Pts, al: u32, req: AliasReq) Allocator.Error!void {
+        const at: u32 = @intCast(p.alias_reqs.items.len);
+        var r = req;
+        r.next = p.aliases.items[al].reqs;
+        try p.alias_reqs.append(p.tmp.allocator(), r);
+        p.aliases.items[al].reqs = at;
+    }
+
+    /// The constraint being evaluated spreads var `v`, whose summary may be
+    /// another var's: it is evaluated again when `v`'s summary is its own
+    /// (`split`).
+    fn seeAlias(p: *Pts, v: VarId) Allocator.Error!void {
+        const al = p.vars.items[v].alias;
+        if (al == none or p.cur == none or p.aliases.items[al].seen == p.walk) return;
+        p.aliases.items[al].seen = p.walk;
+        const head = p.aliases.items[al].deps;
+        p.aliases.items[al].deps = try p.addDep(head);
+    }
+
+    /// Var `x`, whose summary was another's, has its own from now on: a
+    /// second source joined it, a site of its own, or it is about to be
+    /// `top`. It is made as `summaryOf` makes one — linked to each source's
+    /// summary, the sites none of them holds folded — and takes what was
+    /// asked through `x`, and through every var whose summary is `x`'s,
+    /// transitively, since theirs is now this one: the load cells that read
+    /// it and the summaries it feeds are attached to it, and the constraints
+    /// that spread it are evaluated again, reading it. They keep what they
+    /// took from the old summary, which held a subset of what the new one
+    /// holds — `x` held every site its source did, and so does every summary
+    /// `x`'s is linked to — so no consumer holds more than it would have.
+    fn split(p: *Pts, x: VarId) Allocator.Error!void {
+        const al = p.vars.items[x].alias;
+        p.vars.items[x].alias = none;
+        p.split_epoch +%= 1;
+        p.changed = true;
+        try p.newSummary(x);
+        try p.feedSummary(x);
+        const sum = p.vars.items[x].summary;
+        const a = p.tmp.allocator();
+        const base = p.work.items.len;
+        defer p.work.shrinkRetainingCapacity(base);
+        try p.replay(al, sum);
+        try p.work.append(a, x);
+        while (p.work.items.len > base) {
+            const y = p.work.pop().?;
+            var k = p.vars.items[y].kids;
+            while (k != none) : (k = p.alias_kids.items[k].next) {
+                const kid = p.alias_kids.items[k].v;
+                // Split since: its own summary has what it asked.
+                if (p.vars.items[kid].alias == none) continue;
+                try p.replay(p.vars.items[kid].alias, sum);
+                try p.work.append(a, kid);
+            }
+        }
+    }
+
+    /// What was asked through alias `al`, asked of summary `sum`.
+    fn replay(p: *Pts, al: u32, sum: u32) Allocator.Error!void {
+        var r = p.aliases.items[al].reqs;
+        while (r != none) : (r = p.alias_reqs.items[r].next) {
+            const q = p.alias_reqs.items[r];
+            switch (q.kind) {
+                .cell => try p.summaryLoad(sum, q.id, q.a),
+                .link => try p.linkSummaries(sum, q.a),
+            }
+        }
+        const deps = p.aliases.items[al].deps;
+        p.aliases.items[al].deps = none;
+        p.aliases.items[al].seen = 0;
+        p.wake(deps);
+    }
+
+    /// Var `v`'s summary is about to die (`makeTop`): each var whose
+    /// summary is `v`'s has its own.
+    fn splitKids(p: *Pts, v: VarId) Allocator.Error!void {
+        var k = p.vars.items[v].kids;
+        p.vars.items[v].kids = none;
+        while (k != none) : (k = p.alias_kids.items[k].next) {
+            const kid = p.alias_kids.items[k].v;
+            if (p.vars.items[kid].alias != none) try p.split(kid);
+        }
     }
 
     /// A summary for var `v`, empty: dead when `v` is `top` and capped.
@@ -9965,7 +10190,7 @@ const Pts = struct {
         var e = p.vars.items[v].pred;
         while (e != none) : (e = p.edges.items[e].next_in) {
             const from = p.edges.items[e].from;
-            if (p.linksAcross(from, v)) try p.linkSummaries(try p.summaryOf(from), id);
+            if (p.linksAcross(from, v)) try p.linkFrom(from, id);
         }
         for (p.vars.items[v].sites) |site| {
             var covered = false;
@@ -10179,8 +10404,7 @@ const Pts = struct {
             const m = p.findMark(s, id) orelse continue;
             if (m.lacks) continue;
             m.lacks = true;
-            const cell = m.load;
-            if (cell != none) try p.join(p.loads.items[cell].out, Val.undef_val);
+            try p.joinCells(m.load, Val.undef_val);
             for (p.summaries.items[s].succs.items) |succ| try p.work.append(a, succ);
         }
     }
@@ -10206,9 +10430,14 @@ const Pts = struct {
     fn topLoads(p: *Pts, sum: u32) Allocator.Error!void {
         var k: usize = 0;
         while (k < p.summaries.items[sum].marks.items.len) : (k += 1) {
-            const cell = p.summaries.items[sum].marks.items[k].load;
-            if (cell != none) try p.join(p.loads.items[cell].out, Val.top_val);
+            try p.joinCells(p.summaries.items[sum].marks.items[k].load, Val.top_val);
         }
+    }
+
+    /// `val` joins every load cell of a mark's list, from `head`.
+    fn joinCells(p: *Pts, head: u32, val: Val) Allocator.Error!void {
+        var c = head;
+        while (c != none) : (c = p.mark_loads.items[c].next) try p.join(p.loads.items[p.mark_loads.items[c].cell].out, val);
     }
 
     /// Load cell `li` reads property `id` of the var of summary `sum`:
@@ -10222,14 +10451,25 @@ const Pts = struct {
         const out = p.loads.items[li].out;
         try p.markRead(sum, id);
         const m = p.findMark(sum, id).?;
-        if (std.debug.runtime_safety) std.debug.assert(m.load == none);
-        m.load = li;
+        const at: u32 = @intCast(p.mark_loads.items.len);
+        try p.mark_loads.append(p.tmp.allocator(), .{ .cell = li, .next = m.load });
+        m.load = at;
         const lacks = m.lacks;
         if (p.findSumProp(sum, id)) |v| try p.copy(v, out);
         try p.copy(p.summaries.items[sum].any, out);
         const sm = p.summaries.items[sum];
         if (sm.dead or sm.escaped or sm.unknown) try p.join(out, Val.top_val);
         if (lacks) try p.join(out, Val.undef_val);
+    }
+
+    /// Load cell `li` reads property `id` of var `v` through `v`'s summary
+    /// (`summaryLoad`). When that is another var's (`VSet.alias`), the cell
+    /// is listed on `v` before it reads: `v` may split while it does, and
+    /// `split` then has the cell read `v`'s own.
+    fn nameLoad(p: *Pts, v: VarId, id: u32, li: u32) Allocator.Error!void {
+        const sum = try p.summaryOf(v);
+        if (p.vars.items[v].alias != none) try p.addReq(p.vars.items[v].alias, .{ .kind = .cell, .a = li, .id = id, .next = none });
+        try p.summaryLoad(sum, id, li);
     }
 
     /// Whether summary `sum` holds property `id` of its sites: every
@@ -10292,7 +10532,10 @@ const Pts = struct {
         if (p.s.in.trace_largest) p.originAt(v, p.originOf(p.summaries.items[sum].of, .summary_prop, id));
         try p.summaries.items[sum].props.insert(p.tmp.allocator(), at, .{ .id = id, .vals = v });
         p.summaryChanged(sum);
-        if (p.findMark(sum, id)) |m| if (m.load != none) try p.copy(v, p.loads.items[m.load].out);
+        if (p.findMark(sum, id)) |m| {
+            var c = m.load;
+            while (c != none) : (c = p.mark_loads.items[c].next) try p.copy(v, p.loads.items[p.mark_loads.items[c].cell].out);
+        }
         return v;
     }
 
@@ -10853,7 +11096,7 @@ const Pts = struct {
                     gop.value_ptr.* = made;
                     if (p.s.in.trace_largest) p.originAt(p.loads.items[made].out, p.originOf(v, .load, id));
                     // An unknown key is anything whatever the sites are.
-                    if (id != none) try p.summaryLoad(try p.summaryOf(v), id, made);
+                    if (id != none) try p.nameLoad(v, id, made);
                     li = made;
                 } else li = gop.value_ptr.*;
             } else {
@@ -11270,6 +11513,11 @@ const Pts = struct {
         p.linking = false;
         p.work = .empty;
         p.summaries = .empty;
+        p.aliases = .empty;
+        p.alias_reqs = .empty;
+        p.alias_kids = .empty;
+        p.mark_loads = .empty;
+        p.split_epoch = 0;
         p.field_outs = .empty;
         p.sharers = .empty;
         p.lit_keys = .empty;
@@ -12057,6 +12305,9 @@ const Pts = struct {
                                 // edges to every other (#464).
                                 const v = try p.nodeVar(mi, operand, @fromBackingInt(@intCast(ir.data(operand).lhs)));
                                 const sum = try p.summaryOf(v);
+                                // Evaluated again when `v`'s summary, another
+                                // var's, becomes its own (#568).
+                                try p.seeAlias(v);
                                 // Read whole: every site the name holds.
                                 try p.markWhole(sum);
                                 try p.seeSummary(sum);
@@ -13782,14 +14033,19 @@ test "a field summary composes along a copy edge" {
     const v = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
     try p.copy(u, v);
+    // A second source, empty, so that `v` has a summary of its own: a var
+    // that copies one var alone shares its summary (#568).
+    const w = try p.newVar();
+    try p.copy(w, v);
     const sum_v = try p.summaryOf(v);
     // Read whole, as a spread reads it.
     try p.markWhole(sum_v);
     const sum_u = p.vars.items[u].summary;
     try testing.expect(sum_u != none and sum_u != sum_v);
     // `u`'s summary folds two sites of two properties (plus `any`), each
-    // once; `v`'s takes `u`'s through one edge per property (plus `any`).
-    try testing.expectEqual(@as(usize, 1 + 2 * 3 + 3), p.edges.items.len);
+    // once; `v`'s takes `u`'s through one edge per property (plus `any`),
+    // and `w`'s, which holds nothing, through its `any`.
+    try testing.expectEqual(@as(usize, 2 + 2 * 3 + 3 + 1), p.edges.items.len);
     const prop1 = p.summaries.items[sum_v].props.items[0];
     try testing.expectEqual(@as(u32, 1), prop1.id);
     try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(prop1.vals)).sites);
@@ -13877,8 +14133,8 @@ test "a parameter copied from a load cell is made top as the cell is" {
 // summary links in turn; that var is fed by the field's var of each site
 // the summary folded, a site's own var (`VSet.site_var`), and no summary
 // is made of one of those (`linksAcross`): the summary at the field's var
-// folds the sites they hold. Every name and the cell link it, and fold
-// nothing. A read through a name's summary marks and reads the sites the
+// folds the sites they hold. The cell and every name copy it alone, so
+// theirs is that summary (#568), and nothing else is made. A read through a name's summary marks and reads the sites the
 // field holds, and a site that joins the field later reaches it.
 test "names that copy a load cell share one summary, which folds the field's sites" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -13910,12 +14166,13 @@ test "names that copy a load cell share one summary, which folds the field's sit
     try p.copy(cell, b);
     const sum_a = try p.summaryOf(a);
     const sum_b = try p.summaryOf(b);
-    const sum_cell = p.vars.items[cell].summary;
     const sum_field = p.vars.items[field].summary;
-    try testing.expect(sum_cell != none and sum_field != none);
+    try testing.expect(sum_field != none and sum_a == sum_field and sum_b == sum_field);
+    try testing.expectEqual(sum_field, try p.summaryOf(cell));
+    try testing.expect(p.vars.items[cell].summary == none and p.vars.items[cell].alias != none);
     try testing.expectEqual(none, p.vars.items[site_field].summary);
+    try testing.expectEqual(@as(usize, 1), p.summaries.items.len);
     try testing.expectEqual(@as(usize, 3), p.summaries.items[sum_field].sites.items.len);
-    for ([_]u32{ sum_cell, sum_a, sum_b }) |sum| try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
     const li = try p.newLoad();
     try p.summaryLoad(sum_a, 1, li);
     const out = p.loads.items[li].out;
@@ -13926,7 +14183,7 @@ test "names that copy a load cell share one summary, which folds the field's sit
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102, 103 }, (try p.view(out)).sites);
     try testing.expect(p.findProp(3, 1).?.read);
     try testing.expectEqual(@as(usize, 4), p.summaries.items[sum_field].sites.items.len);
-    for ([_]u32{ sum_cell, sum_a, sum_b }) |sum| try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
+    try testing.expectEqual(@as(usize, 1), p.summaries.items.len);
 }
 
 // #562: a function that passes a field of its parameter back to itself,
@@ -14240,12 +14497,12 @@ test "a spread's untouched field shares the summary's var until something else w
 
 // #564: `browser-inline` copies the model into each handler
 // (`const $before = $model`) and spreads the copy, so every update's
-// summary is another var's, linked to the model's: its var of each
-// property is a copy of the model summary's, with that one source. The
-// fields of all those updates share the var of the root of the copies, and
-// a summary folding them takes one edge. A copy that gains a second source
-// is a copy no longer: the fields spread from it get their own vars, which
-// hold what it holds, and the others stay shared.
+// summary is the model's (#568). The fields of all those updates share
+// the var of the model summary's property, and a summary folding them
+// takes one edge. A copy that gains a second source is a copy no longer:
+// its summary is its own, and its spread, evaluated again, gives the
+// fields it writes their own vars, which hold what it holds; the others
+// stay shared.
 test "fields spread from copies of one record share one var until a copy gains a source" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
@@ -14271,6 +14528,7 @@ test "fields spread from copies of one record share one var until a copy gains a
     try p.copy(model, b);
     const sum_a = try p.summaryOf(a);
     const sum_b = try p.summaryOf(b);
+    try testing.expect(sum_a == p.vars.items[model].summary and sum_b == sum_a);
     try p.markWhole(sum_a);
     try p.markWhole(sum_b);
     try p.spreadSummary(2, sum_a, &.{});
@@ -14296,12 +14554,215 @@ test "fields spread from copies of one record share one var until a copy gains a
     const q = try p.newVar();
     try p.addSite(q, 4);
     try p.copy(q, b);
+    // What the spread's constraint does when `split` wakes it.
+    const own_b = try p.summaryOf(b);
+    try testing.expect(own_b != sum_b);
+    try p.markWhole(own_b);
+    try p.spreadSummary(3, own_b, &.{});
     try testing.expect(p.findProp(3, 1).?.from == none);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(p.findProp(3, 1).?.vals)).sites);
     try testing.expectEqual(shared, p.findProp(2, 1).?.vals);
     try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(out)).sites);
     try testing.expect(!p.neverWritten(both, 1) and !p.neverRead(both, 1));
+}
+
+/// A `Pts` of `n` object sites, each with properties 1 and 2 from its
+/// literal, holding sites 100 + i and 200 + i.
+fn aliasSites(p: *Pts, arena: Allocator, n: u32) !void {
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        (try p.prop(i, 1)).init = true;
+        (try p.prop(i, 2)).init = true;
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.addSite(try fieldVar(p, i, 2), 200 + i);
+    }
+}
+
+// #568: a var that copies one var and holds nothing of its own has that
+// var's field summary, and so does a chain of such copies: no summary, and
+// no edge, per copy. A read through the last copy reads the source's
+// summary, and what the source gains later reaches it.
+test "a var that copies one var alone shares its field summary" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena_state.allocator(), 3);
+    const u = try p.newVar();
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    const v = try p.newVar();
+    try p.copy(u, v);
+    const w = try p.newVar();
+    try p.copy(v, w);
+    const edges = p.edges.items.len;
+    const sum = try p.summaryOf(w);
+    try testing.expectEqual(sum, try p.summaryOf(u));
+    try testing.expectEqual(sum, try p.summaryOf(v));
+    try testing.expect(p.vars.items[v].summary == none and p.vars.items[w].summary == none);
+    try testing.expectEqual(@as(usize, 1), p.summaries.items.len);
+    const li = try p.newLoad();
+    try p.nameLoad(w, 1, li);
+    const out = p.loads.items[li].out;
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(out)).sites);
+    // Two sites' `any` and property 1 into `u`'s summary, and the cell's
+    // two: nothing for either copy.
+    try testing.expectEqual(edges + 2 + 2 + 2, p.edges.items.len);
+    try p.addSite(u, 2);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
+    for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.findProp(site, 1).?.read and !p.findProp(site, 2).?.read);
+}
+
+/// The facts of `secondSource`: what two reads give, and which properties
+/// of the four sites are read.
+const SplitFacts = struct { v1: [3]u32, t2: [4]u32, read: [4][2]bool };
+
+/// `u` holds sites 0 and 1 and copies into `v`; `t` copies `v` and holds
+/// site 3, so its summary is its own and fed by `v`'s; `q` holds site 2.
+/// A read of `v.1` and one of `t.2`, and `q` copied into `v`: before the
+/// reads (`split` false), so that `v` never shares `u`'s summary, or after.
+fn secondSource(split: bool) !SplitFacts {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena_state.allocator(), 4);
+    const u = try p.newVar();
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    const v = try p.newVar();
+    try p.copy(u, v);
+    const t = try p.newVar();
+    try p.copy(v, t);
+    try p.addSite(t, 3);
+    const q = try p.newVar();
+    try p.addSite(q, 2);
+    if (!split) try p.copy(q, v);
+    const lv = try p.newLoad();
+    try p.nameLoad(v, 1, lv);
+    const lt = try p.newLoad();
+    try p.nameLoad(t, 2, lt);
+    if (split) {
+        try testing.expectEqual(try p.summaryOf(u), try p.summaryOf(v));
+        try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(p.loads.items[lv].out)).sites);
+        try p.copy(q, v);
+    }
+    try testing.expect(try p.summaryOf(v) != try p.summaryOf(u));
+    try testing.expect(p.vars.items[v].summary != none and p.vars.items[v].alias == none);
+    var f: SplitFacts = undefined;
+    const v1 = (try p.view(p.loads.items[lv].out)).sites;
+    const t2 = (try p.view(p.loads.items[lt].out)).sites;
+    try testing.expectEqual(@as(usize, 3), v1.len);
+    try testing.expectEqual(@as(usize, 4), t2.len);
+    @memcpy(&f.v1, v1);
+    @memcpy(&f.t2, t2);
+    for (0..4) |site| for (0..2) |k| {
+        f.read[site][k] = p.findProp(@intCast(site), @intCast(k + 1)).?.read;
+    };
+    return f;
+}
+
+// #568: a var that shares its source's summary has its own once a second
+// source copies into it. What read the shared summary through the var — a
+// load cell, and the summary of a var it copies into — reads the new one,
+// so the facts are those of a run where the var never shared one.
+test "a second source gives a var its own summary, read by what read the shared one" {
+    const early = try secondSource(false);
+    const late = try secondSource(true);
+    try testing.expectEqual(early, late);
+    try testing.expectEqual([3]u32{ 100, 101, 102 }, late.v1);
+    try testing.expectEqual([4]u32{ 200, 201, 202, 203 }, late.t2);
+    try testing.expectEqual([4][2]bool{ .{ true, true }, .{ true, true }, .{ true, true }, .{ false, true } }, late.read);
+}
+
+// #568: a site joining a var that shares its source's summary is one the
+// source lacks: the var's summary is its own from then on, and folds it.
+// A read through the source does not see it.
+test "a site of its own gives a var its own summary" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena_state.allocator(), 2);
+    const u = try p.newVar();
+    try p.addSite(u, 0);
+    const v = try p.newVar();
+    try p.copy(u, v);
+    const lv = try p.newLoad();
+    try p.nameLoad(v, 1, lv);
+    const lu = try p.newLoad();
+    try p.nameLoad(u, 1, lu);
+    try testing.expectEqual(try p.summaryOf(u), try p.summaryOf(v));
+    try p.addSite(v, 1);
+    const sum_v = try p.summaryOf(v);
+    try testing.expect(sum_v != try p.summaryOf(u));
+    try testing.expectEqualSlices(u32, &.{1}, p.summaries.items[sum_v].sites.items);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(p.loads.items[lv].out)).sites);
+    try testing.expectEqualSlices(u32, &.{100}, (try p.view(p.loads.items[lu].out)).sites);
+    try testing.expect(p.findProp(1, 1).?.read and !p.findProp(1, 2).?.read);
+}
+
+// #568, *Summaries across a filter*: a var shares its source's summary
+// only where the copy edge links summaries — its filter wild or the
+// source's. A stricter filter folds the sites one by one, as before.
+test "a var whose filter differs from its source's never shares its summary" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena_state.allocator(), 2);
+    const k1: JsIr.RepKey = @fromBackingInt(7);
+    const k2: JsIr.RepKey = @fromBackingInt(8);
+    const u = try p.newVar();
+    p.vars.items[u].allow = k1;
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    const other = try p.newVar();
+    p.vars.items[other].allow = k2;
+    const same = try p.newVar();
+    p.vars.items[same].allow = k1;
+    const wild = try p.newVar();
+    for ([_]Pts.VarId{ other, same, wild }) |x| try p.copy(u, x);
+    const sum_u = try p.summaryOf(u);
+    const sum_other = try p.summaryOf(other);
+    try testing.expect(sum_other != sum_u and p.vars.items[other].alias == none);
+    try testing.expectEqual(@as(usize, 2), p.summaries.items[sum_other].sites.items.len);
+    try testing.expectEqual(sum_u, try p.summaryOf(same));
+    try testing.expectEqual(sum_u, try p.summaryOf(wild));
+}
+
+// #568: a var whose source's summary dies (`makeTop`) has its own first, so
+// an uncapped var, which keeps its sites beside `top`, keeps a live summary
+// as it would have had one of its own all along.
+test "a var whose source goes top keeps a summary of its own" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena_state.allocator(), 2);
+    const u = try p.newVar();
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    const v = try p.newVar();
+    p.vars.items[v].uncapped = true;
+    try p.copy(u, v);
+    const lv = try p.newLoad();
+    try p.nameLoad(v, 1, lv);
+    try testing.expectEqual(try p.summaryOf(u), try p.summaryOf(v));
+    try p.makeTop(u);
+    try testing.expect(p.summaries.items[try p.summaryOf(u)].dead);
+    try testing.expect(!p.summaries.items[try p.summaryOf(v)].dead);
+    try testing.expect(try p.summaryOf(v) != try p.summaryOf(u));
+    try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(v)).sites);
+    try testing.expect((try p.view(v)).top and (try p.view(p.loads.items[lv].out)).top);
 }
 
 /// The var of property `id` of site `site`, its own, the property made
