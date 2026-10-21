@@ -1,7 +1,8 @@
 --! A chat page in beni, on the `browser-tea` platform (`boundary.md`
 --! §9.11 (b)): one WebSocket to the server that served the page, held by
 --! a subscription. The page shows what the room says, and says what is
---! typed. When the connection ends it waits, then connects again.
+--! typed. When the connection ends it waits, then connects again; after
+--! each failure in a row it waits a second longer, 30 seconds at most.
 
 import Chat
 import Cmd exposing (Cmd)
@@ -12,8 +13,10 @@ import Time
 import WebSocket exposing (Socket)
 
 
+-- `Connecting` and `Down` count the failures in a row before this
+-- attempt; an open socket ends the row.
 type Link
-    = Connecting
+    = Connecting Int
     | Up Socket
     | Down Int
 
@@ -33,7 +36,7 @@ type Msg
 
 
 init : ⊤ → Model × Cmd Msg
-init ⊤ = ( { link = Connecting, lines = [], draft = "" }, Cmd.none )
+init ⊤ = ( { link = Connecting 0, lines = [], draft = "" }, Cmd.none )
 
 
 update : Msg, Model → Model × Cmd Msg
@@ -70,25 +73,34 @@ update msg model =
                     ( model, Cmd.none )
 
         Retry →
-            ( { model | link = Connecting }, Cmd.none )
+            case model.link of
+                Down failures →
+                    ( { model | link = Connecting failures }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
 
         Unsent _ →
             ( model, Cmd.none )
 
 
--- The connection ended: wait longer after each failure, then connect again.
+-- The connection ended: wait a second longer after each failure in a
+-- row, then connect again.
 down : Model, String → Model × Cmd Msg
 down model why =
-    attempt =
+    failures =
         case model.link of
-            Down n →
+            Connecting n →
                 n + 1
 
-            _ →
+            Up _ →
                 1
-    ( { model | link = Down attempt, lines = model.lines ++ [ why ] }
+
+            Down n →
+                n
+    ( { model | link = Down failures, lines = model.lines ++ [ why ] }
     , Cmd.perform λemit →
-        Time.sleep (Time.millis (1000 * attempt))
+        Time.sleep (Time.millis (1000 * min failures 30))
         emit Retry
     )
 
@@ -119,7 +131,7 @@ subscriptions model =
 status : Link → String
 status link =
     case link of
-        Connecting →
+        Connecting _ →
             "connecting"
 
         Up _ →
