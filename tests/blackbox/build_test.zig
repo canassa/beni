@@ -6962,7 +6962,7 @@ test "a platform that declares exports gets an entry file that exports what run 
     defer w.deinit();
     try writeExportingPlatform(&w);
     try w.write("beni.json",
-        \\{ "name": "arena", "exports": ["Arena", "Lobby"] }
+        \\{ "name": "arena", "exports": ["Arena", "Lobby", "$beniProgram"] }
     );
     try w.write("Main.beni",
         \\import Prog exposing (Program)
@@ -6973,11 +6973,13 @@ test "a platform that declares exports gets an entry file that exports what run 
         \\    Prog.say "hello"
         \\
     );
+    // `$beniProgram` is the entry's own binding: an export name is a
+    // namespace of its own, so the listed name is legal and loads.
     try w.write("check.mjs",
         \\import * as dev from "./out/_main.mjs";
         \\import * as rel from "./rel/_main.mjs";
         \\process.stdout.write(`${Object.keys(dev).sort().join(",")} ${dev.default.text} ${dev.Arena.name}\n`);
-        \\process.stdout.write(`${Object.keys(rel).sort().join(",")} ${rel.default.text} ${rel.Lobby.name}\n`);
+        \\process.stdout.write(`${Object.keys(rel).sort().join(",")} ${rel.default.text} ${rel.Lobby.name} ${rel.$beniProgram.name}\n`);
         \\
     );
 
@@ -7004,6 +7006,8 @@ test "a platform that declares exports gets an entry file that exports what run 
         \\export { $beniExport0 as Arena };
         \\const $beniExport1 = $beniProgram.exports("Lobby");
         \\export { $beniExport1 as Lobby };
+        \\const $beniExport2 = $beniProgram.exports("$beniProgram");
+        \\export { $beniExport2 as $beniProgram };
         \\
     , try w.read("out/_main.mjs"));
     // The hoisted release file ends in the same exports, compact.
@@ -7011,11 +7015,64 @@ test "a platform that declares exports gets an entry file that exports what run 
     try testing.expect(std.mem.indexOf(u8, hoisted, "export default $beniProgram.default;") != null);
     try testing.expect(std.mem.indexOf(u8, hoisted, "export{$beniExport0 as Arena};") != null);
     try testing.expect(std.mem.indexOf(u8, hoisted, "export{$beniExport1 as Lobby};") != null);
-    try w.expectProgram("out/_main.mjs", .{ .stdout = "run: hello\nexport Arena\nexport Lobby\n" });
-    try w.expectProgram("rel/_main.mjs", .{ .stdout = "run: hello\nexport Arena\nexport Lobby\n" });
+    try testing.expect(std.mem.indexOf(u8, hoisted, "export{$beniExport2 as $beniProgram};") != null);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "run: hello\nexport Arena\nexport Lobby\nexport $beniProgram\n" });
+    try w.expectProgram("rel/_main.mjs", .{ .stdout = "run: hello\nexport Arena\nexport Lobby\nexport $beniProgram\n" });
     try w.expectProgram("check.mjs", .{
-        .stdout = "run: hello\nexport Arena\nexport Lobby\nrun: hello\nexport Arena\nexport Lobby\nArena,Lobby,default hello Arena\nArena,Lobby,default hello Lobby\n",
+        .stdout = "run: hello\nexport Arena\nexport Lobby\nexport $beniProgram\nrun: hello\nexport Arena\nexport Lobby\nexport $beniProgram\n$beniProgram,Arena,Lobby,default hello Arena\n$beniProgram,Arena,Lobby,default hello Lobby $beniProgram\n",
     });
+}
+
+test "a chain whose runtime is a module may not declare exports: check and a release build refuse it as the development build does" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §9.12 (c): `unknown_exports_mode` is known from the chain
+    // alone (a lowering plus a markup module), so `checkEntryExports` runs
+    // it for `check` and for both builds before anything is written. The
+    // corpus's `build/bad/` kind runs a development build only
+    // (`build/bad/ExportsWithRuntimeModule`), so the other two paths are
+    // pinned here: at `ef6b6bb46` both exited 0, and the release build
+    // wrote `_main.mjs`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("page/beni.json",
+        \\{ "platform": true, "name": "page", "platforms": ["browser"], "reexports": ["Browser", "Html"], "exports": "program" }
+    );
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view count = <p id="count">{String.fromInt count}</p>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → 0, update = λInc count → count + 1, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=page", "Main.beni" });
+    const rel = try w.run(&.{ "build", "--platform=page", "--release", "--out=rel", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ checked, rel }) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.unknown_exports_mode, r.diagnostics[0].code);
+        try testing.expectEqualStrings("page/beni.json", r.diagnostics[0].span.file);
+    }
+    try testing.expect(!w.exists("rel"));
 }
 
 test "a platform that declares exports and a project that lists none exports only default" {

@@ -145,12 +145,13 @@ pub const ExportsDecl = union(enum) { none, mode: []const u8, list };
 /// its named exports are what `run(main)` returns.
 pub const exports_program = "program";
 
-/// The entry file's own bindings under that mode (`boundary.md` §9.12 (c)):
-/// they begin with `$`, which no listed name may hold, and are longer than
-/// any short name `Rename` spells. A listed name is written only as an
-/// export name and inside `exports("…")`, where `exportNameIsLegal`'s ASCII
-/// identifier needs no escaping; widen the name rule and that call needs
-/// `jsString`.
+/// The entry file's own bindings under that mode (`boundary.md` §9.12 (c)),
+/// longer than any short name `Rename` spells, so no hoisted declaration
+/// can take them (`emitEntryExporting` asserts it). A listed name is
+/// written only as an export name, a namespace of its own that a binding
+/// never meets, and inside `exports("…")`, where `exportNameIsLegal`'s
+/// ASCII identifier needs no escaping; widen the name rule and that call
+/// needs `jsString`.
 const entry_program_binding = "$beniProgram";
 const entry_export_binding = "$beniExport";
 
@@ -6340,9 +6341,11 @@ const Emitter = struct {
             // returns. The bindings are longer than any short name `Rename`
             // spells (8 characters at most), so no hoisted declaration can
             // take them.
-            try out.print(scratch, "const $beniProgram={s}({s});export default $beniProgram.default;", .{ run_name, main_name });
+            const prog = entry_program_binding;
+            const exp = entry_export_binding;
+            try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
             for (e.options.platform.entry_exports, 0..) |name, i| {
-                try out.print(scratch, "const $beniExport{d}=$beniProgram.exports(\"{s}\");export{{$beniExport{d} as {s}}};", .{ i, name, i, name });
+                try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
             }
         } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
 
@@ -6351,7 +6354,10 @@ const Emitter = struct {
         // embedding page flushes a render at once through it. It stays an
         // export of the module the page loads, which is now this one, when
         // the runtime's render loop kept it — or the runtime module's, when
-        // it supplies `flush` and something reached it.
+        // it supplies `flush` and something reached it. A listed name may
+        // therefore not be `flush` (`checkEntryExports`): the two exports
+        // would share the file, and a module that exports one name twice
+        // does not load.
         if (e.suppliedAs("flush") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "flush"))) |ordinal| {
                 var buf: [8]u8 = undefined;
@@ -6365,7 +6371,9 @@ const Emitter = struct {
                 try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17),
-        // the runtime module's, exported as `flush` is.
+        // the runtime module's, exported as `flush` is. Only a runtime
+        // module supplies `stop`, and the exports mode refuses a runtime
+        // module, so no listed name can meet it: `stop` stays listable.
         if (e.suppliedAs("stop") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
                 var buf: [8]u8 = undefined;
@@ -6994,15 +7002,17 @@ const Emitter = struct {
         else
             try text.print(e.scratch, "import {{ {s} as $main }} from \"./{s}\";\n\n", .{ imported, module_path });
         if (start) |s| try text.print(e.scratch, "$start({s});\n", .{s.data});
+        const prog = entry_program_binding;
+        const exp = entry_export_binding;
         if (release)
-            try text.appendSlice(e.scratch, "const $beniProgram=$run($main);\nexport default $beniProgram.default;\n")
+            try text.print(e.scratch, "const {s}=$run($main);\nexport default {s}.default;\n", .{ prog, prog })
         else
-            try text.appendSlice(e.scratch, "const $beniProgram = $run($main);\nexport default $beniProgram.default;\n");
+            try text.print(e.scratch, "const {s} = $run($main);\nexport default {s}.default;\n", .{ prog, prog });
         for (e.options.platform.entry_exports, 0..) |name, i| {
             if (release)
-                try text.print(e.scratch, "const $beniExport{d}=$beniProgram.exports(\"{s}\");\nexport{{$beniExport{d} as {s}}};\n", .{ i, name, i, name })
+                try text.print(e.scratch, "const {s}{d}={s}.exports(\"{s}\");\nexport{{{s}{d} as {s}}};\n", .{ exp, i, prog, name, exp, i, name })
             else
-                try text.print(e.scratch, "const $beniExport{d} = $beniProgram.exports(\"{s}\");\nexport {{ $beniExport{d} as {s} }};\n", .{ i, name, i, name });
+                try text.print(e.scratch, "const {s}{d} = {s}.exports(\"{s}\");\nexport {{ {s}{d} as {s} }};\n", .{ exp, i, prog, name, exp, i, name });
         }
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }
@@ -7445,9 +7455,11 @@ const Emitter = struct {
         }
         for (p.entry_exports, 0..) |name, i| {
             const fault: ?[]const u8 = if (!exportNameIsLegal(name))
-                "is not an identifier name of ASCII letters, digits and `_` that does not begin with a digit"
+                "is not an identifier name of ASCII letters, digits, `_` and `$` that does not begin with a digit"
             else if (std.mem.eql(u8, name, "default"))
                 "is the name of the entry file's default export"
+            else if (std.mem.eql(u8, name, "flush"))
+                "is the name of the runtime's own `flush` export, which a release build writes beside it"
             else if (listedBefore(p.entry_exports[0..i], name))
                 "is listed twice"
             else
@@ -7458,7 +7470,8 @@ const Emitter = struct {
                 \\This project lists `{s}` under `"exports"`, which {s}.
                 \\
                 \\Each name is one the entry file exports as `export {{ … as Name }}`: an ASCII
-                \\identifier name, not `default`, listed once (`docs/design/boundary.md` §9.12 (c)).
+                \\identifier name, not `default` or `flush`, listed once
+                \\(`docs/design/boundary.md` §9.12 (c)).
             ,
                 .{ name, why },
             );
@@ -7751,13 +7764,15 @@ fn jsString(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8) Alloc
     try out.append(scratch, '"');
 }
 
-/// An ASCII identifier name — letters, digits and `_`, not beginning with
-/// a digit — which is every name an `export { … as Name }` clause takes
-/// (`boundary.md` §9.12 (c)); the check is ASCII only, as `entryNameIsLegal`'s.
+/// An ASCII identifier name — letters, digits, `_` and `$`, not beginning
+/// with a digit — written as an `export { … as Name }` clause's name and
+/// inside `exports("…")` (`boundary.md` §9.12 (c)). The check is ASCII only
+/// because the name is printed without escaping, as `entryNameIsLegal`'s
+/// is; an export name may be any identifier name, a reserved word included.
 fn exportNameIsLegal(name: []const u8) bool {
     if (name.len == 0) return false;
     if (std.ascii.isDigit(name[0])) return false;
-    for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+    for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '$')) return false;
     return true;
 }
 
