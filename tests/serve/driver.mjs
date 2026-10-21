@@ -690,8 +690,9 @@ const boundPort = (port) => (address !== null && Number(port) === address.port ?
 // version or by the clock: the project's path, Node's report of where a
 // throw happened (the location line with its excerpt and caret: the
 // build's file and line), stack frames, Node's version line, an IPv4
-// address, the port the program bound (`address.port`; any other port is
-// kept, so a line that names the wrong one differs), and the time of a
+// address before a `:port` and an `address:` property's value, the port
+// the program bound (`address.port`; any other port is kept, so a line
+// that names the wrong one differs), and the time of a
 // `logfmt` line with `timestamp` first (`Io.run`'s sink). A throw inside
 // Node (an unhandled `error` event) is located in a `node:` module, and
 // that line goes the same way.
