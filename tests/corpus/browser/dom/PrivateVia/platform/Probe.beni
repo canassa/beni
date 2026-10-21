@@ -1,0 +1,29 @@
+--! A payload extractor that is not `pub` (boundary.md §9.3, amended
+--! 2026-10-21). The event names it. A program cannot. The sibling reads
+--! the event's `detail`, which is the string the page must show.
+
+import Html exposing (Html)
+
+
+--| The event object the extractor is handed.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it.
+pub markup text : String → Html msg
+
+
+--| The same markup, its messages passed through the function.
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onProbe" name "probe" via probe : String
+
+
+foreign impure probe : Event → String

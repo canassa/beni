@@ -1,0 +1,23 @@
+-- A handler typed as taking the extractor's `String`. The page shows
+-- that string. `probe` is the only read of the event's `detail`, and it
+-- is not `pub`, so a build that hands the handler the event itself shows
+-- a different text.
+import Browser
+import Html exposing (Html)
+
+
+view : String → Html String
+view text =
+    <main>
+        <button id="box" onProbe={λvalue → value}>send</button>
+        <p id="out">{text}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → "none"
+        , update = λnext _ → next
+        , view = view
+        }
