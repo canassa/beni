@@ -76,6 +76,51 @@ submitted event =
     Submitted
 ```
 
+### Pointer input
+
+The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `onPointerMove`,
+`onPointerUp`, `onPointerCancel`, `onPointerEnter` and `onPointerLeave`. Each handler gets an
+`Html.Pointer`.
+
+- `Html.localX p` and `Html.localY p` are CSS pixels from the top-left corner of the border box of
+  the element that has the handler. A child under the pointer does not change this.
+- `Html.clientX p` and `Html.clientY p` are the viewport's coordinates.
+- `Html.pointerId p` is the same from a pointer's down to its up or cancel; each finger has its
+  own. `Html.pointerType p` is `"mouse"`, `"pen"`, `"touch"` or `""`. `Html.isPrimary p` is the
+  mouse or the first finger.
+- `Html.pointerEvent p` is the same event as an `Html.Event`, for `Html.preventDefault` and the
+  modifier keys.
+- A `Pointer` stays correct after the dispatch, so a message can carry it into `update`.
+- To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
+  `preventDefault` cannot stop them. For iOS, also write `-webkit-user-select: none` and
+  `-webkit-touch-callout: none`.
+- End a touch on `onPointerCancel` as on `onPointerUp`: the browser cancels a pointer when it
+  takes the gesture.
+
+```beni platform=html
+import Html exposing (Html)
+
+
+type Msg
+    = Aim Float Float
+    | Lift
+
+
+pub arena : Html Msg
+arena =
+    <div
+        style="position: relative; width: 600px; height: 400px; touch-action: none"
+        onPointerDown={aim}
+        onPointerMove={aim}
+        onPointerUp={λ_ → Lift}
+        onPointerCancel={λ_ → Lift}
+    />
+
+
+aim : Html.Pointer → Msg
+aim p = Aim (Html.localX p) (Html.localY p)
+```
+
 ## Components
 
 A capitalised tag names a module, and the component is that module's `view`: `<TodoItem todo={t}
@@ -121,4 +166,4 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
-Sources: `docs/design/language.md` §11; `platforms/html/Html.beni`.
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `platforms/html/Html.beni`.

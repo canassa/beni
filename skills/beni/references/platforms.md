@@ -171,7 +171,8 @@ only what it reaches. Lists are edited in place here, so the ownership checker's
 
 The vocabulary the page platforms and `Ssr` share: every element, attribute and event, with the
 payload each event carries (`onInput` gives the input's value as a `String`; `onClick` gives the
-`Event`). `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this
-platform; the others include it.
+`Event`; the pointer events give an `Html.Pointer`, read with `Html.localX` and `Html.localY`).
+`Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this platform;
+the others include it.
 
 Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10; `platforms/*/beni.json`; the modules' doc comments.
