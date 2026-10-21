@@ -1454,6 +1454,11 @@ of its HTML integration points, none of HTML's rules apply, and an element whose
 parser would not give it where it stands is `markup_restructured`. Which namespace an element is declared
 in is the vocabulary's fact, handed to the table by the lowering.
 
+*Amended 2026-10-20* (§9.8.20 (d)): **every lowering calls a `via` extractor synchronously, in the
+listener of the element that has the handler, while the event is dispatched.** An extractor may read
+what is true only then — the pointer events' reads `currentTarget` and its box — so a lowering that
+queues an event and extracts later breaks it (issue #559).
+
 *As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
 The smallest readings, and what waits for the lowering interface:
 
@@ -4995,8 +5000,9 @@ of its position, and nothing handed a touch.
 and the touch screen, in every current browser (Chrome 55, Firefox 59, Safari 13). Each pointer has
 an identity, `pointerId`, so two fingers are two pointers, and the browser sends `pointercancel`
 when it takes a pointer for itself. Touch events (`touchstart`, `touchmove`, …) hand a list of
-touches per event, serve no mouse, and are passive by default on the window, the document and the
-body (DOM, *default passive value*), so a page would need two APIs to do what one does. The mouse
+touches per event, serve no mouse, and are passive by default on the window, the document, the
+document element and the body (DOM, *default passive value*), so a page would need two APIs to do
+what one does. The mouse
 events stay as they are (§9.9 (c)). **The model**: elm/html has no pointer events, and the package
 Elm programs use is mpizenberg/elm-pointer-events (`Html.Events.Extra.Pointer`), whose `onDown`,
 `onMove`, `onUp`, `onCancel`, `onEnter` and `onLeave` hand a decoded record with the pointer's id,
@@ -5017,7 +5023,9 @@ and each reader as the DOM names the property it reads.
 | `pointerEvent : Pointer → Event` | the same event as an `Event`: the modifier readers and `preventDefault` take it |
 
 `pointerover`, `pointerout`, `gotpointercapture` and `lostpointercapture` wait for a use, as the
-other drag events do (§9.8.10, *amended 2026-10-13*). So do the pen's pressure and tilt.
+drag events that no program has needed do (§9.8.10, *amended 2026-10-13*). So do the pen's pressure
+and tilt, `getCoalescedEvents()` (the points between two `pointermove`s, which a drawing page needs
+and a game that reads one point per frame does not) and `pointerrawupdate` (no Safari).
 
 **(c) The coordinate system.** `localX` and `localY` are CSS pixels from the top-left corner of the
 **border box of the element whose handler runs**: the element that carries `onPointerMove`, not the
@@ -5030,6 +5038,12 @@ the bounding box of the transformed element, so the point is in that box and not
 own frame. A point outside the box is a value like any other: a touch has implicit capture, so its
 moves go to the element where it started, wherever the finger is, and `localX` can be negative.
 
+Two consequences of the border box. An absolutely positioned child is placed from its parent's
+**padding** box, so on an arena with a border, a dot drawn at `left: localX` is one border width
+off: a page with a bordered arena subtracts the border, or puts the border on a wrapper. And on an
+arena that scrolls itself (`overflow: auto`), the point is in the visible box, not in the scrolled
+content: the page adds its own scroll offset.
+
 `clientX` and `clientY` are the viewport's coordinates. There is no `offsetX`: the DOM measures it
 from the padding edge of the event's target, the innermost element, which is the wrong element for
 a surface with children. `pageX`, which adds the scroll, and `screenX` wait for a use.
@@ -5037,10 +5051,20 @@ a surface with children. `pageX`, which adds the scroll, and `screenX` wait for 
 **(d) Why a `Pointer`, and why the pointer events are not `delegated`.** The position needs the
 handler's element. While an event is dispatched, `currentTarget` is that element only when the
 listener is on the element itself. The `dom` lowering's delegated listener is on the document
-(`backend.md` §15.3, *Events*), so under it `currentTarget` is the document. So the pointer events are not
-`delegated`: `dom` attaches one listener to each element that has a pointer handler, through the
-runtime's `listen`, and `browser-inline` attaches every listener to its element already (its
-runtime's `on`, `platforms/browser-inline/Inline.beni`).
+(`backend.md` §15.3, *Events*), so under it `currentTarget` is the document. This section **chooses**
+not to delegate the pointer events: `dom` attaches one listener to each element that has a pointer
+handler, through the runtime's `listen`, and `browser-inline` attaches every listener to its element
+already (its runtime's `on`, `platforms/browser-inline/Inline.beni`). The other choice is Solid 2's:
+it delegates `pointerdown`, `pointermove`, `pointerover`, `pointerout` and `pointerup`, and during
+its walk redefines `currentTarget` as the walk's node (dom-expressions
+`packages/runtime/src/constants.js`, `client.js`). beni's `fire` has that node too.
+
+**A known gap of the choice** (issue #557): each listener of one trusted event is its own turn
+(`backend.md` §15.11), so a user's `pointerdown` on an element inside another that also has
+`onPointerDown` renders between the two handlers, and the outer one runs with the handler that the
+first render wrote. A delegated event's walk is one turn and one render. The `.steps` step sends
+untrusted events, which are no turn, so no fixture sees the difference yet. #557 takes Solid's
+choice, or specifies the turn per listener.
 
 The position is taken by `pointer`, the events' extractor and a `foreign` of `Html` (§9.3), while
 the event is dispatched. After the dispatch `currentTarget` is null and the box can have moved, so
@@ -5048,10 +5072,17 @@ a reader that ran later — in `update`, on a `Pointer` that a message carries �
 or a wrong box. **No program can call `pointer`**: on another event, such as a delegated `onClick`
 under `dom`, the element would be the document, which has no box. Its type is `pointer : Dispatched
 → Pointer`, and `Dispatched` is a `foreign type` of `Html` that is not `pub`: no event hands one to a
-handler and no function returns one. `pointer` itself is `pub`, because the lowering finds an
-extractor in the vocabulary module's interface, which holds only `pub` values (issue #532: a
-non-`pub` extractor is accepted by the checker and then replaced by the raw event). **The type is the
-guarantee**: a `Pointer` comes only from the listener of a pointer event on its own element, so
+handler and no function returns one. `pointer` itself is `pub` until issue #532 is fixed: today the
+lowering finds an extractor in the vocabulary module's interface, which holds only `pub` values, and
+a non-`pub` extractor is accepted by the checker and then replaced by the raw event.
+
+**A lowering's obligation.** A lowering calls a `via` extractor **synchronously, in the listener of
+the element that has the handler, while the event is dispatched**, so that `currentTarget` is that
+element (§9.3, amended here). `dom` does: `listen`'s listener calls `fire`, which applies the
+extractor before it computes the message. `browser-inline` does on its usual path, but a send made
+while another send runs is queued with its raw event, and the extractor would run after the dispatch
+(issue #559; latent, because a host never dispatches a pointer event inside a send). **The type is
+the guarantee**, given that obligation: a `Pointer` comes only from the listener of a pointer event on its own element, so
 `localX` of every `Pointer` is a point in its handler's element, under every lowering and at any
 time after. The other readers read properties of the event, which do not change after the
 dispatch. **The second wall is `Js`**: `Js.to : Value → a` can make a value of any type, so a
@@ -5062,24 +5093,49 @@ trust every `foreign` has (rule 6).
 The cost is one listener for each element that has a pointer handler, not one for each page: a
 `For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
 surface is one element. A delegated form waits for a page that needs it and a measurement (rule 8).
-The extractor also reads the element's box on every event, and the read forces a layout when the
-page has changed since the last one. That is the cost of a point that stays right after the
-dispatch. It is accepted, unmeasured, until a page shows the cost (rule 8).
+The extractor also reads the element's box on every event. **Measured** (2026-10-20, the review of
+PR #548: headless Chrome, synthetic `pointermove` on an arena, the median of 5 × 2 000 events, µs per
+event):
+
+| arena | layout before the event | read `clientX` only | the extractor | read `offsetX` |
+|---|---|---|---|---|
+| 20 absolute children | clean | 5.6 | 7.1 | 6.7 |
+| 20 absolute children | one child moved | 6.6 | 69 | 65 |
+| 1 000 absolute children | clean | 4.2 | 6.3 | 5.1 |
+| 1 000 absolute children | one child moved | 6.5 | 1 075 | 1 172 |
+| 1 000 in flow | width changed | 5.6 | 886 | 898 |
+| 5 000 in flow | one child moved | 8.4 | 6 762 | 6 500 |
+
+On a clean layout the extractor adds 1.5 to 4.5 µs. On a changed layout it forces the layout, as
+`offsetX` does: any point in an element's box needs one, so a delegated handler that reads the box,
+as Solid's would, pays the same. Chrome dispatches `pointermove` once per frame, before the
+`requestAnimationFrame` callbacks, so a steady single pointer reads the layout that the last frame
+made. A forced layout comes with a second pointer event in one frame after a render that changed the
+layout: a second finger, or a `pointerdown` and then a `pointermove`. On a 1 000-element arena that
+is about 1 ms for each such event. The cost is accepted: it is the price of a point that stays right
+after the dispatch.
 
 **(e) The browser's own gestures.** A page stops scrolling, pinch zoom and double-tap zoom on its
 game surface with CSS: **`touch-action: none`** in the element's `style`, an ordinary attribute
 (`language.md` §11.19). That is the Pointer Events standard's way, and the only one that works. The
 browser decides on a gesture at the `pointerdown`, from `touch-action`, before any listener can
-answer, and `preventDefault` on a pointer event never stops a scroll or a zoom. On a `pointerdown`
-it stops the compatibility mouse events (`mousedown`, `mouseup`), which `Html.preventDefault
-(Html.pointerEvent p)` does as it does for any event. When the browser does take a gesture — on an
-element with no `touch-action: none` — it sends `pointercancel` and nothing more of that pointer, so
-a game ends a pointer's steering on `onPointerCancel` as on `onPointerUp`.
+answer, and `preventDefault` on a pointer event never stops a scroll or a zoom (Pointer Events
+§4.1.3.1). One exception is known: on iOS, `touch-action: none` does not stop a double-tap zoom on
+an absolutely positioned element (WebKit bug 218015, open). On a `pointerdown`, `preventDefault`
+stops the compatibility mouse events `mousedown`, `mousemove` and `mouseup` until that pointer's
+`pointerup` or `pointercancel` (Pointer Events §11.2), and never `mouseover`, `mouseout`,
+`mouseenter`, `mouseleave`, `click`, `auxclick` or `contextmenu`. `Html.preventDefault
+(Html.pointerEvent p)` does it, as for any event. When the browser does take a gesture — on an
+element with no `touch-action: none` — it sends `pointercancel`, then `pointerout` and
+`pointerleave`, and nothing more of that pointer, so a game ends a pointer's steering on
+`onPointerCancel` as on `onPointerUp`, and an `onPointerLeave` hears a leave after each cancel.
 
 The runtimes register their listeners with no options. A browser makes a listener passive by
-default only for `touchstart`, `touchmove`, `wheel` and `mousewheel` on the window, the document or
-the body, so a pointer handler's `preventDefault` is never ignored. `user-select: none`, also CSS,
-keeps a long press from selecting text. **Pointer capture** (`setPointerCapture`) is not exposed: a
+default only for `touchstart`, `touchmove`, `wheel` and `mousewheel` on the window, the document,
+the document element or the body, so a pointer handler's `preventDefault` is never ignored.
+`user-select: none`, also CSS, keeps a long press from selecting text; Safari and iOS Safari need
+`-webkit-user-select: none` beside it, and iOS needs `-webkit-touch-callout: none` to stop the
+long-press menu. **Pointer capture** (`setPointerCapture`) is not exposed: a
 touch is captured by the element where it started, which is what a surface needs, and a mouse that
 leaves the surface sends `onPointerLeave`. Explicit capture waits for a use; it can throw
 `NotFoundError` and `InvalidStateError`, so it will return a `Result` (rule 9).
@@ -5092,7 +5148,8 @@ minifier's export pruning remove the readers and the extractor when no handler r
 **(g) Proofs.** The `.steps` language gains `pointer`, a pointer event at a point given in an
 element's box (`tests/corpus/README.md`). Under happy-dom, which has no layout, every box is at 0,
 so only Chrome (`zig build test-browser`) shows the conversion of (c); a step names its point in
-the box of the handler's element, so both DOMs print the same transcript. `browser/tea/PointerInput`
+the box of the handler's element, so both DOMs print the same transcript. That step is neither a
+gate nor a CI job, so today no automatic check sees the conversion (issue #558). `browser/tea/PointerInput`
 pins movement, up, cancel, enter and leave, identity and type, `preventDefault`, a handler on an
 element with a child (the box is the handler's, not the target's), a `Pointer` read in `update`
 after its dispatch, and a handler that the view changes in place. `browser/dom/PointerEvents` pins
@@ -5108,8 +5165,8 @@ specified, with these findings:
 - **Measured** (`bench/size.mjs --pages-only`, the compiler before and after this change): every
   release figure is the same, and TodoMVC's release file is the same bytes. Every page that reaches
   no `foreign` of `Html` is the same in development too. TodoMVC and Conduit reach `targetValue`, and
-  their development output grows by 523 bytes raw: a development build copies the sibling file
-  whole, with the new export and its comments. `examples/steer`, the demonstration, is 10 800 bytes raw
+  a development build copies the sibling file whole, with the new export and its comments: 523
+  bytes raw more in TodoMVC (measured), and the same file in Conduit. `examples/steer`, the demonstration, is 10 800 bytes raw
   and 4 267 brotli under `--release`.
 - **The extractor's key is `ev`, not `e`.** A first version returned `{ e, x, y }`. The release
   minifier keeps the spelling of a name that stands where a property name can, anywhere in the file
@@ -5121,7 +5178,12 @@ specified, with these findings:
 - **`Html.Pointer` is `crossing`**, as `Html.Event` is, and `tests/corpus/ownership/
   trusted-surface.txt` lists it: without the word, `ownership/WordsBrowser`'s summary of `update`
   has the `Pointer` of a message escape.
-- The page fuzzer sends no pointer events yet (issue #527).
+- The page fuzzer sends no pointer events yet (issue #527). The trusted path of nested handlers
+  (#557) and the conversion under the gates (#558) have issues of their own.
+- **Reviewed** (PR #548): the facts of (a) and (e) were checked against Pointer Events level 3, the
+  DOM Standard and MDN's compatibility data, and four were corrected — the events after a
+  `pointercancel`, the mouse events a prevented `pointerdown` stops, Safari's `user-select`, and
+  iOS's double-tap zoom.
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
