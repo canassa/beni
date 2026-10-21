@@ -2401,8 +2401,8 @@ pub const Lowerer = struct {
                     // ran after both consumption sources, and a consumed
                     // declaration has no direct or twin part to match. This
                     // loop lowers only a declaration that is both `wanted`
-                    // and `consumed`; the check is that invariant's local
-                    // assertion.
+                    // and `consumed`, and the skip is safe by that
+                    // invariant.
                     if (re.take[index]) continue;
                 }
                 const wanted = index < l.wanted.len and l.wanted[index];
