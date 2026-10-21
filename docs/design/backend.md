@@ -9364,6 +9364,66 @@ indexing of every lookup; what is left is the join machinery itself (`joinNow`, 
 `unionSets`, the set table's probes), the copies a fold makes, and `summaryPropAt`'s search past
 a gap in a summary's properties (about 4% of fact 3 at N = 64).
 
+**As built 2026-10-21 — a spread walks only what its summary gained** (issue #607, part of
+#464; cause 3 of `plans/build-profile-2026-10-21b.md`). *The worklist*'s difference
+propagation, applied to a summary's keys. A spread of a name, evaluated again, walked every
+property of the summary and wrote each into the literal's site; now:
+
+- **A summary keeps a log** of the properties it gained, in the order it gained them
+  (`Summary.log`, appended by `addSumPropAt`, never moved), beside `props`, which stays sorted.
+- **A spread constraint keeps a cursor per spread of a name** in its literal (`Cons.spreads`,
+  `Pts.Cursor`: the summary it read and how many log entries it wrote), made at its first
+  evaluation. Evaluated again it walks the entries past the cursor, sorted by id as the whole walk
+  meets them, and again whatever that walk added to the log (`spreadSince`). An entry before the
+  cursor would do nothing a second time: the property is written, and it either shares the
+  entry's var (`Prop.from`) or has a var of its own with the entry's edge into it, since
+  `shareField` takes only a property with no var and `ownField` keeps the edge from the var it
+  shared. A summary that dies is fed nothing, so its entries past the cursor stay unwalked, as the
+  whole walk leaves them.
+- **The whole summary is walked** when the cursor names another one: the constraint's first
+  evaluation, and an evaluation after the operand's var split (`split`, #568), which hands it its
+  own summary; and when more than half of the log is past the cursor, since the whole walk meets
+  each property where the last one left it (`indexAt`) and the new ones alone skip about and
+  search: without that rule `emit/release/inline/MergedChildren` cost 1% more. Outside a constraint — the safety build's reference, `byUnits` — every spread walks
+  the whole summary, so the shuffled-order check compares this against the whole walk on every
+  corpus program of at most 1 500 nodes. What else wakes a spread (`unknown`, `any_written`, an
+  operand's value) is read whole each time, as before: it is a flag, not a list.
+
+Four counters say how often each path runs: `spec_pts_spreads` (evaluations of a spread of a
+name), `spec_pts_spread_full` (the whole walks), `spec_pts_spread_resets` (those after a split)
+and `spec_pts_spread_props` (the properties walked). Every `emit/release/` golden and release run
+hash is byte for byte the same, `zig build test-run-hashes` changes nothing, the shuffled-order
+check is green on the corpus, and `spec_pts_edges` and `spec_pts_joins` are equal on the three
+programs below. On the dashboard N = 16, N = 64 and N = 64 without `withDefault`:
+spreads 2 862, 6 512 and 6 170, of which whole walks 1 312, 3 628 and 3 421 — a constraint's
+first evaluation 862, 2 314 and 2 314, after a split 5, 3 and 3, and the rest with more than half
+the summary new — and properties walked 8 035, 79 680 and 68 765.
+
+**The profile's estimate did not hold, and this is why.** The 1 505 object re-evaluations of the
+solve after the structural pass at N = 64 are all spreads, and every one has an unchanged value —
+an object literal's value is its own site, always. They were not walking an unchanged summary:
+the merged widget summary gains its properties one at a time in that solve, and each gain wakes
+every spread of it. Measured with the profile's instrumented build, in that solve the whole walks
+would have met 51 368 properties, and 13 984 of them are past the cursors: new to the site, each
+doing real work — 13 570 take a shared field (`shareField`), 478 a var of their own, and
+each new property of a spread site is copied into the summaries that hold the site, which is most
+of the remaining cost. The 37 000 properties no longer walked were cheap. Fact 3's
+instructions per solve (ReleaseFast, counted by the kernel around `Pts.fixpoint`), before →
+after: N = 64 140.0M, 132.5M, 212.2M → 138.7M, 131.0M, 209.2M (484.7M → 478.9M, −1.2%; the
+third solve's sweep 3, the profile's 68.4M, 66.7M); without `withDefault` 376.8M → 373.2M
+(−1.0%); N = 16 119.4M → 119.0M. The issue's target, that third solve at ≈ 114M, is not in
+reach of this change. Instructions of the gates' build: `emit/release/inline/SpreadCopiesLookups`
+4 090M → 4 073M, `SpreadCopiesBatched` 3 036M → 3 025M, `SpreadCopiesWide` 2 609M → 2 600M,
+`SpreadCopies` 2 302M → 2 295M, `MemberReadsWide` 1 730M → 1 726M, `SpreadArms` 1 378M →
+1 374M, `SpreadWide` 959M → 956M, `MergedChildren` 1 471M → 1 472M. Wall time and `specialise`
+(ReleaseFast, `build --release --no-cache --jobs=1`, dagon, minima of 11 interleaved runs, load
+under 3) do not move beyond noise: N = 16 64.2 → 64.2 ms and 30.6 → 31.6 ms, N = 64 205.7 → 206.5
+ms and 118.5 → 118.8 ms, without `withDefault` 189.5 → 190.9 ms and 100.9 → 101.6 ms. What is left of
+the solve's excess is new properties reaching spread sites and the summaries that fold them
+(#565's folds, the profile's 70 956 edges into escaped summaries of uncapped `top` owners), not
+re-walking. No corpus case was added: none moves by more than the gain, so none can be made red
+before through the budget.
+
 ### Compact statements
 
 ### Compact statements
