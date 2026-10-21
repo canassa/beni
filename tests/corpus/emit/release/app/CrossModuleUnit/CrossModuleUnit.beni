@@ -1,0 +1,11 @@
+-- The imported init is called once with its emitted arity: release can
+-- inline its record into this caller (backend.md §6 and §9).
+import Helpers
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main =
+    model = Helpers.init ⊤
+    Node.print (Probe.inspect model)

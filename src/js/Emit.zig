@@ -4737,6 +4737,8 @@ const Emitter = struct {
             const file = e.graph().moduleFile(m);
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .birs = e.reach.birs,
+                .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
                 .module = m,
                 .graph = e.graph(),

@@ -204,6 +204,10 @@ pub const Input = struct {
     module: Graph.Index,
     graph: *const Graph,
     interfaces: []const Interface,
+    /// Immutable declaration facts for imported callees, indexed by module.
+    /// Published before parallel lowering; no other module's lowering is read.
+    birs: []const *const Bir,
+    provenance: []const Interface.Provenance,
     /// What the checker decided about every method call of this module
     /// (static-dispatch-spike.md §7). Lowering reads it; what it cannot
     /// honour is REFUSED rather than emitted wrongly.
@@ -3230,30 +3234,37 @@ pub const Lowerer = struct {
         return l.funcRecord(names.items, split);
     }
 
-    /// How many trailing arguments of a call of `callee` are a `()` literal
-    /// in the position of a parameter the callee's JavaScript does not hold
-    /// (`writtenParams`), and so need not be passed. Known for a declaration
-    /// of this module defined with its parameters; any other callee is
-    /// passed every argument, which is always right, `null` being ignored.
+    /// Trailing unit literals in positions the named declaration omits
+    /// from its JavaScript parameter list (backend.md §6). Imported
+    /// declarations use the same immutable BIR facts as local ones;
+    /// neither a function type nor a foreign sibling decides this count.
     fn unwrittenArgs(l: *Lowerer, callee: Inst.Index, args: []const Inst.Index) usize {
-        if (l.bir.instTag(callee) != .top) return 0;
-        const index = l.bir.instData(callee).lhs;
-        if (index >= l.bir.decls.len) return 0;
-        const d = l.bir.decls[index];
-        // A `foreign`'s sibling is written by hand, and reads what it reads.
-        if (d.kind != .value) return 0;
-        const params: []const Inst.Index = switch (Convention.definitionOf(l.in.dispatch, l.bir, index)) {
-            .params => l.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index),
-            .lambda => blk: {
-                const body = d.body.unwrap() orelse return 0;
-                break :blk l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(body).lhs))), Inst.Index);
+        const data = l.bir.instData(callee);
+        const bir, const index = switch (l.bir.instTag(callee)) {
+            .top => .{ l.bir, data.lhs },
+            .ext_value => blk: {
+                std.debug.assert(data.lhs < l.in.birs.len);
+                std.debug.assert(data.lhs < l.in.provenance.len);
+                const decls = l.in.provenance[data.lhs].value_decl;
+                std.debug.assert(data.rhs < decls.len);
+                break :blk .{ l.in.birs[data.lhs], decls[data.rhs].int() };
             },
             else => return 0,
         };
+        std.debug.assert(index < bir.decls.len);
+        const d = bir.decls[index];
+        // A foreign's sibling is written by hand, and reads what it reads.
+        if (d.kind != .value) return 0;
+        const params: []const Inst.Index = if (d.params != 0)
+            bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index)
+        else if (Convention.bodyIsLambda(bir, index)) blk: {
+            const body = d.body.unwrap().?;
+            break :blk bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(body).lhs))), Inst.Index);
+        } else return 0;
         if (params.len != args.len) return 0;
         var n: usize = 0;
         var i = args.len;
-        while (i > l.writtenParams(params)) : (i -= 1) {
+        while (i != 0 and bir.instTag(params[i - 1]) == .pat_unit) : (i -= 1) {
             if (l.bir.instTag(args[i - 1]) != .unit) break;
             n += 1;
         }
@@ -17621,6 +17632,8 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
 
+    const birs = try arena.alloc(*const Bir, count);
+    for (birs, 0..) |*b, i| b.* = session.artifacts.bir(session.graph.moduleFile(@fromBackingInt(@intCast(i))));
     const specifiers = try arena.alloc([]const u8, count);
     for (specifiers, 0..) |*specifier, i| {
         const index: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
@@ -17637,6 +17650,8 @@ fn emitModule(gpa: Allocator, project: *TestProject, name: []const u8) ![]u8 {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
+        .birs = birs,
+        .provenance = session.resolution.provenance,
         .dispatch = if (m.int() < session.checked.dispatch.len)
             &session.checked.dispatch[m.int()]
         else
@@ -18067,6 +18082,8 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     const count = session.graph.count();
+    const birs = try arena.alloc(*const Bir, count);
+    for (birs, 0..) |*b, i| b.* = session.artifacts.bir(session.graph.moduleFile(@fromBackingInt(@intCast(i))));
     const specifiers = try arena.alloc([]const u8, count);
     for (specifiers) |*specifier| specifier.* = "./x.mjs";
     const file = session.graph.moduleFile(m);
@@ -18078,6 +18095,8 @@ test "a `?` the table has no shape for is a bug, not a wrong answer" {
         .module = m,
         .graph = &session.graph,
         .interfaces = session.resolution.interfaces,
+        .birs = birs,
+        .provenance = session.resolution.provenance,
         .dispatch = &Dispatch.empty,
         .types = &session.checked.types,
         .specifiers = specifiers,

@@ -1,0 +1,18 @@
+pub init : ⊤ → { cups : Int }
+init ⊤ = { cups = -1 }
+
+
+pub pair : Int, ⊤, ⊤ → Int
+pair n ⊤ ⊤ = n
+
+
+pub lambda : ⊤ → Int
+lambda = λ⊤ → 3
+
+
+pub named : ⊤ → ⊤
+named unit = unit
+
+
+pub first : ⊤, Int → Int
+first ⊤ n = n
