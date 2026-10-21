@@ -6176,7 +6176,54 @@ session per accepted upgrade in the order the upgrades arrive, as it starts requ
   request is.
 - **Both together** — the demonstration of #524: a server program and a page program in one
   fixture, the page loaded under the page driver with the host's real `WebSocket`, connected to
-  the server the serve driver started. Its kind and its steps are specified with its slice.
+  the server the serve driver started. Its kind and its steps are specified with its slice
+  (*Amended 2026-10-21*, below).
+
+*Amended 2026-10-21, the page and the server together* ((l)'s last item; #524's demonstration;
+#571). A page and a server that are both beni talk through a real WebSocket in one test:
+
+- **The example.** `examples/chat/` holds three directories, as `examples/todo/` does: `shared/`,
+  `server/` (`node`) and `page/` (`browser-tea`). `shared/Chat.beni` is the protocol: the events and
+  their lines, and `tell`, which writes an event with `WebSocket.write`. It names only the handle
+  operations that every platform shares (the amendment's item 1), so the page's build and the
+  server's build check it, each on its own platform. The server serves the page's build and
+  accepts sockets at `/chat`, and refuses one whose `origin` is another site's (item 21). It tells
+  each page's events to every other page. The page holds its socket in a `listen` subscription,
+  shows what the room says, and connects again after a wait when the connection ends.
+- **The page driver's `--server=127.0.0.1:<port>`** (happy-dom only) opens the page at
+  `http://127.0.0.1:<port>/_page.html`, so a socket the page opens to `/chat` reaches the server
+  on that port. The page's `WebSocket` is then happy-dom's own, which wraps the `ws` library, not
+  the scripted one: it is the independent client of item 30. Item 30 named Node 24's own
+  `WebSocket` (undici), which cannot run in the page: it calls `unref` on what `setTimeout`
+  returns, and the page's virtual clock returns a number, as a browser's does. undici drives the
+  server in `bench/websocket/load.mjs`. Each socket is still numbered and logged, and the scripted
+  `socket` steps are refused. The step `socket <n> wait <k>`, `wait open` or `wait closed` waits —
+  5 seconds at most, in real time — until the socket has received `k` messages in all, opened,
+  or closed; then the page settles as after any step. In this mode the driver writes the line of
+  each step it has run to file descriptor 3.
+- **The serve driver's page steps.** `{"page": "<entry>", "steps": "<file>"}` runs a page under the
+  page driver with `--server` set to the program's port and prints its transcript, each line
+  `| …`. With `"wait": false` it runs beside the next steps. `{"page-wait": "<step>"}` waits until
+  the page has run that step (the line on file descriptor 3), and `{"page-end": true}` waits for
+  the page to end and prints its transcript. So a script orders what the page and the driver's own
+  clients do, and the transcript depends on no timing.
+- **The test** is `tests/blackbox/chat_example_test.zig`. It builds the example as its README says,
+  with a `Config` that listens on port 0, and runs the server under the serve driver. In its script
+  the driver's own client and the page talk: the page connects, says a line, and hears the
+  client's answer; the client hears the page join, speak and leave; a socket from another site is
+  refused; the server shuts down and closes the client's socket with 1001.
+- **The scripted `open` follows the handshake** (#571). `socket <n> open "<protocol>"` fails the
+  step when the page did not offer that protocol, and `socket <n> open` with no protocol fails it
+  when the page offered some: a host fails both handshakes (RFC 6455 §4.1, the Fetch standard's
+  "establish a WebSocket connection"), so no golden shows a state that no browser reaches.
+- **The owner's decisions** ((n); the owner, 2026-10-21, each as recommended). `ws-q1`: the
+  wrappers take Elm's names — the command is `send` and the subscription `listen` — and the
+  direct forms are `read`, `write` and `close` on every platform; Workers uses `write` too. So
+  (a)–(d) stand as written. `ws-q3`: each host keeps its own reading style. `node` reads with the
+  pull `read` session of (e)–(h), with read back-pressure; Cloudflare delivers events to
+  handlers, so that an object can hibernate. Programs share the handle operations of item 1 and
+  their logic as plain functions, as `examples/chat/shared/Chat.beni` does. Item 1's "until it is
+  answered" is spent: (e)–(h) stay as written for `node`.
 
 **(m) The game's load, measured.** The slices measure what the game does: a server with 100
 players, each sent a 1 KiB state 30 times per second while it sends 5 small inputs per second;
@@ -6188,7 +6235,8 @@ reported with its number.
 
 **(n) The owner's decisions.**
 
-- **`ws-q1`, the API of (a)–(d).** *Recommended*: as written, which keeps §9.8.17's rule: the
+- **`ws-q1`, the API of (a)–(d).** *Decided 2026-10-21 as recommended* (the amendment of
+  2026-10-21, *the page and the server together*). *Recommended*: as written, which keeps §9.8.17's rule: the
   wrappers take Elm's names (`send`, `listen`), and the direct forms take other names (`read`,
   `write`, Effect's and the WHATWG `WebSocketStream`'s), so the names that a shared module uses
   are the same on both sides. *The other choice*: the direct forms take the host's names
