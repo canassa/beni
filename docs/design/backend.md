@@ -8446,6 +8446,60 @@ allocates new per-node arrays into one arena that lives for the whole pass (D4):
 build of `bench --generate=100000` as a library peaks at 377 MB. Each slice reports peak RSS on
 TodoMVC, that build and `abuse_wide_test`, and none may raise it by more than 5%.
 
+**As built 2026-10-21 — the solve's memory reused between runs** (issue #574, part of #464). A
+release build solves fact 3 up to six times (one fewer where an analysis keeps it, #575). Every
+run took its per-node and per-name columns (`vals`, `site_of`, `name_var`/`name_top`,
+`node_var`/`node_top`, `ones`, `globals`), its vars, sites, locals and statement list anew
+from the compilation's arena, which kept each run's copy until the build ended.
+The fixpoint's own arena, a `std.heap.ArenaAllocator`, was reset with `.retain_capacity`, which
+in Zig 0.17 frees every chunk but the last and reallocates that one, so a run that outgrew it
+faulted a fresh mapping the next time. `inlineOne` and `fuseOne` took three
+arrays as long as the program's names on each of their hundreds of calls, and `inlineScan` took
+every module's counts anew whenever a body written at the top added a name. Page faults were a
+quarter of the N = 64 dashboard's wall time. Now:
+
+- **One run arena** (`Pts.tmp`, `src/Arena.zig`) holds everything of one run: those columns, the
+  vars, sites, locals, constraints, edges, summaries, load cells, the set table, and `Spec`'s
+  arrays of one analysis (`spread_sites`, the sweeps' dependency lists). The solve's columns and
+  pools and the set table are reset together, as above, in one arena.
+- **It is emptied with `Arena.ResetMode.keep_all`** at the start of each run. That frees no chunk
+  and opens them again in the order the run before opened them, so a run that repeats its
+  predecessor's allocations lands on the same pages, already mapped. The columns come first and
+  are filled again where the last run left them, grown in place when a pass added nodes.
+- **The safety build's reference run** fills an arena of its own, swapped in as before, which
+  `expectSame` reads after the build's run has refilled `tmp`.
+- **The inliner's scratch is kept** across calls, and `inlineScan`'s counts across an added name
+  (`Spec.scratchOf`, grown by half again past the need).
+- **The compilation's arena keeps only what outlives a run**: `extra_init`, the walk's stacks,
+  the modules' property columns. A unit test pins it: a second fixpoint takes nothing from that
+  arena and no new chunk, and its columns are the first's memory.
+
+No fact moved: every `emit/release/` golden and run hash is byte for byte the same, and the
+shuffled-order check is unchanged. ReleaseFast, `build --release --no-cache --jobs=1` on dagon
+(Ryzen 9 5950X), against master with #575, before → after. Faults and peak RSS are medians of 5 or
+7 runs; the times are the minima of 11 interleaved runs, on a quiet host:
+
+| program | minor faults | peak RSS | sys | wall |
+|---|---|---|---|---|
+| research dashboard N = 16 | 13 600 → 8 700 | 56 → 40 MB | 0.02 → 0.01 s | 0.07 → 0.07 s |
+| research dashboard N = 64 | 56 300 → 31 100 | 180 → 115 MB | 0.08 → 0.04 s | 0.33 → 0.29 s |
+| N = 64 without `withDefault` | 46 300 → 28 000 | 163 → 103 MB | 0.07 → 0.04 s | 0.29 → 0.26 s |
+| `bench --generate=100000`, `--library`, names migrated | 92 000 → 68 000 | 348 → 273 MB | 0.15 → 0.12 s | 0.56 → 0.52 s |
+| `browser/tea/TodoMVC` | 9 800 → 5 700 | 44 → 31 MB | | |
+| `abuse_wide_test`'s 16 400 arms | 11 600 → 10 800 | 33 → 30 MB | | |
+
+What is left of the faults:
+
+- **Run 1** touches its arena once: 38 MB at N = 64, about half of it lists that grew and left
+  their old copy behind, which a bump arena cannot reuse within a run.
+- **A run that outgrows every earlier one** faults its growth: at N = 64, the solve after the second
+  inlining pass takes the arena to 77 MB.
+- **`Spec`'s own caches** still go to the compilation's arena between the runs: `nameScan`'s
+  per-statement uses, `preorder`, `inlineSmall`'s copies.
+
+There is no extraction yet to keep per module while `Mod.version` stands: `Pts` still makes every
+constraint from its walk (slice 5).
+
 #### Building it — research 52 §4.5's slices 4–8
 
 Each slice is gates-green, measured (instructions of the ReleaseSafe compiler and peak RSS on
