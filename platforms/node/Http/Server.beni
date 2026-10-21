@@ -226,7 +226,7 @@ upgradeWith incoming upgrade =
 
         Accept chosen limit session →
             if chosen ≠ "" && not (List.member (protocols (requestOf incoming)) chosen) then
-                invalidUpgrade incoming "the protocol \"${chosen}\" is not one the client offered"
+                notOffered incoming chosen
             else
                 case WebSocket.upgraded incoming chosen limit of
                     Nothing →
@@ -321,7 +321,7 @@ foreign pure isUpgrade : Js.Value → Bool
 foreign impure refuseUpgrade : Js.Value, Response → ⊤
 
 
-foreign impure invalidUpgrade : Js.Value, String → ⊤
+foreign impure notOffered : Js.Value, String → ⊤
 
 
 foreign impure write : Js.Value, Response → ⊤

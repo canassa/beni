@@ -16,6 +16,10 @@
 < (socket p) 500
 < (socket p) content-length: 0
 < (socket p) connection: close
+> (socket n) GET /newline ["v1"]
+< (socket n) 500
+< (socket n) content-length: 0
+< (socket n) connection: close
 > (socket i) GET /invalid
 < (socket i) 500
 < (socket i) content-length: 0
@@ -50,5 +54,6 @@ late ended: { code = 1001, reason = "" }
 the server has closed
 --- stderr ---
 beni: Http.Server: the answer to the WebSocket request GET /protocol is invalid: the protocol "v9" is not one the client offered
+beni: Http.Server: the answer to the WebSocket request GET /newline is invalid: the protocol "v1\nbeni: forged" is not one the client offered
 beni: Http.Server: the answer to the WebSocket request GET /invalid is invalid: the response is invalid: status 1000 is not an integer from 200 to 999
 --- exit 0 ---
