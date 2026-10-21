@@ -308,4 +308,33 @@ module Time
   value seconds : Int → Duration
   value sleep : Duration → ⊤  -- suspends
   value toMillis : Posix → Int
+module WebSocket
+  alias Close
+    Close
+  type CloseError
+    InvalidCode
+    ReasonTooLong
+  type ConnectError
+    BadUrl
+    BadProtocol
+    Blocked
+    Unreachable
+  type Event
+    Opened
+    Received
+    Closed
+    Failed
+  type Socket
+  type WriteError
+    NotOpen
+  value buffered : Socket → Int  -- impure
+  value close : Socket, Close → Result CloseError ⊤  -- impure
+  value connect : String, List String, (Socket → a) → Result ConnectError a  -- suspends
+  value disconnect : Socket, Close, (CloseError → msg) → Cmd msg
+  value eq : Socket, Socket → Bool
+  value listen : String, List String, (Event → msg) → Sub msg  -- impure
+  value protocol : Socket → String  -- impure
+  value read : Socket → Result Close String  -- suspends
+  value send : Socket, String, (WriteError → msg) → Cmd msg
+  value write : Socket, String → Result WriteError ⊤  -- impure
 ```
