@@ -5085,6 +5085,10 @@ const Emitter = struct {
         profile.addCounter(.spec_points_to_reused, stats.points_to_reused);
         profile.addCounter(.spec_points_to_sweeps, stats.points_to_sweeps);
         profile.addCounter(.spec_passes, stats.passes);
+        profile.addCounter(.spec_prunes, stats.prunes);
+        profile.addCounter(.spec_prunes_skipped, stats.prunes_skipped);
+        profile.addCounter(.spec_fuse_declined, stats.fuse_declined);
+        profile.addCounter(.spec_fuse_taken_back, stats.fuse_taken_back);
         profile.addCounter(.spec_analyses_declined, stats.analyses_declined);
         profile.addCounter(.spec_points_to_declined, stats.points_to_declined);
         profile.addCounter(.spec_rounds_capped, stats.rounds_capped);

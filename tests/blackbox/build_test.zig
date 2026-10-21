@@ -5866,6 +5866,64 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     try testing.expect(runs.? >= analyses.? - reused.?);
 }
 
+test "the release specialiser takes back the copies it declines and skips a prune nothing moved for" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #624 (`backend.md` §9, *As built 2026-10-21 — the driver's exact
+    // skips*): `fuseCalls` makes every copy of a function in its sites'
+    // modules before it decides, and declines when the copies come to no
+    // less than what they replace. `run/Dictionaries` has such functions
+    // in core's `Dict`: their copies are taken back, and none is made
+    // after the first that reaches the sum. Reachability (`prune`) reads
+    // the program and where each declaration is; after a round whose
+    // rewrite changed nothing, neither moved since the last prune, which
+    // dropped nothing, so that prune is not run again. The corpus runs
+    // the program's release build against its golden, so the output is
+    // what it was.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try copyFixture(&w, "tests/corpus/run/Dictionaries.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--no-cache", "--release", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    const Event = struct {
+        ph: []const u8,
+        args: struct {
+            spec_prunes: ?u64 = null,
+            spec_prunes_skipped: ?u64 = null,
+            spec_fuse_declined: ?u64 = null,
+            spec_fuse_taken_back: ?u64 = null,
+        } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var prunes: ?u64 = null;
+    var skipped: ?u64 = null;
+    var declined: ?u64 = null;
+    var taken_back: ?u64 = null;
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.spec_prunes) |v| prunes = v;
+        if (e.args.spec_prunes_skipped) |v| skipped = v;
+        if (e.args.spec_fuse_declined) |v| declined = v;
+        if (e.args.spec_fuse_taken_back) |v| taken_back = v;
+    }
+    try testing.expect(prunes.? >= 1);
+    try testing.expect(skipped.? >= 1);
+    try testing.expect(declined.? >= 1);
+    // Every declined function had at least one copy made, and each copy
+    // is a node at least.
+    try testing.expect(taken_back.? >= declined.?);
+}
+
 test "the release specialiser counts a call chain deeper than its sweeps as a declined analysis" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

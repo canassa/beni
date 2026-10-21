@@ -421,6 +421,14 @@ pub const Stats = struct {
     points_to_reused: u64 = 0,
     /// Passes of the structural loop in `run` that changed the program.
     passes: u64 = 0,
+    /// Reachability's runs (`prune`), and those it did not run because
+    /// nothing it reads moved since one that dropped nothing (#624).
+    prunes: u64 = 0,
+    prunes_skipped: u64 = 0,
+    /// Functions `fuseCalls` declined after copying them into their sites,
+    /// and the nodes it took back from those copies (`Mod.takeBack`, #624).
+    fuse_declined: u64 = 0,
+    fuse_taken_back: u64 = 0,
     /// The caps, each counted where it stopped work that would have gone
     /// on — the counters to read first when an output grew (research 52
     /// §3.7). An analysis whose facts 1, 2, 4 and 5 did not converge in
@@ -748,6 +756,89 @@ const Mod = struct {
         return true;
     }
 
+    /// The module's columns as they are, for `takeBack`.
+    const Mark = struct {
+        module: u32,
+        nodes: usize,
+        extra: usize,
+        string_bytes: usize,
+        names: usize,
+        node_keys: usize,
+        name_key: usize,
+        global_list: usize,
+        global: []const u32,
+        keep: usize,
+        discards: usize,
+        unobserved: usize,
+        mutable: usize,
+        prop_more: usize,
+        fact3: bool,
+    };
+
+    fn mark(m: *const Mod) Mark {
+        return .{
+            .module = m.index,
+            .nodes = m.ir.nodes.len,
+            .extra = m.extra.items.len,
+            .string_bytes = m.string_bytes.items.len,
+            .names = m.names.items.len,
+            .node_keys = m.node_keys.items.len,
+            .name_key = m.name_key.items.len,
+            .global_list = m.global_list.items.len,
+            .global = m.global,
+            .keep = if (m.tables) |t| t.keep.items.len else 0,
+            .discards = if (m.tables) |t| t.discards.items.len else 0,
+            .unobserved = if (m.tables) |t| t.unobserved.items.len else 0,
+            .mutable = if (m.tables) |t| t.mutable.items.len else 0,
+            .prop_more = m.prop_more.items.len,
+            .fact3 = m.fact3,
+        };
+    }
+
+    /// Take back what was appended to the module since `k`: the nodes,
+    /// words, bytes, names and `tables` rows of copies the pass then
+    /// declined (`Spec.fuseAt`, #624), which no statement reaches. Nothing
+    /// appended since `k` may have been written into a node or a list that
+    /// was there at `k`, so the module is again what it was, and so is what
+    /// fact 3 reads of it (`fact3`). `version` and `epoch` stay where they
+    /// went: a cache stamped with a value they passed through must not find
+    /// that value again on a different module.
+    fn takeBack(m: *Mod, k: Mark) void {
+        var nodes = m.ir.nodes.toMultiArrayList();
+        nodes.shrinkRetainingCapacity(k.nodes);
+        m.ir.nodes = nodes.slice();
+        m.extra.shrinkRetainingCapacity(k.extra);
+        m.ir.extra = m.extra.items;
+        m.string_bytes.shrinkRetainingCapacity(k.string_bytes);
+        m.ir.string_bytes = m.string_bytes.items;
+        m.node_keys.shrinkRetainingCapacity(k.node_keys);
+        m.ir.node_keys = m.node_keys.items;
+        if (m.name_key.items.len > k.name_key) m.name_key.shrinkRetainingCapacity(k.name_key);
+        m.ir.name_key = m.name_key.items;
+        // `findName`'s index: a name that goes is no name's first index.
+        if (m.name_index_len > k.names) {
+            for (m.names.items[k.names..m.name_index_len], k.names..) |x, i| {
+                if (m.name_index.get(x)) |at| if (at == i) {
+                    _ = m.name_index.remove(x);
+                };
+            }
+            m.name_index_len = @intCast(k.names);
+        }
+        m.names.shrinkRetainingCapacity(k.names);
+        m.ir.names = m.names.items;
+        m.global_list.shrinkRetainingCapacity(k.global_list);
+        m.global = if (k.global_list == 0) k.global else m.global_list.items;
+        if (m.tables) |t| {
+            t.keep.shrinkRetainingCapacity(k.keep);
+            t.discards.shrinkRetainingCapacity(k.discards);
+            t.unobserved.shrinkRetainingCapacity(k.unobserved);
+            t.mutable.shrinkRetainingCapacity(k.mutable);
+        }
+        if (m.prop_more.items.len > k.prop_more) m.prop_more.shrinkRetainingCapacity(k.prop_more);
+        m.uniq_len = std.math.maxInt(usize);
+        m.fact3 = k.fact3;
+    }
+
     /// Make `node` something else. Its key goes with what it was: a node
     /// rewritten in place is no longer the allocation lowering keyed
     /// (`backend.md` §9, *Declared-type filtering of fact 3*), and so
@@ -939,6 +1030,11 @@ const Spec = struct {
     pts_kept_nodes: []usize = &.{},
     pts_kept_names: []usize = &.{},
     pts_kept_globals: u32 = 0,
+    /// The last `prune` dropped nothing: the program's `stamp` then, and
+    /// what of `decl` it read (`DeclAt`).
+    prune_clean: bool = false,
+    prune_stamp: u64 = 0,
+    prune_decls: std.ArrayList(DeclAt) = .empty,
     /// Parameter drops `rewrite` made that the kept state takes when the
     /// next analysis keeps it (`keepDrop`, `keepArgs`, `applyKeptDrops`;
     /// #582): the function sites and their parameters, and the arguments
@@ -1072,6 +1168,8 @@ const Spec = struct {
     const Declined = struct { g: u32, lit: Lit };
     const SiteProp = struct { site: u32, prop: u32 };
     const NodeRef = struct { module: u32, node: u32 };
+    /// A top-level declaration's module and statement, or `none` for none.
+    const DeclAt = struct { module: u32 = none, stmt: Index = none_index };
     const KeptDrop = struct { site: u32, module: u32, top: Index, gone: []const bool, names: []const NameIndex };
 
     /// The join of the lattice: a literal and nonnull, or two different
@@ -3187,6 +3285,43 @@ const Spec = struct {
     /// initialiser may do something when evaluated is kept whether or not it
     /// is read, as `Reach` keeps it — and the names `Input.escaping` lists.
     fn prune(s: *Spec) Allocator.Error!bool {
+        // What a prune reads is the program and, of `decl`, each
+        // declaration's module and statement. When none of it moved since a
+        // prune that dropped nothing, this one drops nothing either (#624).
+        if (s.prune_clean and s.prune_stamp == s.stamp() and s.pruneDeclsSame()) {
+            s.stats.prunes_skipped += 1;
+            return false;
+        }
+        s.stats.prunes += 1;
+        const any = try s.pruneNow();
+        s.prune_clean = !any;
+        if (!any) {
+            s.prune_stamp = s.stamp();
+            s.prune_decls.clearRetainingCapacity();
+            try s.prune_decls.ensureTotalCapacity(s.arena, s.decl.len);
+            for (s.decl) |d| s.prune_decls.appendAssumeCapacity(if (d) |x| .{ .module = x.module, .stmt = x.stmt } else .{});
+        }
+        return any;
+    }
+
+    fn pruneDeclsSame(s: *const Spec) bool {
+        if (s.prune_decls.items.len != s.decl.len) return false;
+        for (s.decl, s.prune_decls.items) |d, p| {
+            const now: DeclAt = if (d) |x| .{ .module = x.module, .stmt = x.stmt } else .{};
+            if (now.module != p.module or now.stmt != p.stmt) return false;
+        }
+        return true;
+    }
+
+    /// A count that every change to the program moves (`Mod.changed`,
+    /// `Mod.namesChanged`, `addGlobal`) and nothing else does.
+    fn stamp(s: *const Spec) u64 {
+        var n: u64 = s.globals;
+        for (s.mods) |*m| n += m.epoch;
+        return n;
+    }
+
+    fn pruneNow(s: *Spec) Allocator.Error!bool {
         const referenced = try s.arena.alloc(bool, s.globals);
         @memset(referenced, false);
         const live = try s.arena.alloc(bool, s.globals);
@@ -8089,13 +8224,27 @@ const Spec = struct {
         // function counts as big to `nodeCount`).
         var old_size: u32 = 8 + @as(u32, @intCast(params.len));
         for (body) |st| old_size += try s.stmtSize(fm, decl.module, st);
+        for (fits.items) |fit| {
+            const cm = &s.mods[fit.site.module];
+            for (listAt(cm, fit.place.owner.?)[fit.at..]) |r| old_size += try s.stmtSize(cm, fit.site.module, r);
+        }
+        // A copy is made in its module's columns before the decision. When
+        // the copies come to no less than what they replace, every one is
+        // taken back, and the sum only grows, so none is made after the
+        // first that reaches it: a function the pass declines leaves no node
+        // or name behind (#624).
+        var marks: std.ArrayList(Mod.Mark) = .empty;
+        for (fits.items) |fit| {
+            for (marks.items) |k| {
+                if (k.module == fit.site.module) break;
+            } else try marks.append(s.arena, s.mods[fit.site.module].mark());
+        }
         var new_size: u32 = 0;
         const copies = try s.arena.alloc([]const u32, fits.items.len);
         for (fits.items, copies) |fit, *copy| {
+            if (new_size >= old_size) break;
             const cm = &s.mods[fit.site.module];
             const mi: u32 = fit.site.module;
-            const list = listAt(cm, fit.place.owner.?);
-            for (list[fit.at..]) |r| old_size += try s.stmtSize(cm, mi, r);
             const args = try s.arena.dupe(Index, cm.ir.extraSlice(cm.ir.subRange(@fromBackingInt(@intCast(cm.ir.data(fit.site.call).rhs))), Index));
             const cont: Cont = .{ .x = fit.x, .rest = fit.rest, .top = fit.site.top, .call = fit.site.call, .inspected = inspected, .args = args, .assigned = assigned };
             var c: Copy = .{
@@ -8128,7 +8277,10 @@ const Spec = struct {
             for (out.items) |o| new_size += try s.stmtSize(cm, mi, @fromBackingInt(@intCast(o)));
             copy.* = out.items;
         }
-        if (new_size >= old_size) return false;
+        if (new_size >= old_size) {
+            s.takeBackFuse(marks.items, fm, scan);
+            return false;
+        }
         s.noteCopy(decl.module, g);
         for (fits.items, copies) |fit, copy| {
             const cm = &s.mods[fit.site.module];
@@ -8161,6 +8313,23 @@ const Spec = struct {
             try s.leave(cm);
         }
         return true;
+    }
+
+    /// Every module `fuseAt` copied into, back to its `marks`, and the
+    /// names `nameIn` gave it for `scan`'s whole-program names forgotten
+    /// with the names.
+    fn takeBackFuse(s: *Spec, marks: []const Mod.Mark, fm: *const Mod, scan: *const BodyScan) void {
+        s.stats.fuse_declined += 1;
+        for (marks) |k| {
+            const m = &s.mods[k.module];
+            s.stats.fuse_taken_back += m.ir.nodes.len - k.nodes;
+            if (m.names.items.len > k.names and k.module != fm.index) for (scan.mentioned.items) |nm| {
+                const h = fm.globalOf(@fromBackingInt(@intCast(nm))) orelse continue;
+                const key: SiteProp = .{ .site = k.module, .prop = h };
+                if (s.name_in.get(key)) |v| if (v != none and v >= k.names) s.name_in.remove(key);
+            };
+            m.takeBack(k);
+        }
     }
 
     /// The statements of the list whose range is stored at `owner`.

@@ -265,6 +265,14 @@ pub const Counter = enum {
     spec_points_to_reused,
     spec_points_to_sweeps,
     spec_passes,
+    /// Reachability's runs inside the pass (`Spec.prune`) and those it skipped,
+    /// nothing it reads having moved since one that dropped nothing; the
+    /// functions `Spec.fuseCalls` copied and then declined, and the nodes
+    /// it took back (#624).
+    spec_prunes,
+    spec_prunes_skipped,
+    spec_fuse_declined,
+    spec_fuse_taken_back,
     /// Each cap where it stopped work that would have gone on: a size
     /// regression is traced to one of these first. An analysis that did
     /// not converge rewrites nothing; a fact 3 that did not is not used.
