@@ -200,6 +200,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/page_fuzz_test.zig", 1 },
     .{ "tests/blackbox/playground_page_test.zig", 1 },
     .{ "tests/blackbox/todo_example_test.zig", 1 },
+    .{ "tests/blackbox/chat_example_test.zig", 1 },
 };
 
 /// Where `coverage-run` installs the instrumented compiler the suites

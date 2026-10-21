@@ -1,0 +1,19 @@
+--! The server's settings. A `node` program cannot read command-line
+--! arguments or environment variables yet (canassa/beni#357), so the
+--! settings are a module: edit this file and build again. The test builds
+--! the server with a `Config` of its own, which listens on port 0.
+
+--| The address the server listens on.
+pub host : String
+host = "127.0.0.1"
+
+
+--| The port. `0` lets the operating system pick one.
+pub port : Int
+port = 0
+
+
+--| Where the page's build is, relative to the directory the server runs
+--| in: `node out/_main.mjs` from `examples/chat/server`.
+pub pageDir : String
+pageDir = "../page/out"
