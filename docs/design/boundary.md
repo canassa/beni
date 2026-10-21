@@ -6547,9 +6547,10 @@ arena =
   `impure`, so a `sync` handler may call them, but an object has no fiber of its own: a fiber a
   handler started would run on the isolate's shared scheduler, keep the object from hibernating
   while it waits, and be lost at hibernation or eviction with no finaliser run — a `Task.bracket`
-  release that never runs, against §9.8.14 (a). **It is a hazard, not a rule** (*amended
-  2026-10-21, R3-1, replacing R2-6's check; rule 7*): nothing in the platform enforces it, and
-  issue #550 holds the two ways to: a core API the platform can call at once — a count of fibers
+  release that never runs, against §9.8.14 (a). **It is a hazard today, and the error is owed**
+  (*amended 2026-10-21, R3-1, replacing R2-6's check*): the rule buys a guarantee — a `bracket`'s
+  release runs — so it is an error once the platform can keep it, which it cannot yet; nothing in
+  the platform enforces it, and issue #550 holds the two ways to: a core API the platform can call at once — a count of fibers
   made and a public way to stop core's queue — which is a change to `core/Task.beni` coordinated
   with #358, or (j)'s slice, fibers in an object with the scope the host's lifecycle allows them.
   A check on `Task.cleansUp ⊤` was specified and withdrawn the same day: the fiber runs to its
@@ -6643,7 +6644,7 @@ of #531 found why, and this section follows it:
   "Server sent no subprotocol"), and a page that passes protocols to §9.11's `connect` needs it.
 
 ```elm
-module WebSocket   -- cloudflare: the shared handle operations of §9.11 (a), plus these
+module WebSocket   -- cloudflare: the handle operations §9.11's amendment shares (item 1), plus these
 
 pub accept : Context, Request, List String → Result AcceptError (Socket × Response)
 pub id : Socket → String                 -- the platform's id, kept in the attachment: the same across hibernation
