@@ -8,7 +8,9 @@
 -- at 0.25 pixels a millisecond, never past it, and the page asks for
 -- frames only while the dot has somewhere to go. The arena fills the
 -- window, and its `touch-action: none` keeps the browser from scrolling or
--- zooming under the finger.
+-- zooming under the finger. The `-webkit-` styles are for Safari and iOS,
+-- which need them to stop a long press from selecting text or opening a
+-- menu.
 import Browser.Events
 import Cmd exposing (Cmd)
 import Html exposing (Html)
@@ -89,7 +91,7 @@ view model =
     <main>
         <div
             id="arena"
-            style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none"
+            style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none"
             onPointerDown={aim}
             onPointerMove={aim}
             onPointerUp={λp → Release (Html.pointerType p)}

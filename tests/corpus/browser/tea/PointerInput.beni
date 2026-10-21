@@ -6,8 +6,9 @@
 -- dispatch, when `currentTarget` is null: the extractor took the point
 -- while the event was dispatched. A move on the dot, inside the arena, is
 -- a point in the ARENA's box, the element whose handler runs, not the
--- dot's. A primary pointer's down prevents its default, so the browser
--- sends no compatibility mouse events; a second finger's does not. Two
+-- dot's. A primary pointer's down prevents its default, and the step logs
+-- that; a second finger's does not. (A browser then sends no compatibility
+-- mouse events for the pointer; a synthetic event never makes them.) Two
 -- touches keep their ids from down to up or cancel, and a touch that
 -- leaves the arena still moves in it, at a negative point. `#zoom`
 -- changes the move handler, which the view writes in place: the next
