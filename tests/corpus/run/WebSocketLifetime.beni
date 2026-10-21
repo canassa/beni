@@ -17,6 +17,7 @@ import WebSocket exposing (Socket)
 type alias Gates =
     late : Deferred ⊤
     closed : Deferred ⊤
+    ended : Deferred ⊤
 
 
 plain : Gates, Request → Response
@@ -34,39 +35,47 @@ upgrade : Gates, Request → Upgrade
 upgrade gates request =
     case request.path of
         "/protocol" →
-            Server.acceptWith { protocol = Just "v9", maxMessage = 100 } (session "protocol" _)
+            Server.acceptWith
+                { protocol = Just "v9", maxMessage = 100 }
+                (session gates "protocol" _)
 
         "/newline" →
             Server.acceptWith
                 { protocol = Just "v1\nbeni: forged", maxMessage = 100 }
-                (session "newline" _)
+                (session gates "newline" _)
 
         "/invalid" →
             Server.refuse { status = 1000, headers = [], body = "" }
 
         "/late" →
             Deferred.wait gates.late
-            Server.accept (session "late" _)
+            Server.accept (session gates "late" _)
 
         _ →
-            Server.accept (session request.path _)
+            Server.accept (session gates request.path _)
 
 
-session : String, Socket → ⊤
-session name socket =
+-- `/b`'s end opens the gate of the late upgrade, so the two sessions that
+-- `Server.close` ends print their lines in one order.
+session : Gates, String, Socket → ⊤
+session gates name socket =
     case WebSocket.read socket of
         Ok text →
             _ = WebSocket.write socket "${name} ${text}"
-            session name socket
+            session gates name socket
 
         Err close →
             _ = Debug.log "${name} ended" close
-            ⊤
+            if name == "/b" then
+                _ = Deferred.complete gates.ended ⊤
+                ⊤
+            else
+                ⊤
 
 
 main : Program
 main = Io.run λ⊤ →
-    gates = { late = Deferred.make ⊤, closed = Deferred.make ⊤ }
+    gates = { late = Deferred.make ⊤, closed = Deferred.make ⊤, ended = Deferred.make ⊤ }
     case
         Server.listenWith { host = "127.0.0.1", port = 0 }
             { request = plain gates _, upgrade = upgrade gates _ }
@@ -77,6 +86,7 @@ main = Io.run λ⊤ →
         Ok server →
             Deferred.wait gates.closed
             Server.close server
+            Deferred.wait gates.ended
             _ = Deferred.complete gates.late ⊤
             Server.wait server
             Node.print "the server has closed"
