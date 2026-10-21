@@ -3456,63 +3456,80 @@ pub const Lowerer = struct {
     }
 
     fn branchesReach(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+        return l.branchesReachProjected(inst, probe, &.{}, &.{});
+    }
+
+    fn reaches(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+        return l.reachesProjected(inst, probe, &.{}, &.{});
+    }
+
+    fn anyReaches(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe) bool {
+        return l.anyReachesProjected(insts, probe, &.{}, &.{});
+    }
+
+    // The same checked-effect walk over the source projection actually
+    // emitted by a branch override; empty exclusions preserve whole-expression
+    // queries. Omitted arm bodies and skipped definitions evaluate nothing.
+    fn branchesReachProjected(l: *Lowerer, inst: Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
         for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index)) |branch| {
             if (l.bir.instTag(branch) != .branch) continue;
-            if (l.reaches(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), probe)) return true;
+            if (l.reachesProjected(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), probe, omitted, skipped)) return true;
         }
         return false;
     }
 
     /// Whether evaluating `inst` reaches a call `probe` hits, outside any
     /// function it makes.
-    fn reaches(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+    fn reachesProjected(l: *Lowerer, inst: Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
+        if (std.mem.indexOfScalar(Inst.Index, omitted, inst) != null) return false;
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
             .call => {
                 if (l.callHits(inst, probe)) return true;
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
-                return l.anyReaches(l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), probe);
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
+                return l.anyReachesProjected(l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), probe, omitted, skipped);
             },
             .method_call => {
                 if (l.callHits(inst, probe)) return true;
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
                 const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
-                return l.anyReaches(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe);
+                return l.anyReachesProjected(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe, omitted, skipped);
             },
             .type_dispatch => {
                 if (l.callHits(inst, probe)) return true;
                 const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
-                return l.anyReaches(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe);
+                return l.anyReachesProjected(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe, omitted, skipped);
             },
             .let => {
                 for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                    if (std.mem.indexOfScalar(Inst.Index, skipped, def) != null) continue;
                     const dd = l.bir.instData(def);
                     switch (l.bir.instTag(def)) {
                         .let_def => {
                             const payload = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
                             if (payload.params_end != payload.params_start) continue;
-                            if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true;
+                            if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true;
                         },
-                        .let_pattern => if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true,
-                        .let_stmt => if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true,
+                        .let_pattern => if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true,
+                        .let_stmt => if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true,
                         else => {},
                     }
                 }
-                return l.reaches(@fromBackingInt(@intCast(d.rhs)), probe);
+                return l.reachesProjected(@fromBackingInt(@intCast(d.rhs)), probe, omitted, skipped);
             },
             .case => {
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
-                return l.branchesReach(inst, probe);
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
+                return l.branchesReachProjected(inst, probe, omitted, skipped);
             },
-            .@"try", .field_access, .tuple_index => return l.reaches(@fromBackingInt(@intCast(d.lhs)), probe),
-            .tuple, .list, .interp => return l.anyReaches(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe),
+            .@"try", .field_access, .tuple_index => return l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped),
+            .tuple, .list, .interp => return l.anyReachesProjected(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe, omitted, skipped),
             .record => {
-                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
+                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reachesProjected(f.value, probe, omitted, skipped)) return true;
                 return false;
             },
             .record_update => {
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (l.reachesProjected(f.value, probe, omitted, skipped)) return true;
                 return false;
             },
             // Markup is not walked. For a suspension the answer stays no, as
@@ -3524,8 +3541,8 @@ pub const Lowerer = struct {
         }
     }
 
-    fn anyReaches(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe) bool {
-        for (insts) |inst| if (l.reaches(inst, probe)) return true;
+    fn anyReachesProjected(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
+        for (insts) |inst| if (l.reachesProjected(inst, probe, omitted, skipped)) return true;
         return false;
     }
 
@@ -14926,7 +14943,13 @@ pub const Lowerer = struct {
             try stmts.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @backingInt(record)));
         } else if (inner.items.len == 0) {
             try l.constDecl(&stmts, n, result, p);
-            if (l.mayHaveEffect(ov.arms.value)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
+            // Index lowering replaces each arm body with a number. Only
+            // its remaining control expression can affect this initializer.
+            const effect = if (ov.mode == .index)
+                l.reachesProjected(ov.arms.value, .effect, ov.arms.bodies, skip)
+            else
+                l.mayHaveEffect(ov.arms.value);
+            if (effect) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
         } else {
             try stmts.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(Node.OptionalIndex.none)));
             try inner.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), result.int()));
