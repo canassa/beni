@@ -1,0 +1,37 @@
+--! An enum cycle in another module's arm piece must fuse into its handler.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    season : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { season = "Sunny" }
+
+
+pub type Msg
+    = Rotate
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rotate →
+            { model
+                | season =
+                    case model.season of
+                        "Sunny" →
+                            "Cloudy"
+                        "Cloudy" →
+                            "Rainy"
+                        "Rainy" →
+                            "Windy"
+                        _ →
+                            "Sunny"
+            }
+
+
+pub view : Model → Html Msg
+view model = <section><button onClick={Rotate}>{model.season}</button></section>

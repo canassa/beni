@@ -3078,6 +3078,18 @@ nothing is a binding, and §9 item 1 still drops it in `--release` (`language.md
 right-hand side is pure, since 2026-09-30; one that may be impure is kept (§9 item 1's amendment).
 `run/CaseSingleConstructorScrutinee` and `abuse_wide_test.zig`'s development build are the tests.
 
+*Amended 2026-10-22:* in a release build, a value-position case over one
+scrutinee whose tests are only literal equalities and whose leaves each lower to
+one expression, bind nothing and share nothing is a conditional chain, even at
+three or more labels: `x===l1?v1:x===l2?v2:vDefault`. This is the narrow
+exception to the switch threshold above promised by browser-inline.md §8.8;
+there is no separate arm-count limit. The tree's edge order and default are kept.
+A scrutinee other than a name or field read is bound before the chain so it is
+evaluated once. A binding, shared leaf or statements in a leaf keeps the existing
+form, as do tail and discarded positions and every development build. See §9,
+*Compact statements*, and `emit/release/inline/EnumCycle`,
+`emit/release/inline/EnumCycleModule` and `run/EnumCycle`.
+
 ### List patterns over arrays
 
 *Amended 2026-10-15 (§4, *The representation: a plain array*):* a list is a plain array or a

@@ -1,0 +1,19 @@
+scrutinee: "Sunny"
+leaf: "Cloudy"
+scrutinee: "Cloudy"
+leaf: "Rainy"
+scrutinee: "Rainy"
+leaf: "Windy"
+scrutinee: "Windy"
+leaf: "Sunny"
+Cloudy
+Rainy
+Windy
+Sunny
+10
+20
+30
+40
+first
+last
+middle
