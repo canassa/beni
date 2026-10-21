@@ -6,13 +6,14 @@ the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or w
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
-| `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `Ssr`, `Random`, and `Html` |
-| `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `Storage`, `Random`, `Log`, `Browser.Events`, `Browser.Navigation`, and `Html` |
+| `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
+| `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Log`, `Browser.Events`, `Browser.Navigation`, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
 | `html` | none | — | the markup vocabulary the four above share |
 
-`api-<platform>.md` lists each module's public interface.
+`api-<platform>.md` lists each module's public interface. `websocket.md` tells how to use a
+WebSocket on a server and in a page.
 
 ## `node`
 
