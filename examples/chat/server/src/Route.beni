@@ -1,0 +1,16 @@
+--! A request target split into its path segments: `"/api/todos/3?x=1"` is
+--! `[ "api", "todos", "3" ]`. The query is dropped, and empty segments
+--! (a leading `/`, a doubled one, a final one) are dropped too.
+--! `Http.Server` hands a program the target as sent (`boundary.md` §9.10
+--! (c)); this is the little the server needs of it.
+
+pub segments : String → List String
+segments target =
+    path =
+        case String.split target "?" of
+            [ before, …_ ] →
+                before
+
+            [] →
+                target
+    List.filter (String.split path "/") λs → not (String.isEmpty s)

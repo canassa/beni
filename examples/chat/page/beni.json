@@ -1,0 +1,5 @@
+{
+  "name": "chat-page",
+  "build": { "platform": "browser-tea", "paths": ["src", "../shared"], "out": "out" },
+  "html": "index.html"
+}
