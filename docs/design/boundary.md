@@ -1454,10 +1454,14 @@ of its HTML integration points, none of HTML's rules apply, and an element whose
 parser would not give it where it stands is `markup_restructured`. Which namespace an element is declared
 in is the vocabulary's fact, handed to the table by the lowering.
 
-*Amended 2026-10-20* (§9.8.20 (d)): **every lowering calls a `via` extractor synchronously, in the
-listener of the element that has the handler, while the event is dispatched.** An extractor may read
-what is true only then — the pointer events' reads `currentTarget` and its box — so a lowering that
-queues an event and extracts later breaks it (issue #559).
+*Amended 2026-10-20* (§9.8.20 (d)): **every lowering calls a `via` extractor synchronously, while
+the event is dispatched; for an event that is not `delegated`, in the listener of the element that
+has the handler, so that `currentTarget` is that element.** A `delegated` event's extractor can run
+in a listener higher up — under `dom`, the document's (`backend.md` §15.3, *Events*), where
+`onInput`'s and `onChange`'s `targetValue` and `onCheck`'s `targetChecked` run — so it must not read
+`currentTarget`. An extractor may read what is true only during the dispatch — the pointer events'
+reads `currentTarget` and its box — so a lowering that queues an event and extracts later breaks it
+(issue #559).
 
 *As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
 The smallest readings, and what waits for the lowering interface:
@@ -5076,19 +5080,19 @@ handler and no function returns one. `pointer` itself is `pub` until issue #532 
 lowering finds an extractor in the vocabulary module's interface, which holds only `pub` values, and
 a non-`pub` extractor is accepted by the checker and then replaced by the raw event.
 
-**A lowering's obligation.** A lowering calls a `via` extractor **synchronously, in the listener of
-the element that has the handler, while the event is dispatched**, so that `currentTarget` is that
-element (§9.3, amended here). `dom` does: `listen`'s listener calls `fire`, which applies the
-extractor before it computes the message. `browser-inline` does on its usual path, but a send made
-while another send runs is queued with its raw event, and the extractor would run after the dispatch
-(issue #559; latent, because a host never dispatches a pointer event inside a send). **The type is
-the guarantee**, given that obligation: a `Pointer` comes only from the listener of a pointer event on its own element, so
-`localX` of every `Pointer` is a point in its handler's element, under every lowering and at any
-time after. The other readers read properties of the event, which do not change after the
-dispatch. **The second wall is `Js`**: `Js.to : Value → a` can make a value of any type, so a
-package that may import `Js` can make a `Dispatched` and call `pointer` on any event. A program
-cannot import `Js` (`js_outside_platform`, §4.2), so only a platform package can, which is the
-trust every `foreign` has (rule 6).
+**A lowering's obligation.** The pointer events are not `delegated`, so a lowering calls their
+extractor **synchronously, in the listener of the element that has the handler, while the event is
+dispatched**, and `currentTarget` is that element (§9.3, amended here). `dom` does: `listen`'s
+listener calls `fire`, which applies the extractor before it computes the message. `browser-inline`
+does on its usual path, but a send made while another send runs is queued with its raw event, and
+the extractor would run after the dispatch (issue #559; latent, because a host never dispatches a
+pointer event inside a send). **The type is the guarantee**, given that obligation: a `Pointer`
+comes only from the listener of a pointer event on its own element, so `localX` of every `Pointer`
+is a point in its handler's element, under every lowering and at any time after. The other readers
+read properties of the event, which do not change after the dispatch. **The second wall is `Js`**:
+`Js.to : Value → a` can make a value of any type, so a package that may import `Js` can make a
+`Dispatched` and call `pointer` on any event. A program cannot import `Js` (`js_outside_platform`,
+§4.2), so only a platform package can, which is the trust every `foreign` has (rule 6).
 
 The cost is one listener for each element that has a pointer handler, not one for each page: a
 `For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
