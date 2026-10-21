@@ -1,0 +1,21 @@
+-- A computed key that cannot be `"__proto__"` stays field-insensitive
+-- (`backend.md` §9, fact 3). `byName` writes `o["k"]` and `byIndex`
+-- writes `o[0]`. Neither reads `n`, so a release build drops `o.n = 3`
+-- and keeps the computed write.
+import Js
+
+
+pub byName : ⊤ → Int
+byName ⊤ =
+    o = Js.object [ ( "pad", 1 ) ]
+    Js.setAt o "k" (Js.from 2)
+    Js.set o "n" (Js.from 3)
+    Js.to (Js.get o "pad")
+
+
+pub byIndex : ⊤ → Int
+byIndex ⊤ =
+    o = Js.object [ ( "pad", 1 ) ]
+    Js.setAt o 0 (Js.from 2)
+    Js.set o "n" (Js.from 3)
+    Js.to (Js.get o "pad")

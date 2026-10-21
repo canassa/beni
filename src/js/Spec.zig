@@ -1473,7 +1473,7 @@ const Spec = struct {
     ///   through the name's load cell and field summary, and a guard's
     ///   chain starts at a name;
     /// - it is not the string `__proto__`, which as the key of a computed
-    ///   write escapes the object (`Pts.indexAssignsPrototype`).
+    ///   write escapes the object (`Pts.indexMayAssignPrototype`).
     ///
     /// A type key on the node is no reason to refuse: fact 3 reads a node's
     /// key only where it makes a site (`siteOf`, `funcSite`), and a safety
@@ -12084,12 +12084,15 @@ const Pts = struct {
         for (obj.sites) |site| try p.writeAnyOne(site, value);
     }
 
-    /// `o["__proto__"] = v` when the key is the string literal `"__proto__"`
-    /// at the write site. A key from a `let` binding stays field-insensitive
-    /// (`backend.md` §9, fact 3, #519).
-    fn indexAssignsPrototype(p: *const Pts, mi: u32, key: Index) bool {
+    /// Escapes unless the key is a non-`"__proto__"` string literal or a
+    /// numeric literal (`backend.md` §9 fact 3, #519).
+    fn indexMayAssignPrototype(p: *const Pts, mi: u32, key: Index) bool {
         const ir = p.s.mods[mi].ir;
-        return ir.tag(key) == .string and std.mem.eql(u8, ir.bytes(key), prototype_assign);
+        return switch (ir.tag(key)) {
+            .string => std.mem.eql(u8, ir.bytes(key), prototype_assign),
+            .number => false,
+            else => true,
+        };
     }
 
     // ---- The analysis --------------------------------------------------------
@@ -12712,7 +12715,7 @@ const Pts = struct {
                     .member => try p.write(vals[td.lhs], p.propId(mi, @fromBackingInt(@intCast(td.rhs))), value),
                     .index_get => {
                         const obj = vals[td.lhs];
-                        if (p.indexAssignsPrototype(mi, @fromBackingInt(@intCast(td.rhs)))) try p.escape(obj);
+                        if (p.indexMayAssignPrototype(mi, @fromBackingInt(@intCast(td.rhs)))) try p.escape(obj);
                         try p.writeAny(obj, value);
                     },
                     else => try p.escape(value),
