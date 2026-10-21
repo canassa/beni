@@ -5245,8 +5245,8 @@ determinism test passes. `zig build gates` is green. What the
 rows cost is theirs to hold: the pack grows from 3 486 231 to 5 570 755 bytes (2 081 276 of
 payload in the 51 records, plus 3 248 of row table), and the maker's run is 1 s in every
 compiler build beside the 9 s its one compile adds. The playground's wasm embeds the same pack,
-so it grows too: the reviewer's two-pack proxy is brotli q11 883 409 → 1 260 000 B
-(+376 591 B). Of the medians of `perf stat -e instructions:u`, five runs
+so it grows too: the reviewer's two-pack proxy is brotli q11 736 366 → 1 054 617 B
+(+318 251 B). Of the medians of `perf stat -e instructions:u`, five runs
 each, `acccea6a3` against the slice: `run/Dictionaries` 158.81M → 159.34M (+0.33%),
 `browser/tea/ApiItems` 531.97M → 536.51M (+0.85%) and `bench/corpus` as one `--library` build
 421.97M → 425.21M (+0.77%) — the funnel's asks, on the builds that answer them.
