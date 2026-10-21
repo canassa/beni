@@ -6334,3 +6334,253 @@ fn specCounters(levels: usize) !SpecCounters {
     if (seen != 3) return error.NoCounter;
     return counters;
 }
+
+test "the release specialiser writes every independent function called once in one count of the program" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *A function called once is written where it is
+    // called*, *As built — one count writes every independent candidate*
+    // (#576): 260 `pub` functions of another module, each called once from
+    // its own binding. Each is a candidate no write touches, so the first
+    // count writes all of them and the second finds none: one structural
+    // pass. Before, the pass wrote 256 and stopped at its cap
+    // (`spec_inline_capped` 1), and a second pass, with its analysis, wrote
+    // the rest.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const n = 260;
+    var lib: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer lib.deinit();
+    for (1..n + 1) |i| try lib.writer.print(
+        "pub f{d} : Int → Int\nf{d} x =\n    y = x * {d}\n    z = y + x\n    case z of\n        0 →\n            1\n\n        _ →\n            z * y + {d}\n\n\n",
+        .{ i, i, i, i },
+    );
+    try w.write("Lib.beni", lib.written());
+    var main: std.Io.Writer.Allocating = .init(testing.allocator);
+    defer main.deinit();
+    try main.writer.writeAll("import Lib\nimport Node exposing (Program)\n\n\nmain : Program\nmain =\n    Node.printLines (List.map [ 1, 2, 3 ] λn → String.fromInt (total n))\n\n\ntotal : Int → Int\ntotal n =\n");
+    for (1..n + 1) |i| try main.writer.print("    a{d} = Lib.f{d} n\n", .{ i, i });
+    try main.writer.writeAll("    a1");
+    for (2..n + 1) |i| try main.writer.print(" + a{d}", .{i});
+    try main.writer.writeAll("\n");
+    try w.write("Main.beni", main.written());
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const c = try inlineCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u64, n + 1), c.spec_inlined); // and `total`, called once
+    try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
+    try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
+    try testing.expectEqual(@as(u64, 1), c.spec_passes);
+    try testing.expectEqual(@as(u64, 2), c.spec_analyses);
+    // The pass's two counts, and the one count of the pass that found
+    // nothing to do.
+    try testing.expectEqual(@as(u64, 3), c.spec_inline_scans);
+}
+
+test "the release specialiser leaves a function whose call a write just copied for the next pass" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *As built — one count writes every independent
+    // candidate* (#576): `k` calls `g` once and `g` calls `Zed.h` once, so
+    // both `g` and `h` are called from inside another candidate and are
+    // taken first, in order of whole-program id — `g` before `h`, whose
+    // module comes later. Writing `g` into `k` copies `g`'s body, `h`'s
+    // call with it: `h` is now called twice (from the copy, and from
+    // `g`'s declaration, which `prune` drops only after the pass), so the
+    // count leaves it (`spec_inline_waits`) and the next pass writes it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Zed.beni",
+        \\pub h : Int → Int
+        \\h x =
+        \\    c = x * 5
+        \\    case c of
+        \\        0 →
+        \\            3
+        \\
+        \\        _ →
+        \\            c + x
+        \\
+    );
+    try w.write("Lib.beni",
+        \\import Zed
+        \\
+        \\
+        \\pub k : Int → Int
+        \\k x =
+        \\    a = g x
+        \\    case a of
+        \\        0 →
+        \\            1
+        \\
+        \\        _ →
+        \\            a * 2
+        \\
+        \\
+        \\pub g : Int → Int
+        \\g x =
+        \\    b = Zed.h x
+        \\    case b of
+        \\        0 →
+        \\            2
+        \\
+        \\        _ →
+        \\            b * 3
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Lib
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.map [ 1, 2, 3 ] λn → String.fromInt (twice n))
+        \\
+        \\
+        \\twice : Int → Int
+        \\twice n =
+        \\    a = Lib.k n
+        \\    a * 2
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const c = try inlineCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u64, 1), c.spec_inline_waits);
+    try testing.expectEqual(@as(u64, 2), c.spec_passes);
+    // `g`, `k`, `twice` and, a pass later, `h`: every one of them.
+    try testing.expectEqual(@as(u64, 4), c.spec_inlined);
+}
+
+test "the release specialiser does not ask a declined call again while neither module changed" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *As built — one count writes every independent
+    // candidate* (#576): `R.r` is called once, in an expression, and its
+    // body is statements, so `inlineAt` declines it; `Lib.f`, written into
+    // `Main` in the same count, makes the pass count the program again.
+    // Neither `R` nor anything else `r`'s refusal read changed, so the
+    // second count does not ask it again.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("R.beni",
+        \\pub r : Int → Int
+        \\r x =
+        \\    y = x * 3
+        \\    case y of
+        \\        0 →
+        \\            1
+        \\
+        \\        _ →
+        \\            y * y
+        \\
+        \\
+        \\pub useR : Int → Int
+        \\useR x =
+        \\    1 + r x
+        \\
+    );
+    try w.write("Lib.beni",
+        \\pub f : Int → Int
+        \\f x =
+        \\    y = x * 5
+        \\    case y of
+        \\        0 →
+        \\            3
+        \\
+        \\        _ →
+        \\            y + x
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Lib
+        \\import Node exposing (Program)
+        \\import R
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines (List.map [ 1, 2, 3 ] λn → String.fromInt (total n))
+        \\
+        \\
+        \\total : Int → Int
+        \\total n =
+        \\    a = Lib.f n
+        \\    b = R.useR n
+        \\    c = R.useR (n + 1)
+        \\    a + b + c
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const c = try inlineCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(c.spec_inlined >= 1);
+    try testing.expect(c.spec_inline_scans >= 2);
+    try testing.expect(c.spec_inline_refusals_kept >= 1);
+}
+
+/// Slice 5's counters and the structural loop's, from a `--release`
+/// build of the project in `w`.
+const InlineCounters = struct {
+    spec_passes: u64 = 0,
+    spec_analyses: u64 = 0,
+    spec_inline_capped: u64 = 0,
+    spec_inline_scans: u64 = 0,
+    spec_inlined: u64 = 0,
+    spec_inline_waits: u64 = 0,
+    spec_inline_refusals_kept: u64 = 0,
+};
+
+fn inlineCounters(w: *World) !InlineCounters {
+    const r = try w.runWith(&.{ "build", "--platform=node", "--out=out", "--no-cache", "--release", "--self-profile=trace.json", "." }, .{ .raw_diagnostics = true });
+    try expectBuilt(r);
+    const Event = struct {
+        ph: []const u8,
+        args: struct {
+            spec_passes: ?u64 = null,
+            spec_analyses: ?u64 = null,
+            spec_inline_capped: ?u64 = null,
+            spec_inline_scans: ?u64 = null,
+            spec_inlined: ?u64 = null,
+            spec_inline_waits: ?u64 = null,
+            spec_inline_refusals_kept: ?u64 = null,
+        } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var counters: InlineCounters = .{};
+    var seen: u32 = 0;
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        inline for (@typeInfo(InlineCounters).@"struct".field_names) |name| {
+            if (@field(e.args, name)) |v| {
+                @field(counters, name) = v;
+                seen += 1;
+            }
+        }
+    }
+    if (seen != @typeInfo(InlineCounters).@"struct".field_names.len) return error.NoCounter;
+    return counters;
+}
