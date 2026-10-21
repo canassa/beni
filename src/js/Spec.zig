@@ -8904,6 +8904,12 @@ const Pts = struct {
     linking: bool = false,
     work: std.ArrayList(u32) = .empty,
     summaries: std.ArrayList(Summary) = .empty,
+    /// The consumers shared fields fed (`Prop.outs`), and an object
+    /// literal's own keys, sorted, while a spread in it is evaluated
+    /// (`spreadSummary`). Of one fixpoint, in `tmp`.
+    field_outs: std.ArrayList(FieldOut) = .empty,
+    sharers: std.ArrayList(Sharer) = .empty,
+    lit_keys: std.ArrayList(u32) = .empty,
     /// The site-set table (`backend.md` §9, *The combined solver — Cells*):
     /// every set a var holds, and every union and difference `Pts` makes, is
     /// one entry of it, content-addressed, so vars that hold the same sites
@@ -9126,6 +9132,12 @@ const Pts = struct {
         /// summary's (`newSummary`, `addSumProp`), saturating. Only vars of
         /// depth 0 and 1 link summaries (`linksAcross`, #562).
         depth: u8 = 0,
+        /// A summary var's: the var the untouched fields of spread targets
+        /// take where this one is the root of the copies their summary's
+        /// var is (`shareField`); and those fields, listed while this var
+        /// is a copy of one other var (`Sharer`, `unshare`).
+        shared: VarId = none,
+        sharers: u32 = none,
     };
 
     const Pending = struct { v: VarId, val: Val, folded: bool };
@@ -9232,6 +9244,14 @@ const Pts = struct {
     };
 
     const SumProp = struct { id: u32, vals: VarId };
+    /// A consumer a property without a var of its own fed on behalf of one
+    /// site (`copyField`): the var it copied into, and the next of the site
+    /// property's list.
+    const FieldOut = struct { to: VarId, next: u32 };
+    /// A shared field (`Prop.from`) whose summary var is a copy of another,
+    /// listed on each var of the chain of copies between the two
+    /// (`VSet.sharers`).
+    const Sharer = struct { site: u32, id: u32, next: u32 };
     /// A property read through a summary: some site it holds lacks the
     /// key, or has it with no initialiser, so the read may be `undefined`
     /// (`lacks`); and the load cell of the summary's var and this property,
@@ -9268,7 +9288,25 @@ const Pts = struct {
     /// `init`: the object literal has the key, so the property exists from
     /// the moment the object does (slice 4); a read of one it lacks may be
     /// `undefined`.
-    const Prop = struct { id: u32, vals: VarId, read: bool = false, written: bool = false, init: bool = false };
+    ///
+    /// A spread target's field that only the spread writes is a copy of the
+    /// source summary's var of the property and nothing else (#564), so it
+    /// has no var of its own: `vals` is the summary property's `shared` var,
+    /// which every such field of every spread of that summary holds, and
+    /// `from` is the summary's var it is fed from. What the field fed on the
+    /// site's behalf — a summary that folded the site, a load cell that read
+    /// it — is listed from `outs` (`copyField`), so that when something else
+    /// writes the field it gets its own var, fed by `from` and feeding each of
+    /// those (`ownField`). `from` is `none` for a field with a var of its own.
+    const Prop = struct {
+        id: u32,
+        vals: VarId,
+        read: bool = false,
+        written: bool = false,
+        init: bool = false,
+        from: VarId = none,
+        outs: u32 = none,
+    };
 
     const Site = struct {
         kind: SiteKind,
@@ -9805,6 +9843,8 @@ const Pts = struct {
         const set = p.vars.items[from];
         try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, links);
         try p.drain();
+        // A chain of copies a shared field ran through is one no longer.
+        if (p.vars.items[to].preds == 2 and p.vars.items[to].sharers != none) try p.unshare(to);
     }
 
     /// How many edges of a var's list `hasEdge` walks before it asks
@@ -9995,7 +10035,7 @@ const Pts = struct {
         var k: usize = 0;
         while (k < p.sites.items[site].props.items.len) : (k += 1) {
             const pr = p.sites.items[site].props.items[k];
-            if (p.demands(sum, pr.id)) try p.copy(pr.vals, try p.summaryProp(sum, pr.id));
+            if (p.demands(sum, pr.id)) try p.copyField(site, k, pr.id, try p.summaryProp(sum, pr.id));
         }
         try p.copy(p.sites.items[site].any, p.summaries.items[sum].any);
         if (p.sites.items[site].any_written) try p.setAnyWritten(sum);
@@ -10038,7 +10078,7 @@ const Pts = struct {
                 var j: usize = 0;
                 while (j < p.sites.items[site].props.items.len) : (j += 1) {
                     const pr = p.sites.items[site].props.items[j];
-                    try p.copy(pr.vals, try p.summaryProp(s, pr.id));
+                    try p.copyField(site, j, pr.id, try p.summaryProp(s, pr.id));
                 }
             }
             k = 0;
@@ -10112,17 +10152,17 @@ const Pts = struct {
         if (st.escaped) {
             // What it held is joined as a whole read joins it; the read is
             // anything all the same.
-            if (fed) if (p.findProp(site, id)) |pr| try p.copy(pr.vals, try p.summaryProp(sum, id));
+            if (fed) if (p.findProp(site, id) != null) try p.copyField(site, none, id, try p.summaryProp(sum, id));
             return;
         }
-        const pr = try p.prop(site, id);
+        const at = try p.propAt(site, id);
+        const pr = &p.sites.items[site].props.items[at];
         if (!pr.read) {
             pr.read = true;
             p.changed = true;
         }
-        const vals = pr.vals;
         const has_init = pr.init;
-        if (fed) try p.copy(vals, try p.summaryProp(sum, id));
+        if (fed) try p.copyField(site, at, id, try p.summaryProp(sum, id));
         if (!has_init) try p.setLacks(sum, id);
     }
 
@@ -10555,16 +10595,21 @@ const Pts = struct {
         return site;
     }
 
-    /// Property `id` of site `site`, made when it is new. The properties are
+    /// Property `id` of site `site`, made when it is new, with no var: a
+    /// property nothing has written holds nothing, and gets a var when
+    /// something does (`ownField`, `spreadSummary`). The properties are
     /// sorted by id: a wide record is found by binary search, not a scan.
     fn prop(p: *Pts, site: u32, id: u32) Allocator.Error!*Prop {
+        const at = try p.propAt(site, id);
+        return &p.sites.items[site].props.items[at];
+    }
+
+    /// `prop`, by index in the site's `props`.
+    fn propAt(p: *Pts, site: u32, id: u32) Allocator.Error!usize {
         const at = std.sort.lowerBound(Prop, p.sites.items[site].props.items, id, orderProp);
-        if (at < p.sites.items[site].props.items.len and p.sites.items[site].props.items[at].id == id) return &p.sites.items[site].props.items[at];
-        const v = try p.newVar();
-        p.vars.items[v].site_var = true;
-        if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
+        if (at < p.sites.items[site].props.items.len and p.sites.items[site].props.items[at].id == id) return at;
         const st = &p.sites.items[site];
-        try st.props.insert(p.arena(), at, .{ .id = id, .vals = v });
+        try st.props.insert(p.arena(), at, .{ .id = id, .vals = none });
         // A new property: what read the site whole reads it too.
         p.wake(st.prop_deps);
         st.prop_deps = none;
@@ -10572,10 +10617,9 @@ const Pts = struct {
         // Into the summary of every var that holds the site and is read
         // for it (`demands`).
         for (p.sites.items[site].summaries.items) |sum| if (!p.summaries.items[sum].dead and p.demands(sum, id)) {
-            try p.copy(v, try p.summaryProp(sum, id));
+            try p.copyField(site, at, id, try p.summaryProp(sum, id));
         };
-        if (std.debug.runtime_safety) std.debug.assert(p.sites.items[site].props.items[at].id == id);
-        return &p.sites.items[site].props.items[at];
+        return p.propIndex(site, at, id);
     }
 
     fn findProp(p: *const Pts, site: u32, id: u32) ?*const Prop {
@@ -10586,6 +10630,168 @@ const Pts = struct {
 
     fn orderProp(id: u32, pr: Prop) std.math.Order {
         return std.math.order(id, pr.id);
+    }
+
+    /// The index of property `id`, which site `site` has, in its `props`:
+    /// `hint` when it is still there, which a walk over the properties
+    /// knows, unless something it called since gave the site another.
+    inline fn propIndex(p: *const Pts, site: u32, hint: usize, id: u32) usize {
+        const props = p.sites.items[site].props.items;
+        if (hint < props.len and props[hint].id == id) return hint;
+        const at = std.sort.lowerBound(Prop, props, id, orderProp);
+        if (std.debug.runtime_safety) std.debug.assert(props[at].id == id);
+        return at;
+    }
+
+    /// What a property's var holds now, read by the constraint being
+    /// evaluated: nothing for one no var holds yet (`Prop`), whose readers
+    /// are woken through the site when it gets one (`wakeReaders`).
+    inline fn fieldView(p: *Pts, v: VarId) Allocator.Error!Val {
+        return if (v == none) .{} else p.view(v);
+    }
+
+    /// The constraints that read a property of site `site` (`seeSite`,
+    /// `seeProps`) read it again: its var changed (`Prop`). No value
+    /// changed, so nothing else is.
+    fn wakeReaders(p: *Pts, site: u32) void {
+        const st = &p.sites.items[site];
+        p.wake(st.deps);
+        st.deps = none;
+        st.seen = 0;
+        p.wake(st.prop_deps);
+        st.prop_deps = none;
+        st.prop_seen = 0;
+    }
+
+    /// Property `id` of site `site`, which exists, copied into var `to`: a
+    /// summary that folds the site, a load cell that reads it. A property
+    /// without a var of its own (`Prop`) lists `to`, which the var it gets
+    /// feeds then (`ownField`, `spreadSummary`); one with none yet copies
+    /// nothing now.
+    fn copyField(p: *Pts, site: u32, hint: usize, id: u32, to: VarId) Allocator.Error!void {
+        const pr = &p.sites.items[site].props.items[p.propIndex(site, hint, id)];
+        const from = pr.vals;
+        if (from == none or pr.from != none) {
+            const out: u32 = @intCast(p.field_outs.items.len);
+            try p.field_outs.append(p.tmp.allocator(), .{ .to = to, .next = pr.outs });
+            pr.outs = out;
+        }
+        if (from != none) try p.copy(from, to);
+    }
+
+    /// The var of property `id` of site `site`, which exists, for a write
+    /// other than a spread's that shares it (`Prop`): its own, made now when
+    /// the property has none. It is fed by the summary's var the property
+    /// shared, if it shared one, and feeds what the property fed on the
+    /// site's behalf (`Prop.outs`), so it holds what the property held, and
+    /// the constraints that read the property through the site read it
+    /// again, from the new var (#564).
+    fn ownField(p: *Pts, site: u32, hint: usize, id: u32) Allocator.Error!VarId {
+        const at = p.propIndex(site, hint, id);
+        const pr = &p.sites.items[site].props.items[at];
+        if (pr.vals != none and pr.from == none) return pr.vals;
+        const from = pr.from;
+        const outs = pr.outs;
+        const v = try p.newVar();
+        p.vars.items[v].site_var = true;
+        if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
+        const own = &p.sites.items[site].props.items[at];
+        own.vals = v;
+        own.from = none;
+        own.outs = none;
+        p.wakeReaders(site);
+        if (from != none) try p.copy(from, v);
+        var o = outs;
+        while (o != none) : (o = p.field_outs.items[o].next) try p.copy(v, p.field_outs.items[o].to);
+        return v;
+    }
+
+    /// `{...x}` of a name: what spreading summary `sum` into object site
+    /// `site` writes, property by property, `keys` the literal's own keys
+    /// (sorted). A property the literal does not write, and that nothing
+    /// else has written, is shared (`Prop.from`, `shareField`) in place of
+    /// a var of its own fed by an edge per site (#564, copy equivalence: a
+    /// var whose one source is a copy edge holds what the source holds).
+    fn spreadSummary(p: *Pts, site: u32, sum: u32, keys: []const u32) Allocator.Error!void {
+        var k: usize = 0;
+        while (!p.summaries.items[sum].dead and k < p.summaries.items[sum].props.items.len) : (k += 1) {
+            const sp = p.summaries.items[sum].props.items[k];
+            const at = try p.propAt(site, sp.id);
+            const pr = &p.sites.items[site].props.items[at];
+            if (!pr.written) {
+                pr.written = true;
+                p.changed = true;
+            }
+            // Shared already, from this very var: nothing more to copy.
+            if (pr.from == sp.vals) continue;
+            if (pr.vals == none and std.sort.binarySearch(u32, keys, sp.id, orderU32) == null) {
+                try p.shareField(site, at, sp.id, sp.vals);
+                continue;
+            }
+            try p.copy(sp.vals, try p.ownField(site, at, sp.id));
+        }
+    }
+
+    /// How many copies `shareField` follows back from a summary's var.
+    const max_share_chain = 16;
+
+    /// Property `id` of site `site`, which exists and has no var, written by
+    /// a spread from summary var `x` alone, takes the var every such field
+    /// shares (`VSet.shared`). `x` is one of the summary's vars, which a copy
+    /// edge feeds from another summary's var of the property when the
+    /// summary is linked to that one's (`linkSummaries`); while that edge is
+    /// its one source, it holds what that var holds. So the field shares
+    /// the var of the root of that chain of copies — every record update
+    /// whose spread operand is a copy of one record (`browser-inline`'s
+    /// `const $before = $model` in each handler) shares one var per field,
+    /// fed by one edge, and a summary that folds any number of them takes
+    /// one edge from it. The field is listed on each var of the chain, and
+    /// gets its own var when one of them gains a second source (`unshare`)
+    /// or something else writes it (`ownField`).
+    fn shareField(p: *Pts, site: u32, hint: usize, id: u32, x: VarId) Allocator.Error!void {
+        var root = x;
+        var steps: u32 = 0;
+        while (steps < max_share_chain) : (steps += 1) {
+            const vr = p.vars.items[root];
+            if (vr.preds != 1) break;
+            const from = p.edges.items[vr.pred].from;
+            if (p.vars.items[from].depth == 0 or from == x) break;
+            root = from;
+        }
+        var z = x;
+        while (z != root) : (z = p.edges.items[p.vars.items[z].pred].from) {
+            const at: u32 = @intCast(p.sharers.items.len);
+            try p.sharers.append(p.tmp.allocator(), .{ .site = site, .id = id, .next = p.vars.items[z].sharers });
+            p.vars.items[z].sharers = at;
+        }
+        const fresh = p.vars.items[root].shared == none;
+        if (fresh) {
+            const v = try p.newVar();
+            p.vars.items[v].site_var = true;
+            if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
+            p.vars.items[root].shared = v;
+        }
+        const shared = p.vars.items[root].shared;
+        const pr = &p.sites.items[site].props.items[p.propIndex(site, hint, id)];
+        pr.vals = shared;
+        pr.from = x;
+        const outs = pr.outs;
+        p.wakeReaders(site);
+        if (fresh) try p.copy(root, shared);
+        var o = outs;
+        while (o != none) : (o = p.field_outs.items[o].next) try p.copy(shared, p.field_outs.items[o].to);
+    }
+
+    /// Var `z`, a summary's var a chain of copies ran through, has a second
+    /// source: each field shared through it (`shareField`) that is still
+    /// shared gets its own var, fed by the summary var it was spread from.
+    fn unshare(p: *Pts, z: VarId) Allocator.Error!void {
+        var s = p.vars.items[z].sharers;
+        p.vars.items[z].sharers = none;
+        while (s != none) : (s = p.sharers.items[s].next) {
+            const sh = p.sharers.items[s];
+            if (p.findProp(sh.site, sh.id).?.from != none) _ = try p.ownField(sh.site, none, sh.id);
+        }
     }
 
     // ---- Reads and writes ----------------------------------------------------
@@ -10612,10 +10818,10 @@ const Pts = struct {
                     p.changed = true;
                 }
                 if (!pr.init) out.undef = true;
-                out = try p.unionOf(out, try p.view(pr.vals));
+                out = try p.unionOf(out, try p.fieldView(pr.vals));
             } else if (p.findProp(site, id)) |pr| {
                 if (!pr.init) out.undef = true;
-                out = try p.unionOf(out, try p.view(pr.vals));
+                out = try p.unionOf(out, try p.fieldView(pr.vals));
             } else out.undef = true;
             out = try p.unionOf(out, try p.view(p.sites.items[site].any));
         }
@@ -10679,13 +10885,14 @@ const Pts = struct {
                 continue;
             }
             try p.sites.items[site].loads.append(p.tmp.allocator(), li);
-            const pr = try p.prop(site, id);
+            const at = try p.propAt(site, id);
+            const pr = &p.sites.items[site].props.items[at];
             if (!pr.read) {
                 pr.read = true;
                 p.changed = true;
             }
             if (!pr.init) try p.join(out, Val.undef_val);
-            try p.copy(pr.vals, out);
+            try p.copyField(site, at, id, out);
             try p.copy(p.sites.items[site].any, out);
         }
         return p.view(out);
@@ -10715,7 +10922,7 @@ const Pts = struct {
                 st.all_read = true;
                 p.changed = true;
             }
-            for (p.sites.items[site].props.items) |pr| out = try p.unionOf(out, try p.view(pr.vals));
+            for (p.sites.items[site].props.items) |pr| out = try p.unionOf(out, try p.fieldView(pr.vals));
             out = try p.unionOf(out, try p.view(p.sites.items[site].any));
         }
         return out;
@@ -10766,12 +10973,13 @@ const Pts = struct {
                 if (id == none) try p.writeAnyOne(site, value);
                 continue;
             }
-            const pr = try p.prop(site, id);
+            const at = try p.propAt(site, id);
+            const pr = &p.sites.items[site].props.items[at];
             if (!pr.written) {
                 pr.written = true;
                 p.changed = true;
             }
-            try p.join(pr.vals, value);
+            try p.join(try p.ownField(site, at, id), value);
         }
     }
 
@@ -10929,6 +11137,12 @@ const Pts = struct {
                 );
                 return c.sameSites(va.sites, vb.sites);
             }
+            /// A property no var holds yet (`Prop`) holds nothing.
+            fn sameField(c: @This(), a: VarId, b: VarId) bool {
+                if (a != none and b != none) return c.sameVar(a, b);
+                const v = if (a != none) c.x.vars.items[a] else if (b != none) c.y.vars.items[b] else return true;
+                return !v.top and !v.prim and !v.nul and !v.undef and v.sites.len == 0;
+            }
             fn sameSet(a: []const u32, b: []const u32) bool {
                 if (a.len != b.len) return false;
                 for (a) |v| if (std.mem.indexOfScalar(u32, b, v) == null) return false;
@@ -10988,7 +11202,7 @@ const Pts = struct {
                 // order and after in another.
                 const written_differs = pa.written != pb.written and !a.any_written;
                 if (pa.read != pb.read or written_differs or pa.init != pb.init) Check.fail("site prop flags", i);
-                if (!c.sameVar(pa.vals, pb.vals)) Check.fail("site prop value", i);
+                if (!c.sameField(pa.vals, pb.vals)) Check.fail("site prop value", i);
             }
         }
         for (p.vals, ref.vals, 0..) |a, b, mi| {
@@ -11056,6 +11270,9 @@ const Pts = struct {
         p.linking = false;
         p.work = .empty;
         p.summaries = .empty;
+        p.field_outs = .empty;
+        p.sharers = .empty;
+        p.lit_keys = .empty;
         p.pending = .empty;
         p.draining = false;
         // A fresh table, not the old one cleared: a safety build's
@@ -11374,7 +11591,7 @@ const Pts = struct {
             // wakes them: setting it here alone left a constraint evaluated earlier
             // in the sweep the site escaped in never to see it.
             try p.markAnyWritten(@intCast(i));
-            for (p.sites.items[i].props.items) |pr| try p.escape(try p.view(pr.vals));
+            for (p.sites.items[i].props.items) |pr| try p.escape(try p.fieldView(pr.vals));
             try p.escape(try p.view(p.sites.items[i].any));
             if (p.sites.items[i].kind == .func) {
                 for (p.sites.items[i].params) |v| try p.makeTop(v);
@@ -11804,7 +12021,8 @@ const Pts = struct {
                     const cd = ir.data(child);
                     switch (ir.tag(child)) {
                         .property => {
-                            const pr = try p.prop(site, p.propId(mi, @fromBackingInt(@intCast(cd.lhs))));
+                            const at = try p.propAt(site, p.propId(mi, @fromBackingInt(@intCast(cd.lhs))));
+                            const pr = &p.sites.items[site].props.items[at];
                             if (!pr.written) {
                                 pr.written = true;
                                 p.changed = true;
@@ -11814,7 +12032,7 @@ const Pts = struct {
                             // the site reaches any var, so no read of it
                             // ever saw it missing.
                             pr.init = true;
-                            try p.join(pr.vals, vals[cd.rhs]);
+                            try p.join(try p.ownField(site, at, pr.id), vals[cd.rhs]);
                             // A method in the literal reads and writes the
                             // object through `this` (`holdsMethod`).
                             if (p.holdsMethod(vals[cd.rhs])) {
@@ -11843,16 +12061,14 @@ const Pts = struct {
                                 try p.markWhole(sum);
                                 try p.seeSummary(sum);
                                 if (p.summaries.items[sum].unknown) try p.writeAnyOne(site, Val.top_val);
-                                var k: usize = 0;
-                                while (!p.summaries.items[sum].dead and k < p.summaries.items[sum].props.items.len) : (k += 1) {
-                                    const sp = p.summaries.items[sum].props.items[k];
-                                    const pr = try p.prop(site, sp.id);
-                                    if (!pr.written) {
-                                        pr.written = true;
-                                        p.changed = true;
-                                    }
-                                    try p.copy(sp.vals, pr.vals);
-                                }
+                                // The literal's own keys, which a field
+                                // the spread writes does not share.
+                                p.lit_keys.clearRetainingCapacity();
+                                for (ir.extraSlice(JsIr.inlineRange(d), Index)) |key| if (ir.tag(key) == .property) {
+                                    try p.lit_keys.append(p.tmp.allocator(), p.propId(mi, @fromBackingInt(@intCast(ir.data(key).lhs))));
+                                };
+                                std.mem.sortUnstable(u32, p.lit_keys.items, {}, std.sort.asc(u32));
+                                try p.spreadSummary(site, sum, p.lit_keys.items);
                                 if (p.summaries.items[sum].any_written) {
                                     try p.seeSite(site);
                                     try p.markAnyWritten(site);
@@ -11876,12 +12092,14 @@ const Pts = struct {
                                     var k: usize = 0;
                                     while (k < p.sites.items[other].props.items.len) : (k += 1) {
                                         const src = p.sites.items[other].props.items[k];
-                                        const pr = try p.prop(site, src.id);
+                                        const at = try p.propAt(site, src.id);
+                                        const pr = &p.sites.items[site].props.items[at];
                                         if (!pr.written) {
                                             pr.written = true;
                                             p.changed = true;
                                         }
-                                        try p.join(pr.vals, try p.view(src.vals));
+                                        const own = try p.ownField(site, at, src.id);
+                                        try p.join(own, try p.fieldView(src.vals));
                                     }
                                     if (p.sites.items[other].any_written) try p.writeAnyOne(site, try p.view(p.sites.items[other].any));
                                 }
@@ -11893,8 +12111,7 @@ const Pts = struct {
             },
             .array => blk: {
                 const site = try p.siteOf(mi, node, .array);
-                const pr = try p.prop(site, elem_prop);
-                const pv = pr.vals;
+                const pv = try p.ownField(site, try p.propAt(site, elem_prop), elem_prop);
                 for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| try p.join(pv, vals[child.int()]);
                 break :blk .{ .sites = p.ones[site..][0..1] };
             },
@@ -13558,8 +13775,8 @@ test "a field summary composes along a copy edge" {
     var i: u32 = 0;
     while (i < 3) : (i += 1) {
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
-        try p.addSite((try p.prop(i, 1)).vals, 100 + i);
-        try p.addSite((try p.prop(i, 2)).vals, 200 + i);
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.addSite(try fieldVar(p, i, 2), 200 + i);
     }
     const u = try p.newVar();
     const v = try p.newVar();
@@ -13580,7 +13797,7 @@ test "a field summary composes along a copy edge" {
     // held site gains later.
     try p.addSite(u, 2);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(prop1.vals)).sites);
-    try p.addSite((try p.prop(1, 3)).vals, 300);
+    try p.addSite(try fieldVar(p, 1, 3), 300);
     const prop3 = p.summaries.items[sum_v].props.items[2];
     try testing.expectEqual(@as(u32, 3), prop3.id);
     try testing.expectEqualSlices(u32, &.{300}, (try p.view(prop3.vals)).sites);
@@ -13676,7 +13893,7 @@ test "names that copy a load cell share one summary, which folds the field's sit
     while (i < 4) : (i += 1) {
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         (try p.prop(i, 1)).init = true;
-        try p.addSite(p.findProp(i, 1).?.vals, 100 + i);
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
     }
     // `site_field` is a record's field, holding sites 0 to 2, and `field`
     // the summary's var of it; the cell copies `field`.
@@ -13735,8 +13952,8 @@ test "a field passed back to its own parameter makes finitely many summaries" {
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         (try p.prop(i, 1)).init = true;
     }
-    try p.addSite(p.findProp(0, 1).?.vals, 1);
-    try p.addSite(p.findProp(1, 1).?.vals, 0);
+    try p.addSite(try fieldVar(p, 0, 1), 1);
+    try p.addSite(try fieldVar(p, 1, 1), 0);
     const param = try p.newVar();
     try p.addSite(param, 0);
     const li = try p.newLoad();
@@ -13775,7 +13992,7 @@ fn summaryOfLongChain() !void {
     // Site 0, an object whose property 1 holds itself; site 1, a function.
     try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = try p.newVar() });
     try p.sites.append(arena, .{ .kind = .func, .module = 0, .node = @fromBackingInt(1), .any = try p.newVar() });
-    try p.addSite((try p.prop(0, 1)).vals, 0);
+    try p.addSite(try fieldVar(p, 0, 1), 0);
     const head = try p.newVar();
     try p.addSite(head, 0);
     var last = head;
@@ -13789,7 +14006,7 @@ fn summaryOfLongChain() !void {
     try testing.expectEqual(@as(usize, 1), p.summaries.items[sum].props.items.len);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(p.summaries.items[sum].props.items[0].vals)).sites);
     // A property the head's site gains later, along every summary.
-    try p.addSite((try p.prop(0, 2)).vals, 0);
+    try p.addSite(try fieldVar(p, 0, 2), 0);
     const later = p.summaries.items[sum].props.items[1];
     try testing.expectEqual(@as(u32, 2), later.id);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(later.vals)).sites);
@@ -13821,7 +14038,7 @@ test "a read through a field summary marks the property on the sites it holds an
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         (try p.prop(i, 1)).init = true;
         (try p.prop(i, 2)).init = true;
-        try p.addSite(p.findProp(i, 1).?.vals, 100 + i);
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
     }
     // `u` holds sites 0 and 1 and copies into `v`, which holds site 2 too.
     const u = try p.newVar();
@@ -13908,4 +14125,187 @@ test "a read through a field summary is undefined or anything as its sites are" 
     try testing.expect(!(try p.view(p.loads.items[c].out)).top);
     try p.addSite(x, 4);
     try testing.expect((try p.view(p.loads.items[c].out)).top);
+}
+
+// #564: a record update `{...x, k: v}` makes a site whose fields the spread
+// alone writes. Each such field is a copy of the summary's var of it and
+// nothing else, so every spread of one summary shares one var per field
+// (`Pts.spreadSummary`), fed by one edge, and a summary folding many such
+// sites takes one edge from it, made when it folded them before the spread
+// or after. A field the literal writes has its own var. A write of
+// something more gives a shared field its own var, which holds what the
+// shared one held and feeds what it fed for the site; the facts read of the
+// site's properties are the same before and after.
+test "a spread's untouched field shares the summary's var until something else writes it" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const arena = arena_state.allocator();
+    // Sites 0, 1 and 4 are records with properties 1 and 2 (holding sites
+    // 100 + i and 200 + i); sites 2 and 3 are the updates of them, and site 5
+    // is a value written later.
+    var i: u32 = 0;
+    while (i < 6) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        if (i == 2 or i == 3 or i == 5) continue;
+        (try p.prop(i, 1)).init = true;
+        (try p.prop(i, 2)).init = true;
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.addSite(try fieldVar(p, i, 2), 200 + i);
+    }
+    const u = try p.newVar();
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    const sum = try p.summaryOf(u);
+    try p.markWhole(sum);
+    const x1 = p.findSumProp(sum, 1).?;
+    // A var holding both updates, read for property 1 before either
+    // spread is evaluated: the read marks the property on both, which no
+    // var holds yet.
+    const w = try p.newVar();
+    try p.join(w, .{ .sites = &.{ 2, 3 } });
+    const li = try p.newLoad();
+    try p.summaryLoad(try p.summaryOf(w), 1, li);
+    const out = p.loads.items[li].out;
+    try testing.expect(p.findProp(3, 1).?.vals == none and p.findProp(3, 1).?.read);
+    try testing.expectEqual(@as(usize, 0), (try p.view(out)).sites.len);
+    // Site 2's literal writes key 2 itself; site 3's writes nothing.
+    try p.spreadSummary(2, sum, &.{2});
+    try p.spreadSummary(3, sum, &.{});
+    const shared = p.findProp(2, 1).?.vals;
+    try testing.expectEqual(x1, p.findProp(2, 1).?.from);
+    try testing.expectEqual(shared, p.findProp(3, 1).?.vals);
+    try testing.expect(p.findProp(2, 2).?.from == none and p.findProp(2, 2).?.vals != p.findProp(3, 2).?.vals);
+    try testing.expectEqual(p.findProp(3, 2).?.vals, p.vars.items[p.findSumProp(sum, 2).?].shared);
+    try testing.expectEqual(@as(u32, 1), p.vars.items[shared].preds);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
+    try testing.expect(p.findProp(2, 1).?.written and p.findProp(3, 1).?.written and !p.findProp(3, 1).?.init);
+    // The read's summary takes one edge from the shared var for the two
+    // sites, and the read what they hold.
+    const w1 = p.findSumProp(p.vars.items[w].summary, 1).?;
+    try testing.expectEqual(@as(u32, 1), p.vars.items[w1].preds);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(out)).sites);
+    // The read's undefined, as `Prop.init` says: an update's spread key has
+    // no initialiser of the literal's.
+    try testing.expect((try p.view(out)).undef);
+
+    p.ok = true;
+    p.site_of = try arena.alloc([]u32, 1);
+    p.site_of[0] = try arena.alloc(u32, 6);
+    for (p.site_of[0], 0..) |*so, n| so.* = @intCast(n);
+    const both: Pts.Val = .{ .sites = &.{ 2, 3 } };
+    const Facts = struct { written: [3]bool, read: [3]bool, unread: [3]bool };
+    const facts = struct {
+        fn of(q: *const Pts, obj: Pts.Val) Facts {
+            var f: Facts = undefined;
+            for (0..3) |id| {
+                f.written[id] = !q.neverWritten(obj, @intCast(id));
+                f.read[id] = !q.neverRead(obj, @intCast(id));
+                f.unread[id] = q.keyUnread(0, @fromBackingInt(3), @intCast(id));
+            }
+            return f;
+        }
+    }.of;
+    const before = facts(p, both);
+    try testing.expectEqual(Facts{ .written = .{ false, true, true }, .read = .{ false, true, false }, .unread = .{ true, false, true } }, before);
+
+    // A write of more into site 3's field: its own var, fed by the
+    // summary's and feeding the read's summary; site 2's stays shared.
+    try p.write(.{ .sites = &.{3} }, 1, .{ .sites = &.{5} });
+    const own = p.findProp(3, 1).?;
+    try testing.expect(own.from == none and own.vals != shared);
+    try testing.expectEqual(shared, p.findProp(2, 1).?.vals);
+    try testing.expectEqualSlices(u32, &.{ 5, 100, 101 }, (try p.view(own.vals)).sites);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
+    try testing.expectEqualSlices(u32, &.{ 5, 100, 101 }, (try p.view(out)).sites);
+    // What reaches the source later reaches both, and the read.
+    try p.addSite(u, 4);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(shared)).sites);
+    try testing.expectEqualSlices(u32, &.{ 5, 100, 101, 104 }, (try p.view(p.findProp(3, 1).?.vals)).sites);
+    try testing.expectEqualSlices(u32, &.{ 5, 100, 101, 104 }, (try p.view(out)).sites);
+    try testing.expectEqual(before, facts(p, both));
+    // A second spread of another summary into site 2 gives its field its
+    // own var too, holding both.
+    const t = try p.newVar();
+    try p.addSite(t, 4);
+    const sum_t = try p.summaryOf(t);
+    try p.markWhole(sum_t);
+    try p.spreadSummary(2, sum_t, &.{});
+    try testing.expect(p.findProp(2, 1).?.from == none);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(p.findProp(2, 1).?.vals)).sites);
+    try testing.expectEqual(before, facts(p, both));
+}
+
+// #564: `browser-inline` copies the model into each handler
+// (`const $before = $model`) and spreads the copy, so every update's
+// summary is another var's, linked to the model's: its var of each
+// property is a copy of the model summary's, with that one source. The
+// fields of all those updates share the var of the root of the copies, and
+// a summary folding them takes one edge. A copy that gains a second source
+// is a copy no longer: the fields spread from it get their own vars, which
+// hold what it holds, and the others stay shared.
+test "fields spread from copies of one record share one var until a copy gains a source" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const arena = arena_state.allocator();
+    // Sites 0, 1 and 4 are records with property 1 holding site 100 + i;
+    // sites 2 and 3 are updates.
+    var i: u32 = 0;
+    while (i < 5) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        if (i == 2 or i == 3) continue;
+        (try p.prop(i, 1)).init = true;
+        try p.addSite(try fieldVar(p, i, 1), 100 + i);
+    }
+    const model = try p.newVar();
+    try p.join(model, .{ .sites = &.{ 0, 1 } });
+    const a = try p.newVar();
+    const b = try p.newVar();
+    try p.copy(model, a);
+    try p.copy(model, b);
+    const sum_a = try p.summaryOf(a);
+    const sum_b = try p.summaryOf(b);
+    try p.markWhole(sum_a);
+    try p.markWhole(sum_b);
+    try p.spreadSummary(2, sum_a, &.{});
+    try p.spreadSummary(3, sum_b, &.{});
+    const shared = p.findProp(2, 1).?.vals;
+    try testing.expectEqual(shared, p.findProp(3, 1).?.vals);
+    try testing.expectEqual(p.findSumProp(sum_a, 1).?, p.findProp(2, 1).?.from);
+    try testing.expectEqual(p.findSumProp(sum_b, 1).?, p.findProp(3, 1).?.from);
+    try testing.expectEqual(shared, p.vars.items[p.findSumProp(p.vars.items[model].summary, 1).?].shared);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
+    const w = try p.newVar();
+    try p.join(w, .{ .sites = &.{ 2, 3 } });
+    const li = try p.newLoad();
+    try p.summaryLoad(try p.summaryOf(w), 1, li);
+    const out = p.loads.items[li].out;
+    try testing.expectEqual(@as(u32, 1), p.vars.items[p.findSumProp(p.vars.items[w].summary, 1).?].preds);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(out)).sites);
+    p.ok = true;
+    const both: Pts.Val = .{ .sites = &.{ 2, 3 } };
+    try testing.expect(!p.neverWritten(both, 1) and !p.neverRead(both, 1));
+    // `b` takes a second source: site 3's field gets its own var, which
+    // holds what `b`'s summary holds; site 2's stays shared.
+    const q = try p.newVar();
+    try p.addSite(q, 4);
+    try p.copy(q, b);
+    try testing.expect(p.findProp(3, 1).?.from == none);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(p.findProp(3, 1).?.vals)).sites);
+    try testing.expectEqual(shared, p.findProp(2, 1).?.vals);
+    try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(out)).sites);
+    try testing.expect(!p.neverWritten(both, 1) and !p.neverRead(both, 1));
+}
+
+/// The var of property `id` of site `site`, its own, the property made
+/// when it is new: what a literal's key joins (`Pts.ownField`).
+fn fieldVar(p: *Pts, site: u32, id: u32) Allocator.Error!Pts.VarId {
+    return p.ownField(site, try p.propAt(site, id), id);
 }
