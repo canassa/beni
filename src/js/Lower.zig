@@ -729,16 +729,6 @@ pub fn lower(
         const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
         if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
     };
-    // What a development build can splice from its emit row (`Input.reuse`,
-    // `backend.md` §9): the plan, the constants its taken units name, and
-    // the identities its marks number. After the walk, before any
-    // declaration is lowered, so a taken declaration asks nothing.
-    if (input.reuse) |row| if (try l.planReuse(row)) |plan| {
-        l.reuse = plan;
-        if (l.reuse) |*at| try l.seedReuse(at);
-        l.row_names = try l.internRowNames(row);
-    };
-
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
     // the statements that name those imports can only be built once every
@@ -748,6 +738,19 @@ pub fn lower(
     // §9.4.3), so what it hoists is known before the first declaration.
     try l.beginMarkup();
     try l.markPieceDecls();
+    // What a development build can splice from its emit row (`Input.reuse`,
+    // `backend.md` §9): the plan, the constants its taken units name, and
+    // the identities its marks number. It runs after both consumption
+    // sources (`findPrograms`, `markPieceDecls`), so `consumed` is final
+    // when the plan reads it: a consumed declaration has no direct or twin
+    // part for the row's units to match, and the wanted loop below cannot
+    // re-lower a taken one. Before any declaration is lowered, so a taken
+    // declaration asks nothing.
+    if (input.reuse) |row| if (try l.planReuse(row)) |plan| {
+        l.reuse = plan;
+        if (l.reuse) |*at| try l.seedReuse(at);
+        l.row_names = try l.internRowNames(row);
+    };
     var declarations: std.ArrayList(Node.Index) = .empty;
     var decl_units: std.ArrayList(Unit) = .empty;
     try l.declarations(&declarations, &decl_units);
@@ -2394,9 +2397,12 @@ pub const Lowerer = struct {
             again = false;
             for (order, parts) |index, *part| {
                 if (l.reuse) |*re| {
-                    // A taken declaration is never wanted: its `.wanted`
-                    // fact was compared, and a different answer would have
-                    // lowered it.
+                    // A taken declaration has no `consumed` mark: the plan
+                    // ran after both consumption sources, and a consumed
+                    // declaration has no direct or twin part to match. This
+                    // loop lowers only a declaration that is both `wanted`
+                    // and `consumed`; the check is that invariant's local
+                    // assertion.
                     if (re.take[index]) continue;
                 }
                 const wanted = index < l.wanted.len and l.wanted[index];

@@ -5167,9 +5167,12 @@ reuse rests on: a slice-1 test drops a middle declaration and compares a neighbo
 included, and the maker's self-check above splits and joins before any build reads a row. The
 acceptance is the
 measurement: the second step is worth about 235 million of ApiItems's 489 million instructions, the
-embedded modules' emit, and what it really saves is `perf stat`'s median of five on
-`run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` as one `--library` build, when the
-slices land.
+embedded modules' emit. Slice 3 measured wall time (21 interleaved runs a side, median of 17, Node
+24.19, under heavy load): `browser/tea/ApiItems` 122 → 115 ms (−6%), its emit phase 50.5 → 42.8 ms
+(−15%), and `run/Dictionaries` within noise (61 → 59 ms; the phases' sum +4%). The row read and its
+fact comparison pay for themselves on the large page and roughly cancel on the small program. The
+`perf stat` instruction count on `run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` as
+one `--library` build is issue #633's.
 
 **The slices.** (1) `Lower` lowers one unit at a time and a join assembles the module, with no pack
 and no funnel: the output is byte-identical and nothing is reusable yet — the foundation whatever
