@@ -8614,6 +8614,57 @@ What is left of the faults:
 There is no extraction yet to keep per module while `Mod.version` stands: `Pts` still makes every
 constraint from its walk (slice 5).
 
+**As built 2026-10-21 — the hot columns grow in place, scratch stays mapped, huge pages on Linux**
+(issue #606, part of #464; `plans/build-profile-2026-10-21b.md`, cause 2). After #574 page faults
+were still about a quarter of the N = 64 dashboard's wall time. A throwaway stack trace of every
+large free the run arena could not take back put 44 MB of the four runs' garbage on eight lists:
+`vars`, `cold`, `links_of` (`newVar`), `field_outs` (`copyField`), `edges` (`copy`), `sites`,
+`deps` and `summaries`, each grown by copying past the others. Now:
+
+- **Each of those eight is a column** with an arena of its own (`Spec.RunArena`, reset, swapped and
+  freed as one with the rest of the run's memory). A column is its arena's only allocation, so it
+  grows in place (`Arena.resize`), and its first chunk is a 256 MiB reservation
+  (`Arena.initColumn`) on 64-bit Linux and macOS, where untouched memory costs only address space:
+  a column is never copied, and leaves nothing behind. Elsewhere — Windows, which commits what it
+  maps, and the playground's `wasm32-wasi` — and where the backing allocator refuses the
+  reservation, the arena opens what the request needs and the column grows in ordinary chunks.
+- **The per-module and per-item scratch is emptied with `keep_all`**: check's worker arenas and
+  its patterns arena (per `case`), the frontend's per-file worker arenas, the emit workers'
+  per-item arena (lowering, printing), and ownership's per-depth walk arenas, which were
+  `std.heap.ArenaAllocator`s and are now `Arena`s.
+- **On Linux a chunk of 2 MiB or more is whole 2 MiB pages, aligned to one, and advised
+  `MADV_HUGEPAGE`**; a column's chunk is advised past its first huge page, so a short column costs
+  the small pages it fills. Advice only: a kernel without transparent huge pages ignores it. Every
+  other target opens chunks as before.
+
+Only where memory lives moved: every `emit/release/` golden and run hash is byte for byte the same,
+`--jobs=1` and `--jobs=8` write the same files, and `zig build test-playground` passes. Unit tests
+pin a huge chunk's placement, a column that grows to megabytes without moving or a second
+allocation, and a refused reservation. ReleaseFast, `build --release --no-cache`, dagon (Ryzen 9
+5950X, THP `madvise`/`madvise`, load 1.8–2.5), medians of 11 interleaved runs, master → this
+change (→ the same without huge pages, which is what macOS gets):
+
+| program | `--jobs` | minor faults | sys | wall | peak RSS |
+|---|---|---|---|---|---|
+| dashboard N = 16 | 1 | 8 200 → 5 000 (7 300) | 18 → 15 ms (18) | 62 → 56 ms (61) | 37.1 → 37.8 MB (34.0) |
+| dashboard N = 16 | 8 | 10 600 → 7 400 (9 600) | 31 → 25 ms (28) | 59 → 53 ms (57) | 36.6 → 37.0 MB (33.2) |
+| dashboard N = 64 | 1 | 29 000 → 11 300 (23 300) | 55 → 32 ms (46) | 201 → 169 ms (185) | 104.3 → 95.7 MB (86.2) |
+| dashboard N = 64 | 8 | 31 500 → 13 900 (25 900) | 71 → 53 ms (62) | 186 → 156 ms (171) | 103.9 → 94.8 MB (85.3) |
+| N = 64 without `withDefault` | 1 | 25 600 → 10 500 (21 400) | 50 → 31 ms (45) | 181 → 153 ms (174) | 91.2 → 86.5 MB (79.0) |
+| N = 64 without `withDefault` | 8 | 28 100 → 13 100 (24 000) | 72 → 49 ms (56) | 168 → 144 ms (157) | 90.6 → 85.5 MB (78.0) |
+
+**Huge pages are a bet on the host.** With `defrag` at `madvise`, a fault in an advised range
+compacts memory synchronously to find a free 2 MiB page. On dagon, whose free memory is fragmented
+(few order-9 blocks, 97% of its compaction attempts fail), one interleaved run under another
+agent's load gave a build with huge pages alone *twice* master's sys time at N = 64 (121 against 57 ms);
+the three runs at low load gave the gains above. The columns and `keep_all` win on every host and lower
+peak RSS; huge pages win most of the faults and pay up to 2 MiB of RSS per large chunk.
+
+What is left (11.3k faults at N = 64): first touches of live data, spread thin — the columns
+themselves, check's type stores (one per module, kept for ownership and the backend), lowering's
+name maps, the frontend's artifacts, and `Spec.analyse`'s per-analysis arrays, which still go to
+the compilation's arena once per analysis.
+
 #### Building it — research 52 §4.5's slices 4–8
 
 Each slice is gates-green, measured (instructions of the ReleaseSafe compiler and peak RSS on
