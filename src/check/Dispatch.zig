@@ -320,6 +320,7 @@ pub const EffectSite = struct {
 pub const EffectDecl = struct {
     own: Suspend = .no,
     twin: bool = false,
+    total: bool = false,
 };
 
 /// What of a type JavaScript sees through a use of core's `Js.from` or

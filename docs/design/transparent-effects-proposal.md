@@ -1468,6 +1468,54 @@ diagnostics never do, so no message's text moves:
 
 ---
 
+### 14.9 Declaration totality (owner, 2026-10-21; #618)
+
+The effect rung and termination are distinct facts. The checker publishes a
+**total bit per declaration**, beside its effect summary. Total means a
+saturated invocation terminates, throws nothing and produces no observable
+effect after its arguments have been evaluated. The bit is true only for a
+pure declaration whose execution calls are all known and total, with no
+recursion reachable through those callees. Self-recursion and mutually
+recursive components are non-total, including callers that reach them.
+Unresolved higher-order, local-function and evidence callees are not assumed
+acyclic because no static edge was found. The analysis is conservative; false
+means no proof, not a refusal of the program.
+
+`foreign pure` declarations and execution inside `Js.pure` are total by their
+existing trusted contracts. A `Js.pure` call still evaluates its argument
+formation. Other function formation does not invoke its body; a declaration
+whose body is a lambda describes invocation of that lambda. Ordinary callees
+are checked from the resolved declaration graph, never a name whitelist.
+
+The graph is computed after method elaboration, before publication, by iterative
+dependency settling with no count or depth caps. Starting false, total(d) is the
+least fixed point of eligible(d) and all total(callee). Eligible declarations
+with no outstanding dependencies seed the worklist. Proven targets settle their
+reverse edges once, with one decrement per edge even for duplicates. A recursive
+cycle and its callers never drain; unknown and disqualified nodes never seed.
+This takes O(V + E) work. Interface version
+14 → 15 adds a 0/1 total word to each scheme (16 → 20 bytes). Entry version
+13 → 14 embeds the new interface; dispatch version 14 → 15 carries the same
+fact for private declarations in byte 2 of an effect declaration row. Loaders
+validate the bit and reject old versions as cache misses. It is hashed with
+the interface: a body edit that flips the bit propagates through the ordinary
+interface firewall. No source syntax or frontend artifact changes.
+
+Native operations use the single shared compiler operator contract: exact core
+identity, saturated arity and no hidden evidence. Such a call executes the
+primitive, not an apparent BIR self-call such as `add a b = a + b`. Partial
+indexed reads and writes do not gain a total proof. A string-comparison
+primitive follows its actual core String.compare declaration, using an own
+declaration edge inside that module and the published fact elsewhere.
+
+A consumer may eagerly evaluate a saturated call only when the target's bit
+is true **and each argument expression is pure-total**. Arguments retain source
+order, including when one throws. Unknown calls and partial operations stay
+in the selected arm. The markup classifier uses an uncapped iterative
+worklist; it does not introduce another termination analysis or retain a
+persistent memo. Unicode behavior and body-change invalidation are tested
+through the compiled program and cache, as are hidden-arm effects and throws.
+
 ## 15. The `sync` step, as specified (2026-09-30)
 
 **Status: normative** for the second slice of [`plans/effects-plan.md`](../../plans/effects-plan.md)

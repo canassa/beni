@@ -153,6 +153,8 @@ eval: []Var.Optional = &.{},
 readings: []Readings = &.{},
 /// What `run` solved; empty before it.
 solved: Solved = .{},
+/// Proven declaration totality, after elaboration (effects §14.9).
+total: []bool = &.{},
 /// The effect block a use is applying, read once (`decode`): its classes,
 /// its sites, and per class the index of its first site or `none`. Reused
 /// from use to use. Read per class or per site instead — `class` and
@@ -225,6 +227,7 @@ pub fn deinit(e: *Effects) void {
     e.probes.deinit(gpa);
     gpa.free(e.scheme_decl);
     gpa.free(e.eval);
+    gpa.free(e.total);
     gpa.free(e.readings);
     e.solved.deinit(gpa);
     e.block_classes.deinit(gpa);

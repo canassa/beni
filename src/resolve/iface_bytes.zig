@@ -91,7 +91,8 @@ pub const magic = "BENIIFC\x00";
 /// 13: and bit 10, `crosses`: what the quantifier is instantiated at crosses
 /// into JavaScript (checker-v2.md §36).
 /// 14: closed scalar-key kinds and published parameter domains.
-pub const format_version: u32 = 14;
+/// 15: schemes grow 16 → 20 bytes, publishing declaration totality.
+pub const format_version: u32 = 15;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -127,7 +128,7 @@ pub const Column = enum(u32) {
             .values => 12,
             .types => 36,
             .ctors => 28,
-            .schemes => 16,
+            .schemes => 20,
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 16,
@@ -399,11 +400,12 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@backingInt(Column.schemes)]..];
         for (iface.schemes, 0..) |s, i| {
-            const row = out[i * 16 ..][0..16];
+            const row = out[i * 20 ..][0..20];
             std.mem.writeInt(u32, row[0..4], s.quantified_start, .little);
             std.mem.writeInt(u32, row[4..8], s.quantified_count, .little);
             std.mem.writeInt(u32, row[8..12], @backingInt(s.body), .little);
             std.mem.writeInt(u32, row[12..16], s.effects, .little);
+            std.mem.writeInt(u32, row[16..20], @intFromBool(s.total), .little);
         }
     }
     if (iface.terms.len != 0) {
@@ -724,12 +726,14 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const schemes = try gpa.alloc(Interface.Scheme, lengths[@backingInt(Column.schemes)]);
         iface.schemes = schemes;
         for (schemes, 0..) |*s, i| {
-            const row = in[i * 16 ..][0..16];
+            const row = in[i * 20 ..][0..20];
+            if (std.mem.readInt(u32, row[16..20], .little) > 1) return error.BadRecord;
             s.* = .{
                 .quantified_start = std.mem.readInt(u32, row[0..4], .little),
                 .quantified_count = std.mem.readInt(u32, row[4..8], .little),
                 .body = @fromBackingInt(@intCast(std.mem.readInt(u32, row[8..12], .little))),
                 .effects = std.mem.readInt(u32, row[12..16], .little),
+                .total = std.mem.readInt(u32, row[16..20], .little) == 1,
             };
         }
     }
@@ -1923,4 +1927,24 @@ fn mutatedRecordSweep(part: SweepPart) !void {
     // produce a readable record.
     try testing.expect(loaded > 100);
     try testing.expect(attempts >= @as(usize, if (part == .systematic) 1_000 else random_writes));
+}
+
+test "declaration totality round-trips and rejects old versions and non-bit words" {
+    var p = try TestProject.initWith(testing.allocator, &.{
+        .{ .path = "M.beni", .source = "pub identity x = x\n" },
+    }, .{ .phases = Session.check_phases });
+    defer p.deinit();
+    const module = p.module("M").?;
+    const iface = &p.session.resolution.interfaces[module.int()];
+    try testing.expect(iface.schemes[0].total);
+    try expectRoundTrip(iface, &p.session.interner);
+    const bytes = try write(testing.allocator, iface, &p.session.interner);
+    defer testing.allocator.free(bytes);
+    const column = bytes[header_bytes + @backingInt(Column.schemes) * 8 ..][0..8];
+    const start = std.mem.readInt(u32, column[0..4], .little);
+    std.mem.writeInt(u32, bytes[start + 16 ..][0..4], 2, .little);
+    try testing.expectError(error.BadRecord, read(testing.allocator, bytes, &p.session.interner));
+    std.mem.writeInt(u32, bytes[start + 16 ..][0..4], 1, .little);
+    std.mem.writeInt(u32, bytes[8..12], format_version - 1, .little);
+    try testing.expectError(error.BadRecord, read(testing.allocator, bytes, &p.session.interner));
 }

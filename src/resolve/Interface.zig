@@ -195,6 +195,8 @@ pub const Scheme = struct {
     /// class of the scheme is pure and independent — no function in it
     /// may do anything, and none depends on another.
     effects: u32 = no_terms,
+    /// Pure and terminating by the declaration call graph (effects §14.9).
+    total: bool = false,
 };
 
 /// An effect block's words, read (transparent-effects-proposal.md §14.6).

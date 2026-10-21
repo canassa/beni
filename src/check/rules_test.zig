@@ -100,6 +100,7 @@ const files = [_]File{
     .{ .path = "Sync.zig", .text = @embedFile("Sync.zig") },
     .{ .path = "CallStyle.zig", .text = @embedFile("CallStyle.zig") },
     .{ .path = "Prepend.zig", .text = @embedFile("Prepend.zig") },
+    .{ .path = "Totality.zig", .text = @embedFile("Totality.zig") },
     .{ .path = "TypeFacts.zig", .text = @embedFile("TypeFacts.zig") },
     .{ .path = "TypeKeys.zig", .text = @embedFile("TypeKeys.zig") },
     .{ .path = "TypeStore.zig", .text = @embedFile("TypeStore.zig") },

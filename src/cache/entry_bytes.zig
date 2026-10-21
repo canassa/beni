@@ -79,7 +79,8 @@ pub const magic = "BENICAC\x00";
 /// 12: a sixth section, `type_keys`, the module's type-key artifact
 /// (checker-v2.md §36, `backend.md` §3).
 /// 13: the ownership-to-lowering hoist table, a seventh section.
-pub const format_version: u32 = 13;
+/// 14: embedded interfaces publish declaration totality.
+pub const format_version: u32 = 14;
 
 /// The seven sections, in this order and no other.
 pub const Section = enum(u32) {
