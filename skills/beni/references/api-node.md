@@ -12,6 +12,8 @@ wait says so in a trailing comment, `-- impure` or `-- suspends`.
 module Http.Server
   alias Address
     Address
+  alias Handlers
+    Handlers
   type ListenError
     AddressInUse
     PermissionDenied
@@ -24,10 +26,16 @@ module Http.Server
   alias Response
     Response
   opaque type Server
+  opaque type Upgrade
+  value accept : (Socket → ⊤) → Upgrade
+  value acceptWith : { maxMessage : Int, protocol : Maybe String }, (Socket → ⊤) → Upgrade
   value address : Server → Address
   value close : Server → ⊤  -- impure
   value header : Request, String → Maybe String
   value listen : Address, (Request → Response) → Result ListenError Server  -- suspends
+  value listenWith : Address, Handlers → Result ListenError Server  -- suspends
+  value protocols : Request → List String  -- impure
+  value refuse : Response → Upgrade
   value text : Int, String → Response
   value wait : Server → ⊤  -- suspends
 module Io
@@ -73,4 +81,21 @@ module Random
   value weighted : Float × a, List (Float × a) → Generator a
 module Ssr
   value render : Html msg → String
+module WebSocket
+  alias Close
+    Close
+  type CloseError
+    InvalidCode
+    ReasonTooLong
+  type Socket
+  type WriteError
+    NotOpen
+  value buffered : Socket → Int  -- impure
+  value close : Socket, Close → Result CloseError ⊤  -- impure
+  value drain : Socket → ⊤  -- suspends
+  value eq : Socket, Socket → Bool
+  value protocol : Socket → String  -- impure
+  value read : Socket → Result Close String  -- suspends
+  value upgraded : Value, String, Int → Maybe (Socket × (⊤ → ⊤))  -- impure
+  value write : Socket, String → Result WriteError ⊤  -- impure
 ```
