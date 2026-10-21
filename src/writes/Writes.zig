@@ -723,6 +723,7 @@ root_base_is_deps: std.ArrayList(bool) = .empty,
 root_row: std.ArrayList(u8) = .empty,
 root_control: std.ArrayList(bool) = .empty,
 resolve_view_controls: bool = false,
+/// Caller instruction identity; nested markup holes save/replace their own collector.
 entry_call: ?struct { module: u32, inst: u32 } = null,
 view_args: std.HashMapUnmanaged(VHoleKey, ViewArg, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 view_arms: std.HashMapUnmanaged(VHoleKey, bool, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
