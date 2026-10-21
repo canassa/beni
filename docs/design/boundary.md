@@ -2244,6 +2244,15 @@ A lowering that sets neither sees what it saw.
 program lowering needs to write each key's arm and another module's markup in place of a message
 and a renderer. It lands across the pull requests of `browser-inline`'s S1, each member with the
 one that first uses it; a lowering that targets 1.14 sees what it saw.
+- **Helper argument evaluation reads** (*added 2026-10-21*, #476/#615).
+  `Program.HoleFacts.entry_groups` is an empty-by-default slice of read-group numbers for
+  a helper call's argument expressions that are not proven pure and total. These are
+  evaluation reads, separate from the callee's demanded leaf reads: forwarding a pure
+  model reference does not subscribe to all its fields. A lowering adds these groups
+  to the binding that evaluates the call. Guarded preparation includes the same
+  argument reads in its selector/visibility and descendant bindings so a selected
+  argument is evaluated before any of that preparation's DOM writes. Hidden arms
+  remain unevaluated. This is transient lowering metadata, with no cache-format change.
 - **Eager branches.** `Program.Arm.eager`: the arm is markup written in place that reads no
   variable the branch binds and no `let` of the arm, so its values can be evaluated whichever arm
   the value takes. `programBranchEager(block, node, k)` enters arm `k` of branch `node` so: its

@@ -404,6 +404,8 @@ pub const Direct = struct {
         return arm.ctor_index < ctor_index;
     }
 
+    pub const ViewArm = struct { module: u32, body: u32, path: []const u64, live: bool };
+
     pub const Site = struct {
         module: u32,
         token: u32,
@@ -445,6 +447,8 @@ pub const Direct = struct {
         /// Sorted by module, then token.
         holes: []const Hole,
         edges: []const Hole = &.{},
+        arguments: []const Hole = &.{},
+        arms: []const ViewArm = &.{},
         /// The number of distinct read sets.
         groups: u32,
         /// Per key, the read sets its write set conflicts with, sorted,
@@ -13205,6 +13209,16 @@ pub const Lowerer = struct {
         return l.templateArray(values.items);
     }
 
+    fn markupValuePureTotal(l: *Lowerer, v: beni_markup.Value.Index) bool {
+        const st = l.mk orelse return false;
+        return switch (st.built.values[@backingInt(v)]) {
+            .inst => |i| l.instSafeMode(i, true),
+            .let_value => |lv| l.instSafeMode(lv.inst, true),
+            .capture, .read, .input, .probe, .string, .true, .callee => true,
+            else => false,
+        };
+    }
+
     /// `cx.programHole`.
     fn directHole(l: *Lowerer, ref: beni_markup.Program.HoleRef) beni_markup.Program.HoleFacts {
         const unknown: beni_markup.Program.HoleFacts = .{ .group = std.math.maxInt(u32), .static = false, .bake = null };
@@ -13221,14 +13235,29 @@ pub const Lowerer = struct {
         };
         const producer = ref == .node and switch (st.built.tree.kind(ref.node)) {
             .component, .for_, .show => true,
+            .hole => st.built.tree.hole(ref.node).kind == .html and st.built.tree.hole(ref.node).call != null,
             else => false,
         };
         const h = if (producer) found: {
             for (d.edges) |*edge| if (edge.module == l.in.module.int() and edge.token == token and std.mem.eql(u64, edge.path, l.inline_path.items)) break :found edge;
             return unknown;
         } else l.directHoleAt(d, token) orelse return unknown;
+        var entry_groups: std.ArrayList(u32) = .empty;
+        if (producer and st.built.tree.kind(ref.node) == .hole) {
+            const invocation = st.built.tree.hole(ref.node).call.?;
+            const path = l.scratch.alloc(u64, l.inline_path.items.len + 1) catch return unknown;
+            @memcpy(path[0..l.inline_path.items.len], l.inline_path.items);
+            path[path.len - 1] = (@as(u64, l.in.module.int()) << 32) | token;
+            for (0..invocation.args.len) |i| {
+                if (l.markupValuePureTotal(invocation.args.at(@intCast(i)))) continue;
+                const arg = for (d.arguments) |arg| {
+                    if (arg.module == l.in.module.int() and arg.token == i and std.mem.eql(u64, arg.path, path)) break arg;
+                } else return unknown;
+                entry_groups.append(l.scratch, arg.group) catch return unknown;
+            }
+        }
         const static = h.group < d.written.len and !d.written[h.group];
-        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where };
+        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where, .entry_groups = entry_groups.items };
     }
 
     /// The pass's hole at `token` of this module on the current call path
@@ -14692,8 +14721,33 @@ pub const Lowerer = struct {
         return .{ .call = root };
     }
 
-    /// `cx.programBranch` (version 1.10): an `html` hole whose value, past
-    /// its `let`s, is a `case` — which an `if` is too — and its arms.
+    /// A completed view walk proves this arm dead on this call path.
+    /// Missing facts are unknown, never a dead-arm proof.
+    fn directArmDead(l: *Lowerer, node: beni_markup.Node.Index, body: Inst.Index) bool {
+        const pc = l.program_now orelse return false;
+        const d = pc.direct orelse return false;
+        const st = l.mk orelse return false;
+        const module = l.in.module.int();
+        const path = l.inline_path.items;
+        const extra: usize = if (node == .none) 0 else 1;
+        const token: u64 = if (node == .none) 0 else (@as(u64, module) << 32) | st.built.node_tokens[@backingInt(node)];
+        // Match the current branch's path without changing its caller state.
+        const full = l.scratch.alloc(u64, path.len + extra) catch return false;
+        @memcpy(full[0..path.len], path);
+        if (extra != 0) full[path.len] = token;
+        var lo: usize = 0;
+        var hi = d.arms.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            const arm = d.arms[mid];
+            if (Direct.placeLess(arm.module, arm.body, arm.path, module, body.int(), full)) lo = mid + 1 else hi = mid;
+        }
+        if (lo == d.arms.len) return false;
+        const arm = d.arms[lo];
+        return arm.module == module and arm.body == body.int() and std.mem.eql(u64, arm.path, full) and !arm.live;
+    }
+
+    /// The arms of the current markup choice.
     fn directBranch(l: *Lowerer, node: beni_markup.Node.Index) ?beni_markup.Program.Branch {
         const arms = (l.branchArms(node) catch return null) orelse return null;
         if (arms.document) return .{
@@ -14707,7 +14761,7 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
+            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
         }
         return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
     }
@@ -14872,6 +14926,7 @@ pub const Lowerer = struct {
             try stmts.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @backingInt(record)));
         } else if (inner.items.len == 0) {
             try l.constDecl(&stmts, n, result, p);
+            if (l.mayHaveEffect(ov.arms.value)) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
         } else {
             try stmts.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(Node.OptionalIndex.none)));
             try inner.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), result.int()));
@@ -16323,6 +16378,7 @@ pub const Lowerer = struct {
             else => blk: {
                 const n = try l.fresh(l.well.temp);
                 try l.constDecl(out, n, value, l.pos(inst));
+                if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                 break :blk .{ .name = n };
             },
         };
@@ -17163,14 +17219,7 @@ const markup_vtable: beni_markup.VTable = struct {
     /// Ordinary calls (including foreign and recursive calls) are unknown;
     /// native operators exclude writes and unchecked indexed reads.
     fn valuePureTotal(impl: *anyopaque, v: M.Value.Index) bool {
-        const l = lowerer(impl);
-        const st = l.mk orelse return false;
-        return switch (st.built.values[@backingInt(v)]) {
-            .inst => |i| l.instSafeMode(i, true),
-            .let_value => |lv| l.instSafeMode(lv.inst, true),
-            .capture, .read, .input, .probe, .string, .true, .callee => true,
-            else => false,
-        };
+        return lowerer(impl).markupValuePureTotal(v);
     }
 
     fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {

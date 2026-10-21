@@ -1,0 +1,54 @@
+-- Empty selected results retain their call's effects, but a hidden outer arm
+-- stays inert until reentry. The never-selected text must never run.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    shown : Bool
+    value : Int
+
+
+type Msg
+    = Add
+    | Toggle
+
+
+helper : Int → Html Msg
+helper n =
+    <section>
+        {if Debug.log "selector" False then
+            <button>{Debug.log "dead text" n}</button>
+         else
+            <></>
+        }
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section data-role="outside">{helper (Debug.log "outside argument" model.value)}</section>
+        {if model.shown then
+            <section data-role="inside">{helper (Debug.log "inside argument" model.value)}</section>
+         else
+            <></>
+        }
+        <output>{model.value}</output>
+        <button data-role="add" onClick={Add}>Add</button>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </main>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | value = model.value + 1 }
+
+        Toggle →
+            { model | shown = not model.shown }
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { shown = False, value = 0 }, update = update, view = view }

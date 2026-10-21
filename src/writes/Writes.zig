@@ -520,6 +520,9 @@ pub const Hole = struct {
     path: []const u64 = &.{},
 };
 
+/// Whether any view visit takes this body on this exact call path.
+pub const ViewArm = struct { module: u32, body: u32, path: []const u64, live: bool };
+
 pub const Program = struct {
     module: u32,
     /// The declaration holding the program call.
@@ -540,12 +543,15 @@ pub const Program = struct {
     /// per call*): the consumer's, which no dump prints. `Hole.list` here
     /// indexes `vholes`.
     vholes: []Hole = &.{},
+    varms: []const ViewArm = &.{},
     /// Each constant `let` the view walk evaluated, once per call path, as
     /// a hole whose `token` is the `let`'s value instruction in `module`:
     /// what a derived value reads (browser-direct.md §5.4). The consumer's;
     /// no dump prints it.
     vlets: []Hole = &.{},
     vedges: []Hole = &.{},
+    /// Argument evaluation reads, keyed by argument index on its call path.
+    vargs: []Hole = &.{},
     view_reads: []const u32 = &.{rho_path},
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
@@ -717,7 +723,9 @@ root_base_is_deps: std.ArrayList(bool) = .empty,
 root_row: std.ArrayList(u8) = .empty,
 root_control: std.ArrayList(bool) = .empty,
 resolve_view_controls: bool = false,
+entry_call: ?struct { module: u32, inst: u32 } = null,
 view_args: std.HashMapUnmanaged(VHoleKey, ViewArg, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+view_arms: std.HashMapUnmanaged(VHoleKey, bool, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 
 next_root: u32 = 0,
 
@@ -735,6 +743,8 @@ hole_index: std.HashMapUnmanaged(HoleKey, u32, std.hash_map.AutoContext(HoleKey)
 /// and the call paths: each one's entries, and its extensions by one entry.
 vedges: std.ArrayList(HoleAcc) = .empty,
 vedge_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+vargs: std.ArrayList(HoleAcc) = .empty,
+varg_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 vholes: std.ArrayList(HoleAcc) = .empty,
 vhole_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 /// Each constant `let` the view walk evaluated, per call path, as a hole
@@ -859,6 +869,7 @@ pub fn deinit(a: *Writes) void {
     a.root_row.deinit(gpa);
     a.root_control.deinit(gpa);
     a.view_args.deinit(gpa);
+    a.view_arms.deinit(gpa);
     a.active.deinit(gpa);
     a.split_ctors.deinit(gpa);
     a.diff_memo.deinit(gpa);
@@ -885,6 +896,13 @@ pub fn deinit(a: *Writes) void {
     }
     a.vedges.deinit(gpa);
     a.vedge_index.deinit(gpa);
+    for (a.vargs.items) |*h| {
+        h.reads.deinit(gpa);
+        h.key_paths.deinit(gpa);
+        h.bound.deinit(gpa);
+    }
+    a.vargs.deinit(gpa);
+    a.varg_index.deinit(gpa);
     for (a.vlets.items) |*h| {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
@@ -2374,6 +2392,10 @@ fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) E
     defer negs.deinit(a.gpa);
     var keyed = false;
     const ixeq = a.termTag(s) == .ixeq;
+    if (a.ctx.mode == .view) for (branches) |br| {
+        const entry = try a.view_arms.getOrPut(a.gpa, .{ .module = f.m, .token = b.instData(br).rhs, .path = a.ctx.call_path });
+        if (!entry.found_existing) entry.value_ptr.* = false;
+    };
     for (branches) |br| {
         const pat: Inst.Index = @fromBackingInt(b.instData(br).lhs);
         const body: Inst.Index = @fromBackingInt(b.instData(br).rhs);
@@ -2388,6 +2410,7 @@ fn caseOn(a: *Writes, f: *Frame, s: u32, branches: []const Inst.Index, g: u32) E
         if (b.instTag(pat) == .pat_ctor or b.instTag(pat) == .pat_as) keyed = keyed or a.termTag(s) == .same;
         const gi = (try a.gammaAdd(g_negs, m.facts.items)) orelse continue;
         if (a.ctx.mode == .key) try a.noteSplit(m.facts.items, g);
+        if (a.ctx.mode == .view) a.view_arms.getPtr(.{ .module = f.m, .token = body.int(), .path = a.ctx.call_path }).?.* = true;
         try a.bind(f, pat, s);
         const r = try a.eval(f, body, gi);
         // The alternative's own facts: the negations so far and the arm's.
@@ -2500,6 +2523,9 @@ fn evalCall(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     const data = b.instData(inst);
     const callee: Inst.Index = @fromBackingInt(data.lhs);
     const args = try a.evalArgs(f, b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index), g);
+    if (a.entry_call) |*entry| if (entry.module == f.m and entry.inst == inst.int()) {
+        for (args, 0..) |arg, i| try a.recordArgument(f, @intCast(i), arg);
+    };
     if (a.valueTarget(f.m, callee)) |t| {
         // `++` on lists is `List.append` by the dispatch table.
         if (a.dispatchOf(f.m)) |dt| if (dt.isListAppend(inst) or dt.isListAppend(callee)) {
@@ -4203,11 +4229,17 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             // hole extends (write-sets.md, *a hole's facts per call*).
             const outer = a.ctx.call_path;
             if (a.ctx.mode == .view) a.ctx.call_path = try a.extendPath(outer, f.m, h.token);
+            const saved_entry = a.entry_call;
+            a.entry_call = if (a.ctx.mode == .view and b.instTag(h.value) == .call) .{ .module = f.m, .inst = h.value.int() } else null;
             const t = a.eval(f, h.value, g) catch |err| {
+                a.entry_call = saved_entry;
                 a.ctx.call_path = outer;
                 return err;
             };
+            const entry = a.entry_call;
+            a.entry_call = saved_entry;
             a.ctx.call_path = outer;
+            if (entry != null) try a.recordEdge(f, h.token, t);
             d.* = try a.depsUnion(d.*, try a.deps(t));
             var alone = false;
             if (parent) |par| {
@@ -4468,6 +4500,22 @@ fn recordEdge(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
         try a.vedges.append(a.gpa, .{ .module = f.m, .token = token, .kind = .child, .alone = false, .site = a.cur_site, .path = a.ctx.call_path, .literal_ok = false, .in_row = a.ctx.in_row > 0, .list = a.ctx.veach, .row_path = none, .key_path = none });
     }
     const edge = &a.vedges.items[gop.value_ptr.*];
+    var reads: std.ArrayList(u32) = .empty;
+    defer reads.deinit(a.gpa);
+    var bounds: std.ArrayList(u8) = .empty;
+    defer bounds.deinit(a.gpa);
+    try a.anchorsBound(t, &reads, &bounds);
+    for (reads.items, bounds.items) |r, bound| try a.addBound(&edge.reads, &edge.bound, r, bound);
+}
+
+fn recordArgument(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
+    if (a.ctx.mode != .view or !a.isOwn(f.m)) return;
+    const gop = try a.varg_index.getOrPut(a.gpa, .{ .module = f.m, .token = token, .path = a.ctx.call_path });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(a.vargs.items.len);
+        try a.vargs.append(a.gpa, .{ .module = f.m, .token = token, .kind = .child, .alone = false, .site = a.cur_site, .path = a.ctx.call_path, .literal_ok = false, .in_row = a.ctx.in_row > 0, .list = a.ctx.veach, .row_path = none, .key_path = none });
+    }
+    const edge = &a.vargs.items[gop.value_ptr.*];
     var reads: std.ArrayList(u32) = .empty;
     defer reads.deinit(a.gpa);
     var bounds: std.ArrayList(u8) = .empty;
@@ -4955,6 +5003,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     // caps are listed for the program that reached it.
     a.diff_memo.clearRetainingCapacity();
     a.view_args.clearRetainingCapacity();
+    a.view_arms.clearRetainingCapacity();
     a.resolve_view_controls = false;
     @memset(a.summaries, .absent);
     @memset(a.summary_caps, .{});
@@ -4982,6 +5031,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     a.vedges.clearRetainingCapacity();
     a.vedge_index.clearRetainingCapacity();
+    for (a.vargs.items) |*h| {
+        h.reads.deinit(a.gpa);
+        h.key_paths.deinit(a.gpa);
+        h.bound.deinit(a.gpa);
+    }
+    a.vargs.clearRetainingCapacity();
+    a.varg_index.clearRetainingCapacity();
     for (a.vlets.items) |*h| {
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
@@ -5122,6 +5178,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         if (a.in.effects != null) prog.subscriptions = try a.readSubscriptions(result, prog.keys);
     };
     // The view (§3.6).
+    var view_complete = false;
     if (view_fields) |fs| if (fs.view) |vi| if (a.isFunctionField(fs.m, vi)) {
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
         a.ctx = .{ .mode = .view };
@@ -5133,6 +5190,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
             },
             else => |e| return e,
         };
+        view_complete = result != none and !a.ctx.caps.any();
         a.resolve_view_controls = true;
         if (result != none) {
             var reads: std.ArrayList(u32) = .empty;
@@ -5146,7 +5204,19 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     prog.holes = try a.finishHoles(a.holes.items, init_model, false);
     prog.vholes = try a.finishHoles(a.vholes.items, init_model, true);
     prog.vedges = try a.finishHoles(a.vedges.items, init_model, true);
+    prog.vargs = try a.finishHoles(a.vargs.items, init_model, true);
     prog.vlets = try a.finishHoles(a.vlets.items, none, true);
+    // A cut-short walk cannot prove an unvisited arm unreachable.
+    if (view_complete and !prog.view_capped) {
+        const arms = try a.arena().alloc(ViewArm, a.view_arms.count());
+        var entries = a.view_arms.iterator();
+        var i: usize = 0;
+        while (entries.next()) |entry| : (i += 1) {
+            const key = entry.key_ptr.*;
+            arms[i] = .{ .module = key.module, .body = key.token, .path = try a.arena().dupe(u64, if (key.path == 0) &.{} else a.call_paths.items[key.path]), .live = entry.value_ptr.* };
+        }
+        prog.varms = arms;
+    }
     // A view cut short says so, and every hole it met reads ρ: the top,
     // never a partial read set (§6.1).
     if (prog.view_capped) for ([_][]Hole{ prog.holes, prog.vholes, prog.vlets }) |list| for (list) |*h| {
