@@ -1,0 +1,4 @@
+debug after setMinimum Debug
+warn under Log.minimum Warn
+debug in a child started before setMinimum
+error after setMinimum Error

@@ -1,0 +1,16 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #go
+console.debug: a debug line in update
+console.debug: a debug line from a command
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <p>"1"</p>
+  </main>
+</body>
