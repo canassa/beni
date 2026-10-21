@@ -207,16 +207,17 @@ prints `--- stdout ---`, `--- stderr ---` and `--- exit <code> ---` (or
 running after the last step ---`). Standard error goes through one filter,
 so a crash is deterministic: the project directory's absolute path becomes
 `<project>`, lines that start with `    at ` are dropped, and the
-`Node.js v…` line is dropped. An IPv4 address before a `:port`, and the
-value of an `address:` line of an error's properties, become `<address>`;
-an IPv4 address anywhere else stays as it is. The port the program bound
-becomes `<port>`; any other port stays as it is, so a line that names the
-wrong port differs. A `logfmt` line with `timestamp` first,
-the one `Io.run`'s sink writes, has its time as `timestamp=<time>`. The
-driver connects to `127.0.0.1` only and filters IPv4 addresses only, so a
-served fixture listens on `127.0.0.1`: an IPv6 address would stay in the
-transcript. The driver exits 0 whatever the program did; what it did is
-the transcript. A served fixture has no `.crash`: the crash is in the
+`Node.js v…` line is dropped. An IPv4 address before a `:port` becomes
+`<address>`, and so does any quoted value of an indented `address:` line of
+an error's properties; an IPv4 address anywhere else stays as it is. The
+bound port after an IPv4 address, or on an indented `port:` line, becomes
+`<port>`; any other port stays as it is, so a line that names the wrong
+port differs. A `logfmt` line with `timestamp` first, the one `Io.run`'s
+sink writes, has its time as `timestamp=<time>`. The driver connects to
+`127.0.0.1` only, so a served fixture listens on `127.0.0.1`: an IPv6
+address stays in the transcript, except as the value of an `address:` line.
+The driver exits 0 whatever the program did; what it did is the
+transcript. A served fixture has no `.crash`: the crash is in the
 transcript.
 
 The record line (`.run-hash`) of a served build is `<pass> <node version>
