@@ -6198,15 +6198,17 @@ session per accepted upgrade in the order the upgrades arrive, as it starts requ
   `WebSocket` (undici), which cannot run in the page: it calls `unref` on what `setTimeout`
   returns, and the page's virtual clock returns a number, as a browser's does. undici drives the
   server in `bench/websocket/load.mjs`. Each socket is still numbered and logged, and the scripted
-  `socket` steps are refused. What the host's socket does (`open`, `message`, `error`, `close`)
-  is held, in the order it happened, and reaches the page only in a step `socket <n> wait <k>`,
-  `wait open` or `wait closed`. That step gives the page the held events one at a time until the
-  socket has received `k` messages in all, opened, or closed, and waits for the next event in
-  real time, 5 seconds at most; then the page settles as after any step. So a snapshot depends on
-  the script, and never on when the server answered. In this mode the driver writes the line of
-  each step it has run to file descriptor 3. `--wait-handshakes` tests the hold: after each step,
-  the driver waits until the host has answered every socket's handshake, and lets the page
-  settle again before the snapshot.
+  `socket` steps are refused. What the host's socket does (`open`, `message`, `error`, `close`) is
+  held, in the order it happened, and reaches the page only in a step `socket <n> wait <k>`,
+  `wait open` or `wait closed`. That step gives the page the held events one at a time, each in
+  a task of its own, until the socket has received `k` messages in all, opened, or closed, and
+  waits for the next event in real time, 5 seconds at most; then the page settles as after any
+  step. So a snapshot depends on the script, and never on when the server answered. The socket's
+  `protocol` is the one of the `open` the page was given; its `bufferedAmount` is still the
+  host's at the time the page reads it (#632). In this mode the driver writes the line of each
+  step it has run to file descriptor 3. `--wait-handshakes` tests the hold: after each step, the
+  driver waits until the host has answered every socket's handshake, and lets the page settle
+  again before the snapshot.
 - **The serve driver's page steps.** `{"page": "<entry>", "steps": "<file>"}` runs a page under the
   page driver with `--server` set to the program's port and prints its transcript, each line
   `| …`. With `"wait": false` it runs beside the next steps. `{"page-wait": "<step>"}` waits until
