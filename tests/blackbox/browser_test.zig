@@ -203,6 +203,89 @@ test "a step whose selector matches nothing fails the case with the step's line"
     try expectReported(r, "/corpus/browser/Button.beni: PageFailed\n");
 }
 
+// A `browser-tea` page whose one socket offers the protocol `v1`
+// (`boundary.md` §9.11 (b)).
+const offering =
+    \\import Cmd exposing (Cmd)
+    \\import Html exposing (Html)
+    \\import Tea
+    \\import WebSocket
+    \\
+    \\
+    \\type Msg
+    \\    = Socket WebSocket.Event
+    \\
+    \\
+    \\update : Msg, Int → Int × Cmd Msg
+    \\update _ n = ( n + 1, Cmd.none )
+    \\
+    \\
+    \\view : Int → Html Msg
+    \\view n = <p>{String.fromInt n}</p>
+    \\
+    \\
+    \\main : Tea.Program
+    \\main =
+    \\    Tea.element
+    \\        { init = λ⊤ → ( 0, Cmd.none )
+    \\        , update = update
+    \\        , view = view
+    \\        , subscriptions = λ_ → WebSocket.listen "/chat" [ "v1" ] Socket
+    \\        }
+    \\
+;
+
+test "a socket opened with a protocol the page did not offer fails the case" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A host fails the handshake when the server picks a protocol the page
+    // did not offer (RFC 6455 §4.1), so no golden may show that page.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/tea/Offer.beni", offering);
+    try w.write("corpus/browser/tea/Offer.steps", "socket 1 open \"v9\"\n");
+    try w.write("corpus/browser/tea/Offer.expected", "");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try walker(&w, "");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(1, r);
+    try expectReported(r, "Offer.steps:1: socket 1 open \"v9\": socket 1 offered [\"v1\"], not \"v9\": a host fails that handshake\n");
+    try expectReported(r, "/corpus/browser/tea/Offer.beni: PageFailed\n");
+}
+
+test "a socket opened with no protocol when the page offered some fails the case" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A host fails the handshake when the page offered protocols and the
+    // server picked none (the Fetch standard's "establish a WebSocket
+    // connection").
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/tea/Offer.beni", offering);
+    try w.write("corpus/browser/tea/Offer.steps", "socket 1 open\n");
+    try w.write("corpus/browser/tea/Offer.expected", "");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try walker(&w, "");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(1, r);
+    try expectReported(r, "Offer.steps:1: socket 1 open: socket 1 offered [\"v1\"]: `open` names the one the server picked, since a host fails a handshake that picks none\n");
+    try expectReported(r, "/corpus/browser/tea/Offer.beni: PageFailed\n");
+}
+
 test "a malformed step fails the case before the page loads" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

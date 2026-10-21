@@ -14,7 +14,8 @@
 // A script also drives WebSocket clients by name (docs/design/boundary.md
 // §9.11 (l)) — `socket`, `answer`, `send`, `ping`, `close`, `receive`,
 // `pause`, `resume`, `drop` and `reset` steps — through the small RFC 6455
-// client below; tests/corpus/README.md lists them.
+// client below, and runs a page against the server with `page`,
+// `page-wait` and `page-end` steps; tests/corpus/README.md lists them.
 
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
@@ -638,6 +639,82 @@ const socketStep = async (step) => {
   }
 };
 
+// ---- A page against the server -----------------------------------------------
+
+// `{"page": "<entry.mjs>", "steps": "<file.steps>"}` runs a page program —
+// the build of a `browser-tea` page, say — under the page driver
+// (`tests/browser/driver.mjs`, happy-dom), opened from this server: its
+// address is the server's, so a socket it opens to `/chat` reaches the
+// program under test (docs/design/boundary.md §9.11 (l)). Its transcript is
+// printed, each line `| …`. With `"wait": false` it runs beside the next
+// steps, and `{"page-end": true}` waits for it and prints it.
+const browserDir = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "browser");
+let pageRun = null;
+// The lines the page driver wrote to file descriptor 3: the steps it ran.
+let pageDone = "";
+
+const startPage = (port, step) =>
+  new Promise((resolve) => {
+    const page = spawn(
+      process.execPath,
+      [
+        path.join(browserDir, "driver.mjs"),
+        `--dom=${path.join(browserDir, "happy-dom.mjs")}`,
+        `--parser=${path.join(browserDir, "parse5.mjs")}`,
+        `--server=127.0.0.1:${port}`,
+        step.page,
+        step.steps,
+      ],
+      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe", "pipe"] },
+    );
+    const out = [];
+    const err = [];
+    pageDone = "";
+    page.stdout.on("data", (chunk) => out.push(chunk));
+    page.stdio[3].on("data", (chunk) => {
+      pageDone += chunk;
+    });
+    page.stderr.on("data", (chunk) => err.push(chunk));
+    page.on("close", (code) => resolve({ code, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") }));
+  });
+
+const printPage = (ran) => {
+  for (const line of ran.stdout.replace(/\n$/, "").split("\n")) say(`| ${line}`);
+  if (ran.code !== 0) say(`| (the page driver exited ${ran.code}: ${ran.stderr.split("\n")[0]})`);
+};
+
+const pageStep = async (port, step) => {
+  say(`> (page) ${step.page} ${step.steps}${step.wait === false ? " (not waited for)" : ""}`);
+  const run = startPage(port, step);
+  if (step.wait === false) {
+    pageRun = run;
+    return;
+  }
+  printPage(await run);
+};
+
+// `{"page-wait": "<step>"}`: wait, 5 s at most, until the page has run
+// that step of its script — the page driver names each step it has run on
+// file descriptor 3 — so that the next step reaches the page only after
+// it.
+const pageWait = async (step) => {
+  await within(
+    stepLimit,
+    () =>
+      new Promise((resolve) => {
+        const look = () => (pageDone.split("\n").includes(step["page-wait"]) ? resolve() : setTimeout(look, 5));
+        look();
+      }),
+    () => say(`| (the page did not reach ${JSON.stringify(step["page-wait"])})`),
+  );
+};
+
+const pageEnd = async () => {
+  const ran = await pageRun;
+  pageRun = null;
+  printPage(ran);
+};
+
 // ---- Run --------------------------------------------------------------------
 
 const address = await bound;
@@ -645,7 +722,10 @@ if (address === null) {
   say("(the program ended before it listened)");
 } else {
   for (const step of steps) {
-    if (step.socket !== undefined) await openSocket(address.port, step);
+    if (step.page !== undefined) await pageStep(address.port, step);
+    else if (step["page-end"] === true) await pageEnd();
+    else if (step["page-wait"] !== undefined) await pageWait(step);
+    else if (step.socket !== undefined) await openSocket(address.port, step);
     else if (step.answer !== undefined) await answerStep(step);
     else if (step.send !== undefined || step.ping !== undefined || step.close !== undefined || step.receive !== undefined || step.pause !== undefined || step.resume !== undefined || step.drop !== undefined || step.reset !== undefined) await socketStep(step);
     else if (step.raw !== undefined) await rawStep(address.port, step.raw);
