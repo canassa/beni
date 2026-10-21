@@ -6236,8 +6236,9 @@ and (j) say, with these readings:
 and are asked on the dashboard (`cf-workers-q1` to `q3`): the platform's name, the shape of a
 Durable Object in beni, and how the object classes reach the entry file. The text below assumes the
 recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
-app's manifest — and (l) records the answers as they come: the name, the class names and the
-Worker handler's form are decided (2026-10-21). Every statement about the host cites
+app's manifest — and (l) records the answers as they come. *Every question is answered
+(2026-10-21)*: (e) and (f) are rewritten to the owner's design for the object (handlers that may
+suspend, one event at a time, one fiber runtime per object), and the rest reads as decided. Every statement about the host cites
 Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
 `workerd` (version 1.20260518.1, the one nixpkgs' `wrangler` 4.93.0 bundles; a source line cites
 that tag), and one marked* owed *has not been. Amended 2026-10-20 after the review of this
@@ -6299,7 +6300,7 @@ lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s
 |---|---|
 | `Worker` | every host type — `Program`, `Request`, `Response`, `Env`, `Namespace`, `Stub`, `Service`, `Context`, `Definition` — with `program`, the request and response operations, the bindings and their errors. It imports no module of the platform |
 | `WebSocket` | the server WebSocket: the handle operations §9.11's amendment (item 1) shares, `accept`, the attachment, `autoReply`. It imports `Worker` |
-| `Worker.Object` | `define` and the handlers over `Worker.Definition` and `Worker.Context`, `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
+| `Worker.Object` | `define` and the handlers over `Worker.Definition` and `Worker.Context`, the object's own messages (`send`), `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
 | `Worker.Storage` | the object's key-value store, through schemas. It imports `Worker` |
 
 *Amended 2026-10-20 (H1).* The host types all live in `Worker`, so the modules form no cycle
@@ -6371,19 +6372,23 @@ key; this is its whole contract.
 
 *Amended 2026-10-21, the owner's answer to `cf-workers-q4` ((l)): the Worker's `fetch` is `sync`
 and answers an `Answer` the host runs.* The decided form, which replaces `fetch : Env, Request →
-Response`, `forward` and `callService` below (kept as the record of the question):
+Response`, `forward` and `callService` below (kept as the record of the question). `Answer` is
+opaque and built by three functions, because `sync` is a marker only in a top-level or `foreign`
+signature (§4; `src/parse/Parse.zig`): written inside a `type` declaration it would be a type
+variable named `sync`, so the mark sits on the constructors' signatures, where the checker reads
+it, and on `program`'s own.
 
 ```elm
-pub type Answer
-    = Respond Response                                     -- the host writes it
-    | Forward Stub Request (sync (StubError → Response))   -- the host runs `stub.fetch(request)` and writes what it answers
-    | Serve Service Request (sync (ServiceError → Response))  -- the host runs `service.fetch(request)`: an assets or service binding
+pub opaque type Answer
+pub respond : Response → Answer                                    -- the host writes it
+pub forward : Stub, Request, sync (StubError → Response) → Answer  -- the host runs `stub.fetch(request)` and writes what it answers
+pub serve : Service, Request, sync (ServiceError → Response) → Answer  -- the host runs `service.fetch(request)`: an assets or service binding
 
 pub program : { fetch : sync (Env, Request → Answer), objects : List Definition } → Program
 ```
 
 - **No fiber runs in a Worker.** The class's `fetch` calls the handler, which cannot suspend, and
-  returns at once: a `Response` for `Respond`, or the host's own promise for `Forward` and `Serve`
+  returns at once: a `Response` for `respond`, or the host's own promise for `forward` and `serve`
   — `stub.fetch(request)` and `service.fetch(request)` — so the body stream and the 101 of an
   upgrade pass through untouched. Nothing of core's scheduler is reached, so the cross-request
   hazard and the isolate-wide stop below cannot arise, and a defect ends one request with 1101
@@ -6407,10 +6412,10 @@ route : Env, Request → Answer
 route env request =
     case ( Worker.objects env "ARENAS", arenaOf (Worker.path request) ) of
         ( Just arenas, Just name ) →
-            Worker.Forward (Worker.byName arenas name) request λ_ → Worker.text 503 "the arena is not available"
+            Worker.forward (Worker.byName arenas name) request λ_ → Worker.text 503 "the arena is not available"
 
         _ →
-            Worker.Respond (Worker.text 404 "no such page")
+            Worker.respond (Worker.text 404 "no such page")
 ```
 
 *The text below is the form the question was asked over, kept as written.*
@@ -6461,6 +6466,7 @@ pub type StubError
     = Overloaded                               -- the error's `overloaded` is true: send fewer, or spread the load
     | Reset                                    -- `durableObjectReset` is true: the host reset the object; the call may be made again
     | Transient                                -- `retryable` is true and neither of the above: the connection, a shutdown; the call may be made again
+    | Cycle                                    -- the call's chain already holds a handler parked in the object called ((e.3)); the call is refused at once
 
 pub foreign type Service
 pub callService : Service, Request → Result ServiceError Response   -- suspends: `env.ASSETS.fetch(request)`
@@ -6547,34 +6553,43 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   program calls `byName` again for the next request, which it does by writing `route` as (i)
   shows.
 
-**(e) `Worker.Object`: a Durable Object.** An object is a name, a function that restores its state
-and the handlers it answers events with. Every handler is `sync`; the host runs an object's
-methods in series, interleaving them only where one waits ((a); *Order* below), and a handler
-that cannot suspend keeps that visible in beni: no two handlers interleave, so threading the state
-through them is safe.
+**(e) `Worker.Object`: a Durable Object.** *Rewritten 2026-10-21 to the owner's design for
+`cf-workers-q2` and `q5` (Cesar Canassa, on PR #533; (l)), which replaces the 2026-10-20 text and
+its amendments: handlers that may suspend, run one event at a time, over one fiber runtime per
+object.* An object is a name, a function that restores its state, and the handlers it answers
+events with.
+
+**(e.1) Handlers are ordinary beni functions, and their effects are inferred.** A handler carries
+no `sync` marker, as transparent effects require (no surface syntax); the marker is legal only in
+a top-level or `foreign` signature, and inside a `type alias` it would be a type variable named
+`sync` (the defect of the 2026-10-20 text; `src/parse/Parse.zig:187-193`, `:1976-1982`). A
+handler that never waits runs to its end inside the host's method, at the cost of a plain call; a
+handler that waits runs as a fiber. The program's text is the same either way.
 
 ```elm
 module Worker.Object
 
 -- `Definition` and `Context` are `Worker`'s (b); this module imports them, as `WebSocket` does.
 
-pub define : String, (Context → state), Handlers state → Worker.Definition
+pub define : String, (Context → state), Handlers state msg → Worker.Definition
 
-pub type alias Handlers state =
-    { request : sync (Context, state, Request → state × Response)
-    , message : sync (Context, state, Socket, String → state)
-    , closed : sync (Context, state, Socket, Close → state)        -- `Close` is `WebSocket.Close`, §9.11 (a)
-    , failed : sync (Context, state, Socket, String → state)
-    , alarm : sync (Context, state → state)
-    , tick : sync (state → Maybe Duration)
-    , ticked : sync (Context, state → state)
+pub type alias Handlers state msg =
+    { request : Context, state, Request → state × Response
+    , message : Context, state, Socket, String → state
+    , closed : Context, state, Socket, Close → state          -- `Close` is `WebSocket.Close`, §9.11 (a)
+    , failed : Context, state, Socket, String → state
+    , alarm : Context, state → state
+    , received : Context, state, msg → state                  -- the object's own messages, (e.4)
+    , tick : state → Maybe Duration                           -- reads the state; it may not wait, (e.5)
+    , ticked : Context, state → state
     }
 
-pub none : Handlers state                -- every handler leaves the state as it is; `request` answers 404; `tick` is `Nothing`
+pub none : Handlers state msg            -- every handler leaves the state as it is; `request` answers 404; `tick` is `Nothing`
 
-pub body : Request → String              -- the whole body as UTF-8 text, read by the platform before `request` ran; "" when there is none
+pub send : Context, msg → ⊤              -- post a message to this object's own mailbox, (e.4)
+pub body : Request → String              -- the whole body as UTF-8 text, read by the platform before `request` runs; "" when there is none
 pub id : Context → String                -- `ctx.id.toString()`
-pub name : Context → Maybe String        -- `ctx.id.name`, when the object was reached by name; `Nothing` in an alarm's retried instance (measured, R2-4), so `restore` never depends on it
+pub name : Context → Maybe String        -- `ctx.id.name`, when the object was reached by name; `Nothing` in an alarm's retried instance (measured), so `restore` never depends on it
 pub sockets : Context → List Socket      -- every accepted socket still open, `ctx.getWebSockets()`
 pub socketsTagged : Context, String → List Socket
 
@@ -6593,6 +6608,7 @@ arena =
             | request = join
             , message = input
             , closed = leave
+            , received = scored
             , tick = λstate → if List.isEmpty state.players then Nothing else Just (Duration.millis 50)
             , ticked = step
         }
@@ -6605,145 +6621,158 @@ arena =
   author's, and (i)'s table says what to write.
 - **`restore` runs before the first event of each start.** The host runs the constructor on
   creation, on every wake from hibernation and after every eviction or restart, and the in-memory
-  state is gone each time ((a)). The platform calls `restore ctx` once per instance, at the start
-  of the first event's method, before that method waits for anything (the host's advice is to
-  minimise the constructor's work under hibernation), and holds the state it returns; a program
-  rebuilds it from `Storage` and from `sockets` with their attachments. Nothing else of the
-  previous life is visible.
+  state is gone each time ((a)). The platform calls `restore ctx` once per instance, as the first
+  work of the first event — `restore` may wait, as a handler may, and the first event waits behind
+  it — and holds the state it returns; a program rebuilds it from `Storage` and from `sockets` with
+  their attachments. Nothing else of the previous life is visible, (e.6).
 - **The state is the platform's to hold** between events; a handler is handed it and returns it.
   Nothing a handler returns is written anywhere by itself: what must survive a restart goes through
   `Storage`, incrementally, as the host recommends (no shutdown hook exists).
-- **`request`** answers a request the Worker's stub forwarded; `WebSocket.accept` is how it answers an
-  upgrade ((g)). **The platform reads the body before it calls the handler** — the class's `fetch`
-  awaits `request.text()`, then calls the `sync` handler with the whole text, which `body` answers
-  — so a handler that cannot suspend still reads a POST. *Amended 2026-10-20 (M6):* that wait is
-  I/O that is not storage, during which the host delivers other events (measured: a WebSocket
-  message ran while a body was read), so **a request with a body takes its turn when its body is
-  whole**, after the events that arrived meanwhile; handlers still run one at a time, and `restore`
-  has run before the wait. A body over **1 MiB** — by `content-length` when the header is there,
-  else counted as it is read and stopped at the first byte over — is answered 413 before the
-  handler runs; invalid UTF-8 decodes to U+FFFD, as §9.11 (a) says of `write`. A body whose read
-  fails because the client went away rejects with the host's `Error` "Network connection lost."
-  (workerd `jsg/util.c++`), which the class's `fetch` catches by that message alone, answering
-  nothing — the request is dropped, there is no one to answer — and any other rejection is a
-  defect. The limit is a fixed number in this slice and will be a setting of `define` with this
-  default (rule 7, as §9.10 (c) owes #336); an upgrade request has no body.
-  **`message`** is a text frame. A binary frame — `ArrayBuffer` — is not in this slice
-  ((j)): the platform closes the socket with 1003 "unsupported data", writes one line with
-  `console.warn` naming the socket's id, in both builds, as §9.11 (j) does, and the program sees
-  `closed` with 1003.
-  **`closed`** is the host's `webSocketClose`, with its code and reason mapped to §9.11 (a)'s
-  `Close` as (g) says. *Amended 2026-10-20 (H2):* the host does **not** answer a peer's close
-  frame on a hibernatable socket, whatever the compatibility date — `web_socket_auto_reply_to_close`
-  acts only in the read loop of a socket accepted with the standard `accept()` (workerd
-  v1.20260518.1, `src/workerd/api/web-socket.c++:1083-1099`; the hibernation read loop,
-  `io/hibernation-manager.c++:364-369`, sends none; measured: the client got no close event), so
-  the platform finishes the handshake itself: in `webSocketClose`, when the socket's `readyState`
-  is CLOSING, it calls `ws.close(code, reason)` with the peer's code, before `closed` runs (a
-  socket already closed ignores the call). *Amended 2026-10-21 (R2-2):* a close frame with no
-  status code arrives as 1005, which the host refuses from `close` (`InvalidAccessError`; measured:
-  the client then got no close event), so when the peer's code is one of the four the host refuses
-  — 1004, 1005, 1006, 1015 — the reply is `ws.close()` with no arguments. The fixture *a client
-  closes with no code* pins it beside *the client closes first*. **`failed`** is `webSocketError`, with the error's
-  message; no `webSocketClose` follows it and no close frame is sent (`io/hibernation-manager.c++:250-284`),
-  so the platform delivers `closed` itself right after `failed`, with 1006 and `""` ((g)).
-  **`alarm`** is `alarm()`.
-- **`tick` is the timer, declared.** After `restore` and after every handler the platform calls
-  `tick` on the new state. `Just d` keeps one host timer of `d` armed — set with `setTimeout`,
-  re-armed from the moment it fires — and `ticked` runs when it fires; a different `d` re-arms from
-  now; `Nothing` clears it. A set timer keeps the object from hibernating ((a)), which is what an
-  active arena wants, and `Nothing` is how the program lets it sleep: "the game will stop its tick
-  when the arena is idle" (#526). *Amended 2026-10-20 (M4):* a timer keeps the object from
-  **eviction** only from the compatibility date 2026-10-01, for up to 15 minutes per timer (the
-  changelog of that date; before it the host could shut an idle object down with a timer pending
-  and no client connected), and a timer does not reset the object's CPU allowance, which each
-  request or WebSocket message resets to 30 seconds. Whether a hibernatable socket counts as a
-  connected client in that rule's sense is *owed* (no page says it); an arena that ticks with no
-  client needs that date, which (i) asks for in production, while the pinned local runtime refuses
-  any date after its own build. The timer's callback runs `ticked` in the host's callback, in no
-  fiber, as every handler runs. The same `d` returned again does not re-arm the timer, so a tick
-  is not delayed by the events between ticks; within one life the ticks are re-armed as each
-  fires, and across a restart there is no timer at all: **after an eviction or a restart the
-  object runs nothing until an event arrives** — its sockets stay connected, and a quiet arena
-  does not tick until a player sends — so a tick is not durable and `restore` arms it only when
-  the first event has come. An alarm is the durable timer: it survives hibernation and eviction,
-  fires once, and wakes the object; the program sets the next one in `alarm`. A `ticked` that
-  throws is (f)'s defect, and no timer survives it. *Amended 2026-10-20 (L4):* the sockets stay
-  connected across a restart that the host decides, not across an `abort` ((f), 1006) and not
-  across a code deploy, which disconnects them all.
-- **The ownership row** (*amended 2026-10-20, H5; the owner decides it, `cf-workers-q5`*).
-  `ownership-checker.md` §30.3 gives every program constructor a row, and a constructor with no
-  row leaves its functions pending, which is an error; `Worker.program` and `Handlers` are such
-  constructors. The row this section proposes: `restore` is like `init` — its result is owned by
-  the platform; each handler of `Handlers` is like `update` — the state it is handed is owned, so
-  it may edit a list of the state in place, and the state it returns is owned by the platform;
-  `tick` is like `view` — it borrows the state and may edit nothing; `request`'s `Response` and
-  every socket are escaped values. The runtime keeps P1–P4 and P7 by holding one state at a time:
-  after a handler returns, nothing of the runtime reads the state it was handed, the timer's
-  closure included, which reads the state the last handler returned. §30.3's table gains the rows
-  with the owner's answer; until then a program that edits its state in place is `pending` and
-  does not check, and `List.copy` is the way round it.
-- **A handler starts no fiber** (*amended 2026-10-20, M9*). `Task.spawn` and `Task.start` are
-  `impure`, so a `sync` handler may call them, but an object has no fiber of its own: a fiber a
-  handler started would run on the isolate's shared scheduler, keep the object from hibernating
-  while it waits, and be lost at hibernation or eviction with no finaliser run — a `Task.bracket`
-  release that never runs, against §9.8.14 (a). **It is a hazard today, and the error is owed**
-  (*amended 2026-10-21, R3-1, replacing R2-6's check*): the rule buys a guarantee — a `bracket`'s
-  release runs — so it is an error once the platform can keep it, which it cannot yet; nothing in
-  the platform enforces it, and issue #550 holds the two ways to: a core API the platform can call at once — a count of fibers
-  made and a public way to stop core's queue — which is a change to `core/Task.beni` coordinated
-  with #358, or (j)'s slice, fibers in an object with the scope the host's lifecycle allows them.
-  A check on `Task.cleansUp ⊤` was specified and withdrawn the same day: the fiber runs to its
-  first suspension before the defect's deferred abort (core's drain is a microtask, the abort a
-  timer), and `cleansUp`'s flag is never reset and is set by a `bracket` outside any fiber too,
-  so it would refuse a `Task.bracket` in a handler and, after one violation, the first event of
-  every new instance of the isolate. Until #550, a program that starts a fiber from a handler gets
-  what this paragraph names; a `cloudflare` build of an object that starts none reaches no fiber
-  runtime. Work that must outlive a handler is an alarm.
-- **A handler that throws is a defect, and the object stops** ((f)).
-- **Order and determinism.** Handlers run one at a time, in the order their events become ready
-  — a request once its body is whole (`request` above), an alarm "concurrently with another
-  request" only in the host's sense that it is one more event in the queue; a `tick` fires between
-  events, never inside one. What a program observes depends on the events and the state, never on
-  a host timer's resolution — a fixture drives time as (k) says.
 
-**(f) A defect stops the object** (rule 9; `transparent-effects-proposal.md` §16.5; the owner's
-decision 1 of #331, applied here). A throw in a handler, in `restore`, in `ticked` or in a sibling
-leaves the host's method. *Amended 2026-10-21 (R2-1), the whole of this part; it replaces the
-2026-10-20 amendment that put a catch here, which rule 9 forbids and which the owner declined once
-already (§9.10 (f)).* **Nothing catches the throw.** The guard is `Js.finally` with a flag, the
-shape `core/Task.beni`'s drain has: the method runs the handler, sets the flag after it, and on the
-way out, when the flag is not set, it queues `ctx.abort(…)` on a timer of zero
-(`setTimeout(…, 0)`) and lets the throw go on unchanged. Two host facts shape it: `ctx.abort` does
-not return — workerd terminates the running JavaScript
-(`src/workerd/api/actor-state.c++:1133-1153`) and the caller sees `Error(reason)` with `remote`
-and `durableObjectReset` true, so an abort called before the throw has left would replace the
-defect with its own message (measured) — and a deferred abort keeps it: the stub's caller gets the
-original error unchanged, with its message and its stack, `remote` true and no
-`durableObjectReset`, and then the object is reset, so the next event meets a new instance
-(measured). Between the throw and the abort no program code runs: the flag stays set, and every
-method of the instance called before the timer fires aborts first, with no handler run. `restore`
-runs inside the first event's method, under that event's guard; `ticked` runs in the timer's
-callback, which holds the same guard, since a timer's throw would otherwise reach the host as an
-uncaught exception that resets nothing (measured: a throw in `webSocketMessage` left the object
-and the socket as they were, and a throw in the class's `fetch` rejected the stub's call and left
-the object as it was). `ctx.abort(message)` resets the Durable Object at once and the host logs an
-`Error` with the message ([`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)),
-`"beni: a defect stopped this object; its error is above"` here: in-flight requests fail, (d)'s
-`forward` throws the object's error again as "anything else", so the Worker's request is a defect
-too, every attached socket is closed (measured: the client sees 1006 with no reason, `wasClean`
-false), and the next event starts a new instance whose `restore` runs.
+**(e.2) One event at a time, with the state passed from one to the next.** Every event of an
+object goes into **one mailbox**: a request, a socket message, a close, an error, an alarm, a
+tick, an own message. A handler takes the state, may wait, and returns the new state; **the next
+event starts only after it returns**. Within a handler there is no interleaving and no lost
+update, and waiting on another service before answering is written top to bottom:
 
-**A defect in `alarm` is retried by the host** (*amended 2026-10-21, R2-4*). The host retries an
-alarm whose handler threw "using exponential backoff, starting at 2 second delays for up to 6
-retries" ([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)). In production
-the guard passes `{ retryAlarm: false }` to `abort`, whose options "accept `retryAlarm` (boolean,
-default `true`)" (the state page; the changelog of 2026-08-25), so a defect is not retried as a
-transient failure would be. workerd v1.20260518.1 has `abort(reason)` alone and ignores the option,
-and nothing durable can stop the retry there — `abort` discards every write, a `deleteAlarm()`
+```elm
+join ctx state request =
+    case Auth.check (Object.body request) of    -- waits; the object's other events queue
+        Ok player →
+            case WebSocket.accept ctx request [ player.id ] of
+                Ok ( socket, response ) → ( addPlayer state player socket, response )
+                Err _ → ( state, Worker.text 400 "not a WebSocket upgrade" )
+
+        Err _ →
+            ( state, Worker.empty 401 )
+```
+
+The host delivers an object's methods in series and interleaves them only where one waits for
+I/O that is not storage ((a); measured, M6); the mailbox is what turns that into one handler at a
+time, whatever the host interleaves: the class's `fetch` reads a request's body, then puts the
+event in the mailbox, and the mailbox's one consumer runs the handlers in the order the events
+became ready. What a program observes depends on the events and the state, never on a host
+timer's resolution — a fixture drives time as (k) says.
+
+**(e.3) A cycle between objects is a typed error, not a deadlock.** A strict mailbox deadlocks
+when A calls B and B calls A back, as Orleans and Restate both document. The platform's stub
+wrapper carries a **call-chain id** on every call between objects: a header on `stub.fetch`, and
+the same id through an RPC stub when RPC comes ((j)). An incoming event whose chain holds a
+handler already parked in this object fails at once, with `Err Cycle` at the caller
+(`StubError` gains the case, (d)); nothing hangs, and nothing is caught broadly (rule 9). That the
+id travels through both kinds of stub is a fact to establish (#594, (k)).
+
+**(e.4) Work that must not hold the object: spawn, then send.** To keep serving while slow work
+runs — so that an upstream call does not freeze the ticks — a handler spawns the work and sends
+the object its result, which arrives as an event of `received` in the mailbox's order: Akka's
+`pipeToSelf`, LiveView's `start_async`.
+
+```elm
+input ctx state socket text =
+    _ = Task.spawn λ⊤ → Object.send ctx (Scored socket (Leaderboard.submit text))
+    state
+```
+
+Holding the object or spawning is the program's choice, and both are safe (rule 7). `send` from
+outside a handler — from a spawned fiber, as here — queues the message; `send` from inside a
+handler queues it behind the events already waiting.
+
+**(e.5) Each object gets its own fiber runtime.**
+
+- **Its own scheduler.** Every object instance gets its own scheduler through the `scheduler`
+  fiber slot `transparent-effects-proposal.md` §17.5 reserves (`Task.withScheduler`, a change to
+  `core/Task.beni`: #596, coordinated with #358 and #550). All events of one object share one
+  IoContext in workerd (`src/workerd/io/io-context.h`, `io-context.c++:657-660`), so I/O across
+  requests is not a hazard inside an object; objects that share an isolate refuse each other's
+  I/O — "Cannot perform I/O on behalf of a different Durable Object" (`io-context.c++:1539-1546`)
+  — and core's single drain per isolate is what would cross that line. A per-object scheduler
+  also confines a defect to its own object ((f); H6). That two objects in one isolate stay
+  isolated is a fact to establish (#595, (k)).
+- **Its own scope.** It is opened when the instance starts, and every handler that waits and
+  every spawned fiber lives in it. A handler that never waits lives in no fiber.
+- **A live fiber keeps the object in memory**, as a set timer does: while the scope has a live
+  fiber, the platform holds a host timer. Hibernation happens only when the mailbox is empty and
+  the scope has no live fiber, so it never strands a parked fiber. That the timer prevents
+  hibernation reliably is a fact to establish (#593, (k)).
+- **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
+  `restore` and after every handler, outside any fiber. A marker cannot stand on an alias field,
+  so the platform checks the field at `define` with `Js.maySuspend`, and a `tick` that may suspend
+  is a defect at load, naming the object. `Just d` keeps one host timer of `d` armed — re-armed
+  from the moment it fires, the same `d` not re-arming it — and `ticked` is an event of the
+  mailbox; a different `d` re-arms from now; `Nothing` clears it. A set timer keeps the object
+  from hibernating ((a)), which is what an active arena wants, and `Nothing` is how the program
+  lets it sleep: "the game will stop its tick when the arena is idle" (#526). A timer keeps the
+  object from **eviction** only from the compatibility date 2026-10-01, for up to 15 minutes per
+  timer (the changelog of that date), and a timer does not reset the object's CPU allowance,
+  which each request or WebSocket message resets to 30 seconds; whether a hibernatable socket
+  counts as a connected client in that rule's sense is *owed* (no page says it). After an
+  eviction or a restart there is no timer until an event arrives; the alarm is the durable timer.
+- **A defect closes the scope, then aborts** ((f)).
+- **Eviction is a process kill.** A deploy, a reset and the 15-minute cap on pending operations
+  kill the instance with no code run, as SIGKILL does on Node. The guarantees hold while the
+  instance lives.
+
+**(e.6) What survives what.**
+
+| | Hibernation | Eviction, or a defect |
+|---|---|---|
+| the state | rebuilt by `restore` | rebuilt by `restore` |
+| sockets and their attachments | yes | yes, except after `abort` (1006, (f)) and after a deploy, which disconnects them all |
+| fibers in flight, own messages | cannot happen while they are live ((e.5)) | lost; delivery of an own message is **at most once** |
+| storage and the alarm | yes | yes |
+
+Durable work follows one pattern: write the intent to `Storage`, then finish it in `restore` or
+in `alarm`.
+
+**(e.7) The ownership row** (`cf-workers-q5`, decided 2026-10-21: *owned, like `update`*). The
+state passed between handlers has the row §9.12 proposed: `restore` is like `init`, its result
+owned by the platform; each handler is like `update`: the state it is handed is owned, so a
+handler may edit a list of the state in place, and the state it returns is owned by the
+platform; `tick` is like `view`: it borrows the state and edits nothing; a `Response` and every
+socket are escaped values. A spawned fiber's closure that captures the state makes that value
+escape, so an in-place edit after the spawn is refused and the error offers `List.copy`. The
+runtime keeps P1–P4 and P7 by holding one state at a time: after a handler returns, nothing of
+the runtime reads the state it was handed, the timer's closure included. The row needs new field
+roles in the ownership checker and a `define` over a record written out, with `restore` a field,
+as the question said (`ownership-checker.md` §30.3 gains the rows); until that lands, an in-place
+edit in a handler is `pending` and `List.copy` is the way round it.
+
+**(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context,
+state, msg → state × Cmd msg` — sits over `send` and spawn, as §9.8.11 puts TEA over a direct
+form. It is optional, adds no capability, and is a later slice ((j)).
+
+**(f) A defect closes the object's scope, then aborts** (rule 9; `transparent-effects-proposal.md`
+§16.5; the owner's decision 1 of #331 and his design for `cf-workers-q2`, (e.5)). *Rewritten
+2026-10-21 with (e).* A throw in a handler, in `restore`, in `ticked` or in a sibling is a defect.
+Nothing catches it: it leaves the fiber's drain, or the host's method when the handler ran in
+none, and reaches the host as the uncaught exception it is, with its message and its stack —
+measured: the stub's caller sees the original error with `remote` true and no
+`durableObjectReset`. On its way out the platform's hook for the object's scheduler (the
+per-object form of core's `onDefect`, #596) **closes the object's scope**: every fiber of it is
+cancelled and its finalisers and `Task.bracket` releases run without interruption, as §9.8.14's
+teardown runs them, under its deadline; **then it aborts the instance** with `ctx.abort(…)` and a
+fixed reason — `ctx.abort` does not return (workerd terminates the running JavaScript,
+`src/workerd/api/actor-state.c++:1133-1153`), which is why it comes last, after the teardown, and
+why the reason is fixed: an abort called before the throw has left would replace the defect with
+its own message (measured). From the throw to the abort no handler runs: the mailbox is stopped
+with the scope. `ctx.abort(message)` resets the Durable Object at once and the host logs an
+`Error` with the message ([`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)):
+in-flight requests fail, (d)'s `forward` throws the object's error again as "anything else", so
+the Worker's request is a defect too, every attached socket is closed (measured: the client sees
+1006 with no reason, `wasClean` false), and the next event starts a new instance whose `restore`
+runs. A handler that ran in no fiber — one that never waited — has no scope work to tear down; the
+abort alone follows its throw, queued on a timer of zero so that the throw leaves first.
+
+**A defect in `alarm` is retried by the host.** The host retries an alarm whose handler threw
+"using exponential backoff, starting at 2 second delays for up to 6 retries"
+([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)). In production the
+abort passes `{ retryAlarm: false }`, whose options "accept `retryAlarm` (boolean, default
+`true`)" (the state page; the changelog of 2026-08-25), so a defect is not retried as a transient
+failure would be. workerd v1.20260518.1 has `abort(reason)` alone and ignores the option, and
+nothing durable can stop the retry there — `abort` discards every write, a `deleteAlarm()`
 before it included (measured: with and without the delete, `alarm` ran again about 2 s later,
-`isRetry` true, on a fresh instance after `restore`, with `ctx.id.name` undefined). So under (k)'s
-pinned tools a defect in `alarm` is retried up to 6 times on fresh instances, each after
+`isRetry` true, on a fresh instance after `restore`, with `ctx.id.name` undefined). So under
+(k)'s pinned tools a defect in `alarm` is retried up to 6 times on fresh instances, each after
 `restore`, and the fixture expects that; the production rule is *owed* to a newer runtime in the
 shell. A defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes
 on.
@@ -6759,14 +6788,18 @@ refusing response. Nothing of those is defined a second time here. **It does not
 `drain` are not shared (item 2) — and no protocol module may need them to check here; the review
 of #531 found why, and this section follows it:
 
-- **The reading style is per event, not a pull.** §9.11 (a)'s `read` parks the fiber that waits
+- **The reading style is per event, not a pull** (the owner's `ws-q3`, 2026-10-21: *each host
+  style* — `node` keeps the pull `read` session, Cloudflare uses event handlers so an object can
+  hibernate; (l)). §9.11 (a)'s `read` parks the fiber that waits
   for the next message, and §9.11 (e)'s `accept session` runs the session in a fiber for as long
   as the connection lives. Under hibernation an object's memory is discarded ((a) above), and
   only the connection, its tags and an attachment of at most 16 384 bytes survive; a parked fiber
   would either keep the object in memory — no hibernation — or be lost. The host's own shape is
   one handler per event, `webSocketMessage`, `webSocketClose`, `webSocketError`, and that is (e)'s
   `message`, `closed` and `failed`. So `read` is not declared: a `sync` handler could not call it,
-  and a fiber that called it would not survive hibernation.
+  and a fiber that called it would not survive hibernation. A handler may wait ((e.1)), but a
+  fiber of the object's scope keeps the object awake ((e.5)), so a program that parked on a socket
+  would give up hibernation; the per-event form keeps it.
 - **There is no back-pressure signal.** The host's `WebSocket` has no `bufferedAmount`
   (*measured*, `undefined`), and `send` inserts each message into an unbounded `outgoingMessages` map with no size check
   (workerd v1.20260518.1, `src/workerd/api/web-socket.c++:617-618`), so neither `buffered` nor
@@ -6958,8 +6991,8 @@ arenaOf path =
 ```
 
 **(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
-forwarded whole; an object reads its body through (e)); fibers started by an object's handler
-((e), M9, #550); binary frames and `Bytes`; RPC methods on a stub and
+forwarded whole; an object reads its body through (e)); `Object.element`, The Elm Architecture over
+`send` and spawn ((e.8)); binary frames and `Bytes`; RPC methods on a stub and
 `WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
 recovery; `ctx.waitUntil`; `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
 Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
@@ -6980,12 +7013,14 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   used.
 - **The script** is a `.steps` file of requests, WebSocket opens, sends, reads and closes, and
   the transcript after each step is the golden, with run hashes as `serve/`'s (§9.10 (h)).
-- **Time is driven, never waited for.** workerd has no test clock and Miniflare no alarm trigger
-  or fake timers, so a fixture that ticked for real would sleep for real. The platform's runtime
-  takes a test-only binding, `BENI_TEST` — set by the driver and never by a user's configuration —
-  under which the object answers two requests of the driver's: `/__beni/tick` runs `ticked` as the
-  timer would, and `/__beni/alarm` runs `alarm`; with the binding unset the paths are ordinary
-  requests. *The owner decides it* (`cf-workers-q6`, the recommended choice).
+- **Time is driven, never waited for** (`cf-workers-q6`, decided 2026-10-21: *a hidden build
+  flag*; (l)). workerd has no test clock and Miniflare no alarm trigger or fake timers, so a
+  fixture that ticked for real would sleep for real. A hidden flag, `beni build --test-hooks` —
+  hidden as `--allow-debug` is, test-only surface — compiles two paths into every object:
+  `/__beni/tick` puts a `ticked` event in the mailbox as the timer would, and `/__beni/alarm` an
+  `alarm` event; the corpus passes the flag, and a user's build never holds the paths. The runtime
+  reads the flag's switch as it reads `Js.development`. The transcript is a function of the steps
+  alone (rule 5).
 - **The budget.** Measured with `perf stat -e instructions:u`: `node -e 0` is 112M, and one
   Miniflare start, one request and its disposal 1 933M — 45% of the 4 300M budget before a build
   runs — so a case starts Miniflare once, and the `run/` habit of a development and a `--release`
@@ -6993,7 +7028,10 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   `<name>.release`, each one build and one Miniflare start over the same sources and script.
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
-  slice under this driver; until then their result is what is cited, not a file.
+  slice under this driver; until then their result is what is cited, not a file. Three facts of
+  (e.5) and (e.3) are to establish the same way, each with its issue: the live-fiber timer
+  prevents hibernation (#593), the call-chain id travels through `stub.fetch` and an RPC stub
+  (#594), and two objects in one isolate stay isolated (#595).
 
 **(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
 the part of the section it settles keeps its text.
@@ -7008,8 +7046,24 @@ the part of the section it settles keeps its text.
   handler that answers a value the host runs**; the recommended answer. (d)'s amendment of this
   date writes the form. The other choice, fibers per request through core's reserved scheduler
   slot, was not taken, and may follow as a later slice over the same `Answer`.
-- `cf-workers-q2` (the object shape), `q5` (the ownership row), `q6` (the tests' time) and the
-  joint `ws-q3` (the socket session) are open.
+- **`cf-workers-q2`, the object shape** (Cesar Canassa, 2026-10-21 11:50 UTC, on PR #533):
+  **neither option as offered — handlers that may suspend, run one at a time**, the end state:
+  no `sync` marker and effects inferred; one mailbox per object with the state passed from one
+  event to the next; a call-chain id that turns a cycle into `Err Cycle`; spawn then `send` for
+  slow work; one fiber runtime per object through `Task.withScheduler`, with its own scope, a host
+  timer while a fiber is live, and a defect that closes the scope then aborts; the survival table;
+  The Elm Architecture as an optional `Object.element` layer. (e) and (f) are rewritten to it.
+- **`cf-workers-q5`, the ownership row** (Cesar Canassa, 2026-10-21 11:52 UTC): **owned, like
+  `update`**, as §8 of the same comment says: the state passed between handlers keeps the proposed
+  row, and a spawned closure that captures the state makes it escape ((e.7)).
+- **`cf-workers-q6`, the tests' time** (Cesar Canassa, 2026-10-21 11:53 UTC): **a hidden build
+  flag**: the tests drive a tick and an alarm through hooks that `--test-hooks` compiles in ((k)).
+- **`ws-q1`, the WebSocket names** (Cesar Canassa, 2026-10-21): the direct forms are `read`,
+  `write` and `close` on every platform, and Workers uses `write`; §9.11 and (g) already say so.
+- **`ws-q3`, the socket session** (Cesar Canassa, 2026-10-21 11:52 UTC): **each host style** —
+  `node` keeps the pull `read` session, Cloudflare uses event handlers so an object can hibernate
+  ((g)).
+- No question of this section is open.
 
 ## Appendix — what is deliberately not done
 
