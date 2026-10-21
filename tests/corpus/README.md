@@ -198,11 +198,16 @@ browser answers one:
                                 (happy-dom), opened from this server with
                                 `--server`, and print its transcript, each
                                 line `| …`; with `"wait": false` it runs
-                                beside the next steps
+                                beside the next steps, and with
+                                `"wait-handshakes": true` the page driver
+                                has `--wait-handshakes`
     {"page-wait": "<step>"}     wait, 5 s at most, until the page has run
-                                that line of its script
-    {"page-end": true}          wait for the page to end, and print its
-                                transcript
+                                that line of its script; the wait uses the
+                                lines up to it, so a second wait for the
+                                same line waits for the next one, and a
+                                page that ended stops the wait at once
+    {"page-end": true}          wait for the page to end, 20 s at most,
+                                then stop it; print its transcript
 
 A `{"fault": "socket:EIO"}` step, first in a script, makes the first socket
 the program upgrades fail, as Node fails one (`error`, then `close`), with
@@ -445,10 +450,12 @@ project) against it, one step per line, `#` for a comment:
     sockets                     log `(sockets: <n>)`, the sockets the page
                                 made and has not closed
     socket <n> wait <k>|open|closed
-                                with `--server` only: wait, 5 s at most in
-                                real time, until the socket has received
+                                with `--server` only: give the page what
+                                the host's socket did, one event at a time
+                                in order, until the socket has received
                                 `k` messages in all, has opened, or has
-                                closed
+                                closed; wait for the next event in real
+                                time, 5 s at most
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
@@ -554,11 +561,15 @@ it happy-dom's own `WebSocket` (which wraps the `ws` library) in place of the
 scripted one, so a socket the page opens to `/chat` reaches the server there.
 Node's `WebSocket` (undici) cannot serve, because it calls `unref` on what
 `setTimeout` returns, and the page's virtual clock returns a number. Each socket is still
-numbered and logged, the scripted `socket` steps are refused, and `socket
-<n> wait` waits for it in real time. The line of each step the driver has
-run goes to file descriptor 3. The serve driver's `page` steps start it so,
-with the program under test's port (`tests/blackbox/chat_example_test.zig`,
-`boundary.md` §9.11 (l)).
+numbered and logged, and the scripted `socket` steps are refused. What the
+host's socket does is held, in order, and reaches the page only in a `socket
+<n> wait` step, so a snapshot never depends on when the server answered.
+`--wait-handshakes` tests that: after each step, the driver waits until the
+host has answered every socket's handshake, and lets the page settle again
+before the snapshot. The line of each step the driver has run goes to file
+descriptor 3. The serve driver's `page` steps start it so, with the program
+under test's port (`tests/blackbox/chat_example_test.zig`, `boundary.md`
+§9.11 (l)).
 
 **The page never leaves its document.** A navigation the page starts to
 another document — `location.assign`, `replace` or `reload`, a write to
