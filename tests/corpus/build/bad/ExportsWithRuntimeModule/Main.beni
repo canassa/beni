@@ -1,0 +1,20 @@
+-- `unknown_exports_mode` for a chain whose runtime is a module (boundary.md
+-- §9.12 (c); §9.2, amended 2026-10-02): `browser`'s runtime is its `Rt`
+-- module, and the entry file of a runtime module exports nothing of `run`'s
+-- result yet. The chain declares `"exports": "program"` and is refused
+-- against the manifest that declared it, in `check`, in a development
+-- build and in a release build alike, before anything is built.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Inc
+
+
+view : Int → Html Msg
+view count = <p id="count">{String.fromInt count}</p>
+
+
+main : Browser.Program
+main = Browser.program { init = λ⊤ → 0, update = λInc count → count + 1, view = view }

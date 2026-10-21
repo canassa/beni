@@ -1,0 +1,1 @@
+[{"code":"unknown_exports_mode","severity":"error","span":{"file":"platform/beni.json","start":{"line":1,"col":1},"end":{"line":1,"col":1}},"title":"UNKNOWN EXPORTS MODE","message":"This platform declares `\"exports\": \"program\"` and a runtime module, and the\nentry file of a runtime module exports nothing of `run`'s result yet\n(`docs/design/boundary.md` §9.12 (c))."}]
