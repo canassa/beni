@@ -401,10 +401,6 @@ fn isRoot(in: Input, g: u32) bool {
 /// is sound on its own; a later one only finds more (a dropped call site
 /// can make a parameter constant).
 const max_rounds = 4;
-/// How many sweeps one round's fixpoint may take before the round gives up
-/// and rewrites nothing: stopping short of the fixpoint would be unsound,
-/// declining is not.
-const max_sweeps = 24;
 /// How deep a statement nesting the rewriting walk follows by recursion.
 const max_depth = 200;
 /// On a node index in an evaluating walk's stack: its operands are done.
@@ -427,9 +423,6 @@ pub const Stats = struct {
     /// Whole analyses (`analyse`): fact 3 to its fixpoint, then facts 1,
     /// 2, 4 and 5 to theirs, each from ⊥.
     analyses: u64 = 0,
-    /// Sweeps of facts 1, 2, 4 and 5 (`sweeps`), over every analysis: a
-    /// safety build's check of the combined solver on a small program.
-    sweeps: u64 = 0,
     /// The combined solver (`backend.md` §9, *The combined solver*, slice
     /// 4), over every analysis: the modules it extracted, and those whose
     /// constraints it kept because the module had not changed; the
@@ -457,16 +450,14 @@ pub const Stats = struct {
     passes: u64 = 0,
     /// The caps, each counted where it stopped work that would have gone
     /// on — the counters to read first when an output grew (research 52
-    /// §3.7). An analysis whose facts 1, 2, 4 and 5 did not converge in
-    /// `max_sweeps`, which rewrites nothing; a fact 3 that did not
-    /// converge in `max_pts_sweeps`, so that no fact 3 is used; `rounds`
+    /// §3.7). A fact 3 that did not converge in `max_pts_sweeps`, so that
+    /// no fact 3 is used; `rounds`
     /// stopped at `max_rounds` after a round that changed the program;
     /// the structural loop stopped at `max_passes` after a pass that did;
     /// definite initialisation stopped at `max_init_runs` while it still
     /// found keys; and an inlining pass stopped at its own cap
     /// (`copyLimit`, the nodes `inlineOnce` and `fuseCalls` may copy;
     /// `inlineSmall`'s four turns; `foldConstructors`' budget of a list).
-    analyses_declined: u64 = 0,
     points_to_declined: u64 = 0,
     rounds_capped: u64 = 0,
     passes_capped: u64 = 0,
@@ -1177,10 +1168,6 @@ const Spec = struct {
     kept_drops: std.ArrayList(KeptDrop) = .empty,
     kept_args: std.ArrayList(NodeRef) = .empty,
     changed: bool = false,
-    /// Whether this sweep counts the reads of whole-program names: the
-    /// first of a round only, so that `reads` is a count and not a
-    /// multiple of one.
-    counting: bool = false,
     /// Slice 4, facts 4 and 5: per abstract object and property, the join
     /// of every value written to it; the object sites whose literal has a
     /// spread; per function, the join of what it returns, and the function
@@ -1263,31 +1250,19 @@ const Spec = struct {
     first_stamp: []u32 = &.{},
     first_name: []u32 = &.{},
     first_epoch: u32 = 0,
-    /// `countTop`'s record of each top-level statement's count, and while
-    /// it counts (`logging`), the names `count` touched, the whole-program
-    /// names it read (each read once), and those it marked escaped or
-    /// assigned.
-    count_logs: KeyMap(NodeRef, CountLog) = .empty,
-    log_names: std.ArrayList(u32) = .empty,
-    log_reads: std.ArrayList(u32) = .empty,
-    log_escaped: std.ArrayList(u32) = .empty,
-    log_assigned: std.ArrayList(u32) = .empty,
-    logging: bool = false,
-    log_failed: bool = false,
     /// `scanOf`'s answers, per function, with the `Mod.version` each is of.
     body_scans: KeyMap(NodeRef, KeptScan) = .empty,
     /// `returnsMade` of a function, kept while its module stands (`fuseOne`).
     fuse_made: KeyMap(NodeRef, struct { version: u32, made: bool }) = .empty,
-    /// The worklist of facts 1, 2, 4 and 5 (`walkAll`): every top-level
-    /// statement in order; those a change woke; the one being walked
-    /// (`none` outside a sweep) and that walk's number; and per
-    /// whole-program name and per site, the statements that read it.
+    /// The rewrite's own walks' dependencies (`rewrite`, `stale`), which the
+    /// combined solver leaves (`solve`): every top-level statement in order;
+    /// those a change woke; the one a solve's constraint is of (`none`
+    /// outside one) and its number; and per whole-program name and per
+    /// site, the statements that read it.
     w_stmts: std.ArrayList(WorkStmt) = .empty,
     w_dirty: std.DynamicBitSetUnmanaged = .{},
     w_cur: u32 = none,
     w_walk: u32 = 0,
-    /// How many sweeps the last `sweeps` took.
-    sweep_count: u32 = 0,
     w_deps: std.ArrayList(WorkDep) = .empty,
     g_deps: []u32 = &.{},
     g_seen: []u32 = &.{},
@@ -1303,8 +1278,6 @@ const Spec = struct {
     solve_tmp: Arena = .init(std.heap.page_allocator),
 
     const KeptScan = struct { epoch: u64, scan: ?*const BodyScan };
-    const CountLog = struct { version: u32, names: []const NameCount, reads: []const u32, escaped: []const u32, assigned: []const u32 };
-    const NameCount = struct { name: u32, decls: u32, uses: u32, assigned: bool };
     const KeptNodes = struct { epoch: u64, nodes: []const Index };
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
@@ -1669,127 +1642,9 @@ const Spec = struct {
         s.spread_sites = try s.pts.run().alloc(bool, s.pts.sites.items.len);
         @memset(s.spread_sites, false);
         // Facts 1, 2, 4 and 5 by the combined solver (`backend.md` §9, *The
-        // combined solver*, slice 4), which has no sweep to run out of; in
-        // a safety build of a small program, by the sweeps first, which it
-        // must agree with.
-        if (std.debug.runtime_safety) {
-            var nodes: usize = 0;
-            for (s.mods) |*m| nodes += m.ir.nodes.len;
-            if (nodes <= max_solve_checked_nodes) {
-                try s.checkedSolve();
-                return true;
-            }
-        }
+        // combined solver*, slice 4), which has no sweep to run out of.
         try s.solve();
         return true;
-    }
-
-    /// `solve`, after the sweeps (`checkedSweeps`) on the same input, in a
-    /// safety build of a small program: the two must agree on every node's
-    /// value, every parameter, field and return, every conditional fact 5
-    /// decides, and the `escaped`, `assigned`, `reads`, `spread_sites` and
-    /// `arg_effect` columns, and a disagreement names the node. The
-    /// solver's facts are the ones the build reads. Where the sweeps stopped
-    /// at `max_sweeps` there is nothing to compare: the solver has no such
-    /// cap (research 52's E1).
-    fn checkedSolve(s: *Spec) Allocator.Error!void {
-        const a = s.arena;
-        const escaped = try a.dupe(bool, s.escaped);
-        const assigned = try a.dupe(bool, s.assigned);
-        const params = try a.dupe(Lat, s.params.items);
-        const want = try s.checkedSweeps();
-        s.stats.sweeps += s.sweep_count;
-        const ref = .{
-            .params = try a.dupe(Lat, s.params.items),
-            .escaped = try a.dupe(bool, s.escaped),
-            .assigned = try a.dupe(bool, s.assigned),
-            .reads = try a.dupe(u32, s.reads),
-            .spread = try a.dupe(bool, s.spread_sites),
-            .effect = try a.dupe(bool, s.arg_effect.items),
-            .props = try s.prop_lat.clone(a),
-            .rets = try s.ret_lat.clone(a),
-            .conds = try s.decided_conds.clone(a),
-        };
-        const memo = try a.alloc([]Lat, s.mods.len);
-        for (memo, s.mods) |*mm, *m| mm.* = try a.dupe(Lat, m.memo);
-        @memcpy(s.escaped, escaped);
-        @memcpy(s.assigned, assigned);
-        @memcpy(s.params.items, params);
-        @memset(s.reads, 0);
-        @memset(s.spread_sites, false);
-        @memset(s.arg_effect.items, false);
-        s.prop_lat.clearRetainingCapacity();
-        s.ret_lat.clearRetainingCapacity();
-        s.decided_conds.clearRetainingCapacity();
-        try s.solve();
-        if (!want) return;
-        const Fail = struct {
-            fn lat(sp: *Spec, w: *std.Io.Writer, v: Lat) void {
-                switch (v.state) {
-                    .bot => w.writeAll("⊥") catch {},
-                    .top => w.print("⊤ (truth {t})", .{v.truth}) catch {},
-                    .nonnull => w.print("nonnull (truth {t})", .{v.truth}) catch {},
-                    .lit => {
-                        const l = sp.litOf(v);
-                        w.print("{t} `{s}`", .{ l.kind, if (l.kind == .name) "…" else l.bytes }) catch {};
-                    },
-                }
-            }
-            fn at(sp: *Spec, what: []const u8, module: u32, node: u32, by_sweeps: ?Lat, by_solver: ?Lat) noreturn {
-                var buf: [512]u8 = undefined;
-                var w: std.Io.Writer = .fixed(&buf);
-                const ir = sp.mods[module].ir;
-                if (node < ir.nodes.len) {
-                    const nd: Index = @fromBackingInt(@intCast(node));
-                    w.print("{s} of node {d} ({t}) of module {d}, at byte {d}", .{ what, node, ir.tag(nd), module, ir.pos(nd) }) catch {};
-                } else w.print("{s} of node {d} of module {d}", .{ what, node, module }) catch {};
-                if (by_sweeps) |v| {
-                    w.writeAll(": the sweeps say ") catch {};
-                    lat(sp, &w, v);
-                }
-                if (by_solver) |v| {
-                    w.writeAll(", the solver ") catch {};
-                    lat(sp, &w, v);
-                }
-                std.debug.panic("specialisation: the combined solver and the sweeps disagree on the {s}", .{w.buffered()});
-            }
-            fn column(what: []const u8, i: usize) noreturn {
-                std.debug.panic("specialisation: the combined solver and the sweeps disagree on the `{s}` column at {d}", .{ what, i });
-            }
-        };
-        for (s.params.items, ref.params, 0..) |x, y, i| if (!x.eql(y)) {
-            for (s.decl) |d| if (d) |dd| if (dd.func != null and i >= dd.params and i < dd.params + dd.arity) {
-                Fail.at(s, "parameter", dd.module, dd.stmt.int(), y, x);
-            };
-            Fail.column("params", i);
-        };
-        for (s.escaped, ref.escaped, 0..) |x, y, g| if (x != y) Fail.column("escaped", g);
-        for (s.assigned, ref.assigned, 0..) |x, y, g| if (x != y) Fail.column("assigned", g);
-        for (s.reads, ref.reads, 0..) |x, y, g| if (x != y) Fail.column("reads", g);
-        for (s.spread_sites, ref.spread, 0..) |x, y, i| if (x != y) Fail.column("spread_sites", i);
-        for (s.arg_effect.items, ref.effect, 0..) |x, y, i| if (x != y) Fail.column("arg_effect", i);
-        if (s.prop_lat.count() != ref.props.count()) Fail.column("prop_lat count", s.prop_lat.count());
-        var pit = ref.props.iterator();
-        while (pit.next()) |kv| {
-            const site = &s.pts.sites.items[kv.key_ptr.site];
-            const got = s.prop_lat.get(kv.key_ptr.*) orelse Fail.at(s, "fields (one the solver lacks)", site.module, site.node.int(), kv.value_ptr.*, null);
-            if (!got.eql(kv.value_ptr.*)) Fail.at(s, "field", site.module, site.node.int(), kv.value_ptr.*, got);
-        }
-        if (s.ret_lat.count() != ref.rets.count()) Fail.column("ret_lat count", s.ret_lat.count());
-        var rit = ref.rets.iterator();
-        while (rit.next()) |kv| {
-            const got = s.ret_lat.get(kv.key_ptr.*) orelse Fail.at(s, "returns (one the solver lacks)", kv.key_ptr.module, kv.key_ptr.node, kv.value_ptr.*, null);
-            if (!got.eql(kv.value_ptr.*)) Fail.at(s, "return", kv.key_ptr.module, kv.key_ptr.node, kv.value_ptr.*, got);
-        }
-        if (s.decided_conds.count() != ref.conds.count()) Fail.column("decided_conds count", s.decided_conds.count());
-        var cit = ref.conds.iterator();
-        while (cit.next()) |kv| {
-            const got = s.decided_conds.get(kv.key_ptr.*) orelse Fail.at(s, "decided conditional (one the solver lacks)", kv.key_ptr.module, kv.key_ptr.node, null, null);
-            if (got != kv.value_ptr.*) Fail.at(s, "decided conditional", kv.key_ptr.module, kv.key_ptr.node, null, null);
-        }
-        for (memo, s.mods, 0..) |mm, *m, mi| for (mm, m.memo[0..mm.len], 0..) |x, y, n| {
-            if (!x.eql(y)) Fail.at(s, "value", @intCast(mi), @intCast(n), x, y);
-        };
     }
 
     /// Whether `pts` is still the solve of the program as it stands (#575):
@@ -2210,104 +2065,6 @@ const Spec = struct {
         s.solve_tmp.deinit();
     }
 
-    /// Facts 1, 2, 4 and 5 swept to their fixpoint, from what `analyse`
-    /// set up. False when the fixpoint was not reached.
-    ///
-    /// The worklist (backend.md §9, *As built — the worklist*): after the
-    /// first sweep, which walks everything and counts, a sweep walks only
-    /// the statements that read a fact that changed since they were last
-    /// walked — any other would read what it read before and change
-    /// nothing — so the sweeps, their count and the facts are those of
-    /// walking the whole program each time, which `reference` does.
-    fn sweeps(s: *Spec, reference: bool) Allocator.Error!bool {
-        @memset(s.spread_sites, false);
-        const a = s.pts.run();
-        s.w_dirty = try .initEmpty(a, s.w_stmts.items.len);
-        s.w_deps.clearRetainingCapacity();
-        s.g_deps = try growSlice(a, u32, &.{}, s.globals, none);
-        s.g_seen = try growSlice(a, u32, &.{}, s.globals, 0);
-        s.site_deps = try growSlice(a, u32, &.{}, s.pts.sites.items.len, none);
-        s.site_seen = try growSlice(a, u32, &.{}, s.pts.sites.items.len, 0);
-        s.w_walk = 0;
-        var sweep: u32 = 0;
-        while (sweep < max_sweeps) : (sweep += 1) {
-            s.changed = false;
-            s.counting = sweep == 0;
-            s.sweep_count = sweep + 1;
-            try s.walkAll(reference or sweep == 0);
-            if (!s.changed) return true;
-        }
-        return false;
-    }
-
-    /// `sweeps` twice, walking everything every sweep and then by the
-    /// worklist, which must agree on every fact (a safety build's check, on
-    /// a small program).
-    fn checkedSweeps(s: *Spec) Allocator.Error!bool {
-        const a = s.arena;
-        const escaped = try a.dupe(bool, s.escaped);
-        const assigned = try a.dupe(bool, s.assigned);
-        const params = try a.dupe(Lat, s.params.items);
-        const want = try s.sweeps(true);
-        const ref = .{
-            .count = s.sweep_count,
-            .params = try a.dupe(Lat, s.params.items),
-            .escaped = try a.dupe(bool, s.escaped),
-            .assigned = try a.dupe(bool, s.assigned),
-            .reads = try a.dupe(u32, s.reads),
-            .spread = try a.dupe(bool, s.spread_sites),
-            .props = try s.prop_lat.clone(a),
-            .rets = try s.ret_lat.clone(a),
-            .conds = try s.decided_conds.clone(a),
-        };
-        const memo = try a.alloc([]Lat, s.mods.len);
-        for (memo, s.mods) |*mm, *m| mm.* = try a.dupe(Lat, m.memo);
-        @memcpy(s.escaped, escaped);
-        @memcpy(s.assigned, assigned);
-        @memcpy(s.params.items, params);
-        @memset(s.reads, 0);
-        s.prop_lat.clearRetainingCapacity();
-        s.ret_lat.clearRetainingCapacity();
-        s.decided_conds.clearRetainingCapacity();
-        const got = try s.sweeps(false);
-        const Fail = struct {
-            fn at(what: []const u8) noreturn {
-                std.debug.panic("specialisation: the worklist's facts differ from a sweep of everything: {s}", .{what});
-            }
-        };
-        if (got != want) Fail.at("converged");
-        if (s.sweep_count != ref.count) Fail.at("sweeps");
-        if (!got) return got;
-        for (s.params.items, ref.params) |x, y| if (!x.eql(y)) Fail.at("parameter");
-        if (!std.mem.eql(bool, s.escaped, ref.escaped)) Fail.at("escaped");
-        if (!std.mem.eql(bool, s.assigned, ref.assigned)) Fail.at("assigned");
-        if (!std.mem.eql(u32, s.reads, ref.reads)) Fail.at("reads");
-        if (!std.mem.eql(bool, s.spread_sites, ref.spread)) Fail.at("spread");
-        if (s.prop_lat.count() != ref.props.count()) Fail.at("properties");
-        var pit = ref.props.iterator();
-        while (pit.next()) |kv| if (!(s.prop_lat.get(kv.key_ptr.*) orelse Fail.at("property")).eql(kv.value_ptr.*)) Fail.at("property");
-        if (s.ret_lat.count() != ref.rets.count()) Fail.at("returns");
-        var rit = ref.rets.iterator();
-        while (rit.next()) |kv| if (!(s.ret_lat.get(kv.key_ptr.*) orelse Fail.at("return")).eql(kv.value_ptr.*)) Fail.at("return");
-        if (s.decided_conds.count() != ref.conds.count()) Fail.at("conditionals");
-        var cit = ref.conds.iterator();
-        while (cit.next()) |kv| if ((s.decided_conds.get(kv.key_ptr.*) orelse Fail.at("conditional")) != kv.value_ptr.*) Fail.at("conditional");
-        for (memo, s.mods) |mm, *m| for (mm, m.memo) |x, y| if (!x.eql(y)) Fail.at("value");
-        return got;
-    }
-
-    /// One sweep: every statement when `full`, else those a change woke.
-    fn walkAll(s: *Spec, full: bool) Allocator.Error!void {
-        defer s.w_cur = none;
-        for (s.w_stmts.items, 0..) |st, i| {
-            if (!full and !s.w_dirty.isSet(i)) continue;
-            s.w_dirty.unset(i);
-            s.w_cur = @intCast(i);
-            s.w_walk += 1;
-            try s.walkTop(&s.mods[st.module], st.module, st.stmt);
-        }
-    }
-
     /// The statement being walked reads whole-program name `g`'s flags,
     /// `escaped` and `assigned`.
     inline fn readsName(s: *Spec, g: u32) Allocator.Error!void {
@@ -2361,18 +2118,12 @@ const Spec = struct {
     }
 
     fn setEscaped(s: *Spec, g: u32) void {
-        if (s.logging) s.log_escaped.append(s.arena, g) catch {
-            s.log_failed = true;
-        };
         if (s.escaped[g]) return;
         s.escaped[g] = true;
         s.nameChanged(g);
     }
 
     fn setAssigned(s: *Spec, g: u32) void {
-        if (s.logging) s.log_assigned.append(s.arena, g) catch {
-            s.log_failed = true;
-        };
         if (s.assigned[g]) return;
         s.assigned[g] = true;
         s.nameChanged(g);
@@ -2415,9 +2166,6 @@ const Spec = struct {
 
     fn touch(s: *Spec, m: *Mod, i: u32) void {
         if (m.stamp[i] == s.current) return;
-        if (s.logging) s.log_names.append(s.arena, i) catch {
-            s.log_failed = true;
-        };
         m.stamp[i] = s.current;
         m.decls[i] = 0;
         m.uses[i] = 0;
@@ -2501,49 +2249,11 @@ const Spec = struct {
         }
     }
 
-    /// `count` of top-level statement `stmt`, on a fresh `current`: what a
-    /// count of it did is kept while its module's version stands, and done
-    /// again without the walk — every sweep, and the rewrite, count every
-    /// statement they walk, and the counts cannot differ. While `counting`
-    /// (a round's first sweep), the reads of whole-program names it made
-    /// are counted again from the record, once each (`reads`).
+    /// `count` of top-level statement `stmt`, on a fresh `current`: the
+    /// rewrite's count of a statement it walks or patches. The analysis's
+    /// counts are the extraction's (`Extractor`).
     fn countTop(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!void {
-        const key: NodeRef = .{ .module = m.index, .node = stmt.int() };
-        if (s.count_logs.get(key)) |log| if (log.version == m.version) {
-            for (log.names) |c| {
-                m.stamp[c.name] = s.current;
-                m.decls[c.name] = c.decls;
-                m.uses[c.name] = c.uses;
-                m.assigned[c.name] = c.assigned;
-                m.value[c.name] = .top;
-                m.param[c.name] = none;
-            }
-            if (s.counting) for (log.reads) |g| {
-                s.reads[g] +|= 1;
-            };
-            for (log.escaped) |g| s.setEscaped(g);
-            for (log.assigned) |g| s.setAssigned(g);
-            return;
-        };
-        s.log_names.clearRetainingCapacity();
-        s.log_reads.clearRetainingCapacity();
-        s.log_escaped.clearRetainingCapacity();
-        s.log_assigned.clearRetainingCapacity();
-        s.log_failed = false;
-        s.logging = true;
-        defer s.logging = false;
         try s.count(m, stmt);
-        s.logging = false;
-        if (s.log_failed) return error.OutOfMemory;
-        const names = try s.arena.alloc(NameCount, s.log_names.items.len);
-        for (names, s.log_names.items) |*c, i| c.* = .{ .name = i, .decls = m.decls[i], .uses = m.uses[i], .assigned = m.assigned[i] };
-        try s.count_logs.put(s.arena, key, .{
-            .version = m.version,
-            .names = names,
-            .reads = try s.arena.dupe(u32, s.log_reads.items),
-            .escaped = try s.arena.dupe(u32, s.log_escaped.items),
-            .assigned = try s.arena.dupe(u32, s.log_assigned.items),
-        });
     }
 
     fn countList(s: *Spec, m: *Mod, range: JsIr.SubRange) Allocator.Error!void {
@@ -2590,8 +2300,6 @@ const Spec = struct {
 
     fn read(s: *Spec, m: *Mod, n: NameIndex, callee: bool) Allocator.Error!void {
         if (m.globalOf(n)) |g| {
-            if (s.counting) s.reads[g] +|= 1;
-            if (s.logging) try lists.push(u32, &s.log_reads, s.arena, g);
             if (!callee) s.setEscaped(g);
             return;
         }
@@ -3083,9 +2791,6 @@ const Spec = struct {
             return;
         }
         for (args, 0..) |a, i| {
-            // Asked of the first sweep, which walks every call: the answer
-            // is the IR's and fact 3's, which no later sweep moves.
-            if (s.counting and !s.arg_effect.items[decl.params + i] and !try s.effectFree(m, a)) s.arg_effect.items[decl.params + i] = true;
             // A parameter is read by its own declaration alone.
             if (s.joinInto(&s.params.items[decl.params + i], m.memo[a.int()]) and decl.index < s.w_dirty.bit_length)
                 s.w_dirty.set(decl.index);
@@ -3450,7 +3155,6 @@ const Spec = struct {
     /// find more.
     fn rewrite(s: *Spec) Allocator.Error!bool {
         var any = false;
-        s.counting = false;
         s.name_in.clearRetainingCapacity();
         s.only_fewer = true;
         s.rewrite_epoch += 1;
