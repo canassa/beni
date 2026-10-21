@@ -6395,7 +6395,7 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   measurement settles — with §9.8.14's teardown under the `cloudflare` platform's `deadline`,
   1 000 ms, as `browser`'s (§9.8.14, choice 3) and `node`'s shutdown, and holds the teardown's
   promise in the same `waitUntil`; a finaliser therefore runs if it finishes within that
-  deadline, as §9.8.14 says of a finaliser that waits on every platform, and a fiber the platform
+  deadline, and a fiber the platform
   cancels there has its finalisers run before the host's cap (*wording, 2026-10-21, R7-6*). That the host honours the held teardown is a fact to
   establish (#600, (k)).
 - **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
@@ -6519,7 +6519,8 @@ handler that waits runs as a fiber. The program's text is the same either way.
 ```elm
 module Worker.Object
 
--- `Definition` and `Ref msg` are `Worker`'s (b); this module imports them, and names the ref:
+-- `Definition` and `Ref msg` are `Worker`'s (b); this module imports `Worker` (qualified for `Ref`:
+-- `import Worker exposing (Ref)` plus the alias is `shadows_import`, measured, R8-3) and names the ref:
 pub type alias Ref msg = Worker.Ref msg  -- the same type, named here (R7-4: an import is no re-export)
 
 
@@ -6744,8 +6745,10 @@ to an object is typed by it.
 pub replySchema : Schema e a → Schema String (Reply a)   -- a `Reply a` on the wire is a correlation id; the argument is the reply's own schema, kept for `reply` (R6-2, R7-2)
 
 pub type AskError
-    = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))    | NoReply                                  -- nothing can reply any more: `received` returned without replying and no live fiber holds the `Reply` (e.10)
-    | Unprintable (List Schema.Issue)          -- the message does not print by the protocol's schema    | Unreadable (List Schema.Issue)           -- the reply does not parse by the asker's schema, or the message did not parse by the receiver's (its 422, (e.10))
+    = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))
+    | NoReply                                  -- the `received` call that got the `Reply` returned, every fiber it spawned ended, and no message to `self` carries it (e.10)
+    | Unprintable (List Schema.Issue)          -- the message does not print by the protocol's schema
+    | Unreadable (List Schema.Issue)           -- the reply does not parse by the asker's schema, or the message did not parse by the receiver's (its 422, (e.10))
 ```
 
 - **`received` is the one entry point for messages**, from this object or from any other;
@@ -6775,16 +6778,23 @@ pub type AskError
   (`Unreadable`). **A reply may come later**: `received` may reply before it returns, or hand the
   `Reply` to a fiber it spawns ((e.4)) which replies when its work is done; the asker waits until
   the reply, until the asked instance ends (the host's error, as (d) sorts it), or until its own
-  `Task.timeout`. `NoReply` is answered when nothing can reply any more: `received` returned
-  without replying and the object's scope holds no live fiber, or the last live fiber ended with
-  the `Reply` unused. **An `ask` to `self` from a handler is `Err Cycle` at once**: the message
+  `Task.timeout`. `NoReply` is answered when nothing can reply any more, a condition the platform
+  checks (*amended 2026-10-21, R8-2*): the `received` call that got the `Reply` has returned
+  without replying, every fiber that call spawned — directly, or through its fibers — has ended,
+  and no message posted to `self` by that call or those fibers still waits to run (a `Reply` in
+  such a message is not printed, so the `Unprintable` rule does not reach it; the queued message
+  holds the `Reply` until its own `received` returns, which lets a `Reply` pass within the object).
+  The platform tracks that set of fibers and messages; it cannot see which fiber captured a
+  `Reply`, so a test over the whole scope was not checkable. **An `ask` to `self` from a handler is `Err Cycle` at once**: the message
   would wait in the mailbox behind the asking handler, so no stub and no chain is consulted. It
   is subject to (e.3)'s cycle rule across objects, and every failure is a typed result: the host's
   four ((d)'s sorting), `NoReply`, and the two schema failures. A second `reply` on the same
   `Reply` is ignored; a `Reply` is one-shot. *Amended 2026-10-21 (R7-1; a choice the owners can
   overturn, taken because q8 says "nothing hangs"): a `Reply` is valid only in the instance that
-  parsed it, while a running handler or a live fiber of that instance holds it. A `Reply` kept in
-  the state is held by neither, so the asker gets `NoReply` at once under the rule above, and a
+  parsed it, and only while the `received` call that got it, a fiber that call spawned (directly
+  or through its fibers), or a message those posted to `self` can still reach it — the holders
+  the `NoReply` rule above counts. A `Reply` kept in the state is held by none of them, so the
+  asker gets `NoReply` as soon as the last of them ends, and a
   `reply` that comes after `NoReply` was answered — from a later handler, or through a `Reply` kept
   in the state — is not dropped in silence: the platform writes one `Log.warn` line naming the
   object and the message. Printing a `Reply` into a message for any ref but `self` is
