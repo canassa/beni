@@ -2315,6 +2315,29 @@ const Printer = struct {
         };
     }
 
+    /// One spelling for field keys, accesses, and shape output-key strings.
+    fn fieldText(p: *Printer, index: JsIr.NameIndex) []const u8 {
+        const text = p.names.text(p.ir.name(index).base);
+        if (p.fields) |table| {
+            if (table.get(text)) |short| return short;
+            if (std.debug.runtime_safety and !table.knows(text)) {
+                std.debug.panic("release printer: field has no spelling: {s}", .{text});
+            }
+        }
+        return text;
+    }
+
+    /// A shape record entry needs slot 3 only when it differs from slot 0.
+    /// Keep the original compact entry for independently pinned fields.
+    fn arrayElements(p: *Printer, d: Node.Data) []const Index {
+        const elements = p.ir.extraSlice(JsIr.inlineRange(d), Index);
+        if (elements.len != 4 or p.ir.tag(elements[3]) != .field_name) return elements;
+        const written = p.fieldText(@fromBackingInt(@intCast(p.ir.data(elements[3]).lhs)));
+        if (p.ir.tag(elements[0]) != .string or !std.mem.eql(u8, p.ir.bytes(elements[0]), written)) return elements;
+        if (p.ir.tag(elements[2]) == .number and std.mem.eql(u8, p.ir.bytes(elements[2]), "0")) return elements[0..2];
+        return elements[0..3];
+    }
+
     /// The recursive printer: `expand`'s twin, one Zig frame per level, used
     /// under `recursion_limit`. The bytes must be `expand`'s exactly; the test
     /// "the recursive and the iterative printer write the same bytes" holds it.
@@ -2325,6 +2348,7 @@ const Printer = struct {
             .ident => try p.name(@fromBackingInt(@intCast(d.lhs)), .binding),
             .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
+            .field_name => try p.quoted(p.fieldText(@fromBackingInt(@intCast(d.lhs)))),
             .template => {
                 // Everything between the backticks is inside the literal, so
                 // no adjacency guard applies to the literal halves; an
@@ -2409,7 +2433,7 @@ const Printer = struct {
             },
             .array => {
                 try p.push("[");
-                for (p.ir.extraSlice(JsIr.inlineRange(d), Index), 0..) |e, i| {
+                for (p.arrayElements(d), 0..) |e, i| {
                     if (i != 0) try p.tok(", ", ",");
                     try p.expression(e, prec_arrow, level);
                 }
@@ -2474,6 +2498,7 @@ const Printer = struct {
             .ident => try p.name(@fromBackingInt(@intCast(d.lhs)), .binding),
             .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
+            .field_name => try p.quoted(p.fieldText(@fromBackingInt(@intCast(d.lhs)))),
             .template => {
                 // `` ` `` part… `` ` ``. Everything between the backticks is
                 // inside the literal, so no adjacency guard applies to the
@@ -2570,7 +2595,7 @@ const Printer = struct {
                 // `[` element `, ` element … `]`
                 try p.push("[");
                 try p.later(.piece(.close_bracket));
-                const elements = p.ir.extraSlice(JsIr.inlineRange(d), Index);
+                const elements = p.arrayElements(d);
                 var i = elements.len;
                 while (i > 0) {
                     i -= 1;

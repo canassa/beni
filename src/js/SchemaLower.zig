@@ -953,9 +953,9 @@ const Gen = struct {
     /// for a `Maybe` field, or `[key, shape, flag, name]` when the field's
     /// name is not its key; `order` `0` when the declaration lists the fields
     /// in that order, else their places in the declaration's order. The
-    /// reader copies into a fresh record by the names, which keep their
-    /// source text (`boundary.md` §4, *Types a shape reads keep their
-    /// names*).
+    /// reader copies into a fresh record by the names. Release output
+    /// names are resolved after field assignment (`schema.md` §6,
+    /// amendment 2026-10-22); host keys stay literal strings.
     fn shapeRecord(g: *Gen, n: PNode) Allocator.Error!Node.Index {
         const plan = g.plan;
         const fields = SchemaGraph.fields(plan, n);
@@ -982,9 +982,10 @@ const Gen = struct {
             try entry.append(g.l.scratch, try g.str(key));
             try entry.append(g.l.scratch, try g.shapeOf(f.child));
             const flag: u32 = if (SchemaGraph.isMaybeField(plan, f)) 2 else if (f.optional) 1 else 0;
-            const renamed = !std.mem.eql(u8, key, name);
+            const release = g.l.in.boundary != null;
+            const renamed = release or !std.mem.eql(u8, key, name);
             if (flag != 0 or renamed) try entry.append(g.l.scratch, try g.num(flag));
-            if (renamed) try entry.append(g.l.scratch, try g.str(name));
+            if (renamed) try entry.append(g.l.scratch, if (release) try g.l.fieldString(names[at], g.p) else try g.str(name));
             try items.append(g.l.scratch, try g.l.arrayNode(entry.items, g.p));
         }
         return g.l.arrayNode(items.items, g.p);

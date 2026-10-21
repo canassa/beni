@@ -1,0 +1,88 @@
+-- Shape records use the whole-program release field names in entry slot 3;
+-- slot 0 keeps the host key, including aliases. There are exactly 29 shape
+-- runs: 27 in padding and one each in parse and decode. The release golden
+-- checks shortened entries beside a field pinned by a concrete host reader; run/ reads and updates the resulting records.
+import Hosts
+import Json
+import Node
+import Schema
+
+
+schema Model =
+    pinned : Int
+    cups : Int
+    coins : Int as "host-coins"
+
+
+type alias Native =
+    cups : Int
+    coins : Int
+
+
+parse : String → String
+parse text =
+    case Schema.parse (Model.schema ⊤) text of
+        Ok model →
+            changed = { model | cups = model.cups + 1 }
+            "${String.fromInt changed.cups}/${String.fromInt changed.coins}/${String.fromInt (Hosts.readPinned { pinned = changed.pinned })}"
+
+        Err _ →
+            "invalid"
+
+
+nativeText : Native → String
+nativeText model = "${String.fromInt model.cups}/${String.fromInt model.coins}"
+
+
+decode : String → String
+decode text =
+    case Json.decode text of
+        Ok model →
+            nativeText model
+
+        Err _ →
+            "invalid"
+
+
+padding : String → Int
+padding text =
+    List.length
+        [ Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        , Result.toMaybe (Schema.parse (Model.schema ⊤) text)
+        ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ parse "{\"cups\":2,\"host-coins\":9,\"pinned\":5}"
+        , decode "{\"cups\":7,\"coins\":4}"
+        , parse "{\"cups\":\"bad\",\"host-coins\":9,\"pinned\":5}"
+        , decode "{\"cups\":7}"
+        , String.fromInt (padding "{\"cups\":1,\"host-coins\":0,\"pinned\":5}")
+        ]

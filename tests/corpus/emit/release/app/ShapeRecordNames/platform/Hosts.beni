@@ -1,0 +1,6 @@
+-- A concrete host boundary pins only this record's field name.
+import Js
+
+
+pub readPinned : { pinned : Int } → Int
+readPinned record = Js.to (Js.get (Js.from record) "pinned")
