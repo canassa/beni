@@ -8968,6 +8968,51 @@ without `withDefault` (`drain`, `enqueue`, `unionSets`, `copy`), the structural 
 `SpreadWide` 1 201M → 1 148M, and the new `SpreadCopiesBatched` (51 children) 4 556M, over the
 budget, → 3 988M.
 
+**As built 2026-10-21 — a site waits to be folded until the end of the sweep** (issue #565, part
+of #464). The issue, written from `plans/pts-per-run-profile.md` before #562, #564, #568 and #563
+landed, asked for two things: a batch that makes a var `top` taken before its site batches, and
+summaries that link a property only when a reader asks for it. Measured again on master (an
+instrumented ReleaseFast build, not committed), both already hold, and neither is where the
+waste is. **`top` first holds by construction since #563**: a var waits with one batch, and
+`joinNow` applies the batch's `top` before its sites, so a site queued with a `top`, whichever
+was joined first, is escaped and never folded. A `makeTop` that reaches a var whose site batch
+waits leaves the batch to a `top` var, which escapes what joins it. **Laziness holds since
+#500**: a summary holds a property only when a spread reads it whole or a read marked it
+(`demands`). The summaries that die are read whole, by spreads. On the dashboard N=64, runs 5
+and 6 still make most of the edges (138 080 and 108 719 of 360 868), and 87% and 85% of theirs
+end in a summary whose owner var is `top`. Of those, 67 244 and 26 882 are in summaries that
+die (a capped owner). The rest, 53 109 and 65 673, are in the live, escaped summaries of
+uncapped `top` owners: cells and member bindings that keep their sites beside `top`. Those edges
+carry facts (a read through such a value still marks the sites it holds), so they stay. Of the
+edges into dead summaries, 3 in each run were made in the same drain as the `top` that killed
+the summary, and every other one a drain or more before it: no order of `pending` can save
+them. **What changed is when a fold happens.** `joinNow` no longer folds a site that came by no
+linking edge into the var's summary there and then. It queues it (`Pts.folds`), and
+`foldWaiting` folds every queued site at the end of the sweep, after the constraints that wait,
+the escaping globals, the entry's call and `propagate`. It does so inside one drain, as the
+fold at the join was, so that what the folds' copy edges join is one batch per var.
+`feedSummary`'s folds, made when a summary is created, stay immediate: deferred too, they tripled
+the edges of N=64's first three runs. A fold that waits is one more step of a fair order, and the
+sweep asks whether the fixpoint is reached only after it, so the least fixpoint is the same. Every
+`emit/release/` golden and release run hash is byte for byte the same, `zig build
+test-run-hashes` changes nothing, and the safety build's shuffled-order check is green on the
+corpus. Measured, ReleaseFast, `--release --no-cache --jobs=1`, dagon, median of seven, every
+output byte-identical, before → after: `spec_pts_edges` per run on N=64 29 984, 28 764, 28 764,
+26 557, 138 080, 108 719 → 29 995, 28 775, 28 775, 26 614, 83 351, 87 002 (360 868 → 284 512;
+the edges into dead summaries in runs 5 and 6 94 126 → 22 272); N=64 without `withDefault`
+151 994 → 131 968; N=16 40 509 either way. `spec_pts_joins` 89 024 → 83 336, 522 270 → 493 331
+and 479 852 → 462 748. `specialise` 49.7 → 47.3 ms, 274.8 → 248.7 ms and 212.8 → 207.2 ms; time
+and peak RSS N=16 0.08 s / 56 MB → 0.07 s / 56 MB, N=64 0.36 s / 185 MB → **0.33 s / 179 MB**,
+without `withDefault` 0.30 s / 163 MB → 0.29 s / 163 MB. The issue's estimate (N=64 from 2 s to
+0.55 s with #562) was met before this change by #562, #564 and #568. Instructions of the gates'
+build move by under 1%: `SpreadCopiesBatched` 3 987M → 3 970M, `SpreadCopiesWide` 3 385M →
+3 371M, `SpreadCopies` 2 951M → 2 938M, `MemberReadsWide` 2 169M → 2 156M, `SpreadArms` 1 689M →
+1 680M, `MergedChildren` 2 871M → 2 880M. No corpus case crosses the budget either way, so none
+was added: the edges saved are those of summaries that die after they folded, which the
+dashboard's escaped JSON makes and no corpus case does at a size that matters. The first build
+drained after each fold, outside a drain, so each copy edge's join was a batch of its own; it put
+the inline cases up 1–2%.
+
 ### Compact statements
 
 ### Compact statements
