@@ -9013,6 +9013,55 @@ dashboard's escaped JSON makes and no corpus case does at a size that matters. T
 drained after each fold, outside a drain, so each copy edge's join was a batch of its own; it put
 the inline cases up 1–2%.
 
+**As built 2026-10-21 — an analysis keeps fact 3 when nothing it reads changed** (issue #575,
+part of #499). *Whole-program specialisation*'s rounds solve fact 3 from ⊥ at every analysis,
+and the worklist note's *rounds still start from ⊥* is why: a rewrite takes constraints away.
+A rewrite that takes none away and adds none leaves the least fixpoint where it was, so the
+analysis after it keeps the last solve's state (`Pts`' vars, sites, cells, summaries and per-node
+values) and solves nothing; the sweeps of facts 1, 2, 4 and 5 run as before. The rule is exact
+by construction, and conservative:
+
+- **Every change asks for a solve** (`Mod.fact3`). `Mod.changed` and `Mod.namesChanged` set the
+  flag, so every rewrite, prune and structural pass that writes a node, a list, a parameter list,
+  a module body or a name does: an object, array or arrow, a call, a member read or write, a
+  binding or assignment, a `return`, a dropped parameter and its arguments, a pruned declaration,
+  an `import` trimmed. The analysis keeps the state only when no module set the flag since the
+  last solve and no module grew a node or a name (`Spec.fact3Kept`), the solve reached its
+  fixpoint, and definite initialisation was not capped.
+- **One write does not** (`Spec.fact3Neutral`): an identifier written as a number, a string,
+  `true` or `false` (`patchLiteral`), when fact 3's value of the read was the primitive alone (no
+  site, not `top`, not `null` or `undefined`), the read is not the object of another read, the
+  string is not `__proto__`, and lowering keyed no type on the node. Fact 3 makes of the literal
+  what it made of the read; a guard takes only `null` and `undefined` off a read, so none on that
+  name narrowed anything; and what else a read of a name gives fact 3 (a copy edge where a join
+  would do, a dependency) is cost, not a fact. A folded test is not neutral: an `if` that keeps
+  one arm drops the other's constraints, and the fold of a guard's test drops the guard.
+- **Checked.** A safety build solves again whenever an analysis of a program of at most 1 500
+  nodes keeps the state, and every fact of that solve must be the kept one's, each site with the
+  same number (`Pts.checkKept`, `expectSame`); the build then reads the kept state, so the
+  corpus's outputs are the skip's. With the flag never set, the check stops builds of
+  `-Dcorpus=run/Specialize`. `--self-profile`'s `spec_points_to_reused` counts the analyses
+  that kept the state; `spec_points_to_runs` still counts the solves.
+
+**What it does not reach: the case #575 measured.** On today's master the rewrite between
+analyses 2 and 3 of the dashboard N = 64 writes one identifier as `"root"` — neutral — and drops
+the parameter that read it, with the argument of its one call, in the same module; `prune` also
+trims an `import`. The dropped parameter asks for the solve, as this rule says it must: the
+parameter's var, its position in the site's `params` and the argument's copy edge are fact-3
+state, and keeping them is exact only with that state patched. Measured, ReleaseFast, `--release
+--no-cache --jobs=1`, dagon, median of five, outputs byte for byte the same, before → after:
+`spec_points_to_runs`/`spec_points_to_reused` on N = 16 7/– → 7/0, N = 64 6/– → 6/0, N = 64
+without `withDefault` 6/– → 6/0; time 89 → 89 ms, 405 → 407 ms and 339 → 337 ms. Of the 453
+`run/` programs built under `--release`, 3 keep a state (`PayloadReassign`, `PayloadPassed`,
+`ReleaseReadAcrossWrite`), each at the analysis after `releaseKeeps`, which writes no node. Of 123
+analyses inside `rounds` after its first, in a sample of 86 of those programs, none kept it: each
+had a change before it that asks for a solve, and a dropped parameter with its calls was the
+commonest (in 79), alone in 24. A parameter drop that kept fact 3 would remove the parameter from
+its site's `params`, give the dropped arguments' nodes the value of a node no walk reaches, and
+drop the parameter's local; that is a separate change, with its own check. `build_test`'s *keeps
+fact 3 for an analysis after a change fact 3 does not read* pins the counter on
+`run/ReleaseReadAcrossWrite`.
+
 ### Compact statements
 
 ### Compact statements
