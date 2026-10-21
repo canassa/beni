@@ -9117,6 +9117,15 @@ const Pts = struct {
         /// with a closed filter holds only the sites of that key and the
         /// wild ones (`joinNow`).
         allow: JsIr.RepKey = .wild,
+        /// A site's own var: one of its properties, or its `any`. A copy
+        /// edge from or to one links no summary (`linksAcross`): the
+        /// summary that takes such a var's sites folds them (#562).
+        site_var: bool = false,
+        /// How many summaries deep the var is: 0 for a name's var, a load
+        /// cell and a site's, one more than its summary's var for a
+        /// summary's (`newSummary`, `addSumProp`), saturating. Only vars of
+        /// depth 0 and 1 link summaries (`linksAcross`, #562).
+        depth: u8 = 0,
     };
 
     const Pending = struct { v: VarId, val: Val, folded: bool };
@@ -9594,9 +9603,36 @@ const Pts = struct {
     /// filter*): Σ(A ∪ B) = Σ(A) ∪ Σ(B) needs `to` to hold every site
     /// `from` holds, which it does when its filter is wild or the same.
     /// Otherwise `to`'s summary folds the sites it holds one by one.
+    ///
+    /// Two more kinds of edge link nothing (#562). Since a load cell can
+    /// have a summary — a name is a copy of it (`copySource`) — a summary
+    /// can be made of the summary's var of a property that a field read's
+    /// cell copies, and of the vars that feed that one: the same
+    /// property's vars of the summaries along the summary links, then the
+    /// property's var of each site those summaries folded.
+    ///
+    /// - An edge from or to a site's own var (`VSet.site_var`): linking it
+    ///   would make a summary of each such var, and of every var feeding
+    ///   it — in an `inline` program, of every record the model was spread
+    ///   into, for every field. The summary at the summaries' vars folds the
+    ///   sites the field holds instead, once, and every cell and name that
+    ///   copies the field shares it.
+    /// - An edge from or to a var two or more summaries deep
+    ///   (`VSet.depth`). A summary's vars are new vars, and a summary of one
+    ///   has new vars of its own: where a function passes a field of its
+    ///   parameter back to itself (`f(x.next)`), the parameter's summary
+    ///   links the cell's, the cell's links that of the parameter's summary
+    ///   var of `next`, which is fed by the cell's summary var of `next`,
+    ///   whose summary would link that of the summary var of `next` of the
+    ///   first, and so on without end. Folding at depth 2 ends it: every
+    ///   summary is of a name's var, a cell, or one of their summaries'
+    ///   vars, so there are as many as the program has names, reads and
+    ///   properties.
     inline fn linksAcross(p: *const Pts, from: VarId, to: VarId) bool {
-        const allow = p.vars.items[to].allow;
-        return allow == .wild or allow == p.vars.items[from].allow;
+        const f = p.vars.items[from];
+        const t = p.vars.items[to];
+        if (f.site_var or t.site_var or f.depth > 1 or t.depth > 1) return false;
+        return t.allow == .wild or t.allow == f.allow;
     }
 
     /// `k` as a filter or a site's key: itself when it is closed, `wild`
@@ -9874,6 +9910,7 @@ const Pts = struct {
         const id: u32 = @intCast(p.summaries.items.len);
         const any = try p.newVar();
         p.vars.items[any].uncapped = true;
+        p.vars.items[any].depth = p.vars.items[v].depth +| 1;
         if (p.s.in.trace_largest) p.originAt(any, p.originOf(v, .summary_any, none));
         const escaped_top = p.vars.items[v].top and !p.vars.items[v].uncapped;
         try p.summaries.append(p.tmp.allocator(), .{ .any = any, .dead = escaped_top, .of = v });
@@ -10211,6 +10248,7 @@ const Pts = struct {
         const at = std.sort.lowerBound(SumProp, p.summaries.items[sum].props.items, id, orderSumProp);
         const v = try p.newVar();
         p.vars.items[v].uncapped = true;
+        p.vars.items[v].depth = p.vars.items[p.summaries.items[sum].of].depth +| 1;
         if (p.s.in.trace_largest) p.originAt(v, p.originOf(p.summaries.items[sum].of, .summary_prop, id));
         try p.summaries.items[sum].props.insert(p.tmp.allocator(), at, .{ .id = id, .vals = v });
         p.summaryChanged(sum);
@@ -10293,6 +10331,43 @@ const Pts = struct {
         const ir = p.s.mods[mi].ir;
         for (p.guards.items[p.guard_base..]) |g| if (g.module == mi and sameChain(ir, g.chain, node)) return true;
         return false;
+    }
+
+    /// The var whose value node `node` is, when a binding, a call argument
+    /// or a `return` of it can be a copy edge from that var (`copy`) and not
+    /// a join of what it is now (#562): a name's var, and a member read's
+    /// load cell (`load`), whose view is what the read gives — so every
+    /// name bound to, or passed, one read of one property of one var shares
+    /// the cell's field summary. Null when a guard may narrow the read — a
+    /// copy carries every flag the source has — and for any other
+    /// expression, whose value is joined.
+    ///
+    /// A cell's var is `uncapped`: `top` is a flag beside its sites. A copy
+    /// carries the flag as a join of the read's value does, so a capped
+    /// target is made `top` (`makeTop`) and escapes the sites, now or when
+    /// the cell turns `top`, and an uncapped one holds both.
+    fn copySource(p: *Pts, mi: u32, node: Index) Allocator.Error!?VarId {
+        const ir = p.s.mods[mi].ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .ident => {
+                if (p.maybeNarrowed(mi, node)) return null;
+                return try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs)));
+            },
+            .member => {
+                if (p.maybeNarrowed(mi, node)) return null;
+                // The read was walked: its cell exists, found as `load`
+                // found it — by the object's var and the property for a
+                // name, by the node for any other object expression.
+                const object: Index = @fromBackingInt(@intCast(d.lhs));
+                const li = if (ir.tag(object) == .ident)
+                    p.load_cells.get(.{ .v = try p.nodeVar(mi, object, @fromBackingInt(@intCast(ir.data(object).lhs))), .id = p.propId(mi, @fromBackingInt(@intCast(d.rhs))) })
+                else
+                    p.load_nodes.get(.{ .module = mi, .node = node.int() });
+                return if (li) |l| p.loads.items[l].out else null;
+            },
+            else => return null,
+        }
     }
 
     fn escapeSite(p: *Pts, site: u32) Allocator.Error!void {
@@ -10451,6 +10526,7 @@ const Pts = struct {
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
         try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
+        p.vars.items[p.sites.items[id].any].site_var = true;
         if (p.s.in.trace_largest) p.originAt(p.sites.items[id].any, .{ .kind = .site_any, .of = .site_any, .module = mi, .node = node.int() });
         // Keys written before anything can read them exist from the moment
         // the object does, as a literal's own do.
@@ -10485,6 +10561,7 @@ const Pts = struct {
         const at = std.sort.lowerBound(Prop, p.sites.items[site].props.items, id, orderProp);
         if (at < p.sites.items[site].props.items.len and p.sites.items[site].props.items[at].id == id) return &p.sites.items[site].props.items[at];
         const v = try p.newVar();
+        p.vars.items[v].site_var = true;
         if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
         const st = &p.sites.items[site];
         try st.props.insert(p.arena(), at, .{ .id = id, .vals = v });
@@ -11212,15 +11289,6 @@ const Pts = struct {
                 const target = try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs)));
                 const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
                 const value = v.unwrap() orelse return p.join(target, Val.undef_val);
-                // A binding to a name, when no guard narrows the read, is a
-                // copy of its var (the combined solver's `copy`): the
-                // binding's set is the var's as it grows, and a spread of
-                // the binding shares the var's field summary.
-                if (ir.tag(value) == .ident) {
-                    if (!p.maybeNarrowed(mi, value)) {
-                        return p.copy(try p.nodeVar(mi, value, @fromBackingInt(@intCast(ir.data(value).lhs))), target);
-                    }
-                }
                 // The cell holds `top` beside the objects (`load`). This
                 // local is that read, so `top` does not escape the objects,
                 // and an unread field can drop. `limited` keeps `max_sites`.
@@ -11232,6 +11300,11 @@ const Pts = struct {
                     p.vars.items[target].uncapped = true;
                     p.vars.items[target].limited = true;
                 }
+                // A binding to a name or a member read, when no guard
+                // narrows it, is a copy (`copySource`): the binding's set is
+                // the source's as it grows, and a spread or a read of the
+                // binding shares the source's field summary.
+                if (try p.copySource(mi, value)) |from| return p.copy(from, target);
                 try p.join(target, vals[value.int()]);
             },
             .assign_stmt => {
@@ -11239,6 +11312,13 @@ const Pts = struct {
                 const target: Index = @fromBackingInt(@intCast(d.lhs));
                 const td = ir.data(target);
                 switch (ir.tag(target)) {
+                    // A later value of a name is joined, not copied (#562):
+                    // the `inline` lowering assigns its model from a read of
+                    // each handler's own result (`$model = $result.a`), a
+                    // cell no other read shares. As a copy, every field
+                    // summary of the model would be fed by one of each such
+                    // cell, each folding the field's records again: the
+                    // dashboard N=64 took 99.7M edges against 1.36M.
                     .ident => try p.join(try p.nodeVar(mi, target, @fromBackingInt(@intCast(td.lhs))), value),
                     .member => try p.write(vals[td.lhs], p.propId(mi, @fromBackingInt(@intCast(td.rhs))), value),
                     .index_get => try p.writeAny(vals[td.lhs], value),
@@ -11249,9 +11329,7 @@ const Pts = struct {
                 const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
                 const val = if (value) |v| vals[v.int()] else Val.undef_val;
                 const site = func orelse return p.escape(val);
-                if (value) |v| if (ir.tag(v) == .ident and !p.maybeNarrowed(mi, v)) {
-                    return p.copy(try p.nodeVar(mi, v, @fromBackingInt(@intCast(ir.data(v).lhs))), p.sites.items[site].ret);
-                };
+                if (value) |v| if (try p.copySource(mi, v)) |from| return p.copy(from, p.sites.items[site].ret);
                 try p.join(p.sites.items[site].ret, val);
             },
             .for_of => {
@@ -11893,10 +11971,10 @@ const Pts = struct {
             for (params, 0..) |v, i| {
                 if (i >= args.len) {
                     try p.join(v, Val.undef_val);
-                } else if (ir.tag(args[i]) == .ident and !p.maybeNarrowed(mi, args[i])) {
-                    // An argument that is a name is a copy of its var
-                    // (`effect`'s binding rule).
-                    try p.copy(try p.nodeVar(mi, args[i], @fromBackingInt(@intCast(ir.data(args[i]).lhs))), v);
+                } else if (try p.copySource(mi, args[i])) |from| {
+                    // An argument that is a name or a member read is a
+                    // copy (`effect`'s binding rule).
+                    try p.copy(from, v);
                 } else try p.join(v, vals[args[i].int()]);
             }
             out = try p.unionOf(out, try p.view(p.sites.items[site].ret));
@@ -13509,6 +13587,170 @@ test "a field summary composes along a copy edge" {
     // A var that goes `top` has a dead summary: nothing more is folded.
     try p.makeTop(v);
     try testing.expect(p.summaries.items[sum_v].dead);
+}
+
+// #562: a binding to a member read is a copy of the read's load cell. The
+// cell is `uncapped`, `top` a flag beside its sites, and so is the binding
+// (`limited`): when the cell turns `top`, the binding holds the read's
+// objects beside `top` and escapes none of them, as the join of the read's
+// value it replaces did.
+test "a binding copied from a load cell holds the read's objects beside top" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    var i: u32 = 0;
+    while (i < 3) : (i += 1) try p.sites.append(arena_state.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+    const cell = p.loads.items[try p.newLoad()].out;
+    try p.join(cell, .{ .sites = &.{ 0, 1 } });
+    const binding = try p.newVar();
+    p.vars.items[binding].uncapped = true;
+    p.vars.items[binding].limited = true;
+    try p.copy(cell, binding);
+    try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(binding)).sites);
+    try testing.expect(!(try p.view(binding)).top);
+    try p.join(cell, Pts.Val.top_val);
+    try p.addSite(cell, 2);
+    const held = try p.view(binding);
+    try testing.expect(held.top);
+    try testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, held.sites);
+    i = 0;
+    while (i < 3) : (i += 1) try testing.expect(!p.sites.items[i].escaped);
+}
+
+// #562: an argument (or a `return`) that is a member read is a copy of the
+// read's load cell into a capped var. The cell's `top` reaches the var
+// along the edge and makes it `top` (`makeTop`), escaping every site it
+// held and every site that joins the cell later — whether the edge was made
+// before the cell turned `top` or after.
+test "a parameter copied from a load cell is made top as the cell is" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) try p.sites.append(arena_state.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+    const cell = p.loads.items[try p.newLoad()].out;
+    try p.join(cell, .{ .sites = &.{0} });
+    const before = try p.newVar();
+    try p.copy(cell, before);
+    try testing.expectEqualSlices(u32, &.{0}, (try p.view(before)).sites);
+    try testing.expect(!p.sites.items[0].escaped);
+    try p.join(cell, .{ .top = true, .sites = &.{1} });
+    const after = try p.newVar();
+    try p.copy(cell, after);
+    try p.addSite(cell, 2);
+    for ([_]Pts.VarId{ before, after }) |v| {
+        const got = try p.view(v);
+        try testing.expect(got.top and got.prim and got.nul and got.undef);
+        try testing.expectEqual(@as(usize, 0), got.sites.len);
+    }
+    // The cell keeps its sites; each of them escaped through the copies.
+    try testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, (try p.view(cell)).sites);
+    for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.sites.items[site].escaped);
+    try testing.expect(!p.sites.items[3].escaped);
+}
+
+// #562: names that copy one load cell share a field summary, made once. A
+// cell of a field read copies the field's var in a summary, which its
+// summary links in turn; that var is fed by the field's var of each site
+// the summary folded, a site's own var (`VSet.site_var`), and no summary
+// is made of one of those (`linksAcross`): the summary at the field's var
+// folds the sites they hold. Every name and the cell link it, and fold
+// nothing. A read through a name's summary marks and reads the sites the
+// field holds, and a site that joins the field later reaches it.
+test "names that copy a load cell share one summary, which folds the field's sites" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const arena = arena_state.allocator();
+    // Four object sites, each with property 1 (holding site 100 + i).
+    var i: u32 = 0;
+    while (i < 4) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        (try p.prop(i, 1)).init = true;
+        try p.addSite(p.findProp(i, 1).?.vals, 100 + i);
+    }
+    // `site_field` is a record's field, holding sites 0 to 2, and `field`
+    // the summary's var of it; the cell copies `field`.
+    const site_field = try p.newVar();
+    p.vars.items[site_field].site_var = true;
+    try p.join(site_field, .{ .sites = &.{ 0, 1, 2 } });
+    const field = try p.newVar();
+    try p.copy(site_field, field);
+    const cell = p.loads.items[try p.newLoad()].out;
+    try p.copy(field, cell);
+    const a = try p.newVar();
+    const b = try p.newVar();
+    try p.copy(cell, a);
+    try p.copy(cell, b);
+    const sum_a = try p.summaryOf(a);
+    const sum_b = try p.summaryOf(b);
+    const sum_cell = p.vars.items[cell].summary;
+    const sum_field = p.vars.items[field].summary;
+    try testing.expect(sum_cell != none and sum_field != none);
+    try testing.expectEqual(none, p.vars.items[site_field].summary);
+    try testing.expectEqual(@as(usize, 3), p.summaries.items[sum_field].sites.items.len);
+    for ([_]u32{ sum_cell, sum_a, sum_b }) |sum| try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
+    const li = try p.newLoad();
+    try p.summaryLoad(sum_a, 1, li);
+    const out = p.loads.items[li].out;
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
+    for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.findProp(site, 1).?.read);
+    try testing.expect(!p.findProp(3, 1).?.read);
+    try p.addSite(site_field, 3);
+    try testing.expectEqualSlices(u32, &.{ 100, 101, 102, 103 }, (try p.view(out)).sites);
+    try testing.expect(p.findProp(3, 1).?.read);
+    try testing.expectEqual(@as(usize, 4), p.summaries.items[sum_field].sites.items.len);
+    for ([_]u32{ sum_cell, sum_a, sum_b }) |sum| try testing.expectEqual(@as(usize, 0), p.summaries.items[sum].sites.items.len);
+}
+
+// #562: a function that passes a field of its parameter back to itself,
+// `f(x.next)`, makes the parameter a copy of its own field's cell. The
+// parameter's summary links the cell's, which links that of the
+// parameter's summary var of `next`, fed by the cell's summary var of
+// `next`, whose summary would link the next one down, without end: a
+// first build ran `run/UrlParser` out of memory. A summary var two
+// summaries deep links nothing (`VSet.depth`), so the summaries are few,
+// and the read still gives what the list holds.
+test "a field passed back to its own parameter makes finitely many summaries" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const arena = arena_state.allocator();
+    // Two list cells, each with property 1 (`next`) holding the other, and
+    // the parameter holding the first.
+    var i: u32 = 0;
+    while (i < 2) : (i += 1) {
+        try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
+        (try p.prop(i, 1)).init = true;
+    }
+    try p.addSite(p.findProp(0, 1).?.vals, 1);
+    try p.addSite(p.findProp(1, 1).?.vals, 0);
+    const param = try p.newVar();
+    try p.addSite(param, 0);
+    const li = try p.newLoad();
+    try p.summaryLoad(try p.summaryOf(param), 1, li);
+    const cell = p.loads.items[li].out;
+    // The call `f(x.next)`, and a read of `x.next.next` through the cell.
+    try p.copy(cell, param);
+    const again = try p.newLoad();
+    try p.summaryLoad(try p.summaryOf(cell), 1, again);
+    try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(param)).sites);
+    try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(cell)).sites);
+    try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(p.loads.items[again].out)).sites);
+    try testing.expect(p.summaries.items.len <= 8);
+    for (p.summaries.items) |sm| try testing.expect(p.vars.items[sm.of].depth <= 1);
 }
 
 // #487: a field summary is made for every var that copies into the spread

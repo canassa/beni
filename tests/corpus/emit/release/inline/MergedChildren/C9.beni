@@ -1,0 +1,69 @@
+--! Child 9: three fields of its own, six messages, a decoder and a view.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    a9 : Int
+    b9 : Int
+    c9 : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { a9 = 9, b9 = 1, c9 = 2 }
+
+
+pub type Msg
+    = M1
+    | M2
+    | M3
+    | M4
+    | M5
+    | M6
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        M1 →
+            { model | b9 = model.b9 + 901 }
+
+        M2 →
+            { model | c9 = model.c9 + 902 }
+
+        M3 →
+            { model | a9 = model.a9 + 903 }
+
+        M4 →
+            { model | b9 = model.b9 + 904 }
+
+        M5 →
+            { model | c9 = model.c9 + 905 }
+
+        M6 →
+            { model | a9 = model.a9 + 906 }
+
+
+pub decode : String → Maybe Model
+decode s =
+    case String.toInt s of
+        Just n →
+            Just { a9 = n, b9 = 9, c9 = n }
+
+        Nothing →
+            Nothing
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <p>{model.a9}</p>
+        <p>{model.b9}</p>
+        <p>{model.c9}</p>
+        <button onClick={M1}>1</button>
+        <button onClick={M2}>2</button>
+        <button onClick={M3}>3</button>
+        <button onClick={M4}>4</button>
+        <button onClick={M5}>5</button>
+        <button onClick={M6}>6</button>
+    </section>

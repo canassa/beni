@@ -1,0 +1,172 @@
+-- #562: 14 children, each a module with three fields of its own, six
+-- messages and a view that reads each field through a binding of its own.
+-- `Load` passes every child through `Maybe.withDefault`, which is not
+-- inlined (its first argument is a call), so every field of the model may
+-- hold any of the 112 child records, of 42 field names. The `inline`
+-- lowering passes `model.wK` to each view binding and binds it for each
+-- arm of each handler: before, those parameters and locals were joined
+-- with the read's value, and each folded the 112 records into its own
+-- field summary one by one, which put this build past the gates'
+-- instruction budget; each is now a copy of the read's load cell, and
+-- every copy shares the one summary of the field, folded once. The golden
+-- was written by the compiler before the change.
+import Browser
+import C1
+import C10
+import C11
+import C12
+import C13
+import C14
+import C2
+import C3
+import C4
+import C5
+import C6
+import C7
+import C8
+import C9
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    w1 : C1.Model
+    w2 : C2.Model
+    w3 : C3.Model
+    w4 : C4.Model
+    w5 : C5.Model
+    w6 : C6.Model
+    w7 : C7.Model
+    w8 : C8.Model
+    w9 : C9.Model
+    w10 : C10.Model
+    w11 : C11.Model
+    w12 : C12.Model
+    w13 : C13.Model
+    w14 : C14.Model
+
+
+type Msg
+    = W1 C1.Msg
+    | W2 C2.Msg
+    | W3 C3.Msg
+    | W4 C4.Msg
+    | W5 C5.Msg
+    | W6 C6.Msg
+    | W7 C7.Msg
+    | W8 C8.Msg
+    | W9 C9.Msg
+    | W10 C10.Msg
+    | W11 C11.Msg
+    | W12 C12.Msg
+    | W13 C13.Msg
+    | W14 C14.Msg
+    | Load String
+
+
+init : ⊤ → Model
+init ⊤ =
+    { w1 = C1.init ⊤
+    , w2 = C2.init ⊤
+    , w3 = C3.init ⊤
+    , w4 = C4.init ⊤
+    , w5 = C5.init ⊤
+    , w6 = C6.init ⊤
+    , w7 = C7.init ⊤
+    , w8 = C8.init ⊤
+    , w9 = C9.init ⊤
+    , w10 = C10.init ⊤
+    , w11 = C11.init ⊤
+    , w12 = C12.init ⊤
+    , w13 = C13.init ⊤
+    , w14 = C14.init ⊤
+    }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1 m →
+            { model | w1 = C1.update m model.w1 }
+
+        W2 m →
+            { model | w2 = C2.update m model.w2 }
+
+        W3 m →
+            { model | w3 = C3.update m model.w3 }
+
+        W4 m →
+            { model | w4 = C4.update m model.w4 }
+
+        W5 m →
+            { model | w5 = C5.update m model.w5 }
+
+        W6 m →
+            { model | w6 = C6.update m model.w6 }
+
+        W7 m →
+            { model | w7 = C7.update m model.w7 }
+
+        W8 m →
+            { model | w8 = C8.update m model.w8 }
+
+        W9 m →
+            { model | w9 = C9.update m model.w9 }
+
+        W10 m →
+            { model | w10 = C10.update m model.w10 }
+
+        W11 m →
+            { model | w11 = C11.update m model.w11 }
+
+        W12 m →
+            { model | w12 = C12.update m model.w12 }
+
+        W13 m →
+            { model | w13 = C13.update m model.w13 }
+
+        W14 m →
+            { model | w14 = C14.update m model.w14 }
+
+        Load s →
+            { model
+                | w1 = Maybe.withDefault (C1.decode s) model.w1
+                , w2 = Maybe.withDefault (C2.decode s) model.w2
+                , w3 = Maybe.withDefault (C3.decode s) model.w3
+                , w4 = Maybe.withDefault (C4.decode s) model.w4
+                , w5 = Maybe.withDefault (C5.decode s) model.w5
+                , w6 = Maybe.withDefault (C6.decode s) model.w6
+                , w7 = Maybe.withDefault (C7.decode s) model.w7
+                , w8 = Maybe.withDefault (C8.decode s) model.w8
+                , w9 = Maybe.withDefault (C9.decode s) model.w9
+                , w10 = Maybe.withDefault (C10.decode s) model.w10
+                , w11 = Maybe.withDefault (C11.decode s) model.w11
+                , w12 = Maybe.withDefault (C12.decode s) model.w12
+                , w13 = Maybe.withDefault (C13.decode s) model.w13
+                , w14 = Maybe.withDefault (C14.decode s) model.w14
+            }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {Html.map (C1.view model.w1) W1}
+        {Html.map (C2.view model.w2) W2}
+        {Html.map (C3.view model.w3) W3}
+        {Html.map (C4.view model.w4) W4}
+        {Html.map (C5.view model.w5) W5}
+        {Html.map (C6.view model.w6) W6}
+        {Html.map (C7.view model.w7) W7}
+        {Html.map (C8.view model.w8) W8}
+        {Html.map (C9.view model.w9) W9}
+        {Html.map (C10.view model.w10) W10}
+        {Html.map (C11.view model.w11) W11}
+        {Html.map (C12.view model.w12) W12}
+        {Html.map (C13.view model.w13) W13}
+        {Html.map (C14.view model.w14) W14}
+        <input data-role="load" onInput={Load} />
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root"
