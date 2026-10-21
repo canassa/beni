@@ -5858,8 +5858,10 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
         if (e.args.spec_points_to_runs) |v| runs = v;
         if (e.args.spec_points_to_reused) |v| reused = v;
     }
-    // One analysis kept the state; every other one solved, at least once.
-    try testing.expectEqual(@as(?u64, 1), reused);
+    // Two analyses kept the state, one of them since #582 lets a rewrite
+    // drop a parameter and its arguments without a solve. Every other one
+    // solved, at least once.
+    try testing.expectEqual(@as(?u64, 2), reused);
     try testing.expect(analyses.? >= 2);
     try testing.expect(runs.? >= analyses.? - reused.?);
 }
