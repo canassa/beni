@@ -14,7 +14,10 @@
 //! when full. `resize`/`remap` grow in place only for the most recent
 //! allocation; `free` rolls the bump pointer back only for the most recent
 //! allocation and is otherwise a no-op. `reset(.retain_capacity)` keeps the
-//! largest chunk so the next file starts warm.
+//! largest chunk so the next file starts warm; `reset(.keep_all)` keeps every
+//! chunk, so that work repeated on one arena — the release optimiser's
+//! points-to runs (backend.md §9, *The combined solver — Memory*) — reuses
+//! memory the kernel has already mapped and never frees or maps it again.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -32,6 +35,11 @@ current: ?*Chunk = null,
 end_index: usize = 0,
 /// Size of the next chunk to open, doubled every time one is opened.
 next_chunk_size: usize = min_chunk_size,
+/// The chunks a `.keep_all` reset kept, linked by `prev`, in the order the
+/// work before it opened them: each is opened again, the first that fits
+/// a request, before the backing allocator is asked for a new one, so work
+/// done again touches the pages it touched before.
+spare: ?*Chunk = null,
 
 /// Chunks are never smaller than this. 256 KiB holds every token and node
 /// of a typical module, so most files never open a second chunk.
@@ -60,6 +68,14 @@ pub const ResetMode = enum {
     /// Keep the largest chunk, release the rest. The design's default between
     /// files (frontend.md §3.4).
     retain_capacity,
+    /// Keep every chunk and free none: the next allocations fill them
+    /// again, in the order they were opened, and the backing allocator is
+    /// asked only for what they cannot hold. Memory the work touched once
+    /// stays mapped, so doing the same work again faults no page;
+    /// `retain_capacity` gives the others back, and a chunk the backing
+    /// allocator hands out again is a fresh mapping whose every page
+    /// faults anew.
+    keep_all,
 };
 
 pub fn init(backing: Allocator) Arena {
@@ -90,6 +106,25 @@ pub fn allocator(arena: *Arena) Allocator {
 /// mapped and becomes the current one; every other chunk is returned to the
 /// backing allocator.
 pub fn reset(arena: *Arena, mode: ResetMode) void {
+    if (mode == .keep_all) {
+        // Newest first, each in front: the oldest leads, and the spares
+        // this work did not open follow.
+        var it = arena.current;
+        while (it) |chunk| {
+            it = chunk.prev;
+            chunk.prev = arena.spare;
+            arena.spare = chunk;
+        }
+        arena.current = null;
+        arena.end_index = 0;
+        return;
+    }
+    // The spare chunks are chunks like the others here.
+    while (arena.spare) |chunk| {
+        arena.spare = chunk.prev;
+        chunk.prev = arena.current;
+        arena.current = chunk;
+    }
     var keep: ?*Chunk = null;
     var it = arena.current;
     while (it) |chunk| {
@@ -117,12 +152,27 @@ pub fn reset(arena: *Arena, mode: ResetMode) void {
 /// and the profiler; not part of the allocation fast path.
 pub fn capacity(arena: *const Arena) usize {
     var total: usize = 0;
-    var it = arena.current;
-    while (it) |chunk| : (it = chunk.prev) total += chunk.size;
+    for ([_]?*Chunk{ arena.current, arena.spare }) |first| {
+        var it = first;
+        while (it) |chunk| : (it = chunk.prev) total += chunk.size;
+    }
     return total;
 }
 
 fn openChunk(arena: *Arena, needed: usize, ret_addr: usize) ?*Chunk {
+    // The first spare chunk the request fits: memory work before this
+    // touched, already mapped.
+    var link = &arena.spare;
+    while (link.*) |chunk| {
+        if (chunk.size >= Chunk.header_size + needed) {
+            link.* = chunk.prev;
+            chunk.prev = arena.current;
+            arena.current = chunk;
+            arena.end_index = Chunk.header_size;
+            return chunk;
+        }
+        link = &chunk.prev;
+    }
     // Enough for the request after the header, or the planned size,
     // whichever is larger; every chunk opened raises the plan.
     const size = @max(arena.next_chunk_size, Chunk.header_size + needed);
@@ -292,6 +342,48 @@ test "reset(.retain_capacity) keeps exactly the largest chunk" {
     arena.reset(.free_all);
     try testing.expectEqual(@as(usize, 0), countChunks(&arena));
     try testing.expectEqual(@as(usize, 0), arena.capacity());
+}
+
+// #574: the release optimiser runs its points-to fixpoint six times on one
+// arena. `retain_capacity` gave back every chunk but the largest, and the
+// next run's chunks were fresh mappings whose every page faulted again.
+// `keep_all` frees nothing and opens the chunks again in the order the work
+// before opened them, so the same work again — here, a small allocation,
+// one past the first chunk, and a list grown past both — lands where it did,
+// on the same pages, and asks the backing allocator for nothing.
+test "reset(.keep_all) frees nothing, and the same work again lands where it did" {
+    var counting: std.testing.FailingAllocator = .init(testing.allocator, .{});
+    var arena: Arena = .init(counting.allocator());
+    defer arena.deinit();
+    const a = arena.allocator();
+    var opened: usize = 0;
+    var mapped: usize = 0;
+    var where: [3]usize = undefined;
+    for (0..4) |round| {
+        const small = try a.alloc(u8, 100);
+        const big = try a.alloc(u8, min_chunk_size * 2);
+        var list: std.ArrayList(u32) = .empty;
+        for (0..min_chunk_size) |i| try list.append(a, @intCast(i));
+        for (list.items, 0..) |v, i| try testing.expectEqual(@as(u32, @intCast(i)), v);
+        const here = [3]usize{ @intFromPtr(small.ptr), @intFromPtr(big.ptr), @intFromPtr(list.items.ptr) };
+        if (round == 0) {
+            opened = counting.allocations;
+            mapped = arena.capacity();
+            where = here;
+            try testing.expect(opened > 1);
+        } else {
+            try testing.expectEqual(opened, counting.allocations);
+            try testing.expectEqual(mapped, arena.capacity());
+            try testing.expectEqualSlices(usize, &where, &here);
+        }
+        arena.reset(.keep_all);
+        try testing.expectEqual(@as(usize, 0), counting.deallocations);
+        try testing.expectEqual(mapped, arena.capacity());
+    }
+    // `retain_capacity` after `keep_all` keeps the largest of them all.
+    arena.reset(.retain_capacity);
+    try testing.expectEqual(@as(usize, 1), countChunks(&arena));
+    try testing.expectEqual(counting.deallocations + 1, opened);
 }
 
 test "reset on an empty arena is a no-op" {
