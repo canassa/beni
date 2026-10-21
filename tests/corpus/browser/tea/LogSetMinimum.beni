@@ -1,0 +1,50 @@
+-- `Log.setMinimum` on a page (boundary.md §9.8.16 (b), amended
+-- 2026-10-21): `init` sets the program's minimum to `Debug`, so a
+-- `Cmd.log Log.Debug` is written when the command runs, as `console.debug`,
+-- and so is a `Log.debug` in `update`. A `Trace` line is still below the
+-- minimum. `Log.minimum Log.Warn` overrides the program's minimum for its
+-- function only.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.debug "a debug line in update"
+            Log.minimum Log.Warn λ⊤ → Log.info "not written: under Log.minimum Log.Warn"
+            ( n + 1
+            , Cmd.batch
+                [ Cmd.log Log.Debug "a debug line from a command"
+                , Cmd.log Log.Trace "not written: trace under the program's Debug"
+                ]
+            )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="go" onClick={Go}>go</button>
+        <p>{String.fromInt n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                Log.setMinimum Log.Debug
+                ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
