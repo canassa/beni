@@ -343,6 +343,9 @@ pub const Program = struct {
     pub const HoleRef = union(enum) { node: Node.Index, item: u32 };
 
     pub const HoleFacts = struct {
+        /// Evaluation reads of helper arguments not proven pure and total;
+        /// kept separate from the callee's demanded leaf reads.
+        entry_groups: []const u32 = &.{},
         /// The hole's anchored read set (`write-sets.md` §3.6), as a
         /// number: two holes of one program have one number exactly when
         /// they read the same model paths. What a group is (§5.3).

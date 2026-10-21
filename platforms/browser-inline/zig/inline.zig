@@ -365,6 +365,7 @@ const Ctx = struct {
     root: m.Root.Index,
     /// The selector read group of an arm.
     group: ?u32 = null,
+    entry_groups: []const u32 = &.{},
     /// An eager arm of a branch (§8.2), or the markup of a function of the
     /// program's own module the hole calls, written in place (§8.4,
     /// amended 2026-10-19): entered with its arguments evaluated in the
@@ -391,6 +392,8 @@ const Write = struct {
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
         event: u32,
+        /// Evaluate a choice whose only reachable markup is empty.
+        observe: m.Node.Index,
     },
     /// A `stateful` attribute: a control the user edits (§8.3).
     stateful: bool = false,
@@ -664,8 +667,8 @@ const Page = struct {
         };
         if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
         if (callee.statements) return later(cx, n, "a function returning markup whose body has `let`s that no hole reads");
-        const call_group = cx.programHole(.{ .node = n }).group;
-        try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = 0, .root = r, .group = call_group, .kind = .call });
+        const facts = cx.programHole(.{ .node = n });
+        try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = 0, .root = r, .group = facts.group, .entry_groups = facts.entry_groups, .kind = .call });
         const inner: u32 = @intCast(pg.ctxs.items.len - 1);
         try cx.programInlineEnter(null, n, null, false);
         defer cx.programInlineLeave();
@@ -686,7 +689,12 @@ const Page = struct {
         // Each arm one element written in place, or `<></>`: one eager
         // `when` per element arm (§8.2, D-b; a `case`, amended 2026-10-19).
         var shown: std.ArrayList(u32) = .empty;
+        var removed = false;
         for (br.arms, 0..) |arm, k| {
+            if (arm.dead) {
+                removed = true;
+                continue;
+            }
             const r = switch (arm.what) {
                 .markup => |r| r,
                 else => return later(cx, n, not_when),
@@ -698,8 +706,21 @@ const Page = struct {
             if (!arm.eager or arm.statements) return later(cx, n, "an `if` or a `case` in markup whose shown arm reads a variable the branch binds, or has `let`s,");
             try shown.append(pg.a(), @intCast(k));
         }
-        if (shown.items.len == 0) return later(cx, n, not_when);
+        if (shown.items.len == 0 and !removed) return later(cx, n, not_when);
         const facts = try pg.known(n, cx.programHole(.{ .node = n }));
+        if (shown.items.len == 0) {
+            // Retain selector and helper-argument effects and throws.
+            var groups: std.ArrayList(u32) = .empty;
+            try groups.append(pg.a(), facts.group);
+            var at: ?u32 = ctx;
+            while (at) |c| : (at = pg.ctxs.items[c].parent) {
+                const call = pg.ctxs.items[c];
+                if (call.kind != .call) continue;
+                try groups.appendSlice(pg.a(), call.entry_groups);
+            }
+            try pg.writes.append(pg.a(), .{ .target = null, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .observe = n } });
+            return;
+        }
         for (shown.items) |s| {
             const armRoot = br.arms[s].what.markup;
             try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = s, .arms = @intCast(br.arms.len), .root = armRoot, .group = facts.group });
@@ -1375,6 +1396,7 @@ const Page = struct {
             },
             .prop => |x| try out.append(pg.a(), x.value),
             .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
+            .observe => |n| try out.append(pg.a(), pg.tree.hole(n).value),
             .event => {},
         }
     }
@@ -1432,15 +1454,6 @@ const Page = struct {
                 }
             }
         }
-        for (pg.events.items) |ev| for (ev.captures) |capture| {
-            var groups: std.ArrayList(u32) = .empty;
-            try groups.append(pg.a(), pg.ctxs.items[capture].group.?);
-            for (pg.writes.items) |w| if (pg.within(w.ctx, capture)) try groups.appendSlice(pg.a(), w.groups);
-            const all = try sorted(pg.a(), groups.items);
-            for (pg.writes.items) |*w| if (pg.within(w.ctx, capture)) {
-                w.groups = all;
-            };
-        };
         for (pg.writes.items) |*w| {
             var at: ?u32 = w.ctx;
             var selector_group: ?u32 = null;
@@ -1450,8 +1463,69 @@ const Page = struct {
             // A branch's group includes its selector and all arm reads.
             // Keep its guarded effects and visibility in one preparation,
             // so a later throw cannot follow an earlier visibility write.
-            if (selector_group) |g| w.groups = try sorted(pg.a(), &.{g});
+            var groups: std.ArrayList(u32) = .empty;
+            if (selector_group) |g| {
+                try groups.append(pg.a(), g);
+            } else try groups.appendSlice(pg.a(), w.groups);
+            // Complete argument reads belong to every binding that enters
+            // an effectful helper call, including a guarded descendant.
+            at = w.ctx;
+            while (at) |c| : (at = pg.ctxs.items[c].parent) {
+                const ctx = pg.ctxs.items[c];
+                if (ctx.kind != .call) continue;
+                try groups.appendSlice(pg.a(), ctx.entry_groups);
+            }
+            w.groups = try sorted(pg.a(), groups.items);
         }
+        // One preflight owns a guarded arm, its visibility write and all
+        // descendant argument evaluations. Nested/alternative guards and
+        // retained captures can overlap; close their cohorts before taking
+        // the union of their read groups, never split one again afterwards.
+        const Cohort = struct {
+            fn representative(parents: []u32, index: u32) u32 {
+                var at = index;
+                while (parents[at] != at) at = parents[at];
+                return at;
+            }
+            fn unite(parents: []u32, left: u32, right: u32) void {
+                const x = representative(parents, left);
+                const y = representative(parents, right);
+                parents[@max(x, y)] = @min(x, y);
+            }
+        };
+        const parents = try pg.a().alloc(u32, pg.writes.items.len);
+        for (parents, 0..) |*parent, wi| parent.* = @intCast(wi);
+        for (pg.ctxs.items, 0..) |context, ci_index| {
+            if (!pg.guarded_ctx[ci_index]) continue;
+            const guarded: u32 = @intCast(ci_index);
+            var first: ?u32 = null;
+            for (pg.writes.items, 0..) |w, wi_| {
+                const visibility = w.ctx == context.parent and w.what == .when and w.what.when.node == context.node;
+                if (!pg.within(w.ctx, guarded) and !visibility) continue;
+                const wi: u32 = @intCast(wi_);
+                if (first) |earlier| Cohort.unite(parents, earlier, wi) else first = wi;
+            }
+        }
+        const additions = try pg.a().alloc(std.ArrayList(u32), pg.writes.items.len);
+        @memset(additions, .empty);
+        for (pg.events.items) |ev| for (ev.captures) |capture| {
+            var first: ?u32 = null;
+            for (pg.writes.items, 0..) |w, wi_| {
+                if (!pg.within(w.ctx, capture)) continue;
+                const wi: u32 = @intCast(wi_);
+                if (first) |earlier| Cohort.unite(parents, earlier, wi) else first = wi;
+            }
+            if (first) |wi| try additions[wi].append(pg.a(), pg.ctxs.items[capture].group.?);
+        };
+        const groups = try pg.a().alloc(std.ArrayList(u32), pg.writes.items.len);
+        @memset(groups, .empty);
+        for (pg.writes.items, 0..) |w, wi| {
+            const cohort = Cohort.representative(parents, @intCast(wi));
+            try groups[cohort].appendSlice(pg.a(), w.groups);
+            try groups[cohort].appendSlice(pg.a(), additions[wi].items);
+        }
+        for (groups) |*set| set.items = @constCast(try sorted(pg.a(), set.items));
+        for (pg.writes.items, 0..) |*w, wi| w.groups = groups[Cohort.representative(parents, @intCast(wi))].items;
     }
 
     fn prepares(pg: *Page, f: *const Function) bool {
@@ -1637,6 +1711,7 @@ const Page = struct {
                 .prop => |x| try values.append(pg.a(), x.value),
                 .event => {},
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
+                .observe => |n| try reads.append(pg.a(), pg.tree.hole(n).value),
             }
         }
         try reads.appendSlice(pg.a(), values.items);
@@ -1802,6 +1877,7 @@ const Page = struct {
                         break :value try cx.value(x.value);
                     },
                     .event => |ei| try pg.capturedArguments(ei, p.call_args.items),
+                    .observe => |n| try p.branch(into, ctx, n),
                     .when => |x| value: {
                         const taken = try p.branch(into, ctx, x.node);
                         break :value if (x.arms > 2)
@@ -1871,6 +1947,7 @@ const Page = struct {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value }));
                 },
                 .when => try js.expression(into, try js.call(try js.name(try cx.runtime("when")), &.{ node, ready.value })),
+                .observe => {},
             }
             if (ready.selected) |n| try js.@"if"(blk, try js.name(n), into, null);
         }
@@ -1916,8 +1993,12 @@ const Page = struct {
             var early: std.ArrayList(struct { node: m.Node.Index, name: m.Name }) = .empty;
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];
-                if (w.ctx != ctx or w.what != .when) continue;
-                const hn = w.what.when.node;
+                if (w.ctx != ctx) continue;
+                const hn = switch (w.what) {
+                    .when => |x| x.node,
+                    .observe => |n| n,
+                    else => continue,
+                };
                 if (cx.valueSafe(pg.tree.hole(hn).value)) continue;
                 if (for (early.items) |e| {
                     if (e.node == hn) break true;
@@ -1936,7 +2017,7 @@ const Page = struct {
                         else => {},
                     },
                     .prop => |x| if (cx.valueSafe(x.value)) try own.append(pg.a(), x.value),
-                    .when, .event => {},
+                    .when, .event, .observe => {},
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
                 const node = try pg.ref(w.target);
@@ -1963,6 +2044,12 @@ const Page = struct {
                         if (x.key) |key| {
                             try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value, try js.string(key) }));
                         } else try js.expression(blk, try js.call(try js.name(try cx.runtime("prop")), &.{ node, value }));
+                    },
+                    .observe => |n| {
+                        const prepared = for (early.items) |e| {
+                            if (e.node == n) break true;
+                        } else false;
+                        if (!prepared) try js.expression(blk, try cx.programBranchArm(blk, n));
                     },
                     .when => |x| {
                         // The arm taken, once per function for all of a

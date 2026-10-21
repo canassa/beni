@@ -1,0 +1,104 @@
+-- load
+console.log: outside argument: 0
+console.log: selector: False
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    ""
+    <output>"0"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=add]
+console.log: outside argument: 1
+console.log: selector: False
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    ""
+    <output>"1"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=toggle]
+console.log: inside argument: 1
+console.log: selector: False
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    <section data-role="inside">
+      <section></section>
+    </section>
+    <output>"1"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=add]
+console.log: outside argument: 2
+console.log: selector: False
+console.log: inside argument: 2
+console.log: selector: False
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    <section data-role="inside">
+      <section></section>
+    </section>
+    <output>"2"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=toggle]
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    ""
+    <output>"2"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=add]
+console.log: outside argument: 3
+console.log: selector: False
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    ""
+    <output>"3"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=toggle]
+console.log: inside argument: 3
+console.log: selector: False
+<body>
+  <main>
+    <section data-role="outside">
+      <section></section>
+    </section>
+    <section data-role="inside">
+      <section></section>
+    </section>
+    <output>"3"</output>
+    <button data-role="add">"Add"</button>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
