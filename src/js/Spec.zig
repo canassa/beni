@@ -1168,16 +1168,12 @@ const Spec = struct {
     kept_drops: std.ArrayList(KeptDrop) = .empty,
     kept_args: std.ArrayList(NodeRef) = .empty,
     changed: bool = false,
-    /// Slice 4, facts 4 and 5: per abstract object and property, the join
-    /// of every value written to it; the object sites whose literal has a
-    /// spread; per function, the join of what it returns, and the function
-    /// the walk is in; and the conditionals fact 5 decides though their
-    /// test is no literal, with the branch each takes. Refilled each round.
-    prop_lat: KeyMap(SiteProp, Lat) = .empty,
+    /// Slice 4, facts 4 and 5: the object sites whose literal has a spread,
+    /// and the function the walk is in. What is written to a property of a
+    /// site, and what a function returns, are fact 3's own cells
+    /// (`Pts.Prop.lat`, `Pts.Site.ret_lat`).
     spread_sites: []bool = &.{},
-    ret_lat: KeyMap(NodeRef, Lat) = .empty,
     cur_fn: ?NodeRef = null,
-    decided_conds: KeyMap(NodeRef, Index) = .empty,
     /// `nameIn`'s answers, keyed by module and whole-program id; cleared
     /// each rewrite.
     name_in: KeyMap(SiteProp, u32) = .empty,
@@ -1269,7 +1265,7 @@ const Spec = struct {
     site_deps: []u32 = &.{},
     site_seen: []u32 = &.{},
     /// The combined solver while it solves (`solve`): what `fieldGet` and
-    /// `retGet` read instead of `prop_lat` and `ret_lat`.
+    /// `retGet` register their reads with.
     solver: ?*Solver = null,
     /// The solve's columns and pools and the rewrite's dependency lists,
     /// of one solve: emptied with `.keep_all` when the next starts, so a
@@ -1356,48 +1352,51 @@ const Spec = struct {
         return false;
     }
 
+    /// `v` joins property `prop` of site `site` (facts 4 and 5), in fact 3's
+    /// own cell of it. A property fact 3 has no `Prop` for is one no read
+    /// of facts 4 and 5 asks of (`propValue` and `tagValue` find the `Prop`
+    /// first), so the write has nowhere to go.
     fn joinProp(s: *Spec, site: u32, prop: u32, v: Lat) Allocator.Error!void {
         if (prop == none) return;
-        const gop = try s.prop_lat.getOrPut(s.arena, .{ .site = site, .prop = prop });
-        var moved = false;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .bot;
-            if (v.state != .bot) s.changed = true;
-            moved = true;
-        }
-        if (s.joinInto(gop.value_ptr, v)) moved = true;
+        const pr = s.pts.propMut(site, prop) orelse return;
+        var moved = !pr.lat_made;
+        if (!pr.lat_made and v.state != .bot) s.changed = true;
+        pr.lat_made = true;
+        if (s.joinInto(&pr.lat, v)) moved = true;
         if (moved) s.siteChanged(site);
     }
 
     /// What is known of property `prop` of site `site` (facts 4 and 5):
     /// null when no write has reached it. Inside the combined solver it is
     /// the field's cell, and the constraint reading it is woken when it
-    /// changes (`Solver.dynGet`).
+    /// changes (`Solver.reads`).
     inline fn fieldGet(s: *Spec, site: u32, prop: u32) Allocator.Error!?Lat {
-        if (s.solver) |sv| return sv.dynGet(.{ .site = site, .prop = prop }, false);
-        return s.prop_lat.get(.{ .site = site, .prop = prop });
+        const pr = s.pts.propMut(site, prop) orelse return null;
+        if (s.solver) |sv| try sv.reads(&pr.lat_readers);
+        return if (pr.lat_made) pr.lat else null;
     }
 
     /// What function `ref` may return (fact 5), as `fieldGet`.
     inline fn retGet(s: *Spec, ref: NodeRef) Allocator.Error!?Lat {
-        if (s.solver) |sv| return sv.dynGet(.{ .site = ref.module, .prop = ref.node }, true);
-        return s.ret_lat.get(ref);
+        const site = s.pts.siteAt(ref.module, @fromBackingInt(@intCast(ref.node))) orelse return null;
+        const st = &s.pts.sites.items[site];
+        if (s.solver) |sv| try sv.reads(&st.ret_readers);
+        return if (st.ret_made) st.ret_lat else null;
     }
 
+    /// `v` joins what the function the walk is in returns, in its site's
+    /// cell (`Pts.Site.ret_lat`). A function fact 3 made no site for is
+    /// one no call reads the return of (`callValue` reads a site's).
     fn joinRet(s: *Spec, v: Lat) Allocator.Error!void {
         const f = s.cur_fn orelse return;
-        const gop = try s.ret_lat.getOrPut(s.arena, f);
-        var moved = false;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .bot;
-            if (v.state != .bot) s.changed = true;
-            moved = true;
-        }
-        if (s.joinInto(gop.value_ptr, v)) moved = true;
+        const site = s.pts.siteAt(f.module, @fromBackingInt(@intCast(f.node))) orelse return;
+        const st = &s.pts.sites.items[site];
+        var moved = !st.ret_made;
+        if (!st.ret_made and v.state != .bot) s.changed = true;
+        st.ret_made = true;
+        if (s.joinInto(&st.ret_lat, v)) moved = true;
         if (moved) {
-            if (s.pts.siteAt(f.module, @fromBackingInt(@intCast(f.node)))) |site| {
-                s.siteChanged(site);
-            } else s.w_dirty.setRangeValue(.{ .start = 0, .end = s.w_dirty.bit_length }, true);
+            s.siteChanged(site);
         }
     }
 
@@ -1576,9 +1575,6 @@ const Spec = struct {
         @memset(s.reads, 0);
         s.params.clearRetainingCapacity();
         s.arg_effect.clearRetainingCapacity();
-        s.prop_lat.clearRetainingCapacity();
-        s.ret_lat.clearRetainingCapacity();
-        s.decided_conds.clearRetainingCapacity();
         var ri: usize = 0;
         while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < s.escaped.len) {
             s.escaped[g] = true;
@@ -1812,13 +1808,25 @@ const Spec = struct {
 
     /// Facts 1, 2, 4 and 5 by the combined solver (`Solver`): extract the
     /// modules that changed, merge, solve, and leave the facts where the
-    /// rewrite reads them — `memo`, `params`, `prop_lat`, `ret_lat`,
-    /// `decided_conds`, the `escaped`, `assigned`, `reads`, `spread_sites`
+    /// rewrite reads them — `memo`, `params`, fact 3's sites' cells of
+    /// fields and returns, the `escaped`, `assigned`, `reads`, `spread_sites`
     /// and `arg_effect` columns — with the statements' dependency lists
     /// (`g_deps`, `site_deps`) for the rewrite's own walks.
     fn solve(s: *Spec) Allocator.Error!void {
         try s.extractAll();
         s.solve_tmp.reset(.keep_all);
+        // Fact 3's state may be the last analysis's (`fact3Kept`): its cells
+        // of fields and returns start again from ⊥.
+        for (s.pts.sites.items) |*st| {
+            st.ret_lat = .bot;
+            st.ret_made = false;
+            st.ret_readers = none;
+            for (st.props.items) |*pr| {
+                pr.lat = .bot;
+                pr.lat_made = false;
+                pr.lat_readers = none;
+            }
+        }
         const a = s.solve_tmp.allocator();
         const mods = s.mods;
         // ---- The merge: cells and constraints by prefix sums, in module order.
@@ -1970,29 +1978,17 @@ const Spec = struct {
         s.stats.solve_constraints += cons;
         s.stats.solve_evaluations += sv.evaluations;
         // ---- The facts, where the rewrite reads them. A node's value is its
-        // last occurrence's, as a walk leaves `memo`; so is a decision.
-        s.decided_conds.clearRetainingCapacity();
+        // last occurrence's, as a walk leaves `memo`; a conditional fact 5
+        // decides is read off it (`decidedBranch`). The fields and returns
+        // are fact 3's sites' own cells already.
         for (mods, 0..) |*m, mi| {
             const x = &m.ex;
-            for (x.code, x.node, 0..) |code, cell, j| {
+            for (x.code, x.node) |code, cell| {
                 if (!code.ofNode()) continue;
-                const node = x.nodeOf(cell);
-                m.memo[node] = sv.lat[cell_base[mi] + cell];
-                if (code.op == .cond) {
-                    const key: NodeRef = .{ .module = @intCast(mi), .node = node };
-                    const taken = sv.aux[con_base[mi] + j];
-                    if (taken != none) try s.decided_conds.put(s.arena, key, @fromBackingInt(@intCast(taken))) else s.decided_conds.remove(key);
-                }
+                m.memo[x.nodeOf(cell)] = sv.lat[cell_base[mi] + cell];
             }
         }
         @memcpy(s.params.items, sv.lat[param_base..]);
-        s.prop_lat.clearRetainingCapacity();
-        s.ret_lat.clearRetainingCapacity();
-        for (sv.dyn.items) |d| if (d.made) {
-            if (d.key.ret == 1) {
-                try s.ret_lat.put(s.arena, .{ .module = d.key.a, .node = d.key.b }, d.lat);
-            } else try s.prop_lat.put(s.arena, .{ .site = d.key.a, .prop = d.key.b }, d.lat);
-        };
     }
 
     /// Statement `w` reads whole-program name `g` (`readsName`).
@@ -2074,7 +2070,7 @@ const Spec = struct {
     }
 
     /// The statement being walked reads what is known of site `site`: its
-    /// properties' values (`prop_lat`), what it returns (`ret_lat`), and
+    /// properties' values (`Pts.Prop.lat`), what it returns, and
     /// whether a spread copies from it.
     inline fn readsSite(s: *Spec, site: u32) Allocator.Error!void {
         if (s.w_cur == none or site >= s.site_deps.len or s.site_seen[site] == s.w_walk) return;
@@ -2462,7 +2458,7 @@ const Spec = struct {
 
     /// A function's body, `node` the arrow or the declaration: what its
     /// `return`s give, and `undefined` when it may run off its end, join
-    /// its entry of `ret_lat` (fact 5).
+    /// its site's return cell (fact 5).
     fn evalFunc(s: *Spec, m: *Mod, mi: u32, record: ExtraIndex, node: Index) Allocator.Error!void {
         const saved = s.cur_fn;
         defer s.cur_fn = saved;
@@ -2542,22 +2538,11 @@ const Spec = struct {
             .cond => blk: {
                 const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
                 const t = m.memo[d.lhs];
-                // Fact 5's second case is decided by this evaluation alone:
-                // one an earlier sweep made, from facts that have grown
-                // since, is taken back unless this one makes it again. A
-                // walk evaluates every node of its statement — both arms of
-                // a conditional or an `if`, both operands of `&&` and `||`,
-                // every function body (`eval`, `evalStmt`) — and a
-                // statement's last walk saw the final facts (`sweeps`), so
-                // what stays is decided by them, as `memo` is.
-                const key: NodeRef = .{ .module = m.index, .node = node.int() };
+                // Fact 5's second case, decided by the values as they are;
+                // the rewrite reads the decision off them (`decidedBranch`).
                 if (t.state == .top or t.state == .nonnull) {
-                    if (try s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), c)) |taken| {
-                        try s.decided_conds.put(s.arena, key, taken);
-                        break :blk m.memo[taken.int()];
-                    }
+                    if (try s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), c)) |taken| break :blk m.memo[taken.int()];
                 }
-                s.decided_conds.remove(key);
                 break :blk s.condValue(t, m.memo[c.consequent.int()], m.memo[c.alternate.int()]);
             },
             .call => blk: {
@@ -2875,6 +2860,13 @@ const Spec = struct {
     /// (or `!==`, either way round) with `x.p` nonnull, the branch the test
     /// takes — when that branch is the read `x.p` itself, which evaluated
     /// first throws, or gives `undefined`, exactly where the test did.
+    fn decidedBranch(s: *Spec, m: *Mod, node: Index) Allocator.Error!?Index {
+        const d = m.ir.data(node);
+        const t = m.memo[d.lhs];
+        if (t.state != .top and t.state != .nonnull) return null;
+        return s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond));
+    }
+
     fn nullTestTaken(s: *Spec, m: *Mod, test_node: Index, c: JsIr.Cond) Allocator.Error!?Index {
         _ = s;
         const ir = m.ir;
@@ -3810,7 +3802,7 @@ const Spec = struct {
             } else if (tag == .cond) {
                 // Fact 5's second case: the branch the test takes is the
                 // read it tested.
-                if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
+                if (try s.decidedBranch(m, node)) |b| {
                     m.foldTo(node, b);
                     m.memo[node.int()] = m.memo[b.int()];
                     try JsIr.pushOperand(s.arena, &stack, node);
@@ -9871,7 +9863,7 @@ const Extractor = struct {
 
     /// Calls `f.see(cell)` for every cell of the module constraint `j`
     /// reads; a parameter's is the merge's (`Solver.prd`), and a field's
-    /// and a return's are registered as they are read (`Solver.dynGet`).
+    /// and a return's are registered as they are read (`Solver.reads`).
     fn eachRead(x: *const Extract, j: usize, f: anytype) void {
         const a = x.a[j];
         switch (x.code[j].op) {
@@ -10411,10 +10403,10 @@ const Extractor = struct {
 ///
 /// **Cells.** Per module, its node cells (`Extract`), numbered by prefix
 /// sums in module order; then one per tracked parameter (`Spec.params`).
-/// Fields (a site and a property, `prop_lat`) and returns (a function node,
-/// `ret_lat`) are made as a write or a read first reaches them, in solve
-/// order: no answer depends on their numbering, every consumer finds one by
-/// its key.
+/// A field (a site and a property) and a return (a function's site) are
+/// fact 3's own cells of them (`Pts.Prop.lat`, `Pts.Site.ret_lat`): a
+/// field exists from its first write, and one fact 3 has no `Prop` for is
+/// one no read asks of.
 ///
 /// **The worklist.** The constraints are evaluated once in module order
 /// and walk order; a cell that changes queues the constraints that read it
@@ -10435,15 +10427,13 @@ const Solver = struct {
     param_base: u32,
     lat: []Lat,
     /// Per constraint: a parameter read's cell (`none`: ⊤), a call's first
-    /// parameter (`none`: not a call `Spec` tracks), a conditional's
-    /// decision (`none`: none), a `return`'s cell once found.
+    /// parameter (`none`: not a call `Spec` tracks).
     aux: []u32,
     /// The parameters' readers: per parameter, `prd[prd_off[p]..prd_off[p + 1]]`.
     prd_off: []u32,
     prd: []u32,
-    /// Fields and returns (`dynGet`, `joinDyn`), and who read each.
-    dyn_ids: KeyMap(DynKey, u32) = .empty,
-    dyn: std.ArrayList(Dyn) = .empty,
+    /// Who read each field and return so far (`reads`): the lists the
+    /// cells' `readers` start.
     readers: std.ArrayList(Reader) = .empty,
     /// The constraint being evaluated.
     cur: u32 = none,
@@ -10458,8 +10448,6 @@ const Solver = struct {
     /// Past the work budget: every cell is ⊤ and stays ⊤.
     pessimised: bool = false,
 
-    const DynKey = struct { ret: u32, a: u32, b: u32 };
-    const Dyn = struct { lat: Lat = .bot, made: bool = false, head: u32 = none, key: DynKey };
     const Reader = struct { con: u32, next: u32 };
 
     /// The work budget (*The worklist*, *Termination*): evaluations per
@@ -10492,8 +10480,9 @@ const Solver = struct {
         try sv.queue.append(sv.arena(), con);
     }
 
-    fn wakeDyn(sv: *Solver, id: u32) Allocator.Error!void {
-        var r = sv.dyn.items[id].head;
+    /// Every constraint on the readers list at `head` queued.
+    fn wakeList(sv: *Solver, head: u32) Allocator.Error!void {
+        var r = head;
         while (r != none) : (r = sv.readers.items[r].next) try sv.enqueue(sv.readers.items[r].con);
     }
 
@@ -10518,47 +10507,35 @@ const Solver = struct {
         for (sv.prd[sv.prd_off[p]..sv.prd_off[p + 1]]) |con| try sv.enqueue(con);
     }
 
-    fn dynOf(sv: *Solver, key: DynKey) Allocator.Error!u32 {
-        const gop = try sv.dyn_ids.getOrPut(sv.arena(), key);
-        if (!gop.found_existing) {
-            gop.value_ptr.* = @intCast(sv.dyn.items.len);
-            try sv.dyn.append(sv.arena(), .{ .key = key });
-        }
-        return gop.value_ptr.*;
+    /// The constraint being evaluated reads a field or a return whose
+    /// readers list starts at `head` (`Spec.fieldGet`, `Spec.retGet`): it is
+    /// woken when that changes. A constraint read again is listed again
+    /// only when another read came between: listed twice, it is woken
+    /// twice, which queues it once.
+    fn reads(sv: *Solver, head: *u32) Allocator.Error!void {
+        if (sv.cur == none) return;
+        if (head.* != none and sv.readers.items[head.*].con == sv.cur) return;
+        try sv.readers.append(sv.arena(), .{ .con = sv.cur, .next = head.* });
+        head.* = @intCast(sv.readers.items.len - 1);
     }
 
-    /// A field's or a return's value, null while nothing wrote it; the
-    /// constraint reading it is woken when it changes. A constraint read
-    /// again is listed again only when another read came between: a
-    /// reader listed twice is woken twice, which queues it once.
-    fn dynGet(sv: *Solver, key: Spec.SiteProp, ret: bool) Allocator.Error!?Lat {
-        const id = try sv.dynOf(.{ .ret = @intFromBool(ret), .a = key.site, .b = key.prop });
-        const d = &sv.dyn.items[id];
-        if (sv.cur != none and (d.head == none or sv.readers.items[d.head].con != sv.cur)) {
-            const head = d.head;
-            try sv.readers.append(sv.arena(), .{ .con = sv.cur, .next = head });
-            sv.dyn.items[id].head = @intCast(sv.readers.items.len - 1);
-        }
-        const now = sv.dyn.items[id];
-        return if (now.made) now.lat else null;
-    }
-
-    /// `v` joins a field or a return (`Spec.joinProp`, `Spec.joinRet`): it
-    /// exists from the first write, whatever the write's value.
-    fn joinDyn(sv: *Solver, key: DynKey, v: Lat) Allocator.Error!void {
-        try sv.joinDynAt(try sv.dynOf(key), v);
-    }
-
-    fn joinDynAt(sv: *Solver, id: u32, v: Lat) Allocator.Error!void {
-        const d = &sv.dyn.items[id];
-        var moved = !d.made;
-        d.made = true;
-        const joined = sv.s.join(d.lat, v);
-        if (!joined.eql(d.lat)) {
-            d.lat = joined;
+    /// `v` joins a field or a return, fact 3's cell of it (`Spec.joinProp`,
+    /// `Spec.joinRet`): it exists from the first write, whatever the write's
+    /// value.
+    fn joinCell(sv: *Solver, lat: *Lat, made: *bool, readers: u32, v: Lat) Allocator.Error!void {
+        var moved = !made.*;
+        made.* = true;
+        const joined = sv.s.join(lat.*, v);
+        if (!joined.eql(lat.*)) {
+            lat.* = joined;
             moved = true;
         }
-        if (moved) try sv.wakeDyn(id);
+        if (moved) try sv.wakeList(readers);
+    }
+
+    fn joinField(sv: *Solver, site: u32, prop: u32, v: Lat) Allocator.Error!void {
+        const pr = sv.s.pts.propMut(site, prop) orelse return;
+        try sv.joinCell(&pr.lat, &pr.lat_made, pr.lat_readers, v);
     }
 
     /// A template's parts' values, read from their cells.
@@ -10620,10 +10597,8 @@ const Solver = struct {
                 const t = sv.lat[sv.cellOf(mi, p[0])];
                 // Fact 5's second case, decided by this evaluation alone.
                 if ((t.state == .top or t.state == .nonnull) and p[3] != none and sv.lat[sv.cellOf(mi, p[3])].state == .nonnull) {
-                    sv.aux[con] = p[5];
                     break :cond sv.lat[sv.cellOf(mi, p[4])];
                 }
-                sv.aux[con] = none;
                 break :cond s.condValue(t, sv.lat[sv.cellOf(mi, p[1])], sv.lat[sv.cellOf(mi, p[2])]);
             },
             .call => call: {
@@ -10643,7 +10618,7 @@ const Solver = struct {
                         const name: NameIndex = @fromBackingInt(@intCast(x.pool[a + 1 + 2 * k]));
                         const prop = s.pts.propId(mi, name);
                         if (prop == none) continue;
-                        try sv.joinDyn(.{ .ret = 0, .a = site, .b = prop }, sv.lat[sv.cellOf(mi, x.pool[a + 2 + 2 * k])]);
+                        try sv.joinField(site, prop, sv.lat[sv.cellOf(mi, x.pool[a + 2 + 2 * k])]);
                     }
                 }
                 break :obj Lat.object;
@@ -10653,15 +10628,16 @@ const Solver = struct {
                     const td = ir.data(node);
                     const obj = s.pts.vals[mi][td.lhs];
                     const prop = s.pts.propId(mi, @fromBackingInt(@intCast(td.rhs)));
-                    if (prop != none) for (obj.sites) |site| try sv.joinDyn(.{ .ret = 0, .a = site, .b = prop }, sv.lat[sv.cellOf(mi, a)]);
+                    if (prop != none) for (obj.sites) |site| try sv.joinField(site, prop, sv.lat[sv.cellOf(mi, a)]);
                 }
                 return;
             },
             .ret => {
                 const w: Lat = if (a == none) .of(try s.intern(.{ .kind = .undefined_lit })) else sv.lat[sv.cellOf(mi, a)];
-                // Its return's cell, found once.
-                if (sv.aux[con] == none) sv.aux[con] = try sv.dynOf(.{ .ret = 1, .a = mi, .b = x.node[j] });
-                try sv.joinDynAt(sv.aux[con], w);
+                // Its function's site, which holds the return's cell.
+                const site = s.pts.siteAt(mi, @fromBackingInt(@intCast(x.node[j]))) orelse return;
+                const fs = &s.pts.sites.items[site];
+                try sv.joinCell(&fs.ret_lat, &fs.ret_made, fs.ret_readers, w);
                 return;
             },
         };
@@ -10675,7 +10651,10 @@ const Solver = struct {
         sv.first_pass = false;
         sv.s.stats.solve_budget_hit += 1;
         for (sv.lat[sv.param_base..]) |*v| v.* = .top;
-        for (sv.dyn.items) |*d| d.lat = .top;
+        for (sv.s.pts.sites.items) |*st| {
+            st.ret_lat = .top;
+            for (st.props.items) |*pr| pr.lat = .top;
+        }
         var con: u32 = 0;
         while (con < sv.queued.bit_length) : (con += 1) try sv.enqueue(con);
     }
@@ -11322,6 +11301,12 @@ const Pts = struct {
         init: bool = false,
         from: VarId = none,
         outs: u32 = none,
+        /// Facts 4 and 5's cell of the property (`Spec.joinProp`): the join
+        /// of every value written to it, whether a write has, and the
+        /// combined solver's readers of it (`Solver.reads`).
+        lat: Lat = .bot,
+        lat_made: bool = false,
+        lat_readers: u32 = none,
     };
 
     const Site = struct {
@@ -11345,6 +11330,11 @@ const Pts = struct {
         /// A function's return and parameters.
         ret: VarId = none,
         params: []const VarId = &.{},
+        /// Fact 5's cell of what a function returns (`Spec.joinRet`), as
+        /// `Prop.lat`.
+        ret_lat: Lat = .bot,
+        ret_made: bool = false,
+        ret_readers: u32 = none,
         /// An object literal that is the value of a `return` of this
         /// function site: its only way out (definite initialisation).
         fresh_fn: u32 = none,
@@ -13122,6 +13112,13 @@ const Pts = struct {
         };
         hint.* = p.propIndex(site, at, id);
         return hint.*;
+    }
+
+    fn propMut(p: *Pts, site: u32, id: u32) ?*Prop {
+        if (site >= p.sites.items.len) return null;
+        const props = p.sites.items[site].props.items;
+        const at = std.sort.lowerBound(Prop, props, id, orderProp);
+        return if (at < props.len and props[at].id == id) &props[at] else null;
     }
 
     fn findProp(p: *const Pts, site: u32, id: u32) ?*const Prop {
