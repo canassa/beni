@@ -1,0 +1,175 @@
+-- Thirty `Json.decodeValue` runs: the shapes/workers fork (`schema.md` §6)
+-- counts a program's validator runs against `SchemaValid.shape_threshold`
+-- (29), and thirty crosses it, so the default build takes the shapes side —
+-- the bytes `--schema-shapes=always` gives — and not the workers side
+-- `--schema-shapes=never` gives. It is the fixture the differential tests
+-- (`backend.md` §9, issue #432) build with the edge lists the binary
+-- carries and with lists made here: the fork's `schema_shapes` is a fact
+-- a row must carry, and this program is on the other side of the
+-- threshold from the rows the binary carries.
+import Json
+import Node
+import Schema exposing (Value)
+
+
+w0 : Value → Int
+w0 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w1 : Value → Int
+w1 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w2 : Value → Int
+w2 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w3 : Value → Int
+w3 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w4 : Value → Int
+w4 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w5 : Value → Int
+w5 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w6 : Value → Int
+w6 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w7 : Value → Int
+w7 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w8 : Value → Int
+w8 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w9 : Value → Int
+w9 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w10 : Value → Int
+w10 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w11 : Value → Int
+w11 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w12 : Value → Int
+w12 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w13 : Value → Int
+w13 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w14 : Value → Int
+w14 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w15 : Value → Int
+w15 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w16 : Value → Int
+w16 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w17 : Value → Int
+w17 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w18 : Value → Int
+w18 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w19 : Value → Int
+w19 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w20 : Value → Int
+w20 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w21 : Value → Int
+w21 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w22 : Value → Int
+w22 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w23 : Value → Int
+w23 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w24 : Value → Int
+w24 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w25 : Value → Int
+w25 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w26 : Value → Int
+w26 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w27 : Value → Int
+w27 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w28 : Value → Int
+w28 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+w29 : Value → Int
+w29 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+main : Node.Program
+main =
+    case Schema.parse Schema.value "{\"n\":7}" of
+        Ok v →
+            Node.print
+                (String.fromInt
+                    (w0 v
+                        + w1 v
+                        + w2 v
+                        + w3 v
+                        + w4 v
+                        + w5 v
+                        + w6 v
+                        + w7 v
+                        + w8 v
+                        + w9 v
+                        + w10 v
+                        + w11 v
+                        + w12 v
+                        + w13 v
+                        + w14 v
+                        + w15 v
+                        + w16 v
+                        + w17 v
+                        + w18 v
+                        + w19 v
+                        + w20 v
+                        + w21 v
+                        + w22 v
+                        + w23 v
+                        + w24 v
+                        + w25 v
+                        + w26 v
+                        + w27 v
+                        + w28 v
+                        + w29 v
+                    )
+                )
+
+        Err _ →
+            Node.print "x"
