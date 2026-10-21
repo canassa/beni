@@ -14,7 +14,8 @@ on the `browser-tea` platform. They talk over one WebSocket per page
   opens (RFC 6455 §10.2).
 - `WebSocket.listen` on `browser-tea`: the page's socket is a subscription,
   `update` keeps it in the model, and `WebSocket.send` is a command. When the
-  connection ends, the page waits and connects again.
+  connection ends, the page waits and connects again. After each failure in a
+  row it waits a second longer, 30 seconds at most.
 - One module, `shared/Chat.beni`, for the protocol. It uses only the WebSocket
   operations that both platforms share (`write` and `Close`), so both programs
   import it.
@@ -57,3 +58,5 @@ Every page's socket is closed with 1001, and the server prints one line.
 `Config` that listens on port 0, and runs the server under
 `tests/serve/driver.mjs`. The script opens a WebSocket of its own, runs the
 page under the page driver against the server, and checks what each side hears.
+It also asks for `/` and for a hidden file. After the shutdown, the page
+connects again on its virtual clock, and the test checks the waits.

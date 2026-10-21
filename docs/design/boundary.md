@@ -6189,7 +6189,8 @@ session per accepted upgrade in the order the upgrades arrive, as it starts requ
   server's build check it, each on its own platform. The server serves the page's build and
   accepts sockets at `/chat`, and refuses one whose `origin` is another site's (item 21). It tells
   each page's events to every other page. The page holds its socket in a `listen` subscription,
-  shows what the room says, and connects again after a wait when the connection ends.
+  shows what the room says, and connects again after a wait when the connection ends. The wait
+  is a second longer after each failure in a row, 30 seconds at most.
 - **The page driver's `--server=127.0.0.1:<port>`** (happy-dom only) opens the page at
   `http://127.0.0.1:<port>/_page.html`, so a socket the page opens to `/chat` reaches the server
   on that port. The page's `WebSocket` is then happy-dom's own, which wraps the `ws` library, not
@@ -6197,21 +6198,32 @@ session per accepted upgrade in the order the upgrades arrive, as it starts requ
   `WebSocket` (undici), which cannot run in the page: it calls `unref` on what `setTimeout`
   returns, and the page's virtual clock returns a number, as a browser's does. undici drives the
   server in `bench/websocket/load.mjs`. Each socket is still numbered and logged, and the scripted
-  `socket` steps are refused. The step `socket <n> wait <k>`, `wait open` or `wait closed` waits —
-  5 seconds at most, in real time — until the socket has received `k` messages in all, opened,
-  or closed; then the page settles as after any step. In this mode the driver writes the line of
-  each step it has run to file descriptor 3.
+  `socket` steps are refused. What the host's socket does (`open`, `message`, `error`, `close`)
+  is held, in the order it happened, and reaches the page only in a step `socket <n> wait <k>`,
+  `wait open` or `wait closed`. That step gives the page the held events one at a time until the
+  socket has received `k` messages in all, opened, or closed, and waits for the next event in
+  real time, 5 seconds at most; then the page settles as after any step. So a snapshot depends on
+  the script, and never on when the server answered. In this mode the driver writes the line of
+  each step it has run to file descriptor 3. `--wait-handshakes` tests the hold: after each step,
+  the driver waits until the host has answered every socket's handshake, and lets the page
+  settle again before the snapshot.
 - **The serve driver's page steps.** `{"page": "<entry>", "steps": "<file>"}` runs a page under the
   page driver with `--server` set to the program's port and prints its transcript, each line
   `| …`. With `"wait": false` it runs beside the next steps. `{"page-wait": "<step>"}` waits until
-  the page has run that step (the line on file descriptor 3), and `{"page-end": true}` waits for
-  the page to end and prints its transcript. So a script orders what the page and the driver's own
-  clients do, and the transcript depends on no timing.
+  the page has run that step (the line on file descriptor 3), 5 seconds at most, and uses the
+  lines up to it, so a second wait for the same step waits for the next one. `{"page-end": true}`
+  waits for the page to end, 20 seconds at most, then stops it, and prints its transcript. So a
+  script orders what the page and the driver's own clients do. With the page driver's hold, the
+  order of the transcript depends on no timing. The time limits only stop a fixture that fails,
+  and the driver ends after every script.
 - **The test** is `tests/blackbox/chat_example_test.zig`. It builds the example as its README says,
   with a `Config` that listens on port 0, and runs the server under the serve driver. In its script
   the driver's own client and the page talk: the page connects, says a line, and hears the
-  client's answer; the client hears the page join, speak and leave; a socket from another site is
-  refused; the server shuts down and closes the client's socket with 1001.
+  client's answer; the client hears the page join and speak; a socket from another site is
+  refused; `/` is the page's shell and `/.env` is 404; the server shuts down and closes both
+  sockets with 1001. The page then connects again after 1 s on its virtual clock, that attempt
+  fails, and the next one starts 2 s later. The page runs with `--wait-handshakes`. A second
+  script runs a page that fails, and pins the serve driver's waits and its end.
 - **The scripted `open` follows the handshake** (#571). `socket <n> open "<protocol>"` fails the
   step when the page did not offer that protocol, and `socket <n> open` with no protocol fails it
   when the page offered some: a host fails both handshakes (RFC 6455 §4.1, the Fetch standard's
