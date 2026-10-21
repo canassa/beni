@@ -7962,6 +7962,18 @@ At N = 64 with small sets, the structural passes went from 65% of `specialise` t
 analysis's own track. `test-perf`'s *specialisation writes n calls of one statement in time
 linear in n* holds it: ratio 3.3 before, 2.1 after.
 
+*Added 2026-10-21 (issue #608) — `Copy` finds a name through an index.* When a body is copied
+across modules, each property name is replaced by the destination module's name with the same
+text (`Copy.property`). It used to be found by a walk of all the destination's names, for every
+property copied. That walk was 38% of `inlineAt` and 2.2% of the whole build at N = 64
+(`plans/build-profile-2026-10-21b.md`, cause 5). `Mod.name_index` now maps each name to its
+first index, as the walk found it. It is built on the first lookup. Names are only ever
+appended, never rewritten, so each later lookup only adds the names appended since the last
+one, whichever pass appended them (`Mod.findName`). In `perf record`, `Copy`'s own samples fell
+from 2.3% of the N = 64 build to too few to see. `specialise` fell from 137.6 to 132.0 ms
+at N = 64 and from 118.9 to 114.4 ms on `nowd` (`--jobs=1`, medians of 11 interleaved runs). The
+output is the same.
+
 **Slice 10 — a value read once at start-up** (*added 2026-10-15*; research 102 §6.1 item 2,
 `Spec.inlineReads`). A top-level binding whose value is made at start-up and read once, also at
 start-up, is written where it is read and not declared at all: direct's patch functions and
@@ -10266,6 +10278,41 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   629 → 545 million in development (−13.5 %) and 1 818 → 1 756 million under `--release`;
   `browser/direct/AfterRenderFocus` 584 → 489 million (−16.2 %) and 716 → 652 million. A build with
   no runtime module, which is every `node` program, does not change. No output changes by one byte.
+  **As built 2026-10-21 — the second lowering takes the first's modules** (issue #608, part of
+  #464). Before, the second lowering lowered every module again, though for most modules
+  nothing it read had moved. There were two lowerings for one reason only: core's and the runtime
+  module's lowerings depend on the narrower roots, and those roots are known only once the
+  other modules are lowered. A module's lowering reads the walk only through the funnel's
+  questions (§9, *The funnel*). Of those, only these can change between the two walks:
+  - its own six survivor sets;
+  - whether another module's constructor is built, at each `ext_ctor` (`patternDead`);
+  - another module's schema members (`liveSchema`);
+  - and the shared validators, when `reshareValidators` decides them again.
+
+  Everything else a lowering reads is made once, before either lowering: the boundary, the
+  representation keys, the write-set pass, the specifiers. `Emit.reusableLowerings` therefore
+  keeps a module's first lowering when the second walk leaves its sets as they were, leaves the
+  constructors behind its `ext_ctor`s as they were, changes no schema member, and does not
+  reshare. A module that reads another's view pieces (`pieceWaves`) also needs that module's
+  lowering kept. The second lowering then lowers only core, the runtime module and whatever
+  failed the test. A development build prints a kept lowering in the second round, and a release
+  build keeps it for §9's passes. `modules_lowered` counts lowerings, not modules per round.
+  `-Demit-lower-reuse-cross-check` lowers every kept module again and stops the build if the two
+  lowerings differ. With it, the whole of `test-blackbox` passed. *Measured* on dagon, ReleaseFast,
+  `build --release --no-cache`, medians of 11 interleaved runs at load 5 (the self-profile's
+  lowering, `perf stat` instructions):
+
+  | program | lowerings | lowering `--jobs=1` | lowering span `--jobs=8` | instructions | wall `--jobs=1` / `=8` |
+  |---|---|---|---|---|---|
+  | dashboard N = 16 | 54 → 31 | 6.4 → 4.4 ms | 4.7 → 2.8 ms | 351M → 335M | 73 → 69 / 69 → 67 ms |
+  | dashboard N = 64 | 151 → 80 | 21.3 → 11.8 ms | 14.8 → 8.8 ms | 1 303M → 1 205M | 239 → 222 / 220 → 209 ms |
+  | N = 64 without `withDefault` | 150 → 79 | 20.9 → 11.6 ms | 14.4 → 8.6 ms | 1 202M → 1 104M | 218 → 205 / 199 → 186 ms |
+
+  At N = 64, four of the 80 lowerings are of modules the first lowering left out. The fifth is
+  `platforms/browser-inline/Cmd.beni`: the narrower roots change its own survivors, so it is
+  lowered again. The instructions include the inliner's name index (§9, *Whole-program
+  specialisation*, *the structural passes keep their walks per statement*). The output of every
+  row is byte for byte the same.
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
   data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
   array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.
