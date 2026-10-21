@@ -415,6 +415,9 @@ pub const Stats = struct {
     /// (`Pts.byConstraints`).
     points_to_runs: u64 = 0,
     points_to_sweeps: u64 = 0,
+    /// Analyses that kept the last fact-3 state instead of solving again:
+    /// nothing fact 3 reads changed since that solve (`Spec.fact3Kept`).
+    points_to_reused: u64 = 0,
     /// Passes of the structural loop in `run` that changed the program.
     passes: u64 = 0,
     /// The caps, each counted where it stopped work that would have gone
@@ -685,6 +688,11 @@ const Mod = struct {
     /// `none - 1` for several (`Spec.onlyName`), as of `global.len`.
     uniq: []u32 = &.{},
     uniq_len: usize = std.math.maxInt(usize),
+    /// Something fact 3 reads may have changed since its last solve: set by
+    /// every change (`changed`, `namesChanged`) but one: the literal
+    /// `Spec.fact3Neutral` licenses (#575). Cleared when fact 3 solves the
+    /// program again (`Spec.keepFact3`).
+    fact3: bool = false,
 
     /// The whole-program id of `n`, or null for a local.
     inline fn globalOf(m: *const Mod, n: NameIndex) ?u32 {
@@ -700,6 +708,7 @@ const Mod = struct {
         if (m.version == none) m.version = 0;
         m.epoch += 1;
         if (m.scope != null) m.scope_last = m.epoch else m.wide = m.epoch;
+        m.fact3 = true;
     }
 
     /// `changed` for a name added to the module and made global, which no
@@ -708,6 +717,7 @@ const Mod = struct {
         m.version +%= 1;
         if (m.version == none) m.version = 0;
         m.epoch += 1;
+        m.fact3 = true;
     }
 
     /// Whether what a walk of top-level statement `top` met at `at` (an
@@ -887,6 +897,14 @@ const Spec = struct {
     /// The top-level statement being walked, which keys `Pts`'s locals.
     cur_top: Index = undefined,
     pts: Pts = undefined,
+    /// `pts` holds the solve of the program as it stood after its last
+    /// solve, and per module how many nodes and names it had then: the next
+    /// analysis keeps that state while no module changed anything fact 3
+    /// reads since (`fact3Kept`, `Mod.fact3`; #575).
+    pts_kept: bool = false,
+    pts_kept_nodes: []usize = &.{},
+    pts_kept_names: []usize = &.{},
+    pts_kept_globals: u32 = 0,
     changed: bool = false,
     /// Whether this sweep counts the reads of whole-program names: the
     /// first of a round only, so that `reads` is a count and not a
@@ -1317,7 +1335,17 @@ const Spec = struct {
         }
         // Fact 3 first: a read it proves `undefined` folds like a literal.
         s.stats.analyses += 1;
-        try s.pts.analyse();
+        if (s.fact3Kept()) {
+            s.stats.points_to_reused += 1;
+            if (std.debug.runtime_safety) {
+                var nodes: usize = 0;
+                for (s.mods) |*m| nodes += m.ir.nodes.len;
+                if (nodes <= Pts.max_checked_nodes) try s.pts.checkKept();
+            }
+        } else {
+            try s.pts.analyse();
+            try s.keepFact3();
+        }
         s.spread_sites = try s.arena.alloc(bool, s.pts.sites.items.len);
         const converged = converged: {
             if (std.debug.runtime_safety) {
@@ -1330,6 +1358,73 @@ const Spec = struct {
         s.stats.sweeps += s.sweep_count;
         if (!converged) s.stats.analyses_declined += 1;
         return converged;
+    }
+
+    /// Whether `pts` is still the solve of the program as it stands (#575):
+    /// it reached its fixpoint, definite initialisation was not capped, and
+    /// since that solve no module made a change fact 3 reads (`Mod.fact3`)
+    /// nor grew a node, a name or the whole-program names. Every change
+    /// moves `Mod.fact3` but the one `fact3Neutral` licenses, so what is
+    /// kept is what a solve would make, sites numbered alike: the walk
+    /// meets the same nodes in the same order.
+    fn fact3Kept(s: *Spec) bool {
+        if (!s.pts_kept or s.globals != s.pts_kept_globals) return false;
+        for (s.mods, s.pts_kept_nodes, s.pts_kept_names) |*m, nodes, names| {
+            if (m.fact3 or m.ir.nodes.len != nodes or m.names.items.len != names) return false;
+        }
+        return true;
+    }
+
+    /// Fact 3 has just solved the program: what `fact3Kept` compares.
+    fn keepFact3(s: *Spec) Allocator.Error!void {
+        s.pts_kept = s.pts.ok and !s.pts.init_capped;
+        if (s.pts_kept_nodes.len != s.mods.len) {
+            s.pts_kept_nodes = try s.arena.alloc(usize, s.mods.len);
+            s.pts_kept_names = try s.arena.alloc(usize, s.mods.len);
+        }
+        for (s.mods, s.pts_kept_nodes, s.pts_kept_names) |*m, *nodes, *names| {
+            m.fact3 = false;
+            nodes.* = m.ir.nodes.len;
+            names.* = m.names.items.len;
+        }
+        s.pts_kept_globals = s.globals;
+    }
+
+    /// Whether writing identifier `node` as literal `lit` (`patchLiteral`)
+    /// leaves fact 3's least fixpoint as it is, so that the write need not
+    /// move `Mod.fact3` (#575). Exactly when fact 3 makes of the literal
+    /// what it made of the read, and reads nothing of the identifier but
+    /// its value:
+    ///
+    /// - the read was the primitive alone — no object, no host value, not
+    ///   `null` or `undefined` — which is what a number, a string, `true`
+    ///   or `false` is (`Pts.literal_vals`). A guard narrows a read by
+    ///   taking `null` and `undefined` off it, so one on this name narrowed
+    ///   nothing, and the reads it guarded are what they were;
+    /// - it is not the object of a read: fact 3 reads a name's property
+    ///   through the name's load cell and field summary, and a guard's
+    ///   chain starts at a name;
+    /// - it is not the string `__proto__`, which as the key of a computed
+    ///   write escapes the object (`Pts.indexAssignsPrototype`);
+    /// - lowering keyed no type on the node (`Mod.setNode` would drop it).
+    ///
+    /// Anything else a read of a name gives fact 3 — a copy edge from its
+    /// var where a join of its value would do, a dependency — is cost, not
+    /// a fact: the edge carries what the var holds, the primitive alone.
+    /// A safety build checks the rule on every small program whose
+    /// analysis keeps the state (`Pts.checkKept`).
+    fn fact3Neutral(s: *Spec, m: *Mod, node: Index, lit: Lit, object_position: bool) bool {
+        if (!s.pts.ok or object_position or m.ir.tag(node) != .ident) return false;
+        switch (lit.kind) {
+            .number, .true_lit, .false_lit => {},
+            .string => if (std.mem.eql(u8, lit.bytes, prototype_assign)) return false,
+            .null_lit, .undefined_lit, .name => return false,
+        }
+        if (JsIr.keyRow(m.node_keys.items, node) != null) return false;
+        const vals = s.pts.vals[m.index];
+        if (node.int() >= vals.len) return false;
+        const v = vals[node.int()];
+        return !v.top and v.prim and !v.nul and !v.undef and v.sites.len == 0;
     }
 
     /// Facts 1, 2, 4 and 5 swept to their fixpoint, from what `analyse`
@@ -3375,6 +3470,12 @@ const Spec = struct {
                 return false;
             }
         }
+        // A write fact 3 cannot see does not ask it to solve again (#575).
+        const neutral = s.fact3Neutral(m, node, lit, object_position);
+        const fact3 = m.fact3;
+        defer if (neutral) {
+            m.fact3 = fact3;
+        };
         switch (lit.kind) {
             .number, .string => {
                 if (m.lit_at.items.len <= v.lit) try m.lit_at.appendNTimes(s.arena, none, v.lit + 1 - m.lit_at.items.len);
@@ -8875,6 +8976,9 @@ const Pts = struct {
     changed: bool = false,
     /// The fixpoint was reached this round: the facts may be read.
     ok: bool = false,
+    /// Definite initialisation was still finding keys at `max_init_runs`
+    /// (`analyse`), so the state is not kept for the next analysis.
+    init_capped: bool = false,
     /// `expr`'s stack of nodes, shared by the walks it nests (`post_bit`).
     nodes: std.ArrayList(Index) = .empty,
     /// The top-level statement the walk is in: locals are keyed by it.
@@ -11476,6 +11580,7 @@ const Pts = struct {
     /// the next run's call graph is this one's.
     fn analyse(p: *Pts) Allocator.Error!void {
         p.extra_init = .empty;
+        p.init_capped = false;
         const stats = &p.s.stats;
         var attempt: u32 = 0;
         while (true) : (attempt += 1) {
@@ -11489,7 +11594,10 @@ const Pts = struct {
             // At the cap, asked once more only to count it: what it finds
             // is no run's, since the next `analyse` starts afresh.
             if (attempt == max_init_runs) {
-                if (try p.definiteInit()) stats.init_capped += 1;
+                if (try p.definiteInit()) {
+                    stats.init_capped += 1;
+                    p.init_capped = true;
+                }
                 return;
             }
             if (!try p.definiteInit()) return;
@@ -11544,19 +11652,51 @@ const Pts = struct {
                 const ref = p.*;
                 std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &ref_tmp);
                 try p.fixpointWith(false);
-                try p.expectSame(&ref);
+                try p.expectSame(&ref, false);
                 return;
             }
         }
         try p.fixpointWith(false);
     }
 
+    /// A safety build's check of a kept state (`Spec.fact3Kept`, #575): fact
+    /// 3 solves the program again, as `analyse` would have, and every fact
+    /// of the solve must be the kept state's, each site the one of the same
+    /// number. The kept state is what the build then reads, so that the
+    /// corpus's outputs are those of the skip. The solve is a check, not
+    /// the build's work: no counter counts it.
+    fn checkKept(p: *Pts) Allocator.Error!void {
+        // The kept state's own arena stays alive in `held` while the solve
+        // fills a fresh one.
+        var held: std.heap.ArenaAllocator = .init(p.s.gpa);
+        std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &held);
+        const kept = p.*;
+        const counted = p.s.stats;
+        p.analyse() catch |err| {
+            p.tmp.deinit();
+            p.* = kept;
+            p.tmp = held;
+            p.s.stats = counted;
+            return err;
+        };
+        p.s.stats = counted;
+        defer {
+            var solved = p.tmp;
+            p.* = kept;
+            p.tmp = held;
+            solved.deinit();
+        }
+        if (!p.ok or p.init_capped) std.debug.panic("specialisation: fact 3 kept a state its solve does not reach", .{});
+        try p.expectSame(&kept, true);
+    }
+
     /// Panic unless the facts in `p` are the facts in `ref`, each site of
-    /// `p` taken for the site of `ref` its node made. Nothing is compared
+    /// `p` taken for the site of `ref` its node made (and, when `numbered`,
+    /// numbered as it). Nothing is compared
     /// when either did not converge: under `max_pts_sweeps` whether a
     /// fixpoint is reached may depend on the order, and short of one no
     /// fact is read.
-    fn expectSame(p: *const Pts, ref: *const Pts) Allocator.Error!void {
+    fn expectSame(p: *const Pts, ref: *const Pts, numbered: bool) Allocator.Error!void {
         if (!p.ok or !ref.ok) return;
         const Check = struct {
             x: *const Pts,
@@ -11566,6 +11706,9 @@ const Pts = struct {
 
             fn fail(what: []const u8, at: usize) noreturn {
                 std.debug.panic("specialisation: fact 3 walked in another order reaches another fixpoint: {s} {d}", .{ what, at });
+            }
+            fn failKept(what: []const u8, at: usize) noreturn {
+                std.debug.panic("specialisation: fact 3 kept a state its solve does not reach: {s} {d}", .{ what, at });
             }
             fn sameSites(c: @This(), a: []const u32, b: []const u32) bool {
                 if (a.len != b.len) return false;
@@ -11618,26 +11761,30 @@ const Pts = struct {
                 return true;
             }
         };
-        if (p.sites.items.len != ref.sites.items.len) Check.fail("sites", 0);
+        const fail = if (numbered) &Check.failKept else &Check.fail;
+        if (p.sites.items.len != ref.sites.items.len) fail("sites", 0);
         const map = try p.s.arena.alloc(u32, p.sites.items.len);
-        for (p.sites.items, map, 0..) |a, *to, i| to.* = ref.siteAt(a.module, a.node) orelse Check.fail("site", i);
+        for (p.sites.items, map, 0..) |a, *to, i| {
+            to.* = ref.siteAt(a.module, a.node) orelse fail("site", i);
+            if (numbered and to.* != i) fail("site number", i);
+        }
         const c: Check = .{ .x = p, .y = ref, .map = map };
-        if (p.unknown_any != ref.unknown_any) Check.fail("unknown_any", 0);
-        if (!Check.sameSet(p.unknown_props.items, ref.unknown_props.items)) Check.fail("unknown_props", 0);
-        for (p.globals, ref.globals, 0..) |a, b, g| if (!c.sameVar(a, b)) Check.fail("global", g);
-        if (p.locals.count() != ref.locals.count()) Check.fail("locals", 0);
+        if (p.unknown_any != ref.unknown_any) fail("unknown_any", 0);
+        if (!Check.sameSet(p.unknown_props.items, ref.unknown_props.items)) fail("unknown_props", 0);
+        for (p.globals, ref.globals, 0..) |a, b, g| if (!c.sameVar(a, b)) fail("global", g);
+        if (p.locals.count() != ref.locals.count()) fail("locals", 0);
         var it = ref.locals.iterator();
         while (it.next()) |kv| {
-            const mine = p.locals.get(kv.key_ptr.*) orelse Check.fail("local", kv.key_ptr.name);
-            if (!c.sameVar(mine, kv.value_ptr.*)) Check.fail("local", kv.key_ptr.name);
+            const mine = p.locals.get(kv.key_ptr.*) orelse fail("local", kv.key_ptr.name);
+            if (!c.sameVar(mine, kv.value_ptr.*)) fail("local", kv.key_ptr.name);
         }
         for (p.sites.items, map, 0..) |a, j, i| {
             const b = ref.sites.items[j];
             const fresh = if (a.fresh_fn == none) none else map[a.fresh_fn];
-            if (a.kind != b.kind or a.once != b.once or a.escaped != b.escaped or fresh != b.fresh_fn) Check.fail("site", i);
+            if (a.kind != b.kind or a.once != b.once or a.escaped != b.escaped or fresh != b.fresh_fn) fail("site", i);
             if (a.kind == .func) {
-                if (!c.sameVar(a.ret, b.ret)) Check.fail("site ret", i);
-                for (a.params, b.params) |x, y| if (!c.sameVar(x, y)) Check.fail("site param", i);
+                if (!c.sameVar(a.ret, b.ret)) fail("site ret", i);
+                for (a.params, b.params) |x, y| if (!c.sameVar(x, y)) fail("site param", i);
             }
             // An escaped site is ⊤: every property read and written with
             // anything, and no fact read of it but its tag's, which a
@@ -11649,18 +11796,18 @@ const Pts = struct {
             if (a.escaped) continue;
             if (a.all_read != b.all_read or a.any_written != b.any_written or a.odd_caller != b.odd_caller or
                 a.prog_any != b.prog_any)
-                Check.fail("site", i);
-            if (!Check.sameSet(a.prog_props.items, b.prog_props.items)) Check.fail("site prog_props", i);
-            if (a.callers.items.len != b.callers.items.len) Check.fail("site callers", i);
+                fail("site", i);
+            if (!Check.sameSet(a.prog_props.items, b.prog_props.items)) fail("site prog_props", i);
+            if (a.callers.items.len != b.callers.items.len) fail("site callers", i);
             for (a.callers.items) |k| {
                 for (b.callers.items) |l| {
                     if (k.module == l.module and k.node == l.node) break;
-                } else Check.fail("site caller", i);
+                } else fail("site caller", i);
             }
-            if (!c.sameVar(a.any, b.any)) Check.fail("site any", i);
-            if (a.props.items.len != b.props.items.len) Check.fail("site props", i);
+            if (!c.sameVar(a.any, b.any)) fail("site any", i);
+            if (a.props.items.len != b.props.items.len) fail("site props", i);
             for (a.props.items) |pa| {
-                const pb = ref.findProp(j, pa.id) orelse Check.fail("site prop", i);
+                const pb = ref.findProp(j, pa.id) orelse fail("site prop", i);
                 // A site written under an unknown key has no per-key
                 // `written` fact: `neverWritten`, the one reader, answers
                 // from `any_written` first. And it is one only an escaped
@@ -11670,12 +11817,12 @@ const Pts = struct {
                 // as it is folded, which may be before it escapes in one
                 // order and after in another.
                 const written_differs = pa.written != pb.written and !a.any_written;
-                if (pa.read != pb.read or written_differs or pa.init != pb.init) Check.fail("site prop flags", i);
-                if (!c.sameField(pa.vals, pb.vals)) Check.fail("site prop value", i);
+                if (pa.read != pb.read or written_differs or pa.init != pb.init) fail("site prop flags", i);
+                if (!c.sameField(pa.vals, pb.vals)) fail("site prop value", i);
             }
         }
         for (p.vals, ref.vals, 0..) |a, b, mi| {
-            for (a, b, 0..) |x, y, node| if (!c.sameVal(x, y)) Check.fail("node value", mi * 1_000_000 + node);
+            for (a, b, 0..) |x, y, node| if (!c.sameVal(x, y)) fail("node value", mi * 1_000_000 + node);
         }
     }
 
@@ -15325,6 +15472,94 @@ test "a fold waits for the end of the sweep, and a summary dead by then takes no
             try testing.expect(p.sites.items[0].all_read);
         }
     }
+}
+
+// #575: an analysis keeps fact 3's state when the rewrite before it only
+// wrote literals for reads fact 3 made the primitive alone. In `const b =
+// "abc"; const c = b;` the read of `b` is written `"abc"`, which moves no
+// fact 3 reads, and the analysis after it solves nothing; a safety build
+// solves anyway and compares (`Pts.checkKept`).
+test "a read written as its literal leaves fact 3 to be kept" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const name_b = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const name_c = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const text = try b.addString("abc");
+    const abc = try b.addParts(.string, Node.no_pos, text[0], text[1]);
+    const decl_b = try b.addParts(.const_decl, Node.no_pos, name_b.int(), abc.int());
+    const read = try b.addParts(.ident, Node.no_pos, name_b.int(), 0);
+    const decl_c = try b.addParts(.const_decl, Node.no_pos, name_c.int(), read.int());
+    var ir = try b.toOwned(try b.addRange(&.{ decl_b, decl_c }));
+    defer ir.deinit(gpa);
+    const global = [_]u32{ 0, 1 };
+    const modules = [_]Module{.{ .ir = &ir, .global = &global }};
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    // Hands the module its columns back, owned and exactly sized.
+    defer s.finish() catch @panic("out of memory");
+    try testing.expect(try s.analyse());
+    const runs = s.stats.points_to_runs;
+    try testing.expect(s.fact3Kept());
+    _ = try s.rewrite();
+    // The read is the literal, and no change fact 3 reads was made.
+    try testing.expectEqual(Node.Tag.string, ir.tag(read));
+    try testing.expect(!s.mods[0].fact3);
+    try testing.expect(s.fact3Kept());
+    try testing.expect(try s.analyse());
+    try testing.expectEqual(runs, s.stats.points_to_runs);
+    try testing.expectEqual(@as(u64, 1), s.stats.points_to_reused);
+}
+
+// #575: dropping a parameter changes what fact 3 reads — the function's
+// parameter list and every call's arguments — so the analysis after it
+// solves again. In `const f = (a) => a; const r = f("x");` the rewrite
+// writes the read of `a` as `"x"`, which alone would be kept, and drops `a`
+// with its argument, which is not.
+test "a dropped parameter makes fact 3 solve again" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const name_f = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const name_r = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const name_a = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const read = try b.addParts(.ident, Node.no_pos, name_a.int(), 0);
+    const ret = try b.addParts(.return_stmt, Node.no_pos, read.int(), 0);
+    const params = try b.addNames(&.{name_a});
+    const body = try b.addRange(&.{ret});
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
+    const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
+    const callee = try b.addParts(.ident, Node.no_pos, name_f.int(), 0);
+    const text = try b.addString("x");
+    const x = try b.addParts(.string, Node.no_pos, text[0], text[1]);
+    const args = try b.addRecord(try b.addRange(&.{x}));
+    const call = try b.addParts(.call, Node.no_pos, callee.int(), @backingInt(args));
+    const decl_r = try b.addParts(.const_decl, Node.no_pos, name_r.int(), call.int());
+    var ir = try b.toOwned(try b.addRange(&.{ decl_f, decl_r }));
+    defer ir.deinit(gpa);
+    const global = [_]u32{ 0, 1, none };
+    const modules = [_]Module{.{ .ir = &ir, .global = &global }};
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    // Hands the module its columns back, owned and exactly sized.
+    defer s.finish() catch @panic("out of memory");
+    try testing.expect(try s.analyse());
+    const runs = s.stats.points_to_runs;
+    _ = try s.rewrite();
+    try testing.expectEqual(Node.Tag.string, ir.tag(read));
+    try testing.expectEqual(@as(u32, 0), ir.extraData(func, JsIr.Func).params().len());
+    try testing.expect(s.mods[0].fact3);
+    try testing.expect(!s.fact3Kept());
+    try testing.expect(try s.analyse());
+    try testing.expect(s.stats.points_to_runs > runs);
+    try testing.expectEqual(@as(u64, 0), s.stats.points_to_reused);
 }
 
 /// The var of property `id` of site `site`, its own, the property made

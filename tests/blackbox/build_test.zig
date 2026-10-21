@@ -5812,6 +5812,58 @@ fn specListsExamined(arms: usize) !u64 {
     return error.NoCounter;
 }
 
+test "the release specialiser keeps fact 3 for an analysis after a change fact 3 does not read" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // #575 (`backend.md` §9, *As built 2026-10-21 — an analysis keeps fact
+    // 3 when nothing it reads changed*): `run/ReleaseReadAcrossWrite`'s
+    // `const n = h.cell.v` is kept by lowering for `Js.read`, and released
+    // once fact 3 shows `h.cell` is an object of the program
+    // (`releaseKeeps`). The facts are asked once more, of a program in
+    // which nothing fact 3 reads changed since its last solve: that
+    // analysis keeps the state instead of solving again. The ReleaseSafe
+    // compiler the tests run solves anyway and compares on a program this
+    // small (`Pts.checkKept`), and the corpus runs the program in both
+    // builds.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("tests/corpus/run/ReleaseReadAcrossWrite", ".", "_");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=./platform", "--out=out", "--no-cache", "--release", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(r);
+    const Event = struct {
+        ph: []const u8,
+        args: struct {
+            spec_analyses: ?u64 = null,
+            spec_points_to_runs: ?u64 = null,
+            spec_points_to_reused: ?u64 = null,
+        } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var analyses: ?u64 = null;
+    var runs: ?u64 = null;
+    var reused: ?u64 = null;
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        if (e.args.spec_analyses) |v| analyses = v;
+        if (e.args.spec_points_to_runs) |v| runs = v;
+        if (e.args.spec_points_to_reused) |v| reused = v;
+    }
+    // One analysis kept the state; every other one solved, at least once.
+    try testing.expectEqual(@as(?u64, 1), reused);
+    try testing.expect(analyses.? >= 2);
+    try testing.expect(runs.? >= analyses.? - reused.?);
+}
+
 test "the release specialiser counts a call chain deeper than its sweeps as a declined analysis" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

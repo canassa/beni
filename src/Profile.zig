@@ -259,6 +259,10 @@ pub const Counter = enum {
     spec_analyses,
     spec_sweeps,
     spec_points_to_runs,
+    /// Analyses that kept fact 3's last solve, nothing it reads having
+    /// changed since (`Spec.fact3Kept`, #575): `spec_analyses` is
+    /// `spec_points_to_reused` plus the analyses that solved.
+    spec_points_to_reused,
     spec_points_to_sweeps,
     spec_passes,
     /// Each cap where it stopped work that would have gone on: a size
