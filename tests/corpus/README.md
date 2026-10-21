@@ -563,7 +563,9 @@ Node's `WebSocket` (undici) cannot serve, because it calls `unref` on what
 `setTimeout` returns, and the page's virtual clock returns a number. Each socket is still
 numbered and logged, and the scripted `socket` steps are refused. What the
 host's socket does is held, in order, and reaches the page only in a `socket
-<n> wait` step, so a snapshot never depends on when the server answered.
+<n> wait` step, each event in a task of its own, so a snapshot never depends
+on when the server answered. The socket's `bufferedAmount` is the host's at
+the time the page reads it, so no golden shows it (#632).
 `--wait-handshakes` tests that: after each step, the driver waits until the
 host has answered every socket's handshake, and lets the page settle again
 before the snapshot. The line of each step the driver has run goes to file

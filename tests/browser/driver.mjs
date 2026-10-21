@@ -565,7 +565,9 @@ function prelude() {
   // `close` — is held, in the order it happened, and reaches the page only
   // in a `socket <n> wait` step, so what a step shows depends on the
   // script and never on when the server answered. The page sees the
-  // socket's state as of the last event it was given.
+  // socket's state and `protocol` as of the last event it was given. Its
+  // `bufferedAmount` is the host's at the time the page reads it, so a
+  // golden must not show it (#632).
   if (globalThis.__beniHostSocket !== undefined) {
     const Host = globalThis.__beniHostSocket;
     class RealSocket extends EventTarget {
@@ -586,13 +588,14 @@ function prelude() {
         this.received = 0;
         this.ended = false;
         this.dropped = 0;
+        this.chosen = "";
         sockets.push(this);
         const list = typeof protocols === "string" ? [protocols] : [...protocols];
         record.log.push(`(socket ${this.n}: ${socketPath(this.url)}${list.length === 0 ? "" : ` ${JSON.stringify(list)}`})`);
         for (const type of ["open", "message", "error", "close"]) {
           this.host.addEventListener(type, (event) => {
             this.answered = true;
-            this.held.push({ type, data: event.data, code: event.code, reason: event.reason, clean: event.wasClean });
+            this.held.push({ type, data: event.data, code: event.code, reason: event.reason, clean: event.wasClean, protocol: this.host.protocol });
           });
         }
       }
@@ -600,7 +603,7 @@ function prelude() {
         return this.host.url;
       }
       get protocol() {
-        return this.host.protocol;
+        return this.chosen;
       }
       get extensions() {
         return this.host.extensions;
@@ -621,6 +624,7 @@ function prelude() {
         if (held.type === "open") {
           this.readyState = 1;
           this.opened = true;
+          this.chosen = held.protocol;
         } else if (held.type === "message") {
           this.received += 1;
           Object.defineProperty(event, "data", { value: held.data });
@@ -1025,10 +1029,10 @@ function step(s) {
   }
   if (s.command === "socket" && s.action === "wait") {
     // A real socket: give the page what the host's socket did, one event
-    // at a time in the order it happened, until the socket has opened, has
-    // received `count` messages in all, or has closed. The next event is
-    // waited for in real time, 5 s at most. Then the page settles as after
-    // any step.
+    // at a time in the order it happened, each in a task of its own as a
+    // browser fires it, until the socket has opened, has received `count`
+    // messages in all, or has closed. The next event is waited for in real
+    // time, 5 s at most. Then the page settles as after any step.
     const harness = globalThis.__beniHarness;
     if (globalThis.__beniHostSocket === undefined) return `\`socket ${s.n} wait\` needs \`--server\`: the socket is scripted`;
     const socket = harness.sockets[s.n - 1];
@@ -1038,7 +1042,10 @@ function step(s) {
     return new Promise((done) => {
       let turns = 0;
       const poll = () => {
-        while (!ready() && socket.held.length !== 0) socket.deliver();
+        if (!ready() && socket.held.length !== 0) {
+          socket.deliver();
+          return void harness.clock.real(poll, 0);
+        }
         if (ready()) return void done(null);
         if (socket.ended) return void done(`socket ${s.n} closed, and did not ${what}`);
         if (++turns > 1000) return void done(`socket ${s.n} did not ${what} within 5 s`);
