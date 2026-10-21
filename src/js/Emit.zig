@@ -4902,6 +4902,10 @@ const Emitter = struct {
         profile.addCounter(.spec_passes_capped, stats.passes_capped);
         profile.addCounter(.spec_init_capped, stats.init_capped);
         profile.addCounter(.spec_inline_capped, stats.inline_capped);
+        profile.addCounter(.spec_inline_scans, stats.inline_scans);
+        profile.addCounter(.spec_inlined, stats.inlined);
+        profile.addCounter(.spec_inline_waits, stats.inline_waits);
+        profile.addCounter(.spec_inline_refusals_kept, stats.inline_refusals_kept);
         profile.maxCounter(.spec_pts_max_set, stats.pts_max_set);
         profile.addCounter(.spec_pts_set_words, stats.pts_set_words);
         profile.addCounter(.spec_pts_edges, stats.pts_edges);

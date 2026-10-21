@@ -274,6 +274,14 @@ pub const Counter = enum {
     spec_passes_capped,
     spec_init_capped,
     spec_inline_capped,
+    /// Slice 5's work (`Spec.inlineOnce`): its counts of the program, the
+    /// functions it wrote, the candidates it left for its next count because
+    /// a write in the same count touched them, and those it did not ask
+    /// again because it declined them before and nothing they read changed.
+    spec_inline_scans,
+    spec_inlined,
+    spec_inline_waits,
+    spec_inline_refusals_kept,
     /// Fact 3's sets (`plans/type-directed-points-to.md` slice 0), over
     /// every fixpoint but a safety build's reference sweep: the most sites
     /// one var held at once (the largest over the passes, not a sum), the

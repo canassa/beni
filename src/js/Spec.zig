@@ -429,14 +429,23 @@ pub const Stats = struct {
     /// the structural loop stopped at `max_passes` after a pass that did;
     /// definite initialisation stopped at `max_init_runs` while it still
     /// found keys; and an inlining pass stopped at its own cap
-    /// (`max_inlines`, `inlineSmall`'s four turns, `foldConstructors`'
-    /// budget of a list).
+    /// (`copyLimit`, the nodes `inlineOnce` and `fuseCalls` may copy;
+    /// `inlineSmall`'s four turns; `foldConstructors`' budget of a list).
     analyses_declined: u64 = 0,
     points_to_declined: u64 = 0,
     rounds_capped: u64 = 0,
     passes_capped: u64 = 0,
     init_capped: u64 = 0,
     inline_capped: u64 = 0,
+    /// Slice 5 (`inlineOnce`): the counts of the program it made
+    /// (`inlineBatch`), the functions it wrote, the candidates it left for
+    /// the next count because a write in the same count touched them, and
+    /// those it did not ask again because `inlineAt` declined them before
+    /// and neither module changed since (`Refusal`).
+    inline_scans: u64 = 0,
+    inlined: u64 = 0,
+    inline_waits: u64 = 0,
+    inline_refusals_kept: u64 = 0,
     /// Fact 3's sets (`plans/type-directed-points-to.md` slice 0), over
     /// every fixpoint but a safety build's reference (`Pts.fixpoint`): the
     /// most sites one var held at once; the site words its set table holds
@@ -955,11 +964,23 @@ const Spec = struct {
     stats: Stats = .{},
     /// Slice 9: `smallTable`, for the pass in progress.
     cf_smalls: []?Small = &.{},
-    /// `inlineOne`'s counts, per module and for the whole program
+    /// `inlineBatch`'s counts, per module and for the whole program
     /// (`inlineScan`).
     io_scans: []InlineScan = &.{},
     io_refs: []u32 = &.{},
     io_assigned: []u32 = &.{},
+    /// Per whole-program name, while one `inlineOnce` lasts: the last call
+    /// of it `inlineAt` declined, and the versions of the two modules then
+    /// (`inlineScanWrite`). Asked again only once either module changed.
+    io_refused: []Refusal = &.{},
+    /// Whole-program names whose mentions a write since the last
+    /// `inlineScan` may have dropped (an argument nothing read): for them
+    /// `io_refs` may say read where nothing reads any more (`nameRead`).
+    io_dropped: std.ArrayList(u32) = .empty,
+    /// Since the last `inlineScan`, a write changed the program.
+    io_written: bool = false,
+    /// `isRootCached`'s table.
+    io_root: []const bool = &.{},
     /// `preorder`'s answers, per top-level statement, with the `Mod.epoch`
     /// each is of.
     preorders: KeyMap(NodeRef, KeptNodes) = .empty,
@@ -5914,9 +5935,13 @@ const Spec = struct {
 
     /// `backend.md` §9, *A function called once is written where it is
     /// called*, *Once the whole program is in view*: every top-level
-    /// function the program calls from exactly one place, written there,
-    /// one at a time, each on the program as the last one left it. After
-    /// the facts, whose per-node tables it does not grow. True when any was.
+    /// function the program calls from exactly one place, written there.
+    /// One count of the program (`inlineBatch`) writes every candidate it
+    /// finds that no write before it in the same count touched; the
+    /// program is counted again while a count wrote any. After the facts,
+    /// whose per-node tables it does not grow. Bounded by the nodes it
+    /// copies (`copyLimit`), not by a number of functions. True when any
+    /// was written.
     fn inlineOnce(s: *Spec) Allocator.Error!bool {
         if (s.in.fresh == .none) return false;
         // The index holds within this pass only: other passes move nodes.
@@ -5924,22 +5949,61 @@ const Spec = struct {
             for (m.place_at.items) |*e| e.top = none_index;
             @memset(m.place_top.items, none);
         }
+        // So do the refusals: the facts and `prune` between two passes
+        // change what a refusal read.
+        if (s.io_refused.len != s.globals) s.io_refused = try s.arena.alloc(Refusal, s.globals);
+        @memset(s.io_refused, .{});
+        const limit = s.copyLimit();
         var any = false;
-        var left: u32 = max_inlines;
-        while (left > 0) : (left -= 1) {
-            if (!try s.inlineOne()) break;
-            any = true;
-            if (left == 1) s.stats.inline_capped += 1;
+        while (true) {
+            const b = try s.inlineBatch(limit);
+            if (b.wrote) any = true;
+            if (b.capped) {
+                s.stats.inline_capped += 1;
+                break;
+            }
+            if (!b.wrote) break;
         }
         return any;
     }
 
+    /// The nodes of every module.
+    fn programNodes(s: *const Spec) u64 {
+        var n: u64 = 0;
+        for (s.mods) |*m| n += m.ir.nodes.len;
+        return n;
+    }
+
+    /// The most nodes the program may hold before one pass of `inlineOnce`
+    /// or `fuseCalls` stops writing: a bound on the work and the output's
+    /// growth, not on what is written. Writing a function called once moves
+    /// its body; it copies it only into a body that is itself written in
+    /// later, so a pass copies each node a few times at most, and the bound
+    /// is `copy_budget` times the program it began with.
+    fn copyLimit(s: *const Spec) u64 {
+        const n = s.programNodes();
+        return n + @max(n * copy_budget, min_copy_budget);
+    }
+
+    /// `inlineOnce`'s memory of a call `inlineAt` declined: the call, and
+    /// the `Mod.version` of the callee's module and the caller's then.
+    /// Nothing else it asks changes within a pass in a way that could let
+    /// it write the call after all (`inlineBatch`).
+    const Refusal = struct {
+        module: u32 = none,
+        top: Index = none_index,
+        call: Index = none_index,
+        callee_version: u32 = 0,
+        caller_version: u32 = 0,
+    };
+
+    /// What one count of `inlineOnce` did: wrote a function, and stopped
+    /// at `copyLimit` with candidates left.
+    const Batch = struct { wrote: bool = false, capped: bool = false };
+
     const CallSite = struct { module: u32, top: Index, call: Index };
 
-    /// Count every whole-program name's mentions, and write in the first
-    /// function, by whole-program id, mentioned once as a callee and fit to
-    /// be written there.
-    /// One module's part of `inlineOne`'s count: per whole-program name,
+    /// One module's part of `inlineBatch`'s count: per whole-program name,
     /// its mentions, its last call, and whether it is assigned — as of the
     /// module's `version`.
     const InlineScan = struct {
@@ -5996,6 +6060,9 @@ const Spec = struct {
             }
             sc.version = m.version;
         }
+        // The counts are the program's as it stands.
+        s.io_written = false;
+        s.io_dropped.clearRetainingCapacity();
     }
 
     // ---- What a statement says of each name it names (#492) ---------------
@@ -6506,7 +6573,18 @@ const Spec = struct {
         return nodes.items;
     }
 
-    fn inlineOne(s: *Spec) Allocator.Error!bool {
+    /// Count every whole-program name's mentions, and write in every
+    /// function mentioned once as a callee and fit to be written there, in
+    /// the order they were once taken one at a time: by whole-program id,
+    /// those called from inside another candidate first. A candidate a
+    /// write before it in this count touched waits for the next count: one
+    /// whose call stood in a body just copied (it is now called twice, its
+    /// original and its copy), or in a top-level statement the write
+    /// replaced. Nothing else a write changes is what made a candidate one
+    /// — it takes mentions away or copies ones already counted, and
+    /// `inlineAt` asks the program as it stands everything else.
+    fn inlineBatch(s: *Spec, limit: u64) Allocator.Error!Batch {
+        s.stats.inline_scans += 1;
         const n = s.globals;
         try s.inlineScan();
         const refs = s.io_refs[0..n];
@@ -6529,7 +6607,7 @@ const Spec = struct {
             if (refs[g] != 1) continue;
             const site = sites[g] orelse continue;
             const decl = s.decl[g] orelse continue;
-            if (isRoot(s.in, g)) continue;
+            if (try s.isRootCached(g)) continue;
             const fm = &s.mods[decl.module];
             if (fm.ir.tag(decl.stmt) != .const_decl) continue;
             // Still written: reachability may have dropped it.
@@ -6539,6 +6617,9 @@ const Spec = struct {
             if (site.module == decl.module and site.top == decl.stmt) continue;
             fit[g] = true;
         }
+        // The top-level statements this count's writes touched as above.
+        var touched: std.AutoHashMapUnmanaged(NodeRef, void) = .empty;
+        var out: Batch = .{};
         // The innermost first: a function called from inside another
         // candidate is written there before that one is written anywhere,
         // where its call may stand where only an expression can.
@@ -6552,26 +6633,78 @@ const Spec = struct {
                     const t = cm.ir.tag(site.top);
                     if (t != .const_decl and t != .func_decl) break :blk false;
                     const h = cm.globalOf(@fromBackingInt(@intCast(cm.ir.data(site.top).lhs))) orelse break :blk false;
-                    break :blk fit[h];
+                    break :blk h < fit.len and fit[h];
                 };
                 if (in_candidate != inner) continue;
+                if (touched.contains(.{ .module = site.module, .node = site.top.int() })) {
+                    s.stats.inline_waits += 1;
+                    continue;
+                }
                 const decl = s.decl[g].?;
-                const value: Index = @fromBackingInt(@intCast(s.mods[decl.module].ir.data(decl.stmt).rhs));
+                const fm = &s.mods[decl.module];
+                const cm = &s.mods[site.module];
+                // Declined before, and neither module changed since.
+                if (g < s.io_refused.len) {
+                    const r = s.io_refused[g];
+                    if (r.module == site.module and r.top == site.top and r.call == site.call and
+                        r.callee_version == fm.version and r.caller_version == cm.version)
+                    {
+                        s.stats.inline_refusals_kept += 1;
+                        continue;
+                    }
+                }
+                if (s.programNodes() >= limit) {
+                    out.capped = true;
+                    return out;
+                }
+                const value: Index = @fromBackingInt(@intCast(fm.ir.data(decl.stmt).rhs));
                 // Every change `inlineAt` makes is to the call's statement:
                 // the call, a list in it, or — the call a top-level
                 // binding's — the module's body around it; and to the
                 // module's names.
-                const cm = &s.mods[site.module];
                 within(cm, site.top);
                 const wrote = s.inlineAt(decl, value, site, assigned) catch |err| {
                     cm.scope = null;
                     return err;
                 };
                 try s.leave(cm);
-                if (wrote) return true;
+                if (!wrote) {
+                    if (g < s.io_refused.len) s.io_refused[g] = .{
+                        .module = site.module,
+                        .top = site.top,
+                        .call = site.call,
+                        .callee_version = fm.version,
+                        .caller_version = cm.version,
+                    };
+                    continue;
+                }
+                out.wrote = true;
+                s.io_written = true;
+                s.stats.inlined += 1;
+                try touched.put(s.arena, .{ .module = decl.module, .node = decl.stmt.int() }, {});
+                if (std.mem.indexOfScalar(Index, cm.ir.extraSlice(cm.ir.body, Index), site.top) == null) {
+                    try touched.put(s.arena, .{ .module = site.module, .node = site.top.int() }, {});
+                }
             }
         }
-        return false;
+        return out;
+    }
+
+    /// `isRoot`, from a table made once: `inlineBatch` asks it of every
+    /// name mentioned once, every count. A name made after the table is
+    /// one a copy declared, which no file outside names.
+    fn isRootCached(s: *Spec, g: u32) Allocator.Error!bool {
+        if (s.io_root.len == 0 and s.globals != 0) {
+            const root = try s.arena.alloc(bool, s.globals);
+            @memset(root, false);
+            var i: usize = 0;
+            while (eachRoot(s.in, i)) |r| : (i += 1) if (r < root.len) {
+                root[r] = true;
+            };
+            s.io_root = root;
+        }
+        if (g >= s.io_root.len) return isRoot(s.in, g);
+        return s.io_root[g];
     }
 
     /// What `scanBody` learns of a function's body.
@@ -6606,8 +6739,8 @@ const Spec = struct {
 
     /// `scanBody` of function `value` of module `fm`, declared by top-level
     /// statement `top`, kept while nothing changed that statement
-    /// (`Mod.kept`): `inlineOne` tries every candidate again after each
-    /// function it writes, and most callees are where they were. Null when
+    /// (`Mod.kept`): `inlineBatch` asks every candidate again in each count
+    /// of the program, and most callees are where they were. Null when
     /// the body is too big or too deep.
     fn scanOf(s: *Spec, fm: *Mod, top: Index, value: Index, f: JsIr.Func) Allocator.Error!?*const BodyScan {
         const gop = try s.body_scans.getOrPut(s.arena, .{ .module = fm.index, .node = value.int() });
@@ -6795,7 +6928,9 @@ const Spec = struct {
             else => return false,
         }
         const n: NameIndex = @fromBackingInt(@intCast(ir.data(a).lhs));
-        if (m.globalOf(n)) |g| return !assigned[g];
+        // A name made after `assigned` was counted is one a copy declared at
+        // a module's top (`inlineBatch`): not known to be unassigned.
+        if (m.globalOf(n)) |g| return g < assigned.len and !assigned[g];
         return !try s.assignedInTop(m, top, n);
     }
 
@@ -6974,9 +7109,15 @@ const Spec = struct {
     /// `top` of module `m`: a whole-program name anywhere, a local there.
     fn nameRead(s: *Spec, m: *Mod, top: Index, n: NameIndex) Allocator.Error!bool {
         const g = m.globalOf(n);
-        // A whole-program name: `inlineOne` counted its mentions, of a
-        // program nothing has changed since.
-        if (g) |want| if (s.io_refs.len == s.globals) return s.io_refs[want] != 0;
+        // A whole-program name: `inlineScan` counted its mentions. A write
+        // since (`io_written`) copies only mentions already counted, so a
+        // name counted unread is unread still; one counted read is read
+        // still unless a write dropped an argument naming it (`io_dropped`),
+        // which the walk below answers.
+        if (g) |want| if (s.io_refs.len == s.globals) {
+            if (s.io_refs[want] == 0) return false;
+            if (!s.io_written or std.mem.indexOfScalar(u32, s.io_dropped.items, want) == null) return true;
+        };
         for (s.mods) |*other| {
             if (g == null and other != m) continue;
             const ir = other.ir;
@@ -7365,6 +7506,18 @@ const Spec = struct {
         return null;
     }
 
+    /// Each whole-program name `root`, an argument a write drops, names
+    /// (`io_dropped`).
+    fn noteDropped(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try JsIr.pushOperand(s.arena, &stack, root);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (m.ir.tag(node) == .ident) if (m.globalOf(@fromBackingInt(@intCast(m.ir.data(node).lhs)))) |g| try s.io_dropped.append(s.arena, g);
+            try pushChildren(s.arena, m.ir, node, &stack);
+        }
+    }
+
     /// Write function `value` (declared by `decl`) at its one call `site`,
     /// when every rule allows; false, with nothing changed, otherwise.
     fn inlineAt(s: *Spec, decl: Decl, value: Index, site: CallSite, assigned: []const bool) Allocator.Error!bool {
@@ -7446,6 +7599,11 @@ const Spec = struct {
             const to = (try s.nameIn(cm, p.g)).?;
             try outer.append(s.arena, .{ .from = p.from, .to = to.int() });
         }
+        // The callee's name goes with the call, and so does an argument
+        // whose parameter nothing reads: `nameRead` asks the program again
+        // of the names they held.
+        try s.io_dropped.append(s.arena, s.globalOfDecl(decl));
+        for (args, bind, scan.reads) |a, b, r| if (!b and r == 0) try s.noteDropped(cm, a);
         s.noteCopy(decl.module, s.globalOfDecl(decl));
         // Each argument moves, whole, into the copy: its nodes' places are
         // no longer the index's.
@@ -7556,15 +7714,18 @@ const Spec = struct {
     /// P` the rest of that list knowing `x` is `P` — when the copies are
     /// smaller than the function and its calls by `stmtSize`, a node count
     /// standing in for bytes (not bytes). One function at a time, the
-    /// program counted again after each.
+    /// program counted again after each, until none is left or the program
+    /// has grown to the pass's `copyLimit`.
     fn fuseCalls(s: *Spec) Allocator.Error!bool {
         if (s.in.fresh == .none) return false;
         var any = false;
-        var left: u32 = max_inlines;
-        while (left > 0) : (left -= 1) {
-            if (!try s.fuseOne()) break;
+        const limit = s.copyLimit();
+        while (try s.fuseOne()) {
             any = true;
-            if (left == 1) s.stats.inline_capped += 1;
+            if (s.programNodes() >= limit) {
+                s.stats.inline_capped += 1;
+                break;
+            }
         }
         return any;
     }
@@ -8637,8 +8798,13 @@ const Spec = struct {
 /// (`switchAsIfs`).
 const max_switch_ifs = 3;
 
-/// How many functions slice 5 writes where they are called, at most.
-const max_inlines = 256;
+/// What one pass of slice 5 (`inlineOnce`) or of slice 9 across a call
+/// (`fuseCalls`) may grow the program by, in nodes: `copy_budget` times the
+/// program the pass began with, or `min_copy_budget` for a small one
+/// (`Spec.copyLimit`). A bound on work, never reached by the corpus or the
+/// dashboard: reaching it is counted (`Stats.inline_capped`).
+const copy_budget = 4;
+const min_copy_budget = 1 << 16;
 /// The largest body slice 5 copies, in nodes, and its deepest nesting: the
 /// copy recurses.
 const max_inline_nodes = 4096;
