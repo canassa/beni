@@ -5304,7 +5304,8 @@ rows of (e):
   handler as two, in order).
 
 *(Amended 2026-10-20: a script also drives WebSocket clients, and the preload fails a socket with
-`socket:<code>`; §9.11, *As built, the server*.)*
+`socket:<code>`, or with `socket:errno=<name>` for an error that carries only the number;
+§9.11, *As built, the server*.)*
 
 Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
 page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
@@ -5767,12 +5768,15 @@ as (e)–(i) and the amendment's items 14–28 say, with these readings:
   loop as it queues a request. `Server.beni` calls the program's `upgrade` in a fiber of the
   server's scope, and for an accept calls `WebSocket.upgraded`, a `pub` function that takes the
   record as a `Js.Value` (a program has no `Js.Value` to give it) and answers the socket and the
-  function the session's end calls. `WebSocket.js` takes the socket over, removes `waiting`, writes
-  the 101, and sets `goAway`, which `Server.close` calls for the 1001.
+  function the session's end calls. `WebSocket.js` takes the socket over: it checks first that
+  the socket is alive, and a socket that is not keeps `waiting` and starts no session; then it
+  removes `waiting`, writes the 101, and sets `goAway`, which `Server.close` calls for the 1001.
 - **A refusal is written by hand** on a socket that Node gave up: the status line with Node's
   reason phrase, `date`, the program's headers less `connection`, `content-length` (none on 204
   and 304), and `connection: close`, then the end of the connection. The checks of §9.10 (d) run
-  first, and an invalid response is a 500 with a line on standard error.
+  first, and an invalid response is a 500 with a line on standard error. That line quotes a
+  protocol the client did not offer with `JSON.stringify`, so the program's text cannot add a
+  line.
 - **Frames.** One allocation and one write per text frame; one cache of the last text and its
   frame for the whole process (item 27). Unmasking runs in place over the received bytes. The
   receive side keeps a list of chunks and copies only a frame that spans two of them.
@@ -5781,17 +5785,25 @@ as (e)–(i) and the amendment's items 14–28 say, with these readings:
   `drain` event, which comes, since a write over the high-water mark returned `false`.
 - **Fixtures** (`tests/corpus/run/`): `WebSocketEcho` (routing; `accept`, `acceptWith`, `refuse`;
   each side's close; 1010 refused; an offer that is not a token dropped), `WebSocketFaults` (the
-  handshake's checks, an `upgrade` list, each frame fault, `maxMessage` below 0),
-  `WebSocketLifetime` (a FIN and a reset with no close frame; a protocol not offered and an
-  invalid refusal; an accept after `Server.close`), `WebSocketOwnerEnds`, `WebSocketBackPressure`
-  (`buffered` and `drain` against a client that does not read; 300 messages read late, in
-  order), `WebSocketDrain` (`drain` after a write too small for Node's `drain` event, which fails
-  on a `drain` that waits for that event; a close while reading is paused), `WebSocketArena`
-  (three players, inputs, a broadcast tick, a player who leaves), `WebSocketNetworkFault`
-  (`EHOSTUNREACH` ends one connection, the server goes on; a reset before the 101) and
-  `WebSocketCrashOnSocket` (`EIO`, which no rule names: exit 1).
+  handshake's checks, an `upgrade` list, each frame fault — among them a 64-bit length with its
+  highest bit, the control opcode 11, and the close codes 1005, 1016 and 2999 — 1009 for two
+  fragments that are over `maxMessage` only together, `maxMessage` below 0),
+  `WebSocketLifetime` (a FIN and a reset with no close frame; a protocol not offered, also one
+  with a newline in it, and an invalid refusal; an accept after `Server.close`, which the
+  program makes only after `/b`'s session has ended, so the two 1001 lines keep one order),
+  `WebSocketOwnerEnds`, `WebSocketBackPressure` (`buffered` and `drain` against a client that does
+  not read; five pings while more than 1 MiB waits, answered with one pong for the latest, item
+  25; 300 messages read late, in order), `WebSocketDrain` (`drain` after a write too small for
+  Node's `drain` event, which fails on a `drain` that waits for that event; a close while
+  reading is paused), `WebSocketArena` (three players, inputs, a broadcast tick, a player who
+  leaves), `WebSocketNetworkFault` (`EHOSTUNREACH` ends one connection, the server goes on; a
+  reset before the 101), `WebSocketNetworkReset` (an error that carries only `ENETRESET`'s number
+  ends one connection, the server goes on) and `WebSocketCrashOnSocket` (`EIO`, which no rule
+  names: exit 1).
 - **`ENETRESET` is matched by its number** (`errno === -os.constants.errno.ENETRESET`), since libuv
-  has no name for it and Node's `code` is not `ENETRESET` (the amendment's item 15).
+  has no name for it and Node's `code` is not `ENETRESET` but `Unknown system error -<n>` (the
+  amendment's item 15). Only macOS and the BSDs report it; the preload's `socket:errno=ENETRESET`
+  gives a Linux run the same error, so `WebSocketNetworkReset` pins the rule on every host.
 - **Measured** (`bench/websocket/`: the arena server of `server/Main.beni`, `--release`, and
   `load.mjs`, with 100 players on Node 24's own `WebSocket` client, each sending 5 inputs a
   second, for 10 seconds, on 127.0.0.1): 29.8 ticks a second, 2 980 states and 500 inputs a
@@ -5799,13 +5811,11 @@ as (e)–(i) and the amendment's items 14–28 say, with these readings:
   instructions per message; between the first and the last player to get a tick, 1.18 ms at the
   median and 3.2 ms at the 99th percentile. The state of about 2.5 KiB is encoded once per tick,
   for all 100 players (item 27).
-- **Not pinned by a fixture**, since each needs real time, a race, or a host the tests do not run
-  on: the 5-second closing timer, TCP keep-alive, the ping flood of item 25, a client that leaves
-  while the program decides and whose end the server sees only after the accept, and
-  `ENETRESET`, which only macOS and the BSDs report. `WebSocketDrain`'s close while reading is
-  paused passes with or without item 18, because the session's `read` resumes reading; the case
-  item 18 settles — a session that closes and never reads — differs only in when the connection
-  ends.
+- **Not pinned by a fixture**, since each needs real time or a race: the 5-second closing timer,
+  TCP keep-alive, and a client that leaves while the program decides and whose end the server
+  sees only after the accept. `WebSocketDrain`'s close while reading is paused passes with or
+  without item 18, because the session's `read` resumes reading; the case item 18 settles — a
+  session that closes and never reads — differs only in when the connection ends.
 
 **(j) Binary messages are a later slice.** beni has no `Bytes` type yet (§9.8.12's *Where this
 departs*, #335). Binary messages arrive with it, under the same API: `read` and `Received` stay
