@@ -1,0 +1,10 @@
+-- `invalid_entry_export` (boundary.md §9.12 (c)): each name the project
+-- lists under `"exports"` is an ASCII identifier name, not `default`, and
+-- listed once. This list has `default`, a name that begins with a digit,
+-- a repeat of `Arena`, and a name with `-`: four diagnostics against the
+-- project's manifest, each naming the entry, and nothing written.
+import Prog exposing (Program)
+
+
+main : Program
+main = Prog.say "hello"

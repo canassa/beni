@@ -312,6 +312,22 @@ about a file rather than a place inside one. **Declaring the name is not on its 
 platform that declared `main.mjs` would put the defect straight back, which is why the rule is
 enforced and not documented.
 
+**A platform MAY declare that the entry file exports what `run` returns** (*added 2026-10-21*;
+`boundary.md` §5.2's `"exports"` key, §9.12 (c)). With `"exports": "program"` in the chain, the entry
+file binds `run(main)`'s result as `$beniProgram`, writes its `default` as the default export, and
+writes one named export per name the app's `beni.json` lists under `"exports"`, each the answer of
+the result's `exports(name)`, as `const $beniExport<N> = …; export { $beniExport<N> as Name };` in
+the list's order; the hoisted `--release` file does the same at its end. The entry's own bindings
+begin with `$`, which a listed name may not hold, and are longer than any short name `Rename`
+spells (eight characters), so no listed name and no hoisted declaration can collide with them; a
+listed name is written only as an export name, where any identifier name is legal. A name that is
+not an ASCII identifier name, is `default` or is listed twice is `invalid_entry_export`, against
+the app's manifest at `1:1`; any other mode is `unknown_exports_mode`, against the platform's; a
+list on a chain that declares no mode is the warning `exports_ignored`. A chain whose runtime is
+a module (`boundary.md` §9.2) may not declare the key yet. `run/EntryExports` pins the shape and
+the order, `build/bad/UnknownExportsMode` and `build/bad/InvalidEntryExport` the refusals,
+`run/ExportsIgnored` the warning.
+
 **Rule 2 — two output paths equal under case folding is a build error.** It is the backstop for
 whatever rule 1 does not reach, and one case is not exotic at all: two modules whose paths differ
 only by case — `Json.Decode` and `JSON.Decode` — are two modules on Linux and one file on macOS.

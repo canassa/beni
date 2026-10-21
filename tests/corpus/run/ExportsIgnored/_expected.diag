@@ -1,0 +1,8 @@
+-- EXPORTS IGNORED ----------------------------------------------- beni.json:1:1
+
+This project lists 1 export under `"exports"`, but the platform `plain` declares
+no `"exports"`, so the list does nothing.
+
+The entry file exports a name only for a platform whose manifest declares
+`"exports": "program"` (`docs/design/boundary.md` §5.2). Remove the list, or
+build for a platform that declares it.

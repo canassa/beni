@@ -130,7 +130,19 @@ pub const Item = struct {
     /// `run`, which outlives the render. `file` and `token` are ignored
     /// when this is set.
     at: ?Session.At = null,
+    /// An error, unless the code is a `warning` (`exports_ignored`).
+    severity: diagnostic.Severity = .@"error",
 };
+
+/// A platform manifest's `"exports"` (`boundary.md` §5.2, amended
+/// 2026-10-20; §9.12 (c)): the mode it declares, or a list, which only an
+/// app's manifest may hold (`unknown_exports_mode` either way, unless the
+/// mode is `program`).
+pub const ExportsDecl = union(enum) { none, mode: []const u8, list };
+
+/// The one mode the compiler knows: the entry file's `default` export and
+/// its named exports are what `run(main)` returns.
+pub const exports_program = "program";
 
 /// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
 /// output key taken from the first package of the chain that declares it.
@@ -188,6 +200,17 @@ pub const Platform = struct {
     /// The URL path the output is served under (`frontend.md` §10.1): a
     /// page shell's `{{base}}`, and what `{{entry}}` begins with.
     base: []const u8 = "/",
+    /// The chain's `"exports"` (`boundary.md` §5.2, amended 2026-10-20), and
+    /// the root of the package that declared it, where a fault in it is
+    /// reported. Checked by `checkEntryExports` before anything is built.
+    exports: ExportsDecl = .none,
+    exports_root: []const u8 = "",
+    /// The app manifest's `"exports"` list (`frontend.md` §10.1): the entry
+    /// file's named exports, in this order, each the answer of the runtime's
+    /// `exports(name)`. Empty when the app lists none; `app_root` is the
+    /// directory of the manifest that listed them.
+    entry_exports: []const []const u8 = &.{},
+    app_root: []const u8 = ".",
 };
 
 /// The page shell's output name (§2, *The page shell*). No `_`: every
@@ -353,6 +376,7 @@ pub fn run(
     // whatever the program does, and `--library` — which writes no entry
     // file at all — must not be the way to find out it is fine.
     try e.checkEntryFileName();
+    try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
@@ -364,7 +388,7 @@ pub fn run(
     // list has the entry declaration in it and §9 roots a library at its
     // export list — `Reach.collectRoots` says why at length.
     const entry = if (options.library) null else try e.findEntry();
-    if (e.diagnostics.items.len != 0 or (entry == null and !options.library)) return e.nothingWritten(gpa);
+    if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
 
     // §9's reachability walk, between `findEntry` and `emitModules` and
     // BEFORE lowering: an unreachable declaration is then never lowered at
@@ -391,7 +415,7 @@ pub fn run(
     // runtime of a lowering, and a chain that names none has nothing to
     // bind it to.
     try e.refuseMarkupWithoutLowering();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
 
     // §9's *The release optimiser*: a `--release` build that still reaches
     // `Debug` is refused (the owner's decision, 2026-09-19). Here and not
@@ -399,7 +423,7 @@ pub fn run(
     // and not later, because nothing may be lowered or written.
     if (options.release and !options.allow_debug) {
         try e.refuseDebug();
-        if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+        if (e.hasErrors()) return e.nothingWritten(gpa);
     }
 
     try e.openDebugContext();
@@ -412,7 +436,7 @@ pub fn run(
     try e.emitModules(entry);
     // A module the lowering refused (`not_implemented`) roots none of the
     // runtime the entry would import, so a release build cannot spell it.
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // A scope-hoisted build wrote the hand-written files and the entry into
     // its one file already (§9, *One scope-hoisted file under `--release`*).
     if (!e.hoisted) {
@@ -424,15 +448,15 @@ pub fn run(
     try e.emitDirectPlan();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // A symbolic link where the build would write is somebody else's, and
     // writing its path would write wherever it points.
     try e.refuseLinks();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // §2's record, read before the first byte is written: a
     // `_manifest.txt` that is not beni's is somebody's file.
     const previous = try e.readRecord();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
 
     const write_token = session.profile.begin();
     try e.flush(previous);
@@ -471,6 +495,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
     try e.checkEntryFileName();
+    try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
@@ -1253,6 +1278,14 @@ const Emitter = struct {
             .message = message,
             .at = at,
         });
+    }
+
+    /// Whether a diagnostic that refuses the build has been reported. A
+    /// `warning` (`exports_ignored`) never refuses one: the build goes on
+    /// and writes what it would have written (CLAUDE.md rule 7).
+    fn hasErrors(e: *const Emitter) bool {
+        for (e.diagnostics.items) |d| if (d.severity == .@"error") return true;
+        return false;
     }
 
     /// `boundary.md` §4's *a diagnostic points at the file whose text is
@@ -4528,7 +4561,7 @@ const Emitter = struct {
             }
         }
         if (hoist) |*h| {
-            if (e.diagnostics.items.len == 0) try e.linkHoisted(slots, h);
+            if (!e.hasErrors()) try e.linkHoisted(slots, h);
         } else if (uses_runtime) try e.emitDerivedRuntime();
     }
 
@@ -6203,7 +6236,16 @@ const Emitter = struct {
         const run_name = if (e.suppliedAs("run") != null)
             try e.moduleSpelling(e.runtime_module.?, "run")
         else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
-        try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        if (e.exportsProgram()) {
+            // `boundary.md` §9.12 (c): the hoisted file exports what `run`
+            // returns. The bindings are longer than any short name `Rename`
+            // spells (8 characters at most), so no hoisted declaration can
+            // take them.
+            try out.print(scratch, "const $beniProgram={s}({s});export default $beniProgram.default;", .{ run_name, main_name });
+            for (e.options.platform.entry_exports, 0..) |name, i| {
+                try out.print(scratch, "const $beniExport{d}=$beniProgram.exports(\"{s}\");export{{$beniExport{d} as {s}}};", .{ i, name, i, name });
+            }
+        } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
@@ -6741,6 +6783,23 @@ const Emitter = struct {
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
         const start = try e.startData();
+        if (e.exportsProgram()) {
+            if (e.runtime_module != null) {
+                // A chain whose runtime is a module (`boundary.md` §9.2) has
+                // no `run` result the entry file could hold: not in this slice.
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.platform.exports_root, Manifest.file_name }) },
+                    \\This platform declares `"exports": "program"` and a runtime module, and the entry
+                    \\file of a runtime module exports nothing of `run`'s result yet
+                    \\(`docs/design/boundary.md` §9.12 (c)).
+                ,
+                    .{},
+                );
+                return;
+            }
+            return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
+        }
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -6794,6 +6853,69 @@ const Emitter = struct {
         // by `checkEntryFileName`), so the manifest is what a collision
         // would have to name: no beni source asked for this file.
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
+    }
+
+    /// Whether the chain declares `"exports": "program"` (`boundary.md`
+    /// §5.2, amended 2026-10-20): the entry file then exports what
+    /// `run(main)` returns. `checkEntryExports` has refused any other mode.
+    fn exportsProgram(e: *Emitter) bool {
+        return switch (e.options.platform.exports) {
+            .mode => |mode| std.mem.eql(u8, mode, exports_program),
+            else => false,
+        };
+    }
+
+    /// The entry file of a chain that declares `"exports": "program"`
+    /// (`boundary.md` §9.12 (c)): `run(main)`'s result is held, its
+    /// `default` is the default export, and each name the app's manifest
+    /// lists is the answer of its `exports(name)`, called once at load. The
+    /// entry's own bindings begin with `$`, which no listed name may hold,
+    /// and are longer than any short name `Rename` spells; a listed name is
+    /// written only in an `export { … as Name }` clause, where any
+    /// identifier name is legal — so no name collides with `run`, `main`, a
+    /// release build's short name, or a reserved word.
+    fn emitEntryExporting(e: *Emitter, entry: Entry, runtime_path: []const u8, module_path: []const u8, imported: []const u8, start: ?StartData) !void {
+        _ = entry;
+        const release = e.options.release;
+        var text: std.ArrayList(u8) = .empty;
+        if (!release) try text.appendSlice(e.scratch,
+            \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
+            \\// the platform's output shape asks for.
+            \\
+        );
+        if (start) |s| if (std.mem.eql(u8, s.path, runtime_path)) {
+            // The program runtime's own `start`: one import names both.
+            if (release)
+                try text.print(e.scratch, "import{{run as $run,start as $start}}from\"./{s}\";\n", .{runtime_path})
+            else
+                try text.print(e.scratch, "import {{ run as $run, start as $start }} from \"./{s}\";\n", .{runtime_path});
+        } else {
+            if (release)
+                try text.print(e.scratch, "import{{run as $run}}from\"./{s}\";\nimport{{start as $start}}from\"./{s}\";\n", .{ runtime_path, s.path })
+            else
+                try text.print(e.scratch, "import {{ run as $run }} from \"./{s}\";\nimport {{ start as $start }} from \"./{s}\";\n", .{ runtime_path, s.path });
+        } else {
+            if (release)
+                try text.print(e.scratch, "import{{run as $run}}from\"./{s}\";\n", .{runtime_path})
+            else
+                try text.print(e.scratch, "import {{ run as $run }} from \"./{s}\";\n", .{runtime_path});
+        }
+        if (release)
+            try text.print(e.scratch, "import{{{s} as $main}}from\"./{s}\";\n", .{ imported, module_path })
+        else
+            try text.print(e.scratch, "import {{ {s} as $main }} from \"./{s}\";\n\n", .{ imported, module_path });
+        if (start) |s| try text.print(e.scratch, "$start({s});\n", .{s.data});
+        if (release)
+            try text.appendSlice(e.scratch, "const $beniProgram=$run($main);\nexport default $beniProgram.default;\n")
+        else
+            try text.appendSlice(e.scratch, "const $beniProgram = $run($main);\nexport default $beniProgram.default;\n");
+        for (e.options.platform.entry_exports, 0..) |name, i| {
+            if (release)
+                try text.print(e.scratch, "const $beniExport{d}=$beniProgram.exports(\"{s}\");\nexport{{$beniExport{d} as {s}}};\n", .{ i, name, i, name })
+            else
+                try text.print(e.scratch, "const $beniExport{d} = $beniProgram.exports(\"{s}\");\nexport {{ $beniExport{d} as {s} }};\n", .{ i, name, i, name });
+        }
+        try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }
 
     /// `emitEntry` for a build with a runtime module (`backend.md` §15.1):
@@ -7159,6 +7281,93 @@ const Emitter = struct {
         return out;
     }
 
+    /// `boundary.md` §5.2's `"exports"` key (amended 2026-10-20; §9.12 (c)):
+    /// a platform may declare `"exports": "program"` and nothing else; the
+    /// app's listed names must each be a name the entry file can export; and
+    /// a list on a chain that declares no mode does nothing, which is almost
+    /// always a mistake, so it is a `warning` (CLAUDE.md rule 7). Each fault
+    /// is reported against the manifest that holds it, at 1:1 with no
+    /// excerpt, as `invalid_entry_file` is.
+    fn checkEntryExports(e: *Emitter) !void {
+        const p = e.options.platform;
+        const platform_manifest = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ p.exports_root, Manifest.file_name });
+        switch (p.exports) {
+            .none => {
+                if (p.entry_exports.len == 0) return;
+                try e.reportInFile(
+                    .exports_ignored,
+                    .{ .path = try e.appManifestPath() },
+                    \\This project lists {d} export{s} under `"exports"`, but the platform `{s}` declares no
+                    \\`"exports"`, so the list does nothing.
+                    \\
+                    \\The entry file exports a name only for a platform whose manifest declares
+                    \\`"exports": "program"` (`docs/design/boundary.md` §5.2). Remove the list, or
+                    \\build for a platform that declares it.
+                ,
+                    .{ p.entry_exports.len, if (p.entry_exports.len == 1) "" else "s", p.name },
+                );
+                e.diagnostics.items[e.diagnostics.items.len - 1].severity = .warning;
+                return;
+            },
+            .list => {
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = platform_manifest },
+                    \\This platform declares `"exports"` as a list, which only an app's `beni.json` may
+                    \\hold.
+                    \\
+                    \\A platform declares the mechanism, `"exports": "program"`, and the app lists the
+                    \\names (`docs/design/boundary.md` §5.2).
+                ,
+                    .{},
+                );
+                return;
+            },
+            .mode => |mode| if (!std.mem.eql(u8, mode, exports_program)) {
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = platform_manifest },
+                    \\This platform declares `"exports": "{s}"`, which the compiler does not know.
+                    \\
+                    \\The one mode is `"program"`: the entry file then exports what `run(main)`
+                    \\returns — its `default`, and each name the app's `beni.json` lists under
+                    \\`"exports"` (`docs/design/boundary.md` §5.2).
+                ,
+                    .{mode},
+                );
+                return;
+            },
+        }
+        for (p.entry_exports, 0..) |name, i| {
+            const fault: ?[]const u8 = if (!exportNameIsLegal(name))
+                "is not an identifier name of ASCII letters, digits and `_` that does not begin with a digit"
+            else if (std.mem.eql(u8, name, "default"))
+                "is the name of the entry file's default export"
+            else if (listedBefore(p.entry_exports[0..i], name))
+                "is listed twice"
+            else
+                null;
+            if (fault) |why| try e.reportInFile(
+                .invalid_entry_export,
+                .{ .path = try e.appManifestPath() },
+                \\This project lists `{s}` under `"exports"`, which {s}.
+                \\
+                \\Each name is one the entry file exports as `export {{ … as Name }}`: an ASCII
+                \\identifier name, not `default`, listed once (`docs/design/boundary.md` §9.12 (c)).
+            ,
+                .{ name, why },
+            );
+        }
+    }
+
+    /// `<app root>/beni.json`, the file an app manifest fault is reported
+    /// against.
+    fn appManifestPath(e: *Emitter) ![]const u8 {
+        const root = e.options.platform.app_root;
+        if (root.len == 0 or std.mem.eql(u8, root, ".")) return Manifest.file_name;
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
+    }
+
     /// **Rule 2** (§2): two files this build would write whose paths are
     /// equal under ASCII case folding. On APFS and NTFS they are ONE file,
     /// the second write wins, and the build exits 0 having shipped
@@ -7435,6 +7644,21 @@ fn jsString(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8) Alloc
         else => try out.append(scratch, c),
     };
     try out.append(scratch, '"');
+}
+
+/// An ASCII identifier name — letters, digits and `_`, not beginning with
+/// a digit — which is every name an `export { … as Name }` clause takes
+/// (`boundary.md` §9.12 (c)); the check is ASCII only, as `entryNameIsLegal`'s.
+fn exportNameIsLegal(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (std.ascii.isDigit(name[0])) return false;
+    for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_')) return false;
+    return true;
+}
+
+fn listedBefore(earlier: []const []const u8, name: []const u8) bool {
+    for (earlier) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
 }
 
 fn entryNameIsLegal(name: []const u8) bool {

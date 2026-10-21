@@ -1,0 +1,11 @@
+-- The `"exports"` output key (boundary.md §5.2, amended 2026-10-20; §9.12
+-- (c)): the platform declares `"exports": "program"`, this project's
+-- beni.json lists `Arena` and `Lobby`, and the entry file holds `run`'s
+-- result, exports its `default`, and exports each listed name as the
+-- answer of `exports(name)`, in the list's order. The runtime prints each
+-- call, so the transcript is the contract.
+import Prog exposing (Program)
+
+
+main : Program
+main = Prog.say "hello"
