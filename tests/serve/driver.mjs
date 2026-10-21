@@ -678,6 +678,9 @@ const startPage = (port, step) => {
   const err = [];
   let partial = "";
   page.stdout.on("data", (chunk) => out.push(chunk));
+  // Decoded as UTF-8 across chunks, so a step whose text is not ASCII is
+  // whole even when a chunk ends inside one of its characters.
+  page.stdio[3].setEncoding("utf8");
   page.stdio[3].on("data", (chunk) => {
     const parts = (partial + chunk).split("\n");
     partial = parts.pop();
