@@ -5469,6 +5469,57 @@ section says only where it sits in this checker.
 - **Versions** (§14.3): `iface_bytes.format_version` 8 → 9, `entry_bytes.format_version` 6 → 7,
   the frontend artifact 8 → 9.
 
+### 26.1 Declaration totality (owner, 2026-10-21; #618)
+
+Beside a declaration's effect rung, the checker publishes a separate total bit.
+It proves that a saturated call terminates without throwing or observable effects
+when its arguments have already been evaluated. A pure rung alone does not prove
+termination. The contract is transparent-effects-proposal.md §14.9.
+
+After elaboration resolves method callees, and before P8 publishes interfaces,
+`check/Totality.zig` builds the declaration execution-call graph. An ordinary
+declaration is total only when its effect rung is pure, every executed callee is
+known and total, and no recursive component is reachable. Unknown higher-order,
+local-function or evidence calls disprove the bit; missing edges are never a
+proof of termination. Function formation does not execute the function's body.
+A declaration written as `f = λx → body` describes that function's invocation,
+so its invocation graph includes `body`. A nested returned lambda does not run.
+
+The graph is iterative, without depth or count caps. It computes the least
+fixed point T(d) = eligible(d) and all T(callee), starting false. Only eligible
+declarations with no outstanding callee seed the worklist. Each proven callee
+settles its reverse edges once, including duplicate edges. A recursive cycle
+never drains, nor do callers that reach it; unknown or disqualified declarations
+never seed a proof. The work is O(V + E). A foreign pure
+declaration is total by its existing contract. A resolved core `Js.pure`
+region is likewise trusted: invoking its thunk is total by contract, while
+forming the thunk argument is still evaluated and checked normally. No module
+or function whitelist supplies an inferred total bit.
+
+Native operations use the single shared compiler operator contract: exact core
+identity, saturated arity and no hidden evidence. Such a call executes the
+primitive, not an apparent BIR self-call such as `add a b = a + b`. Partial
+indexed reads and writes do not gain a total proof. A string-comparison
+primitive follows its actual core String.compare declaration, using an own
+declaration edge inside that module and the published fact elsewhere.
+
+P8 writes the bit in `Interface.Scheme.total`; private declarations carry the
+same answer in `Dispatch.EffectDecl.total`. Interface format 14 → 15 grows the
+scheme row from 16 to 20 bytes; its last word is exactly 0 or 1. Entry format
+13 → 14 embeds that interface; dispatch format 14 → 15 carries the bit in byte
+2 of its four-byte effect declaration row, validated as 0 or 1. Old versions
+are cache misses. The frontend artifact is unchanged. The bit participates in
+the interface hash, so editing an acyclic pure body into a recursive or impure
+body invalidates importers. A recursive body can keep the same type and effect
+rung; an impure edit also changes the existing effect summary.
+
+The markup expression classifier consumes this fact: a saturated call to a
+total declaration is pure-total only when every argument expression is
+pure-total too. Unproven calls and partial operations remain guarded. Its
+worklist is iterative and uncapped (owner approval, 2026-10-21); expression size
+alone cannot change the classification. The fact does not change evaluation
+order, handler binding lifetime, ownership, or the frozen S1 size bars.
+
 ## 27. Amendment of 2026-09-30: the `sync` check
 
 The contract is [`transparent-effects-proposal.md`](transparent-effects-proposal.md) §15; this

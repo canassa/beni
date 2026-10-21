@@ -453,6 +453,20 @@ pub fn check(in: Input) Error!Check.Counters {
         in.type_keys.* = t.artifact;
     }
 
+    // Declaration termination needs the elaborated callees and the solved
+    // effect rungs. Publish only a closed, acyclic pure call graph.
+    if (!quiet) try @import("Totality.zig").run(&effects, .{
+        .scratch = scratch,
+        .module = in.module,
+        .bir = bir,
+        .graph = in.graph,
+        .interfaces = in.interfaces,
+        .interner = in.interner,
+        .dispatch = in.dispatch,
+        .decl_scheme = decl_scheme,
+        .failed = &report.failed,
+    });
+
     // P8.
     const p8_token = if (in.profile) |p| p.begin() else null;
     const withheld = try Publish.fill(.{

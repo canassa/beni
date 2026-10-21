@@ -10441,9 +10441,7 @@ pub const Lowerer = struct {
     /// tail position by name, and what it computes is `a + b` — so neither
     /// the tail-call loop (§8) nor the inliner may take it for a call.
     fn callsOperator(l: *Lowerer, site: Inst.Index) bool {
-        const d = l.bir.instData(site);
-        const which = l.operatorOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
-        return which.arity() == l.bir.subRange(@fromBackingInt(@intCast(d.rhs))).len() and l.rootsOf(site).len == 0;
+        return Operator.atCall(l.in.graph, l.in.interfaces, l.bir, l.in.module, site, l.in.dispatch, l.interner) != null;
     }
 
     /// A saturated call of an `Operator` as the JavaScript it computes. The
@@ -15064,10 +15062,7 @@ pub const Lowerer = struct {
                     const op = l.operatorOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
                     if (total) {
                         if (!l.callsOperator(at)) return false;
-                        switch (op) {
-                            .list_put, .list_at, .list_traverseAt => return false,
-                            else => {},
-                        }
+                        if (!op.pureTotal()) return false;
                     }
                     stack.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) catch return false;
                 },

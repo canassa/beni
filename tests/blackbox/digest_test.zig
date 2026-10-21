@@ -555,7 +555,10 @@ test "a pub type alias NO scheme names — the digest moves and the hash does NO
         // when its KEY moves, and its key folds `Leaf`'s pair. `Leaf`'s hash
         // does not move, so without the digest `Mid` HITS and the moved
         // record is never produced at all.
-        .hashes = &.{"app:Mid"},
+        // Declaration totality adds one legitimate hash change: Side.relayed
+        // still publishes its Int annotation, but its now-invalid body
+        // loses the total bit. Unaffected declarations retain their facts.
+        .hashes = &.{ "app:Mid", "app:Side" },
         .digests = digest_wave_from_leaf,
         .errors = true,
     });

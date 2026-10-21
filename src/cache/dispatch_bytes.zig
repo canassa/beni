@@ -89,8 +89,10 @@ pub const magic = "BENIDSP\x00";
 /// tags, `identity` (its parts in `args`) and `text` (a range of `text`).
 /// 12 since derived codecs (schema.md §12.10): a `codec` term, its index the
 /// module's schema plan's `codecs` and its slots' evidence in `args`.
-// Version 14 adds checked render identity facts and their local paths.
-pub const format_version: u32 = 14;
+/// 13 since scalar dictionary keys (#294) carry key domains.
+/// 14 adds checked render identity facts and their local paths.
+/// 15: effect declaration byte 2 carries the totality proof.
+pub const format_version: u32 = 15;
 
 pub const Column = enum(u32) {
     terms,
@@ -355,6 +357,7 @@ pub fn write(
         const row = effect_decls[i * 4 ..][0..4];
         row[0] = @backingInt(e.own);
         row[1] = @intFromBool(e.twin);
+        row[2] = @intFromBool(e.total);
     }
     const boundary = try gpa.alloc(u8, d.boundary.len * Column.boundary.width());
     defer gpa.free(boundary);
@@ -923,10 +926,11 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         out.table.effect_decls = decls;
         for (decls, 0..) |*e, i| {
             const row = in_bytes[i * 4 ..][0..4];
-            if (row[1] > 1) return error.BadSidecar;
+            if (row[1] > 1 or row[2] > 1) return error.BadSidecar;
             e.* = .{
                 .own = std.enums.fromInt(Dispatch.Suspend, row[0]) orelse return error.BadSidecar,
                 .twin = row[1] == 1,
+                .total = row[2] == 1,
             };
         }
     }
@@ -1902,5 +1906,28 @@ test "a decl row whose convention finish could not have written is BadSidecar" {
     defer gpa.free(bytes);
     const at = std.mem.readInt(u32, bytes[header_bytes + 8 * @backingInt(Column.decls) ..][0..4], .little);
     bytes[at + 10] = 3;
+    try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+}
+
+test "declaration totality dispatch rows reject old versions and non-bit bytes" {
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const decls = [_]Dispatch.DeclInfo{.{}};
+    const effects = [_]Dispatch.EffectDecl{.{ .total = true }};
+    const table: Dispatch = .{ .decls = &decls, .effect_decls = &effects };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var back = try read(gpa, bytes, &global);
+    defer back.deinit(gpa);
+    try testing.expectEqualSlices(Dispatch.EffectDecl, &effects, back.table.effect_decls);
+    const column = bytes[header_bytes + @backingInt(Column.effect_decls) * 8 ..][0..8];
+    const start = std.mem.readInt(u32, column[0..4], .little);
+    bytes[start + 2] = 2;
+    try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
+    bytes[start + 2] = 1;
+    std.mem.writeInt(u32, bytes[8..12], format_version - 1, .little);
     try testing.expectError(error.BadSidecar, read(gpa, bytes, &global));
 }

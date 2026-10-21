@@ -1137,3 +1137,389 @@ test "a vocabulary module's tables and markup primitives travel through the form
     try testing.expect(std.mem.indexOf(u8, base.stdout, "\nevents 0 onInput ") != null);
     try testing.expect(std.mem.indexOf(u8, base.stdout, " via targetValue\n") != null);
 }
+
+test "declaration totality changes the public hash when a pure body becomes recursive" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value n = n
+        \\
+    );
+    try w.write("src/Caller.beni", "import Helper\n\n\npub invoke : Int → Int\ninvoke n = Helper.value n\n");
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value n = value n
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Caller"), try hashOf(after.stdout, "app:Caller")));
+}
+
+test "declaration totality follows a callable alias to a recursive function" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value = worker
+        \\
+        \\
+        \\worker : Int → Int
+        \\worker n = n
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value = worker
+        \\
+        \\
+        \\worker : Int → Int
+        \\worker n = worker n
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
+}
+
+test "declaration totality propagates private mutual recursion to a public caller" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value n = first n + first n
+        \\
+        \\
+        \\first : Int → Int
+        \\first n = second n
+        \\
+        \\
+        \\second : Int → Int
+        \\second n = n
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value n = first n + first n
+        \\
+        \\
+        \\first : Int → Int
+        \\first n = second n
+        \\
+        \\
+        \\second : Int → Int
+        \\second n = first n
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
+}
+
+test "declaration totality imports a Js.pure-backed ordinary function" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : String → Int
+        \\value s = String.length s
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : String → Int
+        \\value s = value s
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
+}
+
+test "declaration totality does not infer an unknown callback to be acyclic" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : (Int → Int), Int → Int
+        \\value f n = f n
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : (Int → Int), Int → Int
+        \\value f n = f (value f n)
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    // Both retain the same callback effect dependency; neither is total.
+    try testing.expectEqualStrings(try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper"));
+}
+
+test "declaration totality leaves unknown local function invocations unproven" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value n =
+        \\    local x = x
+        \\    local n
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : Int → Int
+        \\value n =
+        \\    local x = local x
+        \\    local n
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expectEqualStrings(try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper"));
+}
+
+test "declaration totality imports a foreign pure contract" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Helper.beni",
+        \\pub value : List Int → Int
+        \\value xs = List.length xs
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\pub value : List Int → Int
+        \\value xs = value xs
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
+}
+
+test "declaration totality follows an alias of the Js.pure contract" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{\"platform\":true,\"name\":\"totality\",\"program\":\"P.Program\",\"runtime\":\"run.js\"}\n");
+    try w.write("src/Helper.beni",
+        \\import Js
+        \\
+        \\
+        \\run = Js.pure
+        \\
+        \\
+        \\pub value : Int → Int
+        \\value n = run (λ⊤ → n)
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\import Js
+        \\
+        \\
+        \\run = Js.pure
+        \\
+        \\
+        \\pub value : Int → Int
+        \\value n = value n
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
+}
+
+test "declaration totality still checks formation of a Js.pure argument" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("beni.json", "{\"platform\":true,\"name\":\"totality\",\"program\":\"P.Program\",\"runtime\":\"run.js\"}\n");
+    try w.write("src/Helper.beni",
+        \\import Js
+        \\
+        \\
+        \\pub value : Int, (Int → (⊤ → Int)) → Int
+        \\value n make = Js.pure (make n)
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Helper.beni",
+        \\import Js
+        \\
+        \\
+        \\pub value : Int, (Int → (⊤ → Int)) → Int
+        \\value n make =
+        \\    thunk = make n
+        \\    if n == 0 then value n make else Js.pure thunk
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    // Unknown argument formation and the explicit recursive control both
+    // lack a proof, while publishing the same callback effect dependency.
+    try testing.expectEqualStrings(try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper"));
+}
+
+test "declaration totality resolves a string primitive to its own declaration" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("tiny/Basics.beni",
+        \\pub foreign type Int
+        \\
+        \\
+        \\pub foreign type Float
+        \\
+        \\
+        \\pub type Bool = True | False
+        \\
+        \\
+        \\pub type Order = LT | EQ | GT
+        \\
+    );
+    try w.write("tiny/List.beni", "pub foreign type List a\n");
+    try w.write("tiny/String.beni",
+        \\pub equatable foreign type String
+        \\
+        \\
+        \\pub compare : String, String → Order
+        \\compare _ _ = EQ
+        \\
+        \\
+        \\pub less : String, String → Bool
+        \\less a b = a < b
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import String
+        \\
+        \\
+        \\pub value : String, String → Bool
+        \\value a b = String.less a b
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--core-root=tiny", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("tiny/String.beni",
+        \\pub equatable foreign type String
+        \\
+        \\
+        \\pub compare : String, String → Order
+        \\compare a b = if a < b then LT else EQ
+        \\
+        \\
+        \\pub less : String, String → Bool
+        \\less a b = a < b
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--core-root=tiny", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    // A real recursive invocation of String.compare invalidates less and
+    // its importer; the public annotation and effect rung stay the same.
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Main"), try hashOf(after.stdout, "app:Main")));
+}
+
+test "declaration totality does not treat an app operator name as native" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Basics.beni",
+        \\pub add : a, a → a
+        \\add x y = x
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Basics.beni",
+        \\pub add : a, a → a
+        \\add x y = add x y
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Basics"), try hashOf(after.stdout, "app:Basics")));
+}
+
+test "declaration totality does not discard a native name's hidden evidence" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("tiny/Basics.beni",
+        \\pub equatable foreign type Int
+        \\
+        \\
+        \\pub foreign type Float
+        \\
+        \\
+        \\pub type Bool = True | False
+        \\
+        \\
+        \\pub type Order = LT | EQ | GT
+        \\
+        \\
+        \\pub add : a, a → a
+        \\    where a.eq : a, a → Bool
+        \\add a b = if a.eq b then a else b
+        \\
+    );
+    try w.write("tiny/List.beni", "pub foreign type List a\n");
+    try w.write("tiny/String.beni", "pub equatable foreign type String\n");
+    try w.write("src/Main.beni",
+        \\import Basics
+        \\
+        \\
+        \\pub value : Int, Int → Int
+        \\value a b = Basics.add a b
+        \\
+    );
+    const before = try w.runWith(&.{ "check", "--core-root=tiny", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try testing.expectEqualStrings("", before.stderr);
+    try w.write("src/Main.beni",
+        \\import Basics
+        \\
+        \\
+        \\pub value : Int, Int → Int
+        \\value a b = value a b
+        \\
+    );
+    const after = try w.runWith(&.{ "check", "--core-root=tiny", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings("", after.stderr);
+    // The generic implementation invokes unknown evidence, so neither
+    // version has a declaration-level total proof. Native '+' cannot be
+    // substituted merely because the core declaration is named add.
+    try testing.expectEqualStrings(try hashOf(before.stdout, "app:Main"), try hashOf(after.stdout, "app:Main"));
+}

@@ -248,6 +248,7 @@ pub const Writer = struct {
             .quantified_count = count,
             .body = body,
             .effects = effects,
+            .total = if (w.effects) |p| p.decl < p.effects.total.len and p.effects.total[p.decl] else false,
         });
         try w.finish(mark);
         return @fromBackingInt(@intCast(index));
