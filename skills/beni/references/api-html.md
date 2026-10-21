@@ -12,12 +12,22 @@ wait says so in a trailing comment, `-- impure` or `-- suspends`.
 module Html
   type Event
   type Html a
+  type Pointer
   value altKey : Event → Bool  -- impure
+  value clientX : Pointer → Float  -- impure
+  value clientY : Pointer → Float  -- impure
   value code : Event → String  -- impure
   value ctrlKey : Event → Bool  -- impure
+  value isPrimary : Pointer → Bool  -- impure
   value key : Event → String  -- impure
+  value localX : Pointer → Float  -- impure
+  value localY : Pointer → Float  -- impure
   value map : Html a, (a → b) → Html b
   value metaKey : Event → Bool  -- impure
+  value pointer : Dispatched → Pointer  -- impure
+  value pointerEvent : Pointer → Event  -- impure
+  value pointerId : Pointer → Int  -- impure
+  value pointerType : Pointer → String  -- impure
   value preventDefault : Event → ⊤  -- impure
   value shiftKey : Event → Bool  -- impure
   value targetChecked : Event → Bool  -- impure
@@ -433,6 +443,12 @@ module Html
   event "onMouseOut" delegated : Event
   event "onMouseOver" delegated : Event
   event "onMouseUp" delegated : Event
+  event "onPointerCancel" via pointer : Pointer
+  event "onPointerDown" via pointer : Pointer
+  event "onPointerEnter" via pointer : Pointer
+  event "onPointerLeave" via pointer : Pointer
+  event "onPointerMove" via pointer : Pointer
+  event "onPointerUp" via pointer : Pointer
   event "onScroll" : Event
   event "onSubmit" on "form" delegated preventDefault : Event
 ```
