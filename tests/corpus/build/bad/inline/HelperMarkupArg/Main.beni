@@ -1,0 +1,45 @@
+-- A view helper handed markup as an argument (`title`): the helper's
+-- `{title}` is markup passed as data, refused (class 1,
+-- docs/design/browser-inline.md §5, §8.4).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+card : Html Msg, Int → Html Msg
+card title n = <section>{title}<p>{n}</p></section>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {card (<h1>Hi</h1>) model.cups}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"

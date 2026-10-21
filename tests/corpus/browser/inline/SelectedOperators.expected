@@ -1,0 +1,76 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+(the DOM did not change)
+-- click [data-role=toggle]
+console.log: let: 1
+console.log: interpolation: 1
+console.log: compare: (1,2)
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"2"</p>
+        <p>"n=1"</p>
+        <p>"low"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: let: 2
+console.log: interpolation: 2
+console.log: compare: (2,2)
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"3"</p>
+        <p>"n=2"</p>
+        <p>"high"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+(the DOM did not change)
+-- click [data-role=toggle]
+console.log: let: 3
+console.log: interpolation: 3
+console.log: compare: (3,2)
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"4"</p>
+        <p>"n=3"</p>
+        <p>"high"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>

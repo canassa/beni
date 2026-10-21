@@ -1,0 +1,37 @@
+-- element "root"
+-- load
+<body></body>
+-- event window old
+console.log: piece: 100
+console.log: local: 11
+(the DOM did not change)
+-- event window next
+console.log: first-bound: 3
+(the DOM did not change)
+-- event window old
+console.log: local: 7
+console.log: piece: 100
+console.log: retained: 3
+console.log: local: 11
+(the DOM did not change)
+-- event window next
+console.log: second-bound: 104
+(the DOM did not change)
+-- event window old
+console.log: local: 11
+(the DOM did not change)
+-- event window current
+console.log: retained: 104
+(the DOM did not change)
+-- stop
+(stopped)
+(the DOM did not change)
+-- event window afterstop
+console.log: local false
+console.log: piece false
+console.log: piece-current false
+console.log: old-binding false
+console.log: new-binding false
+console.log: shown-sibling false
+console.log: hidden-sibling false
+(the DOM did not change)

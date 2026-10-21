@@ -1,0 +1,22 @@
+-- Markup held in data stays a limit of the compiler, class 1
+-- (docs/design/browser-inline.md §5, amended 2026-10-19): `header` is a
+-- markup value stored in the model and placed by the `view` through a
+-- field read, which no static structure gives.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    header : Html {}
+
+
+view : Model → Html {}
+view model = <div>{model.header}</div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { header = <h1>Hello</h1> }, update = λ_ m → m, view = view })
+        "root"

@@ -1,0 +1,8 @@
+element "root"
+click [data-role=first]>button
+click [data-role=second]>button
+click [data-role=bump]
+click [data-role=first]>button
+click [data-role=second]>button
+click [data-role=label]
+click [data-role=first]>button

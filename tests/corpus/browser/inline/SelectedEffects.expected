@@ -1,0 +1,70 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+(the DOM did not change)
+-- click [data-role=toggle]
+console.log: hole: 1
+console.log: arg: 1
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p data-role="hole">"1"</p>
+        <p data-role="helper">"1 1"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: hole: 2
+console.log: arg: 2
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p data-role="hole">"2"</p>
+        <p data-role="helper">"2 2"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+(the DOM did not change)
+-- click [data-role=toggle]
+console.log: hole: 3
+console.log: arg: 3
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p data-role="hole">"3"</p>
+        <p data-role="helper">"3 3"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>

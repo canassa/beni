@@ -1,0 +1,51 @@
+-- A later helper argument throws before any text or event binding publishes.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    value : Int
+    picked : Int
+
+
+type Msg
+    = Pick Int
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick n →
+            { model | picked = n }
+        Bump →
+            { model | value = model.value + 1 }
+
+
+checked : Int → Int
+checked n = if n > 0 then Debug.todo "event argument failed" else n
+
+
+helper : Int, Int → Html Msg
+helper first second =
+    <section>
+        <p>{first}</p>
+        <button data-role="pick" onClick={Pick first}>{second}</button>
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {helper (Debug.log "first" model.value) (checked model.value)}
+        <p>{model.picked}</p>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { value = 0, picked = 9 }, update = update, view = view })
+        "root"

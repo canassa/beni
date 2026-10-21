@@ -1,0 +1,67 @@
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    value : Int
+    picked : Int
+    shown : Bool
+
+
+type Msg
+    = Pick Int
+    | Bump
+    | Toggle
+    | Host Int
+
+
+type Key
+    = HostProbe
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Pick n →
+            ( { model | picked = n }, Cmd.none )
+        Bump →
+            ( { model | value = model.value + 1 }, Cmd.none )
+        Toggle →
+            ( { model | shown = not model.shown }, Cmd.none )
+        Host _ →
+            ( model, Cmd.none )
+
+
+helper : Int → Html Msg
+helper n = <button data-role="retained" onClickGuard={Pick n}>{n}</button>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {if model.shown then
+            <section>{helper (Debug.log "bound" model.value)}</section>
+         else
+            <></>
+        }
+        <p>{model.picked}</p>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element
+            { init = λ⊤ → ( { value = 3, picked = 0, shown = True }, Cmd.none )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.on HostProbe Probe.start Host
+            }
+        )
+        "root"

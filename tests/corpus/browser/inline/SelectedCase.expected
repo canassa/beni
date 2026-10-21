@@ -1,0 +1,44 @@
+-- element "root"
+-- load
+console.log: zero: 0
+<body>
+  <div id="root">
+    <div>
+      <p>"0"</p>
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+console.log: one: 1
+<body>
+  <div id="root">
+    <div>
+      ""
+      <p>"1"</p>
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+<body>
+  <div id="root">
+    <div>
+      ""
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+console.log: zero: 3
+<body>
+  <div id="root">
+    <div>
+      <p>"3"</p>
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>

@@ -1,0 +1,7 @@
+element "root"
+event window probehidden
+click [data-role=toggle]
+click [data-role=bump]
+event window probehidden
+click [data-role=toggle]
+event window probehidden

@@ -1,0 +1,51 @@
+-- A `case` in markup one of whose arms is a markup value (`other`), not
+-- markup written in place: chosen at run time, so not an eager `when`, and
+-- refused (class 1, docs/design/browser-inline.md §5, §8.2).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+other : Html Msg
+other = <span>other</span>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {case model.cups of
+            0 →
+                <p>none</p>
+
+            _ →
+                other
+        }
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"
