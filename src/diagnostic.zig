@@ -439,6 +439,21 @@ pub const Code = enum {
     /// its model does not express, permanently, as a tagger that gives no
     /// message constructor. `build`'s, an error; never "not yet".
     program_shape,
+    /// Appended on 2026-10-21 (`boundary.md` §5.2's `"exports"` key,
+    /// §9.12 (c)): a platform manifest's `"exports"` holds a value the
+    /// compiler does not know; only `"program"` is one. Reported against
+    /// that manifest at 1:1, as `invalid_entry_file` is. An error.
+    unknown_exports_mode,
+    /// Appended on 2026-10-21 (the same key): a name the app's `beni.json`
+    /// lists under `"exports"` that the entry file cannot export — not an
+    /// ASCII identifier name, `default`, or listed twice. Reported against
+    /// the app's manifest at 1:1. An error.
+    invalid_entry_export,
+    /// Appended on 2026-10-21 (the same key): the app lists exports and the
+    /// platform chain declares no `"exports"`, so the list does nothing,
+    /// which is almost always a mistake. Reported against the app's
+    /// manifest at 1:1. A `warning` (CLAUDE.md rule 7).
+    exports_ignored,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -629,6 +644,9 @@ pub fn title(code: Code) []const u8 {
         .statement_not_unit => "UNUSED VALUE",
         .not_implemented => "NOT IMPLEMENTED YET",
         .internal => "INTERNAL ERROR",
+        .unknown_exports_mode => "UNKNOWN EXPORTS MODE",
+        .invalid_entry_export => "INVALID ENTRY EXPORT",
+        .exports_ignored => "EXPORTS IGNORED",
     };
 }
 

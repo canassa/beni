@@ -88,6 +88,19 @@ markup: Markup = .{},
 html: ?[]const u8 = null,
 lists: ?Lists = null,
 build: Build = .{},
+exports: Exports = .none,
+
+/// `"exports"` (`boundary.md` §5.2, §9.12 (c); `frontend.md` §10.1): on a
+/// platform manifest a string, the mode — `"program"` is the one the
+/// compiler knows, and any other is `unknown_exports_mode` when the
+/// platform is loaded — and on an app manifest a list of names, the entry
+/// file's named exports. The key is one, its meaning per manifest role, so
+/// both forms parse here and the reader takes the one its role allows.
+pub const Exports = union(enum) {
+    none,
+    mode: []const u8,
+    names: []const []const u8,
+};
 
 /// `"build"`'s three fields (`frontend.md` §10.1), each absent unless
 /// written.
@@ -132,6 +145,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         html: ?[]const u8 = null,
         lists: ?Lists = null,
         build: ?Build = null,
+        exports: ?std.json.Value = null,
     };
     const parsed = std.json.parseFromSliceLeaky(Schema, arena, bytes, .{
         .ignore_unknown_fields = true,
@@ -140,6 +154,18 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         error.OutOfMemory => return error.OutOfMemory,
         else => return error.Malformed,
     };
+    const exports: Exports = if (parsed.exports) |value| switch (value) {
+        .string => |mode| .{ .mode = mode },
+        .array => |items| blk: {
+            const names = try arena.alloc([]const u8, items.items.len);
+            for (items.items, names) |item, *slot| slot.* = switch (item) {
+                .string => |name| name,
+                else => return error.Malformed,
+            };
+            break :blk .{ .names = names };
+        },
+        else => return error.Malformed,
+    } else .none;
     return .{
         .platform = parsed.platform orelse false,
         .name = parsed.name,
@@ -152,6 +178,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .html = parsed.html,
         .lists = parsed.lists,
         .build = parsed.build orelse .{},
+        .exports = exports,
     };
 }
 
@@ -248,6 +275,29 @@ test "a page shell, and a project's build defaults" {
     try testing.expectEqual(@as(?[]const u8, null), bare.build.platform);
     try testing.expectError(error.Malformed, parse(arena.allocator(),
         \\{ "build": { "paths": "src" } }
+    ));
+}
+
+test "exports: a mode on a platform, a list of names on an app" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const platform = try parse(arena.allocator(),
+        \\{ "platform": true, "name": "cf", "program": "Worker.Program", "runtime": "runtime.js", "exports": "program" }
+    );
+    try testing.expectEqualStrings("program", platform.exports.mode);
+    const app = try parse(arena.allocator(),
+        \\{ "name": "arena", "exports": ["Arena", "Lobby"] }
+    );
+    try testing.expectEqual(@as(usize, 2), app.exports.names.len);
+    try testing.expectEqualStrings("Arena", app.exports.names[0]);
+    try testing.expectEqualStrings("Lobby", app.exports.names[1]);
+    try testing.expectEqual(Exports.none, (try parse(arena.allocator(), "{}")).exports);
+    // Any other shape is malformed, like every key of the wrong JSON type.
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "exports": true }
+    ));
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "exports": ["Arena", 1] }
     ));
 }
 

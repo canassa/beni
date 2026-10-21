@@ -166,7 +166,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         return fail(stderr, "beni: out of memory", .{});
     defer gpa.free(late);
     for (items, late) |item, *slot| {
-        slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at };
+        slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
     }
     const errors = session.renderLate(late, stderr) catch return 2;
     return if (errors > 0) 1 else 0;

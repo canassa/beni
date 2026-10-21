@@ -3029,6 +3029,10 @@ pub const LateItem = struct {
     /// not in a beni source file. `file` and `token` are ignored when this
     /// is set. Borrowed for the call, like `message`.
     at: ?At = null,
+    /// An error, unless the code is a `warning` the late phase emits
+    /// (`exports_ignored`, `boundary.md` §5.2): a warning never changes
+    /// the exit code or what is written.
+    severity: diagnostic.Severity = .@"error",
 };
 
 /// A place in a file the `SourceStore` does not hold: a sibling `.js`
@@ -3113,7 +3117,7 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
         late_messages.appendAssumeCapacity(try wrap.reflow(gpa, item.message));
         slot.* = .{
             .code = item.code,
-            .severity = .@"error",
+            .severity = item.severity,
             .span = .{
                 .file = if (item.at) |at| at.path else session.store.path(item.file),
                 .start = start,

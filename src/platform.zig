@@ -82,6 +82,20 @@ pub const Chain = struct {
         return false;
     }
 
+    /// The first layer, in chain order, whose manifest declares `"exports"`
+    /// (§5.2, amended 2026-10-20): the mode it declares, or the fact that it
+    /// declared a list, which a platform may not.
+    pub fn firstExports(chain: *const Chain) ?struct { decl: Emit.ExportsDecl, layer: u32 } {
+        for (chain.layers, 0..) |layer, i| {
+            switch (layer.manifest.exports) {
+                .none => continue,
+                .mode => |mode| return .{ .decl = .{ .mode = mode }, .layer = @intCast(i) },
+                .names => return .{ .decl = .list, .layer = @intCast(i) },
+            }
+        }
+        return null;
+    }
+
     /// As `first`, for one field of `"markup"` (§9.2).
     pub fn firstMarkup(chain: *const Chain, comptime field: []const u8) ?Found {
         for (chain.layers, 0..) |layer, i| {
@@ -436,6 +450,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
     if (needs_program and (program == null or (runtime == null and !module_runtime))) return error.Incomplete;
     const entry = chain.first("entry");
     const html = chain.first("html");
+    const exports = chain.firstExports();
     const lowering = chain.firstMarkup("lowering");
     const markup_runtime = chain.firstMarkup("runtime");
     const dirs = try arena.alloc([]const u8, chain.layers.len);
@@ -463,6 +478,8 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .markup_module = if (chain.firstMarkup("module")) |m| m.value else null,
             .html = if (html) |h| h.value else null,
             .html_root = if (html) |h| chain.layers[h.layer].root else chain.top().root,
+            .exports = if (exports) |x| x.decl else .none,
+            .exports_root = if (exports) |x| chain.layers[x.layer].root else chain.top().root,
         },
         .embedded = try collectEmbedded(arena, session, chain),
     };

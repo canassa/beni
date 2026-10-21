@@ -26,6 +26,7 @@ The project file, in the directory `beni` runs from (or `--root`):
 | `"build"."out"` | the output directory, what `--out` says | `out` |
 | `"build"."base"` | the URL path the output is served under; ends in `/` | `/` |
 | `"html"` | the page shell, a file relative to `beni.json` | the platform's |
+| `"exports"` | the names the entry file exports, a list of ASCII identifier names; read when the platform declares `"exports": "program"`, a warning otherwise | none |
 
 A command-line flag replaces the manifest's value, field by field. `check` always takes its paths.
 

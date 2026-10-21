@@ -1,0 +1,12 @@
+-- `exports_ignored` (boundary.md §5.2, amended 2026-10-20): this project
+-- lists a name under `"exports"`, but its platform — `plain`, layered on
+-- `node` and declaring nothing of its own — declares no `"exports"`, so
+-- the list does nothing. A list that does nothing is almost always a
+-- mistake, so it is a warning (CLAUDE.md rule 7) and the build goes on;
+-- the `.diag` golden pins it. The platform directory is here so that the
+-- harness copies the whole project, `beni.json` included.
+import Node exposing (Program)
+
+
+main : Program
+main = Node.print "built anyway"
