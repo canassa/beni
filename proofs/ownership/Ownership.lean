@@ -18,6 +18,8 @@ import Ownership.StatementChecks.LinkSummary
 import Ownership.DiagnosticCampaign
 import Ownership.LinkClauses
 import Ownership.FlatFragment.Trace
+import Ownership.DictPrograms
+import Ownership.DictProbes
 import Ownership.CallDerivation
 import Ownership.LinkedWriteStep
 import Ownership.StatementChecks.LinkedCallControl

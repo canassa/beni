@@ -94,6 +94,14 @@ def prim (env : Env Value) (op : Prim) (vs : List Value) : M Value := do
   | .close, [.ref c] => pure (.ref c)
   | .close, [.ref c, .ref source] => do
     if (← array c) == (← array source) then pure (.ref source) else pure (.ref c)
+  | .dictEmpty _, [] => alloc []
+  | .dictInsert, [.ref c, .int k, v] => do
+    writeNoted env c (dictPut InPlaceSemantics.entryKey (← array c) k (.record [.int k, v]))
+  | .dictRemove, [.ref c, .int k] => do
+    writeNoted env c (dictDrop InPlaceSemantics.entryKey (← array c) k)
+  | .dictGet, [.ref c, .int k] => do
+    pure (InPlaceSemantics.maybe ((dictFind InPlaceSemantics.entryKey (← array c) k).map InPlaceSemantics.entryValue))
+  | .dictSize, [.ref c] => do pure (Value.int (← array c).length)
   | _, _ => throw "shape"
 
 def call (env : Env Value) (m : M Value) : M Value := do
@@ -171,6 +179,15 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
       | some v =>
         let w ← eval (depth - 1) ds self ((x, v) :: env) body
         writeNoted env c ((← array c).set i.toNat w)
+    | .dictFocus src key found body =>
+      let .ref c ← InPlaceSemantics.atom env src | throw "dictionary focus"
+      let .int k ← InPlaceSemantics.atom env key | throw "key"
+      let current := (dictFind InPlaceSemantics.entryKey (← array c) k).map InPlaceSemantics.entryValue
+      match ← eval (depth - 1) ds self ((found, InPlaceSemantics.maybe current) :: env) body with
+      | .record [.int 1, _, w] =>
+        writeNoted env c (dictPut InPlaceSemantics.entryKey (← array c) k (.record [.int k, w]))
+      | .record [.int 0, _, _] => writeNoted env c (dictDrop InPlaceSemantics.entryKey (← array c) k)
+      | _ => throw "dictionary focus answer"
 termination_by depth
 decreasing_by all_goals simp_wf; omega
 

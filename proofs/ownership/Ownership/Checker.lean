@@ -337,7 +337,8 @@ def usesWith (cfg : Config) (e : Expr) (resultRead : Bool := true) : Live :=
   | .closure _ xs => if cfg.has .captureRead then [] else atomsUses xs
   | .traverse _ src init i x acc body =>
     union (atomsUses [src, init]) (removeVars [i, x, acc] (usesWith cfg body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesWith cfg body))
+  | .focus src i x body | .dictFocus src i x body =>
+    union (atomsUses [src, i]) (removeVars [x] (usesWith cfg body))
   | _ => usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) (!cfg.has .prependBase) e
 
 def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
@@ -360,7 +361,7 @@ def typeShape : Ty → Abstract
   | .int => .scalar
   | .result e a => .record [.scalar, typeShape e, typeShape a]
   | .record xs => .record (xs.attach.map (fun x => typeShape x.val))
-  | .chain t | .list t | .builder t => .list [.unknown] (typeShape t) true
+  | .chain t | .list t | .builder t | .dict t => .list [.unknown] (typeShape t) true
   | .fn _ _ => .function [] []
 termination_by a => sizeOf a
 decreasing_by
@@ -372,7 +373,7 @@ decreasing_by
 def containsFunction : Ty → Bool
   | .fn .. => true
   | .record xs => xs.attach.any (fun x => containsFunction x.val)
-  | .chain t | .list t | .builder t => containsFunction t
+  | .chain t | .list t | .builder t | .dict t => containsFunction t
   | .int => false
   | .result e a => containsFunction e || containsFunction a
 termination_by a => sizeOf a
@@ -387,7 +388,7 @@ def tyPaths : Ty → List Path
   | .int | .fn _ _ => []
   | .result e a => (tyPaths e).map (.field 1 :: ·) ++ (tyPaths a).map (.field 2 :: ·)
   | .record ts => ts.attach.zipIdx.flatMap fun (t, i) => (tyPaths t.val).map (.field i :: ·)
-  | .chain t | .list t | .builder t => [] :: (tyPaths t).map (.element :: ·)
+  | .chain t | .list t | .builder t | .dict t => [] :: (tyPaths t).map (.element :: ·)
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -402,7 +403,7 @@ def shapeOf (cells : List (Path × List Origin)) (exclusive : List Path) (spines
       shapeOf cells exclusive spines e (p ++ [.field 1]),
       shapeOf cells exclusive spines a (p ++ [.field 2])]
   | .record ts, p => .record (ts.attach.zipIdx.map fun (t, i) => shapeOf cells exclusive spines t.val (p ++ [.field i]))
-  | .chain t, p | .list t, p | .builder t, p =>
+  | .chain t, p | .list t, p | .builder t, p | .dict t, p =>
     .list ((cells.lookup p).getD []) (shapeOf cells exclusive spines t (p ++ [.element])) ⟨exclusive.contains p, spines.contains p⟩
 termination_by t => sizeOf t
 decreasing_by
@@ -496,7 +497,7 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
            (containers elem).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old v.cells))⟩)
   | .literal _, xs =>
     pure (.list [fresh] (xs.foldl Abstract.join .bottom) ⟨storeExclusive ctx xs later [], storeSpines ctx xs later []⟩)
-  | .builder _, [] => pure (.list [fresh] .bottom true)
+  | .builder _, [] | .dictEmpty _, [] => pure (.list [fresh] .bottom true)
   | .shared, [a] => do
     let escaped := if ctx.config.has .sharedRoots then a.roots
       else if ctx.config.has .sharedFn then
@@ -507,13 +508,27 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
       else a.cells
     modifyFacts fun s => { s with escapes := union s.escapes escaped }
     pure (a.mapOrigins fun _ cs => if cs.isEmpty then [] else union cs [.shared])
-  | .length, [a] => do noteRead a.roots; pure .scalar
+  | .length, [a] | .dictSize, [a] => do noteRead a.roots; pure .scalar
   | .at, [.list cs elem _, _, fallback] => do
     noteRead (union cs elem.cells)
     pure (elem.join fallback)
+  | .dictGet, [.list cs elem _, _] => do
+    -- `Maybe v` as `Result Int v`: a read of the entries and of the values;
+    -- the payload aliases the values (`DictValueWritten`).
+    noteRead (union cs elem.cells)
+    pure (.record [.scalar, .scalar, elem])
+  | .dictRemove, [.list cs elem ex, _] => do
+    -- A write of the entries that keeps every value: the push's demand on
+    -- the dictionary's cells, the certificate unchanged.
+    demand ctx.config cs later elem.cells
+    pure (.list cs elem ex)
   | .set, [.list cs elem ex, _, v]
   | .push, [.list cs elem ex, v]
-  | .put, [.list cs elem ex, v] => do
+  | .put, [.list cs elem ex, v]
+  | .dictInsert, [.list cs elem ex, _, v] => do
+    -- `dictInsert` stores its value at one folded position of the entries,
+    -- as a push does (the thesis's dictionary row: the value must share no
+    -- list with the values already in).
     demand ctx.config cs later (union elem.cells v.cells)
     let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)
     let exclusive := exclusive || (ctx.config.has .setExclusive && op == .set && ex)
@@ -623,7 +638,7 @@ def readCount (v : Var) : Expr → Nat
       (if readCount v body == 0 then 0 else 2)
   | .traverse _ a z _ _ _ b => atomReadCount v a + atomReadCount v z +
       (if readCount v b == 0 then 0 else 2)
-  | .focus a i _ b => atomReadCount v a + atomReadCount v i +
+  | .focus a i _ b | .dictFocus a i _ b => atomReadCount v a + atomReadCount v i +
       (if readCount v b == 0 then 0 else 2)
 
 /-- A deliberately narrow private-read proof: one straight allocation/alias/
@@ -796,37 +811,22 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let _ ← abstractAtom env index
       if input == .bottom then return .bottom
       let .list cs item ex := input | throw "abstract focus"
-      let caps := closureCaps ctx.config env body [x]
-      let capValues := caps.map Prod.snd
-      let element := if ex then item.grantExclusive else item
-      let s ← inferScope f { ctx with bridgeRoot := bridgeKey ctx site ++ "/body" } [(x, element)] caps body later
-      let consumes := (s.writes ++ s.consumes).any fun c => match c with | .parameter 0 _ => true | _ => false
-      let rootWrites := (s.writes ++ s.consumes).all fun c => match c with
-        | .parameter 0 p => containerPath p
-        | _ => true
-      if consumes then
-        if rootWrites && !ex.deep then requireSpine input later (capValues.flatMap Abstract.cells) ctx.config
-        else requireExclusive input later (capValues.flatMap Abstract.cells) ctx.config
-      demand ctx.config cs later (capValues.flatMap Abstract.cells)
-      let out ← applyScope ctx s (site ++ [0]) [element] capValues later (fun _ => later) false
-      let keepsContainers := (containers s.result).all fun (p, os) =>
-        (s.result.paths.all fun (q, ds) => p == q || !cellOverlap os ds) &&
-        os.all fun o => match o with
-          | .parameter 0 q => p == q
-          | .fresh _ => true
-          | _ => false
-      let oldContainers := (containers item).flatMap Prod.snd
-      -- A selected parameter can move into an opaque slot: its old position
-      -- was removed. A captured value may instead be a retained *other*
-      -- position, so it must remain separate from all old containers.
-      let avoidsRetained := (s.result.paths.filter fun (p, _) => !containerPath p).all fun (_, os) =>
-        os.all fun o => match o.base with
-          | .parameter 0 _ | .fresh _ => true
-          | .capture .. => !cellOverlap oldContainers (instantiateOrigin (site ++ [0]) [element] capValues o)
-          | _ => false
-      pure (.list cs (item.join out)
-        ⟨ex.deep && (ctx.config.has .keepsShape || keepsShape s.result),
-         ex.spine && (ctx.config.has .keepsShape || (keepsContainers && (ctx.config.has .resultPositions || avoidsRetained)))⟩)
+      focusStep f ctx env site later cs item ex x (if ex then item.grantExclusive else item) body pure
+    | .dictFocus src key found body =>
+      let input ← abstractAtom env src
+      let _ ← abstractAtom env key
+      if input == .bottom then return .bottom
+      let .list cs item ex := input | throw "abstract dictionary focus"
+      -- The value at the key, taken out of the entries and owned when the
+      -- dictionary is exclusive (`ownership-checker.md` §20.8, the row of
+      -- `focus`); an absent key is `err 0`. The body answers a result: `ok w`
+      -- stores `w` at the key, `err _` stores nothing.
+      let element := Abstract.record [.scalar, .scalar, if ex then item.grantExclusive else item]
+      focusStep f ctx env site later cs item ex found element body fun out =>
+        match out with
+        | .record [_, _, w] => pure w
+        | .bottom => pure .bottom
+        | _ => throw "abstract dictionary focus answer"
     | .traverse kind src initial i x acc body =>
       let input ← abstractAtom env src
       let init ← abstractAtom env initial
@@ -947,6 +947,49 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       pure (current.mapOrigins fun _ cs => cs.map fun c =>
         match c with | .position s _ o => if s == site then o else c | c => c)
 termination_by (fuel, 0)
+decreasing_by all_goals simp_wf; omega
+
+/-- The step of a list focus or a dictionary focus on a container `.list cs
+    item ex`: the body summarised over the bound value `element`, the
+    exclusivity the body's writes need of the container, the write of the
+    container, and the container's new abstract, whose element joins what
+    the body stores (`stored` of the body's result). -/
+def focusStep (fuel : Nat) (ctx : Context) (env : Env Abstract) (site : List Nat)
+    (later : List Origin) (cs : List Origin) (item : Abstract) (ex : Certificate)
+    (x : Var) (element : Abstract) (body : Expr) (stored : Abstract → Except String Abstract) :
+    CheckM Abstract := do
+  let input := Abstract.list cs item ex
+  let caps := closureCaps ctx.config env body [x]
+  let capValues := caps.map Prod.snd
+  let s ← inferScope fuel { ctx with bridgeRoot := bridgeKey ctx site ++ "/body" } [(x, element)] caps body later
+  let consumes := (s.writes ++ s.consumes).any fun c => match c with | .parameter 0 _ => true | _ => false
+  let rootWrites := (s.writes ++ s.consumes).all fun c => match c with
+    | .parameter 0 p => containerPath p
+    | _ => true
+  if consumes then
+    if rootWrites && !ex.deep then requireSpine input later (capValues.flatMap Abstract.cells) ctx.config
+    else requireExclusive input later (capValues.flatMap Abstract.cells) ctx.config
+  demand ctx.config cs later (capValues.flatMap Abstract.cells)
+  let out ← applyScope ctx s (site ++ [0]) [element] capValues later (fun _ => later) false
+  let keepsContainers := (containers s.result).all fun (p, os) =>
+    (s.result.paths.all fun (q, ds) => p == q || !cellOverlap os ds) &&
+    os.all fun o => match o with
+      | .parameter 0 q => p == q
+      | .fresh _ => true
+      | _ => false
+  let oldContainers := (containers item).flatMap Prod.snd
+  -- A selected parameter can move into an opaque slot: its old position
+  -- was removed. A captured value may instead be a retained *other*
+  -- position, so it must remain separate from all old containers.
+  let avoidsRetained := (s.result.paths.filter fun (p, _) => !containerPath p).all fun (_, os) =>
+    os.all fun o => match o.base with
+      | .parameter 0 _ | .fresh _ => true
+      | .capture .. => !cellOverlap oldContainers (instantiateOrigin (site ++ [0]) [element] capValues o)
+      | _ => false
+  pure (.list cs (item.join (← stored out))
+    ⟨ex.deep && (ctx.config.has .keepsShape || keepsShape s.result),
+     ex.spine && (ctx.config.has .keepsShape || (keepsContainers && (ctx.config.has .resultPositions || avoidsRetained)))⟩)
+termination_by (fuel, 9)
 decreasing_by all_goals simp_wf; omega
 
 /-- A traversal or focus step, summarised over its own canonical inputs. -/
