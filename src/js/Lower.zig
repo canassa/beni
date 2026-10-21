@@ -2394,6 +2394,9 @@ pub const Lowerer = struct {
             again = false;
             for (order, parts) |index, *part| {
                 if (l.reuse) |*re| {
+                    // A taken declaration is never wanted: its `.wanted`
+                    // fact was compared, and a different answer would have
+                    // lowered it.
                     if (re.take[index]) continue;
                 }
                 const wanted = index < l.wanted.len and l.wanted[index];
@@ -2670,6 +2673,14 @@ pub const Lowerer = struct {
     /// cannot describe the walk — a virtual codec, a schema declaration, a
     /// live declaration with no unit, or an edge outside the declaration
     /// table — and the module is then lowered whole.
+    ///
+    /// A row edge is this build's edge for a declaration it lowers too: the
+    /// maker records `siteTops`, which reads the module's own BIR, dispatch
+    /// table and schema plans and nothing of the program (`Edges.termsEdges`
+    /// reads only the two tables it is handed; effects would be a fourth leg,
+    /// and this replay must carry it when it lands). What differs between the
+    /// two builds is the root set, and the walk takes that from this build
+    /// (`liveDecl`/`liveTwin`/`livePiece`).
     fn replayOrder(l: *Lowerer, row: *const EmitPack.Row, units: []const std.ArrayList(u32)) Allocator.Error!?[]const u32 {
         const count = l.bir.decls.len;
         if (l.codecCount() != 0) return null;
@@ -2778,6 +2789,10 @@ pub const Lowerer = struct {
             .development => l.in.development,
             .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
             .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
+            // All three are asked with a constant `true` when the unit needs
+            // the thing (`askSelf(.steps, true, …)`), and `reuseNullary` then
+            // proves the nullary and the primitive exist on this side, so
+            // their answer is not build state.
             .nullary, .primitive, .steps => return fact.answer,
             .entry => l.in.entry_decl != null,
             .schema_library => l.in.schema_library,
@@ -2786,6 +2801,9 @@ pub const Lowerer = struct {
                 break :blk l.in.core_private[fact.where];
             },
             .debug => l.in.debug != null,
+            // A row never carries one: the maker refuses a module whose
+            // lowering reaches the markup runtime. A malformed row fails
+            // safe here.
             .markup => false,
             .direct => l.direct_pieces,
             .schema_shapes => l.in.schema_shapes,
@@ -2845,11 +2863,16 @@ pub const Lowerer = struct {
                         0 => l.needs.eq_prim = true,
                         1 => l.needs.compare_prim = true,
                         2 => l.needs.compare_char = true,
+                        // `planReuse` ran `reuseNullary` over every fact of
+                        // a taken unit, so `where` is one of the three here.
                         else => unreachable,
                     },
                     .nullary => {
                         const ext = fact.where & EmitPack.Selector.nullary_ext != 0;
                         const module = if (ext) re.modules[fact.module - 1].? else l.in.module;
+                        // Same invariant: `reuseNullary` checked this
+                        // nullary against this build before the unit was
+                        // taken.
                         if (!try l.nullaryFromFact(module, fact.index, ext)) unreachable;
                     },
                     else => {},
