@@ -6541,10 +6541,123 @@ test "the release specialiser does not ask a declined call again while neither m
     try testing.expect(c.spec_inline_refusals_kept >= 1);
 }
 
+test "the release specialiser folds a run of bindings before a return in one structural pass" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *Slice 9*, *As built — a fold steps back* (#589):
+    // `step`'s five bindings are each read once, in order, by the record it
+    // returns. Folding the last into the `return` makes the one before it
+    // a binding before a `return` that reads it once and first, and the
+    // fold takes it in the same walk of the list. Before, the walk went on
+    // forward, so each structural pass took one binding, with an analysis
+    // after each, and `max_passes` stopped the third with two left
+    // (`spec_passes` 3, `spec_passes_capped` 1, `spec_analyses` 4).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type alias Box =
+        \\    a : Int
+        \\    b : Int
+        \\    c : Int
+        \\    d : Int
+        \\    e : Int
+        \\
+        \\
+        \\bump : Int → Int
+        \\bump n = n * 3 + 1
+        \\
+        \\
+        \\step : Box → Box
+        \\step box =
+        \\    va = bump box.a
+        \\    vb = bump box.b
+        \\    vc = bump box.c
+        \\    vd = bump box.d
+        \\    ve = bump box.e
+        \\    { a = va, b = vb, c = vc, d = vd, e = ve }
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    s = step (step { a = 1, b = 2, c = 3, d = 4, e = 5 })
+        \\    Node.printLines [ String.fromInt s.a, String.fromInt s.e ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const c = try inlineCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u64, 1), c.spec_passes);
+    try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
+    // The one before the loop, and the one after its pass.
+    try testing.expectEqual(@as(u64, 2), c.spec_analyses);
+}
+
+test "the release specialiser still folds in a second pass what the first pass's scalar replacement made" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *As built — a fold steps back* (#589): stepping
+    // back takes only what the walk could already see. `use`'s record is
+    // read only by its fields, so the first pass's scalar replacement,
+    // which runs after constructor folding, makes it one binding per field
+    // — and the second pass folds `p.y`'s binding into the `return` that
+    // reads it first. The third finds nothing: no cap.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\type alias Pt =
+        \\    x : Int
+        \\    y : Int
+        \\
+        \\
+        \\pair : Int → Pt
+        \\pair n = { x = n + 1, y = n * 2 }
+        \\
+        \\
+        \\use : Int → Int
+        \\use n =
+        \\    p = pair n
+        \\    p.y * p.x
+        \\
+        \\
+        \\main : Program
+        \\main = Node.printLines [ String.fromInt (use 1), String.fromInt (use 5) ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const c = try inlineCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u64, 2), c.spec_passes);
+    try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
+    try testing.expectEqual(@as(u64, 3), c.spec_analyses);
+    const js = try w.read("out/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, js, "return a*2*b") != null);
+}
+
 /// Slice 5's counters and the structural loop's, from a `--release`
 /// build of the project in `w`.
 const InlineCounters = struct {
     spec_passes: u64 = 0,
+    spec_passes_capped: u64 = 0,
     spec_analyses: u64 = 0,
     spec_inline_capped: u64 = 0,
     spec_inline_scans: u64 = 0,
@@ -6560,6 +6673,7 @@ fn inlineCounters(w: *World) !InlineCounters {
         ph: []const u8,
         args: struct {
             spec_passes: ?u64 = null,
+            spec_passes_capped: ?u64 = null,
             spec_analyses: ?u64 = null,
             spec_inline_capped: ?u64 = null,
             spec_inline_scans: ?u64 = null,

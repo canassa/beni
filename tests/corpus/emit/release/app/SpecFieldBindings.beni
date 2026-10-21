@@ -1,0 +1,46 @@
+-- emit: a run of bindings before a `return`, each read once and in order by
+-- the record it returns, is folded into the record in one structural pass
+-- (`backend.md` §9, *Slice 9*, `const x = e; return R`, and *As built — a
+-- fold steps back*, #589). `step`'s five `bump` calls are each a binding
+-- the record reads once: the fold writes the last one into the `return`,
+-- and the binding before it is then the one before a `return` that reads
+-- it once and first. Before, the walk went on forward from the new
+-- `return`, so each structural pass took one binding and the third pass,
+-- `max_passes`, stopped with two left (`{let b=c(a.a),e=c(a.b);return{a:b,
+-- b:e,…}}`). Now `step` is one record literal of five calls, written in
+-- their order.
+import Node exposing (Program)
+
+
+type alias Box =
+    a : Int
+    b : Int
+    c : Int
+    d : Int
+    e : Int
+
+
+bump : Int → Int
+bump n = n * 3 + 1
+
+
+step : Box → Box
+step box =
+    va = bump box.a
+    vb = bump box.b
+    vc = bump box.c
+    vd = bump box.d
+    ve = bump box.e
+    { a = va, b = vb, c = vc, d = vd, e = ve }
+
+
+main : Program
+main =
+    s = step (step { a = 1, b = 2, c = 3, d = 4, e = 5 })
+    Node.printLines
+        [ String.fromInt s.a
+        , String.fromInt s.b
+        , String.fromInt s.c
+        , String.fromInt s.d
+        , String.fromInt s.e
+        ]
