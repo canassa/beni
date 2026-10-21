@@ -7592,6 +7592,62 @@ index and in each arm, a `Maybe` read whole by `Debug.toString` and so made, and
 choosing among three), `emit/release/split/EmptyPage`, `HolesPage`, `emit/release/app/SpecScalars`,
 `SpecSmall`, `SpecNodes`.
 
+**As built — a fold steps back** (*added 2026-10-21*, #589; `Spec.foldConstructors`,
+`dropKeys`). On the research dashboard at N = 64, once the inliner wrote every function called
+once in its first count (#576), `spec_passes` stayed 3 with `spec_passes_capped` 1, and the second
+and third passes were constructor folding's alone. It was not an unrolling: every fold was the
+rule *`const x = e; return R`*, taking one binding of a run such as `const a = p.x; const b = p.y;
+…; return {…, k: a, l: b}` per pass. `foldConstructors` walked forward and, after a fold, asked
+again only of what it wrote; the binding before it, now followed by a `return` that reads it once
+and first, waited for the next structural pass and its analysis, and `max_passes` stopped the
+third with bindings left. The two rules that read the statement after their own (this one and
+*`const x = c ? A : B; R`*) can apply to the statement before a fold, and no other rule's answer
+for it changes within the walk, so after each fold the walk now steps back one statement. A run
+of n bindings folds in one walk, within the list's budget of 32 folds. What a later pass makes
+foldable is still folded then: scalar replacement, after constructor folding in the same pass,
+makes a record read only by its fields one binding per field, and the next pass folds those.
+
+Stepping back folded bindings into a returned literal that the analysis after the pass used to
+drop first, a binding nothing read whose value was a call of a function that only makes a value
+(`pureCall`). As a key, it stayed: `dropKeys` dropped an unread key only when its value was
+`inert`. An unread key now goes under the rule an unread binding goes under, `effectFree`: inert,
+a chain that can neither throw nor run a getter, or such a call. That also drops keys master kept,
+such as the schema context's `i:b(1)`.
+
+Measured on dagon, ReleaseFast, `build --release --no-cache --jobs=1`, medians of 7, master at
+`adc9323e6`. The dashboard's output is byte for byte the same at N = 64 and `nowd`. At N = 16 it is
+16 bytes shorter (32 136 → 32 120): there the cap had stopped the walk with two bindings left.
+
+| | `spec_passes` | `spec_passes_capped` | `spec_analyses` | `specialise` (ms) | whole build (ms) |
+|---|--:|--:|--:|--:|--:|
+| N = 16 | 3 → **1** | 1 → 0 | 7 → 5 | 48.7 → 39.2 | 85.5 → 75.1 |
+| N = 64 | 3 → **1** | 1 → 0 | 6 → 4 | 247.6 → **165.0** | 346.3 → 262.0 |
+| `nowd` | 3 → **1** | 1 → 0 | 6 → 4 | 190.9 → 144.4 | 289.4 → 241.4 |
+
+Development output did not move by one byte, and neither did `bench/corpus` (19 280 brotli bytes
+under `--release`). `bench/size.mjs`'s release total is 1 005 830 → 1 005 242 brotli bytes and
+2 913 039 → 2 911 740 raw. 45 `run/` programs moved, 41 of them smaller. Four grew, each by a few
+bytes: `BasicsEqOwnEq` +2, `SchemaErrorUnreadShapes` +4, `SchemaValidatorGeneric` +2 and the
+`ApiAndRoutes` fibers line +7. The analyses that ran between the old passes found what one
+analysis after the whole fold does not: in `BasicsEqOwnEq`, `Handler.eq`'s `const a = x.a` was
+`"step"` and went, and the read `x.a` it is folded into stays, because `"step"` is longer than
+the read. Seven `emit/release/app/` goldens moved, every one smaller:
+
+| golden | raw | brotli |
+|---|--:|--:|
+| `PayloadReassign` | 4 938 → 4 791 | 1 502 → 1 458 |
+| `PayloadUnreadField` | 1 941 → 1 910 | 751 → 725 |
+| `ShapeThresholdBelow` | 7 951 → 7 918 | 1 176 → 1 152 |
+| `SpecRecordLambda` | 893 → 883 | 459 → 454 |
+| `ValidatorRun` | 1 222 → 1 191 | 634 → 616 |
+| `ValidatorRunsApart` | 7 280 → 7 247 | 1 234 → 1 223 |
+| `ValidatorWorker` | 1 355 → 1 324 | 697 → 679 |
+
+Fixtures: `emit/release/app/SpecFieldBindings`, five bindings read in order by the record they
+make (red before: two left after three passes). `build_test`'s *folds a run of bindings before a
+return in one structural pass* (1 pass and 2 analyses; 3 passes, capped, and 4 before), and *still
+folds in a second pass what the first pass's scalar replacement made* (2 passes, no cap).
+
 **A variable nothing reads** (*amended 2026-10-02*). Fact 3 drops a write of a property no read
 reaches; a write of a *variable* nothing reads stayed, and so did the variable: the fiber runtime's
 `expired`, set by the teardown's deadline and read only where a finaliser is (`finalising`), was
