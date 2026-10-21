@@ -6391,7 +6391,10 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
 /// binary carries it, the relative path from the map's directory to
 /// `mycore/…` when `--core-root` reads it. Both become `core/…`, so the
 /// comparison is about the map's positions rather than where its source
-/// came from.
+/// came from. The same two substitutions run on both trees, whose sources
+/// are the same inputs; a source that contained either spelling would be
+/// rewritten on both sides, so the rewrite cannot make two different
+/// sources equal.
 fn comparableMapSources(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
     const embedded = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
     return std.mem.replaceOwned(u8, arena, embedded, "../../mycore/", "core/");
@@ -6400,7 +6403,8 @@ fn comparableMapSources(arena: std.mem.Allocator, bytes: []const u8) ![]const u8
 /// A manifest hashes every file, its maps included, and a core map's hash
 /// covers the source spelling `comparableMapSources` normalizes. Zero those
 /// hashes on both sides: the maps themselves are compared, so the manifest
-/// still holds every other file's bytes and every path.
+/// still holds every other file's bytes and every path. A line is the hash
+/// and the path, with no size column that the two spellings could move.
 fn comparableManifestHashes(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     var rest = bytes;
