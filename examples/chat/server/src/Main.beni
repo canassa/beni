@@ -69,7 +69,10 @@ join room request =
         Server.accept (member room _)
 
 
--- No `origin` (not a browser), or the server's own.
+-- No `origin` (not a browser), or the server's own. This compares the
+-- `origin` with the request's own `host`, which is enough on 127.0.0.1. A
+-- page that a rebound DNS name loads sends that name in both headers, so a
+-- deployed server compares the `origin` with its own configured address.
 sameSite : Request → Bool
 sameSite request =
     case ( Server.header request "origin", Server.header request "host" ) of
