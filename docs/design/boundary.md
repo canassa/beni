@@ -6236,7 +6236,8 @@ and (j) say, with these readings:
 and are asked on the dashboard (`cf-workers-q1` to `q3`): the platform's name, the shape of a
 Durable Object in beni, and how the object classes reach the entry file. The text below assumes the
 recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
-app's manifest — and (k) records the answers when they come. Every statement about the host cites
+app's manifest — and (l) records the answers as they come: the name and the class names are
+decided (2026-10-21). Every statement about the host cites
 Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
 `workerd` (version 1.20260518.1, the one nixpkgs' `wrangler` 4.93.0 bundles; a source line cites
 that tag), and one marked* owed *has not been. Amended 2026-10-20 after the review of this
@@ -6948,7 +6949,17 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file.
 
-*The owner's answers, when they come, are recorded here.*
+**(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
+the part of the section it settles keeps its text.
+
+- **`cf-workers-q1`, the platform's name** (Jayson Reis, 2026-10-21 11:28 UTC): **`cloudflare`**,
+  as (b) writes it — `--platform=cloudflare`, `platforms/cloudflare/`, `Worker.Program`. The other
+  choice, `workerd` after the runtime, was not taken.
+- **`cf-workers-q3`, the class names** (Jayson Reis, 2026-10-21 11:28 UTC): **a list in the app's
+  `beni.json`**, as (c) and §5.2's `"exports"` key write it; the recommended answer. The other
+  choice, one fixed class per Worker, was not taken.
+- `cf-workers-q2` (the object shape), `q4` (the Worker handler's suspension), `q5` (the ownership
+  row), `q6` (the tests' time) and the joint `ws-q3` (the socket session) are open.
 
 ## Appendix — what is deliberately not done
 
