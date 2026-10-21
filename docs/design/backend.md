@@ -318,23 +318,30 @@ file binds `run(main)`'s result as `$beniProgram`, writes its `default` as the d
 writes one named export per name the app's `beni.json` lists under `"exports"`, each the answer of
 the result's `exports(name)`, as `const $beniExport<N> = …; export { $beniExport<N> as Name };` in
 the list's order; the hoisted `--release` file does the same at its end. The entry's own bindings
-begin with `$`, which a listed name may not hold, and are longer than any short name `Rename`
-spells (eight characters), so no listed name and no hoisted declaration can collide with them; a
-listed name is written only as an export name, where any identifier name is legal. A name that is
-not an ASCII identifier name, is `default` or is listed twice is `invalid_entry_export`, against
+are longer than any short name `Rename` spells (eight characters), so no hoisted declaration can
+collide with them; a listed name is written only as an export name, a namespace of its own that no
+binding meets, so a listed `$beniProgram` is legal and loads. A name that is not an ASCII
+identifier name, is `default`, is `flush` or is listed twice is `invalid_entry_export`, against
 the app's manifest at `1:1`; any other mode is `unknown_exports_mode`, against the platform's; a
-list on a chain that declares no mode is the warning `exports_ignored`. A chain whose runtime is
-a module (`boundary.md` §9.2) may not declare the key yet: the same `unknown_exports_mode`, found
-from the chain alone, so `check`, a development build and a release build refuse it alike. A
-listed name is ASCII only — letters, digits and `_` — although an export name may be any
-identifier name: `$` is kept for the entry's own bindings, and a non-ASCII name buys no
-guarantee a program needs (rule 7 counts it a restriction, and a program that needs one says so).
+list on a chain that declares no mode is the warning `exports_ignored`. `flush` is refused because
+the hoisted release file re-exports the runtime's `flush` when the build keeps it (§15.11), and a
+module that exports one name twice does not load (`SyntaxError: Duplicate export`); the refusal is
+static, the same in both builds, where a test of the runtime's exports would follow reachability
+and differ between them. `stop` is not refused: only a runtime module supplies it, and the exports
+mode refuses a runtime module. A chain whose runtime is a module (`boundary.md` §9.2) may not
+declare the key yet: the same `unknown_exports_mode`, found from the chain alone, so `check`, a
+development build and a release build refuse it alike. A listed name is ASCII only — letters,
+digits, `_` and `$` — although an export name may be any identifier name, a reserved word
+included: the name is printed into the entry file without escaping, as the entry file's name is,
+and the ASCII rule is what makes the print safe.
 **The runtime's `exports(name)` must throw for a name the program does not define**, with a
 message that names it, never return `undefined`: the entry file calls it unguarded, once at load
 (rule 9), so a silent `undefined` would ship as `export { undefined as Name }`, and no check of
 the compiler's sees it. `run/EntryExports` pins the shape and the order,
-`build/bad/UnknownExportsMode`, `build/bad/ExportsListOnPlatform`, `build/bad/ExportsWithRuntimeModule`
-and `build/bad/InvalidEntryExport` the refusals, `run/ExportsIgnored` the warning.
+`build/bad/UnknownExportsMode`, `build/bad/ExportsListOnPlatform`, `build/bad/ExportsWithRuntimeModule`,
+`build/bad/InvalidEntryExport` and `build/bad/FlushEntryExport` the refusals, `run/ExportsIgnored` the
+warning; `tests/blackbox/build_test.zig` runs the runtime-module chain under `--release` and `check`,
+which the corpus's `build/bad/` kind does not.
 
 **Rule 2 — two output paths equal under case folding is a build error.** It is the backstop for
 whatever rule 1 does not reach, and one case is not exotic at all: two modules whose paths differ
