@@ -9265,6 +9265,57 @@ dropped parameter that held a primitive leaves fact 3 to be kept* and *… that 
 makes fact 3 solve again*; `build_test`'s counter on `run/ReleaseReadAcrossWrite` now counts two
 kept analyses.
 
+**As built 2026-10-21 — fact 3's lookups start where the last one ended** (issue #577, part of
+#464; cause 5 of `plans/build-profile-2026-10-21.md`). A frame-pointer profile of the N = 64
+dashboard and its no-`withDefault` variant put a third of fact 3 in finding things: a binary
+search of a site's properties, a summary's properties or its marks for every property a fold, a
+spread or a mark touched (`foldSite`, `markSite`, `spreadSummary`, `markWhole`, `linkNow`), a
+list walk or a probe of `edge_set` for every copy (`hasEdge`, 10% of fact 3 at N = 64), and the
+generic searches' order function, which a release build calls once per step. Nothing in what
+`Pts` stores changed, only how it is found, so every operation happens in the same order as
+before: every `emit/release/` golden and release run hash is byte for byte the same, `zig build
+test-run-hashes` changes nothing, and `spec_pts_edges`, `spec_pts_joins` and
+`spec_pts_set_words` are equal on the three programs. What changed:
+
+- **A walk over one sorted list finds each id in another where the last one was** (`indexAt`,
+  `summaryPropAt`, `propAtHint`, `findMarkAt`, `markSiteAt`): the place it expects or the one
+  after, and a search only past a gap. A fold of a record of 64 fields searches nothing; the
+  answer is always the binary search's, which a unit test checks from every hint.
+- **`copy` remembers the last edge each end made or found** (`VCold.last_to`, `last_from`): an
+  edge is never taken away, so either is an edge that exists. A fold copies one shared field var
+  into the same summary var site after site, and this catches it with no walk. `hasEdge` then
+  walks whichever list is shorter by the counts, before the table.
+- **A one-site batch past a var's last site is not searched for** (`holdsSite`), and the `u32`
+  searches have no order call (`lowerU32`).
+- **`VSet` is 64 bytes**: what `linksAcross` and the filter read (`VLink`: `allow`, `site_var`,
+  `depth`) and what only an edge, a summary or a shared field reads (`VCold`) are columns of
+  their own.
+
+Measured, ReleaseFast with a throwaway `rdtsc` timer around `Pts.fixpoint`, `build --release
+--no-cache --jobs=1`, dagon (Ryzen 9 5950X, load 3), minima of 11 interleaved runs, master with
+#584 and #591 before → after: fact 3 (all runs) on the dashboard N = 16 17.4 → 16.5 ms (5
+runs), N = 64 78.5 → 70.3 ms (3 runs and 1 kept: 26.2 → 23.4 ms a run), without `withDefault`
+60.8 → 52.2 ms (3 runs and 1 kept, 20.3 → 17.4 ms a run); `specialise` 34.0 → 33.0, 130.8 → 124.7 and
+113.5 → 104.6 ms; wall 84 → 84, 241 → 236 and 224 → 215 ms; instructions 362M → 355M, 1 396M →
+1 315M and 1 290M → 1 214M; peak RSS 36.9 → 36.9, 102.6 → 104.1 and 90.5 → 90.9 MB (the two new
+columns grow beside `vars` in the bump arena). Each change was measured on its own, on #592's
+base, in instructions, which move by under 0.1% from run to run, and kept only when it paid:
+the hints −78M at N = 64, the `u32` searches −59M, the edge caches −26M, the shorter list −10M
+once the caches were in (+5M before them); the split moved no instruction and 1–3% of the
+medians, and is kept. Dropped: a forward scan of four places in `indexAt` and a hand-written
+search by `id` in place of `std.sort.lowerBound`, which cost +39M and +14M. Not built: dense
+field slots by representation key, since the hints already reach every walk the slots would
+serve and what is left is one-off lookups (a read's `propAt`, `markRead`), and on the dashboard
+every key is wild (*Declared-type filtering*, above); a bitset of marks, for the same reason.
+Instructions of the gates' build: the new `emit/release/inline/SpreadCopiesLookups`
+(SpreadCopiesBatched with 62 children) 4 869M, over the budget, → 4 091M; `SpreadCopiesBatched`
+3 555M → 3 036M, `SpreadCopiesWide` 3 027M → 2 609M, `SpreadCopies` 2 646M → 2 302M,
+`MemberReadsWide` 1 954M → 1 730M, `MergedChildren` 1 635M → 1 471M, `SpreadArms` 1 528M →
+1 378M, `SpreadWide` 1 061M → 959M. The profile's estimate of a third of fact 3 assumed slot
+indexing of every lookup; what is left is the join machinery itself (`joinNow`, `enqueue`,
+`unionSets`, the set table's probes), the copies a fold makes, and `summaryPropAt`'s search past
+a gap in a summary's properties (about 4% of fact 3 at N = 64).
+
 ### Compact statements
 
 ### Compact statements
