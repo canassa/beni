@@ -295,6 +295,13 @@ pub const Counter = enum {
     /// (`Pts.joinNow`): how much of the worklist is no-op.
     spec_pts_joins,
     spec_pts_joins_empty,
+    /// The evaluations of a spread of a name in fact 3 (`Pts.spreadSince`),
+    /// those that walked the whole summary, those of them after a split,
+    /// and the summary properties every one of them walked.
+    spec_pts_spreads,
+    spec_pts_spread_full,
+    spec_pts_spread_resets,
+    spec_pts_spread_props,
     /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
     /// edge lists were built, the walks over them, the lowerings of a module
     /// and the modules printed. A build builds each module's edge lists

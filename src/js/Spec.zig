@@ -460,6 +460,13 @@ pub const Stats = struct {
     /// site and no flag to it.
     pts_joins: u64 = 0,
     pts_joins_empty: u64 = 0,
+    /// The evaluations of a spread of a name (`Pts.spreadSince`): those that
+    /// walked the whole summary (the first, and those after a split), the
+    /// split ones alone, and the summary properties all of them walked.
+    pts_spreads: u64 = 0,
+    pts_spread_full: u64 = 0,
+    pts_spread_resets: u64 = 0,
+    pts_spread_props: u64 = 0,
     /// Under `Input.trace_largest`: where the var that first held
     /// `pts_max_set` sites came from.
     pts_largest: ?VarOrigin = null,
@@ -9463,6 +9470,11 @@ const Pts = struct {
     /// its value (`links`) and of the guards a read is narrowed by
     /// (`narrows`).
     cons: std.ArrayList(Cons) = .empty,
+    /// The spread constraints' cursors (`Cons.spreads`, `Cursor`), and the
+    /// entries of a summary's log one evaluation walks, sorted by id
+    /// (`spreadSince`).
+    cursors: std.ArrayList(Cursor) = .empty,
+    spread_new: std.ArrayList(SumProp) = .empty,
     inputs: std.ArrayList(Read) = .empty,
     links: std.ArrayList(Link) = .empty,
     narrows: std.ArrayList(Narrow) = .empty,
@@ -9531,7 +9543,16 @@ const Pts = struct {
         woken: bool = false,
         /// A member read's load cell (`load`), in `loads`.
         load: u32 = none,
+        /// An object literal's: the first of its cursors in `cursors`, one
+        /// per spread of a name in it, in the literal's order (`spreadSince`).
+        spreads: u32 = none,
     };
+
+    /// How far one spread constraint has copied one summary (#607): the
+    /// summary it last read (`none`: none yet) and how many entries of its
+    /// `log` it has written into the literal's site. Every entry before
+    /// `pos` has been, so walking it again would copy nothing.
+    const Cursor = struct { sum: u32 = none, pos: u32 = 0 };
 
     /// A load cell: the var a member read gives. Every read of one property
     /// of one var shares one cell (`load_cells`), as every spread of a var
@@ -9790,6 +9811,11 @@ const Pts = struct {
         /// Per property, sorted by id: the var joining that property of
         /// every site.
         props: std.ArrayList(SumProp) = .empty,
+        /// The same properties in the order the summary gained them, each
+        /// appended once and never moved (`addSumPropAt`): a spread that
+        /// read the summary before walks only the entries past its cursor
+        /// (`Cursor`, `spreadSince`; #607).
+        log: std.ArrayList(SumProp) = .empty,
         /// The join of every site's `any`, and whether any site has been
         /// written under an unknown key.
         any: VarId,
@@ -11328,6 +11354,7 @@ const Pts = struct {
         p.links_of.items[v].depth = p.links_of.items[p.summaries.items[sum].of].depth +| 1;
         if (p.s.in.trace_largest) p.originAt(v, p.originOf(p.summaries.items[sum].of, .summary_prop, id));
         try p.summaries.items[sum].props.insert(p.tmp.allocator(), at, .{ .id = id, .vals = v });
+        try p.summaries.items[sum].log.append(p.tmp.allocator(), .{ .id = id, .vals = v });
         p.summaryChanged(sum);
         if (p.findMark(sum, id)) |m| {
             var c = m.load;
@@ -11789,27 +11816,96 @@ const Pts = struct {
     fn spreadSummary(p: *Pts, site: u32, sum: u32, keys: []const u32) Allocator.Error!void {
         // The summary's properties, the site's and `keys` are each sorted
         // by id: each is walked once, in step (`indexAt`, #577).
-        var hint: usize = 0;
-        var key: usize = 0;
+        var at: SpreadHint = .{};
         var k: usize = 0;
         while (!p.summaries.items[sum].dead and k < p.summaries.items[sum].props.items.len) : (k += 1) {
-            const sp = p.summaries.items[sum].props.items[k];
-            if (key > 0 and keys[key - 1] >= sp.id) key = std.sort.lowerBound(u32, keys, sp.id, orderU32);
-            while (key < keys.len and keys[key] < sp.id) key += 1;
-            const at = try p.propAtHint(site, sp.id, &hint);
-            const pr = &p.sites.items[site].props.items[at];
-            if (!pr.written) {
-                pr.written = true;
-                p.changed = true;
+            p.s.stats.pts_spread_props += 1;
+            try p.spreadProp(site, p.summaries.items[sum].props.items[k], keys, &at);
+        }
+    }
+
+    /// `spreadSummary` for spread `cur` of a constraint (`Cons.spreads`),
+    /// `none` outside one: the entries of the summary's log past the
+    /// cursor, in the order of their ids, as the whole walk meets them
+    /// (#607). Walking an entry again would do nothing: the property is
+    /// written already, and it either shares the entry's var (`Prop.from`)
+    /// or has a var of its own with the entry's edge into it — `shareField`
+    /// is taken only by a property with no var, and `ownField` keeps the
+    /// edge from the var it shared — so the facts are the whole walk's. The
+    /// whole summary is walked when the cursor read another (the first
+    /// evaluation, or the operand's var split since, `split`), and when
+    /// more than half of it is new.
+    fn spreadSince(p: *Pts, site: u32, sum: u32, keys: []const u32, cur: u32) Allocator.Error!void {
+        p.s.stats.pts_spreads += 1;
+        // Past half the summary new, the whole walk is the cheaper: it
+        // meets each property where the last one left it (`indexAt`),
+        // where the new ones alone skip about and search.
+        const log_len = p.summaries.items[sum].log.items.len;
+        const same = cur != none and p.cursors.items[cur].sum == sum;
+        if (!same or 2 * (log_len - p.cursors.items[cur].pos) > log_len) {
+            if (cur != none) {
+                if (!same and p.cursors.items[cur].sum != none) p.s.stats.pts_spread_resets += 1;
+                // Every entry the walk starts with is walked unless the
+                // summary dies, after which it is fed nothing.
+                p.cursors.items[cur] = .{ .sum = sum, .pos = @intCast(p.summaries.items[sum].log.items.len) };
             }
-            // Shared already, from this very var: nothing more to copy.
-            if (pr.from == sp.vals) continue;
-            if (pr.vals == none and !(key < keys.len and keys[key] == sp.id)) {
-                try p.shareField(site, at, sp.id, sp.vals);
+            p.s.stats.pts_spread_full += 1;
+            return p.spreadSummary(site, sum, keys);
+        }
+        const a = p.tmp.allocator();
+        // What a walk gives the summary is walked in the same evaluation.
+        while (!p.summaries.items[sum].dead) {
+            const from = p.cursors.items[cur].pos;
+            const to: u32 = @intCast(p.summaries.items[sum].log.items.len);
+            if (from == to) return;
+            p.cursors.items[cur].pos = to;
+            var at: SpreadHint = .{};
+            // Entries gained in ascending order — one alone, or a fold of
+            // a site's sorted properties — are walked where they are.
+            if (std.sort.isSorted(SumProp, p.summaries.items[sum].log.items[from..to], {}, lessSumProp)) {
+                var k = from;
+                while (!p.summaries.items[sum].dead and k < to) : (k += 1) {
+                    p.s.stats.pts_spread_props += 1;
+                    try p.spreadProp(site, p.summaries.items[sum].log.items[k], keys, &at);
+                }
                 continue;
             }
-            try p.copy(sp.vals, try p.ownField(site, at, sp.id));
+            p.spread_new.clearRetainingCapacity();
+            try p.spread_new.appendSlice(a, p.summaries.items[sum].log.items[from..to]);
+            std.mem.sortUnstable(SumProp, p.spread_new.items, {}, lessSumProp);
+            var k: usize = 0;
+            while (!p.summaries.items[sum].dead and k < p.spread_new.items.len) : (k += 1) {
+                p.s.stats.pts_spread_props += 1;
+                try p.spreadProp(site, p.spread_new.items[k], keys, &at);
+            }
         }
+    }
+
+    fn lessSumProp(_: void, x: SumProp, y: SumProp) bool {
+        return x.id < y.id;
+    }
+
+    /// Where `spreadProp` expects the next property in the site's
+    /// properties and in the literal's keys (`indexAt`).
+    const SpreadHint = struct { prop: usize = 0, key: usize = 0 };
+
+    /// Summary property `sp` spread into object site `site`, `keys` the
+    /// literal's own (`spreadSummary`).
+    inline fn spreadProp(p: *Pts, site: u32, sp: SumProp, keys: []const u32, hint: *SpreadHint) Allocator.Error!void {
+        var key = hint.key;
+        if (key > 0 and keys[key - 1] >= sp.id) key = std.sort.lowerBound(u32, keys, sp.id, orderU32);
+        while (key < keys.len and keys[key] < sp.id) key += 1;
+        hint.key = key;
+        const at = try p.propAtHint(site, sp.id, &hint.prop);
+        const pr = &p.sites.items[site].props.items[at];
+        if (!pr.written) {
+            pr.written = true;
+            p.changed = true;
+        }
+        // Shared already, from this very var: nothing more to copy.
+        if (pr.from == sp.vals) return;
+        if (pr.vals == none and !(key < keys.len and keys[key] == sp.id)) return p.shareField(site, at, sp.id, sp.vals);
+        try p.copy(sp.vals, try p.ownField(site, at, sp.id));
     }
 
     /// How many copies `shareField` follows back from a summary's var.
@@ -12175,6 +12271,10 @@ const Pts = struct {
                 p.s.stats.pts_load_cells = counted.pts_load_cells;
                 p.s.stats.pts_joins = counted.pts_joins;
                 p.s.stats.pts_joins_empty = counted.pts_joins_empty;
+                p.s.stats.pts_spreads = counted.pts_spreads;
+                p.s.stats.pts_spread_full = counted.pts_spread_full;
+                p.s.stats.pts_spread_resets = counted.pts_spread_resets;
+                p.s.stats.pts_spread_props = counted.pts_spread_props;
                 p.s.stats.pts_largest = counted.pts_largest;
                 p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
@@ -12394,6 +12494,8 @@ const Pts = struct {
         p.field_outs = .empty;
         p.sharers = .empty;
         p.lit_keys = .empty;
+        p.cursors = .empty;
+        p.spread_new = .empty;
         p.pending = .empty;
         p.pending_head = 0;
         p.draining = false;
@@ -12502,6 +12604,8 @@ const Pts = struct {
         // Most nodes are evaluated once, and read by one other.
         p.cons = .empty;
         try p.cons.ensureTotalCapacity(a, count);
+        p.cursors = .empty;
+        p.spread_new = .empty;
         p.inputs = .empty;
         try p.inputs.ensureTotalCapacity(a, count);
         p.links = .empty;
@@ -13206,6 +13310,24 @@ const Pts = struct {
             .spread_property => vals[d.lhs],
             .object => blk: {
                 const site = try p.siteOf(mi, node, .object);
+                // The constraint's cursors, one per spread of a name, made
+                // at its first evaluation; none outside a constraint (a
+                // safety build's reference walks every summary whole).
+                var cursor: u32 = none;
+                if ((p.recording or p.evaluating) and p.cur < p.cons.items.len) {
+                    cursor = p.cons.items[p.cur].spreads;
+                    if (cursor == none) {
+                        var n: usize = 0;
+                        for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| {
+                            if (ir.tag(child) != .property and ir.tag(@fromBackingInt(@intCast(ir.data(child).lhs))) == .ident) n += 1;
+                        }
+                        if (n != 0) {
+                            cursor = @intCast(p.cursors.items.len);
+                            try p.cursors.appendNTimes(p.tmp.allocator(), .{}, n);
+                            p.cons.items[p.cur].spreads = cursor;
+                        }
+                    }
+                }
                 for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| {
                     const cd = ir.data(child);
                     switch (ir.tag(child)) {
@@ -13260,7 +13382,10 @@ const Pts = struct {
                                     try p.lit_keys.append(p.tmp.allocator(), p.propId(mi, @fromBackingInt(@intCast(ir.data(key).lhs))));
                                 };
                                 std.mem.sortUnstable(u32, p.lit_keys.items, {}, std.sort.asc(u32));
-                                try p.spreadSummary(site, sum, p.lit_keys.items);
+                                // Woken by a property the summary gained, it
+                                // copies that property alone (#607).
+                                try p.spreadSince(site, sum, p.lit_keys.items, cursor);
+                                if (cursor != none) cursor += 1;
                                 if (p.summaries.items[sum].any_written) {
                                     try p.seeSite(site);
                                     try p.markAnyWritten(site);
@@ -15642,6 +15767,149 @@ test "fields spread from copies of one record share one var until a copy gains a
     try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(out)).sites);
     try testing.expect(!p.neverWritten(both, 1) and !p.neverRead(both, 1));
+}
+
+/// What a spread wrote into site `site`, properties 1 to 3: whether each is
+/// written, shared (`Prop.from`), and the first two sites its var holds.
+const SpreadFacts = struct { written: [3]bool, shared: [3]bool, held: [3][2]u32 };
+
+fn spreadFacts(p: *Pts, site: u32) !SpreadFacts {
+    var f: SpreadFacts = .{ .written = @splat(false), .shared = @splat(false), .held = @splat(@splat(none)) };
+    for (0..3) |k| {
+        const pr = p.findProp(site, @intCast(k + 1)) orelse continue;
+        f.written[k] = pr.written;
+        f.shared[k] = pr.from != none;
+        const held = (try p.fieldView(pr.vals)).sites;
+        for (held[0..@min(2, held.len)], 0..) |x, j| f.held[k][j] = x;
+    }
+    return f;
+}
+
+/// What a spread's statistics say it walked: summary properties, whole
+/// walks and walks after a split.
+const SpreadWalks = struct { props: u64, full: u64, resets: u64 };
+
+fn spreadWalks(p: *const Pts) SpreadWalks {
+    const st = p.s.stats;
+    return .{ .props = st.pts_spread_props, .full = st.pts_spread_full, .resets = st.pts_spread_resets };
+}
+
+/// Sites 0 and 1 are records with properties 1 and 2 (`aliasSites`); site
+/// 2 is an update spreading var `u`, which holds site 0, evaluated twice —
+/// through a cursor, or walking the whole summary each time (`cursor`
+/// false). Between the two, site 0 gains property 3 and `u` gains site 1.
+fn spreadGrows(cursor: bool) !struct { facts: SpreadFacts, walks: SpreadWalks } {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena, 2);
+    try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(2), .any = try p.newVar() });
+    const u = try p.newVar();
+    try p.addSite(u, 0);
+    try settle(p);
+    const sum = try p.summaryOf(u);
+    try p.markWhole(sum);
+    try settle(p);
+    var cur: u32 = none;
+    if (cursor) {
+        cur = @intCast(p.cursors.items.len);
+        try p.cursors.append(arena, .{});
+    }
+    try p.spreadSince(2, sum, &.{}, cur);
+    try settle(p);
+    // The whole summary, the first time: its two properties.
+    try testing.expectEqual(SpreadWalks{ .props = 2, .full = 1, .resets = 0 }, spreadWalks(p));
+    (try p.prop(0, 3)).init = true;
+    try p.addSite(try fieldVar(p, 0, 3), 300);
+    try settle(p);
+    try p.addSite(u, 1);
+    try settle(p);
+    try testing.expectEqual(@as(usize, 3), p.summaries.items[sum].log.items.len);
+    try testing.expectEqual(@as(u32, 3), p.summaries.items[sum].log.items[2].id);
+    try p.spreadSince(2, sum, &.{}, cur);
+    try settle(p);
+    return .{ .facts = try spreadFacts(p, 2), .walks = spreadWalks(p) };
+}
+
+// #607: a spread constraint keeps a cursor into its summary's log of the
+// properties it gained. Evaluated again, it walks the entries past the
+// cursor alone — property 3, not 1 and 2 again — and leaves the site it
+// writes as a walk of the whole summary does.
+test "a woken spread copies only the properties its summary gained" {
+    const delta = try spreadGrows(true);
+    const whole = try spreadGrows(false);
+    try testing.expectEqual(whole.facts, delta.facts);
+    try testing.expectEqual(SpreadWalks{ .props = 2 + 1, .full = 1, .resets = 0 }, delta.walks);
+    try testing.expectEqual(SpreadWalks{ .props = 2 + 3, .full = 2, .resets = 0 }, whole.walks);
+    try testing.expectEqual(SpreadFacts{
+        .written = .{ true, true, true },
+        .shared = .{ true, true, true },
+        .held = .{ .{ 100, 101 }, .{ 200, 201 }, .{ 300, none } },
+    }, delta.facts);
+}
+
+/// Sites 0 to 2 are records (`aliasSites`); site 3 an update spreading `v`,
+/// a copy of `u`, which holds sites 0 and 1, so that `v` shares `u`'s
+/// summary (#568). After the first evaluation `q`, holding site 2, copies
+/// into `v`: `v` splits, and the spread is evaluated again with `v`'s own.
+fn spreadSplits(cursor: bool) !struct { facts: SpreadFacts, walks: SpreadWalks } {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try aliasSites(p, arena, 3);
+    try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(3), .any = try p.newVar() });
+    const u = try p.newVar();
+    try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try settle(p);
+    const v = try p.newVar();
+    try p.copy(u, v);
+    const shared = try p.summaryOf(v);
+    try testing.expectEqual(try p.summaryOf(u), shared);
+    try p.markWhole(shared);
+    try settle(p);
+    var cur: u32 = none;
+    if (cursor) {
+        cur = @intCast(p.cursors.items.len);
+        try p.cursors.append(arena, .{});
+    }
+    try p.spreadSince(3, shared, &.{}, cur);
+    try settle(p);
+    const q = try p.newVar();
+    try p.addSite(q, 2);
+    try settle(p);
+    try p.copy(q, v);
+    const own = try p.summaryOf(v);
+    try testing.expect(own != shared);
+    try p.markWhole(own);
+    try settle(p);
+    try p.spreadSince(3, own, &.{}, cur);
+    try settle(p);
+    return .{ .facts = try spreadFacts(p, 3), .walks = spreadWalks(p) };
+}
+
+// #607: a cursor is into one summary's log. When the operand's var splits
+// (#568) the spread reads another summary, so it walks that one whole, as
+// it would with no cursor; the fields it wrote from the shared summary get
+// vars of their own, holding the split var's three sites.
+test "a split resets a spread's cursor" {
+    const delta = try spreadSplits(true);
+    const whole = try spreadSplits(false);
+    try testing.expectEqual(whole.facts, delta.facts);
+    try testing.expectEqual(SpreadWalks{ .props = 2 + 2, .full = 2, .resets = 1 }, delta.walks);
+    try testing.expectEqual(SpreadWalks{ .props = 2 + 2, .full = 2, .resets = 0 }, whole.walks);
+    try testing.expectEqual(SpreadFacts{
+        .written = .{ true, true, false },
+        .shared = .{ false, false, false },
+        .held = .{ .{ 100, 101 }, .{ 200, 201 }, .{ none, none } },
+    }, delta.facts);
 }
 
 /// A `Pts` of `n` object sites, each with properties 1 and 2 from its
