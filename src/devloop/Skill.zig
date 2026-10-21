@@ -70,8 +70,12 @@ fn installInto(arena: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer,
         return fail(stderr, "beni: '{s}/beni' is the installed skill, or lies inside it", .{install.dir});
     }
 
-    // `<dir>` and its missing parents, as `beni new` makes them.
-    cwd.createDirPath(io, install.dir) catch |err|
+    // `<dir>` and its missing parents, as `beni new` makes them. An existing
+    // `<dir>` that is a directory through a symlink — a dotfile manager's
+    // `~/.agents/skills` — is accepted as it is: `createDirPath` would
+    // refuse the link with `NotDir`.
+    const dir_exists = if (cwd.statFile(io, install.dir, .{ .follow_symlinks = true })) |stat| stat.kind == .directory else |_| false;
+    if (!dir_exists) cwd.createDirPath(io, install.dir) catch |err|
         return fail(stderr, "beni: cannot write '{s}': {t}", .{ install.dir, err });
     const target = std.fs.path.join(arena, &.{ install.dir, "beni" }) catch return oom(stderr);
 
@@ -131,25 +135,30 @@ fn installInto(arena: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer,
     return 0;
 }
 
-/// The real path of `dir`'s nearest existing ancestor, with the rest of
-/// `dir` resolved against it: what `dir` will resolve to once it exists.
-/// The rest is resolved lexically, so `nx/../x` under a real path is `x`:
-/// every part of the rest does not exist yet and is created as a plain
-/// directory, so no symlink can make the lexical answer wrong.
+/// What `dir` will resolve to once it exists, physically. The path is
+/// walked one component at a time from the working directory (or `/`): a
+/// component that exists is replaced by its real path, so a symlink is
+/// followed where it stands — `nx/../lnk` goes through `lnk`, and
+/// `lnkc/..` is the parent of what `lnkc` points at, not of `lnkc`; a `..`
+/// steps up from the physical path so far; a component that does not exist
+/// is joined as it is, because it is created later as a plain directory.
 fn resolveAsFarAsExists(arena: Allocator, io: Io, dir: []const u8) ![]const u8 {
-    var existing: []const u8 = dir;
-    var rest: []const u8 = "";
-    while (true) {
-        if (Io.Dir.cwd().realPathFileAlloc(io, if (existing.len == 0) "." else existing, arena)) |real| {
-            return if (rest.len == 0) real else std.fs.path.resolveAlloc(arena, &.{ real, rest });
-        } else |err| switch (err) {
-            error.FileNotFound => {},
-            else => return err,
+    const cwd = Io.Dir.cwd();
+    var current: []const u8 = if (std.fs.path.isAbsolute(dir)) "/" else try cwd.realPathFileAlloc(io, ".", arena);
+    var parts = std.mem.splitScalar(u8, dir, '/');
+    while (parts.next()) |part| {
+        if (part.len == 0 or std.mem.eql(u8, part, ".")) continue;
+        if (std.mem.eql(u8, part, "..")) {
+            current = std.fs.path.dirname(current) orelse "/";
+            continue;
         }
-        const base = std.fs.path.basename(existing);
-        rest = if (rest.len == 0) base else try std.fs.path.join(arena, &.{ base, rest });
-        existing = std.fs.path.dirname(existing) orelse "";
+        const candidate = try std.fs.path.join(arena, &.{ current, part });
+        current = cwd.realPathFileAlloc(io, candidate, arena) catch |err| switch (err) {
+            error.FileNotFound => candidate,
+            else => return err,
+        };
     }
+    return current;
 }
 
 fn isUnder(path: []const u8, root: []const u8) bool {

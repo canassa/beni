@@ -654,10 +654,21 @@ test "beni skill install copies the folder, refuses to replace it, replaces it w
     const exe = try makePrefix(&w, "prefix", true);
     const folder = try w.projectSubPath(arena, "prefix/share/beni/skills/beni");
     const source = try w.projectSubPath(arena, "prefix/share/beni/skills/beni");
+    // A dotfile manager's layout: the skills directory is a symlink to a real one.
+    try w.createDir("dotfiles/skills");
+    try w.symlink(try w.projectSubPath(arena, "dotfiles/skills"), "home/.agents/skills");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE, VERIFY OUTPUT                  │
     // └─────────────────────────────────────────┘
+    // Into a symlinked directory: the copy lands in the real one.
+    const via_link = try skill(&w, exe, &.{ "install", "home/.agents/skills" });
+    try testing.expectEqual(@as(u8, 0), via_link.exit_code);
+    try testing.expectEqualStrings("Installed the beni skill at home/.agents/skills/beni\n", via_link.stdout);
+    try testing.expectEqualStrings("", via_link.stderr);
+    try testing.expectEqual(Io.File.Kind.sym_link, try w.kind("home/.agents/skills"));
+    try expectSameTree(arena, w.io, skill_root, try w.projectSubPath(arena, "dotfiles/skills/beni"));
+
     // A copy, under a directory that does not exist yet.
     const copied = try skill(&w, exe, &.{ "install", "agent/skills" });
     try testing.expectEqual(@as(u8, 0), copied.exit_code);
@@ -724,6 +735,7 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    const arena = w.arena.allocator();
     const exe = try makePrefix(&w, "prefix", true);
     // `<dir>/beni` that is a user's own directory, a file, and a skill of another name.
     try w.write("src/beni/README.md", "my clone\n");
@@ -742,6 +754,12 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     // A `..` after a directory that does not exist yet still resolves to the
     // folder's parent; before the fix this path deleted the installed folder.
     const dotdot = try skill(&w, exe, &.{ "install", "--link", "--force", "nx/../prefix/share/beni/skills" });
+    // The same through symlinks: `lnk` is the folder's parent and `lnkc` the
+    // folder, so `nx/../lnk` and `nx/../lnkc/..` are both the parent, physically.
+    try w.symlink(try w.projectSubPath(arena, "prefix/share/beni/skills"), "lnk");
+    try w.symlink(try w.projectSubPath(arena, "prefix/share/beni/skills/beni"), "lnkc");
+    const through_link = try skill(&w, exe, &.{ "install", "--link", "--force", "nx/../lnk" });
+    const through_link_up = try skill(&w, exe, &.{ "install", "nx/../lnkc/.." });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -760,6 +778,10 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     try testing.expectEqualStrings("beni: 'prefix/share/beni/skills/beni' is the installed skill, or lies inside it\n", itself.stderr);
     try testing.expectEqual(@as(u8, 2), dotdot.exit_code);
     try testing.expectEqualStrings("beni: 'nx/../prefix/share/beni/skills/beni' is the installed skill, or lies inside it\n", dotdot.stderr);
+    try testing.expectEqual(@as(u8, 2), through_link.exit_code);
+    try testing.expectEqualStrings("beni: 'nx/../lnk/beni' is the installed skill, or lies inside it\n", through_link.stderr);
+    try testing.expectEqual(@as(u8, 2), through_link_up.exit_code);
+    try testing.expectEqualStrings("beni: 'nx/../lnkc/../beni' is the installed skill, or lies inside it\n", through_link_up.stderr);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
@@ -771,5 +793,5 @@ test "beni skill install --force replaces only a beni skill, and refuses a direc
     try testing.expect(!w.exists("prefix/share/beni/skills/beni/references/beni"));
     try testing.expect(!w.exists("prefix/share/beni/skills/beni/beni"));
     try testing.expect(!w.exists("nx"));
-    try expectSameTree(w.arena.allocator(), w.io, skill_root, try w.projectSubPath(w.arena.allocator(), "prefix/share/beni/skills/beni"));
+    try expectSameTree(arena, w.io, skill_root, try w.projectSubPath(arena, "prefix/share/beni/skills/beni"));
 }
