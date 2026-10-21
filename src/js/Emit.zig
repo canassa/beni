@@ -4893,6 +4893,7 @@ const Emitter = struct {
         profile.addCounter(.spec_analyses, stats.analyses);
         profile.addCounter(.spec_sweeps, stats.sweeps);
         profile.addCounter(.spec_points_to_runs, stats.points_to_runs);
+        profile.addCounter(.spec_points_to_reused, stats.points_to_reused);
         profile.addCounter(.spec_points_to_sweeps, stats.points_to_sweeps);
         profile.addCounter(.spec_passes, stats.passes);
         profile.addCounter(.spec_analyses_declined, stats.analyses_declined);
