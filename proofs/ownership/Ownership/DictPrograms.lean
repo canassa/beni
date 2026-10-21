@@ -48,8 +48,9 @@ def valueLater : Program := { main := (
   .letE 8 (.prim .dictGet [v 2, .int 1]) <|
   .resultCase (v 8) 9 10 (.atom (.int 0)) (.prim .length [v 10])) }
 
-/-- `reads`: the body only reads the found value and answers a fresh list;
-    the old dictionary and the new one are read afterwards. -/
+/-- `reads`: the body reads the found value and answers a fresh list, which
+    the focus stores at the key; the old dictionary and the new one are read
+    afterwards through their sizes, which a replace does not change. -/
 def reads : Program := { main := (
   .letE 0 (.prim (.literal .int) [.int 1]) <|
   .letE 1 (.prim (.dictEmpty tL) []) <|

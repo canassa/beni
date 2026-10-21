@@ -472,9 +472,11 @@ Checked, not proved (`DictPrograms.lean`, `DictProbes.lean`: `#guard` against
 through the old dictionary), `reads` and `groups` (T44), #474's shared tuple
 and its fresh control, `DictValueWritten`, T51's focus on an empty dictionary,
 a removal and an insert at a key already in. One verdict differs from the Zig
-checker today: `reads` (a focus whose body only reads, the dictionary read
-afterwards) is refused here, because the focus writes the entries back in
-place and the old dictionary is live after the write; Zig accepts
+checker today: `reads` (a focus whose body reads the found value and stores a
+new list at the key, the old dictionary read afterwards through its size) is
+refused here, because the focus writes the entries back in place and the old
+dictionary is live after the write; its runs agree only because a size does
+not see a replace. Zig accepts
 `DictFocus.reads` because core's `Dict.update` builds a new tree (the old
 fold, until #294 lands); #579 tracks the difference. The frozen per-call checker refuses the focus as a
 limit and the primitives as shapes. Not modelled: string keys, `Dict.map`,

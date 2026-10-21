@@ -12,10 +12,11 @@ nothing is proved.
 
 Every dictionary write (`dictInsert`, `dictRemove`, the focus write-back) is
 an in-place write of the entries (#294: a dictionary is its entries in
-insertion order, edited in place where the checker accepts the write). So a
-dictionary read after a focus is refused even when the focus body only reads
-(`reads`); the Zig checker accepts `DictFocus.reads` today because core's
-`Dict.update` builds a new tree (the old fold, until #294 lands). -/
+insertion order, edited in place where the checker accepts the write). So
+`reads`, whose body reads the found value and stores a new list at the key, is
+refused: the old dictionary is read after the write-back. The Zig checker
+accepts `DictFocus.reads` today because core's `Dict.update` builds a new tree
+(the old fold, until #294 lands). -/
 
 namespace Ownership.DictProbes
 
