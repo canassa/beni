@@ -975,7 +975,7 @@ const Page = struct {
 
         // Each event's listener, planned now and wired after the handlers
         // it calls: which key it reaches decides what a stateful control's
-        // handler writes back, and a key only one event reaches has its
+        // handler writes back, and every DOM event has its
         // handler written in that event's listener.
         var plans: std.ArrayList(Plan) = .empty;
         for (pg.events.items) |ev| try plans.append(pg.a(), try pg.plan(ev));
@@ -991,16 +991,18 @@ const Page = struct {
             if (!slot.found_existing) slot.value_ptr.* = .empty;
             try slot.value_ptr.append(pg.a(), @intCast(fi));
         };
-        // Per key, how many places call its handler, and the one event that
-        // does when it is one.
+        // DOM sites get their arm at wiring. Only non-DOM consumers need
+        // a named handler; all sites still contribute to key-wide controls.
         const refs = try pg.a().alloc(u32, keys.len);
         @memset(refs, 0);
-        const only = try pg.a().alloc(?u32, keys.len);
-        @memset(only, null);
-        for (subs) |s| refs[s.handler] += 1;
+        const named = try pg.a().alloc(bool, keys.len);
+        @memset(named, false);
+        for (subs) |s| {
+            refs[s.handler] += 1;
+            named[s.handler] = true;
+        }
         for (plans.items, 0..) |pl, i| {
             refs[pl.key] += 1;
-            only[pl.key] = @intCast(i);
             if (stateful_at.get(pg.events.items[i].target)) |fs| try pg.controls[pl.key].appendSlice(pg.a(), fs.items);
         }
         // Each piece's handlers, by the key the constructor reaches through
@@ -1035,12 +1037,13 @@ const Page = struct {
             );
             for (0..keys.len) |k| {
                 refs[k] += 1;
+                named[k] = true;
                 if (element_) _ = try pg.command(@intCast(k));
             }
             pg.dispatch = try cx.fresh("dispatch");
         }
 
-        // One handler per key reached: its arm writes the model, then the
+        // Each handler body writes the model, then the
         // write pass calls each binding function the key's writes reach,
         // once, then its command is queued.
         const any = for (refs) |r| {
@@ -1048,37 +1051,29 @@ const Page = struct {
         } else false;
         const update = if (any) try cx.programUpdate(body) else null;
         const listeners = try pg.a().alloc(m.Expr, plans.items.len);
-        const inlined = try pg.a().alloc(bool, plans.items.len);
-        @memset(inlined, false);
+        // Compute once after every control has contributed. passOf's stamps
+        // deduplicate each key's pass; every generated body reuses that same
+        // immutable, document-ordered slice.
+        const passes = try pg.a().alloc([]const u32, keys.len);
         for (keys, 0..) |key, k| {
             if (refs[k] == 0) continue;
             try pg.refuseKey(key);
+            passes[k] = try pg.passOf(@intCast(k), key);
+            if (!named[k]) continue;
             const params = try pg.a().alloc(m.Name, key.fields);
             for (params) |*x| x.* = try cx.fresh("value");
-            if (refs[k] == 1) if (only[k]) |i| {
-                // Written in its one event's listener, its fields bound to
-                // what the event's message holds.
-                const pl = plans.items[i];
-                if (pl.args.len != params.len) return limit(cx, pl.node, "this event's message has another number of fields than its key's handler takes");
-                for (params, pl.args) |x, arg| try js.constant(pl.blk, x, arg);
-                try pg.handlerBody(pl.blk, @intCast(k), params, update);
-                listeners[i] = if (pl.event) |e| try js.arrow(&.{e}, pl.blk) else try js.arrow(&.{}, pl.blk);
-                inlined[i] = true;
-                continue;
-            };
             const blk = try js.block();
-            try pg.handlerBody(blk, @intCast(k), params, update);
+            try pg.handlerBody(blk, @intCast(k), params, update, passes[k]);
             try js.constant(body, try pg.handler(@intCast(k)), try js.arrow(params, blk));
         }
-        // Every other listener calls its key's handler, or is it.
-        for (plans.items, listeners, inlined) |pl, *l, done| {
-            if (done) continue;
-            const h = try js.name(try pg.handler(pl.key));
-            if (pl.args.len == 0 and pl.event == null) {
-                l.* = h;
-                continue;
-            }
-            try js.expression(pl.blk, try js.call(h, pl.args));
+        // Each local listener contains its arm, its fields bound to what
+        // the event's message holds, even when another event has the key.
+        for (plans.items, listeners) |pl, *l| {
+            const params = try pg.a().alloc(m.Name, keys[pl.key].fields);
+            for (params) |*x| x.* = try cx.fresh("value");
+            if (pl.args.len != params.len) return limit(cx, pl.node, "this event's message has another number of fields than its key's handler takes");
+            for (params, pl.args) |x, arg| try js.constant(pl.blk, x, arg);
+            try pg.handlerBody(pl.blk, pl.key, params, update, passes[pl.key]);
             l.* = if (pl.event) |e| try js.arrow(&.{e}, pl.blk) else try js.arrow(&.{}, pl.blk);
         }
         if (pg.dispatch) |d| {
@@ -1101,6 +1096,10 @@ const Page = struct {
                 } else try js.expression(body, try js.call(try js.name(try cx.runtime("on")), &.{ node, f }));
                 continue;
             }
+            // The guard retains one callback made during mount; dispatch
+            // must not allocate a new handler closure.
+            const listener = try cx.fresh("listener");
+            try js.constant(body, listener, f);
             const ev = try cx.fresh("event");
             const dom = try js.block();
             if (pl.flags.prevent_default or pl.flags.stop_propagation) {
@@ -1115,7 +1114,7 @@ const Page = struct {
             }
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
-            try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), &.{ f, try js.name(ev) }));
+            try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(listener), try js.name(ev) }));
             try js.expression(body, try js.call(try js.member(node, "addEventListener"), &.{
                 try js.string(pl.kind orelse "click"),
                 try js.arrow(&.{ev}, dom),
@@ -1128,21 +1127,21 @@ const Page = struct {
             const args = try pg.a().alloc(m.Expr, ks.len + 1);
             args[0] = try js.name(u.elements);
             for (args[1..], ks, u.data.handlers) |*x, pk, h| {
-                const handler_ = try js.name(try pg.handler(pk.key));
-                if (!pk.whole) {
-                    x.* = handler_;
-                    continue;
-                }
-                // The key's handler takes the message below its leaf: made
-                // here, from the constructor's fields.
+                // Each piece wiring receives its own body. A whole-message
+                // leaf still receives the same reconstructed message below.
+                const blk = try js.block();
                 const fields = try pg.a().alloc(m.Name, h.fields);
                 const field_exprs = try pg.a().alloc(m.Expr, h.fields);
                 for (fields, field_exprs) |*f, *fe| {
                     f.* = try cx.fresh("value");
                     fe.* = try js.name(f.*);
                 }
-                const blk = try js.block();
-                try js.expression(blk, try js.call(handler_, &.{try cx.programPieceMessage(u.node, h.ctor, pk.key, field_exprs)}));
+                const params = if (pk.whole) p: {
+                    const value = try cx.fresh("value");
+                    try js.constant(blk, value, try cx.programPieceMessage(u.node, h.ctor, pk.key, field_exprs));
+                    break :p try pg.a().dupe(m.Name, &.{value});
+                } else fields;
+                try pg.handlerBody(blk, pk.key, params, update, passes[pk.key]);
                 x.* = try js.arrow(fields, blk);
             }
             try js.expression(body, try js.call(try js.name(try cx.programPieceName(u.node, wire)), args));
@@ -2132,10 +2131,9 @@ const Page = struct {
     /// writes the model, then the write pass calls each binding function the
     /// key's writes reach — and each a control of the key's events shows —
     /// once, in document order, then the key's command is queued.
-    fn handlerBody(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr) m.Error!void {
+    fn handlerBody(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr, pass: []const u32) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
-        const key = cx.programKeys()[k];
         const element_ = pg.p.constructor == 1;
         const incoming = try cx.fresh("before");
         try js.constant(blk, incoming, try js.name(pg.model));
@@ -2147,7 +2145,7 @@ const Page = struct {
             result = try js.name(pair);
         }
         try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
-        for (try pg.passOf(k, key)) |fi| try pg.callFunction(blk, fi);
+        for (pass) |fi| try pg.callFunction(blk, fi);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
