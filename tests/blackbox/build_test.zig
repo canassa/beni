@@ -6148,8 +6148,8 @@ test "a program builds the same with the edge lists the binary carries as with l
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
-    try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" }, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" }, false);
 }
 
 test "a development build's cached units write the same source maps as a core built here" {
@@ -6161,8 +6161,8 @@ test "a development build's cached units write the same source maps as a core bu
     // differs from the one the same module lowers to is the finding: the
     // names array's order is first-occurrence order, so a dead canonical
     // unit must not put a name behind a live one. `--core-root=mycore`
-    // moves only the source path (`beni:///mycore/…`); the helper normalizes
-    // that one word.
+    // changes only how a map spells the core's path; the helper normalizes
+    // that spelling.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.copyTreeInto("core", "mycore", "_");
@@ -6174,7 +6174,7 @@ test "a development build's cached units write the same source maps as a core bu
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "maps", &.{"Main.beni"}, true);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "maps", &.{"Main.beni"}, true);
 }
 
 test "a program that suspends builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6195,7 +6195,7 @@ test "a program that suspends builds the same with the edge lists the binary car
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
 }
 
 test "a page builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6216,7 +6216,39 @@ test "a page builds the same with the edge lists the binary carries as with list
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"}, false);
+    const counters = try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"}, false);
+    // §9's other side: this page's build lowers 41 units it cannot take — a
+    // platform unit falls back — and the trees above still match.
+    try testing.expect(counters.emit_units_lowered > 0);
+}
+
+test "a program over the schema-shape threshold builds the same with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `schema.md` §6's fork gives a program over `SchemaValid.shape_threshold`
+    // validator runs the shapes side, and `run/SchemaShapeThreshold` has
+    // thirty. The answer is a fact a row must carry (`backend.md` §9, issue
+    // #432): the rows the binary carries were made under the canonical
+    // answer, and a build's own modules are on the other side of the
+    // threshold only as far as their own bytes can see it. The two trees
+    // must agree, at the default answer and at `--schema-shapes=never` —
+    // and the two defaults must differ, or the fixture stopped crossing the
+    // threshold and neither comparison says anything about the fork.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/run/SchemaShapeThreshold.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "shapes", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "shapes-never", &.{ "--schema-shapes=never", "Main.beni" }, false);
+    try expectDifferentTrees(&w, "shapes-embedded", "shapes-never-embedded");
 }
 
 test "a page builds the same under --release with the edge lists the binary carries as with lists it builds" {
@@ -6238,7 +6270,7 @@ test "a page builds the same under --release with the edge lists the binary carr
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" }, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" }, false);
 }
 
 test "a browser-inline page builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6259,7 +6291,7 @@ test "a browser-inline page builds the same with the edge lists the binary carri
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"}, false);
 }
 
 /// One fixture of the corpus, copied into the project at `to`.
@@ -6276,11 +6308,12 @@ fn copyFixture(w: *World, from: []const u8, to: []const u8) !void {
 /// builds every module's lists. The one-thread build holds the rows and the
 /// walk to CLAUDE.md rule 5: workers read rows in whatever order they take
 /// modules, and the tree must not show it.
-fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8, mapped: bool) !void {
+fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8, mapped: bool) !EmitCounters {
     const arena = w.arena.allocator();
     const hows = [_][]const u8{ "embedded", "jobs1", "built" };
     var dirs: [hows.len][]const u8 = undefined;
     var stderrs: [hows.len][]const u8 = undefined;
+    var embedded_counters: EmitCounters = .{};
     for (hows, &dirs, &stderrs) |how, *dir, *stderr| {
         dir.* = try std.fmt.allocPrint(arena, "{s}-{s}", .{ out, how });
         var argv: std.ArrayList([]const u8) = .empty;
@@ -6295,6 +6328,7 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
         try testing.expectEqualStrings("", r.stdout);
         stderr.* = r.stderr;
         const counters = try emitCounters(w);
+        if (std.mem.eql(u8, how, "embedded")) embedded_counters = counters;
         const release = blk: {
             for (args) |a| if (std.mem.eql(u8, a, "--release")) break :blk true;
             break :blk false;
@@ -6324,20 +6358,88 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
             try testing.expectEqualStrings(a, b);
             const want_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[0], a }));
             const got_bytes = try w.read(try std.fs.path.join(arena, &.{ dir, b }));
-            // A source map names the core's path, and `--core-root=mycore`
-            // moves it. That one word is the only expected difference; the
-            // rest — every generated position, every mapping and the whole
-            // `names` array — must be byte-identical, cached units included.
-            const comparable = if (mapped and std.mem.endsWith(u8, b, ".mjs.map"))
-                try std.mem.replaceOwned(u8, arena, got_bytes, "mycore", "core")
+            // A source map names the core's path, and the two builds spell
+            // it differently: the embedded core is `beni:///core/…`, a core
+            // read through `--core-root=mycore` is the relative path from
+            // the map to the file. That spelling is the only expected
+            // difference; the rest — every generated position, every mapping
+            // and the whole `names` array — must be byte-identical, cached
+            // units included. The manifest hashes those maps, so its map
+            // lines are masked; the map bytes themselves are compared here.
+            const want_cmp = if (mapped and std.mem.endsWith(u8, a, ".mjs.map"))
+                try comparableMapSources(arena, want_bytes)
+            else if (mapped and std.mem.eql(u8, a, "_manifest.txt"))
+                try comparableManifestHashes(arena, want_bytes)
+            else
+                want_bytes;
+            const got_cmp = if (mapped and std.mem.endsWith(u8, b, ".mjs.map"))
+                try comparableMapSources(arena, got_bytes)
+            else if (mapped and std.mem.eql(u8, b, "_manifest.txt"))
+                try comparableManifestHashes(arena, got_bytes)
             else
                 got_bytes;
-            testing.expectEqualStrings(want_bytes, comparable) catch |err| {
+            testing.expectEqualStrings(want_cmp, got_cmp) catch |err| {
                 std.debug.print("{s} differs between {s} and {s}\n", .{ a, dirs[0], dir });
                 return err;
             };
         }
     }
+    return embedded_counters;
+}
+
+/// A map's `sources` names the core two ways: `beni:///core/…` when the
+/// binary carries it, the relative path from the map's directory to
+/// `mycore/…` when `--core-root` reads it. Both become `core/…`, so the
+/// comparison is about the map's positions rather than where its source
+/// came from.
+fn comparableMapSources(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
+    const embedded = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
+    return std.mem.replaceOwned(u8, arena, embedded, "../../mycore/", "core/");
+}
+
+/// A manifest hashes every file, its maps included, and a core map's hash
+/// covers the source spelling `comparableMapSources` normalizes. Zero those
+/// hashes on both sides: the maps themselves are compared, so the manifest
+/// still holds every other file's bytes and every path.
+fn comparableManifestHashes(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var rest = bytes;
+    var first = true;
+    while (rest.len > 0) {
+        const end = std.mem.indexOfScalar(u8, rest, '\n') orelse rest.len;
+        const line = rest[0..end];
+        if (!first) try out.append(arena, '\n');
+        first = false;
+        if (std.mem.endsWith(u8, line, ".mjs.map")) {
+            if (std.mem.indexOfScalar(u8, line, ' ')) |space| {
+                try out.appendSlice(arena, "0000000000000000");
+                try out.appendSlice(arena, line[space..]);
+            } else try out.appendSlice(arena, line);
+        } else try out.appendSlice(arena, line);
+        rest = if (end < rest.len) rest[end + 1 ..] else rest[rest.len..];
+    }
+    return out.toOwnedSlice(arena);
+}
+
+/// Expect two output trees of the same project under different flags to
+/// differ somewhere. Used to prove a fixture still sits on one side of a
+/// threshold: if the two builds agreed, a comparison across the threshold
+/// would say nothing about it.
+fn expectDifferentTrees(w: *World, a: []const u8, b: []const u8) !void {
+    const arena = w.arena.allocator();
+    const left = try w.listFiles(a);
+    const right = try w.listFiles(b);
+    // A file one build writes and the other does not is already a
+    // difference; the shape-run and worker sides of the threshold reach
+    // different core modules, so their trees may hold different files.
+    if (left.len != right.len) return;
+    for (left, right) |fa, fb| {
+        if (!std.mem.eql(u8, fa, fb)) return;
+        const x = try w.read(try std.fs.path.join(arena, &.{ a, fa }));
+        const y = try w.read(try std.fs.path.join(arena, &.{ b, fb }));
+        if (!std.mem.eql(u8, x, y)) return;
+    }
+    return error.ExpectedDifference;
 }
 
 const EmitCounters = struct {
