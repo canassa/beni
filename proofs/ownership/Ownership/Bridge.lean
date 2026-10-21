@@ -19,6 +19,7 @@ def ty : Ty → String
   | .chain t => node "chain" [ty t]
   | .list t => node "list" [ty t]
   | .builder t => node "builder" [ty t]
+  | .dict t => node "dict" [ty t]
   | .record ts => node "record" [arr (ts.attach.map fun t => ty t.val)]
   | .fn ps r => node "fn" [arr (ps.attach.map fun t => ty t.val), ty r]
 termination_by t => sizeOf t
@@ -49,6 +50,9 @@ def prim : Prim → String
   | .put => node "put" | .close => node "close"
   | .construct spreads => node "construct" [arr (spreads.map toString)]
   | .view front => node "view" [toString front]
+  | .dictEmpty t => node "dict-empty" [ty t]
+  | .dictInsert => node "dict-insert" | .dictRemove => node "dict-remove"
+  | .dictGet => node "dict-get" | .dictSize => node "dict-size"
 
 def expr : Expr → String
   | .atom a => node "atom" [atom a]
@@ -62,6 +66,7 @@ def expr : Expr → String
   | .chainCase input h t left right => node "chain-case" [atom input, toString h, toString t, expr left, expr right]
   | .branch c a b => node "branch" [atom c, expr a, expr b]
   | .focus a i x b => node "focus" [atom a, atom i, toString x, expr b]
+  | .dictFocus a k x b => node "dict-focus" [atom a, atom k, toString x, expr b]
   | .traverse k a z i x acc b => node "traverse"
       [quote (match k with | .list => "list" | .range => "range" | .model => "model"),
        atom a, atom z, toString i, toString x, toString acc, expr b]
@@ -102,7 +107,7 @@ def maxVar : Expr → Nat
   | .resultCase input e a left right | .chainCase input e a left right =>
     [maxAtom input, e, a, maxVar left, maxVar right].foldl max 0
   | .branch c a b => max (maxAtom c) (max (maxVar a) (maxVar b))
-  | .focus a i x b => max x (max (maxAtom a) (max (maxAtom i) (maxVar b)))
+  | .focus a i x b | .dictFocus a i x b => max x (max (maxAtom a) (max (maxAtom i) (maxVar b)))
   | .traverse _ a z i x acc b =>
     [maxAtom a, maxAtom z, i, x, acc, maxVar b].foldl max 0
 
@@ -121,6 +126,7 @@ def auditArithmetic (fresh : Nat) : Expr → Expr
   | .chainCase input h t left right => .chainCase input h t (auditArithmetic fresh left) (auditArithmetic fresh right)
   | .branch c a b => .branch c (auditArithmetic fresh a) (auditArithmetic fresh b)
   | .focus a i x b => .focus a i x (auditArithmetic fresh b)
+  | .dictFocus a k x b => .dictFocus a k x (auditArithmetic fresh b)
   | .traverse k a z i x acc b => .traverse k a z i x acc (auditArithmetic fresh b)
   | e => e
 
@@ -222,7 +228,7 @@ def references : Expr → List Nat
   | .closure d _ => [d]
   | .entry a _ _ b | .resultCase _ _ _ a b | .chainCase _ _ _ a b
   | .letE _ a b | .branch _ a b => references a ++ references b
-  | .focus _ _ _ b | .traverse _ _ _ _ _ _ b => references b
+  | .focus _ _ _ b | .traverse _ _ _ _ _ _ b | .dictFocus _ _ _ b => references b
   | _ => []
 
 def reachable (p : Program) : List Nat := Id.run do

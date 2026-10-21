@@ -84,6 +84,7 @@ def ty : Nat → Value → Except String Ty
     | "chain", [t] => pure (.chain (← ty n t))
     | "list", [t] => pure (.list (← ty n t))
     | "builder", [t] => pure (.builder (← ty n t))
+    | "dict", [t] => pure (.dict (← ty n t))
     | "record", [ts] => pure (.record (← (← array ts).mapM (ty n)))
     | "fn", [ps,r] => pure (.fn (← (← array ps).mapM (ty n)) (← ty n r))
     | _, _ => throw "unknown wire type"
@@ -119,6 +120,9 @@ def prim (v : Value) : Except String Prim := do
   | "construct", [vs] => pure (.construct (← (← array vs).mapM fun
       | .flag b => pure b | _ => throw "expected wire flag"))
   | "view", [.flag b] => pure (.view b)
+  | "dict-empty", [t] => pure (.dictEmpty (← ty 256 t))
+  | "dict-insert", [] => pure .dictInsert | "dict-remove", [] => pure .dictRemove
+  | "dict-get", [] => pure .dictGet | "dict-size", [] => pure .dictSize
   | _, _ => throw "unknown wire primitive"
 
 def expr : Nat → Value → Except String Expr
@@ -139,6 +143,7 @@ def expr : Nat → Value → Except String Expr
     | "chain-case", [s,h,t,x,y] => pure (.chainCase (← a s) (← nat h) (← nat t) (← expr n x) (← expr n y))
     | "branch", [c,x,y] => pure (.branch (← a c) (← expr n x) (← expr n y))
     | "focus", [s,i,x,b] => pure (.focus (← a s) (← a i) (← nat x) (← expr n b))
+    | "dict-focus", [s,k,x,b] => pure (.dictFocus (← a s) (← a k) (← nat x) (← expr n b))
     | "traverse", [k,s,z,i,x,acc,b] =>
       let k ← match ← text k with
         | "list" => pure Source.list | "range" => pure .range | "model" => pure .model

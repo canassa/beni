@@ -182,6 +182,13 @@ def primitive (site : List Nat) (held : List Reader) (op : Prim) (vs : List Valu
   | .push, [.ref c, v] => do
     let xs ← runtime (array c)
     writeEvent site "push" c (held ++ values site "stored operand" [v]) (writeCounted c (xs ++ [v]))
+  | .dictInsert, [.ref c, .int k, v] => do
+    let es ← runtime (array c)
+    writeEvent site "dict-insert" c (held ++ values site "stored operand" [v])
+      (writeCounted c (dictPut entryKey es k (.record [.int k, v])))
+  | .dictRemove, [.ref c, .int k] => do
+    let es ← runtime (array c)
+    writeEvent site "dict-remove" c held (writeCounted c (dictDrop entryKey es k))
   | .put, [.ref c, v] => do
     let xs ← runtime (array c)
     writeEvent site "put" c (held ++ values site "stored operand" [v]) (write c (xs ++ [v]))
@@ -196,7 +203,7 @@ def containsRecur : Expr → Bool
   | .recur _ => true
   | .letE _ a b | .branch _ a b | .entry a _ _ b |
     .resultCase _ _ _ a b | .chainCase _ _ _ a b => containsRecur a || containsRecur b
-  | .traverse _ _ _ _ _ _ body | .focus _ _ _ body => containsRecur body
+  | .traverse _ _ _ _ _ _ body | .focus _ _ _ body | .dictFocus _ _ _ body => containsRecur body
   | _ => false
 
 /-- Pin inherited uses before a local binder changes their environment. -/
@@ -331,6 +338,25 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           writeEvent site "focus" c
             (held ++ readers ++ container ++ values site "stored operand" [w])
             (writeCounted c (current.set i.toNat w))
+      | .dictFocus src key found body =>
+        let .ref c ← fromExcept (atom env src) | throw "in-place dictionary focus"
+        let .int k ← fromExcept (atom env key) | throw "in-place key"
+        let current := (dictFind entryKey (← runtime (array c)) k).map entryValue
+        if let some v := current then runtime (read v)
+        let readers ← pending env after site
+        let container := [{kind := .header c, site, reason := "dictionary focus container"}]
+        let answer ← eval (depth - 1) ds self ((found, maybe current) :: env) body
+          [] (held ++ readers ++ container) (site ++ [14])
+        let entries ← runtime (array c)
+        match answer with
+        | .record [.int 1, _, w] =>
+          writeEvent site "dict-focus" c
+            (held ++ readers ++ container ++ values site "stored operand" [w])
+            (writeCounted c (dictPut entryKey entries k (.record [.int k, w])))
+        | .record [.int 0, _, _] =>
+          writeEvent site "dict-focus" c (held ++ readers ++ container)
+            (writeCounted c (dictDrop entryKey entries k))
+        | _ => throw "in-place dictionary focus answer"
     runtime observeKept
     pure result
 termination_by depth

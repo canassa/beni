@@ -523,3 +523,32 @@ Keep every audit check intact.
 
 Fetch `origin/master` before each later branch.
 If a model rule changes, add its cases and source baseline here before its proof.
+
+## Dictionaries (#522)
+
+The plan, written before the Lean (#522, 2026-10-21): model the meaning of a
+dictionary, not the tree (DESIGN.md, *Dictionaries*); three slices, each a PR
+that is part of #165 and of #522. (1) The model: syntax, typing, both
+interpreters, the checker rules and the probes as `#guard`s against the real
+`check` and both runs; the COVERAGE rows T32, T44 and T51 say what is checked;
+a verdict that differs from the Zig checker gets its own issue. (2) The flat
+relation over arrays of flat values (lists of lists): `heapInts` generalised to
+"every array holds flat values", an element shape in `AllocatedFlatValue.list`,
+`Describes` of an array through `namesAt`'s `.element` step, and real
+exclusivity certificates (`CertifiedExclusive` through the stored values, which
+the checker's `storeExclusive` and `storeSpines` must imply); the existing
+fragment theorems keep their statements. (3) The dictionary forms in
+`FlatANF0` and `flat_preserved`: the five primitives as primitive cases and
+`dictFocus` as a binder case like the list focus; the rows say what is proved.
+`accepted_flat_anf_traces_agree` keeps its statement throughout.
+
+As built (2026-10-21, #522, slice 1): `Ty.dict`, `dictEmpty`, `dictInsert`,
+`dictRemove`, `dictGet`, `dictSize` and `Expr.dictFocus` in `Syntax.lean`, both
+interpreters (`dictPut`, `dictDrop`, `dictFind`, counted writes of the entries)
+and the checker (`dictInsert` on the push's rule, `dictRemove` the push's
+demand, `dictGet` a read whose payload aliases the values, `dictFocus` on the
+list focus's rule through the shared `focusStep`). The frozen per-call checker,
+the aliasing and diagnostic interpreters, the oracle's shrinker, the
+falsifier's walkers, the bridge's printer and parser and `obsTyped` have the
+new forms. `DictPrograms.lean` holds eleven probe programs, `DictProbes.lean` their `#guard`s.
+No theorem changed; no theorem names a dictionary form yet.

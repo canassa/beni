@@ -730,11 +730,12 @@ def mentionsDecl (ids : List Nat) : Expr → Bool
   | .closure d _ => ids.contains d
   | .resultCase _ _ _ a b | .chainCase _ _ _ a b | .entry a _ _ b
   | .letE _ a b | .branch _ a b => mentionsDecl ids a || mentionsDecl ids b
-  | .traverse _ _ _ _ _ _ body | .focus _ _ _ body => mentionsDecl ids body
+  | .traverse _ _ _ _ _ _ body | .focus _ _ _ body | .dictFocus _ _ _ body => mentionsDecl ids body
   | _ => false
 
 def writeOps : Expr → Bool
   | .prim .push _ | .prim .set _ | .focus .. => true
+  | .prim .dictInsert _ | .prim .dictRemove _ | .dictFocus .. => true
   | .resultCase _ _ _ a b | .chainCase _ _ _ a b | .entry a _ _ b
   | .letE _ a b | .branch _ a b => writeOps a || writeOps b
   | .traverse _ _ _ _ _ _ body => writeOps body

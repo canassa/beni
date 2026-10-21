@@ -268,6 +268,7 @@ The write diagnostics count actual runtime write events.
 | `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–6, campaigns, shrinking, controls, distinct and precision counts |
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
+| `DictPrograms.lean`, `DictProbes.lean` | the dictionary model's probe programs and their probes: `DictFocus`, `DictValueWritten` and #474 as `#guard`s against `check` and both runs (#522) |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
 | `FlatFragment/` | the first flat fragment: the strengthened relation, records and field paths (`Fields.lean`), its heap frame, the expression cases (`Branch.lean` for `branch`, `ResultCase.lean` for `resultCase`, `ChainCase.lean` for `chainCase`), and the trace corollary, in one import chain |
@@ -349,9 +350,11 @@ fixed in the statement or the checker.
 ## Limits
 
 Result constructors and elimination, definition-local `?` lowering, recursive `Chain` types, and an
-initialization/retained-entry projection, constructions (`++`, spread literals) and list views are
-modelled (DESIGN.md, last section). Arbitrary user-defined or mutually recursive type
-declarations, `pop`/`swap`/`insertAt`/`removeAt`, dictionaries, sets, opaque types, release representations, implicit evidence,
+initialization/retained-entry projection, constructions (`++`, spread literals), list views and,
+since 2026-10-21, dictionaries with integer keys (`Ty.dict`, five primitives and `dictFocus`, edited
+in place; #522) are modelled (DESIGN.md, its last two sections). Arbitrary user-defined or mutually
+recursive type declarations, `pop`/`swap`/`insertAt`/`removeAt`, string keys and the dictionary
+folds, sets, opaque types, release representations, implicit evidence,
 effects, fibers, TEA and rendering remain outside the model. Chain tails copy their immutable spine;
 payload cells retain their identities. Private initialization uses a deliberately narrow single-read
 allocation/alias/capture chain; unsupported dependency graphs stay shared.
