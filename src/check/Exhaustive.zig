@@ -282,7 +282,7 @@ pub fn run(
         // the kind is asked first (`Bir.Decl.params_start`).
         if (d.kind == .value) {
             for (bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index)) |param| {
-                scratch.reset(.retain_capacity);
+                scratch.reset(.keep_all);
                 try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
             }
         }
@@ -292,22 +292,22 @@ pub fn run(
             const data = bir.instData(at);
             switch (bir.instTag(at)) {
                 .case => {
-                    scratch.reset(.retain_capacity);
+                    scratch.reset(.keep_all);
                     try one(gpa, scratch.allocator(), cx, reporter, at, budget);
                 },
                 .lambda => for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index)) |param| {
-                    scratch.reset(.retain_capacity);
+                    scratch.reset(.keep_all);
                     try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
                 },
                 .let_def => {
                     const def = bir.extraData(@fromBackingInt(@intCast(data.lhs)), Bir.LetDef);
                     for (bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index)) |param| {
-                        scratch.reset(.retain_capacity);
+                        scratch.reset(.keep_all);
                         try irrefutable(gpa, scratch.allocator(), cx, reporter, param, .refutable_parameter_pattern, budget);
                     }
                 },
                 .let_pattern => {
-                    scratch.reset(.retain_capacity);
+                    scratch.reset(.keep_all);
                     try irrefutable(gpa, scratch.allocator(), cx, reporter, @fromBackingInt(@intCast(data.lhs)), .refutable_let_pattern, budget);
                 },
                 else => {},

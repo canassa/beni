@@ -9268,6 +9268,48 @@ pub const prototype_names = [_][]const u8{
     "__defineGetter__", "__defineSetter__", "__lookupGetter__", "__lookupSetter__",
 };
 
+/// The memory of one fact-3 run (`Pts.tmp`, `backend.md` §9, *The combined
+/// solver — Memory*): one arena for everything of the run but its hot
+/// columns, and one arena for each of those, the lists that grow with the
+/// program as the run makes vars, sites, edges, dependencies, summaries
+/// and shared fields' consumers (#606). A column is its arena's only
+/// allocation, so it grows in place (`Arena.initColumn`) and leaves no old
+/// copy behind for the pages it faulted in. It is reset, swapped and
+/// freed as one.
+const RunArena = struct {
+    main: Arena,
+    columns: [column_count]Arena,
+
+    const Column = enum { vars, links_of, cold, sites, edges, deps, summaries, field_outs };
+    const column_count = std.enums.values(Column).len;
+
+    fn init(backing: Allocator) RunArena {
+        var r: RunArena = .{ .main = .init(backing), .columns = undefined };
+        for (&r.columns) |*c| c.* = .initColumn(backing);
+        return r;
+    }
+
+    fn deinit(r: *RunArena) void {
+        r.main.deinit();
+        for (&r.columns) |*c| c.deinit();
+    }
+
+    fn reset(r: *RunArena, mode: Arena.ResetMode) void {
+        r.main.reset(mode);
+        for (&r.columns) |*c| c.reset(mode);
+    }
+
+    /// Everything of the run but a column.
+    fn allocator(r: *RunArena) Allocator {
+        return r.main.allocator();
+    }
+
+    /// Column `c`'s arena: for that list and nothing else.
+    fn column(r: *RunArena, c: Column) Allocator {
+        return r.columns[@backingInt(c)].allocator();
+    }
+};
+
 /// `backend.md` §9, *Whole-program specialisation*, fact 3: a
 /// flow-insensitive, allocation-site points-to analysis, field-sensitive by
 /// property name. An abstract object per object literal, array literal and
@@ -9339,7 +9381,10 @@ const Pts = struct {
     /// and the compilation's arena (`arena`) takes nothing per run (#574).
     /// What outlives a run stays there: `extra_init`, the walk's stacks,
     /// the modules' property columns.
-    tmp: Arena,
+    /// The hot lists among them — `vars`, `links_of`, `cold`, `sites`,
+    /// `edges`, `deps`, `summaries`, `field_outs` — are columns of their
+    /// own (`RunArena`), each grown in place (#606).
+    tmp: RunArena,
     changed: bool = false,
     /// The fixpoint was reached this round: the facts may be read.
     ok: bool = false,
@@ -9967,9 +10012,9 @@ const Pts = struct {
 
     fn newVar(p: *Pts) Allocator.Error!VarId {
         const id: VarId = @intCast(p.vars.items.len);
-        try p.vars.append(p.run(), .{});
-        try p.links_of.append(p.run(), .{});
-        try p.cold.append(p.run(), .{});
+        try p.vars.append(p.tmp.column(.vars), .{});
+        try p.links_of.append(p.tmp.column(.links_of), .{});
+        try p.cold.append(p.tmp.column(.cold), .{});
         if (p.s.in.trace_largest) try p.origins.append(p.run(), .{ .kind = .global, .of = .global });
         return id;
     }
@@ -10046,7 +10091,7 @@ const Pts = struct {
         // `append`, written out: Zig's own backend inlines none of its calls.
         // Dependency chains are read only by this fixpoint. Reclaim the
         // pool with its constraints when the next fixpoint starts (#464).
-        if (p.deps.capacity == at) try p.deps.ensureUnusedCapacity(p.tmp.allocator(), 1);
+        if (p.deps.capacity == at) try p.deps.ensureUnusedCapacity(p.tmp.column(.deps), 1);
         p.deps.items.len = at + 1;
         p.deps.items.ptr[at] = .{ .stmt = p.cur, .next = head };
         return @intCast(at);
@@ -10591,9 +10636,8 @@ const Pts = struct {
             p.cold.items[to].last_from = from;
             return;
         }
-        const a = p.tmp.allocator();
         const at: u32 = @intCast(p.edges.items.len);
-        try p.edges.append(a, .{ .from = from, .to = to, .next_out = p.vars.items[from].succ, .next_in = p.cold.items[to].pred });
+        try p.edges.append(p.tmp.column(.edges), .{ .from = from, .to = to, .next_out = p.vars.items[from].succ, .next_in = p.cold.items[to].pred });
         p.vars.items[from].succ = at;
         p.cold.items[to].pred = at;
         p.cold.items[from].last_to = to;
@@ -10897,7 +10941,7 @@ const Pts = struct {
         p.links_of.items[any].depth = p.links_of.items[v].depth +| 1;
         if (p.s.in.trace_largest) p.originAt(any, p.originOf(v, .summary_any, none));
         const escaped_top = p.vars.items[v].top and !p.vars.items[v].uncapped;
-        try p.summaries.append(p.tmp.allocator(), .{ .any = any, .dead = escaped_top, .of = v });
+        try p.summaries.append(p.tmp.column(.summaries), .{ .any = any, .dead = escaped_top, .of = v });
         p.vars.items[v].summary = id;
     }
 
@@ -11629,7 +11673,7 @@ const Pts = struct {
         const key = p.closedKey(p.s.mods[mi].ir.nodeKey(node));
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
-        try p.sites.append(p.run(), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
+        try p.sites.append(p.tmp.column(.sites), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
         p.links_of.items[p.sites.items[id].any].site_var = true;
         if (p.s.in.trace_largest) p.originAt(p.sites.items[id].any, .{ .kind = .site_any, .of = .site_any, .module = mi, .node = node.int() });
         // Keys written before anything can read them exist from the moment
@@ -11747,7 +11791,7 @@ const Pts = struct {
         const from = pr.vals;
         if (from == none or pr.from != none) {
             const out: u32 = @intCast(p.field_outs.items.len);
-            try p.field_outs.append(p.tmp.allocator(), .{ .to = to, .next = pr.outs });
+            try p.field_outs.append(p.tmp.column(.field_outs), .{ .to = to, .next = pr.outs });
             pr.outs = out;
         }
         if (from != none) try p.copy(from, to);
@@ -12157,9 +12201,9 @@ const Pts = struct {
                 // The reference fills an arena of its own, which `expectSame`
                 // reads after the build's run has emptied and refilled
                 // `tmp`.
-                var ref_tmp: Arena = .init(p.s.gpa);
+                var ref_tmp: RunArena = .init(p.s.gpa);
                 defer ref_tmp.deinit();
-                std.mem.swap(Arena, &p.tmp, &ref_tmp);
+                std.mem.swap(RunArena, &p.tmp, &ref_tmp);
                 const order = try p.arena().alloc(u32, statements);
                 for (order, 0..) |*o, i| o.* = @intCast(i);
                 // A fixed seed: the check, like the build, is a function of
@@ -12181,7 +12225,7 @@ const Pts = struct {
                 p.s.stats.pts_largest = counted.pts_largest;
                 p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
-                std.mem.swap(Arena, &p.tmp, &ref_tmp);
+                std.mem.swap(RunArena, &p.tmp, &ref_tmp);
                 try p.fixpointWith(false);
                 try p.expectSame(&ref, false);
                 return;
@@ -12199,8 +12243,8 @@ const Pts = struct {
     fn checkKept(p: *Pts) Allocator.Error!void {
         // The kept state's own arena stays alive in `held` while the solve
         // fills a fresh one.
-        var held: Arena = .init(p.s.gpa);
-        std.mem.swap(Arena, &p.tmp, &held);
+        var held: RunArena = .init(p.s.gpa);
+        std.mem.swap(RunArena, &p.tmp, &held);
         const kept = p.*;
         const counted = p.s.stats;
         p.analyse() catch |err| {
@@ -14215,10 +14259,10 @@ test "repeated points-to unions of settled site facts keep bounded space" {
     defer s.pts.deinit();
     var storage: [8192]u8 = undefined;
     var bounded: std.heap.FixedBufferAllocator = .init(&storage);
-    s.pts.tmp.deinit();
+    s.pts.tmp.main.deinit();
     // One chunk of all the storage there is: the run arena never opens a
     // second, so the unions must fit in it.
-    s.pts.tmp = .{ .backing = bounded.allocator(), .next_chunk_size = storage.len - 16 };
+    s.pts.tmp.main = .{ .backing = bounded.allocator(), .next_chunk_size = storage.len - 16 };
     const sites = [_]u32{ 1, 3, 5, 7 };
     const equal = [_]u32{ 1, 3, 5, 7 };
     const subset = [_]u32{ 3, 7 };

@@ -18,8 +18,16 @@
 //! chunk, so that work repeated on one arena — the release optimiser's
 //! points-to runs (backend.md §9, *The combined solver — Memory*) — reuses
 //! memory the kernel has already mapped and never frees or maps it again.
+//!
+//! A chunk of `huge_page` bytes or more is, on Linux, placed and sized in
+//! whole huge pages and advised to be backed by them (`MADV_HUGEPAGE`,
+//! #606): one fault then maps 2 MiB instead of 4 KiB, and the release
+//! optimiser's runs touch tens of megabytes. Only where the chunk lives
+//! changes — never what is allocated, in what order, or how much fits — so
+//! nothing a build writes can tell; on every other target it is a no-op.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Alignment = std.mem.Alignment;
 
@@ -35,6 +43,14 @@ current: ?*Chunk = null,
 end_index: usize = 0,
 /// Size of the next chunk to open, doubled every time one is opened.
 next_chunk_size: usize = min_chunk_size,
+/// The size the first chunk is planned at, again after a reset that gave
+/// every chunk back: `min_chunk_size`, or a column's reservation
+/// (`initColumn`).
+first_chunk_size: usize = min_chunk_size,
+/// A column's arena (`initColumn`): its chunks are touched only as far as
+/// the one list in it has grown, so the first huge page of each is not
+/// advised, and a short list costs the small pages it fills.
+sparse: bool = false,
 /// The chunks a `.keep_all` reset kept, linked by `prev`, in the order the
 /// work before it opened them: each is opened again, the first that fits
 /// a request, before the backing allocator is asked for a new one, so work
@@ -48,6 +64,23 @@ pub const min_chunk_size = 256 * 1024;
 /// Allocations are placed at least this aligned; larger alignments are
 /// honoured by forwarding the bump pointer.
 const chunk_align: Alignment = .fromByteUnits(16);
+
+/// The huge page a large chunk is placed and sized in (x86-64's and
+/// AArch64's PMD size with 4 KiB pages). The kernel backs only an aligned
+/// 2 MiB range with one, so such a chunk asks the backing allocator for
+/// that alignment.
+pub const huge_page = 2 * 1024 * 1024;
+
+/// Whether large chunks are placed for huge pages and advised to use them:
+/// only Linux has transparent huge pages behind `madvise`. Elsewhere — macOS,
+/// Windows, the playground's `wasm32-wasi` — a chunk is what it was.
+const huge_pages = builtin.os.tag == .linux;
+
+/// The alignment a chunk of `size` bytes was opened with, and so is
+/// freed with: a function of its size alone.
+fn alignmentOf(size: usize) Alignment {
+    return if (huge_pages and size >= huge_page) .fromByteUnits(huge_page) else chunk_align;
+}
 
 const Chunk = struct {
     prev: ?*Chunk,
@@ -80,6 +113,30 @@ pub const ResetMode = enum {
 
 pub fn init(backing: Allocator) Arena {
     return .{ .backing = backing };
+}
+
+/// Where memory a process has mapped costs nothing until it is touched, so
+/// a reservation is address space and not memory: 64-bit Linux and macOS.
+/// Not Windows, whose page allocator commits what it maps, nor 32-bit
+/// targets, the playground's `wasm32-wasi` among them, where address space
+/// is memory or is short.
+const lazy_commit = @sizeOf(usize) == 8 and (builtin.os.tag == .linux or builtin.os.tag.isDarwin());
+
+/// How much address space a column's arena reserves for its one list.
+pub const column_reservation = 256 * 1024 * 1024;
+
+/// An arena for ONE growing list — a column — and nothing else (#606).
+/// The list is always the arena's last allocation, so it grows in place
+/// (`resize`) for as long as its chunk lasts, and its first chunk is a
+/// reservation of `column_reservation` bytes where that costs only address
+/// space (`lazy_commit`): a list that grows by doubling then never copies
+/// itself, and leaves no old copy behind for the pages it faulted in. A
+/// list longer than that, or a reservation the backing allocator refuses,
+/// goes on in ordinary chunks; elsewhere it is an ordinary arena. Either
+/// way only where the list lives changes.
+pub fn initColumn(backing: Allocator) Arena {
+    const first = if (lazy_commit) column_reservation else min_chunk_size;
+    return .{ .backing = backing, .next_chunk_size = first, .first_chunk_size = first, .sparse = true };
 }
 
 /// Release every chunk. The arena must not be used afterwards.
@@ -131,10 +188,10 @@ pub fn reset(arena: *Arena, mode: ResetMode) void {
         it = chunk.prev;
         const keep_this = mode == .retain_capacity and (keep == null or chunk.size > keep.?.size);
         if (keep_this) {
-            if (keep) |previous_keep| arena.backing.rawFree(previous_keep.bytes(), chunk_align, @returnAddress());
+            if (keep) |previous_keep| arena.backing.rawFree(previous_keep.bytes(), alignmentOf(previous_keep.size), @returnAddress());
             keep = chunk;
         } else {
-            arena.backing.rawFree(chunk.bytes(), chunk_align, @returnAddress());
+            arena.backing.rawFree(chunk.bytes(), alignmentOf(chunk.size), @returnAddress());
         }
     }
     if (keep) |chunk| {
@@ -144,7 +201,7 @@ pub fn reset(arena: *Arena, mode: ResetMode) void {
     } else {
         arena.current = null;
         arena.end_index = 0;
-        arena.next_chunk_size = min_chunk_size;
+        arena.next_chunk_size = arena.first_chunk_size;
     }
 }
 
@@ -175,14 +232,42 @@ fn openChunk(arena: *Arena, needed: usize, ret_addr: usize) ?*Chunk {
     }
     // Enough for the request after the header, or the planned size,
     // whichever is larger; every chunk opened raises the plan.
-    const size = @max(arena.next_chunk_size, Chunk.header_size + needed);
-    const raw = arena.backing.rawAlloc(size, chunk_align, ret_addr) orelse return null;
+    const fits = Chunk.header_size + needed;
+    var size = chunkSize(@max(arena.next_chunk_size, fits));
+    const raw = arena.backing.rawAlloc(size, alignmentOf(size), ret_addr) orelse raw: {
+        // A plan past the request — a column's reservation — that the
+        // backing allocator refuses is not a failure while the request
+        // itself can be had.
+        const least = chunkSize(@max(min_chunk_size, fits));
+        if (least >= size) return null;
+        size = least;
+        break :raw arena.backing.rawAlloc(size, alignmentOf(size), ret_addr) orelse return null;
+    };
+    if (alignmentOf(size) != chunk_align) {
+        const skip: usize = if (arena.sparse) huge_page else 0;
+        if (size > skip) adviseHuge(@alignCast(raw[skip..size]));
+    }
     const chunk: *Chunk = @ptrCast(@alignCast(raw));
     chunk.* = .{ .prev = arena.current, .size = size };
     arena.current = chunk;
     arena.end_index = Chunk.header_size;
     arena.next_chunk_size = size *| 2;
     return chunk;
+}
+
+/// The size a chunk planned at `planned` bytes is opened at: a huge chunk
+/// is whole huge pages, since the tail of a partial one could never be
+/// backed by one.
+fn chunkSize(planned: usize) usize {
+    return if (huge_pages and planned >= huge_page) std.mem.alignForward(usize, planned, huge_page) else planned;
+}
+
+/// Ask the kernel to back `bytes` with huge pages. Advice only: a kernel
+/// without transparent huge pages, or with them off, refuses or ignores
+/// it, and the chunk is ordinary memory, as it was before #606.
+fn adviseHuge(bytes: []align(huge_page) u8) void {
+    if (!huge_pages) return;
+    std.posix.madvise(bytes.ptr, bytes.len, std.posix.MADV.HUGEPAGE) catch {};
 }
 
 fn alloc(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
@@ -384,6 +469,113 @@ test "reset(.keep_all) frees nothing, and the same work again lands where it did
     arena.reset(.retain_capacity);
     try testing.expectEqual(@as(usize, 1), countChunks(&arena));
     try testing.expectEqual(counting.deallocations + 1, opened);
+}
+
+// #606: a chunk of a huge page or more is placed and sized so that the
+// kernel can back all of it with huge pages — on Linux; elsewhere it is
+// opened exactly as before. Either way it holds what it held, and it is
+// given back with the alignment it was taken with (the testing allocator
+// fails the test otherwise).
+test "a huge chunk is whole huge pages on Linux, and an ordinary chunk elsewhere" {
+    var arena: Arena = .init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+
+    const small = try a.alloc(u8, 100);
+    try testing.expect(arena.current.?.size < huge_page);
+    const big = try a.alloc(u8, huge_page + 1);
+    @memset(big, 0xEF);
+    @memset(small, 0x12);
+    const chunk = arena.current.?;
+    try testing.expect(chunk.size >= Chunk.header_size + huge_page + 1);
+    if (huge_pages) {
+        try testing.expectEqual(@as(usize, 0), @intFromPtr(chunk) % huge_page);
+        try testing.expectEqual(@as(usize, 0), chunk.size % huge_page);
+        try testing.expectEqual(@as(usize, 2 * huge_page), chunk.size);
+    } else {
+        try testing.expectEqual(Chunk.header_size + huge_page + 1, chunk.size);
+    }
+    for (big) |b| try testing.expectEqual(@as(u8, 0xEF), b);
+    for (small) |b| try testing.expectEqual(@as(u8, 0x12), b);
+    // Kept by `retain_capacity` as the largest, and given back by `free_all`.
+    arena.reset(.retain_capacity);
+    try testing.expectEqual(chunk, arena.current.?);
+    arena.reset(.free_all);
+    try testing.expectEqual(@as(usize, 0), arena.capacity());
+}
+
+// #606: a list alone in a column's arena is its last allocation, so it
+// grows in place; where a reservation costs only address space, its first
+// chunk is one, and a list that doubles to megabytes is never copied — the
+// one chunk is the only thing asked of the backing allocator, every run
+// after a `keep_all` reset lands on it again, and nothing is freed.
+test "a list alone in a column's arena grows in place and is never copied" {
+    var counting: std.testing.FailingAllocator = .init(testing.allocator, .{});
+    var arena: Arena = .initColumn(counting.allocator());
+    defer arena.deinit();
+    const a = arena.allocator();
+    var first: ?[*]u64 = null;
+    for (0..3) |_| {
+        var list: std.ArrayList(u64) = .empty;
+        var moves: usize = 0;
+        var at: ?[*]u64 = null;
+        for (0..(4 * huge_page) / @sizeOf(u64)) |i| {
+            try list.append(a, i);
+            if (at != list.items.ptr) moves += 1;
+            at = list.items.ptr;
+        }
+        for (list.items, 0..) |v, i| try testing.expectEqual(@as(u64, i), v);
+        if (lazy_commit) {
+            try testing.expectEqual(@as(usize, 1), moves);
+            try testing.expectEqual(@as(usize, 1), counting.allocations);
+            try testing.expectEqual(column_reservation, arena.capacity());
+        }
+        if (first) |f| try testing.expectEqual(f, list.items.ptr) else first = list.items.ptr;
+        arena.reset(.keep_all);
+        try testing.expectEqual(@as(usize, 0), counting.deallocations);
+    }
+}
+
+// A column's reservation is a plan, not a need: a backing allocator that
+// refuses it still hands out what the request needs, and the list goes on
+// in ordinary chunks.
+test "a column whose reservation is refused opens what its list needs" {
+    const Capped = struct {
+        child: Allocator,
+        refused: usize = 0,
+        fn allocFn(ctx: *anyopaque, len: usize, alignment: Alignment, ret_addr: usize) ?[*]u8 {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            if (len > 8 * min_chunk_size) {
+                c.refused += 1;
+                return null;
+            }
+            return c.child.rawAlloc(len, alignment, ret_addr);
+        }
+        fn resizeFn(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) bool {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            return c.child.rawResize(memory, alignment, new_len, ret_addr);
+        }
+        fn remapFn(ctx: *anyopaque, memory: []u8, alignment: Alignment, new_len: usize, ret_addr: usize) ?[*]u8 {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            return c.child.rawRemap(memory, alignment, new_len, ret_addr);
+        }
+        fn freeFn(ctx: *anyopaque, memory: []u8, alignment: Alignment, ret_addr: usize) void {
+            const c: *@This() = @ptrCast(@alignCast(ctx));
+            c.child.rawFree(memory, alignment, ret_addr);
+        }
+        fn allocator(c: *@This()) Allocator {
+            return .{ .ptr = c, .vtable = &.{ .alloc = allocFn, .resize = resizeFn, .remap = remapFn, .free = freeFn } };
+        }
+    };
+    var capped: Capped = .{ .child = testing.allocator };
+    var arena: Arena = .initColumn(capped.allocator());
+    defer arena.deinit();
+    var list: std.ArrayList(u32) = .empty;
+    for (0..min_chunk_size) |i| try list.append(arena.allocator(), @intCast(i));
+    for (list.items, 0..) |v, i| try testing.expectEqual(@as(u32, @intCast(i)), v);
+    try testing.expectEqual(@as(usize, if (lazy_commit) 1 else 0), capped.refused);
+    // Too large for the backing allocator even at its least: out of memory.
+    try testing.expectError(error.OutOfMemory, arena.allocator().alloc(u8, 16 * min_chunk_size));
 }
 
 test "reset on an empty arena is a no-op" {
