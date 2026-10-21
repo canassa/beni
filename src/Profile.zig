@@ -279,6 +279,10 @@ pub const Counter = enum {
     spec_pts_set_words,
     spec_pts_edges,
     spec_pts_load_cells,
+    /// The batches vars took in fact 3, and those that added nothing
+    /// (`Pts.joinNow`): how much of the worklist is no-op.
+    spec_pts_joins,
+    spec_pts_joins_empty,
     /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
     /// edge lists were built, the walks over them, the lowerings of a module
     /// and the modules printed. A build builds each module's edge lists

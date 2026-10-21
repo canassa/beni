@@ -4905,6 +4905,8 @@ const Emitter = struct {
         profile.addCounter(.spec_pts_set_words, stats.pts_set_words);
         profile.addCounter(.spec_pts_edges, stats.pts_edges);
         profile.addCounter(.spec_pts_load_cells, stats.pts_load_cells);
+        profile.addCounter(.spec_pts_joins, stats.pts_joins);
+        profile.addCounter(.spec_pts_joins_empty, stats.pts_joins_empty);
         if (stats.pts_largest) |o| try e.reportLargest(o, stats.pts_largest_sites, slots, spec_slots.items, &ids, &props);
         var k: usize = 0;
         for (todo) |i| {

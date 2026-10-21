@@ -443,6 +443,10 @@ pub const Stats = struct {
     pts_set_words: u64 = 0,
     pts_edges: u64 = 0,
     pts_load_cells: u64 = 0,
+    /// The batches a var took (`Pts.joinNow`), and those that added no
+    /// site and no flag to it.
+    pts_joins: u64 = 0,
+    pts_joins_empty: u64 = 0,
     /// Under `Input.trace_largest`: where the var that first held
     /// `pts_max_set` sites came from.
     pts_largest: ?VarOrigin = null,
@@ -8944,8 +8948,11 @@ const Pts = struct {
     /// hold one copy, and a batch that grows several of them alike makes one
     /// new set. Of one fixpoint, in `tmp` (`Sets`).
     sets: Sets = .{},
-    /// The joins that wait (`join`), and whether `drain` is running.
-    pending: std.ArrayList(Pending) = .empty,
+    /// The vars whose batch waits (`enqueue`), first in, first out from
+    /// `pending_head`, each once (`VSet.queued`); and whether `drain` is
+    /// running.
+    pending: std.ArrayList(VarId) = .empty,
+    pending_head: usize = 0,
     draining: bool = false,
     /// The load cells: those of a var's property by var and property, and
     /// those of any other object expression's read by its node.
@@ -9072,7 +9079,7 @@ const Pts = struct {
     /// before it escaped keeps its property values, which `propagate`
     /// escapes, so no consumer tells the two apart. The reference sweep of
     /// a safety build reads through the same cells.
-    const Load = struct { out: VarId, done: []const u32 = &.{}, summary: bool = false };
+    const Load = struct { out: VarId, done: SetId = 0, summary: bool = false };
     const LoadKey = struct { v: VarId, id: u32 };
 
     /// A node whose value a constraint reads, and the constraint that made
@@ -9113,12 +9120,27 @@ const Pts = struct {
     /// the next — keeps the set it was read as. Growing the set in place shifted, moved or freed the
     /// memory such a value still pointed into: a call in a later operand
     /// joins a site into the very parameter an earlier operand read.
+    /// `set` is the entry's id (*Cells*' `set: []SetId`), so an operation
+    /// on what a var holds starts from the id and never looks it up.
     const VSet = struct {
         top: bool = false,
         prim: bool = false,
         nul: bool = false,
         undef: bool = false,
         sites: []const u32 = &.{},
+        set: SetId = 0,
+        /// What waits to join it (`enqueue`, `drain`): the flags and the
+        /// sites joined since it was last taken from `pending`, as one
+        /// batch, and the part of those sites that came by no linking edge,
+        /// which its field summary folds (`joinNow`). `queued`: it is in
+        /// `pending`.
+        queued: bool = false,
+        q_top: bool = false,
+        q_prim: bool = false,
+        q_nul: bool = false,
+        q_undef: bool = false,
+        q_set: SetId = 0,
+        q_fold: SetId = 0,
         /// The constraints that read the var (`view`), and the walk that last
         /// added one.
         deps: u32 = none,
@@ -9198,10 +9220,21 @@ const Pts = struct {
     const AliasKid = struct { v: VarId, next: u32 };
     const MarkLoad = struct { cell: u32, next: u32 };
 
-    const Pending = struct { v: VarId, val: Val, folded: bool };
+    /// What a var's batch holds when `drain` takes it (`VSet.q_top` …).
+    const Delta = struct {
+        top: bool = false,
+        prim: bool = false,
+        nul: bool = false,
+        undef: bool = false,
+        set: SetId = 0,
+        fold: SetId = 0,
+    };
 
     /// A set's id in `Sets`: 0 is the empty set.
     const SetId = u32;
+    /// The id of a `Val` built from a slice, not read from the table: its
+    /// sites are looked up by content when an id is asked of it (`setOf`).
+    const no_set: SetId = none;
 
     /// The site-set table. An entry is a sorted set of sites, stored once
     /// whichever var or operation made it first; it is never changed or
@@ -9218,9 +9251,9 @@ const Pts = struct {
         chain: std.ArrayList(SetId) = .empty,
         /// Per content hash, the last id made with it.
         by_hash: KeyMap(SetHash, SetId) = .empty,
-        /// Per entry, the id its own slice has: a set a var or a value
-        /// already holds is found without reading its sites.
-        by_slice: KeyMap(SetHash, SetId) = .empty,
+        /// Per site, the id of the set of it alone (0: not made yet): what
+        /// a node that makes a site gives, found without a hash.
+        single: std.ArrayList(SetId) = .empty,
         /// Per operation and operand ids, the result: a second var that
         /// holds what the first held and takes the same batch takes the
         /// same set, with no work. A filter (*Declared-type filtering of
@@ -9325,6 +9358,9 @@ const Pts = struct {
         nul: bool = false,
         undef: bool = false,
         sites: []const u32 = &.{},
+        /// `sites`' id when they are a table entry's own slice (`view`,
+        /// `unionOf`); `no_set` for a value built from any other slice.
+        set: SetId = no_set,
 
         /// What the program did not make, or cannot follow, may be anything:
         /// a host object, a primitive, `null` or `undefined` (research 52
@@ -9482,7 +9518,7 @@ const Pts = struct {
             set.seen = p.walk;
             set.deps = try p.addDep(set.deps);
         }
-        return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites };
+        return .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites, .set = set.set };
     }
 
     /// The constraint being evaluated depends on whether site `site` escaped and
@@ -9560,7 +9596,7 @@ const Pts = struct {
 
     /// Site `site` joins var `v`.
     fn addSite(p: *Pts, v: VarId, site: u32) Allocator.Error!void {
-        try p.join(v, .{ .sites = p.setSites(try p.setOf(&.{site})) });
+        try p.enqueue(v, .{}, try p.single(site), false);
     }
 
     fn makeTop(p: *Pts, v: VarId) Allocator.Error!void {
@@ -9586,42 +9622,105 @@ const Pts = struct {
         if (became or p.vars.items[v].sites.len != 0) p.varChanged(v);
         const held = p.vars.items[v].sites;
         p.vars.items[v].sites = &.{};
+        p.vars.items[v].set = 0;
         for (held) |site| try p.escapeSite(site);
         if (p.vars.items[v].summary != none) p.summaries.items[p.vars.items[v].summary].dead = true;
         var e = p.vars.items[v].succ;
-        while (e != none) : (e = p.edges.items[e].next_out) try p.enqueue(p.edges.items[e].to, Val.top_val, true);
+        while (e != none) : (e = p.edges.items[e].next_out) try p.enqueue(p.edges.items[e].to, Val.top_val, 0, true);
         try p.drain();
     }
 
-    /// `val` joins var `v`. The join is one of a worklist (`pending`): what
-    /// it adds to `v` — the sites `v` lacked, the flags it lacked — is
-    /// queued for every var `v` copies into, as one batch, and the queue is
-    /// drained here unless a drain is in progress. So a value flows along
-    /// a chain of copies by iteration, never by recursion, and each var
-    /// takes each batch of its difference in one new slice.
+    /// `val` joins var `v`. The join waits (`enqueue`): it is merged into
+    /// the batch `v` already waits with, and `drain` carries it on — at the
+    /// end of the constraint being evaluated (`combine`, `effect`), of a
+    /// copy edge's making (`copy`), of `makeTop` and of each of the
+    /// fixpoint's other steps, never inside a join (`backend.md` §9, *The
+    /// combined solver — The worklist*). So a var that takes many sites in
+    /// one evaluation passes them on as one batch.
     fn join(p: *Pts, v: VarId, val: Val) Allocator.Error!void {
-        try p.enqueue(v, val, false);
-        try p.drain();
+        try p.enqueue(v, val, try p.setOf(val), false);
     }
 
-    /// A join that waits: `folded` says the sites arrive along a copy edge,
-    /// whose source's summary already feeds `v`'s (`summaryOf`), so they
-    /// are not folded into it again.
-    fn enqueue(p: *Pts, v: VarId, val: Val, folded: bool) Allocator.Error!void {
-        try p.pending.append(p.tmp.allocator(), .{ .v = v, .val = val, .folded = folded });
+    /// Flags `flags` and the sites of set `set` join var `v`'s batch, and
+    /// `v` waits in `pending` unless it does already. `folded` says the
+    /// sites arrive along a copy edge whose source's summary already feeds
+    /// `v`'s (`summaryOf`), so they are not folded into it again. What `v`
+    /// holds already is no batch: a flag it has, sites it holds, which it
+    /// keeps (a var that goes `top` escapes what it held, as it escapes
+    /// what joins it after).
+    fn enqueue(p: *Pts, v: VarId, flags: Val, set: SetId, folded: bool) Allocator.Error!void {
+        const x = &p.vars.items[v];
+        var sites = set;
+        if (sites != 0) {
+            if (sites == x.set) {
+                sites = 0;
+            } else if (x.sites.len != 0) {
+                const batch = p.setSites(sites);
+                const held = if (batch.len == 1)
+                    std.sort.binarySearch(u32, x.sites, batch[0], orderU32) != null
+                else
+                    batch.len <= x.sites.len and containsSites(x.sites, batch);
+                if (held) sites = 0;
+            }
+        }
+        const new_flags = (flags.top and !x.top) or (flags.prim and !x.prim) or (flags.nul and !x.nul) or (flags.undef and !x.undef);
+        if (!new_flags and sites == 0) return;
+        if (flags.top) x.q_top = true;
+        if (flags.prim) x.q_prim = true;
+        if (flags.nul) x.q_nul = true;
+        if (flags.undef) x.q_undef = true;
+        if (sites != 0) {
+            const all = try p.unionSets(x.q_set, sites);
+            const fold = if (folded) x.q_fold else try p.unionSets(x.q_fold, sites);
+            const y = &p.vars.items[v];
+            y.q_set = all;
+            y.q_fold = fold;
+        }
+        if (!p.vars.items[v].queued) {
+            p.vars.items[v].queued = true;
+            try p.pending.append(p.tmp.allocator(), v);
+        }
     }
 
+    /// Every batch that waits, first in, first out, and every batch that
+    /// processing them makes: a var takes all that reached it since it was
+    /// last taken in one `joinNow`.
     fn drain(p: *Pts) Allocator.Error!void {
         if (p.draining) return;
         p.draining = true;
         defer p.draining = false;
-        while (p.pending.pop()) |next| try p.joinNow(next.v, next.val, next.folded);
+        while (p.pending_head < p.pending.items.len) {
+            const v = p.pending.items[p.pending_head];
+            p.pending_head += 1;
+            const x = &p.vars.items[v];
+            const d: Delta = .{ .top = x.q_top, .prim = x.q_prim, .nul = x.q_nul, .undef = x.q_undef, .set = x.q_set, .fold = x.q_fold };
+            x.queued = false;
+            x.q_top = false;
+            x.q_prim = false;
+            x.q_nul = false;
+            x.q_undef = false;
+            x.q_set = 0;
+            x.q_fold = 0;
+            try p.joinNow(v, d);
+            // What was taken is not kept: the queue's memory follows what
+            // waits, not what has been processed.
+            if (p.pending_head >= 4096 and 2 * p.pending_head >= p.pending.items.len) {
+                const rest = p.pending.items.len - p.pending_head;
+                std.mem.copyForwards(VarId, p.pending.items[0..rest], p.pending.items[p.pending_head..]);
+                p.pending.items.len = rest;
+                p.pending_head = 0;
+            }
+        }
+        p.pending.clearRetainingCapacity();
+        p.pending_head = 0;
     }
 
-    /// The transfer: `val` into `v`, and the difference on.
-    fn joinNow(p: *Pts, v: VarId, val: Val, folded: bool) Allocator.Error!void {
+    /// The transfer: batch `d` into `v`, and the difference on.
+    fn joinNow(p: *Pts, v: VarId, d: Delta) Allocator.Error!void {
+        p.s.stats.pts_joins += 1;
+        const was_top = p.vars.items[v].top;
         var flags: Val = .{};
-        if (val.top) {
+        if (d.top) {
             if (p.vars.items[v].uncapped) {
                 if (!p.vars.items[v].top) {
                     p.vars.items[v].top = true;
@@ -9632,15 +9731,15 @@ const Pts = struct {
         }
         {
             const set = &p.vars.items[v];
-            if (val.prim and !set.prim) {
+            if (d.prim and !set.prim) {
                 set.prim = true;
                 flags.prim = true;
             }
-            if (val.nul and !set.nul) {
+            if (d.nul and !set.nul) {
                 set.nul = true;
                 flags.nul = true;
             }
-            if (val.undef and !set.undef) {
+            if (d.undef and !set.undef) {
                 set.undef = true;
                 flags.undef = true;
             }
@@ -9649,50 +9748,72 @@ const Pts = struct {
         if (new_flags) p.varChanged(v);
         // Only the sites `v`'s declared type allows join it (*Declared-type
         // filtering of fact 3*); the flags pass whatever the filter.
-        const sites = try p.filterSites(val.sites, p.vars.items[v].allow);
+        const sites = try p.filterSites(d.set, p.vars.items[v].allow);
         if (p.vars.items[v].top and !p.vars.items[v].uncapped) {
             // A var that is `top` holds no list: what joins it escapes, and
             // what it copies into is `top` already.
-            for (sites) |site| try p.escapeSite(site);
+            for (p.setSites(sites)) |site| try p.escapeSite(site);
+            if (!new_flags and was_top) p.s.stats.pts_joins_empty += 1;
             return;
         }
-        const old = p.vars.items[v].sites;
-        var added = try p.difference(sites, old);
-        if (added.len != 0) {
+        const old = p.vars.items[v].set;
+        var added: SetId = 0;
+        if (sites != 0 and sites != old) {
+            const batch = p.setSites(sites);
+            // One site, the common batch: a search of what `v` holds, and
+            // the batch is its own difference.
+            if (batch.len == 1) {
+                if (std.sort.binarySearch(u32, p.vars.items[v].sites, batch[0], orderU32) == null) added = sites;
+            } else added = try p.difference(sites, old);
+        }
+        if (added != 0) {
             // A new set, never the old one grown (`VSet`): the table's entry
             // of the union, which every var that held `old` and takes the
-            // same batch shares (`Sets.ops`). The batch the var passes on is
-            // an entry too, so its successors find it by its slice.
-            const batch = try p.setOf(added);
-            if (old.len == 0) added = p.setSites(batch);
-            const grown = p.setSites(try p.unionSets(try p.setOf(old), batch));
-            p.vars.items[v].sites = grown;
-            try p.countSet(v, grown.len);
+            // same batch shares (`Sets.ops`).
+            const grown = try p.unionSets(old, added);
+            p.vars.items[v].sites = p.setSites(grown);
+            p.vars.items[v].set = grown;
+            try p.countSet(v, p.vars.items[v].sites.len);
             p.varChanged(v);
-            if (grown.len > max_sites and (!p.vars.items[v].uncapped or p.vars.items[v].limited)) try p.makeTop(v);
-        } else if (!new_flags) return;
-        flags.sites = added;
+            if (p.vars.items[v].sites.len > max_sites and (!p.vars.items[v].uncapped or p.vars.items[v].limited)) try p.makeTop(v);
+        } else if (!new_flags) {
+            p.s.stats.pts_joins_empty += 1;
+            return;
+        }
         var e = p.vars.items[v].succ;
         while (e != none) : (e = p.edges.items[e].next_out) {
             const to = p.edges.items[e].to;
-            try p.enqueue(to, flags, p.linksAcross(v, to));
+            try p.enqueue(to, flags, added, p.linksAcross(v, to));
         }
-        if (folded or added.len == 0) return;
+        // What no linking edge brought is folded into `v`'s summary.
+        if (added == 0 or d.fold == 0) return;
+        const fresh = p.setSites(added);
+        const all = d.fold == d.set;
+        const fold = p.setSites(d.fold);
+        if (!all) {
+            for (fresh) |site| {
+                if (std.sort.binarySearch(u32, fold, site, orderU32) != null) break;
+            } else return;
+        }
         // A site of its own: a var whose summary is another's has its own
         // from now on (#568), which folds what the other lacks.
         if (p.vars.items[v].alias != none) try p.split(v);
-        if (p.vars.items[v].summary != none) for (added) |site| try p.foldSite(p.vars.items[v].summary, site);
+        if (p.vars.items[v].summary == none) return;
+        const sum = p.vars.items[v].summary;
+        for (fresh) |site| {
+            if (all or std.sort.binarySearch(u32, fold, site, orderU32) != null) try p.foldSite(sum, site);
+        }
     }
 
-    /// The sites of `sites` a var whose filter is `allow` holds: those whose
-    /// key is `allow` or wild (*Declared-type filtering of fact 3*). One
-    /// more operation of the set table, made once per set and key
-    /// (`Sets.ops`); `sites` itself when every one passes.
-    fn filterSites(p: *Pts, sites: []const u32, allow: JsIr.RepKey) Allocator.Error![]const u32 {
-        if (allow == .wild or sites.len == 0) return sites;
-        const a = try p.setOf(sites);
+    /// The sites of set `a` a var whose filter is `allow` holds: those
+    /// whose key is `allow` or wild (*Declared-type filtering of fact 3*).
+    /// One more operation of the set table, made once per set and key
+    /// (`Sets.ops`); `a` itself when every one passes.
+    fn filterSites(p: *Pts, a: SetId, allow: JsIr.RepKey) Allocator.Error!SetId {
+        if (allow == .wild or a == 0) return a;
         const key: SetOpKey = .{ .op = @backingInt(SetOp.filter), .a = a, .b = allow.int() };
-        if (p.sets.ops.get(key)) |id| return p.setSites(id);
+        if (p.sets.ops.get(key)) |id| return id;
+        const sites = p.setSites(a);
         const out = &p.sets.scratch;
         out.clearRetainingCapacity();
         try out.ensureTotalCapacity(p.tmp.allocator(), sites.len);
@@ -9702,7 +9823,7 @@ const Pts = struct {
         }
         const id = if (out.items.len == sites.len) a else if (out.items.len == 0) 0 else try p.intern(out.items);
         try p.sets.ops.put(p.tmp.allocator(), key, id);
-        return p.setSites(id);
+        return id;
     }
 
     /// Whether a copy edge `from → to` links `to`'s field summary to
@@ -9750,23 +9871,62 @@ const Pts = struct {
         return if (keys.isWild(k)) .wild else k;
     }
 
-    /// The sites of `a` that are not in `b`, both sorted sets: `a` itself
-    /// when `b` is empty, nothing when `b` holds all of `a`, else the
-    /// table's entry of the difference.
-    fn difference(p: *Pts, a: []const u32, b: []const u32) Allocator.Error![]const u32 {
-        if (a.len == 0 or b.len == 0) return a;
-        if (containsSites(b, a)) return &.{};
-        return p.setSites(try p.differenceSets(try p.setOf(a), try p.setOf(b)));
+    /// The sites of set `a` that are not in set `b`: `a` itself when `b`
+    /// is empty, nothing when `b` holds all of `a`, else the table's entry
+    /// of the difference.
+    fn difference(p: *Pts, a: SetId, b: SetId) Allocator.Error!SetId {
+        if (a == 0 or b == 0) return a;
+        if (a == b or containsSites(p.setSites(b), p.setSites(a))) return 0;
+        return p.differenceSets(a, b);
     }
 
     // ---- The set table -------------------------------------------------------
 
-    /// The id of the set `sites` holds: the entry whose own slice it is,
-    /// else the entry of its content, made when the table has none.
-    fn setOf(p: *Pts, sites: []const u32) Allocator.Error!SetId {
+    /// The id of the set `val` holds: its own, when it was read from the
+    /// table (`Val.set`), else the entry of its sites.
+    fn setOf(p: *Pts, val: Val) Allocator.Error!SetId {
+        if (val.sites.len == 0) return 0;
+        if (val.set != no_set) {
+            if (std.debug.runtime_safety) {
+                const own = p.setSites(val.set);
+                std.debug.assert(own.ptr == val.sites.ptr and own.len == val.sites.len);
+            }
+            return val.set;
+        }
+        return p.idOf(val.sites);
+    }
+
+    /// The id of the set `sites` holds, made when the table has none.
+    fn idOf(p: *Pts, sites: []const u32) Allocator.Error!SetId {
         if (sites.len == 0) return 0;
-        if (p.sets.by_slice.get(sliceKey(sites))) |id| return id;
+        if (sites.len == 1) return p.single(sites[0]);
         return p.intern(sites);
+    }
+
+    /// The id of the set of site `site` alone.
+    fn single(p: *Pts, site: u32) Allocator.Error!SetId {
+        const t = &p.sets.single;
+        if (site >= t.items.len) {
+            const old = t.items.len;
+            try t.resize(p.tmp.allocator(), site + 1);
+            @memset(t.items[old..], 0);
+        }
+        if (t.items[site] != 0) return t.items[site];
+        const id = try p.intern(&.{site});
+        p.sets.single.items[site] = id;
+        return id;
+    }
+
+    /// A value of the sites of set `id`, which knows its id.
+    fn valOf(p: *const Pts, id: SetId) Val {
+        return .{ .sites = p.setSites(id), .set = id };
+    }
+
+    /// Whether `a` and `b` hold the same sites: by their ids when both
+    /// know theirs, the table being content-addressed.
+    fn sameSites(a: Val, b: Val) bool {
+        if (a.set != no_set and b.set != no_set) return a.set == b.set;
+        return std.mem.eql(u32, a.sites, b.sites);
     }
 
     fn setSites(p: *const Pts, id: SetId) []const u32 {
@@ -9776,8 +9936,8 @@ const Pts = struct {
 
     /// The entry of the sites `content` holds, made when the table has
     /// none: a copy, since `content` may be `scratch` or a caller's own
-    /// memory. Only an entry's own slice goes in `by_slice`, so a slice
-    /// found there is that entry, and an address is never an answer.
+    /// memory. An id is found by content alone, so two entries never hold
+    /// the same sites, and ids compare as their sets do (`sameSites`).
     fn intern(p: *Pts, content: []const u32) Allocator.Error!SetId {
         const a = p.tmp.allocator();
         const t = &p.sets;
@@ -9800,7 +9960,6 @@ const Pts = struct {
         p.s.stats.pts_set_words += stored.len;
         try t.items.append(a, stored);
         try t.chain.append(a, head);
-        try t.by_slice.put(a, sliceKey(stored), id);
         return id;
     }
 
@@ -9811,11 +9970,6 @@ const Pts = struct {
             h ^= h >> 29;
         }
         return .{ .lo = @truncate(h), .hi = @truncate(h >> 32), .len = @intCast(sites.len) };
-    }
-
-    fn sliceKey(sites: []const u32) SetHash {
-        const at: u64 = @intFromPtr(sites.ptr);
-        return .{ .lo = @truncate(at), .hi = @truncate(at >> 32), .len = @intCast(sites.len) };
     }
 
     /// The union of sets `a` and `b`, made once per pair (`Sets.ops`).
@@ -9914,7 +10068,7 @@ const Pts = struct {
             try p.split(to);
         } else if (links and p.vars.items[to].summary != none) try p.linkFrom(from, p.vars.items[to].summary);
         const set = p.vars.items[from];
-        try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef, .sites = set.sites }, links);
+        try p.enqueue(to, .{ .top = set.top, .prim = set.prim, .nul = set.nul, .undef = set.undef }, set.set, links);
         try p.drain();
         // A chain of copies a shared field ran through is one no longer.
         if (p.vars.items[to].preds == 2 and p.vars.items[to].sharers != none) try p.unshare(to);
@@ -10687,16 +10841,17 @@ const Pts = struct {
 
     fn unionOf(p: *Pts, a: Val, b: Val) Allocator.Error!Val {
         const flags: Val = .{ .top = a.top or b.top, .prim = a.prim or b.prim, .nul = a.nul or b.nul, .undef = a.undef or b.undef };
-        if (a.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = b.sites };
-        if (b.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = a.sites };
+        if (a.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = b.sites, .set = b.set };
+        if (b.sites.len == 0) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = a.sites, .set = a.set };
         // Site slices are immutable snapshots. A settled union can share
         // the containing operand instead of retaining another identical
         // snapshot on every fixpoint reevaluation (#464).
-        const large = if (a.sites.len >= b.sites.len) a.sites else b.sites;
-        const small = if (a.sites.len >= b.sites.len) b.sites else a.sites;
-        if (containsSites(large, small)) return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large };
-        const sites = p.setSites(try p.unionSets(try p.setOf(a.sites), try p.setOf(b.sites)));
-        return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = sites };
+        const large = if (a.sites.len >= b.sites.len) a else b;
+        const small = if (a.sites.len >= b.sites.len) b else a;
+        if ((large.set != no_set and large.set == small.set) or containsSites(large.sites, small.sites))
+            return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = large.sites, .set = large.set };
+        const id = try p.unionSets(try p.setOf(a), try p.setOf(b));
+        return .{ .top = flags.top, .prim = flags.prim, .nul = flags.nul, .undef = flags.undef, .sites = p.setSites(id), .set = id };
     }
 
     /// Both operands are sorted sets. Adjacent matches walk once; gaps
@@ -11129,12 +11284,16 @@ const Pts = struct {
         if (obj.top or obj.prim or id == none) try p.join(out, Val.top_val);
         // The summary follows the name's sites itself: `obj` is what the
         // name held when the constraint was evaluated, never more.
-        if (p.loads.items[li].summary) return p.view(out);
-        const fresh = try p.difference(obj.sites, p.loads.items[li].done);
+        if (p.loads.items[li].summary) {
+            // What the read joined is in the cell before its value is read.
+            try p.drain();
+            return p.view(out);
+        }
+        const fresh = try p.difference(try p.setOf(obj), p.loads.items[li].done);
         // What was linked, and what is now: two reads share a cell, and one
         // may be evaluated with an older, smaller object than the other.
-        if (fresh.len != 0) p.loads.items[li].done = (try p.unionOf(.{ .sites = p.loads.items[li].done }, .{ .sites = fresh })).sites;
-        for (fresh) |site| {
+        if (fresh != 0) p.loads.items[li].done = try p.unionSets(p.loads.items[li].done, fresh);
+        for (p.setSites(fresh)) |site| {
             const st = &p.sites.items[site];
             // No object, an unknown key or an escaped site: the read is
             // anything, and nothing is linked. A site that escaped is read
@@ -11154,6 +11313,7 @@ const Pts = struct {
             try p.copyField(site, at, id, out);
             try p.copy(p.sites.items[site].any, out);
         }
+        try p.drain();
         return p.view(out);
     }
 
@@ -11340,6 +11500,8 @@ const Pts = struct {
                 p.s.stats.pts_set_words = counted.pts_set_words;
                 p.s.stats.pts_edges = counted.pts_edges;
                 p.s.stats.pts_load_cells = counted.pts_load_cells;
+                p.s.stats.pts_joins = counted.pts_joins;
+                p.s.stats.pts_joins_empty = counted.pts_joins_empty;
                 p.s.stats.pts_largest = counted.pts_largest;
                 p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
@@ -11549,6 +11711,7 @@ const Pts = struct {
         p.sharers = .empty;
         p.lit_keys = .empty;
         p.pending = .empty;
+        p.pending_head = 0;
         p.draining = false;
         // A fresh table, not the old one cleared: a safety build's
         // reference (`fixpoint`) keeps its own, which `expectSame` reads.
@@ -11576,8 +11739,10 @@ const Pts = struct {
             try p.walkStatements();
             // What files the pass cannot see read.
             for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
+            try p.drain();
             if (s.in.entry) |e| try p.entryCall(e);
             try p.propagate();
+            if (std.debug.runtime_safety) std.debug.assert(p.pending.items.len == 0);
             if (!p.changed) {
                 p.ok = true;
                 return;
@@ -11653,8 +11818,10 @@ const Pts = struct {
             p.changed = false;
             // What files the pass cannot see read.
             for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
+            try p.drain();
             if (s.in.entry) |e| try p.entryCall(e);
             try p.propagate();
+            if (std.debug.runtime_safety) std.debug.assert(p.pending.items.len == 0);
             if (!p.changed and p.waiting_count == 0) {
                 p.ok = true;
                 return;
@@ -11698,7 +11865,7 @@ const Pts = struct {
         const v = try p.combine(k.module, k.node);
         const old = &p.cons.items[c].val;
         if (old.top == v.top and old.prim == v.prim and old.nul == v.nul and old.undef == v.undef and
-            std.mem.eql(u32, old.sites, v.sites)) return;
+            sameSites(old.*, v)) return;
         old.* = v;
         var l = p.cons.items[c].readers;
         while (l != none) : (l = p.links.items[l].next) p.reevaluate(p.links.items[l].cons);
@@ -11772,7 +11939,14 @@ const Pts = struct {
         try p.effect(mi, node, func);
     }
 
+    /// Statement `node`'s transfer, and what it joined carried on: the end
+    /// of a constraint's evaluation, where the worklist drains (`join`).
     fn effect(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
+        try p.effectNow(mi, node, func);
+        try p.drain();
+    }
+
+    fn effectNow(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
         const ir = p.s.mods[mi].ir;
         const d = ir.data(node);
         const vals = p.vals[mi];
@@ -11851,6 +12025,7 @@ const Pts = struct {
             p.once_ctx = true;
             p.reads.clearRetainingCapacity();
             try p.stmt(st.module, st.top, null);
+            try p.drain();
         }
     }
 
@@ -11877,6 +12052,7 @@ const Pts = struct {
                 try p.escape(try p.view(p.sites.items[i].ret));
             }
         }
+        try p.drain();
     }
 
     fn stmt(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
@@ -11894,7 +12070,9 @@ const Pts = struct {
             .func_decl, .gen_decl => {
                 const site = try p.funcSite(mi, node, @fromBackingInt(@intCast(d.rhs)));
                 if (ir.tag(node) == .gen_decl) try p.escapeSite(site);
-                try p.join(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), .{ .sites = &.{site} });
+                try p.enqueue(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), .{}, try p.single(site), false);
+                // Its name holds it before the body, which may call it, is walked.
+                try p.drain();
                 try p.body(mi, @fromBackingInt(@intCast(d.rhs)), site);
                 p.kill();
             },
@@ -12201,6 +12379,7 @@ const Pts = struct {
         const f = ir.extraData(record, JsIr.Func);
         try p.list(mi, f.body(), site);
         if (fallsThrough(ir, f.body())) try p.join(p.sites.items[site].ret, Val.undef_val);
+        try p.drain();
     }
 
     /// What `root` may be, bottom-up over an explicit stack, every node's
@@ -12266,7 +12445,15 @@ const Pts = struct {
         return vals[root.int()];
     }
 
+    /// Node `node`'s value, and what making it joined carried on: the end
+    /// of a constraint's evaluation, where the worklist drains (`join`).
     fn combine(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
+        const v = try p.combineNow(mi, node);
+        try p.drain();
+        return v;
+    }
+
+    fn combineNow(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
         const ir = p.s.mods[mi].ir;
         const vals = p.vals[mi];
         const d = ir.data(node);
@@ -12450,6 +12637,7 @@ const Pts = struct {
             for (params, 0..) |v, i| try p.join(v, if (i < e.args.len) try p.view(p.globals[e.args[i]]) else Val.undef_val);
         }
         if (unknown) for (e.args) |a| try p.escape(try p.view(p.globals[a]));
+        try p.drain();
     }
 
     fn call(p: *Pts, mi: u32, node: Index) Allocator.Error!Val {
@@ -13280,6 +13468,7 @@ test "a value read from a var keeps its sites when a later join adds one" {
         // In front: every site already there moves up one.
         const site: u32 = @intCast(2 * (Pts.max_sites - i));
         try p.addSite(v, site);
+        try p.drain();
         try testing.expectEqualSlices(u32, before, read.sites);
         try want.insert(arena, 0, site);
     }
@@ -13819,8 +14008,9 @@ test "settled points-to joins have bounded work" {
     for (&held, 0..) |*site, i| site.* = @intCast(i);
     var incoming: [64]u32 = undefined;
     @memcpy(&incoming, &held);
-    p.vars.items[v].sites = &held;
+    try holdSites(p, v, &held);
     for (0..131072) |_| try p.join(v, .{ .sites = &incoming });
+    try p.drain();
     try testing.expectEqualSlices(u32, &held, (try p.view(v)).sites);
 }
 
@@ -13836,19 +14026,23 @@ test "points-to joins preserve flags and finite snapshot growth" {
     const v = try p.newVar();
     const held = [_]u32{ 0, 2, 4, 6 };
     const equal = [_]u32{ 0, 2, 4, 6 };
-    p.vars.items[v].sites = &held;
+    try holdSites(p, v, &held);
     p.waiting = try arena_state.allocator().alloc(u64, 1);
     p.waiting[0] = 0;
     p.walk = 1;
     p.cur = 7;
     _ = try p.view(v);
     try p.join(v, .{ .sites = &equal });
+    try p.drain();
     try p.join(v, .{ .sites = &.{ 2, 6 } });
+    try p.drain();
     try testing.expectEqual(@as(u32, 0), p.waiting_count);
     try p.join(v, .{ .sites = &.{ 2, 6 }, .prim = true, .nul = true, .undef = true });
+    try p.drain();
     try testing.expectEqual(@as(u64, 1) << 7, p.waiting[0]);
     try testing.expectEqual(@as(u32, 1), p.waiting_count);
     try p.join(v, .{ .sites = &.{ 1, 3, 5 } });
+    try p.drain();
     const result = try p.view(v);
     try testing.expect(result.prim and result.nul and result.undef and !result.top);
     try testing.expectEqualSlices(u32, &.{ 0, 1, 2, 3, 4, 5, 6 }, result.sites);
@@ -13872,7 +14066,7 @@ test "points-to joins preserve top escape and threshold wake order" {
     }
     const held = try arena.alloc(u32, Pts.max_sites - 1);
     for (held, 0..) |*site, i| site.* = @intCast(i);
-    p.vars.items[v].sites = held;
+    try holdSites(p, v, held);
     p.waiting = try arena.alloc(u64, 1);
     p.waiting[0] = 0;
     p.walk = 1;
@@ -13883,6 +14077,7 @@ test "points-to joins preserve top escape and threshold wake order" {
         try p.seeSite(site);
     }
     try p.join(v, .{ .sites = &.{ 0, Pts.max_sites - 1, Pts.max_sites, Pts.max_sites + 1 } });
+    try p.drain();
     const result = try p.view(v);
     try testing.expect(result.top and result.prim and result.nul and result.undef);
     try testing.expectEqual(@as(usize, 0), result.sites.len);
@@ -13893,6 +14088,7 @@ test "points-to joins preserve top escape and threshold wake order" {
     for (held, 0..) |site, i| try testing.expectEqual(@as(u32, @intCast(i)), site);
     // An already-top destination still has to escape incoming sites.
     try p.join(v, .{ .sites = &.{Pts.max_sites + 2} });
+    try p.drain();
     try testing.expect(p.sites.items[Pts.max_sites + 2].escaped);
     try testing.expectEqual(@as(u32, 5), p.waiting_count);
     // Incoming top escapes a finite destination's borrowed snapshot.
@@ -13901,8 +14097,9 @@ test "points-to joins preserve top escape and threshold wake order" {
     const any = try p.newVar();
     try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = any });
     const snapshot = [_]u32{fresh};
-    p.vars.items[other].sites = &snapshot;
+    try holdSites(p, other, &snapshot);
     try p.join(other, .{ .top = true, .sites = &snapshot });
+    try p.drain();
     try testing.expect((try p.view(other)).top);
     try testing.expect(p.sites.items[fresh].escaped);
     try testing.expectEqualSlices(u32, &.{fresh}, &snapshot);
@@ -13929,6 +14126,7 @@ test "a limited member binding escapes its sites past the cap" {
     const open = try p.newVar();
     p.vars.items[open].uncapped = true;
     try p.join(open, .{ .top = true, .sites = ids });
+    try p.drain();
     const kept = try p.view(open);
     try testing.expect(kept.top);
     try testing.expectEqualSlices(u32, ids, kept.sites);
@@ -13938,6 +14136,7 @@ test "a limited member binding escapes its sites past the cap" {
     p.vars.items[under].uncapped = true;
     p.vars.items[under].limited = true;
     try p.join(under, .{ .top = true, .sites = ids[0..1] });
+    try p.drain();
     const few = try p.view(under);
     try testing.expect(few.top);
     try testing.expectEqualSlices(u32, ids[0..1], few.sites);
@@ -13951,6 +14150,7 @@ test "a limited member binding escapes its sites past the cap" {
     const li = try p.newLoad();
     try p.sites.items[0].loads.append(arena, li);
     try p.join(capped, .{ .top = true, .sites = ids });
+    try p.drain();
     const result = try p.view(capped);
     try testing.expect(result.top and result.prim and result.nul and result.undef);
     try testing.expectEqual(@as(usize, 0), result.sites.len);
@@ -13980,6 +14180,7 @@ test "a copy edge carries the difference, and a value read before keeps its site
     const b = try p.newVar();
     const c = try p.newVar();
     try p.addSite(a, 5);
+    try p.drain();
     try p.copy(a, b);
     try p.copy(b, c);
     try p.copy(a, b);
@@ -13987,6 +14188,7 @@ test "a copy edge carries the difference, and a value read before keeps its site
     try testing.expectEqualSlices(u32, &.{5}, (try p.view(c)).sites);
     const before = try p.view(c);
     try p.join(a, .{ .prim = true, .sites = &.{ 2, 9 } });
+    try p.drain();
     try testing.expectEqualSlices(u32, &.{5}, before.sites);
     try testing.expectEqualSlices(u32, &.{ 2, 5, 9 }, (try p.view(b)).sites);
     try testing.expectEqualSlices(u32, &.{ 2, 5, 9 }, (try p.view(c)).sites);
@@ -13994,6 +14196,7 @@ test "a copy edge carries the difference, and a value read before keeps its site
     // A site already there costs no new set.
     const settled = (try p.view(c)).sites;
     try p.addSite(a, 9);
+    try p.drain();
     try testing.expectEqual(settled.ptr, (try p.view(c)).sites.ptr);
     try p.makeTop(a);
     try testing.expect((try p.view(c)).top);
@@ -14021,6 +14224,7 @@ test "points-to vars grown by the same batches share their sets" {
     while (site < 64) : (site += 1) {
         if (site == 32) before = try p.view(a);
         try p.addSite(src, site);
+        try p.drain();
         const held = (try p.view(src)).sites;
         try testing.expectEqual(@as(usize, site + 1), held.len);
         try testing.expectEqual(held.ptr, (try p.view(a)).sites.ptr);
@@ -14036,6 +14240,7 @@ test "points-to vars grown by the same batches share their sets" {
     for (&all, 0..) |*x, i| x.* = @intCast(i);
     const c = try p.newVar();
     try p.join(c, .{ .sites = &all });
+    try p.drain();
     try testing.expectEqual((try p.view(a)).sites.ptr, (try p.view(c)).sites.ptr);
     try testing.expectEqual(words, s.stats.pts_set_words);
 }
@@ -14058,11 +14263,14 @@ test "a field summary composes along a copy edge" {
     while (i < 3) : (i += 1) {
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.drain();
         try p.addSite(try fieldVar(p, i, 2), 200 + i);
+        try p.drain();
     }
     const u = try p.newVar();
     const v = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     try p.copy(u, v);
     // A second source, empty, so that `v` has a summary of its own: a var
     // that copies one var alone shares its summary (#568).
@@ -14071,6 +14279,7 @@ test "a field summary composes along a copy edge" {
     const sum_v = try p.summaryOf(v);
     // Read whole, as a spread reads it.
     try p.markWhole(sum_v);
+    try p.drain();
     const sum_u = p.vars.items[u].summary;
     try testing.expect(sum_u != none and sum_u != sum_v);
     // `u`'s summary folds two sites of two properties (plus `any`), each
@@ -14083,8 +14292,10 @@ test "a field summary composes along a copy edge" {
     // A site joining `u` later reaches `v`'s summary; so does a property a
     // held site gains later.
     try p.addSite(u, 2);
+    try p.drain();
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(prop1.vals)).sites);
     try p.addSite(try fieldVar(p, 1, 3), 300);
+    try p.drain();
     const prop3 = p.summaries.items[sum_v].props.items[2];
     try testing.expectEqual(@as(u32, 3), prop3.id);
     try testing.expectEqualSlices(u32, &.{300}, (try p.view(prop3.vals)).sites);
@@ -14109,6 +14320,7 @@ test "a binding copied from a load cell holds the read's objects beside top" {
     while (i < 3) : (i += 1) try p.sites.append(arena_state.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
     const cell = p.loads.items[try p.newLoad()].out;
     try p.join(cell, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const binding = try p.newVar();
     p.vars.items[binding].uncapped = true;
     p.vars.items[binding].limited = true;
@@ -14116,7 +14328,9 @@ test "a binding copied from a load cell holds the read's objects beside top" {
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(binding)).sites);
     try testing.expect(!(try p.view(binding)).top);
     try p.join(cell, Pts.Val.top_val);
+    try p.drain();
     try p.addSite(cell, 2);
+    try p.drain();
     const held = try p.view(binding);
     try testing.expect(held.top);
     try testing.expectEqualSlices(u32, &.{ 0, 1, 2 }, held.sites);
@@ -14140,14 +14354,17 @@ test "a parameter copied from a load cell is made top as the cell is" {
     while (i < 4) : (i += 1) try p.sites.append(arena_state.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
     const cell = p.loads.items[try p.newLoad()].out;
     try p.join(cell, .{ .sites = &.{0} });
+    try p.drain();
     const before = try p.newVar();
     try p.copy(cell, before);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(before)).sites);
     try testing.expect(!p.sites.items[0].escaped);
     try p.join(cell, .{ .top = true, .sites = &.{1} });
+    try p.drain();
     const after = try p.newVar();
     try p.copy(cell, after);
     try p.addSite(cell, 2);
+    try p.drain();
     for ([_]Pts.VarId{ before, after }) |v| {
         const got = try p.view(v);
         try testing.expect(got.top and got.prim and got.nul and got.undef);
@@ -14181,12 +14398,14 @@ test "names that copy a load cell share one summary, which folds the field's sit
         try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(i), .any = try p.newVar() });
         (try p.prop(i, 1)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.drain();
     }
     // `site_field` is a record's field, holding sites 0 to 2, and `field`
     // the summary's var of it; the cell copies `field`.
     const site_field = try p.newVar();
     p.vars.items[site_field].site_var = true;
     try p.join(site_field, .{ .sites = &.{ 0, 1, 2 } });
+    try p.drain();
     const field = try p.newVar();
     try p.copy(site_field, field);
     const cell = p.loads.items[try p.newLoad()].out;
@@ -14206,11 +14425,13 @@ test "names that copy a load cell share one summary, which folds the field's sit
     try testing.expectEqual(@as(usize, 3), p.summaries.items[sum_field].sites.items.len);
     const li = try p.newLoad();
     try p.summaryLoad(sum_a, 1, li);
+    try p.drain();
     const out = p.loads.items[li].out;
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
     for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.findProp(site, 1).?.read);
     try testing.expect(!p.findProp(3, 1).?.read);
     try p.addSite(site_field, 3);
+    try p.drain();
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102, 103 }, (try p.view(out)).sites);
     try testing.expect(p.findProp(3, 1).?.read);
     try testing.expectEqual(@as(usize, 4), p.summaries.items[sum_field].sites.items.len);
@@ -14241,16 +14462,21 @@ test "a field passed back to its own parameter makes finitely many summaries" {
         (try p.prop(i, 1)).init = true;
     }
     try p.addSite(try fieldVar(p, 0, 1), 1);
+    try p.drain();
     try p.addSite(try fieldVar(p, 1, 1), 0);
+    try p.drain();
     const param = try p.newVar();
     try p.addSite(param, 0);
+    try p.drain();
     const li = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(param), 1, li);
+    try p.drain();
     const cell = p.loads.items[li].out;
     // The call `f(x.next)`, and a read of `x.next.next` through the cell.
     try p.copy(cell, param);
     const again = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(cell), 1, again);
+    try p.drain();
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(param)).sites);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(cell)).sites);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(p.loads.items[again].out)).sites);
@@ -14281,8 +14507,10 @@ fn summaryOfLongChain() !void {
     try p.sites.append(arena, .{ .kind = .object, .module = 0, .node = @fromBackingInt(0), .any = try p.newVar() });
     try p.sites.append(arena, .{ .kind = .func, .module = 0, .node = @fromBackingInt(1), .any = try p.newVar() });
     try p.addSite(try fieldVar(p, 0, 1), 0);
+    try p.drain();
     const head = try p.newVar();
     try p.addSite(head, 0);
+    try p.drain();
     var last = head;
     for (0..10_000) |_| {
         const next = try p.newVar();
@@ -14291,10 +14519,12 @@ fn summaryOfLongChain() !void {
     }
     const sum = try p.summaryOf(last);
     try p.markWhole(sum);
+    try p.drain();
     try testing.expectEqual(@as(usize, 1), p.summaries.items[sum].props.items.len);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(p.summaries.items[sum].props.items[0].vals)).sites);
     // A property the head's site gains later, along every summary.
     try p.addSite(try fieldVar(p, 0, 2), 0);
+    try p.drain();
     const later = p.summaries.items[sum].props.items[1];
     try testing.expectEqual(@as(u32, 2), later.id);
     try testing.expectEqualSlices(u32, &.{0}, (try p.view(later.vals)).sites);
@@ -14302,6 +14532,7 @@ fn summaryOfLongChain() !void {
     try p.markAnyWritten(0);
     try testing.expect(p.summaries.items[sum].any_written);
     try p.addSite(head, 1);
+    try p.drain();
     try testing.expect(p.summaries.items[sum].unknown);
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(last)).sites);
 }
@@ -14327,17 +14558,21 @@ test "a read through a field summary marks the property on the sites it holds an
         (try p.prop(i, 1)).init = true;
         (try p.prop(i, 2)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.drain();
     }
     // `u` holds sites 0 and 1 and copies into `v`, which holds site 2 too.
     const u = try p.newVar();
     const v = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     try p.copy(u, v);
     try p.addSite(v, 2);
+    try p.drain();
     const li = try p.newLoad();
     const edges = p.edges.items.len;
     const sum = try p.summaryOf(v);
     try p.summaryLoad(sum, 1, li);
+    try p.drain();
     const out = p.loads.items[li].out;
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
     try testing.expect(!(try p.view(out)).undef and !(try p.view(out)).top);
@@ -14350,8 +14585,10 @@ test "a read through a field summary marks the property on the sites it holds an
     // A site joining the feeding var later, and one a var linked after the
     // read brings, are marked and read too; site 3 is in no var.
     try p.addSite(u, 4);
+    try p.drain();
     const t = try p.newVar();
     try p.addSite(t, 5);
+    try p.drain();
     try p.copy(t, v);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102, 104, 105 }, (try p.view(out)).sites);
     for ([_]u32{ 0, 1, 2, 4, 5 }) |site| try testing.expect(p.findProp(site, 1).?.read);
@@ -14389,29 +14626,38 @@ test "a read through a field summary is undefined or anything as its sites are" 
     const u = try p.newVar();
     const v = try p.newVar();
     try p.addSite(u, 0);
+    try p.drain();
     try p.copy(u, v);
     const a = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(v), 1, a);
+    try p.drain();
     try testing.expect(!(try p.view(p.loads.items[a].out)).undef);
     try p.addSite(u, 2);
+    try p.drain();
     try testing.expect((try p.view(p.loads.items[a].out)).undef);
     try testing.expect(p.findProp(2, 1).?.read and !p.findProp(2, 1).?.init);
     try testing.expect(!(try p.view(p.loads.items[a].out)).top);
 
     const w = try p.newVar();
     try p.addSite(w, 1);
+    try p.drain();
     const b = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(w), 1, b);
+    try p.drain();
     try testing.expect(!(try p.view(p.loads.items[b].out)).top);
     try p.escapeSite(1);
+    try p.drain();
     try testing.expect((try p.view(p.loads.items[b].out)).top);
 
     const x = try p.newVar();
     try p.addSite(x, 3);
+    try p.drain();
     const c = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(x), 1, c);
+    try p.drain();
     try testing.expect(!(try p.view(p.loads.items[c].out)).top);
     try p.addSite(x, 4);
+    try p.drain();
     try testing.expect((try p.view(p.loads.items[c].out)).top);
 }
 
@@ -14442,20 +14688,26 @@ test "a spread's untouched field shares the summary's var until something else w
         (try p.prop(i, 1)).init = true;
         (try p.prop(i, 2)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.drain();
         try p.addSite(try fieldVar(p, i, 2), 200 + i);
+        try p.drain();
     }
     const u = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const sum = try p.summaryOf(u);
     try p.markWhole(sum);
+    try p.drain();
     const x1 = p.findSumProp(sum, 1).?;
     // A var holding both updates, read for property 1 before either
     // spread is evaluated: the read marks the property on both, which no
     // var holds yet.
     const w = try p.newVar();
     try p.join(w, .{ .sites = &.{ 2, 3 } });
+    try p.drain();
     const li = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(w), 1, li);
+    try p.drain();
     const out = p.loads.items[li].out;
     try testing.expect(p.findProp(3, 1).?.vals == none and p.findProp(3, 1).?.read);
     try testing.expectEqual(@as(usize, 0), (try p.view(out)).sites.len);
@@ -14502,6 +14754,7 @@ test "a spread's untouched field shares the summary's var until something else w
     // A write of more into site 3's field: its own var, fed by the
     // summary's and feeding the read's summary; site 2's stays shared.
     try p.write(.{ .sites = &.{3} }, 1, .{ .sites = &.{5} });
+    try p.drain();
     const own = p.findProp(3, 1).?;
     try testing.expect(own.from == none and own.vals != shared);
     try testing.expectEqual(shared, p.findProp(2, 1).?.vals);
@@ -14510,6 +14763,7 @@ test "a spread's untouched field shares the summary's var until something else w
     try testing.expectEqualSlices(u32, &.{ 5, 100, 101 }, (try p.view(out)).sites);
     // What reaches the source later reaches both, and the read.
     try p.addSite(u, 4);
+    try p.drain();
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(shared)).sites);
     try testing.expectEqualSlices(u32, &.{ 5, 100, 101, 104 }, (try p.view(p.findProp(3, 1).?.vals)).sites);
     try testing.expectEqualSlices(u32, &.{ 5, 100, 101, 104 }, (try p.view(out)).sites);
@@ -14518,8 +14772,10 @@ test "a spread's untouched field shares the summary's var until something else w
     // own var too, holding both.
     const t = try p.newVar();
     try p.addSite(t, 4);
+    try p.drain();
     const sum_t = try p.summaryOf(t);
     try p.markWhole(sum_t);
+    try p.drain();
     try p.spreadSummary(2, sum_t, &.{});
     try testing.expect(p.findProp(2, 1).?.from == none);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(p.findProp(2, 1).?.vals)).sites);
@@ -14550,9 +14806,11 @@ test "fields spread from copies of one record share one var until a copy gains a
         if (i == 2 or i == 3) continue;
         (try p.prop(i, 1)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.drain();
     }
     const model = try p.newVar();
     try p.join(model, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const a = try p.newVar();
     const b = try p.newVar();
     try p.copy(model, a);
@@ -14561,7 +14819,9 @@ test "fields spread from copies of one record share one var until a copy gains a
     const sum_b = try p.summaryOf(b);
     try testing.expect(sum_a == p.vars.items[model].summary and sum_b == sum_a);
     try p.markWhole(sum_a);
+    try p.drain();
     try p.markWhole(sum_b);
+    try p.drain();
     try p.spreadSummary(2, sum_a, &.{});
     try p.spreadSummary(3, sum_b, &.{});
     const shared = p.findProp(2, 1).?.vals;
@@ -14572,8 +14832,10 @@ test "fields spread from copies of one record share one var until a copy gains a
     try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(shared)).sites);
     const w = try p.newVar();
     try p.join(w, .{ .sites = &.{ 2, 3 } });
+    try p.drain();
     const li = try p.newLoad();
     try p.summaryLoad(try p.summaryOf(w), 1, li);
+    try p.drain();
     const out = p.loads.items[li].out;
     try testing.expectEqual(@as(u32, 1), p.vars.items[p.findSumProp(p.vars.items[w].summary, 1).?].preds);
     try testing.expectEqualSlices(u32, &.{ 100, 101 }, (try p.view(out)).sites);
@@ -14584,11 +14846,13 @@ test "fields spread from copies of one record share one var until a copy gains a
     // holds what `b`'s summary holds; site 2's stays shared.
     const q = try p.newVar();
     try p.addSite(q, 4);
+    try p.drain();
     try p.copy(q, b);
     // What the spread's constraint does when `split` wakes it.
     const own_b = try p.summaryOf(b);
     try testing.expect(own_b != sum_b);
     try p.markWhole(own_b);
+    try p.drain();
     try p.spreadSummary(3, own_b, &.{});
     try testing.expect(p.findProp(3, 1).?.from == none);
     try testing.expectEqualSlices(u32, &.{ 100, 101, 104 }, (try p.view(p.findProp(3, 1).?.vals)).sites);
@@ -14607,7 +14871,9 @@ fn aliasSites(p: *Pts, arena: Allocator, n: u32) !void {
         (try p.prop(i, 1)).init = true;
         (try p.prop(i, 2)).init = true;
         try p.addSite(try fieldVar(p, i, 1), 100 + i);
+        try p.drain();
         try p.addSite(try fieldVar(p, i, 2), 200 + i);
+        try p.drain();
     }
 }
 
@@ -14625,6 +14891,7 @@ test "a var that copies one var alone shares its field summary" {
     try aliasSites(p, arena_state.allocator(), 3);
     const u = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const v = try p.newVar();
     try p.copy(u, v);
     const w = try p.newVar();
@@ -14643,6 +14910,7 @@ test "a var that copies one var alone shares its field summary" {
     // two: nothing for either copy.
     try testing.expectEqual(edges + 2 + 2 + 2, p.edges.items.len);
     try p.addSite(u, 2);
+    try p.drain();
     try testing.expectEqualSlices(u32, &.{ 100, 101, 102 }, (try p.view(out)).sites);
     for ([_]u32{ 0, 1, 2 }) |site| try testing.expect(p.findProp(site, 1).?.read and !p.findProp(site, 2).?.read);
 }
@@ -14665,13 +14933,16 @@ fn secondSource(split: bool) !SplitFacts {
     try aliasSites(p, arena_state.allocator(), 4);
     const u = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const v = try p.newVar();
     try p.copy(u, v);
     const t = try p.newVar();
     try p.copy(v, t);
     try p.addSite(t, 3);
+    try p.drain();
     const q = try p.newVar();
     try p.addSite(q, 2);
+    try p.drain();
     if (!split) try p.copy(q, v);
     const lv = try p.newLoad();
     try p.nameLoad(v, 1, lv);
@@ -14723,6 +14994,7 @@ test "a site of its own gives a var its own summary" {
     try aliasSites(p, arena_state.allocator(), 2);
     const u = try p.newVar();
     try p.addSite(u, 0);
+    try p.drain();
     const v = try p.newVar();
     try p.copy(u, v);
     const lv = try p.newLoad();
@@ -14731,6 +15003,7 @@ test "a site of its own gives a var its own summary" {
     try p.nameLoad(u, 1, lu);
     try testing.expectEqual(try p.summaryOf(u), try p.summaryOf(v));
     try p.addSite(v, 1);
+    try p.drain();
     const sum_v = try p.summaryOf(v);
     try testing.expect(sum_v != try p.summaryOf(u));
     try testing.expectEqualSlices(u32, &.{1}, p.summaries.items[sum_v].sites.items);
@@ -14755,6 +15028,7 @@ test "a var whose filter differs from its source's never shares its summary" {
     const u = try p.newVar();
     p.vars.items[u].allow = k1;
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const other = try p.newVar();
     p.vars.items[other].allow = k2;
     const same = try p.newVar();
@@ -14782,6 +15056,7 @@ test "a var whose source goes top keeps a summary of its own" {
     try aliasSites(p, arena_state.allocator(), 2);
     const u = try p.newVar();
     try p.join(u, .{ .sites = &.{ 0, 1 } });
+    try p.drain();
     const v = try p.newVar();
     p.vars.items[v].uncapped = true;
     try p.copy(u, v);
@@ -14794,6 +15069,113 @@ test "a var whose source goes top keeps a summary of its own" {
     try testing.expect(try p.summaryOf(v) != try p.summaryOf(u));
     try testing.expectEqualSlices(u32, &.{ 0, 1 }, (try p.view(v)).sites);
     try testing.expect((try p.view(v)).top and (try p.view(p.loads.items[lv].out)).top);
+}
+
+/// Var `v` holds `sites`, as a join would leave it: the table's entry,
+/// with its id (`Pts.VSet.set`).
+fn holdSites(p: *Pts, v: Pts.VarId, sites: []const u32) Allocator.Error!void {
+    const id = try p.idOf(sites);
+    p.vars.items[v].set = id;
+    p.vars.items[v].sites = p.setSites(id);
+}
+
+// #563: joins wait in a var's batch until the worklist drains. 300 sites
+// joined one by one, in one evaluation, into a var with a successor: each
+// var takes one batch, and the successor's batch is the 300 sites at once.
+test "a var fed 300 single-site joins in one evaluation forwards one batch" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const v = try p.newVar();
+    const w = try p.newVar();
+    try p.copy(v, w);
+    const joins = s.stats.pts_joins;
+    var site: u32 = 0;
+    while (site < 300) : (site += 1) try p.addSite(v, 299 - site);
+    try testing.expectEqual(joins, s.stats.pts_joins);
+    try testing.expectEqual(@as(usize, 1), p.pending.items.len);
+    try p.drain();
+    try testing.expectEqual(joins + 2, s.stats.pts_joins);
+    try testing.expectEqual(s.stats.pts_joins_empty, 0);
+    const held = try p.view(w);
+    try testing.expectEqual(@as(usize, 300), held.sites.len);
+    for (held.sites, 0..) |x, i| try testing.expectEqual(@as(u32, @intCast(i)), x);
+    // Both vars hold the one entry.
+    try testing.expectEqual(held.set, (try p.view(v)).set);
+}
+
+// #563: a value carries its set's id beside its sites. One read before a
+// later join keeps the slice and the id it was read with, and the id still
+// names that slice; an id compares as the sites do.
+test "a value read before a later join keeps its slice and its id" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var s = try emptySpec(testing.allocator, arena_state.allocator());
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const v = try p.newVar();
+    try p.join(v, .{ .sites = &.{ 1, 4 } });
+    try p.drain();
+    const before = try p.view(v);
+    try p.join(v, .{ .sites = &.{ 2, 3 } });
+    try p.drain();
+    const after = try p.view(v);
+    try testing.expectEqualSlices(u32, &.{ 1, 4 }, before.sites);
+    try testing.expectEqual(before.sites.ptr, p.setSites(before.set).ptr);
+    try testing.expectEqualSlices(u32, &.{ 1, 2, 3, 4 }, after.sites);
+    try testing.expect(before.set != after.set);
+    // A slice built by hand finds the entry of its sites.
+    try testing.expectEqual(after.set, try p.setOf(.{ .sites = &.{ 1, 2, 3, 4 } }));
+    try testing.expect(Pts.sameSites(after, .{ .sites = &.{ 1, 2, 3, 4 } }));
+    try testing.expectEqual(try p.single(7), try p.setOf(.{ .sites = &.{7} }));
+}
+
+// #563: the worklist is first in, first out, and a batch waits until the
+// end of the evaluation; any fair order reaches the same least fixpoint.
+// A cycle of three copies with a tail, joined in two orders — every join
+// drained at once, and all of them in one batch the other way round —
+// holds the same sites and flags in every var.
+test "the order of the worklist changes no fact on a small cycle" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var facts: [2][4]Pts.Val = undefined;
+    for (0..2) |order| {
+        var s = try emptySpec(testing.allocator, arena_state.allocator());
+        s.pts = .init(&s);
+        defer s.pts.deinit();
+        const p = &s.pts;
+        var vs: [4]Pts.VarId = undefined;
+        for (&vs) |*x| x.* = try p.newVar();
+        try p.copy(vs[0], vs[1]);
+        try p.copy(vs[1], vs[2]);
+        try p.copy(vs[2], vs[0]);
+        try p.copy(vs[2], vs[3]);
+        const joins = [_]struct { v: usize, val: Pts.Val }{
+            .{ .v = 0, .val = .{ .sites = &.{1} } },
+            .{ .v = 2, .val = .{ .sites = &.{ 2, 5 }, .nul = true } },
+            .{ .v = 1, .val = .{ .sites = &.{3}, .prim = true } },
+            .{ .v = 3, .val = .{ .sites = &.{4} } },
+        };
+        for (0..joins.len) |k| {
+            const j = joins[if (order == 0) k else joins.len - 1 - k];
+            try p.join(vs[j.v], j.val);
+            if (order == 0) try p.drain();
+        }
+        try p.drain();
+        for (vs, 0..) |x, i| {
+            const val = try p.view(x);
+            facts[order][i] = .{ .prim = val.prim, .nul = val.nul, .sites = try arena_state.allocator().dupe(u32, val.sites) };
+        }
+    }
+    for (facts[0], facts[1], 0..) |a, b, i| {
+        try testing.expectEqualSlices(u32, a.sites, b.sites);
+        try testing.expect(a.prim == b.prim and a.nul == b.nul);
+        try testing.expectEqualSlices(u32, if (i == 3) &.{ 1, 2, 3, 4, 5 } else &.{ 1, 2, 3, 5 }, a.sites);
+    }
 }
 
 /// The var of property `id` of site `site`, its own, the property made
