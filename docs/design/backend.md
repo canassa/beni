@@ -8927,6 +8927,47 @@ children) 4 750M → 3 852M, `SpreadCopies` 4 108M → 3 355M, `MemberReadsWide`
 `shareField` follows; with this change a handler's spread reads the model's summary itself, so
 the chain is the summary's own var unless a copy has split.
 
+**As built 2026-10-21 — the worklist batches per var, and a value carries its set's id** (issue
+#563, part of #464; the profile behind it is `plans/pts-per-run-profile.md`, causes 2 and 3).
+*The worklist* specified a queue of cells with their difference, first in, first out; `Pts` kept a
+stack of `(var, batch)` pairs, drained inside every join, so each site a constraint made went
+through the whole copy graph before the next was made, and a var with k paths to it took k
+batches. **A var now waits with one batch** (`VSet.queued`, `q_*`): `join` merges what it joins
+into that batch — its flags, the union of its sites, and the part of those sites no linking
+edge brought, which the var's field summary folds — and queues the var once; `pending` is a FIFO
+of vars. **The queue drains at the end of a constraint's evaluation** (`combine`, `effect`, and a
+read's `load` before it reads its cell), at the end of `copy` and `makeTop`, after each
+top-level statement, a function declaration's binding and a body's fall-through, and after
+`propagate`, the entry's call and the escaping globals; never inside a join, and empty whenever a
+sweep asks whether the fixpoint is reached. A read made before the drain registered its
+dependency and is woken when the var changes, and every transfer is monotone, so the order is
+one more fair order and the fixpoint the same. A batch the var holds already — its own set, a
+subset of it, flags it has — is no batch (`enqueue`), and a one-site batch is searched for and is
+its own difference. **`VSet` and `Val` carry the set's id beside the slice** (`set`, *Cells*'
+`set: []SetId`): `view` and `unionOf` hand it on, `setOf` of such a value is the field,
+`difference`, `filterSites` and a load cell's `done` work on ids, a one-site set's id is found by
+site (`Sets.single`), and `Sets.by_slice`, which hashed a slice's address to recover an id the
+caller had held, is gone. A value built from any other slice (`no_set`: a test's, a node's
+`ones`) is looked up by its content; ids compare as their sets do, since the table is
+content-addressed. Two counters say how much of the worklist is no-op: `spec_pts_joins` (the
+batches vars took) and `spec_pts_joins_empty` (those that added nothing). Every `emit/release/`
+golden and release run hash is byte for byte the same, and the safety build's shuffled-order check
+is green on the corpus. Measured, ReleaseFast, `--release --no-cache --jobs=1`, dagon, median of
+five, every output byte-identical, before → after (the before build is master with the two
+counters added; 7, 6 and 6 runs): joins N=16 160 661 → 89 024, N=64 1 007 444 → 522 270, N=64
+without `withDefault` 737 237 → 479 852, of which empty 67 216 → 22, 463 964 → 42 and 239 827 →
+27; `spec_pts_edges` unchanged (40 509, 360 868, 151 994); `specialise` 48 → 46 ms, 281 → 266 ms
+and 225 → 204 ms; time and peak RSS N=16 0.07 s / 55 MB → 0.07 s / 56 MB, N=64 0.36 s / 179 MB →
+0.35 s / 185 MB, without `withDefault` 0.31 s / 159 MB → **0.29 s / 163 MB** (the queue's fields
+make a var 28 bytes larger). The profile's estimate of fact 3 halving was made before #562, #564
+and #568 cut the edges by 4.5×; on today's master the join machinery is about 15% of the build
+without `withDefault` (`drain`, `enqueue`, `unionSets`, `copy`), the structural passes
+(`inlineScan`) and `summaryProp`/`propAt` about as much. Instructions of the gates' build:
+`emit/release/inline/SpreadCopiesWide` 3 855M → 3 385M, `SpreadCopies` 3 363M → 2 951M,
+`MemberReadsWide` 2 440M → 2 168M, `SpreadArms` 1 892M → 1 689M, `MergedChildren` 2 975M → 2 871M,
+`SpreadWide` 1 201M → 1 148M, and the new `SpreadCopiesBatched` (51 children) 4 556M, over the
+budget, → 3 988M.
+
 ### Compact statements
 
 ### Compact statements
