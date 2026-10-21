@@ -6479,7 +6479,7 @@ const Emitter = struct {
             while (true) {
                 const k = p.job.next.fetchAdd(1, .monotonic);
                 if (k >= p.job.items.len) return;
-                w.module.reset(.retain_capacity);
+                w.module.reset(.keep_all);
                 p.job.call(p.job.context, w, p.job.items[k]) catch |err| {
                     w.failure = err;
                     return;

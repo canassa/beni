@@ -238,10 +238,10 @@ fn serial(d: *Driver, scratch: *Arena) Error!void {
         for (d.graph.order) |m| {
             if ((d.graph.modulePackage(m) == .core) != core) continue;
             try d.check(m, scratch, &patterns, 0, &recorder, &retained);
-            scratch.reset(.retain_capacity);
+            scratch.reset(.keep_all);
             if (core and d.core_pending != 0) d.core_pending -= 1;
             if (d.core_pending == 0) try d.closeCoreSurface(scratch);
-            scratch.reset(.retain_capacity);
+            scratch.reset(.keep_all);
         }
     }
 }
@@ -385,7 +385,7 @@ fn worker(d: *Driver, tid: u32, own: ?*Arena) void {
         d.mutex.unlock(d.io);
 
         const result = d.check(m, scratch, &patterns, tid, &recorder, &retained);
-        scratch.reset(.retain_capacity);
+        scratch.reset(.keep_all);
         d.finish(m, result);
     }
 }
