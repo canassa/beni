@@ -36,6 +36,10 @@ if (entry === undefined || script === undefined) {
 // reaches, since no fixture sleeps for real.
 const stepLimit = 5000;
 const exitLimit = 5000;
+// How long a page may still run once the script waits for its end. Each of
+// its steps waits 5 s at most, and the page driver itself starts Node and
+// the DOM, so only a page driver that hangs reaches it.
+const pageLimit = 20000;
 
 const preload = path.join(path.dirname(new URL(import.meta.url).pathname), "preload.mjs");
 const say = (line) => process.stdout.write(`${line}\n`);
@@ -647,72 +651,123 @@ const socketStep = async (step) => {
 // address is the server's, so a socket it opens to `/chat` reaches the
 // program under test (docs/design/boundary.md §9.11 (l)). Its transcript is
 // printed, each line `| …`. With `"wait": false` it runs beside the next
-// steps, and `{"page-end": true}` waits for it and prints it.
+// steps, and `{"page-end": true}` waits for it and prints it. With
+// `"wait-handshakes": true` the page driver runs with `--wait-handshakes`.
 const browserDir = path.join(path.dirname(new URL(import.meta.url).pathname), "..", "browser");
+// The page that runs beside the steps: its process, its end, and the lines
+// it wrote to file descriptor 3 (the steps it has run), with the number of
+// them that a `page-wait` has used.
 let pageRun = null;
-// The lines the page driver wrote to file descriptor 3: the steps it ran.
-let pageDone = "";
 
-const startPage = (port, step) =>
-  new Promise((resolve) => {
-    const page = spawn(
-      process.execPath,
-      [
-        path.join(browserDir, "driver.mjs"),
-        `--dom=${path.join(browserDir, "happy-dom.mjs")}`,
-        `--parser=${path.join(browserDir, "parse5.mjs")}`,
-        `--server=127.0.0.1:${port}`,
-        step.page,
-        step.steps,
-      ],
-      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe", "pipe"] },
-    );
-    const out = [];
-    const err = [];
-    pageDone = "";
-    page.stdout.on("data", (chunk) => out.push(chunk));
-    page.stdio[3].on("data", (chunk) => {
-      pageDone += chunk;
-    });
-    page.stderr.on("data", (chunk) => err.push(chunk));
-    page.on("close", (code) => resolve({ code, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") }));
+const startPage = (port, step) => {
+  const page = spawn(
+    process.execPath,
+    [
+      path.join(browserDir, "driver.mjs"),
+      `--dom=${path.join(browserDir, "happy-dom.mjs")}`,
+      `--parser=${path.join(browserDir, "parse5.mjs")}`,
+      `--server=127.0.0.1:${port}`,
+      ...(step["wait-handshakes"] === true ? ["--wait-handshakes"] : []),
+      step.page,
+      step.steps,
+    ],
+    { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe", "pipe"] },
+  );
+  const run = { page, lines: [], used: 0, ended: false, done: null };
+  const out = [];
+  const err = [];
+  let partial = "";
+  page.stdout.on("data", (chunk) => out.push(chunk));
+  page.stdio[3].on("data", (chunk) => {
+    const parts = (partial + chunk).split("\n");
+    partial = parts.pop();
+    run.lines.push(...parts);
   });
+  page.stderr.on("data", (chunk) => err.push(chunk));
+  run.done = new Promise((resolve) => {
+    page.on("close", (code, signal) => {
+      run.ended = true;
+      resolve({ code, signal, stdout: Buffer.concat(out).toString("utf8"), stderr: Buffer.concat(err).toString("utf8") });
+    });
+  });
+  return run;
+};
 
 const printPage = (ran) => {
-  for (const line of ran.stdout.replace(/\n$/, "").split("\n")) say(`| ${line}`);
-  if (ran.code !== 0) say(`| (the page driver exited ${ran.code}: ${ran.stderr.split("\n")[0]})`);
+  if (ran.stdout !== "") for (const line of ran.stdout.replace(/\n$/, "").split("\n")) say(`| ${line}`);
+  if (ran.signal === null && ran.code !== 0) say(`| (the page driver exited ${ran.code}: ${ran.stderr.split("\n")[0]})`);
+};
+
+// Wait for the page, `pageLimit` ms at most, then print it. A page that
+// does not end in time is stopped, so that the driver never waits for it
+// forever.
+const endPage = async (run) => {
+  let late = false;
+  await within(pageLimit, () => run.done, () => {
+    late = true;
+    run.page.kill("SIGKILL");
+  });
+  printPage(await run.done);
+  if (late) say(`| (the page did not end within ${pageLimit} ms, and was stopped)`);
 };
 
 const pageStep = async (port, step) => {
   say(`> (page) ${step.page} ${step.steps}${step.wait === false ? " (not waited for)" : ""}`);
-  const run = startPage(port, step);
-  if (step.wait === false) {
-    pageRun = run;
+  if (pageRun !== null) {
+    say("| (a page runs already: a `page-end` step ends it first)");
     return;
   }
-  printPage(await run);
+  const run = startPage(port, step);
+  if (step.wait === false) pageRun = run;
+  else await endPage(run);
 };
 
 // `{"page-wait": "<step>"}`: wait, 5 s at most, until the page has run
 // that step of its script — the page driver names each step it has run on
 // file descriptor 3 — so that the next step reaches the page only after
-// it.
+// it. A wait uses the lines up to the one it found, so a second wait for
+// the same step waits for the page's next one.
 const pageWait = async (step) => {
+  const title = step["page-wait"];
+  if (pageRun === null) {
+    say(`| (no page runs, so none reaches ${JSON.stringify(title)})`);
+    return;
+  }
+  const run = pageRun;
+  let stop = false;
   await within(
     stepLimit,
     () =>
       new Promise((resolve) => {
-        const look = () => (pageDone.split("\n").includes(step["page-wait"]) ? resolve() : setTimeout(look, 5));
+        const look = () => {
+          if (stop) return;
+          const at = run.lines.indexOf(title, run.used);
+          if (at !== -1) {
+            run.used = at + 1;
+            resolve();
+          } else if (run.ended) {
+            stop = true;
+            say(`| (the page ended before it reached ${JSON.stringify(title)})`);
+            resolve();
+          } else setTimeout(look, 5);
+        };
         look();
       }),
-    () => say(`| (the page did not reach ${JSON.stringify(step["page-wait"])})`),
+    () => {
+      stop = true;
+      say(`| (the page did not reach ${JSON.stringify(title)})`);
+    },
   );
 };
 
 const pageEnd = async () => {
-  const ran = await pageRun;
+  if (pageRun === null) {
+    say("| (no page runs: a `page` step with `\"wait\": false` starts one)");
+    return;
+  }
+  const run = pageRun;
   pageRun = null;
-  printPage(ran);
+  await endPage(run);
 };
 
 // ---- Run --------------------------------------------------------------------
@@ -740,6 +795,12 @@ if (address === null) {
   }
 }
 agent.destroy();
+// A page the script did not wait for is waited for here, so that the
+// driver never ends before it, or waits for it forever.
+if (pageRun !== null) {
+  say("| (the script ended before a `page-end` step)");
+  await pageEnd();
+}
 // A detached request still open when the program ends is answered by its
 // connection's end, which the program's exit brings about.
 if (pendingDetached !== 0) {
@@ -756,7 +817,16 @@ if (detached.length !== 0) {
   for (const lines of detached) for (const line of lines) say(line);
 }
 
-const end = await Promise.race([exited, new Promise((resolve) => setTimeout(() => resolve(null), exitLimit))]);
+// The timer is cleared when the program ends first: the driver ends when
+// nothing is left to wait for, and a pending timer would keep it 5 s more.
+let exitTimer = null;
+const end = await Promise.race([
+  exited,
+  new Promise((resolve) => {
+    exitTimer = setTimeout(() => resolve(null), exitLimit);
+  }),
+]);
+clearTimeout(exitTimer);
 if (end === null) {
   child.kill("SIGKILL");
   await exited;
