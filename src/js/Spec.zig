@@ -628,6 +628,13 @@ const Mod = struct {
     extra: std.ArrayList(u32),
     string_bytes: std.ArrayList(u8),
     names: std.ArrayList(JsIr.Name),
+    /// `Copy.property`'s index of `names` (#608): each name's FIRST index,
+    /// as the scan it replaces found it, for `names[0..name_index_len]`.
+    /// A name is only ever appended and never rewritten, so the index is
+    /// extended, not rebuilt, by `findName` when a lookup finds names past
+    /// `name_index_len` — whichever path appended them. In `Spec.arena`.
+    name_index: std.AutoHashMapUnmanaged(JsIr.Name, u32) = .empty,
+    name_index_len: u32 = 0,
     /// The IR's keys (`JsIr.node_keys`, `JsIr.name_key`), as lists `Copy`
     /// may extend. A node with no row and a name past the end are wild, so
     /// a node `addNode` appends and a name `addName` appends have no key
@@ -831,6 +838,23 @@ const Mod = struct {
         try m.names.append(gpa, n);
         m.ir.names = m.names.items;
         return @fromBackingInt(@intCast(at));
+    }
+
+    /// The first index of name `n`, or null: what a walk of `names` from
+    /// the start finds, read from `name_index` after it takes in every name
+    /// appended since the last lookup.
+    fn findName(m: *Mod, arena: Allocator, n: JsIr.Name) Allocator.Error!?NameIndex {
+        const len: u32 = @intCast(m.names.items.len);
+        if (m.name_index_len < len) {
+            try m.name_index.ensureUnusedCapacity(arena, len - m.name_index_len);
+            for (m.names.items[m.name_index_len..len], m.name_index_len..) |x, i| {
+                const gop = m.name_index.getOrPutAssumeCapacity(x);
+                if (!gop.found_existing) gop.value_ptr.* = @intCast(i);
+            }
+            m.name_index_len = len;
+        }
+        const i = m.name_index.get(n) orelse return null;
+        return @fromBackingInt(i);
     }
 
     /// Append string bytes, keeping the IR's view current. `text` may be
@@ -8751,7 +8775,7 @@ const Spec = struct {
         fn property(c: *Copy, n: NameIndex) Allocator.Error!NameIndex {
             if (!c.cross or n == .none) return n;
             const name = c.src.ir.name(n);
-            for (c.dst.names.items, 0..) |x, i| if (x.eql(name)) return @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+            if (try c.dst.findName(c.s.arena, name)) |i| return i;
             return c.dst.addName(c.gpa(), name);
         }
 

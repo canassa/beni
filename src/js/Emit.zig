@@ -71,6 +71,7 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const diagnostic = @import("diagnostic");
+const emit_options = @import("emit_options");
 const Bir = @import("../bir/Bir.zig");
 const Edges = @import("../check/Edges.zig");
 const Graph = @import("../resolve/Graph.zig");
@@ -3926,6 +3927,71 @@ const Emitter = struct {
         e.session.profile.addCounter(.reach_walks, 1);
     }
 
+    /// Per module, whether the second lowering of a build with a runtime
+    /// module (`emitModules`) may take the first's as it is (#608): true
+    /// when every answer that lowering read is the same after the walk
+    /// from the narrower roots, so that lowering it again would make the
+    /// same tree.
+    ///
+    /// The first lowering ran against the coarse walk, `coarse`; the second
+    /// would run against `e.live`, and against nothing else that moved:
+    /// the boundary, the representation keys, the write-set pass and the
+    /// specifiers are made once, before either. What a module's lowering
+    /// reads of the walk is the funnel's questions (`Lowerer.ask`, `backend.md`
+    /// §9, *The funnel*), and of those only these name another module:
+    ///
+    /// - its own six survivor sets (`decl`, `derived`, `twin`, `lift`,
+    ///   `ctor`, `schema`), and what follows from them (`arm_dead`,
+    ///   `probe`, the declarations `MarkupTree` builds);
+    /// - whether another module's constructor is built, at each `ext_ctor`
+    ///   a pattern names (`Lowerer.patternDead`);
+    /// - whether a schema member of another module survived
+    ///   (`Lowerer.liveSchema`);
+    /// - the shared validators (`SchemaShare`), when `reshareValidators`
+    ///   decided them again.
+    ///
+    /// The debug wall's reads (`requireLive`) decide no byte. And a module
+    /// that reads the facts of another's view pieces (`pieceWaves`) read
+    /// what that module's first lowering wrote, so it is taken only when
+    /// that one is. `-Demit-lower-reuse-cross-check` lowers every module
+    /// taken again and compares.
+    fn reusableLowerings(e: *Emitter, first: []const ModuleSlot, lowered: []const u32, coarse: *const Reach.Result, reshared: bool) ![]const bool {
+        const keep = try e.scratch.alloc(bool, first.len);
+        @memset(keep, false);
+        if (reshared) return keep;
+        for (0..first.len) |k| {
+            const m: Graph.Index = @fromBackingInt(@intCast(k));
+            if (!coarse.of(m).schemas.eql(e.live.of(m).schemas)) return keep;
+        }
+        for (lowered) |i| {
+            if (first[i].lowered == null) continue;
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            if (!sameLive(coarse.of(m), e.live.of(m))) continue;
+            const b = e.bir(m);
+            const tags = b.insts.items(.tag);
+            const data = b.insts.items(.data);
+            const same_ctors = for (tags, data) |tag, d| {
+                if (tag != .ext_ctor) continue;
+                const other: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                if (coarse.extCtor(other, d.rhs) != e.live.extCtor(other, d.rhs)) break false;
+            } else true;
+            keep[i] = same_ctors;
+        }
+        if (e.direct) |*d| {
+            var changed = true;
+            while (changed) {
+                changed = false;
+                for (d.view_pieces) |vp| {
+                    const reader = d.programs[vp.program].module;
+                    if (reader == vp.module or !keep[reader] or keep[vp.module]) continue;
+                    keep[reader] = false;
+                    changed = true;
+                }
+            }
+        }
+        return keep;
+    }
+
     /// No walk is left to read the edge lists.
     fn dropEdges(e: *Emitter) void {
         e.edges = &.{};
@@ -4195,6 +4261,10 @@ const Emitter = struct {
         // runs. Lowering them twice was most of what a build of a page
         // cost beyond its own modules (research 70).
         var skipped = false;
+        // The first lowering's slots, and per module whether the second
+        // takes its lowering as it is (`reusableLowerings`, #608).
+        var first_slots: []ModuleSlot = &.{};
+        var reused: []const bool = &.{};
         while (true) {
             // What each worker needs of the shared arena is made here, first:
             // the arena is the calling thread's alone.
@@ -4202,6 +4272,7 @@ const Emitter = struct {
             @memset(slots, .{ .overlay = .init(&e.session.interner) });
             todo = .empty;
             insts = 0;
+            var lower_insts: usize = 0;
             for (slots, 0..) |*slot, i| {
                 const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
                 // §5: a module with nothing reachable is not written at all,
@@ -4229,15 +4300,24 @@ const Emitter = struct {
                 };
                 try todo.append(e.scratch, @intCast(i));
                 insts += e.bir(m).insts.len;
+                if (i < reused.len and reused[i]) {
+                    slot.adopt(&first_slots[i]);
+                } else lower_insts += e.bir(m).insts.len;
             }
+            // What the first lowering left in a slot the second did not
+            // take: the module is lowered again, or not written.
+            for (first_slots) |*slot| slot.deinit(e.gpa);
+            first_slots = &.{};
 
             // The last write to the session's pool until every module is
             // lowered: from here on the workers only read it.
             try Lower.internFixedNames(e.gpa, &e.session.interner);
             // A first lowering that left a module out is followed by a
-            // second that lowers every module again: it only has to tell the
-            // build what it uses of the runtime module, and a module's bytes
-            // come from the second.
+            // second: it has to tell the build what it uses of the runtime
+            // module, and it prints nothing. The second lowers the modules
+            // it left out and every module whose first lowering read an
+            // answer the narrower walk changed; it takes the rest as they
+            // are (`reusableLowerings`, #608).
             const context: Task = .{ .e = e, .slots = slots, .entry = entry, .lower_only = !refined and skipped };
             // `browser-inline.md` §8.4: a module that owns view pieces is
             // lowered before the program modules that read their facts —
@@ -4248,7 +4328,7 @@ const Emitter = struct {
             while (wave <= waves.last) : (wave += 1) {
                 var batch: std.ArrayList(u32) = .empty;
                 for (todo.items) |i| if (waves.of[i] == wave) try batch.append(e.scratch, i);
-                if (batch.items.len != 0) try e.pool.run(batch.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
+                if (batch.items.len != 0) try e.pool.run(batch.items, context, Task.lower, e.wanted(lower_insts, insts_per_emitter));
             }
             e.countLowered(slots, todo.items);
 
@@ -4284,15 +4364,18 @@ const Emitter = struct {
             const precise = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
             if (sameNodes(precise, e.extra_roots) and !skipped) break;
             e.extra_roots = precise;
-            for (slots) |*slot| slot.deinit(e.gpa);
+            const coarse = e.live;
             try e.walk();
             // The narrower roots may leave fewer worker sets alive, and then
             // fewer calls of a shared validator: decided again, so a helper
             // the count no longer pays for is not kept (`SchemaShare`).
-            if (try e.reshareValidators()) {
+            const reshared = try e.reshareValidators();
+            if (reshared) {
                 e.extra_roots = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
                 try e.walk();
             }
+            first_slots = slots;
+            reused = try e.reusableLowerings(first_slots, todo.items, &coarse, reshared);
         }
         e.dropEdges();
         defer for (slots) |*slot| slot.deinit(e.gpa);
@@ -4460,6 +4543,38 @@ const Emitter = struct {
         /// In the printing worker's `kept` arena.
         marks: []const SourceMap.Mapping = &.{},
         mark_names: []const []const u8 = &.{},
+        /// The lowering is the first lowering's, taken as it is (#608):
+        /// `Task.lower` does not lower the module again.
+        adopted: bool = false,
+        /// A development build's first lowering, kept for the second to
+        /// print (`Lower.Result`'s `units`, `head_len` and `tail_len`), in
+        /// the lowering worker's `kept` arena.
+        units: []const Lower.Unit = &.{},
+        head_len: u32 = 0,
+        tail_len: u32 = 0,
+
+        /// Take what `from`, a slot of the first lowering, holds of the
+        /// module's lowering, leaving it nothing to free. The rest of
+        /// `slot` is planned anew, from the same inputs.
+        fn adopt(slot: *ModuleSlot, from: *ModuleSlot) void {
+            slot.overlay = from.overlay;
+            slot.lowered = from.lowered;
+            slot.uses_runtime = from.uses_runtime;
+            slot.uses_markup_runtime = from.uses_markup_runtime;
+            slot.markup_exports = from.markup_exports;
+            slot.markup_module_uses = from.markup_module_uses;
+            slot.start = from.start;
+            slot.unobserved = from.unobserved;
+            slot.effect_keep = from.effect_keep;
+            slot.pure_discards = from.pure_discards;
+            slot.mutable = from.mutable;
+            slot.units = from.units;
+            slot.head_len = from.head_len;
+            slot.tail_len = from.tail_len;
+            slot.adopted = true;
+            from.lowered = null;
+            from.overlay = .init(from.overlay.global);
+        }
 
         fn deinit(slot: *ModuleSlot, gpa: Allocator) void {
             if (slot.lowered) |*lowered| lowered.deinit(gpa);
@@ -4500,9 +4615,11 @@ const Emitter = struct {
 
     /// `modules_lowered` and `modules_printed` for one round of `Task.lower`:
     /// a development build prints in the same round.
+    /// A module whose first lowering the second took (`ModuleSlot.adopted`)
+    /// is not lowered again, and is not counted again (#608).
     fn countLowered(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) void {
-        e.session.profile.addCounter(.modules_lowered, todo.len);
         for (todo) |i| {
+            if (!slots[i].adopted) e.session.profile.addCounter(.modules_lowered, 1);
             if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
         }
     }
@@ -4525,10 +4642,100 @@ const Emitter = struct {
             const slot = &t.slots[i];
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
+            // The first lowering's, taken as it is: under `--release` there
+            // is nothing left to do here, and a development build prints it.
+            if (slot.adopted) {
+                if (emit_options.lower_reuse_cross_check and std.debug.runtime_safety) try t.crossCheck(w, i);
+                if (e.options.release) return;
+            }
             const token = e.session.profile.begin();
             defer e.session.profile.end(w.tid, token, .emit_module, file.int(), 0);
             const scratch = w.module.allocator();
-            slot.lowered = Lower.lower(e.gpa, scratch, &slot.overlay, .{
+            if (slot.adopted) {
+                const first = &slot.lowered.?;
+                return t.printDevelopment(w, i, first, slot.units, slot.head_len, slot.tail_len, slot.unobserved);
+            }
+            slot.lowered = try t.lowerModule(scratch, i, &slot.overlay);
+            const lowered = &slot.lowered.?;
+            if (lowered.diagnostics.len != 0) return;
+            slot.uses_runtime = lowered.uses_runtime;
+            slot.uses_markup_runtime = lowered.uses_markup_runtime;
+            const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
+            for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
+            slot.markup_exports = exports;
+            const module_uses = try w.kept.allocator().alloc([]const u8, lowered.markup_module_uses.len);
+            for (module_uses, lowered.markup_module_uses) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
+            slot.markup_module_uses = module_uses;
+            // Read in module order once every module is lowered; the
+            // lowering's own copy goes with its tree.
+            const start = try w.kept.allocator().alloc(Lower.StartPair, lowered.start.len);
+            for (start, lowered.start) |*to, pair| to.* = .{
+                .key = try w.kept.allocator().dupe(u8, pair.key),
+                .value = try w.kept.allocator().dupe(u8, pair.value),
+            };
+            slot.start = start;
+            const kept = w.kept.allocator();
+            if (!e.options.release) {
+                // A first lowering a second follows prints nothing: the
+                // second prints this one if it takes it (#608).
+                if (t.lower_only) {
+                    slot.units = try kept.dupe(Lower.Unit, lowered.units);
+                    slot.head_len = lowered.head_len;
+                    slot.tail_len = lowered.tail_len;
+                    slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+                    return;
+                }
+                return t.printDevelopment(w, i, lowered, lowered.units, lowered.head_len, lowered.tail_len, lowered.unobserved);
+            }
+            // What the release optimiser needs of the lowering, kept past
+            // this item's scratch: whole-program specialisation runs first,
+            // on every module at once (§9, *Whole-program specialisation*),
+            // and `optimise` after it.
+            slot.effect_keep = try kept.dupe(JsIr.Node.Index, lowered.effect_keep);
+            slot.pure_discards = try kept.dupe(JsIr.Node.Index, lowered.pure_discards);
+            slot.mutable = try kept.dupe(JsIr.NameIndex, lowered.mutable);
+            slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+        }
+
+        /// `-Demit-lower-reuse-cross-check` (#608): module `i`'s lowering,
+        /// which the build took from its first lowering, made again from
+        /// the build as it is now, and the build stopped if the two differ.
+        /// What `reusableLowerings` claims, checked on every module it
+        /// claims it for.
+        fn crossCheck(t: Task, w: *Worker, i: u32) Allocator.Error!void {
+            const e = t.e;
+            const slot = &t.slots[i];
+            const scratch = w.module.allocator();
+            var overlay: InternPool.Overlay = .init(&e.session.interner);
+            defer overlay.deinit(e.gpa);
+            var again = try t.lowerModule(scratch, i, &overlay);
+            defer again.deinit(e.gpa);
+            const kept = &slot.lowered.?;
+            const same = again.diagnostics.len == 0 and kept.diagnostics.len == 0 and
+                sameIr(&kept.ir, &slot.overlay, &again.ir, &overlay) and
+                again.uses_runtime == slot.uses_runtime and
+                again.uses_markup_runtime == slot.uses_markup_runtime and
+                sameStrings(again.markup_exports, slot.markup_exports) and
+                sameStrings(again.markup_module_uses, slot.markup_module_uses) and
+                sameStart(again.start, slot.start) and
+                std.mem.eql(JsIr.Node.Index, again.unobserved, slot.unobserved) and
+                (!e.options.release or (std.mem.eql(JsIr.Node.Index, again.effect_keep, slot.effect_keep) and
+                    std.mem.eql(JsIr.Node.Index, again.pure_discards, slot.pure_discards) and
+                    std.mem.eql(JsIr.NameIndex, again.mutable, slot.mutable))) and
+                (e.options.release or (again.head_len == slot.head_len and again.tail_len == slot.tail_len and
+                    std.mem.eql(u8, std.mem.sliceAsBytes(again.units), std.mem.sliceAsBytes(slot.units))));
+            if (!same) std.debug.panic("#608: the first lowering of `{s}` that the build kept differs from a lowering made now", .{
+                e.session.store.path(e.graph().moduleFile(@fromBackingInt(@intCast(i)))),
+            });
+        }
+
+        /// `Bir` → `JsIr` for module `i`, into `overlay`.
+        fn lowerModule(t: Task, scratch: Allocator, i: u32, overlay: *InternPool.Overlay) Allocator.Error!Lower.Result {
+            const e = t.e;
+            const slot = &t.slots[i];
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            const file = e.graph().moduleFile(m);
+            return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
                 .token_starts = e.session.artifacts.spans(file).starts,
                 .module = m,
@@ -4561,78 +4768,60 @@ const Emitter = struct {
                 error.UnitRecordOverflow => unreachable,
                 else => |other| return other,
             };
-            const lowered = &slot.lowered.?;
-            if (lowered.diagnostics.len != 0) return;
-            slot.uses_runtime = lowered.uses_runtime;
-            slot.uses_markup_runtime = lowered.uses_markup_runtime;
-            const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
-            for (exports, lowered.markup_exports) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
-            slot.markup_exports = exports;
-            const module_uses = try w.kept.allocator().alloc([]const u8, lowered.markup_module_uses.len);
-            for (module_uses, lowered.markup_module_uses) |*to, name| to.* = try w.kept.allocator().dupe(u8, name);
-            slot.markup_module_uses = module_uses;
-            // Read in module order once every module is lowered; the
-            // lowering's own copy goes with its tree.
-            const start = try w.kept.allocator().alloc(Lower.StartPair, lowered.start.len);
-            for (start, lowered.start) |*to, pair| to.* = .{
-                .key = try w.kept.allocator().dupe(u8, pair.key),
-                .value = try w.kept.allocator().dupe(u8, pair.value),
-            };
-            slot.start = start;
-            if (t.lower_only) {
-                lowered.deinit(e.gpa);
-                slot.lowered = null;
-                slot.overlay.deinit(e.gpa);
-                slot.overlay = .init(&e.session.interner);
-                return;
+        }
+
+        /// A development build's bytes and map of module `i`, from its
+        /// lowering, and then the lowering freed: the bytes are what is
+        /// left of the module.
+        fn printDevelopment(
+            t: Task,
+            w: *Worker,
+            i: u32,
+            lowered: *Lower.Result,
+            units: []const Lower.Unit,
+            head_len: u32,
+            tail_len: u32,
+            unobserved: []const JsIr.Node.Index,
+        ) Allocator.Error!void {
+            const e = t.e;
+            const slot = &t.slots[i];
+            const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
+            const scratch = w.module.allocator();
+            const names: Print.Names = .fromOverlay(&slot.overlay);
+            const mapped = slot.map_file.len != 0;
+            // The module is printed in its pieces — the head, the units
+            // the walk kept, the tail — and joined (`backend.md` §9, *The
+            // join*): one walk's bytes, one `SourceMap.write`.
+            var context = try Print.Context.init(scratch, &lowered.ir, names, unobserved, mapped);
+            var pieces: std.ArrayList(Join.Piece) = .empty;
+            try pieces.ensureTotalCapacity(scratch, units.len + 2);
+            pieces.appendAssumeCapacity(try context.printRange(0, head_len));
+            for (units) |unit| pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
+            const body = context.bodyLen();
+            pieces.appendAssumeCapacity(try context.printRange(body - tail_len, body));
+            const joined = try Join.join(e.gpa, scratch, pieces.items, slot.map_footer);
+            slot.text = joined.text;
+            // §11: the map, from the bytes just printed and the marks
+            // the printer recorded on the way.
+            if (mapped) {
+                const store = &e.session.store;
+                slot.map = try SourceMap.write(e.gpa, scratch, .{
+                    .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
+                    .source_url = slot.source_url,
+                    .source = store.bytes(file),
+                    .line_starts = store.lineStarts(file),
+                    .generated = slot.text.?,
+                    .mappings = joined.mappings,
+                    .names = context.names_out.items,
+                    .name_text = names.forMap(),
+                });
             }
-            if (!e.options.release) {
-                const names: Print.Names = .fromOverlay(&slot.overlay);
-                const mapped = slot.map_file.len != 0;
-                // The module is printed in its pieces — the head, the units
-                // the walk kept, the tail — and joined (`backend.md` §9, *The
-                // join*): one walk's bytes, one `SourceMap.write`.
-                var context = try Print.Context.init(scratch, &lowered.ir, names, lowered.unobserved, mapped);
-                var pieces: std.ArrayList(Join.Piece) = .empty;
-                try pieces.ensureTotalCapacity(scratch, lowered.units.len + 2);
-                pieces.appendAssumeCapacity(try context.printRange(0, lowered.head_len));
-                for (lowered.units) |unit| pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
-                const body = context.bodyLen();
-                pieces.appendAssumeCapacity(try context.printRange(body - lowered.tail_len, body));
-                const joined = try Join.join(e.gpa, scratch, pieces.items, slot.map_footer);
-                slot.text = joined.text;
-                // §11: the map, from the bytes just printed and the marks
-                // the printer recorded on the way.
-                if (mapped) {
-                    const store = &e.session.store;
-                    slot.map = try SourceMap.write(e.gpa, scratch, .{
-                        .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
-                        .source_url = slot.source_url,
-                        .source = store.bytes(file),
-                        .line_starts = store.lineStarts(file),
-                        .generated = slot.text.?,
-                        .mappings = joined.mappings,
-                        .names = context.names_out.items,
-                        .name_text = names.forMap(),
-                    });
-                }
-                // Nothing after this reads the tree or the overlay: the bytes
-                // are what is left of the module.
-                lowered.deinit(e.gpa);
-                slot.lowered = null;
-                slot.overlay.deinit(e.gpa);
-                slot.overlay = .init(&e.session.interner);
-                return;
-            }
-            // What the release optimiser needs of the lowering, kept past
-            // this item's scratch: whole-program specialisation runs first,
-            // on every module at once (§9, *Whole-program specialisation*),
-            // and `optimise` after it.
-            const kept = w.kept.allocator();
-            slot.effect_keep = try kept.dupe(JsIr.Node.Index, lowered.effect_keep);
-            slot.pure_discards = try kept.dupe(JsIr.Node.Index, lowered.pure_discards);
-            slot.mutable = try kept.dupe(JsIr.NameIndex, lowered.mutable);
-            slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+            // Nothing after this reads the tree or the overlay: the bytes
+            // are what is left of the module.
+            lowered.deinit(e.gpa);
+            slot.lowered = null;
+            slot.overlay.deinit(e.gpa);
+            slot.overlay = .init(&e.session.interner);
         }
 
         /// `--release`: §9's release optimiser, between `Lower.lower` and
@@ -7175,6 +7364,48 @@ fn entryNameIsLegal(name: []const u8) bool {
 
 /// `name` without `extension`, or `name` when it does not end in one.
 /// Whether two root lists name the same nodes, repeats aside.
+/// Whether two walks left module's survivors alike, set by set
+/// (`Emitter.reusableLowerings`).
+fn sameLive(a: *const Reach.Live, b: *const Reach.Live) bool {
+    return a.decls.eql(b.decls) and a.derived.eql(b.derived) and a.twins.eql(b.twins) and
+        a.lifts.eql(b.lifts) and a.ctors.eql(b.ctors) and a.schemas.eql(b.schemas);
+}
+
+/// `-Demit-lower-reuse-cross-check`: whether two lowerings of one module,
+/// each into its own overlay, made the same tree. A name is compared by its
+/// text, as the printer and `Spec` read it: the session's pool may have
+/// grown between the two, so one text can be an overlay's symbol in one and
+/// the pool's in the other.
+fn sameIr(a: *const JsIr, ao: *const InternPool.Overlay, b: *const JsIr, bo: *const InternPool.Overlay) bool {
+    const bytes = std.mem.sliceAsBytes;
+    if (a.nodes.len != b.nodes.len or a.names.len != b.names.len) return false;
+    if (!std.mem.eql(u8, bytes(a.nodes.items(.tag)), bytes(b.nodes.items(.tag)))) return false;
+    if (!std.mem.eql(u8, bytes(a.nodes.items(.pos)), bytes(b.nodes.items(.pos)))) return false;
+    if (!std.mem.eql(u8, bytes(a.nodes.items(.data)), bytes(b.nodes.items(.data)))) return false;
+    if (!std.mem.eql(u32, a.extra, b.extra) or !std.mem.eql(u8, a.string_bytes, b.string_bytes)) return false;
+    if (!std.meta.eql(a.body, b.body)) return false;
+    if (!std.mem.eql(u8, bytes(a.node_keys), bytes(b.node_keys)) or !std.mem.eql(u8, bytes(a.name_key), bytes(b.name_key))) return false;
+    if (!std.mem.eql(JsIr.Node.Index, a.closed_decls, b.closed_decls)) return false;
+    for (a.names, b.names) |x, y| {
+        if (x.tag != y.tag or (x.module == .none) != (y.module == .none)) return false;
+        if (!std.mem.eql(u8, ao.slice(x.base), bo.slice(y.base))) return false;
+        if (x.module.unwrap()) |xm| if (!std.mem.eql(u8, ao.slice(xm), bo.slice(y.module.unwrap().?))) return false;
+    }
+    return true;
+}
+
+fn sameStart(a: []const Lower.StartPair, b: []const Lower.StartPair) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| if (!std.mem.eql(u8, x.key, y.key) or !std.mem.eql(u8, x.value, y.value)) return false;
+    return true;
+}
+
+fn sameStrings(a: []const []const u8, b: []const []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+    return true;
+}
+
 fn sameNodes(a: []const Reach.Node, b: []const Reach.Node) bool {
     const Of = struct {
         fn in(x: Reach.Node, list: []const Reach.Node) bool {

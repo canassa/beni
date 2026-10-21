@@ -73,6 +73,7 @@ const allowlist = [_]Allowed{
     .{ .path = "check/Report.zig", .needle = "error_regions: U32Set", .why = "the error path: the instructions already reported" },
     .{ .path = "js/Lower.zig", .needle = "calls: U32Set", .why = "the calls one derived body makes" },
     .{ .path = "js/Lower.zig", .needle = "requests: U32Set", .why = "the derived rows one module requests" },
+    .{ .path = "js/Spec.zig", .needle = "name_index: std.AutoHashMapUnmanaged(JsIr.Name, u32)", .why = "`Copy.property`'s first index of a name in one destination module (#608): a composite key (module, base, tag), not a dense id, over the few of the session's symbols one module's copies ask for, kept and extended for the whole pass; a column over the symbols would be pool-sized per destination module" },
     .{ .path = "own/summary_bytes.zig", .needle = "path_index: std.AutoHashMapUnmanaged(u32, u32)", .why = own_block },
     .{ .path = "own/summary_bytes.zig", .needle = "module_index: std.AutoHashMapUnmanaged(u32, u32)", .why = own_block },
     .{ .path = "own/summary_bytes.zig", .needle = "string_index: std.AutoHashMapUnmanaged(u32, u32)", .why = own_block },

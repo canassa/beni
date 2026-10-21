@@ -25,7 +25,9 @@
 //! `gates` refuses the two filters: a gate runs everything. It also refuses
 //! `-Doptimize` and `--release`, the options below that change the
 //! budget's count, `-Downership-full-cross-check` (every ownership spine
-//! condition cross-checked against the pairwise one: slow), and
+//! condition cross-checked against the pairwise one: slow),
+//! `-Demit-lower-reuse-cross-check` (every lowering a build keeps made
+//! again and compared: slow), and
 //! `-Downership-record-mutation` (the checker broken on purpose).
 //!
 //! Every test of the gates' binaries, and every corpus case, is held to a
@@ -253,6 +255,14 @@ pub fn build(b: *std.Build) void {
     const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     ownership_options = own_opts.createModule();
+    // #608: a release build lowers a module once when the walk from the
+    // narrower runtime roots leaves every answer its lowering read as it
+    // was (`Emit.reusableLowerings`); this lowers each such module again
+    // and stops the build if the two lowerings differ.
+    const lower_reuse_check = b.option(bool, "emit-lower-reuse-cross-check", "Lower again every module whose first lowering a build keeps, and stop the build if the two differ (safety builds; slow, so give it -Dtest-budget=0)") orelse false;
+    const emit_opts = b.addOptions();
+    emit_opts.addOption(bool, "lower_reuse_cross_check", lower_reuse_check);
+    emit_options = emit_opts.createModule();
     // The budget of one test or corpus case (`tests/test_runner.zig`), on
     // every run of a binary the gates run; the random sweeps of `fuzz`, the
     // pending and timing steps, the run-hash recording and coverage are not
@@ -302,6 +312,7 @@ pub fn build(b: *std.Build) void {
     const default_id = compilerBuildId(b, target, optimize, null, shipped_core, platform_sources);
     beni_mod.addImport("build_options", default_id.options);
     beni_mod.addImport("ownership_options", ownership_options.?);
+    beni_mod.addImport("emit_options", emit_options.?);
     // The hermetic suite's library carries no checked core: its tests build
     // their own projects, and the pack is the installed compilers' (below).
     beni_mod.addImport("core_pack", emptyCorePack(b));
@@ -323,6 +334,7 @@ pub fn build(b: *std.Build) void {
     exe_beni.addImport("markup_entity_table", entityTable(b));
     exe_beni.addImport("build_options", default_id.options);
     exe_beni.addImport("ownership_options", ownership_options.?);
+    exe_beni.addImport("emit_options", emit_options.?);
     exe_beni.addImport("core_pack", corePack(b, shipped_core, platform_sources, default_id));
 
     const exe = b.addExecutable(.{
@@ -1324,6 +1336,7 @@ fn gatesRefusal(b: *std.Build, filtered: bool, optimize: std.lang.Optimize, host
     }
     // A slower compiler, which the budget was not set for.
     if (b.user_input_options.contains("ownership-full-cross-check")) return "`gates` holds every test to the budget on the reference build: drop -Downership-full-cross-check, or give it to `test-blackbox` or a `test-blackbox-<file>` step";
+    if (b.user_input_options.contains("emit-lower-reuse-cross-check")) return "`gates` holds every test to the budget on the reference build: drop -Demit-lower-reuse-cross-check, or give it to `test-blackbox` or a `test-blackbox-<file>` step";
     // A checker broken on purpose (§31.12's mutation controls).
     if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` holds every test to the budget on the reference build: drop -Downership-record-mutation, which breaks the ownership checker on purpose; `zig build test-record-mutations` runs it";
     // `-Doptimize` and `--release=`, which never reaches the options.
@@ -1406,6 +1419,7 @@ fn compiler(
     const id = compilerBuildId(b, target, mode, backend, core, sources);
     beni.addImport("build_options", id.options);
     beni.addImport("ownership_options", ownership_options.?);
+    beni.addImport("emit_options", emit_options.?);
     beni.addImport("core_pack", corePack(b, core, sources, id));
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -1555,6 +1569,7 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
     // of the compiler it makes the pack for.
     beni.addImport("build_options", compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{}).options);
     beni.addImport("ownership_options", ownership_options.?);
+    beni.addImport("emit_options", emit_options.?);
     beni.addImport("core_pack", emptyCorePack(b));
     const exe = b.addExecutable(.{
         .name = "core_pack",
@@ -1940,6 +1955,10 @@ var entity_table_module: ?*std.Build.Module = null;
 /// `-Downership-full-cross-check`, as the module `ownership_options` every
 /// build of the compiler imports (`src/own/Ownership.zig`).
 var ownership_options: ?*std.Build.Module = null;
+
+/// `-Demit-lower-reuse-cross-check`, as the module `emit_options` every
+/// build of the compiler imports (`src/js/Emit.zig`).
+var emit_options: ?*std.Build.Module = null;
 
 /// One platform package compiled into beni (`docs/design/boundary.md`
 /// §9.5): a directory under `platforms/`, or one `-Dplatform=<dir>` adds.

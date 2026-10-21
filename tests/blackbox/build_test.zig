@@ -5997,18 +5997,20 @@ fn ptsCounters(w: *World) !PtsCounters {
     return counters;
 }
 
-test "a page build makes each module's edge lists once and prints each module once" {
+test "a page build makes each module's edge lists once and lowers and prints each module once" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // A `browser-tea` page has a runtime module, so its build walks the
     // declaration graph two times and lowers the modules that are not core
-    // or the runtime module two times (`backend.md` §15.1, *The runtime
-    // module*, amended 2026-10-15). The second walk reads the edge lists
-    // the first made, and the first lowering prints nothing: a module's
-    // bytes come from the second. Before, `edge_lists` was two times the
-    // modules of the graph, and every module the first lowering took was
-    // printed two times.
+    // or the runtime module before the second walk (`backend.md` §15.1,
+    // *The runtime module*, amended 2026-10-15 and 2026-10-21). The second
+    // walk reads the edge lists the first made, and the second lowering
+    // takes each module of the first whose answers the second walk left
+    // alone (#608): here every one, so each module is lowered once and
+    // printed once. Before #94, `edge_lists` was two times the modules of
+    // the graph and every module the first lowering took was printed two
+    // times; before #608, it was lowered two times.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6058,13 +6060,63 @@ test "a page build makes each module's edge lists once and prints each module on
         .edge_lists = counters.modules_checked,
         .edge_lists_embedded = counters.embedded_modules,
         .reach_walks = 2,
-        .modules_lowered = counters.modules_lowered,
+        .modules_lowered = maps,
         .modules_printed = maps,
     }, counters);
-    // The first lowering took the page's own module and the platform
-    // modules that are not the runtime module, and the second took them
-    // again with the rest.
-    try testing.expect(counters.modules_lowered > maps);
+}
+
+test "a release page build lowers each module once" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The same page under `--release`, which keeps every lowering for
+    // whole-program specialisation (`backend.md` §9) and prints the modules
+    // of its one file. The first lowering takes the page's own module and
+    // the platform modules that are not the runtime module; the walk from
+    // the narrower roots changes no answer any of them read, so the second
+    // lowering lowers only core and the runtime module (#608). Before, it
+    // lowered every module again: 9 lowerings of 6 modules.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view count =
+        \\    <button onClick={Inc}>{String.fromInt count}</button>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = λ_ n → n + 1, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=out", "--no-cache", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(r);
+    const counters = try emitCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // One file, and each module in it lowered once: none is lowered two
+    // times, and none is lowered that the file does not hold.
+    var files: u64 = 0;
+    for (try w.listFiles("out")) |path| {
+        if (std.mem.endsWith(u8, path, ".mjs")) files += 1;
+    }
+    try testing.expectEqual(1, files);
+    try testing.expectEqual(2, counters.reach_walks);
+    try testing.expect(counters.modules_printed > 1);
+    try testing.expectEqual(counters.modules_printed, counters.modules_lowered);
 }
 
 test "a program builds the same with the edge lists the binary carries as with lists it builds" {
