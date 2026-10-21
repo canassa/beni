@@ -2998,6 +2998,87 @@ const Emitter = struct {
             }
             out.keys = keys;
             out.steps = steps;
+            // Version 1.15: each key as the program spells it — a key of no
+            // steps is the message type's one constructor — and which `*`
+            // each `*` key is (`browser-inline.md` §5, the owner,
+            // 2026-10-17). A model whose type is not a record of several
+            // fields is one value, written whole and exactly. Of a record,
+            // or a model of a type the pass could not read: a key whose write
+            // of the whole model the pass marked an approximation
+            // (`Writes.Write.lost`), or cut by a cap, lost precision, and its
+            // first approximation in source order is named; any other is an
+            // exact inferred whole write.
+            var lost_sites: std.ArrayList(Lower.Direct.LostSite) = .empty;
+            for (keys, 0..) |*key, ki| {
+                key.spelled = if (prog.recognised and prog.keys[ki].steps.len == 0 and prog.msg_only.len != 0) try a.dupe(u8, prog.msg_only) else key.name;
+                if (prog.recognised and prog.keys[ki].steps.len != 0) {
+                    const last = prog.keys[ki].steps[prog.keys[ki].steps.len - 1];
+                    key.fields = if (last.ctor != Writes.none) w.ctorArity(last.ctor) else 1;
+                }
+                if (prog.recognised) {
+                    const c = prog.keys[ki].caps;
+                    key.cap = if (c.k) .depth else if (c.a) .alternatives else if (c.d) .instantiation else if (c.i) .rounds else if (c.s) .size else if (c.w) .work else if (c.l) .leaves else .none;
+                }
+                if (!key.star) continue;
+                if (prog.recognised and prog.model_fields != Writes.none and prog.model_fields <= 1) {
+                    key.star_kind = .single_value;
+                    continue;
+                }
+                const lost_write: ?Writes.Write = if (!prog.recognised) null else for (prog.keys[ki].writes) |wr| {
+                    if (wr.path == Writes.rho_path and wr.kind == .value and wr.lost != Writes.none) break wr;
+                } else null;
+                const capped = !prog.recognised or prog.keys[ki].caps.any();
+                key.star_kind = if (lost_write != null or capped or prog.model_fields == Writes.none) .precision else .whole_record;
+                // Accepted whole-record writes (owner, 2026-10-21) use the
+                // existing authoritative classification. Expand only
+                // exact record writes before any consumer selects groups;
+                // ordinary keys keep their original slice and do no extra work.
+                // evalKey writes only model paths; commands are separate.
+                // Field values cover model descendants, including list rows.
+                if (key.star_kind == .whole_record) key_writes[ki] = try w.wholeModelWrites(prog);
+                const lw = lost_write orelse continue;
+                const origin = w.termOrigin(lw.lost) orelse continue;
+                const mi: Graph.Index = @fromBackingInt(@intCast(origin.module));
+                const b = e.bir(mi);
+                if (origin.inst >= b.insts.len) continue;
+                const file = e.graph().moduleFile(mi);
+                const first, const last = try e.exprTokens(b, file, origin.inst);
+                const at = e.tokenPosition(file, first);
+                const spans = e.session.artifacts.spans(file);
+                const src = e.session.store.bytes(file);
+                var src_text: []const u8 = "";
+                if (last + 1 < spans.len()) {
+                    const t = std.mem.trim(u8, src[spans.starts[first]..spans.starts[last + 1]], " \t\r\n");
+                    // Its first line, and `…` for the rest of a longer one.
+                    const line_end = std.mem.indexOfScalar(u8, t, '\n') orelse t.len;
+                    const head = std.mem.trimEnd(u8, t[0..line_end], " \t\r");
+                    if (head.len <= 60) src_text = if (line_end == t.len) try a.dupe(u8, head) else try std.fmt.allocPrint(a, "{s} …", .{head});
+                }
+                key.lost = .{
+                    .kind = kind: {
+                        if (w.termTag(lw.lost) == .rec) break :kind .record;
+                        // A call of a local: a parameter of its declaration, or a
+                        // value it bound.
+                        const oi: Bir.Inst.Index = @fromBackingInt(origin.inst);
+                        if (b.instTag(oi) != .call) break :kind .call;
+                        const callee: Bir.Inst.Index = @fromBackingInt(b.instData(oi).lhs);
+                        if (b.instTag(callee) != .local) break :kind .call;
+                        const decl = for (b.decls) |dd| {
+                            if (origin.inst >= dd.inst_start.int() and origin.inst < dd.inst_end.int()) break dd;
+                        } else break :kind .call;
+                        const locals = b.declLocals(decl);
+                        const li = b.instData(callee).lhs;
+                        if (li >= locals.len) break :kind .call;
+                        break :kind if (locals[li].kind == .param) .parameter else .local;
+                    },
+                    .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
+                    .text = src_text,
+                    .more = w.lostMore(lw),
+                    .site = @intCast(lost_sites.items.len),
+                };
+                try lost_sites.append(a, .{ .module = origin.module, .inst = origin.inst });
+            }
+            out.lost_sites = lost_sites.items;
             const settles = try a.alloc(bool, keys.len);
             for (key_writes, settles) |kw, *settles_key| {
                 settles_key.* = for (prog.subscription_reads) |r| {
@@ -3148,80 +3229,6 @@ const Emitter = struct {
             @memset(entry_bounds, 0);
             out.root_group = try groups.of(entry_reads, entry_bounds);
             const conflicts = try sparseConflicts(a, w, groups.reads.items, key_writes);
-            // Version 1.15: each key as the program spells it — a key of no
-            // steps is the message type's one constructor — and which `*`
-            // each `*` key is (`browser-inline.md` §5, the owner,
-            // 2026-10-17). A model whose type is not a record of several
-            // fields is one value, written whole and exactly. Of a record,
-            // or a model of a type the pass could not read: a key whose write
-            // of the whole model the pass marked an approximation
-            // (`Writes.Write.lost`), or cut by a cap, lost precision, and its
-            // first approximation in source order is named; any other is an
-            // exact inferred whole write.
-            var lost_sites: std.ArrayList(Lower.Direct.LostSite) = .empty;
-            for (keys, 0..) |*key, ki| {
-                key.spelled = if (prog.recognised and prog.keys[ki].steps.len == 0 and prog.msg_only.len != 0) try a.dupe(u8, prog.msg_only) else key.name;
-                if (prog.recognised and prog.keys[ki].steps.len != 0) {
-                    const last = prog.keys[ki].steps[prog.keys[ki].steps.len - 1];
-                    key.fields = if (last.ctor != Writes.none) w.ctorArity(last.ctor) else 1;
-                }
-                if (prog.recognised) {
-                    const c = prog.keys[ki].caps;
-                    key.cap = if (c.k) .depth else if (c.a) .alternatives else if (c.d) .instantiation else if (c.i) .rounds else if (c.s) .size else if (c.w) .work else if (c.l) .leaves else .none;
-                }
-                if (!key.star) continue;
-                if (prog.recognised and prog.model_fields != Writes.none and prog.model_fields <= 1) {
-                    key.star_kind = .single_value;
-                    continue;
-                }
-                const lost_write: ?Writes.Write = if (!prog.recognised) null else for (prog.keys[ki].writes) |wr| {
-                    if (wr.path == Writes.rho_path and wr.kind == .value and wr.lost != Writes.none) break wr;
-                } else null;
-                const capped = !prog.recognised or prog.keys[ki].caps.any();
-                key.star_kind = if (lost_write != null or capped or prog.model_fields == Writes.none) .precision else .whole_record;
-                const lw = lost_write orelse continue;
-                const origin = w.termOrigin(lw.lost) orelse continue;
-                const mi: Graph.Index = @fromBackingInt(@intCast(origin.module));
-                const b = e.bir(mi);
-                if (origin.inst >= b.insts.len) continue;
-                const file = e.graph().moduleFile(mi);
-                const first, const last = try e.exprTokens(b, file, origin.inst);
-                const at = e.tokenPosition(file, first);
-                const spans = e.session.artifacts.spans(file);
-                const src = e.session.store.bytes(file);
-                var src_text: []const u8 = "";
-                if (last + 1 < spans.len()) {
-                    const t = std.mem.trim(u8, src[spans.starts[first]..spans.starts[last + 1]], " \t\r\n");
-                    // Its first line, and `…` for the rest of a longer one.
-                    const line_end = std.mem.indexOfScalar(u8, t, '\n') orelse t.len;
-                    const head = std.mem.trimEnd(u8, t[0..line_end], " \t\r");
-                    if (head.len <= 60) src_text = if (line_end == t.len) try a.dupe(u8, head) else try std.fmt.allocPrint(a, "{s} …", .{head});
-                }
-                key.lost = .{
-                    .kind = kind: {
-                        if (w.termTag(lw.lost) == .rec) break :kind .record;
-                        // A call of a local: a parameter of its declaration, or a
-                        // value it bound.
-                        const oi: Bir.Inst.Index = @fromBackingInt(origin.inst);
-                        if (b.instTag(oi) != .call) break :kind .call;
-                        const callee: Bir.Inst.Index = @fromBackingInt(b.instData(oi).lhs);
-                        if (b.instTag(callee) != .local) break :kind .call;
-                        const decl = for (b.decls) |dd| {
-                            if (origin.inst >= dd.inst_start.int() and origin.inst < dd.inst_end.int()) break dd;
-                        } else break :kind .call;
-                        const locals = b.declLocals(decl);
-                        const li = b.instData(callee).lhs;
-                        if (li >= locals.len) break :kind .call;
-                        break :kind if (locals[li].kind == .param) .parameter else .local;
-                    },
-                    .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
-                    .text = src_text,
-                    .more = w.lostMore(lw),
-                    .site = @intCast(lost_sites.items.len),
-                };
-                try lost_sites.append(a, .{ .module = origin.module, .inst = origin.inst });
-            }
-            out.lost_sites = lost_sites.items;
             // Version 1.8: the lists, and K3's per-row texts.
             var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of[0..consumers.vholes.len], .holes = all_holes[0..consumers.vholes.len], .written = conflicts.written };
             try lists.build();

@@ -1,11 +1,6 @@
--- `Restore`'s arm returns the model its message carries: its write set is
--- the whole model, `*` (write-sets.md §3.4), so no binding can be chosen
--- for it, and `browser-inline` never re-checks the whole page
--- (docs/design/browser-inline.md §8.7). Refused at the record's `update` by
--- a language rule, class 3 (§5): `program_shape` — the model is a record of
--- two fields, so a whole write hides which of them changed (the owner,
--- 2026-10-17). A model of one value is written whole: S0's `TwoPrograms` and
--- `StopThrowingDisposer`, whose model is an `Int`, are accepted.
+-- An exact whole-model record write is a value write of each field.
+-- Restore refreshes both holes; Inc keeps its count-only write set
+-- (browser-inline.md §5, §8.3/§8.7, amended 2026-10-21).
 import Browser
 import Html exposing (Html)
 import Tea

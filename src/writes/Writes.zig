@@ -578,6 +578,9 @@ pub const Program = struct {
     /// from a record of several (`browser-inline.md` §5, the owner,
     /// 2026-10-17).
     model_fields: u32 = 0,
+    /// The complete init record when it supplies an unannotated model's
+    /// field names. A stable term id, consumed only for exact whole writes.
+    model_record: u32 = none,
     /// The top-level declaration `update` names, or `none` for an `update`
     /// that is not one: where the checker's scheme of it is, which the
     /// fuzzer's message type is read from (`dump --stage=writes
@@ -4145,6 +4148,39 @@ fn fieldsAt(a: *Writes, p: u32) Allocator.Error!?[]const u32 {
     return out;
 }
 
+/// Materialize an already classified exact whole-record write as one value
+/// write per field. Called only for Program.Key.star_kind == .whole_record;
+/// the complete record shape is the one that established model_fields.
+/// A field's value write covers all nested leaves through prefix conflicts.
+pub fn wholeModelWrites(a: *Writes, prog: *const Program) Allocator.Error![]const Write {
+    std.debug.assert(prog.model_fields != none and prog.model_fields > 1);
+    const out = try a.arena().alloc(Write, prog.model_fields);
+    if (prog.type_inst != none) {
+        const ty = try a.tyResolve(.{ .m = prog.type_module, .inst = prog.type_inst, .env = &.{} });
+        // By construction: fieldsAt counted this closed record type when
+        // the existing whole_record classification was established.
+        const rr = switch (ty) {
+            .record => |rr| rr,
+            else => unreachable,
+        };
+        const b = a.bir(rr.m);
+        const fields = b.extraSlice(Bir.inlineRange(b.instData(@fromBackingInt(rr.inst))), Bir.Field);
+        std.debug.assert(fields.len == out.len);
+        for (fields, out) |field, *wr| wr.* = value(try a.mkPath(rho_path, .field, @backingInt(b.symbol(field.name)), 0));
+    } else {
+        // A rec stores (tag, base, rest), then (global field symbol ID,
+        // value term ID) pairs. mkPath uses that same global symbol namespace.
+        // Terms are immutable and live until Writes.deinit, after the
+        // emitter consumes every program; no analysis scratch is retained.
+        const record = prog.model_record;
+        std.debug.assert(record != none and a.termTag(record) == .rec);
+        std.debug.assert(a.termWord(record, 1) == none and a.termWord(record, 2) == 0);
+        std.debug.assert((a.termLen(record) - 3) / 2 == out.len);
+        for (out, 0..) |*wr, i| wr.* = value(try a.mkPath(rho_path, .field, a.termWord(record, @intCast(3 + 2 * i)), 0));
+    }
+    return out;
+}
+
 // ---------------------------------------------------------------------------
 // Markup and holes (§3.6)
 // ---------------------------------------------------------------------------
@@ -5157,7 +5193,10 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         prog.model_fields = if (a.model_type != null)
             (if (try a.fieldsAt(rho_path)) |model_fields| @intCast(model_fields.len) else 0)
         else switch (a.termTag(init_model)) {
-            .rec => if (a.termWord(init_model, 1) == none and a.termWord(init_model, 2) == 0) (a.termLen(init_model) - 3) / 2 else none,
+            .rec => if (a.termWord(init_model, 1) == none and a.termWord(init_model, 2) == 0) record: {
+                prog.model_record = init_model;
+                break :record (a.termLen(init_model) - 3) / 2;
+            } else none,
             .lit, .con => 0,
             else => none,
         };

@@ -2271,7 +2271,12 @@ one that first uses it; a lowering that targets 1.14 sees what it saw.
   three a `*` key is: lost precision (a cap cut it, or the pass marked its whole write an
   approximation, `write-sets.md` amended 2026-10-18), an exact inferred whole write of a model
   whose type is a record of several fields, or a model of one value written exactly
-  (`browser-inline.md` §5). `Program.Key.lost`, for a `*` key of lost precision, is where the pass
+  (`browser-inline.md` §5). *Amended 2026-10-21 (the owner):* `.whole_record` is the existing
+  exact whole-model record fact and is accepted on browser-inline: the write-set consumer expands
+  it to a value write of every model field before selecting groups. A nested field value write
+  covers every leaf below it. `.precision` remains class 4; `.single_value` keeps its existing
+  behavior. The tags and their numeric values do not change, and no classifier is duplicated.
+  `Program.Key.lost`, for a `*` key of lost precision, is where the pass
   lost it — the first approximation in source order, its kind (an opaque call, a call of a
   function-valued parameter, of a function a local holds, a record of a type it cannot read), its
   place and text and how many more — and `programReportAt(site, code, message)` reports there, in

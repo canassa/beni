@@ -167,6 +167,11 @@ program is compiled, not run: each constructor is recognised where it is called,
 only what it reaches. Lists are edited in place here, so the ownership checker's errors apply
 (`lists.md`, *Ownership*).
 
+An update arm may return a complete new model record. That arm updates bindings that read any
+model field. Other arms keep their own field writes. Replacing a nested record field updates
+bindings that read its children. No replacement declaration is needed. A write that the compiler
+cannot determine remains a compiler limitation; keep the source and report it.
+
 A view may call a markup-returning helper in its own module; the compiler writes its markup
 at that call site. Markup held or passed as data is still a compiler limitation, as is a helper
 argument whose effectful evaluation would need sharing across binding functions. Keep the
@@ -185,4 +190,4 @@ payload each event carries (`onInput` gives the input's value as a `String`; `on
 `Event`). `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this
 platform; the others include it.
 
-Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10; `platforms/*/beni.json`; the modules' doc comments.
+Sources: `docs/design/browser-inline.md` §5, §8.3, §8.7; `docs/design/boundary.md` §5, §9.1, §9.8, §9.10; `platforms/*/beni.json`; the modules' doc comments.

@@ -98,7 +98,7 @@ and the per-scenario sections):
 | a derived `let` | a memo node: compute, compare, store, queue its static readers; rank-ordered flush |
 | a unit (page, tab, modal) | markup + function + disposers (`up`/`down`); readers of outliving state register and unregister |
 | a shared kind | one factory per kind, one positional config row per use |
-| an external event | the key's handler called with the decoded payload; a snapshot is a declared whole-state replace |
+| an external event | the key's handler called with the decoded payload; an exact snapshot writes every model field (owner amendment, 2026-10-21) |
 
 Research 106 recommended "compiler-recognised factory sharing, local reducers (C) as the
 start, B as comparator". The research project measured A (tea-inline), B (tea-dirtybits) and C
@@ -288,14 +288,16 @@ Not slices of the platform; each has its own issue and can land in any order.
   filter, append) as named edits, or a keyed collection in `core` whose edits name their element
   (`update id f`, `remove id`, `insert`, `swap`). The strict rule's error for an unrecognised
   structural write points at it. Decision D2 (§9).
-- **`replace`**: a declared whole-model (or whole-page) replacement, so a snapshot, an undo and a
-  route change are exact writes with intent and not inferred `*` keys.
+- **Exact whole-model writes** (owner amendment, 2026-10-21): snapshots, undo and route changes
+  return the new model directly. The existing exact `.whole_record` fact expands to value writes
+  of all model fields at the consumer, including every leaf below a nested field. This reverses
+  the former class 3 rule; no declaration or new syntax is needed. Lost precision stays class 4.
 - **The ownership checker's caps** (#286, #289, #293): a cap is an error that says "limit of the
   checker"; per-field summaries for records of independent fields so a flat model does not hit
   the width cap.
 - **Research-project generators**: `scenarios/*/shared/beni.js` will need the keyed primitive and
-  `replace` once the strict rule rejects their idioms; that is the first measurement of the
-  rule's rejection rate.
+  exact field sets for snapshots; no replacement declaration is required (owner amendment,
+  2026-10-21). The keyed primitive remains independent.
 
 ## 7. Risks
 
@@ -367,7 +369,12 @@ generators change to `Dict`. D5, D6 and D7 remain open.
 
 **The strict rule's refusals are two kinds** (§3), and the diagnostics keep the split (idiom / intended-global / compiler cap):
 - *Compiler limits* are temporary, labelled as limits of the compiler, and each is closed by the slice in its area. Examples: a suspending command before S6, a model-dependent subscription set before S4, `lazy` before D5, an analysis cap.
-- *Language rules* are permanent: they are the decision to depart from Elm, not gaps waiting for a slice. Examples: a structural write to a `List` of rows, an opaque `update`, a markup site that cannot be numbered, a `*` key that is not a declared `replace`. Their text never says "not yet".
+- *Language rules* are permanent: they are the decision to depart from Elm, not gaps waiting for a slice. Examples: a structural write to a `List` of rows, an opaque `update`, a markup site that cannot be numbered. Their text never says "not yet".
+
+*Amended 2026-10-21 (the owner):* the former exact whole-model class 3 refusal is reversed.
+A `.whole_record` key is accepted as value writes of every known model field, selected through
+the existing group conflicts. Other keys remain narrow. A `.precision` key stays class 4; no
+whole-page fallback, warning or new replacement syntax is introduced.
 
 ## 10. How this plan is tracked
 

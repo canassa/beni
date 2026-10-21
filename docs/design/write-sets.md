@@ -2256,3 +2256,17 @@ every term joined (`Write.lost_set`, interned, sorted by id), the first in sourc
 it, a lower term id first among terms one instruction made, and the "N more" counts the other
 places the set's terms were made at, each once (`Writes.lostMore`). A write set being built finds a
 path's write by a map, not a scan.
+
+*Amended 2026-10-21 (the owner): exact whole-model writes on browser-inline.* The existing
+`Program.Key.star_kind == .whole_record` fact means a value write of every field of the known
+complete model record. At the write-set consumer, expand that fact to `value ρ.field` for each
+field before computing conflicts. Each value write covers all nested leaves by §2.5's prefix
+rule; there is no recursive leaf enumeration or new cap. The existing group selection then
+updates bindings that read those fields. Other keys and bindings that read no model fields are
+unchanged. An approximate `*` (`.precision`) remains class 4 and is not expanded or accepted
+as exact. A model of one value keeps its existing `.single_value` behavior.
+
+The consumer reuses the published classification, the saved model type, and the complete init
+record when it supplies an unannotated model's field names. Field paths are materialized only
+for an exact whole-record key. The write dump keeps its existing exact `value ρ` fact; this is
+a consumer expansion, not another write-set analysis or an all-page repaint.

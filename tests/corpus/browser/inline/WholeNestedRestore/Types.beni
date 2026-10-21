@@ -1,0 +1,10 @@
+-- Imported generic aliases exercise the same closed record normalization
+-- used to classify the exact write and to materialize its field paths.
+pub type alias Stats a =
+    count : Int
+    label : a
+
+
+pub type alias Model a =
+    stats : Stats a
+    other : a

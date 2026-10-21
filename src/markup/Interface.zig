@@ -284,9 +284,9 @@ pub const Program = struct {
         /// for a key that is one named constructor; one, the message
         /// itself, for any other.
         params: u32,
-        /// The key's write set is `value ρ` (class `*`): its handler
-        /// re-runs every group of the page (`browser-direct.md` §4.1,
-        /// `patchAll`).
+        /// The key's write set is `value ρ` (class `*`). star_kind
+        /// distinguishes exact writes from lost precision. An exact record
+        /// write selects groups through value writes of all model fields.
         star: bool,
         /// 1.15: when `star`, which of the three kinds of `*` it is (the
         /// owner, 2026-10-17; `browser-inline.md` §5, §8.7).
@@ -328,7 +328,8 @@ pub const Program = struct {
             precision,
             /// An exact inferred write of the whole model whose type is a
             /// record of more than one field — by `update`'s annotation or by
-            /// the record literal `init` makes: it hides which fields changed.
+            /// the record literal `init` makes. Accepted as value writes of
+            /// every model field (owner amendment, 2026-10-21).
             whole_record,
             /// The model is one value — its type is no record of several
             /// fields — written exactly.

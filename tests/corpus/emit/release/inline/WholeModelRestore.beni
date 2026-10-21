@@ -1,0 +1,45 @@
+-- An exact whole-model record write is a value write of each field.
+-- Restore refreshes both holes; Inc keeps its count-only write set
+-- (browser-inline.md §5, §8.3/§8.7, amended 2026-10-21).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Inc
+    | Restore Model
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Restore saved →
+            saved
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="restore" onClick={Restore { count = 0, label = "saved" }}>
+            Restore
+        </button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "start" }, update = update, view = view })
+        "root"

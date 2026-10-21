@@ -1,8 +1,6 @@
--- `StarNotReplace` with no annotation on `update`: the model's type is then
--- read from what `init` makes, a record literal of two fields, and the key
--- is refused by the same language rule (docs/design/browser-inline.md §5,
--- §8.7), never accepted as a model of one value. Where neither the
--- annotation nor `init` says, the key is a limit of the compiler.
+-- An exact whole-model record write is a value write of each field.
+-- Restore refreshes both holes; Inc keeps its count-only write set
+-- (browser-inline.md §5, §8.3/§8.7, amended 2026-10-21).
 import Browser
 import Html exposing (Html)
 import Tea
