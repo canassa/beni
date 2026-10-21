@@ -325,12 +325,14 @@ pub const Input = struct {
 
 /// A way to run `call(task, scratch, item)` for every item of `items` on
 /// threads at once: each call writes only what its item owns, and
-/// `scratch` is its thread's, emptied before each item.
+/// `scratch` is its thread's, emptied before each item. `work` is how
+/// much there is to do in all (nodes), which says how many threads help.
 pub const Parallel = struct {
     context: *anyopaque,
     run: *const fn (
         context: *anyopaque,
         items: []const u32,
+        work: usize,
         task: *const anyopaque,
         call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
     ) Allocator.Error!void,
@@ -438,6 +440,10 @@ pub const Stats = struct {
     solve_constraints: u64 = 0,
     solve_evaluations: u64 = 0,
     solve_budget_hit: u64 = 0,
+    /// The top-level statements an extraction walked, and those whose
+    /// constraints it kept from the last one (`Extractor.reuse`).
+    solve_stmts_walked: u64 = 0,
+    solve_stmts_kept: u64 = 0,
     /// Fact 3's fixpoints (`Pts.fixpoint`: one per analysis, and one more
     /// each time definite initialisation finds keys) and their sweeps: the
     /// first walk, then each pass over the constraints waiting
@@ -723,6 +729,32 @@ const Extract = struct {
     stmts: []ExStmt = &.{},
     reads: []GRead = &.{},
     assigns: []u32 = &.{},
+    /// Of the last extraction: the statements walked, and those whose
+    /// constraints it took from the one before.
+    walked: u32 = 0,
+    reused: u32 = 0,
+    /// The readers index of the module's cells: per cell, the constraints
+    /// that read it, `rd[rd_off[c]..rd_off[c + 1]]`, by counting sort.
+    rd_off: []u32 = &.{},
+    rd: []u32 = &.{},
+
+    /// A safety build's check that what an extraction kept of the last one
+    /// is what a walk of every statement makes (`Extractor.reuse`).
+    fn expectSame(x: *const Extract, y: *const Extract, mi: u32) void {
+        const same = x.nodes == y.nodes and x.op.len == y.op.len and
+            std.mem.eql(Op, x.op, y.op) and std.mem.eql(u32, x.node, y.node) and
+            std.mem.eql(u32, x.out, y.out) and std.mem.eql(u32, x.a, y.a) and
+            std.mem.eql(u32, x.stmt, y.stmt) and std.mem.eql(u32, x.pool, y.pool) and
+            std.mem.eql(u32, x.over, y.over) and std.mem.eql(u32, x.assigns, y.assigns) and
+            std.mem.eql(u32, x.rd_off, y.rd_off) and std.mem.eql(u32, x.rd, y.rd) and
+            x.reads.len == y.reads.len and x.stmts.len == y.stmts.len;
+        if (!same) std.debug.panic("specialisation: module {d}'s constraints kept from its last extraction are not what a walk makes", .{mi});
+        for (x.reads, y.reads) |r, q| if (r.g != q.g or r.callee != q.callee) std.debug.panic("specialisation: module {d}'s kept reads differ", .{mi});
+        for (x.stmts, y.stmts) |p, q| if (p.node != q.node or p.cons != q.cons or p.reads != q.reads or p.assigns != q.assigns or p.param_reads != q.param_reads)
+            std.debug.panic("specialisation: module {d}'s kept statement {d} differs", .{ mi, p.node.int() });
+        // `b` holds a literal's value once the merge found it.
+        for (x.op, x.b, y.b, x.node) |op, p, q, n| if (op != .literal and p != q) std.debug.panic("specialisation: module {d}'s kept constraint of node {d} differs", .{ mi, n });
+    }
 
     fn cells(x: *const Extract) u32 {
         return x.nodes + @as(u32, @intCast(x.over.len));
@@ -745,8 +777,14 @@ const Extract = struct {
 const ExStmt = struct {
     node: Index,
     cons: u32,
+    pool: u32,
+    over: u32,
     reads: u32,
     assigns: u32,
+    /// The module's `epoch` when the statement was extracted: its
+    /// constraints hold while its nodes are what they were then
+    /// (`Mod.keptNodes`).
+    epoch: u64,
     param_reads: bool,
 };
 
@@ -819,6 +857,10 @@ const Mod = struct {
     /// away every walk of a module of many statements per function.
     epoch: u64 = 0,
     wide: u64 = 0,
+    /// The last change made in no named statement but the one that only
+    /// replaced the module's list of statements (`bodyChanged`): every
+    /// statement's nodes are what they were since then (`keptNodes`).
+    wide_nodes: u64 = 0,
     /// The statement `Spec.within` names, and its last change while named.
     scope: ?Index = null,
     scope_last: u64 = 0,
@@ -868,7 +910,23 @@ const Mod = struct {
         m.version +%= 1;
         if (m.version == none) m.version = 0;
         m.epoch += 1;
-        if (m.scope != null) m.scope_last = m.epoch else m.wide = m.epoch;
+        if (m.scope != null) m.scope_last = m.epoch else {
+            m.wide = m.epoch;
+            m.wide_nodes = m.epoch;
+        }
+        m.fact3 = true;
+    }
+
+    /// `changed` for a new list of the module's top-level statements,
+    /// each of which is the node it was: a walk of the module is another
+    /// walk (`kept`), and a walk of one statement is the same one
+    /// (`keptNodes`).
+    fn bodyChanged(m: *Mod) void {
+        std.debug.assert(m.scope == null);
+        m.version +%= 1;
+        if (m.version == none) m.version = 0;
+        m.epoch += 1;
+        m.wide = m.epoch;
         m.fact3 = true;
     }
 
@@ -885,8 +943,15 @@ const Mod = struct {
     /// `epoch`) is what it meets now: no change since was the module's
     /// own or that statement's.
     fn kept(m: *const Mod, top: Index, at: u64) bool {
-        if (at == m.epoch) return true;
         if (at < m.wide) return false;
+        return m.keptNodes(top, at);
+    }
+
+    /// Whether the nodes of top-level statement `top` are what they were at
+    /// `at`: `kept`, but past a new list of statements (`bodyChanged`).
+    fn keptNodes(m: *const Mod, top: Index, at: u64) bool {
+        if (at == m.epoch) return true;
+        if (at < m.wide_nodes) return false;
         if (m.scope) |t| if (t == top and at < m.scope_last) return false;
         if (top.int() < m.top_changed.items.len and at < m.top_changed.items[top.int()]) return false;
         return true;
@@ -1890,7 +1955,8 @@ const Spec = struct {
         }
         std.debug.assert(stmts == s.w_stmts.items.len);
         const param_base = cells;
-        cells += @intCast(s.params.items.len);
+        const params: u32 = @intCast(s.params.items.len);
+        cells += params;
         var sv: Solver = .{
             .s = s,
             .cell_base = cell_base,
@@ -1899,8 +1965,8 @@ const Spec = struct {
             .param_base = param_base,
             .lat = try a.alloc(Lat, cells),
             .aux = try a.alloc(u32, cons),
-            .rd_off = try a.alloc(u32, cells + 1),
-            .rd = &.{},
+            .prd_off = try a.alloc(u32, params + 1),
+            .prd = &.{},
             .queue = try a.alloc(u32, @max(cons, 1)),
             .queued = try .initEmpty(a, cons),
         };
@@ -1934,10 +2000,12 @@ const Spec = struct {
             };
         }
         // ---- Per constraint, what the merge decides of it, in module order:
-        // literals interned, names' values, parameters' cells, calls'
-        // parameters and their arguments' effects, spreads.
+        // the values fixed for the solve (literals, interned in this order,
+        // and names), parameters' cells, calls' parameters and their
+        // arguments' effects, spreads.
         const gval = try a.alloc(u32, s.globals);
         @memset(gval, none);
+        @memset(sv.prd_off, 0);
         for (mods, 0..) |*m, mi_usize| {
             const mi: u32 = @intCast(mi_usize);
             const x = &m.ex;
@@ -1965,16 +2033,26 @@ const Spec = struct {
                 s.cur_top = st.node;
                 for (first..st.cons) |j| {
                     const con = con_base[mi] + @as(u32, @intCast(j));
-                    const node: Index = @fromBackingInt(@intCast(x.node[j]));
                     switch (x.op[j]) {
-                        .literal => sv.aux[con] = @bitCast(try s.literalValue(m, node)),
+                        .constant => sv.lat[cell_base[mi] + x.out[j]] = if (x.a[j] == fixed_object) .object else .top,
+                        .literal => {
+                            // A literal's id is the table's for good: kept
+                            // in the extraction (`b`), which no literal's
+                            // `Lat` leaves 0.
+                            if (x.b[j] == 0) x.b[j] = @bitCast(try s.literalValue(m, @fromBackingInt(@intCast(x.node[j]))));
+                            sv.lat[cell_base[mi] + x.out[j]] = @bitCast(x.b[j]);
+                        },
                         .global => {
                             const g = x.a[j];
                             if (gval[g] == none) gval[g] = @bitCast(s.globalValue(g));
-                            sv.aux[con] = gval[g];
+                            sv.lat[cell_base[mi] + x.out[j]] = @bitCast(gval[g]);
                         },
                         .param => if (tracked) |d| {
-                            if (!s.escaped[s.globalOfDecl(d)]) sv.aux[con] = param_base + d.params + x.a[j];
+                            if (!s.escaped[s.globalOfDecl(d)]) {
+                                const p = d.params + x.a[j];
+                                sv.aux[con] = param_base + p;
+                                sv.prd_off[p + 1] += 1;
+                            }
                         },
                         .call => {
                             const at = x.a[j];
@@ -1988,7 +2066,7 @@ const Spec = struct {
                                 if (!effect.* and !try s.effectFree(m, @fromBackingInt(@intCast(x.nodeOf(c))))) effect.* = true;
                             }
                         },
-                        .object => if (x.b[j] == 1) if (s.pts.siteAt(mi, node)) |site| {
+                        .object => if (x.b[j] == 1) if (s.pts.siteAt(mi, @fromBackingInt(@intCast(x.node[j])))) |site| {
                             if (site < s.spread_sites.len) s.spread_sites[site] = true;
                         },
                         else => {},
@@ -1996,35 +2074,21 @@ const Spec = struct {
                 }
             }
         }
-        // ---- The readers index, by counting sort over the cells.
-        const Counted = struct {
-            off: []u32,
-            fn see(c: @This(), cell: u32) void {
-                c.off[cell + 1] += 1;
-            }
+        // ---- The parameters' readers, by counting sort.
+        for (1..sv.prd_off.len) |i| sv.prd_off[i] += sv.prd_off[i - 1];
+        sv.prd = try a.alloc(u32, sv.prd_off[params]);
+        const fill = try a.dupe(u32, sv.prd_off[0..params]);
+        for (mods, con_base) |*m, base| for (m.ex.op, 0..) |op, j| if (op == .param) {
+            const con = base + @as(u32, @intCast(j));
+            if (sv.aux[con] == none) continue;
+            const p = sv.aux[con] - param_base;
+            sv.prd[fill[p]] = con;
+            fill[p] += 1;
         };
-        @memset(sv.rd_off, 0);
-        for (mods, 0..) |*m, mi| for (0..m.ex.op.len) |j| sv.eachRead(&m.ex, @intCast(mi), j, Counted{ .off = sv.rd_off });
-        for (1..sv.rd_off.len) |i| sv.rd_off[i] += sv.rd_off[i - 1];
-        sv.rd = try a.alloc(u32, sv.rd_off[sv.rd_off.len - 1]);
-        const fill = try a.dupe(u32, sv.rd_off[0 .. sv.rd_off.len - 1]);
-        const Fill = struct {
-            fill: []u32,
-            rd: []u32,
-            con: u32,
-            fn see(f: @This(), cell: u32) void {
-                f.rd[f.fill[cell]] = f.con;
-                f.fill[cell] += 1;
-            }
-        };
-        for (mods, 0..) |*m, mi| for (0..m.ex.op.len) |j| {
-            sv.eachRead(&m.ex, @intCast(mi), j, Fill{ .fill = fill, .rd = sv.rd, .con = con_base[mi] + @as(u32, @intCast(j)) });
-        };
-        // ---- The solve: every constraint once, in order, then what wakes.
-        for (0..cons) |con| sv.enqueue(@intCast(con));
+        // ---- The solve.
         s.solver = &sv;
         defer s.solver = null;
-        try sv.drain();
+        try sv.solve();
         s.w_cur = none;
         s.stats.solve_constraints += cons;
         s.stats.solve_evaluations += sv.evaluations;
@@ -2078,23 +2142,41 @@ const Spec = struct {
             s: *Spec,
             fn run(t: *const @This(), scratch: Allocator, mi: u32) Allocator.Error!void {
                 const m = &t.s.mods[mi];
-                try Extractor.run(scratch, m.ir, m.global, m.stamp.len, m.epoch, &m.ex);
+                try Extractor.run(scratch, m, false, &m.ex);
             }
         };
         const task: Task = .{ .s = s };
-        if (s.in.parallel) |par| if (stale.items.len > 1) {
-            return par.run(par.context, stale.items, &task, struct {
-                fn call(cx: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void {
-                    const t: *const Task = @ptrCast(@alignCast(cx));
-                    return t.run(scratch, item);
-                }
-            }.call);
-        };
         var scratch: Arena = .init(s.gpa);
         defer scratch.deinit();
-        for (stale.items) |mi| {
+        if (s.in.parallel != null and stale.items.len > 1) {
+            const par = s.in.parallel.?;
+            var work: usize = 0;
+            for (stale.items) |mi| work += s.mods[mi].ir.nodes.len;
+            try par.run(par.context, stale.items, work, &task, struct {
+                fn call(cx: *const anyopaque, into: Allocator, item: u32) Allocator.Error!void {
+                    const t: *const Task = @ptrCast(@alignCast(cx));
+                    return t.run(into, item);
+                }
+            }.call);
+        } else for (stale.items) |mi| {
             scratch.reset(.retain_capacity);
             try task.run(scratch.allocator(), mi);
+        }
+        var program_nodes: usize = 0;
+        for (s.mods) |*m| program_nodes += m.ir.nodes.len;
+        for (stale.items) |mi| {
+            const m = &s.mods[mi];
+            s.stats.solve_stmts_walked += m.ex.walked;
+            s.stats.solve_stmts_kept += m.ex.reused;
+            // A safety build checks what a module kept against a walk of
+            // all of it, in a program of at most `max_solve_checked_nodes`.
+            if (std.debug.runtime_safety and m.ex.reused != 0 and program_nodes <= max_solve_checked_nodes) {
+                scratch.reset(.retain_capacity);
+                var fresh: Extract = .{};
+                defer fresh.deinit();
+                try Extractor.run(scratch.allocator(), m, true, &fresh);
+                m.ex.expectSame(&fresh, mi);
+            }
         }
     }
 
@@ -3448,10 +3530,15 @@ const Spec = struct {
                     },
                     else => null,
                 };
+                // Its changes are its own (`Mod.kept`): a walk of another
+                // statement, and the combined solver's constraints of one
+                // (`Extract`), hold across them.
+                within(m, stmt);
                 if (try s.patchStmt(m, stmt)) any = true;
                 // The `if`s whose test is now a literal, while the
                 // declaration's counts are the ones `spliceable` reads.
                 if (try s.foldBelow(m, stmt, 0)) any = true;
+                try s.leave(m);
                 if (binding) |b| {
                     const v: Node.OptionalIndex = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
                     const same = if (v.unwrap()) |root| m.ir.tag(root) == b.tag and
@@ -3491,7 +3578,9 @@ const Spec = struct {
         }
         for (dead_inits.items) |dead| {
             const m = &s.mods[dead.module];
+            within(m, dead.top);
             m.setNode(dead.init, .undefined_lit, 0, 0);
+            try s.leave(m);
             m.lit_of[dead.init.int()] = none;
             any = true;
         }
@@ -3513,7 +3602,9 @@ const Spec = struct {
             const start = try m.append(s.gpa, kept.items);
             const at = @backingInt(decl.func.?);
             const fact3 = m.fact3;
+            within(m, decl.stmt);
             m.changed();
+            try s.leave(m);
             if (kept_drop[g]) m.fact3 = fact3;
             m.extra.items[at] = start;
             m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
@@ -3658,7 +3749,7 @@ const Spec = struct {
         return need;
     }
 
-    const DeadInit = struct { module: u32, init: Index, param: u32 };
+    const DeadInit = struct { module: u32, top: Index, init: Index, param: u32 };
 
     /// Per parameter of `decl`'s function, into `counts`, how many of its
     /// reads stand in the initialiser of a dead binding: a `const` or `let`
@@ -3699,7 +3790,7 @@ const Spec = struct {
                         const seen = for (out.items[first..]) |o| {
                             if (o.param == p) break true;
                         } else false;
-                        if (!seen) try out.append(s.arena, .{ .module = m.index, .init = value, .param = @intCast(p) });
+                        if (!seen) try out.append(s.arena, .{ .module = m.index, .top = decl.stmt, .init = value, .param = @intCast(p) });
                     };
                     try pushChildren(s.arena, ir, r, &reads);
                 }
@@ -3773,7 +3864,9 @@ const Spec = struct {
                         }
                         if (out.items.len != specs.len * JsIr.Specifier.words) {
                             const start = try m.append(s.gpa, out.items);
+                            within(m, stmt);
                             m.changed();
+                            try s.leave(m);
                             m.extra.items[at + 2] = start;
                             m.extra.items[at + 3] = start + @as(u32, @intCast(out.items.len));
                             any = true;
@@ -3788,7 +3881,9 @@ const Spec = struct {
                         }
                         if (out.items.len != names.len) {
                             const start = try m.append(s.gpa, out.items);
+                            within(m, stmt);
                             m.setData(stmt, start, start + @as(u32, @intCast(out.items.len)));
+                            try s.leave(m);
                             any = true;
                         }
                     },
@@ -3798,7 +3893,7 @@ const Spec = struct {
             }
             if (!dropped) continue;
             const start = try m.append(s.gpa, kept.items);
-            m.changed();
+            m.bodyChanged();
             m.ir.body = .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(start + @as(u32, @intCast(kept.items.len)))) };
             any = true;
         }
@@ -3858,12 +3953,22 @@ const Spec = struct {
         var seen: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        for (m.ir.extraSlice(m.ir.body, Index)) |stmt| try JsIr.pushOperand(s.arena, &stack, stmt);
-        while (JsIr.popOperand(&stack)) |node| {
+        // A statement at a time, each change its own (`Mod.kept`).
+        const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+        for (body) |top| {
+            within(m, top);
+            try JsIr.pushOperand(s.arena, &stack, top);
+            try s.callsBelow(m, drop, kept_drop, &seen, &stack);
+            try s.leave(m);
+        }
+    }
+
+    fn callsBelow(s: *Spec, m: *Mod, drop: []const bool, kept_drop: []const bool, seen: *std.DynamicBitSetUnmanaged, stack: *std.ArrayList(Index)) Allocator.Error!void {
+        while (JsIr.popOperand(stack)) |node| {
             const ir = m.ir;
             const tag = ir.tag(node);
             if (tag.isStatement()) {
-                try s.pushStmtExprs(m, node, &stack);
+                try s.pushStmtExprs(m, node, stack);
                 continue;
             }
             if (seen.isSet(node.int())) continue;
@@ -3871,7 +3976,7 @@ const Spec = struct {
             switch (tag) {
                 .arrow => {
                     const f = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
+                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
                     continue;
                 },
                 .call => {
@@ -3895,7 +4000,7 @@ const Spec = struct {
                 },
                 else => {},
             }
-            try m.ir.pushOperands(s.arena, &stack, node);
+            try m.ir.pushOperands(s.arena, stack, node);
         }
     }
 
@@ -9913,6 +10018,9 @@ const Extractor = struct {
     seen: std.DynamicBitSetUnmanaged,
     cell: []u32,
     narrow: std.ArrayList(NameIndex) = .empty,
+    /// Per name, how many entries of `narrow` it has: whether a read of it
+    /// is past a guard, without a search.
+    guards: []u32,
     stack: std.ArrayList(Index) = .empty,
     work: std.ArrayList(Index) = .empty,
     disjuncts: std.ArrayList(Index) = .empty,
@@ -9932,7 +10040,15 @@ const Extractor = struct {
     assigns: std.ArrayList(u32) = .empty,
 
     /// Extract module `ir` into `into`, which it replaces.
-    fn run(scratch: Allocator, ir: *const JsIr, global: []const u32, names: usize, epoch: u64, into: *Extract) Allocator.Error!void {
+    /// Extract module `m` into `into`, which it replaces. A statement whose
+    /// nodes are what they were when `into` took its constraints
+    /// (`Mod.keptNodes`) keeps them, unless `fresh`; so does no statement
+    /// when the names a walk counts changed.
+    fn run(scratch: Allocator, m: *const Mod, fresh: bool, into: *Extract) Allocator.Error!void {
+        const ir = m.ir;
+        const global = m.global;
+        const names = m.stamp.len;
+        const epoch = m.epoch;
         const nodes: u32 = @intCast(ir.nodes.len);
         var x: Extractor = .{
             .scratch = scratch,
@@ -9946,42 +10062,156 @@ const Extractor = struct {
             .assigned = try scratch.alloc(bool, names),
             .pos = try scratch.alloc(u32, names),
             .src = try scratch.alloc(u32, names),
+            .guards = try scratch.alloc(u32, names),
             .seen = try .initEmpty(scratch, nodes),
             .cell = try scratch.alloc(u32, nodes),
         };
         @memset(x.stamp, 0);
+        @memset(x.guards, 0);
         const body = ir.extraSlice(ir.body, Index);
-        try x.op.ensureTotalCapacity(scratch, nodes);
+        // The last extraction's statements, by node.
+        var old: KeyMap(struct { node: u32 }, u32) = .empty;
+        if (!fresh and into.names == names) for (into.stmts, 0..) |st, k| try old.put(scratch, .{ .node = st.node.int() }, @intCast(k));
+        var walked: u32 = 0;
+        var reused: u32 = 0;
         for (body, 0..) |top, i| {
             x.ordinal = @intCast(i);
+            const before = old.get(.{ .node = top.int() });
+            if (before) |k| if (m.keptNodes(top, into.stmts[k].epoch)) if (try x.reuse(into, k)) {
+                reused += 1;
+                continue;
+            };
+            walked += 1;
             try x.prepare(top);
             try x.stmtOf(top);
             try x.stmts.append(scratch, .{
                 .node = top,
                 .cons = @intCast(x.op.items.len),
+                .pool = @intCast(x.pool.items.len),
+                .over = @intCast(x.over.items.len),
                 .reads = @intCast(x.reads.items.len),
                 .assigns = @intCast(x.assigns.items.len),
+                .epoch = epoch,
                 .param_reads = x.param_reads,
             });
         }
-        // The arena is the `Extract`'s own, so each column is written
-        // into its field and the arena is never copied.
+        into.walked = walked;
+        into.reused = reused;
+        // What the last extraction made is no longer read: its arena holds
+        // this one's columns, each written into its field, so that the
+        // arena itself is never copied.
         into.arena.reset(.retain_capacity);
-        const out = into.arena.allocator();
+        const keep = into.arena.allocator();
         into.epoch = epoch;
         into.names = names;
         into.nodes = nodes;
-        into.op = try out.dupe(Op, x.op.items);
-        into.node = try out.dupe(u32, x.node.items);
-        into.out = try out.dupe(u32, x.out.items);
-        into.a = try out.dupe(u32, x.a.items);
-        into.b = try out.dupe(u32, x.b.items);
-        into.stmt = try out.dupe(u32, x.stmt.items);
-        into.pool = try out.dupe(u32, x.pool.items);
-        into.over = try out.dupe(u32, x.over.items);
-        into.stmts = try out.dupe(ExStmt, x.stmts.items);
-        into.reads = try out.dupe(GRead, x.reads.items);
-        into.assigns = try out.dupe(u32, x.assigns.items);
+        into.op = try keep.dupe(Op, x.op.items);
+        into.node = try keep.dupe(u32, x.node.items);
+        into.out = try keep.dupe(u32, x.out.items);
+        into.a = try keep.dupe(u32, x.a.items);
+        into.b = try keep.dupe(u32, x.b.items);
+        into.stmt = try keep.dupe(u32, x.stmt.items);
+        into.pool = try keep.dupe(u32, x.pool.items);
+        into.over = try keep.dupe(u32, x.over.items);
+        into.stmts = try keep.dupe(ExStmt, x.stmts.items);
+        into.reads = try keep.dupe(GRead, x.reads.items);
+        into.assigns = try keep.dupe(u32, x.assigns.items);
+        // The readers index, by counting sort over the cells.
+        const cells = into.cells();
+        const off = try keep.alloc(u32, cells + 1);
+        @memset(off, 0);
+        for (0..into.op.len) |j| eachRead(into, j, Count{ .off = off });
+        for (1..off.len) |i| off[i] += off[i - 1];
+        const rd = try keep.alloc(u32, off[cells]);
+        const fill = try scratch.dupe(u32, off[0..cells]);
+        for (0..into.op.len) |j| eachRead(into, j, Fill{ .fill = fill, .rd = rd, .con = @intCast(j) });
+        into.rd_off = off;
+        into.rd = rd;
+    }
+
+    const Count = struct {
+        off: []u32,
+        fn see(c: Count, cell: u32) void {
+            c.off[cell + 1] += 1;
+        }
+    };
+
+    const Fill = struct {
+        fill: []u32,
+        rd: []u32,
+        con: u32,
+        fn see(f: Fill, cell: u32) void {
+            f.rd[f.fill[cell]] = f.con;
+            f.fill[cell] += 1;
+        }
+    };
+
+    /// Calls `f.see(cell)` for every cell of the module constraint `j`
+    /// reads; a parameter's is the merge's (`Solver.prd`), and a field's
+    /// and a return's are registered as they are read (`Solver.dynGet`).
+    fn eachRead(x: *const Extract, j: usize, f: anytype) void {
+        const a = x.a[j];
+        switch (x.op[j]) {
+            .constant, .literal, .global, .member, .param => {},
+            .local, .ret => if (a != none) f.see(a),
+            .unary, .store => f.see(a),
+            .binary => {
+                f.see(a);
+                f.see(x.b[j]);
+            },
+            .cond => for (x.pool[a..][0..5]) |c| if (c != none) f.see(c),
+            .call => for (x.pool[a + 2 ..][0..x.pool[a + 1]]) |c| f.see(c),
+            .template => for (x.pool[a + 1 ..][0..x.pool[a]]) |c| f.see(c),
+            .object => for (0..x.pool[a]) |k| f.see(x.pool[a + 2 + 2 * k]),
+        }
+    }
+
+    /// Statement `k` of `from`, the last extraction, taken as it was: its
+    /// constraints, renumbered into this one. Not taken when it has a
+    /// repeated node, whose cell is numbered across the module, or one
+    /// that another statement of this extraction met first.
+    fn reuse(x: *Extractor, from: *const Extract, k: u32) Allocator.Error!bool {
+        const st = from.stmts[k];
+        const prev: ExStmt = if (k == 0) .{ .node = st.node, .cons = 0, .pool = 0, .over = 0, .reads = 0, .assigns = 0, .epoch = 0, .param_reads = false } else from.stmts[k - 1];
+        if (st.over != prev.over) return false;
+        for (from.out[prev.cons..st.cons], from.node[prev.cons..st.cons]) |out, node| {
+            if (out != none and x.seen.isSet(node)) return false;
+        }
+        for (from.out[prev.cons..st.cons], from.node[prev.cons..st.cons]) |out, node| {
+            if (out != none) {
+                x.seen.set(node);
+                x.cell[node] = node;
+            }
+        }
+        const s = x.scratch;
+        const pool_delta: u32 = @intCast(x.pool.items.len);
+        for (prev.cons..st.cons) |j| {
+            const op = from.op[j];
+            const a = switch (op) {
+                .cond, .call, .template, .object => from.a[j] - prev.pool + pool_delta,
+                else => from.a[j],
+            };
+            try x.op.append(s, op);
+            try x.node.append(s, from.node[j]);
+            try x.out.append(s, from.out[j]);
+            try x.a.append(s, a);
+            try x.b.append(s, from.b[j]);
+            try x.stmt.append(s, x.ordinal);
+        }
+        try x.pool.appendSlice(s, from.pool[prev.pool..st.pool]);
+        try x.reads.appendSlice(s, from.reads[prev.reads..st.reads]);
+        try x.assigns.appendSlice(s, from.assigns[prev.assigns..st.assigns]);
+        try x.stmts.append(s, .{
+            .node = st.node,
+            .cons = @intCast(x.op.items.len),
+            .pool = @intCast(x.pool.items.len),
+            .over = @intCast(x.over.items.len),
+            .reads = @intCast(x.reads.items.len),
+            .assigns = @intCast(x.assigns.items.len),
+            .epoch = st.epoch,
+            .param_reads = st.param_reads,
+        });
+        return true;
     }
 
     inline fn globalOf(x: *const Extractor, n: NameIndex) ?u32 {
@@ -10197,7 +10427,11 @@ const Extractor = struct {
             .func_decl, .gen_decl => {
                 const saved = x.narrow;
                 x.narrow = .empty;
-                defer x.narrow = saved;
+                for (saved.items) |n| x.guards[n.int()] -= 1;
+                defer {
+                    x.narrow = saved;
+                    for (saved.items) |n| x.guards[n.int()] += 1;
+                }
                 try x.func(@fromBackingInt(@intCast(d.rhs)), stmt);
             },
             .assign_stmt => {
@@ -10243,7 +10477,10 @@ const Extractor = struct {
 
     fn list(x: *Extractor, range: JsIr.SubRange) Allocator.Error!void {
         const base = x.narrow.items.len;
-        defer x.narrow.shrinkRetainingCapacity(base);
+        defer {
+            for (x.narrow.items[base..]) |n| x.guards[n.int()] -= 1;
+            x.narrow.shrinkRetainingCapacity(base);
+        }
         for (x.ir.extraSlice(range, Index)) |stmt| {
             try x.stmtOf(stmt);
             if (x.ir.tag(stmt) == .if_stmt) try x.guardNames(stmt);
@@ -10302,7 +10539,9 @@ const Extractor = struct {
 
     fn narrowName(x: *Extractor, n: NameIndex) Allocator.Error!void {
         if (x.globalOf(n) != null or n.unwrap() == null) return;
+        if (n.int() >= x.guards.len) return;
         try x.narrow.append(x.scratch, n);
+        x.guards[n.int()] += 1;
     }
 
     /// `Spec.evalFunc`: the body, then `undefined` returned when it may run
@@ -10436,7 +10675,7 @@ const Extractor = struct {
         const i = n.unwrap() orelse return x.emit(.constant, node.int(), c, fixed_top, 0);
         if (i >= x.names or x.stamp[i] != x.cur) return x.emit(.constant, node.int(), c, fixed_top, 0);
         if (x.decls[i] != 1 or x.assigned[i]) return x.emit(.constant, node.int(), c, fixed_top, 0);
-        const narrowed: u32 = @intFromBool(std.mem.indexOfScalar(NameIndex, x.narrow.items, n) != null);
+        const narrowed: u32 = @intFromBool(x.guards[i] != 0);
         if (x.pos[i] != none) {
             x.param_reads = true;
             return x.emit(.param, node.int(), c, x.pos[i], narrowed);
@@ -10457,11 +10696,14 @@ const Extractor = struct {
 /// order: no answer depends on their numbering, every consumer finds one by
 /// its key.
 ///
-/// **The worklist.** Every constraint is queued once, in module order and
-/// walk order; a cell that changes queues the constraints that read it —
-/// its static readers from the CSR index the merge builds, and for a field
-/// or a return those that read it so far, registered as they read it. The
-/// queue is first in, first out.
+/// **The worklist.** The constraints are evaluated once in module order
+/// and walk order; a cell that changes queues the constraints that read it
+/// and that this first pass has passed — its static readers from the
+/// module's readers index (`Extract.rd`) or the parameters' (`prd`), and
+/// for a field or a return those that read it so far, registered as they
+/// read it. The queue is first in, first out. A constraint whose value is
+/// fixed for the solve (a literal, a name, a node's kind) is written at the
+/// merge and never evaluated.
 const Solver = struct {
     s: *Spec,
     /// Per module: its first node cell, its first constraint, its first
@@ -10472,20 +10714,22 @@ const Solver = struct {
     /// The first parameter cell; every cell's value.
     param_base: u32,
     lat: []Lat,
-    /// Per constraint: a literal's or a name's value (`Lat` bits), a
-    /// parameter read's cell (`none`: ⊤), a call's first parameter (`none`:
-    /// not a call `Spec` tracks), a conditional's decision (`none`: none).
+    /// Per constraint: a parameter read's cell (`none`: ⊤), a call's first
+    /// parameter (`none`: not a call `Spec` tracks), a conditional's
+    /// decision (`none`: none), a `return`'s cell once found.
     aux: []u32,
-    /// The static readers: per cell, `rd[rd_off[c]..rd_off[c + 1]]`.
-    rd_off: []u32,
-    rd: []u32,
+    /// The parameters' readers: per parameter, `prd[prd_off[p]..prd_off[p + 1]]`.
+    prd_off: []u32,
+    prd: []u32,
     /// Fields and returns (`dynGet`, `joinDyn`), and who read each.
     dyn_ids: KeyMap(DynKey, u32) = .empty,
     dyn: std.ArrayList(Dyn) = .empty,
     readers: std.ArrayList(Reader) = .empty,
-    reader_set: KeyMap(ReaderKey, void) = .empty,
     /// The constraint being evaluated.
     cur: u32 = none,
+    /// While the first pass runs, the constraint it is at: one past it is
+    /// still to come, and is not queued.
+    first_pass: bool = true,
     queue: []u32,
     q_head: usize = 0,
     q_len: usize = 0,
@@ -10495,9 +10739,8 @@ const Solver = struct {
     pessimised: bool = false,
 
     const DynKey = struct { ret: u32, a: u32, b: u32 };
-    const Dyn = struct { key: DynKey, lat: Lat = .bot, made: bool = false, head: u32 = none };
+    const Dyn = struct { lat: Lat = .bot, made: bool = false, head: u32 = none, key: DynKey };
     const Reader = struct { con: u32, next: u32 };
-    const ReaderKey = struct { dyn: u32, con: u32 };
 
     /// The work budget (*The worklist*, *Termination*): evaluations per
     /// constraint and cell.
@@ -10522,7 +10765,8 @@ const Solver = struct {
         return sv.cell_base[mi] + local;
     }
 
-    fn enqueue(sv: *Solver, con: u32) void {
+    inline fn enqueue(sv: *Solver, con: u32) void {
+        if (sv.first_pass and con > sv.cur) return;
         if (sv.queued.isSet(con)) return;
         sv.queued.set(con);
         var at = sv.q_head + sv.q_len;
@@ -10531,30 +10775,30 @@ const Solver = struct {
         sv.q_len += 1;
     }
 
-    fn wake(sv: *Solver, cell: u32) void {
-        for (sv.rd[sv.rd_off[cell]..sv.rd_off[cell + 1]]) |con| sv.enqueue(con);
-    }
-
     fn wakeDyn(sv: *Solver, id: u32) void {
         var r = sv.dyn.items[id].head;
         while (r != none) : (r = sv.readers.items[r].next) sv.enqueue(sv.readers.items[r].con);
     }
 
-    /// Cell `cell` is `v` now.
-    fn set(sv: *Solver, cell: u32, v: Lat) void {
+    /// Node cell `local` of module `mi` is `v` now.
+    fn set(sv: *Solver, mi: u32, local: u32, v: Lat) void {
+        const cell = sv.cellOf(mi, local);
         const old = sv.lat[cell];
         const new = if (sv.pessimised) sv.s.join(old, v) else v;
         if (new.eql(old)) return;
         sv.lat[cell] = new;
-        sv.wake(cell);
+        const x = &sv.s.mods[mi].ex;
+        const base = sv.con_base[mi];
+        for (x.rd[x.rd_off[local]..x.rd_off[local + 1]]) |j| sv.enqueue(base + j);
     }
 
-    /// `v` joins cell `cell` (a parameter).
-    fn joinCell(sv: *Solver, cell: u32, v: Lat) void {
+    /// `v` joins parameter `p`'s cell.
+    fn joinParam(sv: *Solver, p: u32, v: Lat) void {
+        const cell = sv.param_base + p;
         const joined = sv.s.join(sv.lat[cell], v);
         if (joined.eql(sv.lat[cell])) return;
         sv.lat[cell] = joined;
-        sv.wake(cell);
+        for (sv.prd[sv.prd_off[p]..sv.prd_off[p + 1]]) |con| sv.enqueue(con);
     }
 
     fn dynOf(sv: *Solver, key: DynKey) Allocator.Error!u32 {
@@ -10567,25 +10811,28 @@ const Solver = struct {
     }
 
     /// A field's or a return's value, null while nothing wrote it; the
-    /// constraint reading it is woken when it changes.
+    /// constraint reading it is woken when it changes. A constraint read
+    /// again is listed again only when another read came between: a
+    /// reader listed twice is woken twice, which queues it once.
     fn dynGet(sv: *Solver, key: Spec.SiteProp, ret: bool) Allocator.Error!?Lat {
         const id = try sv.dynOf(.{ .ret = @intFromBool(ret), .a = key.site, .b = key.prop });
-        if (sv.cur != none) {
-            const gop = try sv.reader_set.getOrPut(sv.arena(), .{ .dyn = id, .con = sv.cur });
-            if (!gop.found_existing) {
-                const d = &sv.dyn.items[id];
-                try sv.readers.append(sv.arena(), .{ .con = sv.cur, .next = d.head });
-                d.head = @intCast(sv.readers.items.len - 1);
-            }
+        const d = &sv.dyn.items[id];
+        if (sv.cur != none and (d.head == none or sv.readers.items[d.head].con != sv.cur)) {
+            const head = d.head;
+            try sv.readers.append(sv.arena(), .{ .con = sv.cur, .next = head });
+            sv.dyn.items[id].head = @intCast(sv.readers.items.len - 1);
         }
-        const d = sv.dyn.items[id];
-        return if (d.made) d.lat else null;
+        const now = sv.dyn.items[id];
+        return if (now.made) now.lat else null;
     }
 
     /// `v` joins a field or a return (`Spec.joinProp`, `Spec.joinRet`): it
     /// exists from the first write, whatever the write's value.
     fn joinDyn(sv: *Solver, key: DynKey, v: Lat) Allocator.Error!void {
-        const id = try sv.dynOf(key);
+        sv.joinDynAt(try sv.dynOf(key), v);
+    }
+
+    fn joinDynAt(sv: *Solver, id: u32, v: Lat) void {
         const d = &sv.dyn.items[id];
         var moved = !d.made;
         d.made = true;
@@ -10595,35 +10842,6 @@ const Solver = struct {
             moved = true;
         }
         if (moved) sv.wakeDyn(id);
-    }
-
-    /// Calls `f(cell)` for every cell constraint `j` of module `mi` reads
-    /// that is not a field or a return.
-    fn eachRead(sv: *const Solver, x: *const Extract, mi: u32, j: usize, f: anytype) void {
-        switch (x.op[j]) {
-            .constant, .literal, .global, .member => {},
-            .local => if (x.a[j] != none) f.see(sv.cellOf(mi, x.a[j])),
-            .param => if (sv.aux[sv.con_base[mi] + j] != none) f.see(sv.aux[sv.con_base[mi] + j]),
-            .unary, .store => f.see(sv.cellOf(mi, x.a[j])),
-            .ret => if (x.a[j] != none) f.see(sv.cellOf(mi, x.a[j])),
-            .binary => {
-                f.see(sv.cellOf(mi, x.a[j]));
-                f.see(sv.cellOf(mi, x.b[j]));
-            },
-            .cond => for (x.pool[x.a[j]..][0..5]) |c| if (c != none) f.see(sv.cellOf(mi, c)),
-            .call => {
-                const n = x.pool[x.a[j] + 1];
-                for (x.pool[x.a[j] + 2 ..][0..n]) |c| f.see(sv.cellOf(mi, c));
-            },
-            .template => {
-                const n = x.pool[x.a[j]];
-                for (x.pool[x.a[j] + 1 ..][0..n]) |c| f.see(sv.cellOf(mi, c));
-            },
-            .object => {
-                const n = x.pool[x.a[j]];
-                for (0..n) |k| f.see(sv.cellOf(mi, x.pool[x.a[j] + 2 + 2 * k]));
-            },
-        }
     }
 
     /// A template's parts' values, read from their cells.
@@ -10637,15 +10855,14 @@ const Solver = struct {
         }
     };
 
-    /// Constraint `con`'s transfer function, on its operands' cells as they
-    /// are: what `Spec.combine` and `Spec.evalStmt` compute of the node, the
-    /// operands' values being the cells'.
-    fn eval(sv: *Solver, con: u32) Allocator.Error!void {
+    /// Constraint `j` of module `mi` (`con` in all)'s transfer function, on
+    /// its operands' cells as they are: what `Spec.combine` and
+    /// `Spec.evalStmt` compute of the node, the operands' values being the
+    /// cells'.
+    fn eval(sv: *Solver, con: u32, mi: u32, j: usize) Allocator.Error!void {
         const s = sv.s;
-        const mi = sv.moduleOf(con);
         const m = &s.mods[mi];
         const x = &m.ex;
-        const j = con - sv.con_base[mi];
         const ir = m.ir;
         const st = x.stmt[j];
         sv.cur = con;
@@ -10656,8 +10873,8 @@ const Solver = struct {
         const node: Index = @fromBackingInt(@intCast(x.node[j]));
         const a = x.a[j];
         const v: Lat = switch (x.op[j]) {
-            .constant => if (a == fixed_object) Lat.object else Lat.top,
-            .literal, .global => @bitCast(sv.aux[con]),
+            // Written at the merge.
+            .constant, .literal, .global => return,
             .local, .param => read: {
                 const from: u32 = if (x.op[j] == .local) (if (a == none) none else sv.cellOf(mi, a)) else sv.aux[con];
                 const got = if (from == none) Lat.top else sv.lat[from];
@@ -10671,13 +10888,13 @@ const Solver = struct {
                 break :un if (op != .yield and u.state == .top) .{ .state = .nonnull, .truth = u.truth } else u;
             },
             .binary => bin: {
-                const b = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Binary);
                 const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
                 const l = sv.lat[sv.cellOf(mi, a)];
                 const r = sv.lat[sv.cellOf(mi, x.b[j])];
-                if ((op == .strict_eq or op == .strict_ne) and l.state != .bot and r.state != .bot) if (try s.identity(m, b.left, b.right, l, r)) |same| {
-                    break :bin try s.boolean(if (op == .strict_eq) same else !same);
-                };
+                if ((op == .strict_eq or op == .strict_ne) and l.state != .bot and r.state != .bot) {
+                    const b = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Binary);
+                    if (try s.identity(m, b.left, b.right, l, r)) |same| break :bin try s.boolean(if (op == .strict_eq) same else !same);
+                }
                 const w = try s.binary(op, l, r);
                 break :bin if (op != .logical_and and op != .logical_or and w.state == .top) .{ .state = .nonnull, .truth = w.truth } else w;
             },
@@ -10696,7 +10913,7 @@ const Solver = struct {
                 // Its arguments join the parameters of the function it names.
                 if (sv.aux[con] != none) {
                     const n = x.pool[a + 1];
-                    for (x.pool[a + 2 ..][0..n], 0..) |c, i| sv.joinCell(sv.param_base + sv.aux[con] + @as(u32, @intCast(i)), sv.lat[sv.cellOf(mi, c)]);
+                    for (x.pool[a + 2 ..][0..n], 0..) |c, i| sv.joinParam(sv.aux[con] + @as(u32, @intCast(i)), sv.lat[sv.cellOf(mi, c)]);
                 }
                 break :call try s.callValue(m, node);
             },
@@ -10725,17 +10942,20 @@ const Solver = struct {
             },
             .ret => {
                 const w: Lat = if (a == none) .of(try s.intern(.{ .kind = .undefined_lit })) else sv.lat[sv.cellOf(mi, a)];
-                try sv.joinDyn(.{ .ret = 1, .a = mi, .b = x.node[j] }, w);
+                // Its return's cell, found once.
+                if (sv.aux[con] == none) sv.aux[con] = try sv.dynOf(.{ .ret = 1, .a = mi, .b = x.node[j] });
+                sv.joinDynAt(sv.aux[con], w);
                 return;
             },
         };
-        sv.set(sv.cellOf(mi, x.out[j]), v);
+        sv.set(mi, x.out[j], v);
     }
 
     /// What is still changing, past the budget, is ⊤ (*The worklist*): a
     /// fixpoint above any other, so the facts stay sound.
     fn pessimise(sv: *Solver) void {
         sv.pessimised = true;
+        sv.first_pass = false;
         sv.s.stats.solve_budget_hit += 1;
         for (sv.lat[sv.param_base..]) |*v| v.* = .top;
         for (sv.dyn.items) |*d| d.lat = .top;
@@ -10743,25 +10963,41 @@ const Solver = struct {
         while (con < sv.queued.bit_length) : (con += 1) sv.enqueue(con);
     }
 
-    fn drain(sv: *Solver) Allocator.Error!void {
+    fn budget(sv: *Solver, con: u32, limit: u64) void {
+        sv.evaluations += 1;
+        if (sv.evaluations <= limit or sv.pessimised) return;
+        if (std.debug.runtime_safety) {
+            const mi = sv.moduleOf(con);
+            const n = sv.s.mods[mi].ex.node[con - sv.con_base[mi]];
+            std.debug.panic("specialisation: the combined solver passed its work budget of {d} evaluations, node {d} ({t}) of module {d} still changing", .{ limit, n, sv.s.mods[mi].ir.tag(@fromBackingInt(@intCast(n))), mi });
+        }
+        sv.pessimise();
+    }
+
+    /// The first pass, every constraint in order, then the queue to empty.
+    fn solve(sv: *Solver) Allocator.Error!void {
         const limit: u64 = budget_per * (@as(u64, sv.queued.bit_length) + sv.lat.len);
+        for (sv.s.mods, 0..) |*m, mi| {
+            const base = sv.con_base[mi];
+            for (m.ex.op, 0..) |op, j| switch (op) {
+                .constant, .literal, .global => {},
+                else => {
+                    const con = base + @as(u32, @intCast(j));
+                    sv.budget(con, limit);
+                    try sv.eval(con, @intCast(mi), j);
+                },
+            };
+        }
+        sv.first_pass = false;
         while (sv.q_len != 0) {
             const con = sv.queue[sv.q_head];
             sv.q_head += 1;
             if (sv.q_head == sv.queue.len) sv.q_head = 0;
             sv.q_len -= 1;
             sv.queued.unset(con);
-            sv.evaluations += 1;
-            if (sv.evaluations > limit and !sv.pessimised) {
-                if (std.debug.runtime_safety) {
-                    const mi = sv.moduleOf(con);
-                    const x = &sv.s.mods[mi].ex;
-                    const n = x.node[con - sv.con_base[mi]];
-                    std.debug.panic("specialisation: the combined solver passed its work budget of {d} evaluations, node {d} ({t}) of module {d} still changing", .{ limit, n, sv.s.mods[mi].ir.tag(@fromBackingInt(@intCast(n))), mi });
-                }
-                sv.pessimise();
-            }
-            try sv.eval(con);
+            sv.budget(con, limit);
+            const mi = sv.moduleOf(con);
+            try sv.eval(con, mi, con - sv.con_base[mi]);
         }
         sv.cur = none;
     }

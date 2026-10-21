@@ -5108,6 +5108,8 @@ const Emitter = struct {
         profile.addCounter(.spec_solve_constraints, stats.solve_constraints);
         profile.addCounter(.spec_solve_evaluations, stats.solve_evaluations);
         profile.addCounter(.spec_solve_budget_hit, stats.solve_budget_hit);
+        profile.addCounter(.spec_solve_stmts_walked, stats.solve_stmts_walked);
+        profile.addCounter(.spec_solve_stmts_kept, stats.solve_stmts_kept);
         if (stats.pts_largest) |o| try e.reportLargest(o, stats.pts_largest_sites, slots, spec_slots.items, &ids, &props);
         var k: usize = 0;
         for (todo) |i| {
@@ -6365,6 +6367,7 @@ const Emitter = struct {
         fn run(
             context: *anyopaque,
             items: []const u32,
+            work: usize,
             task: *const anyopaque,
             call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
         ) Allocator.Error!void {
@@ -6377,7 +6380,9 @@ const Emitter = struct {
                     return j.call(j.task, w.module.allocator(), item);
                 }
             };
-            try sw.e.pool.run(items, Job{ .task = task, .call = call }, Job.each, items.len);
+            // Threads by the nodes to extract, as the other rounds size
+            // theirs: each keeps its scratch for the rest of the phase.
+            try sw.e.pool.run(items, Job{ .task = task, .call = call }, Job.each, sw.e.wanted(work, nodes_per_extractor));
         }
     };
 
@@ -7354,6 +7359,9 @@ pub const foreign_extension = ".foreign.mjs";
 /// so this is some 1.5 ms of work per thread, against a spawn and a
 /// `Session.check_stack_size` mapping.
 pub const insts_per_emitter = 16 * 1024;
+/// Nodes one thread of the release specialiser's extraction takes before
+/// another helps (`Spec.Parallel`).
+pub const nodes_per_extractor = 64 * 1024;
 
 /// The same for building the reachability edges (`Reach.Builder`), which
 /// gets through about a hundred thousand instructions a millisecond.
