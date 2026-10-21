@@ -295,6 +295,15 @@ pub const Counter = enum {
     /// (`Pts.joinNow`): how much of the worklist is no-op.
     spec_pts_joins,
     spec_pts_joins_empty,
+    /// The combined solver (`backend.md` §9, *The combined solver*, slice 4),
+    /// over every analysis: the modules it extracted and those whose
+    /// constraints it kept, the constraints it solved, the evaluations that
+    /// took, and the solves that hit the work budget.
+    spec_solve_extracted,
+    spec_solve_kept,
+    spec_solve_constraints,
+    spec_solve_evaluations,
+    spec_solve_budget_hit,
     /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
     /// edge lists were built, the walks over them, the lowerings of a module
     /// and the modules printed. A build builds each module's edge lists
