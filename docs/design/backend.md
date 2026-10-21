@@ -9538,6 +9538,22 @@ instructions of the ReleaseSafe compiler against the solver with the check: Todo
 1 394M, the 16 400 arms 2 892M → 2 918M (the rewrite's counts), the 100 000 lines 15 761M →
 15 704M; ReleaseFast times and peak RSS within noise.
 
+**As built 2026-10-22 — slice 5, part 1: `prop_lat`, `ret_lat` and `decided_conds` go** (issue
+#649). What facts 4 and 5 know of a property is a column of fact 3's own cell of it
+(`Pts.Prop.lat`, with `lat_made` for "a write reached it" and `lat_readers` for the solver's
+readers), and what a function returns is one of its site (`Pts.Site.ret_lat`). The two maps and
+the solver's own table of fields and returns are gone. A write to a property fact 3 has no `Prop`
+for has nowhere to go and needs none: `propValue` and `tagValue` find the `Prop` before they read
+the field. Likewise no call reads the return of a function fact 3 made no site for. The cells
+start again from ⊥ at every solve, since fact 3's state may be the last analysis's
+(`fact3Kept`). A conditional fact 5 decides is read off the final values when the rewrite patches
+it (`decidedBranch`, the test of `nullTestTaken` on `memo`), which is what the map recorded at the
+last evaluation. Outputs are byte for byte the same. Measured as in slice 4, before → after
+(slice 4 with its sweeps gone): `specialise` on the dashboard N = 16 24.1 → 24.1 ms, N = 64
+85.9 → 82.4 ms, without `withDefault` 72.0 → 71.6 ms, peak RSS within 1%; ReleaseSafe
+instructions TodoMVC 1 394M → 1 400M, the 16 400 arms 2 918M → 2 908M, the 100 000 lines
+15 704M → 15 642M (peak RSS 339 → 334 MB).
+
 ### Compact statements
 
 ### Compact statements
