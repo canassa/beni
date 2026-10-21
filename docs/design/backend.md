@@ -8815,6 +8815,55 @@ RSS N=16 0.09 s / 56 MB either way, N=64 2.03 s / 623 MB → **0.69 s / 247 MB**
 2 536M and `MemberReadsWide` 3 294M → 3 339M, which bind reads of seven records each, where a
 chain of linked summaries costs a little more than folding seven sites.
 
+**As built 2026-10-21 — a spread target's untouched field shares one var** (issue #564, part of
+#464). A record update `{...$before, wK: v}` gave its site a var per field, fed by one copy edge
+from the spread's summary var of that field, and every summary that folded the site took one
+edge per field from each. Those fields hold nothing but the summary's set, so `Pts` now keeps
+them in one var (copy equivalence, as in Hardekopf and Lin's HVN): a property of a site is in
+one of three states (`Pts.Prop`).
+
+- **No var.** A property nothing has written (one a read made) holds nothing and has no var.
+  What it would have fed — a summary that folds the site, a load cell that reads it — is listed
+  on the property (`Prop.outs`, `copyField`), with no edge.
+- **Shared.** A property that a spread of a name writes and nothing else does, and that the
+  literal does not write, takes the shared var of its summary var `x` (`spreadSummary`,
+  `shareField`). The issue named the wrong source: in `browser-inline` every handler spreads
+  its own `const $before = $model`, so the 349 updates spread 349 summaries and no two of them
+  have the same `x`. Each such summary is linked to the model's, so its var of a property has
+  one source, the model summary's var of it, and holds what that var holds. The field shares the
+  var of the root of that chain of copies (`VSet.shared`), and the field is listed on every var
+  in the chain (`VSet.sharers`). The shared var is a site's own var (`site_var`, capped, depth
+  0, wild), so it holds what each field's own var held, `top` and `max_sites` included, and links
+  no summary (`linksAcross`).
+- **Own.** A write of anything else gives the property a var of its own (`ownField`): a
+  literal's key, `write`, a non-name spread, a second spread from another var, an array's
+  elements, or a var in its chain gaining a second source (`unshare`, called from `copy`). The
+  new var is fed by `x` and feeds everything the property listed, and the constraints that read
+  the property through the site are evaluated again (`wakeReaders`). The shared var keeps the
+  edges it made. They carry a subset of what the new var carries, except when the new var goes
+  `top` and the shared one does not. Then a `top` consumer also holds the escaped sites the
+  shared var still passes on, which *an escaped site is ⊤* already makes no fact.
+
+The facts read of a property (`written`, `read`, `init`, its value and so `undefined` for a
+key the literal lacks) are kept per site and property as before, so `neverWritten`,
+`neverRead`, `keyUnread` and `expectSame` read them unchanged. `expectSame` takes a property
+with no var as ⊥. Every `emit/release/` golden and release run hash is byte for byte the same,
+and the safety build's shuffled-order check is green on the corpus. Measured, ReleaseFast,
+`--release --no-cache --jobs=1`, dagon, median of five, every output byte-identical, before →
+after: `spec_pts_edges` (7, 6 and 6 runs) on the dashboard N=16 79 000 → 52 747, N=64 1.36M →
+0.51M, N=64 without `withDefault` 663 029 → 269 424 (first run: 59.6k vars and 102k edges →
+41.9k and 49.4k). `specialise` 64 → 56 ms, 561 → 370 ms and 411 → 288 ms. Time and peak RSS
+N=16 0.09 s / 55 MB either way, N=64 0.65 s / 248 MB → **0.45 s / 209 MB**, without
+`withDefault` 0.50 s / 198 MB → **0.37 s / 181 MB**. Instructions of the gates' build: the
+new `emit/release/inline/SpreadCopies` (SpreadArms with 42 children) 4 751M → 4 103M,
+`SpreadArms` 2 537M → 2 237M, `MemberReadsWide` 3 336M → 2 925M, `MergedChildren` 3 417M →
+3 122M and `SpreadWide` 1 484M → 1 370M. The first build looked each property up by id at every
+copy, which the self-hosted backend does not inline, and it put `MergedChildren` up 3%.
+Passing the property's index removed that. What is left of these edges is the links themselves:
+each handler's summary of `$before` still has a var per property, fed by the model's, which
+carries the model's sets once per handler (about 22k of the 49k edges of a `nowd` run). A
+summary that is a copy of another's would remove them. That is a separate change.
+
 ### Compact statements
 
 ### Compact statements
