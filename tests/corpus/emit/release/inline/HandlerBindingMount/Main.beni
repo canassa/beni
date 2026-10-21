@@ -1,0 +1,30 @@
+-- Flagged listeners retain each same-key callback during mount. Release
+-- must keep those bindings outside the DOM arrows: dispatch sends the
+-- existing callback, without allocating a handler (browser-inline.md §8.3).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add Int
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Add n →
+            model + n
+
+
+view : Int → Html Msg
+view model =
+    <main>
+        <output>{model}</output>
+        <button onClickGuard={Add 1}>one</button>
+        <button onClickGuard={Add 2}>two</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }

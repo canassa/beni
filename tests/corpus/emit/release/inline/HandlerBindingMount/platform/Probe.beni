@@ -1,0 +1,13 @@
+import Html exposing (Html)
+
+
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClickGuard" name "click" delegated preventDefault : Event

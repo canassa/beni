@@ -973,10 +973,9 @@ const Page = struct {
         }
         for (0..pg.functions.items.len) |fi| try pg.callFunction(body, @intCast(fi));
 
-        // Each event's listener, planned now and wired after the handlers
-        // it calls: which key it reaches decides what a stateful control's
-        // handler writes back, and every DOM event has its
-        // handler written in that event's listener.
+        // Plan events before writing handlers: each key determines which
+        // stateful controls its arm writes back. Each DOM listener carries
+        // its own arm.
         var plans: std.ArrayList(Plan) = .empty;
         for (pg.events.items) |ev| try plans.append(pg.a(), try pg.plan(ev));
         // Per key, the functions writing a stateful control one of its events
@@ -1054,6 +1053,9 @@ const Page = struct {
         // Compute once after every control has contributed. passOf's stamps
         // deduplicate each key's pass; every generated body reuses that same
         // immutable, document-ordered slice.
+        // Initialized exactly for refs[k] != 0: every plan and piece key
+        // contributes a reference before its body reads passes[k], as do
+        // subscription and dispatcher consumers before a named body.
         const passes = try pg.a().alloc([]const u32, keys.len);
         for (keys, 0..) |key, k| {
             if (refs[k] == 0) continue;
