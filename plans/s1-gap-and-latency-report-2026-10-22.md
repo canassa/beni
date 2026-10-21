@@ -205,3 +205,90 @@ cut's conservative folding), which has had no activity since 19 October.
 3. **Accept S1 above the bar** and move on.
 
 Until one of these is chosen, further S1 slices are unlikely to converge.
+
+## Part 3 — The gap checked, and the plan (added 2026-10-22, later the same day)
+
+Part 2 was checked against `master` (`f647ca294`) and turned into a plan. This part is the tracking
+document for that plan: update the status table as work lands. Method as in Part 2: brotli 11,
+`--lists none`, built with a Debug compiler of the commit named (it writes the same bytes as
+ReleaseFast); "B/widget" is the slope.
+
+### What the check confirmed
+
+- **The gap.** Seed 1: beni-inline 286.6 B/widget from N = 16 to N = 64, tea-inline 172.9. Part 2's
+  286 against 173 holds. Fitted over sizes 1, 16, 64 and 256 and seeds 1–3: 256.4 against 145.0.
+- **The quoted output is today's output**, byte for byte (`bj=()=>{let a=_a,d={...a,w1:{...a.w1,cups:-1}};_a=d;{jd(fb,_a.w1)}}`),
+  and the two defects of Part 2's finding 4 are in it.
+- **Finding 7 is too large.** beni's guarantees cost tea-inline's shape about 8 B per widget, not
+  30 or more. Each one was added to tea-inline's own output and measured:
+
+| added to tea-inline's output | B/widget |
+|---|---:|
+| as generated | 172.9 |
+| + code-point length (`z(x)` for `.length`) | +0.2 |
+| + `clamp` keeps both bounds | −0.5 |
+| + pushed state validated with beni's shape table | +8.5 |
+
+  The beni source also keeps a `…Typed : Maybe String` field for every number input, which
+  tea-inline has not: about 4 B per widget. So tea-inline with beni's guarantees is about 185 B per
+  widget, and **about 100 of the 114 B gap is the shape of beni's output.** Changing the bar
+  (Part 2's option 2) cannot close it.
+
+### Where the 100 B are (seed 1, cumulative deletion, B/widget)
+
+| part | beni | tea | gap | why |
+|---|---:|---:|---:|---|
+| handlers | 56.7 | 31.9 | +25 | a named function and a separate `p(fb[1],aj)`; `let a=_a,…;_a=d` around a two-level spread; input handlers through `a=>{$b(E(a))}`; enum cycles as calls |
+| binding calls | 30.3 | 6.1 | +24 | 419 explicit `{jd(fb,_a.w1)}` calls in 205 handlers, the first render's list and the same list again for `snapshot`; tea-inline writes `n(r[0])` and loads pushed state with one generic loader |
+| bindings | 65.0 | 46.3 | +19 | named `(a,c)=>{…}` functions, hoisted `let`s, `?0:1`; tea-inline's are anonymous entries of a group array |
+| validation | 14.9 | 0 | +15 | 8.5 of it in tea-inline's shape; beni adds a route case, a wrapper and a snapshot entry per widget |
+| the rest | 22.7 | 7.8 | +15 | `fb=o(db[0])` per widget, typed-input helpers, the model record |
+| `init`, model, enum cycles | 25.3 | 12.6 | +13 | `I=()=>({…})` + `I(null)` + `{w1:e,…}`; cycles as `switch` functions |
+| markup | 71.7 | 68.3 | +3 | — |
+
+Deletion costs are not additive under brotli, and the order changes them. Two more costs, each under
+1 B per widget: a `when` toggle re-run by every write to a widget its block reads, and binding
+pieces handed slices they do not read.
+
+### The plan, easiest first
+
+Each fix was priced by editing the actual N = 16 and N = 64 output into the shape the fix makes
+("estimate"). "Measured" is the real compiler, fitted over the 12 builds (sizes 1/16/64/256, seeds
+1–3), against `63cfc1a17`.
+
+| # | Fix | Where | Estimate | Measured | Status |
+|---|---|---|---:|---:|---|
+| 1 | Leave out another module's trailing `⊤` argument, so `W.init ⊤` (`I(null)` against `I=()=>…`) is inlined | `Lower.zig` `unwrittenArgs`; `Spec.zig` `inlineAt` refused a call of another arity | −5.5 | **−3.9** | merged, #654 (#651) |
+| 2 | Write a handler used once in its listener | `Opt.zig` inlines an arrow used once only for a `const`; the handlers are `let` in release | −10.7 | — | not done as size work: #7 replaces it. The `let` that stops `Opt` is a defect of its own, not yet traced |
+| 3 | Call a binding without a block or a hoisted `let`: `xd(jb,_a.w4,_a.w1);` | `inline.zig` `callFunction` | −5.9 | — | not done: #7 replaces it |
+| 4 | An enum cycle is a chain of conditionals, fused into its handler | `Lower.zig` `condChainPossible` refused every `switch` tree | −1.4 | **+0.2** (−0.8 from 16 to 64) | merged, #656 (#652): the shape is right, the bytes did not move |
+| 5 | A view `let` read once is written at its use | evaluation-order rule | −2.3 | — | in #618 |
+| 6 | Short field names in shape-read records (from 29 shape runs on): `["cups",A,0,"z"]` | `SchemaValid.zig`, `Emit.zig` `pinShapeFields`, `assignFields`; the owner's decision of 2026-10-22 supersedes 2026-10-19's | −10.4 | **+3.3** (draft) | draft #659 (#653), blocked by #658. Measured worse: the names come out as two letters (`cups`→`oa`) and each entry grows by `,0,"oa"`. Raw −6 %, brotli up. Not yet explained; source names that are English words may be cheap for brotli's static dictionary |
+| 7 | The structural rewrite: a closure per widget, writes in place, bindings grouped by field, handlers that schedule a group, one generic loader for pushed state | `inline.zig` program site; reverses `browser-inline.md` §8.4 "handlers live at the program site" and D-c | ≈ −65 as a whole; each step alone 0–3 | — | blocked: #286 → #315 R4–R7, and the owner's decision on §8.4 and D-c |
+
+Measured state of `master` after #1 and #4 (`4adbf7bbc`):
+
+| | slope | fixed | N = 1 | N = 256 | N = 1 ratio | N = 256 ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| before (`63cfc1a17`) | 256.4 | 2 825 | 1 523 | 68 016 | 1.12 | 1.59 |
+| after #1 and #4 (`4adbf7bbc`) | 252.2 | 2 812 | 1 504 | 66 920 | 1.11 | 1.56 |
+| tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
+
+Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
+the mean of three seeds.
+
+### Work in flight
+
+| Work | Issue / PR | State |
+|---|---|---|
+| fact 3's fixpoint depends on traversal order (a safe build's shuffled-order check panics) | #658, #657 | an agent is on it; #659 waits for it |
+| the ownership path cut: #456 (approximate projections hide a repeated alias), #447, F2 (cast marker, full type), (a), (d) `lvl`, (e), then the cut removed | #286, #456, #447 | an agent is on it; the owner withdrew the measure-first conditions on 2026-10-22: build |
+| re-measure the shape threshold T with short names | #655 | after #659 |
+| the emit cache must key a caller's output on the callee's parameter patterns (since #654), not only its interface | #631 | to tell #631 |
+
+### What the measurements say
+
+- The edit estimates were high for both small fixes. A fix's bytes must be measured on the real
+  compiler before the next fix is ranked on its estimate.
+- The local fixes together (#1–#6) are worth single digits per widget as built. The bar needs about
+  60 B per widget more. Only #7 reaches it, and only as a whole.
