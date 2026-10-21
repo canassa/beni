@@ -4,12 +4,12 @@
 --- stderr ---
 <project>/<file>:<line>
 
-Error: listen EPROTO: injected by tests/serve/preload.mjs <address>:<port>
+Error: listen EPROTO: injected by tests/serve/preload.mjs <address>:54321
 {
   code: 'EPROTO',
   syscall: 'listen',
   address: '<address>',
-  port: <port>
+  port: 54321
 }
 
 --- exit 1 ---

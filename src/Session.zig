@@ -1143,7 +1143,7 @@ fn workerMain(session: *Session, worker: *Worker, phases: Phases) void {
         };
         // Each file's artifacts are moved to session storage inside the
         // phase, so the arena is free to be reused for the next one.
-        worker.arena.reset(.retain_capacity);
+        worker.arena.reset(.keep_all);
     }
 }
 
@@ -2003,7 +2003,7 @@ fn formatPhase(session: *Session, worker: *Worker, file: SourceStore.Index) anye
 fn resolveModules(session: *Session) RunError!void {
     const gpa = session.gpa;
     const worker = &session.workers[0];
-    defer worker.arena.reset(.retain_capacity);
+    defer worker.arena.reset(.keep_all);
 
     const graph_token = session.profile.begin();
     session.graph.deinit(gpa);
@@ -2147,7 +2147,7 @@ fn checkSerial(session: *Session) RunError!void {
     try resolveModules(session);
     const gpa = session.gpa;
     const worker = &session.workers[0];
-    defer worker.arena.reset(.retain_capacity);
+    defer worker.arena.reset(.keep_all);
 
     // A module an earlier phase already reported on is checked silently:
     // see `Check.Options.quiet` for why, and note this has to be computed
@@ -2486,7 +2486,7 @@ fn computeKeys(session: *Session, reported: []const bool) RunError!void {
             .io = session.io,
         },
     );
-    worker.arena.reset(.retain_capacity);
+    worker.arena.reset(.keep_all);
     session.profile.end(0, token, .cache_key, Profile.Event.no_file, 0);
 }
 

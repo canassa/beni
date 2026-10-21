@@ -1,0 +1,14 @@
+-- A release build keeps a `Js.setAt` whose key evaluates to `"__proto__"`
+-- and is not that string literal. Both builds print the same lines.
+import Node
+import Proto
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt (Proto.fromLet ⊤)
+        , String.fromInt (Proto.fromParam "__proto__")
+        , String.fromInt (Proto.fromAppend ⊤)
+        , String.fromInt (Proto.inherited ⊤)
+        ]

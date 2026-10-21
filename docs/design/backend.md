@@ -6944,8 +6944,14 @@ that its three values are not folded away.
   index loop walks (`p(v)`'s `a[b]`) for no reason: nothing unseen reads it. A spread `{...x}`
   reads all of `x` and copies what each of its properties may hold into the new object's.
   *Amended 2026-10-20.* A computed write escapes when its key is the string literal `"__proto__"`
-  at the write site. That assignment sets `[[Prototype]]`. A key that comes from a `let`
-  binding stays field-insensitive, even when the value is the string `__proto__` at run time (#519).
+  at the write site. That assignment sets `[[Prototype]]`.
+  *Amended 2026-10-21.* The escape is not limited to that literal. A computed write escapes
+  unless its key node is a string literal other than `"__proto__"` or a numeric literal.
+  Those two cannot be the string `"__proto__"`. A name, a call, `true`, `false`, `null`,
+  `undefined`, and an index loop's variable escape the object. `run/ReleaseProtoComputed`
+  prints `1`, `1`, `1` and `9` in both builds. Before this escape, that release build
+  printed `0`, `0`, `0` and `9`. `emit/release/core/IndexLiteralDrop` keeps the `k`
+  write and the `[0]` write and drops the unread `n` write.
 - **The iteration is optimistic where nothing can be unsound**: a call, read or write through a
   value that holds nothing yet does nothing (at the fixpoint such a value is never an object),
   while a name no module declares — a hand-written import — is `top` from the start. A var whose
@@ -6983,20 +6989,24 @@ that its three values are not folded away.
   - `__proto__` is not a key of `Js.object`. The checker reports `invalid_js_object`
     (`check/bad/core/JsObjectKey`). `Js.object [ ( "__proto__", p ) ]` does not emit a
     literal `__proto__: v` key. Development and release both refuse the call and write
-    no JavaScript. A `Js.set` of the name, or a `Js.setAt` whose key is the string
-    literal `"__proto__"` at the write site, assigns `[[Prototype]]`. That is not a host
-    read, so the name is not on `implicit_host_keys`. The write escapes the object. The
-    assignment stays, and a later read or write of that object is not dropped as an own
-    data property. `run/ReleaseProtoSet` prints `1`, `1`, `9` and `1` in both builds.
-    Before this escape, that release build printed `0`, `0`, `undefined` and `0`.
+    no JavaScript. A `Js.set` of the name, or a `Js.setAt` whose key may be the string
+    `"__proto__"`, assigns `[[Prototype]]`. That is not a host read, so the name is not on
+    `implicit_host_keys`. The write escapes the object. The assignment stays, and a later
+    read or write of that object is not dropped as an own data property.
+    A string literal other than `"__proto__"`, and a numeric literal, cannot be that
+    string. They stay field-insensitive, so an unread write after them still drops
+    (`emit/release/core/IndexLiteralDrop`). Every other computed key escapes, including
+    a binding, a parameter and `String.append`.
+    `run/ReleaseProtoSet` prints `1`, `1`, `9` and `1` in both builds. Before the literal
+    escape, that release build printed `0`, `0`, `undefined` and `0`.
+    `run/ReleaseProtoComputed` prints `1`, `1`, `1` and `9` in both builds. Its keys are a
+    binding, a parameter and `String.append`. Before the computed escape, that release
+    build printed `0`, `0`, `0` and `9`. Measured on Node v24.19.0.
     The other names on `prototype_names` are data properties. Assigning `__defineSetter__`
     or `constructor` stores an own property, and an unread one drops. `Object.setPrototypeOf`
-    is a call. The call escapes its object, so that assignment stays. Measured on Node
-    v24.19.0, both builds agreed on those three.
-    A computed key that is not the string literal `"__proto__"` at the write site stays
-    field-insensitive. A `let` binding that holds that string is such a key, even when
-    the value is `__proto__` at run time (#519). A setter installed on `Object.prototype`
-    is outside this rule too (#520). Both are unfixed.
+    is a call. The call escapes its object, so that assignment stays. Both builds agreed
+    on those three.
+    A setter installed on `Object.prototype` is outside this rule (#520). It is unfixed.
 - **Rounds.** Facts are recomputed each round; a round is repeated only when the program shrank
   in a way the facts can see — a branch, a read or a parameter gone, or `prune` dropping a
   declaration — so a program with nothing to specialise pays one round.
@@ -8603,6 +8613,57 @@ What is left of the faults:
 
 There is no extraction yet to keep per module while `Mod.version` stands: `Pts` still makes every
 constraint from its walk (slice 5).
+
+**As built 2026-10-21 — the hot columns grow in place, scratch stays mapped, huge pages on Linux**
+(issue #606, part of #464; `plans/build-profile-2026-10-21b.md`, cause 2). After #574 page faults
+were still about a quarter of the N = 64 dashboard's wall time. A throwaway stack trace of every
+large free the run arena could not take back put 44 MB of the four runs' garbage on eight lists:
+`vars`, `cold`, `links_of` (`newVar`), `field_outs` (`copyField`), `edges` (`copy`), `sites`,
+`deps` and `summaries`, each grown by copying past the others. Now:
+
+- **Each of those eight is a column** with an arena of its own (`Spec.RunArena`, reset, swapped and
+  freed as one with the rest of the run's memory). A column is its arena's only allocation, so it
+  grows in place (`Arena.resize`), and its first chunk is a 256 MiB reservation
+  (`Arena.initColumn`) on 64-bit Linux and macOS, where untouched memory costs only address space:
+  a column is never copied, and leaves nothing behind. Elsewhere — Windows, which commits what it
+  maps, and the playground's `wasm32-wasi` — and where the backing allocator refuses the
+  reservation, the arena opens what the request needs and the column grows in ordinary chunks.
+- **The per-module and per-item scratch is emptied with `keep_all`**: check's worker arenas and
+  its patterns arena (per `case`), the frontend's per-file worker arenas, the emit workers'
+  per-item arena (lowering, printing), and ownership's per-depth walk arenas, which were
+  `std.heap.ArenaAllocator`s and are now `Arena`s.
+- **On Linux a chunk of 2 MiB or more is whole 2 MiB pages, aligned to one, and advised
+  `MADV_HUGEPAGE`**; a column's chunk is advised past its first huge page, so a short column costs
+  the small pages it fills. Advice only: a kernel without transparent huge pages ignores it. Every
+  other target opens chunks as before.
+
+Only where memory lives moved: every `emit/release/` golden and run hash is byte for byte the same,
+`--jobs=1` and `--jobs=8` write the same files, and `zig build test-playground` passes. Unit tests
+pin a huge chunk's placement, a column that grows to megabytes without moving or a second
+allocation, and a refused reservation. ReleaseFast, `build --release --no-cache`, dagon (Ryzen 9
+5950X, THP `madvise`/`madvise`, load 1.8–2.5), medians of 11 interleaved runs, master → this
+change (→ the same without huge pages, which is what macOS gets):
+
+| program | `--jobs` | minor faults | sys | wall | peak RSS |
+|---|---|---|---|---|---|
+| dashboard N = 16 | 1 | 8 200 → 5 000 (7 300) | 18 → 15 ms (18) | 62 → 56 ms (61) | 37.1 → 37.8 MB (34.0) |
+| dashboard N = 16 | 8 | 10 600 → 7 400 (9 600) | 31 → 25 ms (28) | 59 → 53 ms (57) | 36.6 → 37.0 MB (33.2) |
+| dashboard N = 64 | 1 | 29 000 → 11 300 (23 300) | 55 → 32 ms (46) | 201 → 169 ms (185) | 104.3 → 95.7 MB (86.2) |
+| dashboard N = 64 | 8 | 31 500 → 13 900 (25 900) | 71 → 53 ms (62) | 186 → 156 ms (171) | 103.9 → 94.8 MB (85.3) |
+| N = 64 without `withDefault` | 1 | 25 600 → 10 500 (21 400) | 50 → 31 ms (45) | 181 → 153 ms (174) | 91.2 → 86.5 MB (79.0) |
+| N = 64 without `withDefault` | 8 | 28 100 → 13 100 (24 000) | 72 → 49 ms (56) | 168 → 144 ms (157) | 90.6 → 85.5 MB (78.0) |
+
+**Huge pages are a bet on the host.** With `defrag` at `madvise`, a fault in an advised range
+compacts memory synchronously to find a free 2 MiB page. On dagon, whose free memory is fragmented
+(few order-9 blocks, 97% of its compaction attempts fail), one interleaved run under another
+agent's load gave a build with huge pages alone *twice* master's sys time at N = 64 (121 against 57 ms);
+the three runs at low load gave the gains above. The columns and `keep_all` win on every host and lower
+peak RSS; huge pages win most of the faults and pay up to 2 MiB of RSS per large chunk.
+
+What is left (11.3k faults at N = 64): first touches of live data, spread thin — the columns
+themselves, check's type stores (one per module, kept for ownership and the backend), lowering's
+name maps, the frontend's artifacts, and `Spec.analyse`'s per-analysis arrays, which still go to
+the compilation's arena once per analysis.
 
 #### Building it — research 52 §4.5's slices 4–8
 
