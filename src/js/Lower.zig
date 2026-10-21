@@ -249,6 +249,9 @@ pub const Input = struct {
     /// a program's own modules call — the same reason a chunked build's
     /// `lazy` declarations will be exported from their chunks.
     entry_decl: ?u32 = null,
+    /// A library roots every public value of its root package, even when
+    /// no code inside the build names that declaration.
+    public_roots: bool = false,
     /// `--release`: what JavaScript sees (`Fields.close`), which decides
     /// the types whose constructors have integer tags (`backend.md` §9,
     /// *Item 4, taken up*). Null in a development build: every tag is a
@@ -13544,6 +13547,7 @@ pub const Lowerer = struct {
         // markup value, as before).
         if (l.in.markup) |mk| if (mk.lowering.no_markup_values != null) for (l.bir.decls, 0..) |dc, i| {
             if (dc.kind != .value or dc.params == 0) continue;
+            if (l.in.public_roots and dc.is_pub) continue;
             var body = dc.body.unwrap() orelse continue;
             while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
             if (l.bir.instTag(body) != .markup) continue;
@@ -13560,6 +13564,7 @@ pub const Lowerer = struct {
         const d = l.in.direct orelse return;
         for (d.view_pieces) |vp| {
             if (vp.module != l.in.module.int() or !vp.consumed or vp.decl >= l.bir.decls.len) continue;
+            if (l.in.public_roots and l.bir.decls[vp.decl].is_pub) continue;
             if (l.consumed.len == 0) {
                 l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
                 @memset(l.consumed, false);

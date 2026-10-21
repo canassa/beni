@@ -577,3 +577,43 @@ test "a partial primitive helper argument is bound only in its selected arm" {
     try testing.expect(std.mem.indexOf(u8, shown.stdout, "<button id=\"pick\">\"7\"</button>") != null);
     try testing.expect(std.mem.indexOf(u8, shown.stdout, "<p>\"7\"</p>") != null);
 }
+
+test "a public library markup helper receives the markup-value diagnostic" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\pub helper : Int → Html msg
+        \\helper n = <p>{n}</p>
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <div>{helper n}</div>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }
+        \\
+    );
+    // Warm the same module cache as an application first. Public roots
+    // must change the recorded consumed decision for the library build.
+    const app = try w.run(&.{ "build", "--platform=browser-inline", "--out=appout", "Main.beni" });
+    try expectExit(0, app);
+    try testing.expectEqualStrings("", app.stdout);
+    try testing.expectEqualStrings("", app.stderr);
+    const r = try w.run(&.{ "build", "--library", "--platform=browser-inline", "--out=out", "Main.beni" });
+    try expectExit(1, r);
+    const diagnostic = @import("diagnostic");
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .not_implemented,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 6, .col = 12 }, .end = .{ .line = 6, .col = 13 } },
+        .title = "NOT IMPLEMENTED YET",
+        .message = "A limit of the compiler: `browser-inline` has no markup value yet; it compiles\nmarkup only as a program's `view`, written in place\n(`docs/design/browser-inline.md` §5, class 1). Write markup held, passed or\nreturned by a helper in place in the `view`, or build this program with\n`--platform=browser-tea`.",
+    }}), r.diagnostics);
+    try testing.expect(!w.exists("out"));
+}

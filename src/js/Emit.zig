@@ -4539,6 +4539,7 @@ const Emitter = struct {
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,
                 .entry_decl = e.entryDeclOf(m, t.entry),
+                .public_roots = e.options.library and e.session.store.package(file) == .app,
                 .live = &e.live,
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,

@@ -114,6 +114,16 @@ console.log: outside true
 console.log: picked: 105
 console.log: inside true
 (the DOM did not change)
+-- event window bump
+console.log: outside: 6
+console.log: inside: 106
+(the DOM did not change)
+-- event window fire
+console.log: picked: 6
+console.log: outside true
+console.log: picked: 106
+console.log: inside true
+(the DOM did not change)
 -- stop
 (stopped)
 <body>
