@@ -6944,8 +6944,14 @@ that its three values are not folded away.
   index loop walks (`p(v)`'s `a[b]`) for no reason: nothing unseen reads it. A spread `{...x}`
   reads all of `x` and copies what each of its properties may hold into the new object's.
   *Amended 2026-10-20.* A computed write escapes when its key is the string literal `"__proto__"`
-  at the write site. That assignment sets `[[Prototype]]`. A key that comes from a `let`
-  binding stays field-insensitive, even when the value is the string `__proto__` at run time (#519).
+  at the write site. That assignment sets `[[Prototype]]`.
+  *Amended 2026-10-21.* The escape is not limited to that literal. A computed write escapes
+  unless its key node is a string literal other than `"__proto__"` or a numeric literal.
+  Those two cannot be the string `"__proto__"`. A name, a call, `true`, `false`, `null`,
+  `undefined`, and an index loop's variable escape the object. `run/ReleaseProtoComputed`
+  prints `1`, `1`, `1` and `9` in both builds. Before this escape, that release build
+  printed `0`, `0`, `0` and `9`. `emit/release/core/IndexLiteralDrop` keeps the `k`
+  write and the `[0]` write and drops the unread `n` write.
 - **The iteration is optimistic where nothing can be unsound**: a call, read or write through a
   value that holds nothing yet does nothing (at the fixpoint such a value is never an object),
   while a name no module declares — a hand-written import — is `top` from the start. A var whose
@@ -6983,20 +6989,24 @@ that its three values are not folded away.
   - `__proto__` is not a key of `Js.object`. The checker reports `invalid_js_object`
     (`check/bad/core/JsObjectKey`). `Js.object [ ( "__proto__", p ) ]` does not emit a
     literal `__proto__: v` key. Development and release both refuse the call and write
-    no JavaScript. A `Js.set` of the name, or a `Js.setAt` whose key is the string
-    literal `"__proto__"` at the write site, assigns `[[Prototype]]`. That is not a host
-    read, so the name is not on `implicit_host_keys`. The write escapes the object. The
-    assignment stays, and a later read or write of that object is not dropped as an own
-    data property. `run/ReleaseProtoSet` prints `1`, `1`, `9` and `1` in both builds.
-    Before this escape, that release build printed `0`, `0`, `undefined` and `0`.
+    no JavaScript. A `Js.set` of the name, or a `Js.setAt` whose key may be the string
+    `"__proto__"`, assigns `[[Prototype]]`. That is not a host read, so the name is not on
+    `implicit_host_keys`. The write escapes the object. The assignment stays, and a later
+    read or write of that object is not dropped as an own data property.
+    A string literal other than `"__proto__"`, and a numeric literal, cannot be that
+    string. They stay field-insensitive, so an unread write after them still drops
+    (`emit/release/core/IndexLiteralDrop`). Every other computed key escapes, including
+    a binding, a parameter and `String.append`.
+    `run/ReleaseProtoSet` prints `1`, `1`, `9` and `1` in both builds. Before the literal
+    escape, that release build printed `0`, `0`, `undefined` and `0`.
+    `run/ReleaseProtoComputed` prints `1`, `1`, `1` and `9` in both builds. Its keys are a
+    binding, a parameter and `String.append`. Before the computed escape, that release
+    build printed `0`, `0`, `0` and `9`. Measured on Node v24.19.0.
     The other names on `prototype_names` are data properties. Assigning `__defineSetter__`
     or `constructor` stores an own property, and an unread one drops. `Object.setPrototypeOf`
-    is a call. The call escapes its object, so that assignment stays. Measured on Node
-    v24.19.0, both builds agreed on those three.
-    A computed key that is not the string literal `"__proto__"` at the write site stays
-    field-insensitive. A `let` binding that holds that string is such a key, even when
-    the value is `__proto__` at run time (#519). A setter installed on `Object.prototype`
-    is outside this rule too (#520). Both are unfixed.
+    is a call. The call escapes its object, so that assignment stays. Both builds agreed
+    on those three.
+    A setter installed on `Object.prototype` is outside this rule (#520). It is unfixed.
 - **Rounds.** Facts are recomputed each round; a round is repeated only when the program shrank
   in a way the facts can see — a branch, a read or a parameter gone, or `prune` dropping a
   declaration — so a program with nothing to specialise pays one round.
