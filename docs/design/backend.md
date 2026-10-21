@@ -9374,6 +9374,72 @@ indexing of every lookup; what is left is the join machinery itself (`joinNow`, 
 `unionSets`, the set table's probes), the copies a fold makes, and `summaryPropAt`'s search past
 a gap in a summary's properties (about 4% of fact 3 at N = 64).
 
+**As built 2026-10-21 — the driver skips what is exact, and a declined fuse leaves nothing**
+(issue #624, part of #464; cause 1 of `plans/build-profile-2026-10-21b.md`, its exact part). The
+profile found three of the four analyses of the dashboard N = 64 changing nothing in its output.
+A throwaway trace of every step of `Spec.run` (the sum of `Mod.epoch`, the nodes, the names, the
+modules whose `Mod.fact3` is set, and each step's own answer) says why none of them can be
+skipped as *nothing it reads changed*:
+
+- **The loops already stop at the first step that changed nothing.** `rounds` ends after a round
+  whose rewrite and prune changed nothing; the structural loop ends after a pass none of whose
+  five passes changed the program; the facts after `releaseKeeps` are asked only when it released
+  a binding, which changes `Tables.keep`, an input of the analysis. So every analysis and every
+  pass runs after a change to something it reads.
+- **At N = 64 each one has such a change behind it.** Analysis 2's rewrite wrote three nodes
+  (#575's `"root"` and #582's dropped parameter), so analysis 3 reads another program. The
+  structural pass added more than 10 000 nodes, so analysis 4 does. Pass 2 reads analysis 4's facts,
+  of a program pass 1 never saw, and its first pass (`inlineSmall`) ran last before
+  `inlineOnce` wrote 601 functions. That they then change nothing is a property of these
+  programs, not of their inputs: dropping them moves the N = 16 output by +234 and −45 bytes
+  (the profile's experiment). Taking them away is *The combined solver*'s work, not a skip.
+
+What is exact, and built:
+
+- **`prune` is not run again on what it has seen** (`Spec.prune`). Its inputs are the program and,
+  of `decl`, each declaration's module and statement (`DeclAt`). A prune that drops nothing
+  records `Spec.stamp` (the modules' `epoch`s and the whole-program names, which every change
+  moves and nothing else does) and that column; a prune whose two are the same is skipped. A
+  prune that dropped something is not repeated on the rule's word: reachability is not
+  idempotent (the first of two declarations of a name can go, and the second then becomes a
+  candidate). At N = 64 this skips the prune of the round after #575's three nodes:
+  `spec_prunes` 5, `spec_prunes_skipped` 1.
+- **A fuse `fuseCalls` declines takes back its copies** (`Spec.fuseAt`, `Mod.takeBack`). It
+  copied the function's body into every site's module before it summed the sizes, and on a
+  decline left the copies there: at N = 64 core's one candidate of 17 sites (copies 4 506 against
+  1 845) and another of one site, in both passes, 1 913 nodes and about 170 names a pass, plus the
+  names `nameIn` gave a module for a copy from another, each of which moved that module's
+  `version` and set its `fact3`. Now the old size is summed first, the copies stop at the first
+  that reaches it (the sum only grows, so the decision is the same), and a decline truncates
+  every module it wrote back to a mark: nodes, `extra`, string bytes, node and name keys, names
+  (with `findName`'s index, the module's `global` list, fact 3's `prop_more` and `nameIn`'s
+  answers for those names), the `Tables` rows `Copy.listed` and `fresh` appended, and `fact3`.
+  `version` and `epoch` are not rolled back, so no cache can meet a value they passed through on
+  another state of the module; `next_tag` is not either, so every later fresh name has the tag
+  it had. `spec_fuse_declined` 4 and `spec_fuse_taken_back` 1 686 nodes at N = 64 (3 826 were
+  left before). `inlineSmall` and `constructors` leave 12 nodes each in pass 2 at N = 64 (61 for
+  the variant without `withDefault`); that is left as it is.
+
+**Not built: `analyse`'s arrays in a reused arena.** A throwaway count of every byte `Spec.run`
+takes from the compilation arena, step by step, at N = 64: the first analysis 2.0 MB, the later
+ones 0.15, 0.09 and 0.69 MB; `decl`, `escaped`, `assigned` and `reads` are allocated once by
+`init` and cleared in place, `params`, `arg_effect`, the three maps, `w_stmts` and `w_deps` keep
+their capacity, and the sweeps' state is already in `Pts.tmp`. Reusing the later analyses'
+memory saves at most about 230 page faults, under 0.4 ms. The arena's large takers are the
+structural passes: `inlineOnce` 9.5 and 2.5 MB, `inlineSmall` 3.7 and 0.8 MB, `fuseCalls` 1.4
+and 0.4 MB, likely most of it the two arrays every `Copy` takes, each as long as the source
+module's names (#634).
+
+Measured, ReleaseFast, `build --release --no-cache --jobs=1`, dagon (Ryzen 9 5950X), every output
+byte for byte the same (every `emit/` golden and run hash unchanged), master → this change,
+`perf stat -r 7` instructions and minor faults: N = 16 334.95M → 334.18M and 7 913 → 7 883; N = 64
+1 205.0M → 1 201.5M and 28 139 → 27 957; without `withDefault` 1 103.8M → 1 100.3M and 24 757 →
+24 586. Each on its own at N = 64: the prune skip −2.26M instructions, the take-back −1.12M and
+−166 faults. Wall time and `specialise` (medians of 11 interleaved runs, load 1.8–1.9) moved by
+less than their noise: 61.2 → 61.5, 191.2 → 191.3 and 177.3 → 176.5 ms; 31.1 → 30.9, 114.4 → 113.8
+and 98.2 → 97.1 ms. `build_test`'s *takes back the copies it declines and skips a prune nothing
+moved for* pins the four counters on `run/Dictionaries`.
+
 ### Compact statements
 
 ### Compact statements
