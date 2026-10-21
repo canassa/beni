@@ -60,6 +60,7 @@ const Allocator = std.mem.Allocator;
 const JsIr = @import("JsIr.zig");
 const RepKeys = @import("RepKeys.zig");
 const lists = @import("../lists.zig");
+const Arena = @import("../Arena.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -981,6 +982,16 @@ const Spec = struct {
     io_written: bool = false,
     /// `isRootCached`'s table.
     io_root: []const bool = &.{},
+    /// The memory of `io_refs` and `io_assigned`, and the per-name scratch
+    /// of `inlineOne` and `fuseOne`, kept across their calls and grown with
+    /// the program's names (`scratchOf`, #574): each of those calls used to
+    /// take arrays as long as the whole program's names anew.
+    io_refs_keep: []u32 = &.{},
+    io_assigned_keep: []u32 = &.{},
+    io_sites: []?CallSite = &.{},
+    io_flags: []bool = &.{},
+    io_fit: []bool = &.{},
+    io_wanted: []bool = &.{},
     /// `preorder`'s answers, per top-level statement, with the `Mod.epoch`
     /// each is of.
     preorders: KeyMap(NodeRef, KeptNodes) = .empty,
@@ -1367,7 +1378,9 @@ const Spec = struct {
             try s.pts.analyse();
             try s.keepFact3();
         }
-        s.spread_sites = try s.arena.alloc(bool, s.pts.sites.items.len);
+        // What follows is of this analysis alone, so it lives where the
+        // fixpoint does, emptied by the next solve (`Pts.tmp`).
+        s.spread_sites = try s.pts.run().alloc(bool, s.pts.sites.items.len);
         const converged = converged: {
             if (std.debug.runtime_safety) {
                 var nodes: usize = 0;
@@ -1459,12 +1472,13 @@ const Spec = struct {
     /// walking the whole program each time, which `reference` does.
     fn sweeps(s: *Spec, reference: bool) Allocator.Error!bool {
         @memset(s.spread_sites, false);
-        s.w_dirty = try .initEmpty(s.arena, s.w_stmts.items.len);
+        const a = s.pts.run();
+        s.w_dirty = try .initEmpty(a, s.w_stmts.items.len);
         s.w_deps.clearRetainingCapacity();
-        s.g_deps = try growSlice(s.arena, u32, &.{}, s.globals, none);
-        s.g_seen = try growSlice(s.arena, u32, &.{}, s.globals, 0);
-        s.site_deps = try growSlice(s.arena, u32, &.{}, s.pts.sites.items.len, none);
-        s.site_seen = try growSlice(s.arena, u32, &.{}, s.pts.sites.items.len, 0);
+        s.g_deps = try growSlice(a, u32, &.{}, s.globals, none);
+        s.g_seen = try growSlice(a, u32, &.{}, s.globals, 0);
+        s.site_deps = try growSlice(a, u32, &.{}, s.pts.sites.items.len, none);
+        s.site_seen = try growSlice(a, u32, &.{}, s.pts.sites.items.len, 0);
         s.w_walk = 0;
         var sweep: u32 = 0;
         while (sweep < max_sweeps) : (sweep += 1) {
@@ -6011,7 +6025,20 @@ const Spec = struct {
         refs: []u32 = &.{},
         sites: []?CallSite = &.{},
         assigned: []bool = &.{},
+        /// The three columns' memory, kept when a name is added (#574).
+        refs_keep: []u32 = &.{},
+        sites_keep: []?CallSite = &.{},
+        assigned_keep: []bool = &.{},
     };
+
+    /// The first `n` entries of a scratch column kept across calls in
+    /// `keep`, which grows by half again past `n` when the program has more
+    /// names than it holds, so that names added one at a time do not take
+    /// a new column each. What the entries hold is the caller's to fill.
+    fn scratchOf(s: *Spec, comptime T: type, keep: *[]T, n: usize) Allocator.Error![]T {
+        if (keep.len < n) keep.* = try s.arena.alloc(T, n + n / 2);
+        return keep.*[0..n];
+    }
 
     /// Bring `io_refs` and `io_assigned`, the whole program's counts, up to
     /// date: a module that changed since it was last counted is counted
@@ -6024,11 +6051,14 @@ const Spec = struct {
         }
         if (s.io_refs.len != n) {
             // A name was added: every module is counted afresh.
-            s.io_refs = try s.arena.alloc(u32, n);
+            s.io_refs = try s.scratchOf(u32, &s.io_refs_keep, n);
             @memset(s.io_refs, 0);
-            s.io_assigned = try s.arena.alloc(u32, n);
+            s.io_assigned = try s.scratchOf(u32, &s.io_assigned_keep, n);
             @memset(s.io_assigned, 0);
-            @memset(s.io_scans, .{});
+            for (s.io_scans) |*sc| {
+                sc.version = none;
+                sc.refs = &.{};
+            }
         }
         for (s.mods, s.io_scans, 0..) |*m, *sc, mi| {
             if (sc.version == m.version) continue;
@@ -6038,9 +6068,9 @@ const Spec = struct {
                     s.io_assigned[g] -= @intFromBool(a);
                 }
             } else {
-                sc.refs = try s.arena.alloc(u32, n);
-                sc.sites = try s.arena.alloc(?CallSite, n);
-                sc.assigned = try s.arena.alloc(bool, n);
+                sc.refs = try s.scratchOf(u32, &sc.refs_keep, n);
+                sc.sites = try s.scratchOf(?CallSite, &sc.sites_keep, n);
+                sc.assigned = try s.scratchOf(bool, &sc.assigned_keep, n);
             }
             @memset(sc.refs, 0);
             @memset(sc.sites, null);
@@ -6589,9 +6619,9 @@ const Spec = struct {
         try s.inlineScan();
         const refs = s.io_refs[0..n];
         // The last call of each name mentioned once: that one mention.
-        const sites = try s.arena.alloc(?CallSite, n);
+        const sites = try s.scratchOf(?CallSite, &s.io_sites, n);
         @memset(sites, null);
-        const assigned = try s.arena.alloc(bool, n);
+        const assigned = try s.scratchOf(bool, &s.io_flags, n);
         for (assigned, s.io_assigned[0..n]) |*a, k| a.* = k != 0;
         for (refs, 0..) |r, g| if (r == 1) {
             for (s.io_scans) |*sc| if (sc.refs[g] != 0) {
@@ -6600,7 +6630,7 @@ const Spec = struct {
             };
         };
         // Which are candidates at all.
-        const fit = try s.arena.alloc(bool, n);
+        const fit = try s.scratchOf(bool, &s.io_fit, n);
         @memset(fit, false);
         for (0..n) |gi| {
             const g: u32 = @intCast(gi);
@@ -7734,11 +7764,11 @@ const Spec = struct {
         try s.inlineScan();
         const n = s.globals;
         const refs = s.io_refs[0..n];
-        const assigned = try s.arena.alloc(bool, n);
+        const assigned = try s.scratchOf(bool, &s.io_flags, n);
         for (assigned, s.io_assigned[0..n]) |*a, k| a.* = k != 0;
         // The functions that may gain: a top-level arrow some `return` of
         // which makes a value a case can see into.
-        const wanted = try s.arena.alloc(bool, n);
+        const wanted = try s.scratchOf(bool, &s.io_wanted, n);
         @memset(wanted, false);
         var any_wanted = false;
         for (0..n) |gi| {
@@ -9137,8 +9167,17 @@ const Pts = struct {
     globals: []VarId = &.{},
     /// Each module's per-node value of the sweep in progress.
     vals: [][]Val = &.{},
-    /// Where one sweep's temporary values live.
-    tmp: std.heap.ArenaAllocator,
+    /// Where everything of one fixpoint lives — the per-node and per-name
+    /// columns above, `globals`, the vars, sites, locals, constraints,
+    /// edges, summaries, load cells and the set table — and the facts
+    /// `Spec` keeps of one analysis (`Spec.spread_sites`, the sweeps'
+    /// dependency lists): `backend.md` §9, *The combined solver — Memory*'s
+    /// solve arena and set table. `reset` empties it with `.keep_all`, so
+    /// each run fills the memory the run before touched, already mapped,
+    /// and the compilation's arena (`arena`) takes nothing per run (#574).
+    /// What outlives a run stays there: `extra_init`, the walk's stacks,
+    /// the modules' property columns.
+    tmp: Arena,
     changed: bool = false,
     /// The fixpoint was reached this round: the facts may be read.
     ok: bool = false,
@@ -9735,16 +9774,22 @@ const Pts = struct {
         p.tmp.deinit();
     }
 
+    /// The compilation's arena: only for what outlives one fixpoint.
     inline fn arena(p: *Pts) Allocator {
         return p.s.arena;
+    }
+
+    /// The fixpoint's own arena (`tmp`).
+    inline fn run(p: *Pts) Allocator {
+        return p.tmp.allocator();
     }
 
     // ---- Sets ----------------------------------------------------------------
 
     fn newVar(p: *Pts) Allocator.Error!VarId {
         const id: VarId = @intCast(p.vars.items.len);
-        try p.vars.append(p.arena(), .{});
-        if (p.s.in.trace_largest) try p.origins.append(p.arena(), .{ .kind = .global, .of = .global });
+        try p.vars.append(p.run(), .{});
+        if (p.s.in.trace_largest) try p.origins.append(p.run(), .{ .kind = .global, .of = .global });
         return id;
     }
 
@@ -11196,7 +11241,7 @@ const Pts = struct {
     /// made the first time it is asked for.
     fn localVar(p: *Pts, mi: u32, n: NameIndex) Allocator.Error!VarId {
         if (p.cachedLocal(mi, p.top, n)) |v| return v;
-        const gop = try p.locals.getOrPut(p.arena(), .{ .module = mi, .top = p.top.int(), .name = n.int() });
+        const gop = try p.locals.getOrPut(p.run(), .{ .module = mi, .top = p.top.int(), .name = n.int() });
         if (!gop.found_existing) {
             gop.value_ptr.* = try p.newVar();
             // Filtered by its name's declared type (*Declared-type filtering
@@ -11286,7 +11331,7 @@ const Pts = struct {
         const key = p.closedKey(p.s.mods[mi].ir.nodeKey(node));
         const id: u32 = @intCast(p.sites.items.len);
         p.site_of[mi][node.int()] = id;
-        try p.sites.append(p.arena(), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
+        try p.sites.append(p.run(), .{ .kind = kind, .module = mi, .node = node, .key = key, .once = p.once_ctx, .any = try p.newVar() });
         p.vars.items[p.sites.items[id].any].site_var = true;
         if (p.s.in.trace_largest) p.originAt(p.sites.items[id].any, .{ .kind = .site_any, .of = .site_any, .module = mi, .node = node.int() });
         // Keys written before anything can read them exist from the moment
@@ -11305,7 +11350,7 @@ const Pts = struct {
         const ir = p.s.mods[mi].ir;
         const f = ir.extraData(record, JsIr.Func);
         const names = ir.extraSlice(f.params(), NameIndex);
-        const params = try p.arena().alloc(VarId, names.len);
+        const params = try p.run().alloc(VarId, names.len);
         for (params, names) |*v, n| v.* = try p.localVar(mi, n);
         p.sites.items[site].params = params;
         p.sites.items[site].ret = try p.newVar();
@@ -11330,7 +11375,7 @@ const Pts = struct {
         const at = std.sort.lowerBound(Prop, p.sites.items[site].props.items, id, orderProp);
         if (at < p.sites.items[site].props.items.len and p.sites.items[site].props.items[at].id == id) return at;
         const st = &p.sites.items[site];
-        try st.props.insert(p.arena(), at, .{ .id = id, .vals = none });
+        try st.props.insert(p.run(), at, .{ .id = id, .vals = none });
         // A new property: what read the site whole reads it too.
         p.wake(st.prop_deps);
         st.prop_deps = none;
@@ -11659,13 +11704,13 @@ const Pts = struct {
     /// cannot see, which it records for every object (slice 9's tag).
     fn progWrite(p: *Pts, obj: Val, id: u32) Allocator.Error!void {
         if (obj.top or obj.prim) {
-            if (id == none) p.unknown_any = true else if (std.mem.indexOfScalar(u32, p.unknown_props.items, id) == null) try p.unknown_props.append(p.arena(), id);
+            if (id == none) p.unknown_any = true else if (std.mem.indexOfScalar(u32, p.unknown_props.items, id) == null) try p.unknown_props.append(p.run(), id);
         }
         for (obj.sites) |site| {
             const st = &p.sites.items[site];
             if (id == none) {
                 st.prog_any = true;
-            } else if (std.mem.indexOfScalar(u32, st.prog_props.items, id) == null) try st.prog_props.append(p.arena(), id);
+            } else if (std.mem.indexOfScalar(u32, st.prog_props.items, id) == null) try st.prog_props.append(p.run(), id);
         }
     }
 
@@ -11792,9 +11837,12 @@ const Pts = struct {
                 statements += m.ir.body.len();
             }
             if (nodes <= max_checked_nodes) {
-                var ref_tmp: std.heap.ArenaAllocator = .init(p.s.gpa);
+                // The reference fills an arena of its own, which `expectSame`
+                // reads after the build's run has emptied and refilled
+                // `tmp`.
+                var ref_tmp: Arena = .init(p.s.gpa);
                 defer ref_tmp.deinit();
-                std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &ref_tmp);
+                std.mem.swap(Arena, &p.tmp, &ref_tmp);
                 const order = try p.arena().alloc(u32, statements);
                 for (order, 0..) |*o, i| o.* = @intCast(i);
                 // A fixed seed: the check, like the build, is a function of
@@ -11816,7 +11864,7 @@ const Pts = struct {
                 p.s.stats.pts_largest = counted.pts_largest;
                 p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
-                std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &ref_tmp);
+                std.mem.swap(Arena, &p.tmp, &ref_tmp);
                 try p.fixpointWith(false);
                 try p.expectSame(&ref, false);
                 return;
@@ -11834,8 +11882,8 @@ const Pts = struct {
     fn checkKept(p: *Pts) Allocator.Error!void {
         // The kept state's own arena stays alive in `held` while the solve
         // fills a fresh one.
-        var held: std.heap.ArenaAllocator = .init(p.s.gpa);
-        std.mem.swap(std.heap.ArenaAllocator, &p.tmp, &held);
+        var held: Arena = .init(p.s.gpa);
+        std.mem.swap(Arena, &p.tmp, &held);
         const kept = p.*;
         const counted = p.s.stats;
         p.analyse() catch |err| {
@@ -11997,9 +12045,15 @@ const Pts = struct {
         if (reference) try p.byUnits() else try p.byConstraints();
     }
 
-    /// Everything a fixpoint computes, back to ⊥.
+    /// Everything a fixpoint computes, back to ⊥. The run arena is emptied
+    /// first and keeps its chunks (`Arena.ResetMode.keep_all`), so the
+    /// columns below land where the last run's did, on pages already
+    /// mapped — grown in place when a pass added nodes — and each is filled
+    /// here, since what the memory holds is the last run's (#574).
     fn reset(p: *Pts) Allocator.Error!void {
         const s = p.s;
+        p.tmp.reset(.keep_all);
+        const a = p.run();
         p.ok = false;
         p.vars = .empty;
         p.sites = .empty;
@@ -12008,43 +12062,7 @@ const Pts = struct {
         p.decl_call = .empty;
         p.unknown_props = .empty;
         p.unknown_any = false;
-        p.globals = try p.arena().alloc(VarId, s.globals);
-        for (p.globals, 0..) |*g, i| {
-            g.* = try p.newVar();
-            if (s.in.trace_largest) p.originAt(g.*, .{ .kind = .global, .of = .global, .global = @intCast(i) });
-        }
-        // What no module declares — an import of a hand-written file's
-        // export — is anything at all.
-        for (s.decl, p.globals) |d, g| if (d == null) try p.makeTop(g);
-        p.vals = try p.arena().alloc([]Val, s.mods.len);
-        p.site_of = try p.arena().alloc([]u32, s.mods.len);
-        p.name_var = try p.arena().alloc([]VarId, s.mods.len);
-        p.name_top = try p.arena().alloc([]u32, s.mods.len);
-        p.node_var = try p.arena().alloc([]VarId, s.mods.len);
-        p.node_top = try p.arena().alloc([]u32, s.mods.len);
-        // A node no sweep reached (in code nothing runs) is anything.
-        for (p.vals, p.site_of, p.name_var, p.name_top, s.mods) |*v, *so, *nv, *nt, *m| {
-            const nodes = m.ir.nodes.len;
-            v.* = try p.arena().alloc(Val, nodes);
-            @memset(v.*, Val.top_val);
-            so.* = try p.arena().alloc(u32, nodes);
-            @memset(so.*, none);
-            nv.* = try p.arena().alloc(VarId, m.names.items.len);
-            nt.* = try p.arena().alloc(u32, m.names.items.len);
-            @memset(nt.*, none);
-            const ns = try p.arena().alloc(VarId, 2 * nodes);
-            @memset(ns[nodes..], none);
-            p.node_var[m.index] = ns[0..nodes];
-            p.node_top[m.index] = ns[nodes..];
-        }
         p.stmts = .empty;
-        for (s.mods, 0..) |*m, mi| {
-            for (m.ir.extraSlice(m.ir.body, Index)) |top| try p.stmts.append(p.arena(), .{ .module = @intCast(mi), .top = top });
-        }
-        var nodes: usize = 0;
-        for (s.mods) |*m| nodes += m.ir.nodes.len;
-        p.ones = try p.arena().alloc(u32, nodes);
-        for (p.ones, 0..) |*o, i| o.* = @intCast(i);
         p.deps = .empty;
         p.edges = .empty;
         p.edge_set = .empty;
@@ -12074,7 +12092,42 @@ const Pts = struct {
         p.next_walk = 0;
         p.guards.clearRetainingCapacity();
         p.guard_base = 0;
-        _ = p.tmp.reset(.retain_capacity);
+        p.globals = try a.alloc(VarId, s.globals);
+        for (p.globals, 0..) |*g, i| {
+            g.* = try p.newVar();
+            if (s.in.trace_largest) p.originAt(g.*, .{ .kind = .global, .of = .global, .global = @intCast(i) });
+        }
+        // What no module declares — an import of a hand-written file's
+        // export — is anything at all.
+        for (s.decl, p.globals) |d, g| if (d == null) try p.makeTop(g);
+        p.vals = try a.alloc([]Val, s.mods.len);
+        p.site_of = try a.alloc([]u32, s.mods.len);
+        p.name_var = try a.alloc([]VarId, s.mods.len);
+        p.name_top = try a.alloc([]u32, s.mods.len);
+        p.node_var = try a.alloc([]VarId, s.mods.len);
+        p.node_top = try a.alloc([]u32, s.mods.len);
+        // A node no sweep reached (in code nothing runs) is anything.
+        for (p.vals, p.site_of, p.name_var, p.name_top, s.mods) |*v, *so, *nv, *nt, *m| {
+            const nodes = m.ir.nodes.len;
+            v.* = try a.alloc(Val, nodes);
+            @memset(v.*, Val.top_val);
+            so.* = try a.alloc(u32, nodes);
+            @memset(so.*, none);
+            nv.* = try a.alloc(VarId, m.names.items.len);
+            nt.* = try a.alloc(u32, m.names.items.len);
+            @memset(nt.*, none);
+            const ns = try a.alloc(VarId, 2 * nodes);
+            @memset(ns[nodes..], none);
+            p.node_var[m.index] = ns[0..nodes];
+            p.node_top[m.index] = ns[nodes..];
+        }
+        for (s.mods, 0..) |*m, mi| {
+            for (m.ir.extraSlice(m.ir.body, Index)) |top| try p.stmts.append(a, .{ .module = @intCast(mi), .top = top });
+        }
+        var nodes: usize = 0;
+        for (s.mods) |*m| nodes += m.ir.nodes.len;
+        p.ones = try a.alloc(u32, nodes);
+        for (p.ones, 0..) |*o, i| o.* = @intCast(i);
     }
 
     /// The fixpoint by sweeps of everything: a safety build's reference
@@ -12526,7 +12579,7 @@ const Pts = struct {
                 .const_decl, .let_decl => {
                     const v: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(node).rhs));
                     if (p.full) if (v.unwrap()) |value| if (ir.tag(value) == .call) {
-                        try p.decl_call.put(p.arena(), .{ .module = mi, .node = value.int() }, .{ .range = range, .index = @intCast(k) });
+                        try p.decl_call.put(p.run(), .{ .module = mi, .node = value.int() }, .{ .range = range, .index = @intCast(k) });
                     };
                 },
                 else => {},
@@ -12556,7 +12609,7 @@ const Pts = struct {
                 here.clearRetainingCapacity();
                 try p.writesAfter(c, &here);
                 if (ci == 0) {
-                    try found.appendSlice(p.arena(), here.items);
+                    try found.appendSlice(p.run(), here.items);
                     continue;
                 }
                 var kept: usize = 0;
@@ -12601,7 +12654,7 @@ const Pts = struct {
             const id = p.propId(mi, @fromBackingInt(@intCast(ir.data(target).rhs)));
             if (id == none) return;
             if (!p.harmless(mi, @fromBackingInt(@intCast(ir.data(next).rhs)), x)) return;
-            if (std.mem.indexOfScalar(u32, out.items, id) == null) try out.append(p.arena(), id);
+            if (std.mem.indexOfScalar(u32, out.items, id) == null) try out.append(p.run(), id);
         }
     }
 
@@ -13024,7 +13077,7 @@ const Pts = struct {
             const known_caller = for (callers.items) |k| {
                 if (k.module == key.module and k.node == key.node) break true;
             } else false;
-            if (!known_caller) try callers.append(p.arena(), key);
+            if (!known_caller) try callers.append(p.run(), key);
         }
         if (unknown) {
             for (args) |a| try p.escape(vals[a.int()]);
@@ -13843,7 +13896,9 @@ test "repeated points-to unions of settled site facts keep bounded space" {
     var storage: [8192]u8 = undefined;
     var bounded: std.heap.FixedBufferAllocator = .init(&storage);
     s.pts.tmp.deinit();
-    s.pts.tmp = .init(bounded.allocator());
+    // One chunk of all the storage there is: the run arena never opens a
+    // second, so the unions must fit in it.
+    s.pts.tmp = .{ .backing = bounded.allocator(), .next_chunk_size = storage.len - 16 };
     const sites = [_]u32{ 1, 3, 5, 7 };
     const equal = [_]u32{ 1, 3, 5, 7 };
     const subset = [_]u32{ 3, 7 };
@@ -13945,6 +14000,62 @@ test "points-to dependency storage is reclaimed between fixpoints" {
             head = p.deps.items[head].next;
         }
         try testing.expectEqual(64, count);
+    }
+}
+
+// #574: every fixpoint took its per-node and per-name columns anew from the
+// compilation's arena, six times a release build, and its own arena gave
+// its chunks back and mapped them again, so each run faulted its memory in
+// afresh. A fixpoint takes nothing from the compilation's arena, a second
+// one no new chunk, and its columns are the first's memory, filled again.
+test "a second fixpoint takes no new column and no new chunk" {
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    _ = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    _ = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    var stmts: [64]Index = undefined;
+    for (&stmts) |*st| {
+        const t = try b.addNode(.{ .tag = .true_lit, .pos = Node.no_pos, .data = .{ .lhs = 0, .rhs = 0 } });
+        st.* = try b.addNode(.{ .tag = .expr_stmt, .pos = Node.no_pos, .data = .{ .lhs = t.int(), .rhs = 0 } });
+    }
+    var ir = try b.toOwned(try b.addRange(&stmts));
+    defer ir.deinit(gpa);
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    // The compilation's arena, and what the run arena's chunks come from.
+    var compilation: std.testing.FailingAllocator = .init(arena_state.allocator(), .{});
+    var chunks: std.testing.FailingAllocator = .init(gpa, .{});
+    const modules = [_]Module{.{ .ir = &ir, .global = &.{ none, none } }};
+    var s = try Spec.init(chunks.allocator(), compilation.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    const taken = compilation.allocations;
+    try p.reset();
+    const opened = chunks.allocations;
+    const vals = p.vals[0].ptr;
+    const node_var = p.node_var[0].ptr;
+    for (0..3) |_| {
+        // What a run leaves behind, which the next must not read.
+        @memset(p.vals[0], Pts.Val.prim_val);
+        @memset(p.site_of[0], 0);
+        @memset(p.name_top[0], 0);
+        @memset(p.node_top[0], 0);
+        try p.reset();
+        try testing.expectEqual(taken, compilation.allocations);
+        try testing.expectEqual(opened, chunks.allocations);
+        try testing.expectEqual(@as(usize, 0), chunks.deallocations);
+        try testing.expectEqual(vals, p.vals[0].ptr);
+        try testing.expectEqual(node_var, p.node_var[0].ptr);
+        try testing.expectEqual(ir.nodes.len, p.vals[0].len);
+        for (p.vals[0]) |v| try testing.expect(v.top and v.prim and v.nul and v.undef and v.sites.len == 0);
+        for (p.site_of[0]) |x| try testing.expectEqual(none, x);
+        for (p.name_top[0]) |x| try testing.expectEqual(none, x);
+        for (p.node_top[0]) |x| try testing.expectEqual(none, x);
+        try testing.expectEqual(@as(usize, 2), p.globals.len);
+        try testing.expectEqual(@as(usize, 2), p.vars.items.len);
+        try testing.expectEqual(stmts.len, p.stmts.items.len);
     }
 }
 
