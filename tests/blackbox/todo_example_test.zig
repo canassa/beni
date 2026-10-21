@@ -149,6 +149,7 @@ test "the todo server serves the page its sibling build wrote" {
         \\--- stdout ---
         \\todo server stopped
         \\--- stderr ---
+        \\timestamp=<time> level=INFO message="listening on http://<address>:<port>"
         \\--- exit 0 ---
         \\
     ;

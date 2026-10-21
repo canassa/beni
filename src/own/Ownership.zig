@@ -32,6 +32,7 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
+const Arena = @import("../Arena.zig");
 const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Graph = @import("../resolve/Graph.zig");
@@ -817,8 +818,10 @@ schema_taints: std.AutoHashMapUnmanaged(u64, ?SchemaTaint) = .empty,
 /// §30.10: per `(module, schema declaration, member, arity)`, the summary of a
 /// call of that member (`schemaMemberRow`).
 schema_members: std.AutoHashMapUnmanaged([4]u32, *const Summary) = .empty,
-/// Per depth of nested walks: an arena reused from walk to walk.
-walk_arenas: [16]?std.heap.ArenaAllocator = @splat(null),
+/// Per depth of nested walks: an arena reused from walk to walk, emptied
+/// with `keep_all`, so a walk lands on the pages the walks before it
+/// touched and maps none of its own (#606).
+walk_arenas: [16]?Arena = @splat(null),
 walk_depth: u32 = 0,
 /// The summary `summaryText` prints, so that a slot's `cb` names its path.
 text_sum: ?*const Summary = null,
@@ -1879,13 +1882,13 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
     const saved_decl = o.cur_decl;
     o.cur_decl = .{ m, d };
     defer o.cur_decl = saved_decl;
-    var own: std.heap.ArenaAllocator = .init(o.in.gpa);
+    var own: Arena = .init(o.in.gpa);
     defer own.deinit();
     const scratch = if (depth < o.walk_arenas.len) blk: {
         if (o.walk_arenas[depth] == null) o.walk_arenas[depth] = .init(o.in.gpa);
         break :blk &o.walk_arenas[depth].?;
     } else &own;
-    defer _ = scratch.reset(.retain_capacity);
+    defer scratch.reset(.keep_all);
     const report = m < o.report_for.len and o.report_for[m];
     var w = o.walker(m, d, scratch.allocator(), if (report) .report else .summary);
     w.recursive = recursive;

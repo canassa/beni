@@ -682,12 +682,19 @@ if (end === null) {
   await exited;
 }
 
-// Standard error without what varies by machine, by build or by Node's
-// version: the project's path, Node's report of where a throw happened (the
-// location line with its excerpt and caret: the build's file and line),
-// stack frames, Node's version line, and the port and address a host
-// error's properties name. A throw inside Node (an unhandled `error` event)
-// is located in a `node:` module, and that line goes the same way.
+// `<port>` for the port the program bound, which the system picked; any
+// other port as it is.
+const boundPort = (port) => (address !== null && Number(port) === address.port ? "<port>" : port);
+
+// Standard error without what varies by machine, by build, by Node's
+// version or by the clock: the project's path, Node's report of where a
+// throw happened (the location line with its excerpt and caret: the
+// build's file and line), stack frames, Node's version line, an IPv4
+// address, the port the program bound (`address.port`; any other port is
+// kept, so a line that names the wrong one differs), and the time of a
+// `logfmt` line with `timestamp` first (`Io.run`'s sink). A throw inside
+// Node (an unhandled `error` event) is located in a `node:` module, and
+// that line goes the same way.
 const filterStderr = (text) => {
   const here = process.cwd();
   const real = fs.realpathSync(here);
@@ -709,11 +716,12 @@ const filterStderr = (text) => {
     }
     if (/^Node\.js v\d/.test(line)) continue;
     // A host error names the address and the port, in its message and in
-    // its properties.
+    // its properties; a log line, the time it was written.
     kept.push(
       line
-        .replace(/\b\d{1,3}(?:\.\d{1,3}){3}:\d+\b/g, "<address>:<port>")
-        .replace(/^(\s+port: )\d+/, "$1<port>")
+        .replace(/^timestamp=\S+ /, "timestamp=<time> ")
+        .replace(/\b\d{1,3}(?:\.\d{1,3}){3}:(\d+)\b/g, (_, port) => `<address>:${boundPort(port)}`)
+        .replace(/^(\s+port: )(\d+)/, (_, key, port) => `${key}${boundPort(port)}`)
         .replace(/^(\s+address: )'[^']*'/, "$1'<address>'"),
     );
   }

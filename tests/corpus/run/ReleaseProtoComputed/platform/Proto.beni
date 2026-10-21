@@ -1,0 +1,69 @@
+--! A computed `Js.setAt` key that evaluates to `"__proto__"` assigns
+--! `[[Prototype]]` (`backend.md` §9, fact 3). An arrow is not `Js.method`,
+--! so the object does not escape on its own. `pad` is an ordinary key
+--! nothing reads.
+
+import Js
+
+
+counter : Js.Ref Int
+counter = Js.ref 0
+
+
+--| The key is a binding. The prototype's setter runs. Development is `1`.
+--| Dropping the later write of `n` leaves `0`.
+pub fromLet : ⊤ → Int
+fromLet ⊤ =
+    Js.write counter 0
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "pad", 1 ) ]
+    key = "__proto__"
+    _ =
+        Js.call p "__defineSetter__"
+            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    Js.setAt o key p
+    Js.set o "n" (Js.from 1)
+    Js.read counter
+
+
+--| The key is the function's parameter. Development is `1`.
+pub fromParam : String → Int
+fromParam key =
+    Js.write counter 0
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "pad", 1 ) ]
+    _ =
+        Js.call p "__defineSetter__"
+            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    Js.setAt o key p
+    Js.set o "n" (Js.from 1)
+    Js.read counter
+
+
+--| The key is `String.append`, not a literal and not a binding.
+--| Development is `1`.
+pub fromAppend : ⊤ → Int
+fromAppend ⊤ =
+    Js.write counter 0
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "pad", 1 ) ]
+    key = String.append "__pro" "to__"
+    _ =
+        Js.call p "__defineSetter__"
+            [ Js.from "n", Js.from λ_ → Js.write counter (Js.read counter + 1) ]
+    Js.setAt o key p
+    Js.set o "n" (Js.from 1)
+    Js.read counter
+
+
+--| A property the literal never writes, inherited through a computed key.
+--| Development is `9`.
+pub inherited : ⊤ → Int
+inherited ⊤ =
+    o = Js.object [ ( "pad", 1 ) ]
+    p = Js.object [ ( "x", 9 ) ]
+    key = "__proto__"
+    Js.setAt o key p
+    got : Int
+    got = Js.to (Js.get o "x")
+    got
