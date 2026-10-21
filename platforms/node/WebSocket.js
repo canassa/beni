@@ -357,9 +357,11 @@ const closed = (ws, payload) => {
 
 export const fromUpgrade = (incoming, protocol, max) => {
   const { req, socket: raw, head, handle } = incoming;
-  raw.off("error", incoming.waiting);
-  // The client went away while the program decided: no session starts.
+  // The client went away while the program decided: no session starts,
+  // and the socket keeps `Server.js`'s listener, which names the codes of a
+  // client that is gone, until it closes.
   if (raw.destroyed || !raw.writable) return null;
+  raw.off("error", incoming.waiting);
   const key = req.headers["sec-websocket-key"];
   const accept = crypto.createHash("sha1").update(key + guid).digest("base64");
   const lines = ["HTTP/1.1 101 Switching Protocols", "upgrade: websocket", "connection: Upgrade", `sec-websocket-accept: ${accept}`];
