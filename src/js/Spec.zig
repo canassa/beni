@@ -914,6 +914,12 @@ const Spec = struct {
     pts_kept_nodes: []usize = &.{},
     pts_kept_names: []usize = &.{},
     pts_kept_globals: u32 = 0,
+    /// Parameter drops `rewrite` made that the kept state takes when the
+    /// next analysis keeps it (`keepDrop`, `keepArgs`, `applyKeptDrops`;
+    /// #582): the function sites and their parameters, and the arguments
+    /// that went.
+    kept_drops: std.ArrayList(KeptDrop) = .empty,
+    kept_args: std.ArrayList(NodeRef) = .empty,
     changed: bool = false,
     /// Whether this sweep counts the reads of whole-program names: the
     /// first of a round only, so that `reads` is a count and not a
@@ -1031,6 +1037,7 @@ const Spec = struct {
     const Declined = struct { g: u32, lit: Lit };
     const SiteProp = struct { site: u32, prop: u32 };
     const NodeRef = struct { module: u32, node: u32 };
+    const KeptDrop = struct { site: u32, module: u32, top: Index, gone: []const bool, names: []const NameIndex };
 
     /// The join of the lattice: a literal and nonnull, or two different
     /// literals, meet at nonnull when no side is `null` or `undefined`.
@@ -1358,6 +1365,7 @@ const Spec = struct {
         s.stats.analyses += 1;
         if (s.fact3Kept()) {
             s.stats.points_to_reused += 1;
+            try s.applyKeptDrops();
             if (std.debug.runtime_safety) {
                 var nodes: usize = 0;
                 for (s.mods) |*m| nodes += m.ir.nodes.len;
@@ -1409,6 +1417,8 @@ const Spec = struct {
             names.* = m.names.items.len;
         }
         s.pts_kept_globals = s.globals;
+        s.kept_drops.clearRetainingCapacity();
+        s.kept_args.clearRetainingCapacity();
     }
 
     /// Whether writing identifier `node` as literal `lit` (`patchLiteral`)
@@ -1426,8 +1436,12 @@ const Spec = struct {
     ///   through the name's load cell and field summary, and a guard's
     ///   chain starts at a name;
     /// - it is not the string `__proto__`, which as the key of a computed
-    ///   write escapes the object (`Pts.indexAssignsPrototype`);
-    /// - lowering keyed no type on the node (`Mod.setNode` would drop it).
+    ///   write escapes the object (`Pts.indexAssignsPrototype`).
+    ///
+    /// A type key on the node is no reason to refuse: fact 3 reads a node's
+    /// key only where it makes a site (`siteOf`, `funcSite`), and a safety
+    /// build asserts a keyed node is an object, an array or an arrow
+    /// (`JsIr.nodeKey`), so an identifier's row, if any, is `wild`.
     ///
     /// Anything else a read of a name gives fact 3 — a copy edge from its
     /// var where a join of its value would do, a dependency — is cost, not
@@ -1441,11 +1455,99 @@ const Spec = struct {
             .string => if (std.mem.eql(u8, lit.bytes, prototype_assign)) return false,
             .null_lit, .undefined_lit, .name => return false,
         }
-        if (JsIr.keyRow(m.node_keys.items, node) != null) return false;
         const vals = s.pts.vals[m.index];
         if (node.int() >= vals.len) return false;
         const v = vals[node.int()];
         return !v.top and v.prim and !v.nul and !v.undef and v.sites.len == 0;
+    }
+
+    /// Whether fact 3's state can take the drop of `decl`'s parameters
+    /// `gone` (`rewrite`) without a solve, and if so a record of it that
+    /// `applyKeptDrops` spends when the next analysis keeps the state
+    /// (#582). Asked before the parameter list is rewritten, of the state
+    /// the rewrite reads. A solve of the program without them makes no var
+    /// for them and joins nothing into one; what it keeps of the rest is
+    /// the kept state's exactly when nothing else read them:
+    ///
+    /// - each one's var holds no object of the program and is not `top`:
+    ///   no site escaped or was linked through it, so it fed no fact. A var
+    ///   that holds only the primitive, `null` or `undefined` and that no
+    ///   read reads is a dead end;
+    /// - the var is the parameter's local of the declaration's statement,
+    ///   and no identifier of that statement names the parameter any more
+    ///   (each read was written as its literal, `fact3Neutral`, or there was
+    ///   none). `rewrite` drops only a parameter declared once in the
+    ///   statement, so no other function of it shares the local.
+    ///
+    /// The calls lose the arguments with the parameters (`keepArgs`).
+    fn keepDrop(s: *Spec, m: *Mod, decl: Decl, gone: []const bool) Allocator.Error!bool {
+        if (!s.pts_kept or !s.pts.ok) return false;
+        const ir = m.ir;
+        const node: Index = switch (ir.tag(decl.stmt)) {
+            .const_decl => @fromBackingInt(@intCast(ir.data(decl.stmt).rhs)),
+            .func_decl => decl.stmt,
+            else => return false,
+        };
+        const site = s.pts.siteAt(m.index, node) orelse return false;
+        const st = &s.pts.sites.items[site];
+        if (st.kind != .func or st.params.len != gone.len) return false;
+        const names = ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).params(), NameIndex);
+        for (gone, names, st.params) |g, n, v| {
+            if (!g) continue;
+            const val = try s.pts.view(v);
+            if (val.top or val.sites.len != 0) return false;
+            if ((s.pts.findLocal(m.index, decl.stmt, n) orelse return false) != v) return false;
+        }
+        for (try s.preorder(m, decl.stmt)) |x| if (ir.tag(x) == .ident) {
+            for (gone, names) |g, n| if (g and ir.data(x).lhs == n.int()) return false;
+        };
+        try s.kept_drops.append(s.arena, .{
+            .site = site,
+            .module = m.index,
+            .top = decl.stmt,
+            .gone = try s.arena.dupe(bool, gone),
+            .names = try s.arena.dupe(NameIndex, names),
+        });
+        return true;
+    }
+
+    /// Whether fact 3's state can take a call's loss of the arguments
+    /// `gone` of a function `keepDrop` admitted, and if so a record of each
+    /// (#582): each is a literal or a name, a leaf whose value only joined
+    /// the parameter that goes — no site, nothing marked read, no node
+    /// below it. A solve walks it no more, so its node has the value of a
+    /// node no walk reaches.
+    fn keepArgs(s: *Spec, m: *Mod, args: []const u32, gone: []const bool) Allocator.Error!bool {
+        for (args, gone) |a, g| {
+            if (!g) continue;
+            const tag = m.ir.tag(@fromBackingInt(@intCast(a)));
+            if (!isLiteralTag(tag) and tag != .ident) return false;
+        }
+        for (args, gone) |a, g| if (g) try s.kept_args.append(s.arena, .{ .module = m.index, .node = a });
+        return true;
+    }
+
+    /// The parameter drops the kept state takes (`keepDrop`, `keepArgs`):
+    /// each function site's parameter list without them, their locals
+    /// gone, and each dropped argument's node unreached (`Val.top_val`, as
+    /// `Pts.reset` leaves a node no walk reaches). Their vars stay, fed by
+    /// nothing a fact reads.
+    fn applyKeptDrops(s: *Spec) Allocator.Error!void {
+        const p = &s.pts;
+        for (s.kept_drops.items) |k| {
+            const st = &p.sites.items[k.site];
+            var kept: std.ArrayList(Pts.VarId) = .empty;
+            for (st.params, k.gone) |v, g| if (!g) try kept.append(s.arena, v);
+            st.params = kept.items;
+            for (k.names, k.gone) |n, g| if (g) {
+                p.locals.remove(.{ .module = k.module, .top = k.top.int(), .name = n.int() });
+                const row = p.name_top[k.module];
+                if (n.int() < row.len and row[n.int()] == k.top.int()) row[n.int()] = none;
+            };
+        }
+        for (s.kept_args.items) |a| p.vals[a.module][a.node] = Pts.Val.top_val;
+        s.kept_drops.clearRetainingCapacity();
+        s.kept_args.clearRetainingCapacity();
     }
 
     /// Facts 1, 2, 4 and 5 swept to their fixpoint, from what `analyse`
@@ -2821,18 +2923,25 @@ const Spec = struct {
             any = true;
         }
         // Parameters and arguments.
-        for (s.decl) |maybe| {
+        // Per whole-program name: fact 3's state takes the drop of its
+        // parameters without a solve (`keepDrop`, #582).
+        const kept_drop = try s.arena.alloc(bool, s.globals);
+        @memset(kept_drop, false);
+        for (s.decl, 0..) |maybe, g| {
             const decl = maybe orelse continue;
             if (decl.func == null) continue;
             const flags = drop[decl.params..][0..decl.arity];
             if (std.mem.indexOfScalar(bool, flags, true) == null) continue;
             const m = &s.mods[decl.module];
+            kept_drop[g] = try s.keepDrop(m, decl, flags);
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
             var kept: std.ArrayList(u32) = .empty;
             for (m.ir.extraSlice(f.params(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
             const start = try m.append(s.gpa, kept.items);
             const at = @backingInt(decl.func.?);
+            const fact3 = m.fact3;
             m.changed();
+            if (kept_drop[g]) m.fact3 = fact3;
             m.extra.items[at] = start;
             m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
             for (flags, quiet[decl.params..][0..decl.arity]) |gone, q| {
@@ -2858,7 +2967,7 @@ const Spec = struct {
                 const names = for (m.global) |g| {
                     if (g != none and g < lost.len and lost[g]) break true;
                 } else false;
-                if (names) try s.rewriteCalls(m, drop);
+                if (names) try s.rewriteCalls(m, drop, kept_drop);
             }
         }
         return any;
@@ -3172,7 +3281,7 @@ const Spec = struct {
         }
     }
 
-    fn rewriteCalls(s: *Spec, m: *Mod, drop: []const bool) Allocator.Error!void {
+    fn rewriteCalls(s: *Spec, m: *Mod, drop: []const bool, kept_drop: []const bool) Allocator.Error!void {
         var seen: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
@@ -3199,11 +3308,15 @@ const Spec = struct {
                         const flags = drop[decl.params..][0..decl.arity];
                         const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), u32);
                         if (args.len == decl.arity and std.mem.indexOfScalar(bool, flags, true) != null) {
+                            // Asked before `append`, which may move `args`.
+                            const keep_args = kept_drop[g] and try s.keepArgs(m, args, flags);
                             var kept: std.ArrayList(u32) = .empty;
                             for (args, flags) |a, gone| if (!gone) try kept.append(s.arena, a);
                             const start = try m.append(s.gpa, kept.items);
                             const record = try m.append(s.gpa, &.{ start, start + @as(u32, @intCast(kept.items.len)) });
+                            const fact3 = m.fact3;
                             m.setData(node, d.lhs, record);
+                            if (keep_args) m.fact3 = fact3;
                         }
                     };
                 },
@@ -15680,37 +15793,55 @@ test "a read written as its literal leaves fact 3 to be kept" {
     try testing.expectEqual(@as(u64, 1), s.stats.points_to_reused);
 }
 
-// #575: dropping a parameter changes what fact 3 reads — the function's
-// parameter list and every call's arguments — so the analysis after it
-// solves again. In `const f = (a) => a; const r = f("x");` the rewrite
-// writes the read of `a` as `"x"`, which alone would be kept, and drops `a`
-// with its argument, which is not.
-test "a dropped parameter makes fact 3 solve again" {
-    const gpa = testing.allocator;
-    var arena_state: std.heap.ArenaAllocator = .init(gpa);
-    defer arena_state.deinit();
-    var b: JsIr.Builder = .init(gpa);
-    defer b.deinit();
+/// `const f = (a) => <body>; const r = f(<arg>);` as one module, `f` and
+/// `r` whole-program names 0 and 1: analysed once, then rewritten, which
+/// drops `a` with its argument (#582's tests).
+const DropProgram = struct {
+    ir: JsIr,
+    func: ExtraIndex,
+    read: ?Index,
+};
+
+fn dropProgram(b: *JsIr.Builder, read_param: bool, object_arg: bool) !DropProgram {
     const name_f = try b.intern(.local(@fromBackingInt(@intCast(1))));
     const name_r = try b.intern(.local(@fromBackingInt(@intCast(2))));
     const name_a = try b.intern(.local(@fromBackingInt(@intCast(3))));
-    const read = try b.addParts(.ident, Node.no_pos, name_a.int(), 0);
-    const ret = try b.addParts(.return_stmt, Node.no_pos, read.int(), 0);
+    const read = if (read_param) try b.addParts(.ident, Node.no_pos, name_a.int(), 0) else null;
+    const one = try b.addString("1");
+    const value = read orelse try b.addParts(.number, Node.no_pos, one[0], one[1]);
+    const ret = try b.addParts(.return_stmt, Node.no_pos, value.int(), 0);
     const params = try b.addNames(&.{name_a});
     const body = try b.addRange(&.{ret});
     const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
     const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
     const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
     const callee = try b.addParts(.ident, Node.no_pos, name_f.int(), 0);
-    const text = try b.addString("x");
-    const x = try b.addParts(.string, Node.no_pos, text[0], text[1]);
-    const args = try b.addRecord(try b.addRange(&.{x}));
+    const arg = if (object_arg) try b.addParts(.object, Node.no_pos, 0, 0) else blk: {
+        const text = try b.addString("x");
+        break :blk try b.addParts(.string, Node.no_pos, text[0], text[1]);
+    };
+    const args = try b.addRecord(try b.addRange(&.{arg}));
     const call = try b.addParts(.call, Node.no_pos, callee.int(), @backingInt(args));
     const decl_r = try b.addParts(.const_decl, Node.no_pos, name_r.int(), call.int());
-    var ir = try b.toOwned(try b.addRange(&.{ decl_f, decl_r }));
-    defer ir.deinit(gpa);
+    return .{ .ir = try b.toOwned(try b.addRange(&.{ decl_f, decl_r })), .func = func, .read = read };
+}
+
+// #582: a parameter every call passes the same literal goes with its
+// arguments, and fact 3's state takes the drop: in `const f = (a) => a;
+// const r = f("x");` the read of `a` is written `"x"`, `a` holds the
+// primitive alone, and the argument is a literal, so the analysis after
+// the rewrite keeps the state with `a` gone from `f`'s site and its local.
+// A safety build solves anyway and compares (`Pts.checkKept`).
+test "a dropped parameter that held a primitive leaves fact 3 to be kept" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    var program = try dropProgram(&b, true, false);
+    defer program.ir.deinit(gpa);
     const global = [_]u32{ 0, 1, none };
-    const modules = [_]Module{.{ .ir = &ir, .global = &global }};
+    const modules = [_]Module{.{ .ir = &program.ir, .global = &global }};
     var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
     s.pts = .init(&s);
     defer s.pts.deinit();
@@ -15719,8 +15850,39 @@ test "a dropped parameter makes fact 3 solve again" {
     try testing.expect(try s.analyse());
     const runs = s.stats.points_to_runs;
     _ = try s.rewrite();
-    try testing.expectEqual(Node.Tag.string, ir.tag(read));
-    try testing.expectEqual(@as(u32, 0), ir.extraData(func, JsIr.Func).params().len());
+    try testing.expectEqual(Node.Tag.string, program.ir.tag(program.read.?));
+    try testing.expectEqual(@as(u32, 0), program.ir.extraData(program.func, JsIr.Func).params().len());
+    try testing.expect(!s.mods[0].fact3);
+    try testing.expect(s.fact3Kept());
+    try testing.expect(try s.analyse());
+    try testing.expectEqual(runs, s.stats.points_to_runs);
+    try testing.expectEqual(@as(u64, 1), s.stats.points_to_reused);
+    try testing.expectEqual(@as(usize, 0), s.pts.locals.count());
+}
+
+// #582: a parameter nothing reads goes whatever it is passed, and when a
+// call passed it an object, fact 3 made a site and joined it into the
+// parameter, which a solve without the argument would not: `const f = (a)
+// => 1; const r = f({});` solves again.
+test "a dropped parameter that held an object makes fact 3 solve again" {
+    const gpa = testing.allocator;
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    var program = try dropProgram(&b, false, true);
+    defer program.ir.deinit(gpa);
+    const global = [_]u32{ 0, 1, none };
+    const modules = [_]Module{.{ .ir = &program.ir, .global = &global }};
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    // Hands the module its columns back, owned and exactly sized.
+    defer s.finish() catch @panic("out of memory");
+    try testing.expect(try s.analyse());
+    const runs = s.stats.points_to_runs;
+    _ = try s.rewrite();
+    try testing.expectEqual(@as(u32, 0), program.ir.extraData(program.func, JsIr.Func).params().len());
     try testing.expect(s.mods[0].fact3);
     try testing.expect(!s.fact3Kept());
     try testing.expect(try s.analyse());
