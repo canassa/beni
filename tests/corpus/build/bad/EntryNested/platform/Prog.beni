@@ -1,0 +1,6 @@
+pub type Program
+    = Program
+
+
+pub bad : List (entry { init : ⊤ → ⊤ }) → ⊤
+bad _ = ⊤

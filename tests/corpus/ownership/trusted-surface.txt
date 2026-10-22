@@ -61,3 +61,14 @@ node       Node.print            ownership/Words.beni            -
 node       Node.printLines       ownership/Words.beni            -
 node       Node.exitWith         ownership/Words.beni            -
 node       Ssr.render            ownership/Words.beni            -
+# entry declares a privileged runtime protocol; removing it leaves callback writers pending.
+browser    Browser.program       ownership/EntryInitProgram.beni  1:entry>-
+browser    Browser.hosted        ownership/HostedEntry.beni       1:entry>-
+browser-tea Tea.sandbox           ownership/EntryPush.beni         1:entry>-
+browser-tea Tea.element           ownership/EntryCommand.beni      1:entry>-
+browser-tea Tea.application       ownership/EntryUrlTaggers.beni   1:entry>-
+# document delegates to element with the same protocol; no further ownership promise.
+browser-tea Tea.document          browser/tea/DocumentTitle.beni        -
+browser-inline Tea.sandbox        ownership/EntryPush.beni         1:entry>-
+browser-inline Tea.element        ownership/EntryCommand.beni      1:entry>-
+page       Page.sandbox           browser/Counter.beni             1:entry>-

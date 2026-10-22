@@ -1,0 +1,11 @@
+--! A declaration-selected entry fixture: no constructor has a recognised name.
+
+pub type Program
+    = Program
+
+
+pub launch :
+      Int
+    , entry { init : ⊤ → model, update : msg, model → model, view : model → Int }
+    → Program
+launch _ _ = Program

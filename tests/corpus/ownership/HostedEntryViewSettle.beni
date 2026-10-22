@@ -1,0 +1,17 @@
+import Browser
+import Html
+import List
+
+
+update : Browser.Host Int, Int, List Int → List Int
+update host n state = state
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → []
+        , update = update
+        , settle = λhost state → List.push state 0
+        , view = λstate → <button onClick={λ_ → List.length state}>step</button>
+        }

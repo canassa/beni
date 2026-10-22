@@ -1,0 +1,1 @@
+{ "platform": true, "name": "entry", "program": "Start.Program", "runtime": "runtime.js" }

@@ -53,3 +53,19 @@ platforms/node/Node.js          Node.print          a10b7db6541292679a3e959151c1
 platforms/node/Node.js          Node.printLines     6e0c6a75d11138ad964ed9579e8e5d2dd0f41685106561b7e5ba69baa51cb8e1
 platforms/node/Node.js          Node.exitWith       6a610ffef02442fae778d2d281e7de08500c2a0c8d56d72862e66eab7c3b99ba
 platforms/node/Ssr.js           Ssr.render          37ee0eae3d16ff93948d7a631bf45c19de7beb0c31893d6a0f2abc47665d02df
+
+# Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
+platforms/browser/Browser.beni               Browser.program          a1a03d3bdb04728a2178b66cab64a4ee5b0a208a1df64457b3653f821d0980f8
+platforms/browser/Browser.beni               Browser.hosted           b60687d2b82a5f5c513e529c47f2bcf18fa63bb2aebd38360f9e5cc013dd5c62
+platforms/browser/Browser.beni               Browser.host             33c2cf0b8d1c38fdfc4b36fd6a3c91c2c6ce5b454d67af551bd2043e0cc71032
+platforms/browser-tea/Tea.beni               Tea.sandbox              8e3b27e500a7feac2eb34e69e9fcf30fa4f498653e306168d75936f47cf113e1
+platforms/browser-tea/Tea.beni               Tea.element              b4024695983c46b54e8cf3822573fbefcf65bc38cb76e55468e728e2bac6f523
+platforms/browser-tea/Tea.beni               Tea.document             1f37469ef95b2ebf4b679547bdc80d9432c4ea5b6169438bd44bb70b6aa58c29
+platforms/browser-tea/Tea.beni               Tea.application          e6200815da17feee44ee77949affb7e41153e018774051e8de9d9ef354b57311
+platforms/browser-inline/Tea.js              Tea.sandbox              f67bbcd3142c8c9c05dc3b387f906062e1ddb0833e3fd37d6a34c95a7cc7af36
+platforms/browser-inline/Tea.js              Tea.element              d373999e62ba6b9a338d87d9af28f9e161f57ffd5a7d13e7126a6f66607596d0
+tests/platforms/page/Page.js                 Page.sandbox             c72696a375ce50996c18cb35783240a89cec50b82254864acd5a2c4832a9df9e
+tests/platforms/page/runtime.js              Page.renderAttributes    b9978143277b8790644dc173f2eb7f1d3cb38da590ecf7fa790a86321ab30b1a
+tests/platforms/page/runtime.js              Page.create              4bfd151d7726aa70d50f176fc43e97f00cd3c775c0a32133e5ad84082ee0b9e6
+tests/platforms/page/runtime.js              Page.patch               a1d3fea2925b61dbfde073736cb98369f987cd972481713293a964ec33bfd96d
+tests/platforms/page/runtime.js              Page.run                 94db922d68d939f36a1aeef52018c9d92dd4d4805cd06f80a3a61c4eb2925ff8

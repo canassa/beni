@@ -41,7 +41,7 @@ pub type alias Program =
 --| the task. `init` is a function on every platform, so that each mount
 --| starts from a model of its own (`boundary.md` §9.8.16).
 pub sandbox :
-      { init : ⊤ → model, update : msg, model → model, view : model → Html msg }
+      entry { init : ⊤ → model, update : msg, model → model, view : model → Html msg }
     → Program
 sandbox app = Browser.program app
 
@@ -56,11 +56,11 @@ sandbox app = Browser.program app
 --| message started it. A command that never waits runs where its fiber
 --| would have started, with none.
 pub element :
-      { init : ⊤ → model × Cmd msg
-      , update : msg, model → model × Cmd msg
-      , view : model → Html msg
-      , subscriptions : model → Sub msg
-      }
+      entry { init : ⊤ → model × Cmd msg
+            , update : msg, model → model × Cmd msg
+            , view : model → Html msg
+            , subscriptions : model → Sub msg
+            }
     → Program
 element app =
     Browser.hosted
@@ -82,11 +82,11 @@ pub type alias Document msg =
 --| and the render that renders the body writes the title when it differs
 --| from the page's, so the two never disagree.
 pub document :
-      { init : ⊤ → model × Cmd msg
-      , update : msg, model → model × Cmd msg
-      , view : model → Document msg
-      , subscriptions : model → Sub msg
-      }
+      entry { init : ⊤ → model × Cmd msg
+            , update : msg, model → model × Cmd msg
+            , view : model → Document msg
+            , subscriptions : model → Sub msg
+            }
     → Program
 document app =
     element
@@ -114,13 +114,13 @@ document app =
 --|             , onUrlChange = UrlChanged
 --|             }
 pub application :
-      { init : Url, Navigation.Key → model × Cmd msg
-      , update : msg, model → model × Cmd msg
-      , view : model → Document msg
-      , subscriptions : model → Sub msg
-      , onUrlRequest : UrlRequest → msg
-      , onUrlChange : Url → msg
-      }
+      entry { init : Url, Navigation.Key → model × Cmd msg
+            , update : msg, model → model × Cmd msg
+            , view : model → Document msg
+            , subscriptions : model → Sub msg
+            , onUrlRequest : UrlRequest → msg
+            , onUrlChange : Url → msg
+            }
     → Program
 application app =
     subscriptions =

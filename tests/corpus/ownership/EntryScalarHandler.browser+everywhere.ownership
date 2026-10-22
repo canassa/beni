@@ -1,0 +1,7 @@
+module EntryScalarHandler
+  7:18 List.push state: accepted param
+  12:5 entry EntryScalarHandler.update model: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
+  summary update: π2 RAW[storage], π2[*] A; res [*] ~π2[*], π2
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause payload 1

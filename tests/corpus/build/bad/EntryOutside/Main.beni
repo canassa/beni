@@ -1,0 +1,6 @@
+bad : entry { init : ⊤ → Int } → Int
+bad _ = 0
+
+
+main : Int
+main = 0

@@ -119,7 +119,8 @@ pub const magic = "BENIFE\x00\x00";
 /// declaration row carries `own_start`/`own_end`, `Ast.Node.Tag` gained
 /// `type_own`, which shifted every later tag, and lowering has a new code,
 /// `misplaced_ownership_word`.
-pub const format_version: u32 = 22;
+/// 23 (2026-10-22): entry ownership words and their record diagnostics.
+pub const format_version: u32 = 23;
 
 /// The sections, in this order and no other (`fast-compiler.md` §8).
 ///

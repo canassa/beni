@@ -1,0 +1,8 @@
+module HostedEntry
+  7:20 List.push state: accepted param
+  12:5 entry <settle> model: accepted entry
+  12:5 entry HostedEntry.update model: accepted entry
+  15:31 List.push state: accepted callback-param (decided at its calls)
+  summary update: π3 RAW[storage], π3[*] A; res [*] ~π3[*], π3
+  demands 4: accepted 4 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 2; assumed 0), pending 0, rejected 0
+total 4: accepted 4 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 2; assumed 0), pending 0, rejected 0

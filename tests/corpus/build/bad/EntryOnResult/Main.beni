@@ -1,0 +1,5 @@
+import Prog
+
+
+main : Prog.Program
+main = Prog.Program

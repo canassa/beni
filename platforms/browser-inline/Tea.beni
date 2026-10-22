@@ -20,10 +20,10 @@ pub type alias Program =
 --| first model, and each message goes through `update`, whose model the
 --| page shows before the dispatch ends.
 pub foreign pure sandbox :
-      { init : sync (⊤ → model)
-      , update : sync (msg, model → model)
-      , view : sync (model → Html msg)
-      }
+      entry { init : sync (⊤ → model)
+            , update : sync (msg, model → model)
+            , view : sync (model → Html msg)
+            }
     → Program
 
 
@@ -33,9 +33,9 @@ pub foreign pure sandbox :
 --| the model; and `subscriptions` says what the program listens to, which
 --| on this platform may not depend on the model.
 pub foreign pure element :
-      { init : sync (⊤ → model × Cmd msg)
-      , update : sync (msg, model → model × Cmd msg)
-      , view : sync (model → Html msg)
-      , subscriptions : sync (model → Sub msg)
-      }
+      entry { init : sync (⊤ → model × Cmd msg)
+            , update : sync (msg, model → model × Cmd msg)
+            , view : sync (model → Html msg)
+            , subscriptions : sync (model → Sub msg)
+            }
     → Program
