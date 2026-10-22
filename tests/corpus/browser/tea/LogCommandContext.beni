@@ -14,9 +14,11 @@
 -- first's, `Concurrent` both; a body that does not wait, queued behind one
 -- that waits, keeps its own `step`. A `Cmd.task` that waits keeps it too.
 -- A subscription declared inside `annotate` is not changed: its body has
--- the default context. `Done` writes no line: which context the `update`
--- of a message that a body sends has is the owner's open question
--- (`node-log-q4`).
+-- the default context. A context stops at the body (amended 2026-10-23;
+-- #818): `Done`, which the bodies of `Task` and `TaskWait` send, runs its
+-- `update` with the program's context, so its lines carry no annotation,
+-- its debug line is below the program's minimum, and its command has the
+-- program's context too.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log exposing (Entry)
@@ -85,17 +87,20 @@ update msg model =
 
         Task →
             Log.annotate "request" "t1" λ⊤ →
-                ( next
-                , Cmd.task
-                    (λ⊤ →
-                        Log.info "a task"
-                        7
+                Log.minimum Log.Debug λ⊤ →
+                    ( next
+                    , Cmd.task
+                        (λ⊤ →
+                            Log.info "a task"
+                            7
+                        )
+                        Done
                     )
-                    Done
-                )
 
         Done _ →
-            ( next, Cmd.none )
+            Log.info "Done's update: the program's context"
+            Log.debug "Done's update: a debug line, below the program's minimum"
+            ( next, Cmd.log Log.Info "a command of Done's update: the program's context" )
 
         After →
             Log.annotate "request" "a1" λ⊤ →
