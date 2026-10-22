@@ -63,7 +63,8 @@ join arena request =
 
 play : Arena, String, Socket → ⊤
 play arena name socket =
-    Ref.update arena.players λplayers → [ …players, { name = name, socket = socket, input = "-" } ]
+    Ref.update arena.players λplayers →
+        [ …List.copy players, { name = name, socket = socket, input = "-" } ]
     Task.onExit (λ⊤ → inputs arena name socket) λ_ →
         Ref.update arena.players λplayers → List.filter players λp → p.name ≠ name
 

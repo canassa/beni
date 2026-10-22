@@ -1,0 +1,21 @@
+-- A Ref lends its stored list borrowed. Keeping a snapshot and extending
+-- that list would change the snapshot. The Log sinks and WebSocket arena
+-- copy before a spread; the todo server copies the list in its stored
+-- record before Ref.modify extends it (ownership-checker.md §30.9).
+import Ref
+
+
+pub update : ⊤ → List Int × List Int
+update ⊤ =
+    cell = Ref.make [ 1 ]
+    snapshot = Ref.get cell
+    Ref.update cell λxs → [ …xs, 2 ]
+    ( snapshot, Ref.get cell )
+
+
+pub modify : ⊤ → List Int × List Int
+modify ⊤ =
+    cell = Ref.make { items = [ 1 ] }
+    snapshot = (Ref.get cell).items
+    _ = Ref.modify cell λs → ( snapshot, { items = [ …s.items, 2 ] } )
+    ( snapshot, (Ref.get cell).items )

@@ -17,7 +17,7 @@ import Task
 record : Ref (List String), Entry → ⊤
 record seen entry =
     pairs = String.join (List.map entry.annotations λ( key, value ) → "${key}=${value}") ", "
-    Ref.update seen λlines → [ …lines, "${entry.message} [${pairs}]" ]
+    Ref.update seen λlines → [ …List.copy lines, "${entry.message} [${pairs}]" ]
 
 
 main : Program
