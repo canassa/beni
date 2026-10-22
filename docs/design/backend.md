@@ -9812,6 +9812,27 @@ within noise. The ReleaseSafe compiler takes TodoMVC 1 440M → 1 488M, the 16 4
 3 117M and the 100 000 lines 16 126M → 16 564M, with peak RSS within 2%. The cost is the exec
 cells' extraction and indexes. Parts 2 and 3 remove the rounds this part still runs.
 
+**As built 2026-10-22 — slice 6, part 2a: the names' cells** (issue #676). A whole-program name
+whose value is its initialiser's now reads that node's cell (`Spec.nameInit`). That is a name's one
+`const` or `let` with an initialiser that nothing assigns, other than a function, an arrow, or a
+`const` object or array, which stay the name itself (`nameLat`). Before, a read of such a name was
+`globalValue`, a function of the initialiser's tag alone, so a module-level constant was a literal
+only as written. The rounds and the rewrite's `stale` walks carried what its initialiser was found
+to be over to its readers, one round later. Now the solve does: a `global` read of a name with a
+cell is a reader of that cell, woken with it. The readers are kept per name in an index built by
+counting sort, and a bitset with a sorted list maps a cell to its name. A read before the
+declaration throws, so it has no value at all. The value the solve found is kept for the
+rewrite's walks (`name_solved`). Golden moves: `tea/HttpSendUntracked` 12 340 → 12 322 and
+`tea/HttpSendTracked` 17 867 → 17 861, an alias of a module constant gone. `SchemaWorkers` (5 722)
+and `app/ValidatorWorker` (1 324) keep their size, with a declaration ordered and named apart.
+Over the `run/` corpus's release builds, 51 programs shrink and none grows: 1 988 794 → 1 987 146
+bytes against master with part 1. TodoMVC is 23 620 → 23 614 bytes, and 8 762 → 8 771 after brotli
+from the names it renamed. Instructions of the ReleaseSafe compiler against master
+(`2a362f6e7`) are TodoMVC 1 440M → 1 492M, the 16 400 arms 2 958M → 3 121M and the 100 000 lines
+16 126M → 16 605M. Of the ReleaseFast compiler they are N = 16 355M → 366M, N = 64 1 504M → 1 536M
+and without `withDefault` 1 390M → 1 422M. Part 1 accounts for nearly all of it. Peak RSS is
+within 2%, and the measurement programs other than TodoMVC are byte for byte the same.
+
 ### Compact statements
 
 ### Compact statements
