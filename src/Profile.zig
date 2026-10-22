@@ -264,9 +264,7 @@ pub const Counter = enum {
     spec_points_to_sweeps,
     spec_passes,
     /// Each cap where it stopped work that would have gone on: a size
-    /// regression is traced to one of these first. A fact 3 that did not
-    /// converge is not used.
-    spec_points_to_declined,
+    /// regression is traced to one of these first.
     spec_rounds_capped,
     spec_passes_capped,
     spec_init_capped,
