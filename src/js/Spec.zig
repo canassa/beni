@@ -6367,8 +6367,11 @@ const Spec = struct {
     /// the printer writes as the conditional. A conditional made for it is
     /// a node of its own, reached from nowhere but the copies made of it.
     /// Null for any other body.
-    fn returnExpr(s: *Spec, module: u32, body: []const Index, depth: u32) Allocator.Error!?Index {
-        if (depth > 8 or body.len == 0) return null;
+    fn returnExpr(s: *Spec, module: u32, body_in: []const Index, depth: u32) Allocator.Error!?Index {
+        if (depth > 8 or body_in.len == 0) return null;
+        // A copy below appends to `extra`, which may move: the body is read
+        // from a copy of its own (#770).
+        const body = try s.arena.dupe(Index, body_in);
         const fm = &s.mods[module];
         const ir = fm.ir;
         const first = body[0];
@@ -18489,6 +18492,82 @@ test "a read written as its literal leaves fact 3 to be kept" {
     try testing.expect(try s.analyse());
     try testing.expectEqual(runs, s.stats.points_to_runs);
     try testing.expectEqual(@as(u64, 1), s.stats.points_to_reused);
+}
+
+/// An allocator that never grows or shrinks a block in place, so that every
+/// append past the capacity moves the list and frees the block it left —
+/// which the testing allocator then poisons.
+const MovingAllocator = struct {
+    child: std.mem.Allocator,
+
+    fn allocator(m: *MovingAllocator) std.mem.Allocator {
+        return .{ .ptr = m, .vtable = &.{
+            .alloc = alloc,
+            .resize = std.mem.Allocator.noResize,
+            .remap = std.mem.Allocator.noRemap,
+            .free = free,
+        } };
+    }
+
+    fn alloc(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
+        const m: *MovingAllocator = @ptrCast(@alignCast(ctx));
+        return m.child.rawAlloc(len, alignment, ret_addr);
+    }
+
+    fn free(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
+        const m: *MovingAllocator = @ptrCast(@alignCast(ctx));
+        m.child.rawFree(memory, alignment, ret_addr);
+    }
+};
+
+// #770: `returnExpr` of `(a) => { if (a) { if (a) return 1; return 2; }
+// return 3; }` on a module no pass has appended to yet. The inner `if`
+// appends its conditional to `extra`, which has no room and moves; the outer
+// `if` then reads the rest of its body, which was a slice of the old block.
+test "returnExpr reads its body after a nested conditional moved extra" {
+    var moving: MovingAllocator = .{ .child = testing.allocator };
+    const gpa = moving.allocator();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const name_f = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const name_a = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    var rets: [3]Index = undefined;
+    for (&rets, [_][]const u8{ "1", "2", "3" }) |*r, digits| {
+        const text = try b.addString(digits);
+        const number = try b.addParts(.number, Node.no_pos, text[0], text[1]);
+        r.* = try b.addParts(.return_stmt, Node.no_pos, number.int(), 0);
+    }
+    const none_else = try b.addRange(&.{});
+    const inner_then = try b.addRange(&.{rets[0]});
+    const inner_rec = try b.addRecord(JsIr.If{ .then_start = inner_then.start, .then_end = inner_then.end, .else_start = none_else.start, .else_end = none_else.end });
+    const inner_test = try b.addParts(.ident, Node.no_pos, name_a.int(), 0);
+    const inner_if = try b.addParts(.if_stmt, Node.no_pos, inner_test.int(), @backingInt(inner_rec));
+    const outer_then = try b.addRange(&.{ inner_if, rets[1] });
+    const outer_rec = try b.addRecord(JsIr.If{ .then_start = outer_then.start, .then_end = outer_then.end, .else_start = none_else.start, .else_end = none_else.end });
+    const outer_test = try b.addParts(.ident, Node.no_pos, name_a.int(), 0);
+    const outer_if = try b.addParts(.if_stmt, Node.no_pos, outer_test.int(), @backingInt(outer_rec));
+    const params = try b.addNames(&.{name_a});
+    const body = try b.addRange(&.{ outer_if, rets[2] });
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = body.start, .body_end = body.end });
+    const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
+    const decl_f = try b.addParts(.const_decl, Node.no_pos, name_f.int(), arrow.int());
+    var ir = try b.toOwned(try b.addRange(&.{decl_f}));
+    defer ir.deinit(gpa);
+    const global = [_]u32{ 0, none };
+    const modules = [_]Module{.{ .ir = &ir, .global = &global }};
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 1, .escaping = &.{} });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    defer s.finish() catch @panic("out of memory");
+    const f = ir.extraData(func, JsIr.Func);
+    const ret = (try s.returnExpr(0, ir.extraSlice(f.body(), Index), 0)).?;
+    // `a ? (a ? 1 : 2) : 3`.
+    try testing.expectEqual(Node.Tag.cond, ir.tag(ret));
+    const outer = ir.extraData(@fromBackingInt(@intCast(ir.data(ret).rhs)), JsIr.Cond);
+    try testing.expectEqual(Node.Tag.cond, ir.tag(outer.consequent));
+    try testing.expectEqual(Node.Tag.number, ir.tag(outer.alternate));
 }
 
 /// `const f = (a) => <body>; const r = f(<arg>);` as one module, `f` and
