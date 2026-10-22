@@ -1372,6 +1372,46 @@ is no cast, since the concrete caller casts):
   and raising `value-cells` (which the bounds paragraph above sets from measured summaries, and which a pairwise
   condition makes quadratic). Neither is measured yet.
 
+*Amended 2026-10-22 (issue #286, the owner’s full-type decision): proposed cast markers, not built.*
+A cast marker names the entire resolved structural type: nominal identity and every
+argument, each tuple member, record field and extension, and all function parameters
+and its result. Aliases are read through their expansion. Unresolved variables keep
+their identity; a variable at the root on either side is not a cast. Type keys are
+interned and compared by identity after structural equality, never by a type head or
+an unchecked hash. Cached summaries store the complete key, not a session type id.
+
+A returned parameter crossing between an opaque foreign type and a concrete type
+uses the call’s instantiated types. Into the opaque type, entries below the root
+are placed under ⟨as T⟩; the root itself is the same object. Out of it, entries
+marked with precisely T lose that marker; mismatched or unmarked contents become
+approximate ⋆ entries. A symbolic root is read through ⟨as T⟩, preserving the
+relation to its source. These rules also apply when a summary projects a cast.
+A second entry into T folds the intervening walk under the first marker, retaining
+a second ⟨as T⟩ for deeper levels. Projection keeps folded contents approximately;
+overlap treats a cast boundary conservatively, and a trailing boundary never makes
+one physical object separate from itself. Every merged occurrence remains subject
+to the existing construction conditions. Interning, projection and summary encoding
+must share the same full-type identity. No cap, condition or budget changes here.
+
+The soundness argument is preservation of every holder: exact cancellation requires
+full type equality, other reads retain all contents at ⋆, and a folded marker retains
+the deeper occurrences rather than dropping them. Each type has at most two cast
+markers on a path. The existing path cut remains until the separate cut-removal
+change; this amendment does not claim that it has been removed. Validation starts
+with a fixture red before implementation, then the unchanged gates. Any newly refused
+safe program or exceeded budget stops this work and is reported on #286. The owner’s
+current no-measurement instruction supersedes the historical prerequisite above.
+
+*Validation stopped 2026-10-22:* the first candidate compiled, but core preflight
+newly refused safe `Schema.run` at `core/Schema.beni:2109:35`, through approximate
+cast paths (including `c.fail⟨as Maybe (Js.Value)⟩`). The owner’s stop condition
+applies. No marker implementation lands, and no soundness or completeness claim
+is made for this candidate. The red-first fixture, candidate patch, baseline binary
+and failure logs are preserved on dagon in
+`~/worktree-evidence/beni-full-cast-f2/`. No cap, check or budget was changed.
+The proposed rules above remain unvalidated; this failure does not establish that
+the full-type design is impossible. Issue #286 records the finding.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
