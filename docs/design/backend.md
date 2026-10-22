@@ -9779,6 +9779,39 @@ instructions of the ReleaseFast compiler on the dashboard N = 16 348M → 347M, 
 1 462M, without `withDefault` 1 350M → 1 348M; of the ReleaseSafe compiler TodoMVC 1 431M →
 1 430M, the 16 400 arms and the 100 000 lines unchanged (2 937M, 16 009M); peak RSS the same.
 
+**As built 2026-10-22 — slice 6, part 1: executability** (issue #676). The extraction gives every
+constraint the innermost exec cell it lies in: its module's top level, a function body (`func`),
+or an arm. An arm is the `then` or `else` of an `if` or `?:`, or the right side of `&&` or `||`.
+Its test is the cell of the test's node. `switch` cases, loops and `try` parts share their parent's
+cell. The cells, and the indexes from a cell to the constraints it gates, from a cell to the arms
+below it and from a test cell to the arms it decides, are built by counting sort with the rest
+(`Extract.execs`, `ec`, `ek`, `et`). A statement that is kept is renumbered with its cells, and
+the safety build's check of what was kept compares them too. The solver starts with every top
+level true. A body starts true when fact 3 made no site for it, or when its site escaped or has
+`odd_caller` (`new`, the entry file). It also starts true when its function is held under a key in
+`implicit_host_keys` or under a key the pass does not know, which the host may call with no call in
+the program. An executable `call` makes true the bodies of the function sites in its callee.
+An arm becomes true when its parent is true and its test's truthiness allows it, which is checked
+when either changes. A constraint whose cell is false is not evaluated, and a woken one is skipped
+until its cell is true. Past the budget, every cell is true. Fact 3 still analyses every body
+and both arms; its sets are a superset of what runs, which is sound. Two things follow from the
+facts holding only of what runs. **The rewrite's walks join nothing** (`Spec.frozen`): a walk of
+a statement already patched reads the solved parameters, fields and returns, and no longer widens
+them with what a dead arm passes. **An arm of a `?:` whose test may do something, and is always
+truthy or always falsy, is written as `0`** (`writeDead`), because its nodes have no values and
+nothing evaluates it. A tag read (`tagValue`) treats a literal with no write, which never ran, as
+holding nothing. `SpecSelfGuard` folds `go` as it folds `quiet` (371 → 341 bytes).
+`PayloadReassign` loses a dead object with its message (4 791 → 4 683). `SpecDeadArm` is new
+(473), and is 558 bytes before this part. No other golden moves. Development output is byte for
+byte the same, and 34 `run/` and `browser/` release outputs changed with the same results.
+Measured on dagon against master at `2a362f6e7`, load below 3: the measurement programs' outputs
+are byte for byte the same. Instructions of the ReleaseFast compiler are N = 16 355M → 365M,
+N = 64 1 504M → 1 534M, and without `withDefault` 1 390M → 1 419M (+2 to +3%). `spec_analyses`
+is unchanged (5, 4, 4), and the minimum `specialise` (27/135/107 ms → 29/130/98 ms) and wall are
+within noise. The ReleaseSafe compiler takes TodoMVC 1 440M → 1 488M, the 16 400 arms 2 958M →
+3 117M and the 100 000 lines 16 126M → 16 564M, with peak RSS within 2%. The cost is the exec
+cells' extraction and indexes. Parts 2 and 3 remove the rounds this part still runs.
+
 ### Compact statements
 
 ### Compact statements
