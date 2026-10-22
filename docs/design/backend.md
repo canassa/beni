@@ -8831,6 +8831,18 @@ executable and only arms are decided. Arms are decided by the test's truthiness,
 on the graph. Research 52's E2 (`SpecSelfGuard`) and `SpecDeadArm` are arms, and no `emit/release`
 golden moves.
 
+*Amended 2026-10-22 (issue #685): a check.* A hidden, test-only `--check-call-graph` runs the
+call graph on its own after every fact-3 solve (`Spec.checkCallGraph`). The roots are those
+executability had before the amendment above: a function site that escaped, one with
+`odd_caller`, and one held in a site's `any` or under an implicit host key. A call reaches the
+function sites its callee may be when it stands at a module's top level or in a reached body.
+Arms are not asked. Every function body that some solve leaves unreached is then written as
+`throw "beni: --check-call-graph: …"` (`poisonMissed`). The corpus's release passes build with the
+flag: `run/`, the `--schema-library` pass, the `browser/` pages and the value-fuzz pages. So a
+program that calls a body the graph missed fails a gate loudly, instead of printing something
+else. When the check landed it found no such body in the corpus. Without it, nothing tests the
+graph's completeness, which the revert of this amendment needs.
+
 #### The worklist
 
 Two queues, rings of `u32` with a bitset of what is queued: changed cells and newly executable

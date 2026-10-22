@@ -147,6 +147,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,
         .points_to_largest = build.points_to_largest,
+        .check_call_graph = build.check_call_graph,
         .rep_keys = build.rep_keys,
         .source_maps = build.source_maps,
     }) catch |err| switch (err) {

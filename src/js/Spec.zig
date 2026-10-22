@@ -325,6 +325,12 @@ pub const Input = struct {
     /// where it came from, so that `Stats.pts_largest` can name the var that
     /// held `Stats.pts_max_set` sites. It changes no fact and no byte.
     trace_largest: bool = false,
+    /// `--check-call-graph` (`src/Cli.zig`): every function body fact 3's call
+    /// graph leaves unreached in any solve throws when it runs
+    /// (`Spec.checkCallGraph`). Tests only: the corpus's release passes run
+    /// with it, so a body the program calls that the graph missed (#685)
+    /// fails a gate.
+    check_call_graph: bool = false,
     /// `--release`: the build's representation keys, which say which of
     /// the keys in the IR's columns are wild (`backend.md` §9,
     /// *Declared-type filtering of fact 3*). Null: every key is.
@@ -547,6 +553,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     // Slice 10, after every fact: a value made at start-up and read once
     // there is made where it is read; reachability drops its declaration.
     if (try s.inlineReads()) _ = try s.prune();
+    if (in.check_call_graph) try s.poisonMissed();
     try s.finish();
     s.stats.copied = s.copied[0..@min(s.copied.len, in.globals)];
     s.stats.copied_modules = s.copied_modules;
@@ -1297,6 +1304,8 @@ const Spec = struct {
     /// take arrays as long as the whole program's names anew.
     io_refs_keep: []u32 = &.{},
     io_assigned_keep: []u32 = &.{},
+    /// `checkCallGraph`'s unreached function nodes, over every solve.
+    missed: std.ArrayList(Pts.NodeKey) = .empty,
     /// `inlineScan`'s place of each name in the module it counts, plus
     /// one: zero between modules.
     io_slot: []u32 = &.{},
@@ -1744,6 +1753,99 @@ const Spec = struct {
         }
     }
 
+    /// `Input.check_call_graph` (#685): the function sites fact 3's call
+    /// graph does not reach, kept by node for `poisonMissed`. The roots are
+    /// what `backend.md` §9 *Executability* names: a site that escaped, one
+    /// something other than a call runs (`odd_caller`), and one held under a
+    /// key the pass does not know (`any`) or one the host reads unasked
+    /// (`hostImplicit`). A call reaches the function sites its callee may
+    /// be (`Pts.vals`) when it stands at a module's top level or in the body
+    /// of a function reached. Arms are not asked: this is the graph alone.
+    fn checkCallGraph(s: *Spec) Allocator.Error!void {
+        const p = &s.pts;
+        if (!p.ok) return;
+        const reached = try s.arena.alloc(bool, p.sites.items.len);
+        @memset(reached, false);
+        for (p.sites.items, 0..) |st, i| {
+            if (st.kind == .func and (st.escaped or st.odd_caller)) reached[i] = true;
+            if (st.any != none) for ((try p.view(st.any)).sites) |h| {
+                reached[h] = true;
+            };
+            for (st.props.items) |pr| if (p.hostImplicit(pr.id)) {
+                if (pr.vals != none) for ((try p.view(pr.vals)).sites) |h| {
+                    reached[h] = true;
+                };
+                if (pr.from != none) for ((try p.view(pr.from)).sites) |h| {
+                    reached[h] = true;
+                };
+            };
+        }
+        // Every call, with the function site whose body holds it (`none`:
+        // a module's top level).
+        const Call = struct { module: u32, node: Index, within: u32 };
+        var calls: std.ArrayList(Call) = .empty;
+        const Item = struct { node: Index, within: u32 };
+        var stack: std.ArrayList(Item) = .empty;
+        var kids: std.ArrayList(Index) = .empty;
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            for (ir.extraSlice(ir.body, Index)) |top| try stack.append(s.arena, .{ .node = top, .within = none });
+            while (stack.pop()) |it| {
+                var within_fn = it.within;
+                const t = ir.tag(it.node);
+                if (t == .arrow or t == .func_decl or t == .gen_decl) {
+                    if (p.siteAt(@intCast(mi), it.node)) |site| within_fn = site;
+                }
+                if (t == .call or t == .new_call) try calls.append(s.arena, .{ .module = @intCast(mi), .node = it.node, .within = within_fn });
+                kids.clearRetainingCapacity();
+                if (t.isStatement() or t == .arrow) try pushChildren(s.arena, ir, it.node, &kids) else try ir.pushOperands(s.arena, &kids, it.node);
+                for (kids.items) |k| if (k.int() < ir.nodes.len) try stack.append(s.arena, .{ .node = k, .within = within_fn });
+            }
+        }
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (calls.items) |c| {
+                if (c.within != none and !reached[c.within]) continue;
+                const callee = s.mods[c.module].ir.data(c.node).lhs;
+                const vals = p.vals[c.module];
+                if (callee >= vals.len) continue;
+                for (vals[callee].sites) |site| if (p.sites.items[site].kind == .func and !reached[site]) {
+                    reached[site] = true;
+                    grew = true;
+                };
+            }
+        }
+        for (p.sites.items, 0..) |st, i| if (st.kind == .func and !reached[i]) {
+            try s.missed.append(s.arena, .{ .module = st.module, .node = st.node.int() });
+        };
+    }
+
+    /// `Input.check_call_graph`: every body `checkCallGraph` found
+    /// unreached in any solve is `throw "…"`, so a run that calls one fails
+    /// loudly instead of printing something else.
+    fn poisonMissed(s: *Spec) Allocator.Error!void {
+        const text = "beni: --check-call-graph: the release specialiser's call graph missed a function this program calls (#685)";
+        for (s.missed.items) |k| {
+            const m = &s.mods[k.module];
+            const node: Index = @fromBackingInt(k.node);
+            if (node.int() >= m.ir.nodes.len) continue;
+            const rec: u32 = switch (m.ir.tag(node)) {
+                .arrow => m.ir.data(node).lhs,
+                .func_decl, .gen_decl => m.ir.data(node).rhs,
+                else => continue,
+            };
+            const pos = m.ir.pos(node);
+            const at = try m.addBytes(s.gpa, text);
+            const message = try m.addNode(s.gpa, .string, pos, at, text.len);
+            const thrown = try m.addNode(s.gpa, .throw_stmt, pos, message.int(), 0);
+            const start = try m.append(s.gpa, &.{thrown.int()});
+            m.extra.items[rec + 2] = start;
+            m.extra.items[rec + 3] = start + 1;
+            m.ir.extra = m.extra.items;
+        }
+    }
+
     /// Facts 1 and 2 to their fixpoint. False when the fixpoint was not
     /// reached, and the round must rewrite nothing.
     fn analyse(s: *Spec) Allocator.Error!bool {
@@ -1762,6 +1864,7 @@ const Spec = struct {
             try s.pts.analyse();
             try s.keepFact3();
         }
+        if (s.in.check_call_graph) try s.checkCallGraph();
         // What follows is of this analysis alone, so it lives where the
         // fixpoint does, emptied by the next solve (`Pts.tmp`).
         s.spread_sites = try s.pts.run().alloc(bool, s.pts.sites.items.len);

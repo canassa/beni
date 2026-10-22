@@ -322,6 +322,10 @@ pub const Options = struct {
     /// `--points-to-largest`, the hidden flag (`src/Cli.zig`): after the
     /// release specialiser, one line naming the var of fact 3 that held the
     /// most sites (`Result.points_to`). No emitted byte changes.
+    /// `--check-call-graph`, the hidden flag (`src/Cli.zig`): the release
+    /// specialiser poisons every function body its call graph did not reach
+    /// (`Spec.Input.check_call_graph`). Tests only.
+    check_call_graph: bool = false,
     points_to_largest: bool = false,
     /// `--rep-keys`, the hidden flag (`src/Cli.zig`): under `--release`, the
     /// representation keys lowering wrote (`Result.rep_keys`). No emitted
@@ -5290,6 +5294,7 @@ const Emitter = struct {
             .entry = entry_call,
             .one_scope = one_scope,
             .trace_largest = e.options.points_to_largest,
+            .check_call_graph = e.options.check_call_graph,
             .rep_keys = if (e.rep_keys) |*k| k else null,
             .field_keys = field_keys.items,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
