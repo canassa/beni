@@ -717,6 +717,16 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.everywhere = true;
         }
     }
+    // `build/bad/workers/`: projects built for `cloudflare`, whose refusals
+    // are that platform's own marks — an object's `tick` that may wait
+    // (`boundary.md` §9.12 (e.5)); the `workers/` kind cannot hold a build
+    // that fails.
+    if (kind == .build_bad) {
+        const workers_dir = try std.fs.path.join(arena, &.{ kind_dir, "workers" });
+        const start = fixtures.items.len;
+        try collect(arena, workers_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "cloudflare";
+    }
     // `emit/release/split/`: release applications built for `browser`,
     // whose markup runtime is a beni module and a hand-written file together
     // (`boundary.md` §9.2, *A runtime module*), their golden the one file
@@ -1284,7 +1294,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }

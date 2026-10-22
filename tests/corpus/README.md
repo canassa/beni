@@ -49,7 +49,10 @@ is the project: every file under it is copied, not only the `.beni`s,
 because the fixture may carry its own **platform package** — the thing
 `boundary.md` §4's sibling checks are checks of. A `platform/`
 subdirectory means `--platform=platform`, and without one the build takes
-`--platform=node`; there is no per-fixture flag file. That kind exists
+`--platform=node`; there is no per-fixture flag file. Under
+`build/bad/workers/` the build takes `--platform=cloudflare`: that
+platform's own refusals, such as an object's `tick` that may wait
+(`boundary.md` §9.12 (e.5)), which the `workers/` kind cannot hold. That kind exists
 because nine diagnostic codes could be produced nowhere else: six need a
 platform, and three (`missing_main`, `main_not_program`, `duplicate_main`)
 need a build, `check --platform` having deliberately no opinion about

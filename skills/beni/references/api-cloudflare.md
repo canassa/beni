@@ -100,7 +100,7 @@ module Worker.Object
   value autoReply : Context msg, String, String → Result AutoReplyError ⊤  -- impure
   value body : Request → String  -- impure
   value cancelAlarm : Context msg → ⊤  -- impure
-  value define : String, Schema e msg, (Context msg → state), Handlers state msg → Definition
+  value define : String, Schema e msg, (Context msg → state), { alarm : Context msg, state → state, closed : Context msg, state, Socket, Close → state, failed : Context msg, state, Socket, String → state, message : Context msg, state, Socket, String → state, received : Context msg, state, msg → state, request : Context msg, state, Request → state × Response, tick : state → Maybe Duration, ticked : Context msg, state → state } → Definition
   value env : Context msg → Env  -- impure
   value id : Context msg → String  -- impure
   value name : Context msg → Maybe String  -- impure

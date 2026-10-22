@@ -45,9 +45,11 @@ into this build.
 
 **The platform is a convention, not a flag file.** A `platform/`
 subdirectory means `--platform=platform`; without one the build takes the
-embedded `--platform=node`, which is all the entry-point codes need. So a
-fixture is still one directory and one golden, and there is nothing to
-configure.
+embedded `--platform=node`, which is all the entry-point codes need. A
+project under `workers/` takes the embedded `--platform=cloudflare`: that
+platform's own refusals, which the `workers/` corpus kind cannot hold since
+its builds must succeed. So a fixture is still one directory and one
+golden, and there is nothing to configure.
 
 The smallest platform a fixture can carry is four files — this is what
 `mk_plat` writes into the six that have one:
