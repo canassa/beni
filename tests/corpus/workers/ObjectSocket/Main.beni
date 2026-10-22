@@ -4,8 +4,10 @@
 -- message with the socket's id, tags and protocol, keeps a value in the
 -- attachment and reads it back, closes with a code and a reason, refuses
 -- a code a server may not send, sees the peer's close, answers the
--- `autoReply` pair without an event, closes a binary frame with 1003, and
--- after a defect every socket ends with 1006.
+-- `autoReply` pair without an event, refuses a long `autoReply` text and a
+-- tag over 256 bytes in beni, closes a binary frame with 1003, sees a
+-- client that leaves with no close frame as 1006, and after a defect every
+-- socket ends with 1006.
 import Duration
 import Schema exposing (Schema)
 import String
@@ -35,7 +37,7 @@ arena =
 
 restore : Object.Context String → State
 restore ctx =
-    Object.autoReply ctx "ping?" "pong!"
+    _ = Object.autoReply ctx "ping?" "pong!"
     { joined = List.length (Object.sockets ctx) }
 
 
@@ -49,6 +51,35 @@ join ctx state request =
             ( state
             , Worker.text 200 "${String.fromInt (List.length (Object.sockets ctx))} sockets open"
             )
+
+        [ "auto-long", …rest ] →
+            -- A text over the host's 2 048 bytes is refused in beni, not by
+            -- a throw that would stop the arena.
+            ( state
+            , Worker.text 200
+                (case Object.autoReply ctx (String.repeat "r" 3000) "pong!" of
+                    Ok ⊤ →
+                        "set"
+
+                    Err Object.RequestTooLarge →
+                        "Err RequestTooLarge"
+
+                    Err Object.ResponseTooLarge →
+                        "Err ResponseTooLarge"
+                )
+            )
+
+        [ "cjk", …rest ] →
+            -- A tag of 256 CJK characters is 768 bytes: the host would throw.
+            case Object.accept ctx request [ String.repeat "字" 256 ] of
+                Ok ( _, response ) →
+                    ( state, response )
+
+                Err Object.TooManyTags →
+                    ( state, Worker.text 400 "a tag is too long" )
+
+                Err _ →
+                    ( state, Worker.text 503 "no room" )
 
         [ player, …rest ] →
             offered = Worker.header request "sec-websocket-protocol"
@@ -85,6 +116,17 @@ input ctx state socket text =
                 case WebSocket.attach socket Schema.string value of
                     Ok ⊤ →
                         WebSocket.write socket "attached"
+
+                    Err _ →
+                        WebSocket.write socket "not attached"
+
+            [ "attach-big" ] →
+                case WebSocket.attach socket Schema.string (String.repeat "x" 9000) of
+                    Ok ⊤ →
+                        WebSocket.write socket "attached"
+
+                    Err WebSocket.TooLarge →
+                        WebSocket.write socket "Err TooLarge"
 
                     Err _ →
                         WebSocket.write socket "not attached"

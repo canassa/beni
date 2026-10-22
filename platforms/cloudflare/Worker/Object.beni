@@ -735,7 +735,7 @@ fired instance ms =
 -- ---- The socket ((g)) -------------------------------------------------------
 
 --| Why an upgrade was not accepted: no `upgrade: websocket` header or a
---| method that is not GET, more than 10 tags or one over 256 characters,
+--| method that is not GET, more than 10 tags or one over 256 bytes of UTF-8,
 --| the host's 32 768 sockets per object already open, or a subprotocol the
 --| request did not offer.
 pub type AcceptError
@@ -775,8 +775,9 @@ acceptWith ctx request options =
     then
         Err NotAnUpgrade
     else if
-        List.length options.tags > 10 || List.any options.tags λtag → String.length tag > 256
-    then
+        -- The host counts a tag's bytes of UTF-8, not its characters: 256
+        -- CJK characters are 768 bytes, which it refuses with a throw.
+        List.length options.tags > 10 || List.any options.tags λtag → utf8Bytes tag > 256 then
         Err TooManyTags
     else if List.length (sockets ctx) ≥ 32768 then
         Err TooManySockets
@@ -820,15 +821,38 @@ opened ctx tags protocol =
     )
 
 
+--| Why `autoReply` set nothing: the host takes a request text and a
+--| response text of at most 2 048 bytes of UTF-8 each (measured).
+pub type AutoReplyError
+    = RequestTooLarge
+    | ResponseTooLarge
+
+
 --| `setWebSocketAutoResponse`: a request text the host answers with the
---| response text on every socket of the object, without waking it.
-pub autoReply : Context msg, String, String → ⊤
+--| response text on every socket of the object, without waking it. Each
+--| text is at most 2 048 bytes of UTF-8, tested before the host is called.
+pub autoReply : Context msg, String, String → Result AutoReplyError ⊤
 autoReply ctx request response =
+    if utf8Bytes request > 2048 then
+        Err RequestTooLarge
+    else if utf8Bytes response > 2048 then
+        Err ResponseTooLarge
+    else
+        _ =
+            Js.call (hostState ctx) "setWebSocketAutoResponse"
+                [ Js.construct (Js.global "WebSocketRequestResponsePair")
+                    [ Js.from request, Js.from response ]
+                ]
+        Ok ⊤
+
+
+-- The host's count of a text: its bytes of UTF-8.
+utf8Bytes : String → Int
+utf8Bytes text =
     Js.to
-        (Js.call (hostState ctx) "setWebSocketAutoResponse"
-            [ Js.construct (Js.global "WebSocketRequestResponsePair")
-                [ Js.from request, Js.from response ]
-            ]
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
         )
 
 

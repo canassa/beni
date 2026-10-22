@@ -14,6 +14,7 @@
 // clock or on the machine.
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 
@@ -138,7 +139,7 @@ const mf = new Miniflare({
     capture("err", stderr);
   },
 });
-await mf.ready;
+const readyUrl = await mf.ready;
 const base = "http://127.0.0.1";
 
 // ---- The steps --------------------------------------------------------------
@@ -212,48 +213,76 @@ const send = (step, signal) =>
 // Requests the script sent and has not taken the answer of, by name.
 const detached = new Map();
 
-// WebSocket clients the script opened, by name: Miniflare's client over
-// `dispatchFetch` with `upgrade: websocket` (`res.webSocket`). What the
-// server sends is kept, in order, until a `receive` step takes it.
+// WebSocket clients the script opened, by name. The client is the `ws`
+// library Miniflare itself carries, connected to the Worker's port, so a
+// step can send a binary frame or drop the connection with no close
+// frame, which Miniflare's own client cannot. What the server sends is
+// kept, in order, until a `receive` step takes it.
+const WebSocketClient = createRequire(import.meta.url)(path.join(path.dirname(miniflarePath), "..", "..", "node_modules", "ws"));
 const sockets = new Map();
 const socketNamed = (name) => {
-  const ws = sockets.get(name);
-  if (ws === undefined) throw new Error(`no socket named ${name}`);
-  return ws;
+  const entry = sockets.get(name);
+  if (entry === undefined) say(`< (no socket ${name})`);
+  return entry;
 };
-const openSocket = async (step) => {
-  const name = step.socket;
-  const protocols = step.protocols ?? [];
-  say(`> (socket ${name}) GET ${step.path}${protocols.length === 0 ? "" : ` ${JSON.stringify(protocols)}`}`);
-  const headers = { upgrade: "websocket", ...(step.headers ?? {}) };
-  if (protocols.length !== 0) headers["sec-websocket-protocol"] = protocols.join(", ");
-  const outcome = await within(() => mf.dispatchFetch(`${base}${step.path}`, { headers }));
-  if (outcome.late || outcome.error || outcome.value.status !== 101) {
-    await printOutcome(outcome, `(socket ${name}) `);
-    return;
-  }
-  const res = outcome.value;
-  say(`(socket ${name}) < 101`);
-  for (const [h, value] of res.headers) {
-    if (h.startsWith("mf-") || h === "transfer-encoding") continue;
+const printHeaders = (name, headers) => {
+  for (const [h, value] of Object.entries(headers).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (h.startsWith("mf-") || h === "transfer-encoding" || h === "connection" || h === "date") continue;
     // The accept key answers the client's random key: shown as present.
     say(`(socket ${name}) < ${h}: ${h === "sec-websocket-accept" ? "(the key)" : value}`);
   }
-  const ws = res.webSocket;
-  const entry = { ws, inbox: [], waiter: null, ended: false };
-  const arrived = (line) => {
-    entry.inbox.push(line);
-    if (entry.waiter !== null) entry.waiter();
-  };
-  ws.addEventListener("message", (e) => arrived(typeof e.data === "string" ? JSON.stringify(e.data) : `binary ${e.data.byteLength} bytes`));
-  ws.addEventListener("close", (e) => {
-    entry.ended = true;
-    arrived(`close ${e.code} ${JSON.stringify(e.reason)}`);
-  });
-  ws.addEventListener("error", (e) => arrived(`error ${e.message ?? ""}`));
-  ws.accept();
-  sockets.set(name, entry);
 };
+const openSocket = (step) =>
+  new Promise((resolve) => {
+    const name = step.socket;
+    const protocols = step.protocols ?? [];
+    say(`> (socket ${name}) GET ${step.path}${protocols.length === 0 ? "" : ` ${JSON.stringify(protocols)}`}`);
+    const ws = new WebSocketClient(`ws://${readyUrl.host}${step.path}`, protocols, { headers: step.headers ?? {} });
+    const entry = { ws, inbox: [], waiter: null };
+    const arrived = (line) => {
+      entry.inbox.push(line);
+      if (entry.waiter !== null) entry.waiter();
+    };
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      say(`(socket ${name}) < (no answer in ${stepLimit} ms)`);
+      ws.terminate();
+      done();
+    }, stepLimit);
+    ws.on("upgrade", (res) => {
+      say(`(socket ${name}) < 101`);
+      printHeaders(name, res.headers);
+      sockets.set(name, entry);
+      done();
+    });
+    ws.on("unexpected-response", (_req, res) => {
+      say(`(socket ${name}) < ${res.statusCode}`);
+      printHeaders(name, res.headers);
+      let body = "";
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        if (body !== "") {
+          say(`(socket ${name}) <`);
+          for (const line of body.split("\n")) if (!/^\s+at /.test(line)) say(`(socket ${name}) < ${line}`);
+        }
+        done();
+      });
+    });
+    ws.on("message", (data, isBinary) => arrived(isBinary ? `binary ${data.length} bytes` : JSON.stringify(data.toString())));
+    ws.on("close", (code, reason) => arrived(`close ${code} ${JSON.stringify(reason.toString())}`));
+    ws.on("error", (e) => {
+      arrived(`error ${e.message}`);
+      done();
+    });
+  });
 // The next thing the socket got, waiting up to the step limit for it.
 const receiveOne = (entry) =>
   entry.inbox.length !== 0
@@ -297,18 +326,35 @@ for (const step of steps) {
     say(outcome.error ? `< (aborted: ${outcome.error.name})` : outcome.late ? `< (no response in ${stepLimit} ms)` : `< ${outcome.value.status} (answered before the abort)`);
   } else if (step.socket !== undefined) {
     await openSocket(step);
+  } else if (step.send !== undefined && step.binary !== undefined) {
+    say(`> (socket ${step.send}) binary ${step.binary} bytes`);
+    socketNamed(step.send)?.ws.send(Buffer.alloc(step.binary, 1));
   } else if (step.send !== undefined) {
     say(`> (socket ${step.send}) ${JSON.stringify(step.text)}`);
-    socketNamed(step.send).ws.send(step.text);
+    socketNamed(step.send)?.ws.send(step.text);
+  } else if (step.drop !== undefined) {
+    // The connection ends with no close frame: the server sees 1006. The
+    // step waits for the client's own close event, and a moment more, so
+    // the server's close handler has run before the step's mark.
+    say(`> (socket ${step.drop}) (dropped, no close frame)`);
+    const entry = socketNamed(step.drop);
+    if (entry !== undefined) {
+      const closed = new Promise((resolve) => entry.ws.once("close", resolve));
+      entry.ws.terminate();
+      await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, stepLimit))]);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
   } else if (step.close !== undefined) {
     say(`> (socket ${step.close}) close${step.code === undefined ? "" : ` ${step.code} ${JSON.stringify(step.reason ?? "")}`}`);
-    if (step.code === undefined) socketNamed(step.close).ws.close();
-    else socketNamed(step.close).ws.close(step.code, step.reason ?? "");
+    const entry = socketNamed(step.close);
+    if (entry === undefined) {
+    } else if (step.code === undefined) entry.ws.close();
+    else entry.ws.close(step.code, step.reason ?? "");
   } else if (step.receive !== undefined && step.count !== undefined) {
     const entry = socketNamed(step.receive);
     let messages = 0;
     let bytes = 0;
-    while (messages < step.count) {
+    while (entry !== undefined && messages < step.count) {
       const line = await receiveOne(entry);
       if (line === null || !line.startsWith('"')) {
         if (line !== null) entry.inbox.unshift(line);
@@ -317,10 +363,13 @@ for (const step of steps) {
       messages += 1;
       bytes += JSON.parse(line).length;
     }
-    say(`< (socket ${step.receive}) ${messages} messages, ${bytes} bytes`);
+    if (entry !== undefined) say(`< (socket ${step.receive}) ${messages} messages, ${bytes} bytes`);
   } else if (step.receive !== undefined) {
-    const line = await receiveOne(socketNamed(step.receive));
-    say(`< (socket ${step.receive}) ${line === null ? "(nothing arrived)" : line}`);
+    const entry = socketNamed(step.receive);
+    if (entry !== undefined) {
+      const line = await receiveOne(entry);
+      say(`< (socket ${step.receive}) ${line === null ? "(nothing arrived)" : line}`);
+    }
   } else {
     printRequest(step);
     await printOutcome(await within(() => send(step)));
