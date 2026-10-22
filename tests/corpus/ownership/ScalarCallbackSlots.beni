@@ -1,0 +1,10 @@
+-- CK-268: an inferred keep edge must stay conditional on its writer.
+-- These handlers write no list. The generic Object implementation must
+-- not demand owned results merely because a different slot might write.
+import Schema
+import Worker
+import Worker.Object as Object
+
+
+pub definition : Worker.Definition
+definition = Object.define "Scalar" Schema.int (λ_ → ⊤) Object.none

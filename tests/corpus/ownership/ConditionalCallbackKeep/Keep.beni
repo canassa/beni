@@ -1,0 +1,24 @@
+-- A borrowed supply retained by one callback matters when another writes
+-- it. Keep the dependency through a record slot and an exported wrapper.
+keepThenEdit : { keep : a → b, edit : a → a }, a → b × a
+keepThenEdit actions value =
+    kept = actions.keep value
+    ( kept, actions.edit value )
+
+
+pub wrapped : (List Int → List Int × Int), (List Int → List Int) → (List Int × Int) × List Int
+wrapped keep edit = keepThenEdit { keep = keep, edit = edit } []
+
+
+-- A dependency learned after an earlier recursive round must survive
+-- the join with that round's empty dependency set.
+pub recursive :
+      Int
+    , (List Int → List Int × Int)
+    , (List Int → List Int)
+    → (List Int × Int) × List Int
+recursive n keep edit = if n > 0 then relay (n - 1) keep edit else wrapped keep edit
+
+
+relay : Int, (List Int → List Int × Int), (List Int → List Int) → (List Int × Int) × List Int
+relay n keep edit = recursive n keep edit

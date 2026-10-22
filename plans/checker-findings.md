@@ -6297,3 +6297,22 @@ exclusivity before Maybe.map receives its value. The accepted golden remains
 red. This records the existing, explicitly deferred case; it does not extend
 the exception to a different safe program or bless the refusal. The fixture
 now names its finding and its checked red signature in `tests/pending/RED`.
+
+## CK-268 — a generic callback keep edge forgets its writer (2026-10-22)
+
+**Issue:** #210. **Fixture:** `tests/pending/ownership/ScalarCallbackSlots.beni`.
+A unit-state `Worker.Object.define` with `Object.none` has no list writer,
+but was refused because a callback slot might retain what another generic
+slot might write. The wrapper promoted that conditional dependency to an
+unconditional owned-result requirement. The opaque host response then
+correctly could not satisfy that stronger requirement. Preserve the writer
+callback in the summary and decide the requirement at its actual, through
+record slots and wrappers. Unknown writers remain conservative. The original
+keep-edge refusals and unknown-callable controls must remain unchanged.
+
+**As built (2026-10-22, #210).** The dependency stays in `FunFacts.need_if`
+through function slots, wrappers, recursive summary joins and serialized blocks.
+Known nonwriters discharge it; writers and unknown callback behaviour retain it.
+The red fixture is promoted to `tests/corpus/ownership/ScalarCallbackSlots.beni`.
+`ConditionalCallbackKeep` preserves the real-sharing refusal and unseen-writer
+control. No host-allocation assertion or platform copy is added.
