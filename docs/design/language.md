@@ -11,6 +11,14 @@ indentation rules in §4.
 
 ## 0. Differences from Elm, in one place
 
+**Ordered dictionaries and sets.** *Amended 2026-10-22, specifying the owner's
+2026-10-17 and 2026-10-19 decisions (#294); specified before implementation.*
+`Dict k v` accepts only `Int` and `String` keys; `Set t` accepts only `Int` and
+`String` members. They keep insertion order, including in equality. They have
+no `compare`. Accepted writes edit in place on every platform; a refused write
+offers `Dict.copy` or `Set.copy`. The detailed contract is §6.8, *Ordered
+dictionaries and sets*, and `backend.md` §4, *Ordered dictionaries*.
+
 **No automatic currying.** Decided 2026-09-14, specified here 2026-09-15: every call is saturated,
 function types are n-ary and written `Int, Int -> Int`, `_` is the partial-application placeholder,
 `|>` is pipe-first syntax, `>>` and `<<` are removed, and `let x <- e` binds the rest of the block.
@@ -1342,6 +1350,73 @@ a first-order `foreign` sibling, so **a callback may suspend** (`transparent-eff
 the single-element writes, `slice`, `insertAt`, `removeAt`, `swap`, and `eq` and `compare`, whose
 `where` evidence is called from JavaScript and is `sync` (`boundary.md` §4); nothing that takes a
 function is `foreign`.
+
+### Ordered dictionaries and sets
+
+*Added 2026-10-22 (#294), specifying the owner's decisions of 2026-10-17 and
+2026-10-19. This amendment supersedes earlier promises of key order, arbitrary
+comparable keys, persistent trees and `Dict.compare`/`Set.compare`, including
+§2.5's statement that `Int32` is a dictionary key or set member.*
+
+`Dict k v` is an ordered keyed collection. `k` must resolve to `Int` or `String`.
+An alias for either is accepted. `Char`, `Int32`, `Float`, tuples, records,
+custom types and collections are refused, even if they have `eq` or `compare`.
+The diagnostic `invalid_dict_key` says **Dict keys and Set members must be Int
+or String** and names the actual type. This is a restriction on the type, not
+only on insertion: it applies to annotations, empty collections and generic
+instantiations too. A generic key variable carries the restriction through
+inference, generalisation, interfaces and caches; it cannot instantiate to an
+unsupported type. It requires no user-defined method or hidden evidence.
+
+`Set t` wraps `Dict t ⊤` and has the same order and key restriction. Inserting
+an existing key replaces its value without moving it; inserting an existing set
+member leaves its position. Removing and then reinserting appends at the end.
+`fromList` visits left to right: first occurrence determines position, last
+occurrence determines value. `keys`, `values`, `toList`, `map` and `foldl` visit
+in insertion order; `foldr` visits in reverse insertion order. Filters and each
+partition preserve the relative order of retained entries. `Set.map` keeps the
+first occurrence of each result in the input's order.
+
+Equality first checks identity, then length, then keys and values in step.
+Keys use scalar equality; values use their own `eq`. Thus
+`Dict.fromList [(1,"a"),(2,"b")] ≠ Dict.fromList [(2,"b"),(1,"a")]`.
+Set equality also includes order. Neither module exports `compare`, and the
+compiler must not derive one through their representation. Sort explicitly for
+a canonical order; a type containing either collection cannot derive an order
+unless it supplies an order of its own.
+
+All functions remain subject first and callback last. The ordered operations
+are:
+
+| Signature | Meaning |
+|---|---|
+| `Dict.copy : Dict k v → Dict k v` | fresh storage, same order and values; shallow, as `List.copy` |
+| `Dict.sortBy : Dict k v, (k, v → a) → Dict k v where a.compare : a, a → Order` | stable ascending sort by the callback result; evaluate it once per entry, in current order |
+| `Dict.swap : Dict k v, k, k → Dict k v` | exchange the positions of two keys; if either is absent, or the keys are equal, leave it unchanged |
+| `Dict.insertAt : Dict k v, Int, k, v → Dict k v` | remove any old occurrence of the key, then insert the new pair at the index clamped to `0..size` of the remaining entries |
+| `Set.copy : Set t → Set t` | copy its dictionary storage |
+| `Set.sortBy : Set t, (t → a) → Set t where a.compare : a, a → Order` | the same stable sort on members |
+| `Set.swap : Set t, t, t → Set t` | exchange two members' positions |
+| `Set.insertAt : Set t, Int, t → Set t` | place the member at the clamped index, removing its old occurrence first |
+
+`insert`, `remove`, `update`, `swap`, `insertAt` and `sortBy` edit the subject
+in place. `map`, `filter`, `partition`, `union`, `intersect`, `diff`, `fromList`
+and `copy` build fresh storage; stored values can still alias their inputs.
+`union left right` keeps the left's order and values, then appends right-only
+entries in the right's order. `intersect` and `diff` preserve the left's order.
+`merge` visits every left key in left order, calling `leftStep` or `bothStep`,
+then right-only keys in right order, calling `rightStep`. These rules apply to
+Set's corresponding operations too.
+
+The ownership checker accepts every in-place write before it is emitted. A
+write it cannot prove safe is a compile error offering `Dict.copy` (or
+`Set.copy`); there is no copying fallback. A shallow copy separates the
+collection's storage, not lists or records in its values. Editing a shared
+value needs that value's own copy. Even a no-op writer has the writer's demand;
+an old collection read after a write needs an explicit copy. `Dict.update`
+hands its callback `Nothing` or the selected value in `Just`, once. `Just v`
+replaces or appends; `Nothing` removes. Its focus contract and the primitive
+summaries are in `ownership-checker.md` §32.
 
 ## 7. Scoping and shadowing
 

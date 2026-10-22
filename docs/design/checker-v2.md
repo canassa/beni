@@ -6085,3 +6085,45 @@ keys prints `every key wild`. `dump --stage=raw` marks a crossing quantifier `cr
 `check --type-keys` prints the typekeys dump for every source module, which is how
 `tests/blackbox/cache_test.zig` asserts that a module installed from the cache keys as a fresh
 check does. The corpus is `tests/corpus/typekeys/`.
+
+## 37. Ordered dictionary key restriction (specified 2026-10-22)
+
+*Specifies the owner's 2026-10-17 decision (#294). Amends the key constraints
+of core Dict and Set; `language.md` §6.8 owns the language rule, and
+`fast-compiler.md` §3.1 records the change to its closed constraint set.*
+
+A use of core's nominal `Dict k v` or `Set k` constrains `k` to Int or String.
+Identify these types by core package/type identity, never by a user's module
+name. Alias expansion preserves the obligation. It applies at type formation,
+including a type that appears only in an annotation, not just at a call of an
+insertion function. A foreign Dict's opaque body does not hide this obligation.
+
+The obligation follows a variable through unification, substitution,
+annotation checking, local and top-level generalisation, instantiation,
+imported schemes and cached interfaces. Type constructors whose parameters
+flow into a dictionary key carry that restriction on their corresponding
+arguments too; an opaque wrapper or a constructor reference must not erase it.
+A generic signature such as `Dict k v, k → Maybe v` remains generic, with `k`
+restricted. Its user need not write a new clause or supply a comparator.
+
+This is a closed membership check of the resolved scalar head. It is
+independent of `eq`/`compare` dispatch and requires no recursive structural
+membership walk during unification. Intersect it with existing constraints:
+with `number` only Int remains; with `appendable` only String remains. An alias
+of Int or String is accepted, while a nominal wrapper around either is not.
+An unresolved variable keeps the obligation; it must not silently default to
+Int, accept any equatable type or lose the constraint at the module boundary.
+
+An unsupported instantiation reports `invalid_dict_key`, naming the actual
+type and saying **Dict keys and Set members must be Int or String**. This
+includes Char, Int32, Float and function keys. Reject these because of the key
+rule rather than an incidental missing compare. Exported and cached schemes
+must preserve the obligation with their quantifiers; serialization changes
+invalidate older artifacts instead of reading an unrecorded restriction as
+unconstrained. Warm/cold and imported generic uses get the same verdict.
+
+Dict declares equatability and a value `eq` method, with value equality evidence;
+its keys need no evidence. Neither Dict nor Set exports compare. The foreign
+Dict has no structural comparison body to derive; Set's wrapper does not make
+it comparable. Types containing these collections have the same derivation
+boundary unless their own module supplies an order explicitly.
