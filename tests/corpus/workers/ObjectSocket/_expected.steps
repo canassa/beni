@@ -39,7 +39,7 @@
 # reaches the peer, and the peer's close reaches the object.
 {"send": "a", "text": "close-bad"}
 {"receive": "a"}
-{"send": "a", "text": "close"}
+{"send": "a", "text": "close", "until": "closed p1"}
 {"receive": "a"}
 {"close": "b", "code": 4002, "reason": "client says bye", "until": "closed p2"}
 {"path": "/arena/x/count"}

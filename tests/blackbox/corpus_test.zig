@@ -1245,9 +1245,10 @@ const Fixture = struct {
     everywhere: bool = false,
     /// A `workers/` fixture's second case: its `--release` build, run under
     /// Miniflare as the first case runs the development build. Two cases,
-    /// because one Miniflare start is about 1 900M instructions and a case
-    /// starts it once (`boundary.md` §9.12 (k)); the release case records
-    /// into `_expected.release-run-hash`, so neither writes the other's.
+    /// each starting Miniflare once (`boundary.md` §9.12 (k)); the per-test
+    /// budget that first set the split is gone (#744), the split stays as
+    /// the kind's shape. The release case records into
+    /// `_expected.release-run-hash`, so neither writes the other's.
     release_case: bool = false,
     /// An ownership fixture's case for one token of its `.platform` file,
     /// which alone it checks and dumps; null for a fixture without one.
