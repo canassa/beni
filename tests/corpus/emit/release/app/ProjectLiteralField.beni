@@ -1,0 +1,17 @@
+-- emit: a small function that reads a field of its record parameter, called
+-- with a record literal (`backend.md` §9, *Slice 8*, amended 2026-10-22:
+-- the projection). Written in, the read `ops.step` is the literal's
+-- `step`, a function, and the call is that function called where it is
+-- made, which the `tidy` modes write in and the solve folds: `2`. Since the
+-- structural passes run before the first solve (#781), no second solve
+-- reads `{ step: z => z + 1 }.step(1)` as a chain any more, and without
+-- the projection the call stays.
+import Node exposing (Program)
+
+
+apply : { step : Int → Int }, Int → Int
+apply ops n = ops.step n
+
+
+main : Program
+main = Node.printLines [ String.fromInt (apply { step = λz → z + 1 } 1) ]

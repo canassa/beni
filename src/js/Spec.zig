@@ -9718,7 +9718,11 @@ const Spec = struct {
                     const args = try c.exprs(ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index), depth);
                     return c.node(from, tag, callee.int(), try c.record(args));
                 },
-                .member => return c.node(from, .member, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), (try c.property(@fromBackingInt(@intCast(d.rhs)))).int()),
+                .member => {
+                    const key = try c.property(@fromBackingInt(@intCast(d.rhs)));
+                    if (try c.projected(@fromBackingInt(@intCast(d.lhs)), key)) |v| return c.atom(v);
+                    return c.node(from, .member, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), key.int());
+                },
                 .index_get => {
                     const obj = try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1);
                     const key = try c.expr(@fromBackingInt(@intCast(d.rhs)), depth + 1);
@@ -9745,6 +9749,34 @@ const Spec = struct {
                 .unary => return c.node(from, .unary, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), d.rhs),
                 else => return c.stmt(from, depth),
             }
+        }
+
+        /// `p.k`, `p` a parameter whose argument is an object literal that
+        /// does nothing when made and holds `k` once among plain keys (by
+        /// property id, as fact 3 numbers them): the value of `k`, written
+        /// in place of the read. The literal goes with its other values,
+        /// which do nothing. Nothing can see the object between its making
+        /// and the read, so the read is that value; a key it lacks is left
+        /// alone, since it reads the prototype (`backend.md` §9, *Slice 8*,
+        /// amended 2026-10-22).
+        fn projected(c: *Copy, object: Index, key: NameIndex) Allocator.Error!?Index {
+            const ir = c.src.ir;
+            if (ir.tag(object) != .ident) return null;
+            const n = ir.data(object).lhs;
+            if (n >= c.subst.len) return null;
+            const arg = c.subst[n].unwrap() orelse return null;
+            const dir = c.dst.ir;
+            if (dir.tag(arg) != .object or !inert(dir, arg)) return null;
+            const want = c.s.pts.propId(c.dst.index, key);
+            if (want == none) return null;
+            var found: ?Index = null;
+            for (dir.extraSlice(JsIr.inlineRange(dir.data(arg)), Index)) |prop| {
+                if (dir.tag(prop) != .property) return null;
+                if (c.s.pts.propId(c.dst.index, @fromBackingInt(@intCast(dir.data(prop).lhs))) != want) continue;
+                if (found != null) return null;
+                found = @fromBackingInt(@intCast(dir.data(prop).rhs));
+            }
+            return found;
         }
 
         fn optional(c: *Copy, v: u32, depth: u32) Allocator.Error!u32 {
