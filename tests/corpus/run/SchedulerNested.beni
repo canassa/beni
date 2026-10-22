@@ -40,7 +40,6 @@ main = Io.run λ⊤ →
     -- Queued behind `inside` on the scheduler: when this fiber goes on,
     -- `inside` has run to its wait.
     Task.withScheduler s λ⊤ → Task.yieldNow ⊤
-    _ = Debug.log "busy" (Task.schedulerBusy s)
     Task.stopScheduler s 1 report
     _ = Debug.log "inside" (outcome (Task.wait inside))
     Node.done

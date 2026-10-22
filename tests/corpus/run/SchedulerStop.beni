@@ -2,8 +2,7 @@
 -- (transparent-effects-proposal.md §17.5, amended 2026-10-22). The fibers
 -- under it are cancelled and their releases run; a release that waits past
 -- the deadline is cut short and counted for `done`; a fiber under another
--- scheduler runs on to its end meanwhile, and `onSchedulerIdle` fires when
--- the main fiber leaves it. The deadline is 1 ms: a timer
+-- scheduler runs on to its end meanwhile. The deadline is 1 ms: a timer
 -- fires only once every microtask has run, so the order does not depend on
 -- the machine. `z 3` comes first because the stop's teardown is queued and
 -- the main fiber goes on before it runs.
@@ -69,13 +68,8 @@ main = Io.run λ⊤ →
         -- goes on, both have run to their waits.
         Task.yieldNow ⊤
         pair
-    _ = Debug.log "busy before" (Task.schedulerBusy stopping)
     Task.stopScheduler stopping 1 report
-    Task.withScheduler other λ⊤ →
-        -- This fiber is lent to `other`: it fires when the fiber leaves.
-        Task.onSchedulerIdle other λ⊤ → say "other idle"
-        steps "z" 3
+    Task.withScheduler other λ⊤ → steps "z" 3
     _ = Debug.log "x" (outcome (Task.wait x))
     _ = Debug.log "y" (outcome (Task.wait y))
-    _ = Debug.log "busy after" (Task.schedulerBusy stopping)
     Node.done

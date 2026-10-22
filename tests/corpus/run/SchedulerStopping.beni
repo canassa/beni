@@ -1,0 +1,55 @@
+-- run: a scheduler that is stopping starts nothing new
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22). While its
+-- teardown runs a member's release, a fiber that enters it with
+-- `withScheduler` is cancelled at once, before its work runs; `done` comes
+-- after the release, with no cleanup cut short.
+import Duration
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+report : Int → ⊤
+report cut =
+    _ = Debug.log "cut" cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+
+    member = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            Task.bracket
+                (λ⊤ → ⊤)
+                (λ_ _ →
+                    Task.sleep (Duration.millis 20)
+                    say "release done"
+                )
+                λ_ → Task.never ⊤
+    -- Queued behind `member` on the scheduler: it has run to its wait.
+    Task.withScheduler s λ⊤ → Task.yieldNow ⊤
+    Task.stopScheduler s 1000 report
+
+    late = Task.spawn λ⊤ →
+        -- The stop's teardown has run by now, and the release sleeps.
+        Task.sleep (Duration.millis 1)
+        Task.withScheduler s λ⊤ → say "late inside"
+    _ = Debug.log "late" (outcome (Task.wait late))
+    _ = Debug.log "member" (outcome (Task.wait member))
+    Node.done
