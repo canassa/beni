@@ -9353,6 +9353,17 @@ into a field and the dashboard's `withDefault` into fields; `TypedFilterFieldFun
 a function field is filtered. Precision: `emit/release/app/FieldKeyFilter`. There is still no filter
 at a member read's or a call's node.
 
+*Amended 2026-10-22 (issue #796): a `const` copy is its source's var.* Take `const x = y` where
+`x` is declared nowhere else in its module: no other binding, parameter, loop or catch of the
+name, counting every node, live or not (`Pts.aliasSources`). The read of `y` is not narrowed
+(`maybeNarrowed`), and `x`'s filter is wild or equal to `y`'s. Then the copy edge would make
+`x`'s set exactly `y`'s, flags and all, and nothing else writes `x`. So `localVar` gives `x` the
+source's var (`aliasOf`) and makes no var, no edge and no load cell of its own. The facts are
+those of the copy edge. On the N = 64 dashboard, after the structural passes first,
+`structureFirst` writes the TEA runtime into `main`, and 288 such copies of one local each held
+all 349 sites. With the alias, joins go 67 007 → 22 596, edges 17 374 → 13 426, load cells 1 252
+→ 970, and instructions fall 2.8%. The output does not change.
+
 **In a `browser-tea` page the filter changes nothing, in either direction.** The hosted runtime
 keeps the program's model in a `Js.ref` and reads it back with `Js.to`
 (`platforms/browser/Browser.beni`, `model = Js.ref (Js.to Js.null)` and `Js.write model (p.update
