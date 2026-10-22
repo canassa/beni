@@ -4707,15 +4707,17 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   program's `update`, for `Browser.program` and `Browser.hosted` alike. When the calling fiber has
   a log context of its own (`Task.hasLogContext`), `send` runs `update` inside
   `Task.withoutLogContext`. That function sets the slot to the default context, and puts the old
-  one back when `update` returns. The other slots stay the caller's. In a hosted program, a
+  one back when `update` returns or throws. The other slots stay the caller's. In a hosted program, a
   message that is sent while an `update` runs is applied in the same call of `send`, after that
   `update`, so it has the program's context too.
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
-  set, each message reads the slot, and a message sent inside a context runs one
-  `inLogContext`: `withoutLogContext` is `inLogContext` with the default context, so it does not
-  write `slotted` either. A development build folds nothing, so each page ships the check and
-  the run.
+  set, each message reads the slot, and a message sent inside a context copies the slot record
+  once. `update` cannot wait, so `withoutLogContext` puts the old slots back in a `Js.finally`,
+  with no finaliser. So it writes none of the cells that a build with no fiber folds away
+  (`slotted`, `fibered`, `finalising`), not even in code that is not reached: one such write keeps
+  the teardown in a release page that has no fiber. A development build folds nothing, so each
+  page ships the check and the run.
 - **Not covered:** `browser-inline` (#751).
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
