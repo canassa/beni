@@ -5068,6 +5068,35 @@ behaviour changes.
   of `browser-tea`'s `Tea.application` none. The three left wait on the owner: `ApiItems` and `ApiLogin`
   on what `Schema.parse`'s answer holds (#218), `RefModify` on whether a `Ref`'s value may be lent
   owned (#219). Until they are answered O1 is not accepted.
+
+  *Amended 2026-10-22 (the owner, #210 and #315):* O1's acceptance above
+  applies to **LIST** demand lines. Record-update reports are report-only
+  under the owner's 2026-10-18 plan for #315; R4, after #286, enforces and
+  clears them. O1 inventories those reports separately as R4 input and does
+  not clear them. A precision change stops for a reduced safe program that
+  becomes rejected; moving a refusal to a concrete call that really shares
+  its input is permitted, as clarified for `RecursiveHolds` on 2026-10-22.
+
+
+  *As built 2026-10-22 (#210):* O1 is complete for list demands. The owner
+  decisions in #218 and #219 are implemented. Recursive returned-function
+  classes and function-element supplies retain their result ownership;
+  uncarriable alternatives remain unknown. The returned-validator page is
+  promoted from pending, with shared-result, unknown-function and cache
+  controls. Genuine fixture/example sharing uses fresh initialization or
+  copies at the write, including the two borrowed Ref-list replacements.
+
+  The final hidden-flag audit checks 1,350 roots/module sets and 980 list
+  demands across the corpus, examples, bench apps, core and all production
+  and test platforms: **zero rejected, zero pending**, with every list
+  verdict checked against the dump totals and no command error. Core's
+  117 list demands are all accepted. Record-update reports remain on #315
+  as R4 input. The bounded Lean bridge checks 2,139 programs, value-checks
+  1,473 translations and confirms **zero unsafe accepted originals**, at
+  the CI bound and both generators' three recorded seeds. Gates pass on
+  the self-hosted compiler; no safe accepted program became rejected, no
+  check or budget was weakened, and no core/platform copy was added.
+
 - **O2 — the pass on the DAG, and the block in the interface** (§28.11 item 1, §16.9–§16.10).
   - *Accepted when:* the firewall holds for every build, as `cache_test.zig` shows. The 100 000-line
     benchmark, Conduit and the corpus pages meet §28.8's target with the pass on, or the miss is reported
