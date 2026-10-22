@@ -773,6 +773,49 @@ function prelude() {
   } else {
     record.trust = null;
   }
+  // Boxes. happy-dom lays nothing out and puts every box at 0, so under it
+  // a reader of a box that subtracts the wrong element's box, or none,
+  // reads what a correct one reads (`Html.localX`, issue #558). So under
+  // happy-dom an element that its inline style places gets the box Chrome
+  // gives it on a page that is not scrolled: `position: absolute` or
+  // `fixed`, with `left` and `top` in pixels, from its containing block —
+  // the viewport for `fixed`; for `absolute`, the box of the nearest
+  // positioned ancestor, or the page's origin when there is none — and
+  // `width` and `height` from the style, or 0. Borders are not counted.
+  // Every other element keeps happy-dom's box at 0, and so does one whose
+  // nearest positioned ancestor has no such box. Installed once, as above.
+  if (globalThis.happyDOM !== undefined && !Object.hasOwn(Element.prototype, "__beniBox")) {
+    const own = Element.prototype.getBoundingClientRect;
+    const pixels = (text) => {
+      if (text === "0") return 0;
+      const match = /^(-?[0-9]+(?:\.[0-9]+)?)px$/.exec(text);
+      return match === null ? null : Number(match[1]);
+    };
+    const placed = (element) => {
+      const style = element.style;
+      if (style === undefined || (style.position !== "absolute" && style.position !== "fixed")) return null;
+      const left = pixels(style.left);
+      const top = pixels(style.top);
+      if (left === null || top === null) return null;
+      const box = { x: left, y: top, width: pixels(style.width) ?? 0, height: pixels(style.height) ?? 0 };
+      if (style.position === "fixed") return box;
+      for (let up = element.parentElement; up !== null; up = up.parentElement) {
+        const position = up.style?.position ?? "";
+        if (position === "" || position === "static") continue;
+        const block = placed(up);
+        if (block === null) return null;
+        box.x += block.x;
+        box.y += block.y;
+        break;
+      }
+      return box;
+    };
+    Object.defineProperty(Element.prototype, "__beniBox", { value: true });
+    Element.prototype.getBoundingClientRect = function () {
+      const box = placed(this);
+      return box === null ? own.call(this) : new DOMRect(box.x, box.y, box.width, box.height);
+    };
+  }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
   // Every listener the page adds to the window or the document from here
@@ -1245,8 +1288,9 @@ function step(s) {
     // A pointer event at a point of a box: `x` and `y` are CSS pixels from
     // the top-left corner of the `box:` element (by default the element the
     // event is dispatched on), so its `clientX` is that box's left plus `x`.
-    // happy-dom has no layout and puts every box at 0; Chrome lays the page
-    // out, so only Chrome shows the conversion. `pointerenter` and
+    // happy-dom has no layout, so there only an element that its inline
+    // style places has a box away from 0 (the prelude's *Boxes*); Chrome
+    // lays out every element. `pointerenter` and
     // `pointerleave` neither bubble nor cancel, and nor does
     // `pointercancel`, as the Pointer Events standard fires them.
     case "pointer": {

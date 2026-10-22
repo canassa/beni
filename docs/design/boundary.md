@@ -5256,7 +5256,12 @@ the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot
 pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
 a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
 *Amended 2026-10-22* (#696): the first is refused with `private_name`, because `pointer` is not
-`pub`.
+`pub`. *Amended 2026-10-23* (#558): under happy-dom, an element whose inline style places it
+(`position: absolute` or `fixed`, with `left` and `top` in pixels) has the box that Chrome gives it
+(`tests/corpus/README.md`, *layout*). So the gates see the conversion of (c) in `PointerInput` and
+`browser/dom/PointerEvents`: a reader that drops the subtraction, or subtracts the target's box,
+fails them. `browser/inline/PointerPoint` has no such element, because `browser-inline` compiles no
+`style` yet, so only Chrome sees its conversion.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:

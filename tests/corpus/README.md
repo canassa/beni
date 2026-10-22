@@ -392,12 +392,15 @@ project) against it, one step per line, `#` for a comment:
                                 neither, `pointercancel` does not cancel.
                                 One whose default a handler prevented logs
                                 `(pointerdown's default prevented)` (or its
-                                name's). happy-dom has no layout, so every
-                                box is at 0 there and only Chrome shows a
-                                handler converting the point to its own
-                                box: name the point in the box of the
+                                name's). happy-dom has no layout: there,
+                                only an element that its inline style
+                                places has a box away from 0 (*layout*,
+                                below). Name the point in the box of the
                                 element that has the handler, and both DOMs
-                                print the same transcript
+                                print the same transcript. For the gates
+                                to see a handler convert the point to its
+                                own box, place that element in its style
+                                and point at a child of it
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -734,7 +737,17 @@ compares instead of `.expected`. The differences known today:
   a fixture about scheduling order belongs to `test-browser`. Frames are
   not among the differences: both DOMs draw only the driver's virtual
   frames (`frame`);
-- layout: happy-dom lays nothing out, so sizes and positions are zero;
+- layout: happy-dom lays nothing out, so sizes and positions are zero,
+  with one exception for `getBoundingClientRect`. An element whose inline
+  style has `position: absolute` or `fixed` and `left` and `top` in
+  pixels gets the box that Chrome gives it on a page that is not
+  scrolled: from the viewport for `fixed`, and for `absolute` from the box
+  of the nearest positioned ancestor (or the page's origin when there is
+  none). Its width and height come from the style, or are 0. Borders are
+  not counted. Any other element has the box at 0, and so does an element
+  whose nearest positioned ancestor has no such box. So under the gates,
+  `browser/tea/PointerInput` and `browser/dom/PointerEvents` see
+  `Html.localX` subtract the box of the element that has the handler;
 - CSS values: a property the page sets through `style.setProperty`
   goes back into the `style` attribute as each DOM serialises it. A
   colour is `rgb(…)` in Chrome and as the page wrote it in happy-dom
