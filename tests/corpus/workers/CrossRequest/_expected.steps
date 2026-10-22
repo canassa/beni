@@ -1,0 +1,9 @@
+# Two requests in flight at once, each parked on its own timer: the shorter
+# answers first, and each answers in its own context.
+{"path": "/slow/40", "detach": "long"}
+{"path": "/slow/10"}
+{"answer": "long"}
+# A fiber that outlives the answer: not seen at once, seen once it has run.
+{"path": "/outlive"}
+{"path": "/seen"}
+{"path": "/wait-then-seen/30"}

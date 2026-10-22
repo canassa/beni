@@ -313,6 +313,7 @@ zig build test-pending    # red fixtures of open findings (tests/pending/); not 
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
 zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
+zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#workers); not a gate
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
 zig build test-playground # that wasm against the native beni, byte for byte, on the corpus; not a gate, CI runs it
 zig build test-playground-page  # the playground in headless Chrome (nix develop .#browser); not a gate

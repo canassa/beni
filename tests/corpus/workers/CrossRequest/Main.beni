@@ -1,0 +1,54 @@
+-- workers: each request runs on a scheduler of its own (boundary.md §9.12
+-- (d); transparent-effects-proposal.md §17.5). Two requests park on their
+-- own timers at once and each answers in its own context when woken; a
+-- fiber started with `Task.spawnDetached` outlives its answer under
+-- `waitUntil`, and a later request reads what it wrote. Two requests of
+-- one Miniflare share an isolate, which a program never relies on: the
+-- shared cell is the test's device.
+import Duration
+import Ref exposing (Ref)
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+seen : Ref String
+seen = Ref.make "nothing yet"
+
+
+route : Context, Request → Response
+route ctx request =
+    case String.split (Worker.path request) "/" of
+        [ "", "slow", ms ] →
+            case String.toInt ms of
+                Just n →
+                    Task.sleep (Duration.millis n)
+                    Worker.text 200 "slept ${ms}"
+
+                Nothing →
+                    Worker.text 400 "not a number"
+
+        [ "", "outlive" ] →
+            _ = Task.spawnDetached λ⊤ →
+                Task.sleep (Duration.millis 5)
+                Ref.set seen "the detached fiber ran after the answer"
+            Worker.text 200 "answered first"
+
+        [ "", "wait-then-seen", ms ] →
+            case String.toInt ms of
+                Just n →
+                    Task.sleep (Duration.millis n)
+                    Worker.text 200 (Ref.get seen)
+
+                Nothing →
+                    Worker.text 400 "not a number"
+
+        [ "", "seen" ] →
+            Worker.text 200 (Ref.get seen)
+
+        _ →
+            Worker.text 404 "no such page"

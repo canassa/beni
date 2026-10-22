@@ -110,6 +110,7 @@ const Part = @import("corpus_parts.zig").Part;
 const run_hash = @import("run_hash.zig");
 const browser = @import("browser.zig");
 const serve = @import("serve.zig");
+const worker_harness = @import("workers.zig");
 
 /// The root every `Kind` directory is joined onto unless
 /// `BENI_CORPUS_ROOT` says otherwise (see `Config`).
@@ -136,6 +137,7 @@ const Kind = enum {
     build_bad_release,
     run,
     browser,
+    workers,
     emit,
     regress,
 
@@ -159,6 +161,7 @@ const Kind = enum {
             .build_bad_release => "build/bad-release",
             .run => "run",
             .browser => "browser",
+            .workers => "workers",
             .emit => "emit",
             .regress => "regress",
         };
@@ -171,7 +174,7 @@ const Kind = enum {
         return switch (kind) {
             .parse_good => "ast",
             .parse_bad, .check_bad, .check_args, .build_bad, .build_bad_release => "diag",
-            .fmt, .run, .browser => "expected",
+            .fmt, .run, .browser, .workers => "expected",
             .bir => "bir",
             .dispatch => "dispatch",
             .typekeys => "typekeys",
@@ -194,12 +197,12 @@ const Kind = enum {
     /// the `core/` flag directory every kind has.
     fn hasProjects(kind: Kind) bool {
         return kind == .check_good or kind == .check_bad or kind == .dispatch or kind == .typekeys or kind == .repkeys or kind == .writes or kind == .ownership or
-            kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser;
+            kind == .build_bad or kind == .build_bad_release or kind == .run or kind == .browser or kind == .workers;
     }
 
     /// Whether the kind runs what it builds, and so has run hashes.
     fn runs(kind: Kind) bool {
-        return kind == .run or kind == .browser;
+        return kind == .run or kind == .browser or kind == .workers;
     }
 
     /// Whether the build this kind runs carries `--release` (and, for the
@@ -222,6 +225,7 @@ const Kind = enum {
                 .release, .release_library => .run_release,
             },
             .browser => .browser,
+            .workers => .workers,
         };
     }
 };
@@ -361,6 +365,14 @@ test "corpus: run" {
 // cannot show.
 test "corpus: browser" {
     try walk(.browser);
+}
+
+// A Worker under Miniflare (`workers.zig`, `boundary.md` §9.12 (k)): each
+// build of a `cloudflare` program, driven by a script of requests, and the
+// transcript of its answers is the golden. Not a gate: `zig build
+// test-workers` in `nix develop .#workers`.
+test "corpus: workers" {
+    try walk(.workers);
 }
 
 // The shape corpus (backend.md §12): what the emitter WROTE, for claims
@@ -638,6 +650,16 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             values.values = true;
             try fixtures.append(arena, values);
         };
+    }
+    // `workers/`: each project is two cases, the development build and the
+    // release build, each run under Miniflare once (`Fixture.release_case`).
+    if (kind == .workers) {
+        const end = fixtures.items.len;
+        for (0..end) |i| {
+            var release = fixtures.items[i];
+            release.release_case = true;
+            try fixtures.append(arena, release);
+        }
     }
     // `inline/`: built for `browser-inline`, whose `inline` lowering
     // compiles a program whole with no task kernel (`browser-inline.md`) —
@@ -1221,6 +1243,12 @@ const Fixture = struct {
     /// `--ownership-everywhere`, so the ownership checker enforces on a
     /// platform that edits no list in place (`ownership-checker.md` §30.7).
     everywhere: bool = false,
+    /// A `workers/` fixture's second case: its `--release` build, run under
+    /// Miniflare as the first case runs the development build. Two cases,
+    /// because one Miniflare start is about 1 900M instructions and a case
+    /// starts it once (`boundary.md` §9.12 (k)); the release case records
+    /// into `_expected.release-run-hash`, so neither writes the other's.
+    release_case: bool = false,
     /// An ownership fixture's case for one token of its `.platform` file,
     /// which alone it checks and dumps; null for a fixture without one.
     token: ?[]const u8 = null,
@@ -1230,7 +1258,7 @@ const Fixture = struct {
     /// What a report names the case by after its path: which of a page's
     /// two cases failed, or which platform an ownership case read.
     fn suffix(fixture: Fixture) []const u8 {
-        return if (fixture.values) " [value fuzz]" else fixture.label;
+        return if (fixture.values) " [value fuzz]" else if (fixture.release_case) " [release]" else fixture.label;
     }
 
     /// Whether `text` is in the fixture's repo-relative path, the path
@@ -1430,6 +1458,7 @@ const Case = struct {
             .build_bad, .build_bad_release => try c.buildBad(),
             .run => try c.runProgram(),
             .browser => try c.runPage(),
+            .workers => try c.runWorker(),
             .emit => try c.emitted(),
             .regress => {
                 const has_diag = c.goldenExists("diag");
@@ -2260,6 +2289,111 @@ const Case = struct {
     /// `page` test platform or the fixture's own `platform/`, and each build
     /// loaded into a page and driven by the fixture's `.steps`. The page
     /// is happy-dom under Node, or Chrome under `BENI_BROWSER=chrome`.
+    /// A `workers/` fixture: a project with `wrangler.jsonc` and an
+    /// `_expected.steps` script, built for `cloudflare` and run under
+    /// Miniflare by `tests/workers/driver.mjs` (`workers.zig`); the
+    /// transcript is the golden. The case is one build — development, or
+    /// `--release --allow-debug` for `Fixture.release_case` — with a record
+    /// file of its own.
+    fn runWorker(case: Case) !void {
+        var c = case;
+        var own = try World.init(testing.allocator, testing.io);
+        defer own.deinit();
+        c.w = &own;
+        // The whole project: the modules, `beni.json` and `wrangler.jsonc`.
+        try c.w.copyTree(try c.fixturePath(), "_expected.");
+        const h = try worker_harness.harness(testing.io);
+        if (h.miniflare.len == 0) {
+            // Recording hashes in a shell without Miniflare leaves this
+            // kind's records as they are: `test-run-hashes` is run from the
+            // default shell too, and the gates never read them.
+            if (c.cfg.run_hashes == .record) {
+                RunCounts.add(&run_counts.refused);
+                return;
+            }
+            detail("{s}: a workers/ fixture needs Miniflare: `nix develop .#workers` sets BENI_MINIFLARE, or give `-Dminiflare=`\n", .{c.fixture.name});
+            return error.MiniflareNotFound;
+        }
+        const sources = try c.writeSources();
+        const steps_path = try c.goldenPath("steps");
+        const steps = Io.Dir.cwd().readFileAlloc(testing.io, steps_path, c.arena, .limited(world.max_stream_bytes)) catch |err| switch (err) {
+            error.FileNotFound => {
+                detail("{s}: a workers/ fixture needs an _expected.steps script\n", .{c.fixture.name});
+                return error.MissingGolden;
+            },
+            else => return err,
+        };
+        const steps_name = std.fs.path.basename(steps_path);
+        try c.w.write(steps_name, steps);
+        const config = Io.Dir.cwd().readFileAlloc(testing.io, try std.fs.path.join(c.arena, &.{ try c.fixturePath(), "wrangler.jsonc" }), c.arena, .limited(world.max_stream_bytes)) catch |err| switch (err) {
+            error.FileNotFound => "",
+            else => return err,
+        };
+
+        const release = c.fixture.release_case;
+        const pass: RunPass = if (release) .release else .dev;
+        const out_dir = if (release) "out-release" else "out";
+        var args: std.ArrayList([]const u8) = .empty;
+        try args.appendSlice(c.arena, &.{ "build", "--platform=cloudflare" });
+        if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
+        if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
+        try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{out_dir}));
+        try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
+
+        const record_path = try c.goldenPath(if (release) "release-" ++ run_hash.ext else run_hash.ext);
+        const recording = c.cfg.run_hashes == .record;
+        const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
+
+        const built = try c.inProject(args.items);
+        if (built.exit_code != 0) {
+            detail("{s} [{s}]: build failed\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stdout, built.stderr });
+            because("[{s}] build exit {d}: {s}: {s}", .{ out_dir, built.exit_code, summarize(c.arena, built.stderr), messageHead(c.arena, built.stderr) });
+            classify("{s}: {s}", .{ passName(out_dir), failSignature(c.arena, built) });
+            return error.BuildFailed;
+        }
+        if (!try c.warningsAccounted(built.stderr)) {
+            detail("{s} [{s}]: a workers fixture must compile with no diagnostics but those of its .diag\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, built.stderr });
+            return error.GoodFixtureHasDiagnostics;
+        }
+        const golden = "expected";
+        const line_for = struct {
+            fn of(cc: Case, dir: []const u8, p: RunPass, hh: worker_harness.Harness, g: []const u8, expected: []const u8, st: []const u8, cf: []const u8) ![]const u8 {
+                return run_hash.lineWith(cc.arena, cc.w, dir, @tagName(p), g, expected, try worker_harness.inputs(cc.arena, hh, st, cf));
+            }
+        };
+        // Skip Miniflare when this exact output tree, golden, driver and
+        // script were verified together before.
+        if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !c.bless) {
+            if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
+                const line = try line_for.of(c, out_dir, pass, h, golden, bytes, steps, config);
+                if (run_hash.listed(record, line)) {
+                    RunCounts.add(&run_counts.skipped);
+                    return;
+                }
+                RunCounts.add(&run_counts.stale);
+            } else |_| {}
+        }
+        const program = c.w.runNode(&.{
+            h.driver,
+            try std.fmt.allocPrint(c.arena, "--miniflare={s}", .{h.miniflare}),
+            out_dir,
+            steps_name,
+        }) catch |err| {
+            detail("{s} [{s}]: cannot run the driver ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
+            return err;
+        };
+        if (program.exit_code != 0) {
+            detail("{s} [{s}]: the driver exited {d}\n--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ c.fixture.name, out_dir, program.exit_code, program.stdout, program.stderr });
+            because("[{s}] driver exit {d}: {s}", .{ out_dir, program.exit_code, summarize(c.arena, program.stderr) });
+            return error.ProgramFailed;
+        }
+        try c.expectGoldenMaybeBless(golden, program.stdout, c.bless);
+        if (!recording) return;
+        const line = try line_for.of(c, out_dir, pass, h, golden, program.stdout, steps, config);
+        RunCounts.add(&run_counts.recorded);
+        try run_hash.write(testing.io, record_path, try run_hash.render(c.arena, &.{line}));
+    }
+
     fn runPage(case: Case) !void {
         var c = case;
         var own: ?World = null;
