@@ -10749,6 +10749,29 @@ const PtsExtract = struct {
     constants: []u32 = &.{},
     /// Every `const x = f(…)` or `let x = f(…)` (`Pts.decl_call`).
     decl_calls: []PtsDeclCall = &.{},
+    /// Per top-level statement: its node, where each of its columns ends,
+    /// and the module's `epoch` when it was extracted. A statement's
+    /// constraints read only constraints of the statement, so one whose
+    /// nodes stand is copied into the next extraction, renumbered
+    /// (`PtsExtractor.reuse`).
+    stmts: []PtsStmt = &.{},
+    /// Of the last extraction: the statements walked and those copied.
+    walked: u32 = 0,
+    reused: u32 = 0,
+
+    /// A safety build's check that what an extraction kept of the last one
+    /// is what a walk of every statement makes.
+    fn expectSame(x: *const PtsExtract, y: *const PtsExtract, mi: u32) void {
+        const same = std.mem.eql(u32, x.node, y.node) and std.mem.eql(u32, x.top, y.top) and
+            std.mem.eql(u32, x.inputs_end, y.inputs_end) and std.mem.eql(u32, x.narrows_end, y.narrows_end) and
+            std.mem.eql(u8, std.mem.sliceAsBytes(x.inputs), std.mem.sliceAsBytes(y.inputs)) and
+            std.mem.eql(u32, x.kills, y.kills) and std.mem.eql(u32, x.constants, y.constants) and
+            x.narrows.len == y.narrows.len and x.script.len == y.script.len and x.decl_calls.len == y.decl_calls.len;
+        if (!same) std.debug.panic("specialisation: module {d}'s fact-3 constraints kept from its last extraction are not what a walk makes", .{mi});
+        for (x.narrows, y.narrows) |a, b| if (a.nul != b.nul or a.undef != b.undef or a.start != b.start or a.end != b.end) std.debug.panic("specialisation: module {d}'s kept guards differ", .{mi});
+        for (x.script, y.script) |a, b| if (a.op != b.op or a.a != b.a) std.debug.panic("specialisation: module {d}'s kept steps differ", .{mi});
+        for (x.decl_calls, y.decl_calls) |a, b| if (a.call != b.call or a.start != b.start or a.end != b.end or a.index != b.index) std.debug.panic("specialisation: module {d}'s kept calls differ", .{mi});
+    }
 
     fn deinit(x: *PtsExtract) void {
         x.arena.deinit();
@@ -10757,6 +10780,7 @@ const PtsExtract = struct {
 };
 
 const PtsRead = struct { node: u32, cons: u32 };
+const PtsStmt = struct { node: u32, cons: u32, inputs: u32, narrows: u32, kills: u32, script: u32, constants: u32, decl_calls: u32, epoch: u64 };
 const PtsNarrow = struct { nul: bool, undef: bool, start: u32, end: u32 };
 const PtsDeclCall = struct { call: u32, start: u32, end: u32, index: u32 };
 
@@ -10804,6 +10828,7 @@ const PtsExtractor = struct {
     guard_base: usize = 0,
     reads: std.ArrayList(u32) = .empty,
     stack: std.ArrayList(Index) = .empty,
+    stmts: std.ArrayList(PtsStmt) = .empty,
     node: std.ArrayList(u32) = .empty,
     top: std.ArrayList(u32) = .empty,
     inputs_end: std.ArrayList(u32) = .empty,
@@ -10818,17 +10843,34 @@ const PtsExtractor = struct {
 
     const Guard = struct { chain: Index, nul: bool, undef: bool, dead: bool = false, reads: u32 };
 
-    fn run(scratch: Allocator, ir: *const JsIr, epoch: u64, into: *PtsExtract) Allocator.Error!void {
+    /// Extract module `m` into `into`, which it replaces: a statement whose
+    /// nodes are what they were when `into` took it (`Mod.keptNodes`) is
+    /// copied, unless `fresh`.
+    fn run(scratch: Allocator, m: *const Mod, fresh: bool, into: *PtsExtract) Allocator.Error!void {
+        const ir = m.ir;
+        const epoch = m.epoch;
         const nodes: u32 = @intCast(ir.nodes.len);
         var x: PtsExtractor = .{ .scratch = scratch, .ir = ir, .nodes = nodes, .last = try scratch.alloc(u32, nodes) };
         @memset(x.last, none);
+        var old: KeyMap(struct { node: u32 }, u32) = .empty;
+        if (!fresh) for (into.stmts, 0..) |st, k| try old.put(scratch, .{ .node = st.node }, @intCast(k));
+        var walked: u32 = 0;
+        var reused: u32 = 0;
         for (ir.extraSlice(ir.body, Index)) |top| {
+            if (old.get(.{ .node = top.int() })) |k| if (m.keptNodes(top, into.stmts[k].epoch)) if (try x.reuse(into, k)) {
+                reused += 1;
+                continue;
+            };
+            walked += 1;
             x.cur_top = top;
             x.reads.clearRetainingCapacity();
             try x.step(.stmt_begin, top.int());
             try x.stmt(top);
             try x.step(.stmt_end, 0);
+            try x.endStmt(top, epoch);
         }
+        into.walked = walked;
+        into.reused = reused;
         into.arena.reset(.retain_capacity);
         const keep = into.arena.allocator();
         into.epoch = epoch;
@@ -10843,6 +10885,66 @@ const PtsExtractor = struct {
         into.script = try keep.dupe(PtsStep, x.script.items);
         into.constants = try keep.dupe(u32, x.constants.items);
         into.decl_calls = try keep.dupe(PtsDeclCall, x.decl_calls.items);
+        into.stmts = try keep.dupe(PtsStmt, x.stmts.items);
+    }
+
+    fn endStmt(x: *PtsExtractor, top: Index, epoch: u64) Allocator.Error!void {
+        try x.stmts.append(x.scratch, .{
+            .node = top.int(),
+            .cons = @intCast(x.node.items.len),
+            .inputs = @intCast(x.inputs.items.len),
+            .narrows = @intCast(x.narrows.items.len),
+            .kills = @intCast(x.kills.items.len),
+            .script = @intCast(x.script.items.len),
+            .constants = @intCast(x.constants.items.len),
+            .decl_calls = @intCast(x.decl_calls.items.len),
+            .epoch = epoch,
+        });
+    }
+
+    /// Statement `k` of `from`, the last extraction, taken as it was, its
+    /// constraints renumbered into this one. Not taken when one of its
+    /// nodes was evaluated before it in this extraction, or one of its
+    /// constraints reads a constraint outside it: a node two statements
+    /// share, whose last evaluation is another statement's.
+    fn reuse(x: *PtsExtractor, from: *const PtsExtract, k: u32) Allocator.Error!bool {
+        const st = from.stmts[k];
+        const prev: PtsStmt = if (k == 0) std.mem.zeroes(PtsStmt) else from.stmts[k - 1];
+        for (from.node[prev.cons..st.cons]) |node| if (x.last[node] != none) return false;
+        for (from.inputs[prev.inputs..st.inputs]) |in| if (in.cons < prev.cons or in.cons >= st.cons) return false;
+        for (from.kills[prev.kills..st.kills]) |c| if (c < prev.cons or c >= st.cons) return false;
+        const s = x.scratch;
+        const cons_at: u32 = @intCast(x.node.items.len);
+        const inputs_at: u32 = @intCast(x.inputs.items.len);
+        const narrows_at: u32 = @intCast(x.narrows.items.len);
+        const kills_at: u32 = @intCast(x.kills.items.len);
+        for (from.node[prev.cons..st.cons], from.top[prev.cons..st.cons], from.inputs_end[prev.cons..st.cons], from.narrows_end[prev.cons..st.cons], cons_at..) |node, top, in_end, nar_end, c| {
+            try x.node.append(s, node);
+            try x.top.append(s, top);
+            try x.inputs_end.append(s, in_end - prev.inputs + inputs_at);
+            try x.narrows_end.append(s, nar_end - prev.narrows + narrows_at);
+            // The node's last evaluation, for a statement after it that
+            // reads it.
+            if (!x.ir.tag(@fromBackingInt(@intCast(node))).isStatement()) x.last[node] = @intCast(c);
+        }
+        for (from.inputs[prev.inputs..st.inputs]) |in| try x.inputs.append(s, .{ .node = in.node, .cons = in.cons - prev.cons + cons_at });
+        for (from.narrows[prev.narrows..st.narrows]) |n| try x.narrows.append(s, .{ .nul = n.nul, .undef = n.undef, .start = n.start - prev.kills + kills_at, .end = n.end - prev.kills + kills_at });
+        for (from.kills[prev.kills..st.kills]) |c| try x.kills.append(s, c - prev.cons + cons_at);
+        for (from.script[prev.script..st.script]) |step_| try x.script.append(s, if (step_.op == .eval) .{ .op = .eval, .a = step_.a - prev.cons + cons_at } else step_);
+        try x.constants.appendSlice(s, from.constants[prev.constants..st.constants]);
+        try x.decl_calls.appendSlice(s, from.decl_calls[prev.decl_calls..st.decl_calls]);
+        try x.stmts.append(s, .{
+            .node = st.node,
+            .cons = @intCast(x.node.items.len),
+            .inputs = @intCast(x.inputs.items.len),
+            .narrows = @intCast(x.narrows.items.len),
+            .kills = @intCast(x.kills.items.len),
+            .script = @intCast(x.script.items.len),
+            .constants = @intCast(x.constants.items.len),
+            .decl_calls = @intCast(x.decl_calls.items.len),
+            .epoch = st.epoch,
+        });
+        return true;
     }
 
     fn step(x: *PtsExtractor, op: PtsStep.Act, a: u32) Allocator.Error!void {
@@ -14466,10 +14568,21 @@ const Pts = struct {
         const a = p.tmp.allocator();
         var scratch: Arena = .init(s.gpa);
         defer scratch.deinit();
-        for (s.mods) |*m| {
+        var program_nodes: usize = 0;
+        for (s.mods) |*m| program_nodes += m.ir.nodes.len;
+        for (s.mods, 0..) |*m, mi| {
             if (m.pex.epoch == m.epoch and m.pex.nodes == m.ir.nodes.len) continue;
             scratch.reset(.retain_capacity);
-            try PtsExtractor.run(scratch.allocator(), m.ir, m.epoch, &m.pex);
+            try PtsExtractor.run(scratch.allocator(), m, false, &m.pex);
+            // A safety build checks what a module kept against a walk of all
+            // of it, in a small program.
+            if (std.debug.runtime_safety and m.pex.reused != 0 and program_nodes <= max_checked_nodes) {
+                scratch.reset(.retain_capacity);
+                var walked: PtsExtract = .{};
+                defer walked.deinit();
+                try PtsExtractor.run(scratch.allocator(), m, true, &walked);
+                m.pex.expectSame(&walked, @intCast(mi));
+            }
         }
         // The constraints, numbered across modules in module order.
         const base = try a.alloc(u32, s.mods.len);
