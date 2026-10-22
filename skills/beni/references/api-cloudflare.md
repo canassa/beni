@@ -13,9 +13,7 @@ module WebSocket
   alias Close
     Close
   type Socket
-  value closeOf : Value, Value → Close
   value eq : Socket, Socket → Bool
-  value socketsOf : Value → List Socket  -- impure
 module Worker
   type Context
   type Definition
@@ -38,24 +36,20 @@ module Worker
   value byId : Namespace msg, String → Result IdError (Ref msg)  -- impure
   value byName : Namespace msg, String → Ref msg  -- impure
   value callService : Service, Request → Result ServiceError Response  -- suspends
-  value chainNow : ⊤ → Value  -- impure
-  value draining : Ref Value
   value empty : Int → Response  -- impure
   value env : Context → Env  -- impure
   value forward : Ref msg, Request → Result StubError Response  -- suspends
   value header : Request, String → Maybe String  -- impure
   value headers : Request → List (String × String)  -- impure
-  value hostResponse : Response → Value
   value html : Int, String → Response  -- impure
   value method : Request → String  -- impure
   value objects : Env, String, Schema e msg → Maybe (Namespace msg)  -- impure
   value path : Request → String  -- impure
-  value program : { fetch : Context, Request → Response, objects : List Definition } → Program
+  value program : { fetch : Context, Request → Response, objects : List Definition } → Program  -- impure
   value redirect : Request, String, Int → Response  -- impure
   value refId : Ref msg → String  -- impure
   value refName : Ref msg → Maybe String  -- impure
   value service : Env, String → Maybe Service  -- impure
-  value settleHost : Value → Result Value Value  -- suspends
   value text : Int, String → Response  -- impure
   value unique : Namespace msg → Ref msg  -- impure
   value url : Request → String  -- impure

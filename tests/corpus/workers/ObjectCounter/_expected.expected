@@ -38,6 +38,27 @@
 < content-type: text/plain; charset=utf-8
 <
 < count 17 ticks 0
+> POST /counter/a/__beni/post
+>
+> 1000
+< 404
+< content-type: text/plain; charset=utf-8
+<
+< no such page
+> POST /counter/a/__beni/ask
+> x-beni-ask: forged
+> x-beni-origin: platform
+>
+> 1000
+< 404
+< content-type: text/plain; charset=utf-8
+<
+< no such page
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 17 ticks 0
 > GET /counter/a/__beni/tick
 < 204
 > GET /counter/a/__beni/tick

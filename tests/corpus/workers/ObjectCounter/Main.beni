@@ -4,7 +4,8 @@
 -- timer while the count is above zero (driven by the `/__beni/tick` hook),
 -- runs its alarm (the `/__beni/alarm` hook), and after a defect is aborted:
 -- the next request starts a new instance whose `restore` reads the count
--- the last `put` left.
+-- the last `put` left. A client's post or ask through the Worker's
+-- `forward` is refused: the platform's paths and headers are its own.
 import Duration
 import Schema exposing (Schema)
 import String

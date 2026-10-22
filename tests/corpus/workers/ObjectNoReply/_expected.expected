@@ -1,0 +1,26 @@
+> GET /lobby/keep
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err NoReply
+> GET /lobby/late
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err NoReply
+| err: beni: a reply came after its ask was answered: the object Scorer replied "too late" to a Reply that no one waits on
+> GET /lobby/drop-fiber
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err NoReply
+> GET /lobby/bg
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok bg started
+> GET /lobby/drop
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err NoReply

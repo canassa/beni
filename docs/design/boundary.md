@@ -6760,7 +6760,10 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   Worker slice therefore depends on #596** before it can be built.
 - **`forward ref request` waits** and returns the host's `Response` with its body stream
   untouched, so the 101 of an upgrade and a streamed body pass through; it carries the chain id
-  ((e.3)) — a fresh one, after stripping any `x-beni-chain` the client sent. Its failures are
+  ((e.3)) — a fresh one, after stripping every `x-beni-` header the client sent (*amended
+  2026-10-22, P723-1*: not the chain alone — the ask id and the origin mark of (e.10) too — and a
+  path that holds `/__beni/` is answered 404 by `forward` itself, never sent, since the platform's
+  paths are no page of the program's; a `--test-hooks` build lets its two hooks through). Its failures are
   *What a stub's failure becomes* below. **Typed asks to an `Object.Ref msg` are ordinary waits**
   ((e.10)), under the same cycle rule. *Two names differ from the owners' words (R6-6): the owners
   wrote `Object.Ref msg`, and the type is `Worker.Ref msg`, because `Worker.forward` takes a ref
@@ -7107,7 +7110,10 @@ inside a handler queues it behind the events already waiting ((e.10)).
   suspend is a defect at load, naming the object. Whether `Js.maySuspend` answers for a field of
   a record argument, or conservatively, is *owed* (a probe before slice (c)); if it is
   conservative, the compile-time form is `tick` in `define`'s own signature as `sync (state →
-  Maybe Duration)`, which changes the owner's signature and goes back to him (R5-6). `Just d` keeps one host timer of `d` armed — re-armed
+  Maybe Duration)`, which changes the owner's signature and goes back to him (R5-6). *Measured
+  2026-10-22: it is conservative, and the form is the owner's (`cf-workers-q9`). Until the answer,
+  what is built is this: no check, and a `tick` that waits parks the object until it answers, its
+  other events waiting in the mailbox.* `Just d` keeps one host timer of `d` armed — re-armed
   from the moment it fires, the same `d` not re-arming it — and `ticked` is an event of the
   mailbox; a different `d` re-arms from now; `Nothing` clears it. A set timer keeps the object
   from hibernating ((a)), which is what an active arena wants, and `Nothing` is how the program
@@ -7237,6 +7243,13 @@ pub type AskError
   mailbox's order; a receiver that is evicted mid-handler loses it ((e.6)'s table). Durable work
   therefore follows (e.6)'s pattern: write the intent to `Storage`, then finish it in `restore`
   or `alarm`, with the message as the trigger and never as the record.
+- **A message comes only from the platform's own stub** (*amended 2026-10-22, P723-1*). The
+  object's `/__beni/post` and `/__beni/ask` are the stubs' own: a `post` or `ask` sends them with
+  the header `x-beni-origin: platform`, and the object runs `received` only with that mark, else
+  answers 404. A client cannot forge the mark through a Worker, because `forward` strips every
+  `x-beni-` header a client sent and answers 404 itself to a path that holds `/__beni/`, never
+  sending it ((d)); so a request a Worker forwards reaches `request` alone. `ObjectCounter` posts
+  and asks through `forward` and the count stays.
 - **Refused messages.** A message that does not parse by the receiver's schema — a ref of the
   wrong protocol, an older deploy's shape —   is answered with `422 Unprocessable Content` and the
   header `x-beni-message: unparsed`, which the sender's `ask` reads as `Err (Unreadable issues)`
@@ -7265,6 +7278,11 @@ pub type AskError
   cancels them. `ObjectIsolation` shows spawn-then-`post` to `self` with the `bracket` release
   running when the fiber ends, a later handler joining a fiber an earlier one spawned, and two
   instances of one class each resuming a parked handler in its own context (#595, *measured*).
+- **The live-fiber timer** ((e.5)) is built: the same `onSchedulerCount` watcher holds one host
+  `setTimeout`, of the longest delay the host takes, while the scheduler runs any fiber beside
+  the consumer, and clears it when the count falls to the consumer alone; so an object whose
+  fiber is parked on a `Deferred` or a `join` is not hibernated under it. That the timer prevents
+  hibernation is #593's probe, still owed.
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
@@ -7285,10 +7303,22 @@ pub type AskError
   consumer parks, for each ask whose `received` has returned when the object's scheduler runs no
   fiber but the consumer and no message to `self` waiting in the mailbox holds that `Reply`. That
   set contains (e.10)'s recursive one — a fiber the second `received` spawned is a fiber of the
-  object — and is never smaller, so `NoReply` never comes while a holder lives; it may come later
-  than the rule's, while an unrelated fiber runs. `ObjectHolders` shows the relay through `self`,
-  the relay through a fiber the second call spawned, the `Reply` kept in the state (`NoReply` at
-  once) and the late `reply` through it (the warning line, no answer).
+  object — and is never smaller, so `NoReply` never comes while a holder lives. **It comes when
+  the count allows** (*amended 2026-10-22, P723-2*): the platform watches the scheduler with
+  `Task.onSchedulerCount`, so the last holder ending while the consumer is parked settles the
+  pending asks at once, with no next event needed. **A choice the owners can overturn:** because
+  the platform cannot see which fiber holds a `Reply`, one unrelated live fiber of the object
+  delays every `NoReply` until it ends; `NoReply` then comes, never fails to. The alternative,
+  holders tracked per ask, needs the checker to name the closures that capture a `Reply`.
+  `ObjectHolders` shows the relay through `self`, the relay through a fiber the second call
+  spawned, the `Reply` kept in the state (`NoReply` at once), the late `reply` through it (the
+  warning line, no answer), the holder that ends while the consumer is parked, and the unrelated
+  fiber that delays a `NoReply`.
+- **`ask` to `self` is refused from every fiber of the object** (*amended 2026-10-22, P723-7*),
+  not from the running handler alone: the kernel does not say which fiber is current, so the
+  platform cannot tell a spawned fiber from the handler it serves. A fiber that needs its own
+  object's answer posts to `self` and lets `received` act. R7-3's hazard, a handler joining a
+  fiber that asks `self`, cannot occur.
 
 **(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
 state, msg → state × Cmd msg` — sits over `post` and spawn, as §9.8.11 puts TEA over a direct
