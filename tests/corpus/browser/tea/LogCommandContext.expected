@@ -9,6 +9,14 @@
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"0"</p>
   </main>
 </body>
@@ -24,6 +32,14 @@ console.debug: a body that does not wait {"request":"p1"}
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"1"</p>
   </main>
 </body>
@@ -42,6 +58,14 @@ console.info: a keyed body that does not wait save=0ms {"request":"k1"}
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"2"</p>
   </main>
 </body>
@@ -60,6 +84,14 @@ console.info: a task {"request":"t1"}
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"4"</p>
   </main>
 </body>
@@ -75,6 +107,14 @@ console.info: after the render {"request":"a1"}
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"5"</p>
   </main>
 </body>
@@ -90,6 +130,14 @@ console.info: a child's command {"parent":"x","child":"y"}
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"6"</p>
   </main>
 </body>
@@ -105,6 +153,14 @@ console.info: a command made outside any context
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"7"</p>
   </main>
 </body>
@@ -119,6 +175,14 @@ console.info: a command made outside any context
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"8"</p>
   </main>
 </body>
@@ -134,6 +198,325 @@ console.info: the sink kept: to update's sink
     <button id="plain">"plain"</button>
     <button id="sink">"sink"</button>
     <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
     <p>"9"</p>
   </main>
 </body>
+-- click #restart
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"10"</p>
+  </main>
+</body>
+-- click #restart
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"11"</p>
+  </main>
+</body>
+-- advance 5
+console.info: restart: a keyed body after a wait {"request":"r10"}
+(the DOM did not change)
+-- click #queue
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"12"</p>
+  </main>
+</body>
+-- click #queue
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"13"</p>
+  </main>
+</body>
+-- advance 5
+console.info: queue: a keyed body after a wait {"request":"r11"}
+(the DOM did not change)
+-- advance 5
+console.info: queue: a keyed body after a wait {"request":"r12"}
+(the DOM did not change)
+-- click #behind
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"14"</p>
+  </main>
+</body>
+-- advance 5
+console.info: behind: a keyed body after a wait {"request":"r13"}
+console.info: behind: a body that does not wait, queued behind one {"request":"r13","step":"queued"}
+(the DOM did not change)
+-- click #ignore
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"15"</p>
+  </main>
+</body>
+-- click #ignore
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"16"</p>
+  </main>
+</body>
+-- advance 5
+console.info: ignore: a keyed body after a wait {"request":"r14"}
+(the DOM did not change)
+-- click #concurrent
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"17"</p>
+  </main>
+</body>
+-- click #concurrent
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"18"</p>
+  </main>
+</body>
+-- advance 5
+console.info: concurrent: a keyed body after a wait {"request":"r16"}
+console.info: concurrent: a keyed body after a wait {"request":"r17"}
+(the DOM did not change)
+-- click #taskwait
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"19"</p>
+  </main>
+</body>
+-- advance 5
+console.info: a task after a wait {"request":"r18"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"20"</p>
+  </main>
+</body>
+-- click #mapafter
+console.info: a child's after-render body {"request":"r20","child":"y"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"21"</p>
+  </main>
+</body>
+-- click #listen
+console.info: a subscription body: the default context
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <p>"23"</p>
+  </main>
+</body>
+-- advance 1
+(the DOM did not change)
