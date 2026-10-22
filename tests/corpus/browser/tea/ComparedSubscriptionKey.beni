@@ -1,0 +1,66 @@
+-- Distinct values that compare EQ keep the same live subscription.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Bag
+    = Bag (List Int)
+
+
+pub compare : Bag, Bag → Order
+compare (Bag a) (Bag b) = List.compare (List.sort a) (List.sort b)
+
+
+type Msg
+    = Flip
+    | Tick Int
+
+
+type alias Model =
+    order : Int
+    ticks : Int
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update msg model =
+    case msg of
+        Flip →
+            ( { model | order = model.order + 1 }, Cmd.none )
+
+        Tick n →
+            ( { model | ticks = model.ticks + n }, Cmd.none )
+
+
+listen : (Int → ⊤) → ⊤
+listen send = Task.bracket (λ⊤ → Debug.log "start" ⊤) (λ_ _ → Debug.log "stop" ⊤) λ_ →
+    Time.sleep (Time.millis 100)
+    send 1
+    Time.sleep (Time.millis 1000)
+
+
+subscriptions : Model → Sub.Sub Msg
+subscriptions model =
+    key = if Int.mod model.order 2 == 0 then Bag [ 1, 2 ] else Bag [ 2, 1 ]
+    Sub.listen key listen Tick
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="flip" onClick={Flip}>flip</button>
+        <p>{model.ticks}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { order = 0, ticks = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }
