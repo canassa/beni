@@ -1800,7 +1800,7 @@ reached apart from the level it started at, with a step of its own:
 path cut `k` (c) is sound only if every path the checker builds is bounded without it. The paragraph above
 names four sources of unbounded paths. This one argues there is no fifth, and gives each source its fold. It is a
 design text recording the owner's composed-path decision and the remaining proof obligations. `k` stays:
-casts through records and tuples still have no fold (F2), and #447's soundness correction is open.
+casts through records and tuples still have no fold (F2). #447's prefix correction is recorded below.
 
 *Where a path grows.* A path is built only by `child`, one step at a time, and a step is added in three ways:
 a projection or a construction mirrors one step of the value (a field, a tuple slot, a constructor field, a
@@ -1856,8 +1856,8 @@ infinite. That gives the four sources, and only four:
    fold of 1–3 sees a repeated region. `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns
    `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. *Decided
    (2026-10-19):* the owner chose the fold on the composed path (the amendment above, *the owner's choice
-   (a)*). #429 implements it on every route of growth. The soundness correction to `nested` in #447 remains
-   open; neither that correction nor removal of `k` is claimed here.
+   (a)*). #429 implements it on every route of growth. The soundness correction to `nested` in #447 is
+   recorded in the dated amendment below; removal of `k` is not claimed here.
    - *The rejected fold at the call* (the earlier F3 amendment, *a fold at a polymorphic-recursive call*):
      an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
      first step and go to `⋆` below it). Finite and sound (`⋆` only merges), but it loses a verdict master
@@ -1874,7 +1874,7 @@ infinite. That gives the four sources, and only four:
      longer an unmeasured alternative awaiting the owner. A concrete place cannot hold a cell and hold
      that same cell strictly below itself, by acyclicity. A prefix containing a representative step names
      several places, so that argument alone does not justify treating its entries as one place: #447
-     tracks the required soundness correction.
+     supplies that comparison, with #456's construction conditions (the dated amendments below).
 
 *Why no fifth.* Every step is one of: a typed step (bounded by 1 on a finite type graph); a root-only slot; `◇`
 (2); a step after a cast (3, unbounded for records and tuples until F2); or a `⋆`, which ends growth. The type
@@ -1888,8 +1888,8 @@ type checker gives no other way to make one.
 
 *What else `k` holds up.* Besides the cut in `childRaw`, `k_limit` sizes the path buffers (`[k_limit + 1]Step`,
 about twenty) and guards `markupEvents`'s walk of a type term. That walk is bounded by the term's size, a finite
-type, so the guard goes with `k`. The order of (c): F1 has landed; 4 has #429 and awaits #447's soundness
-correction; 3 waits for F2 and its measurement to the owner. Then `k` goes: the cut, the buffers (as stack room
+type, so the guard goes with `k`. The order of (c): F1 has landed; 4 has #429, #447's prefix correction
+and #456's construction conditions; 3 waits for F2. The owner withdrew the measurement prerequisite below. Then `k` goes: the cut, the buffers (as stack room
 that spills, not a limit), and the summary block's one-byte path length and `n_steps > k_limit` check. A larger
 program can have a larger finite type and path; neither storage nor serialization may impose the old
 constant-length bound.
@@ -1955,6 +1955,27 @@ on 2026-10-22; no assertion changes. Both projected-alias twins and constructor/
 accepted. The owner accepts the pending `DictFocusGrow` false refusal and the extra callback
 refusal inside the already-rejected `DictFocus.readLater` (#663, until #294); any other whole program
 changing from accepted to rejected stops landing. The incorrect `restMayBeEmpty` tightening is excluded.
+
+*Amended 2026-10-22 (review of #447, after #456): representative prefixes.*
+`nested` exempts a step-by-step prefix pair from separation in three cases:
+the entries have different cells (a container and its contents); the same cell
+occurs at a prefix naming one place (acyclicity rules out holding itself); or
+at least one entry is approximate. For the second case the shorter path must
+contain neither a representative (`[*]`, a level marker or the Dict tree) nor
+`⋆`. Two exact entries of one cell under such a prefix may be distinct stored
+occurrences and are compared. This includes `⋆`, which can also name the root.
+For overlapping paths without a step-by-step prefix, the existing cell-holding
+and approximate-view rules are unchanged.
+
+The approximate case is an exemption from this pair comparison, **not a proof
+that approximate entries denote only one occurrence**. #456 disproved that
+assumption. Its surviving, value-scoped construction conditions separately
+require simultaneous stored operands to be separate, including exact/approximate
+and approximate/approximate aliases. `ApproximateAliasLevels` pins the projected,
+constructor-alias and helper routes; `ConstructorDiscardedAlias` pins recovery
+when an unused alias-bearing subtree is discarded. The containing conditions,
+ordinary holder checks and representative-prefix comparison are used together.
+No `restMayBeEmpty` tightening is part of this rule.
 
 ### 16.8 The library
 

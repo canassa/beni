@@ -7420,21 +7420,22 @@ const Walker = struct {
         return w.condAndAll(&acc);
     }
 
-    /// Whether two entries of one value are a container and what it holds,
-    /// which a deep condition does not separate (§18.2): one path a prefix of
-    /// the other step by step. A prefix only through `⋆` or a marker (§16.7)
-    /// is a place that stands for several, which may be the other one or
-    /// beside it, so the two are separated unless their cells are two that
-    /// hold one another. One cell at both is two places that share it, unless
-    /// one entry is only a copy of the other at a place it may stand for (an
-    /// approximate entry: a projection keeps a marked entry whole and at the
-    /// rest of its path).
+    /// Whether a deep condition may omit separation of two entries (§16.7).
+    /// Different cells under a step-by-step prefix are a container and its
+    /// contents. One cell at both is acyclic only if the shorter path names
+    /// one place. Approximate views are not compared here; value-scoped
+    /// construction conditions still separate coexisting stored operands.
     fn nested(w: *Walker, e: Entry, f: Entry) Allocator.Error!bool {
-        if (w.o.startsWith(e.path, f.path) or w.o.startsWith(f.path, e.path)) return true;
+        const x = if (w.o.startsWith(e.path, f.path)) f.path else if (w.o.startsWith(f.path, e.path)) e.path else null;
+        if (x) |prefix| {
+            if (e.cell != f.cell) return true;
+            if (!try w.o.representative(prefix) and !w.o.paths.any.items[prefix]) return true;
+            return e.approx != 0 or f.approx != 0;
+        }
         if (!w.o.overlap(e.path, f.path)) return false;
-        // Both exact: the value holds the cell at two places, which is
-        // sharing (`EnvPrefix`). One approximate: a copy of the other entry
-        // at a place it may stand for, one place.
+        // Both exact: one cell at two overlapping places is sharing
+        // (`EnvPrefix`). Approximate views are not separated here; the
+        // containing value still carries its construction conditions.
         if (e.cell == f.cell) return e.approx != 0 or f.approx != 0;
         return (try w.covers(e.cell, f.cell)) != null or (try w.covers(f.cell, e.cell)) != null;
     }

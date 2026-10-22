@@ -909,6 +909,9 @@ const Mod = struct {
     /// The module's constraints for the combined solver, kept while its
     /// `epoch` stands (`Extract`).
     ex: Extract = .{},
+    /// Fact 3's constraints and the steps of its first walk, kept while
+    /// its `epoch` stands (`PtsExtract`).
+    pex: PtsExtract = .{},
 
     /// The whole-program id of `n`, or null for a local.
     inline fn globalOf(m: *const Mod, n: NameIndex) ?u32 {
@@ -2057,7 +2060,10 @@ const Spec = struct {
 
     /// Every module's constraints given back (`run`'s end).
     fn freeExtracts(s: *Spec) void {
-        for (s.mods) |*m| m.ex.deinit();
+        for (s.mods) |*m| {
+            m.ex.deinit();
+            m.pex.deinit();
+        }
         s.solve_tmp.deinit();
     }
 
@@ -10708,6 +10714,523 @@ const Solver = struct {
     }
 };
 
+/// Fact 3's constraints of one module (`backend.md` §9, *The combined
+/// solver*, slice 5): what `Pts`' first walk by constraints recorded of it
+/// (`Pts.begin`, `Pts.input`, `Pts.narrowed`, `Pts.killRead`), made from the
+/// module's `JsIr` alone, and the script of what else that walk did in
+/// between, in its order — the sites and bodies of functions, the drains,
+/// the context a site is made in — which `Pts.replay` follows. A constraint
+/// is numbered in the walk's order within its module; the replay adds the
+/// module's base. Kept while the module's `epoch` stands.
+const PtsExtract = struct {
+    arena: Arena = .init(std.heap.page_allocator),
+    epoch: u64 = std.math.maxInt(u64),
+    nodes: u32 = 0,
+    /// Per constraint: its node, its top-level statement, where its inputs
+    /// and its candidate guards end in `inputs` and `narrows`.
+    node: []u32 = &.{},
+    top: []u32 = &.{},
+    inputs_end: []u32 = &.{},
+    narrows_end: []u32 = &.{},
+    /// A node whose value a constraint reads, and the constraint (of this
+    /// module) that made the value.
+    inputs: []PtsRead = &.{},
+    /// The guards in view where a read was walked that name its chain and
+    /// no unconditional kill had killed: what each says, and the reads
+    /// between its push and this read (`kills[start..end]`, constraints of
+    /// this module) each of which kills it once its object is `top`. The
+    /// replay keeps them unless the read's object is `top` when it is first
+    /// evaluated, as the walk recorded them only then (`Pts.narrowed`).
+    narrows: []PtsNarrow = &.{},
+    kills: []u32 = &.{},
+    script: []PtsStep = &.{},
+    /// The nodes whose value is their tag's, made by no constraint: every
+    /// leaf but a name, and `constantValue`'s.
+    constants: []u32 = &.{},
+    /// Every `const x = f(…)` or `let x = f(…)` (`Pts.decl_call`).
+    decl_calls: []PtsDeclCall = &.{},
+    /// Per top-level statement: its node, where each of its columns ends,
+    /// and the module's `epoch` when it was extracted. A statement's
+    /// constraints read only constraints of the statement, so one whose
+    /// nodes stand is copied into the next extraction, renumbered
+    /// (`PtsExtractor.reuse`).
+    stmts: []PtsStmt = &.{},
+    /// Of the last extraction: the statements walked and those copied.
+    walked: u32 = 0,
+    reused: u32 = 0,
+
+    /// A safety build's check that what an extraction kept of the last one
+    /// is what a walk of every statement makes.
+    fn expectSame(x: *const PtsExtract, y: *const PtsExtract, mi: u32) void {
+        const same = std.mem.eql(u32, x.node, y.node) and std.mem.eql(u32, x.top, y.top) and
+            std.mem.eql(u32, x.inputs_end, y.inputs_end) and std.mem.eql(u32, x.narrows_end, y.narrows_end) and
+            std.mem.eql(u8, std.mem.sliceAsBytes(x.inputs), std.mem.sliceAsBytes(y.inputs)) and
+            std.mem.eql(u32, x.kills, y.kills) and std.mem.eql(u32, x.constants, y.constants) and
+            x.narrows.len == y.narrows.len and x.script.len == y.script.len and x.decl_calls.len == y.decl_calls.len;
+        if (!same) std.debug.panic("specialisation: module {d}'s fact-3 constraints kept from its last extraction are not what a walk makes", .{mi});
+        for (x.narrows, y.narrows) |a, b| if (a.nul != b.nul or a.undef != b.undef or a.start != b.start or a.end != b.end) std.debug.panic("specialisation: module {d}'s kept guards differ", .{mi});
+        for (x.script, y.script) |a, b| if (a.op != b.op or a.a != b.a) std.debug.panic("specialisation: module {d}'s kept steps differ", .{mi});
+        for (x.decl_calls, y.decl_calls) |a, b| if (a.call != b.call or a.start != b.start or a.end != b.end or a.index != b.index) std.debug.panic("specialisation: module {d}'s kept calls differ", .{mi});
+    }
+
+    fn deinit(x: *PtsExtract) void {
+        x.arena.deinit();
+        x.* = .{};
+    }
+};
+
+const PtsRead = struct { node: u32, cons: u32 };
+const PtsStmt = struct { node: u32, cons: u32, inputs: u32, narrows: u32, kills: u32, script: u32, constants: u32, decl_calls: u32, epoch: u64 };
+const PtsNarrow = struct { nul: bool, undef: bool, start: u32, end: u32 };
+const PtsDeclCall = struct { call: u32, start: u32, end: u32, index: u32 };
+
+/// One step of `Pts.replay`, as the first walk took it.
+const PtsStep = struct {
+    op: Act,
+    a: u32 = 0,
+
+    const Act = enum(u8) {
+        /// A top-level statement `a` begins: no constraint is current, the
+        /// statement's locals are keyed by it, and what is made is made once.
+        stmt_begin,
+        /// The statement ends: what waits joins (`Pts.drain`).
+        stmt_end,
+        /// Constraint `a` evaluated.
+        eval,
+        /// Arrow `a`: its site, then its body begins.
+        arrow,
+        /// Function declaration `a`: its site, held by its name, then its
+        /// body begins.
+        func_decl,
+        /// The body of function `a` ends: `undefined` returned when it may
+        /// run off its end, what waits joins, and the context is the one it
+        /// began in; an arrow's value is its site.
+        body_end,
+        /// A loop's statements begin, which may run many times, and end.
+        loop_begin,
+        loop_end,
+        /// The object literal `a` that a `return` gives, the function's one
+        /// way out (`Site.fresh_fn`).
+        fresh,
+    };
+};
+
+/// `Pts`' first walk by constraints, without evaluating anything: the
+/// constraints it would make and the steps it would take (`PtsExtract`).
+/// Reads the module's `JsIr` and its `global` column alone.
+const PtsExtractor = struct {
+    scratch: Allocator,
+    ir: *const JsIr,
+    nodes: u32,
+    /// Per node, the last constraint that evaluated it (`Pts.last`).
+    last: []u32,
+    guards: std.ArrayList(Guard) = .empty,
+    guard_base: usize = 0,
+    reads: std.ArrayList(u32) = .empty,
+    stack: std.ArrayList(Index) = .empty,
+    stmts: std.ArrayList(PtsStmt) = .empty,
+    node: std.ArrayList(u32) = .empty,
+    top: std.ArrayList(u32) = .empty,
+    inputs_end: std.ArrayList(u32) = .empty,
+    narrows_end: std.ArrayList(u32) = .empty,
+    inputs: std.ArrayList(PtsRead) = .empty,
+    narrows: std.ArrayList(PtsNarrow) = .empty,
+    kills: std.ArrayList(u32) = .empty,
+    script: std.ArrayList(PtsStep) = .empty,
+    constants: std.ArrayList(u32) = .empty,
+    decl_calls: std.ArrayList(PtsDeclCall) = .empty,
+    cur_top: Index = undefined,
+
+    const Guard = struct { chain: Index, nul: bool, undef: bool, dead: bool = false, reads: u32 };
+
+    /// Extract module `m` into `into`, which it replaces: a statement whose
+    /// nodes are what they were when `into` took it (`Mod.keptNodes`) is
+    /// copied, unless `fresh`.
+    fn run(scratch: Allocator, m: *const Mod, fresh: bool, into: *PtsExtract) Allocator.Error!void {
+        const ir = m.ir;
+        const epoch = m.epoch;
+        const nodes: u32 = @intCast(ir.nodes.len);
+        var x: PtsExtractor = .{ .scratch = scratch, .ir = ir, .nodes = nodes, .last = try scratch.alloc(u32, nodes) };
+        @memset(x.last, none);
+        var old: KeyMap(struct { node: u32 }, u32) = .empty;
+        if (!fresh) for (into.stmts, 0..) |st, k| try old.put(scratch, .{ .node = st.node }, @intCast(k));
+        var walked: u32 = 0;
+        var reused: u32 = 0;
+        for (ir.extraSlice(ir.body, Index)) |top| {
+            if (old.get(.{ .node = top.int() })) |k| if (m.keptNodes(top, into.stmts[k].epoch)) if (try x.reuse(into, k)) {
+                reused += 1;
+                continue;
+            };
+            walked += 1;
+            x.cur_top = top;
+            x.reads.clearRetainingCapacity();
+            try x.step(.stmt_begin, top.int());
+            try x.stmt(top);
+            try x.step(.stmt_end, 0);
+            try x.endStmt(top, epoch);
+        }
+        into.walked = walked;
+        into.reused = reused;
+        into.arena.reset(.retain_capacity);
+        const keep = into.arena.allocator();
+        into.epoch = epoch;
+        into.nodes = nodes;
+        into.node = try keep.dupe(u32, x.node.items);
+        into.top = try keep.dupe(u32, x.top.items);
+        into.inputs_end = try keep.dupe(u32, x.inputs_end.items);
+        into.narrows_end = try keep.dupe(u32, x.narrows_end.items);
+        into.inputs = try keep.dupe(PtsRead, x.inputs.items);
+        into.narrows = try keep.dupe(PtsNarrow, x.narrows.items);
+        into.kills = try keep.dupe(u32, x.kills.items);
+        into.script = try keep.dupe(PtsStep, x.script.items);
+        into.constants = try keep.dupe(u32, x.constants.items);
+        into.decl_calls = try keep.dupe(PtsDeclCall, x.decl_calls.items);
+        into.stmts = try keep.dupe(PtsStmt, x.stmts.items);
+    }
+
+    fn endStmt(x: *PtsExtractor, top: Index, epoch: u64) Allocator.Error!void {
+        try x.stmts.append(x.scratch, .{
+            .node = top.int(),
+            .cons = @intCast(x.node.items.len),
+            .inputs = @intCast(x.inputs.items.len),
+            .narrows = @intCast(x.narrows.items.len),
+            .kills = @intCast(x.kills.items.len),
+            .script = @intCast(x.script.items.len),
+            .constants = @intCast(x.constants.items.len),
+            .decl_calls = @intCast(x.decl_calls.items.len),
+            .epoch = epoch,
+        });
+    }
+
+    /// Statement `k` of `from`, the last extraction, taken as it was, its
+    /// constraints renumbered into this one. Not taken when one of its
+    /// nodes was evaluated before it in this extraction, or one of its
+    /// constraints reads a constraint outside it: a node two statements
+    /// share, whose last evaluation is another statement's.
+    fn reuse(x: *PtsExtractor, from: *const PtsExtract, k: u32) Allocator.Error!bool {
+        const st = from.stmts[k];
+        const prev: PtsStmt = if (k == 0) std.mem.zeroes(PtsStmt) else from.stmts[k - 1];
+        for (from.node[prev.cons..st.cons]) |node| if (x.last[node] != none) return false;
+        for (from.inputs[prev.inputs..st.inputs]) |in| if (in.cons < prev.cons or in.cons >= st.cons) return false;
+        for (from.kills[prev.kills..st.kills]) |c| if (c < prev.cons or c >= st.cons) return false;
+        const s = x.scratch;
+        const cons_at: u32 = @intCast(x.node.items.len);
+        const inputs_at: u32 = @intCast(x.inputs.items.len);
+        const narrows_at: u32 = @intCast(x.narrows.items.len);
+        const kills_at: u32 = @intCast(x.kills.items.len);
+        for (from.node[prev.cons..st.cons], from.top[prev.cons..st.cons], from.inputs_end[prev.cons..st.cons], from.narrows_end[prev.cons..st.cons], cons_at..) |node, top, in_end, nar_end, c| {
+            try x.node.append(s, node);
+            try x.top.append(s, top);
+            try x.inputs_end.append(s, in_end - prev.inputs + inputs_at);
+            try x.narrows_end.append(s, nar_end - prev.narrows + narrows_at);
+            // The node's last evaluation, for a statement after it that
+            // reads it.
+            if (!x.ir.tag(@fromBackingInt(@intCast(node))).isStatement()) x.last[node] = @intCast(c);
+        }
+        for (from.inputs[prev.inputs..st.inputs]) |in| try x.inputs.append(s, .{ .node = in.node, .cons = in.cons - prev.cons + cons_at });
+        for (from.narrows[prev.narrows..st.narrows]) |n| try x.narrows.append(s, .{ .nul = n.nul, .undef = n.undef, .start = n.start - prev.kills + kills_at, .end = n.end - prev.kills + kills_at });
+        for (from.kills[prev.kills..st.kills]) |c| try x.kills.append(s, c - prev.cons + cons_at);
+        for (from.script[prev.script..st.script]) |step_| try x.script.append(s, if (step_.op == .eval) .{ .op = .eval, .a = step_.a - prev.cons + cons_at } else step_);
+        try x.constants.appendSlice(s, from.constants[prev.constants..st.constants]);
+        try x.decl_calls.appendSlice(s, from.decl_calls[prev.decl_calls..st.decl_calls]);
+        try x.stmts.append(s, .{
+            .node = st.node,
+            .cons = @intCast(x.node.items.len),
+            .inputs = @intCast(x.inputs.items.len),
+            .narrows = @intCast(x.narrows.items.len),
+            .kills = @intCast(x.kills.items.len),
+            .script = @intCast(x.script.items.len),
+            .constants = @intCast(x.constants.items.len),
+            .decl_calls = @intCast(x.decl_calls.items.len),
+            .epoch = st.epoch,
+        });
+        return true;
+    }
+
+    fn step(x: *PtsExtractor, op: PtsStep.Act, a: u32) Allocator.Error!void {
+        try x.script.append(x.scratch, .{ .op = op, .a = a });
+    }
+
+    /// `Pts.begin`: a new constraint of `node`, reading the last evaluation
+    /// of each node whose value it reads; evaluated where it stands.
+    fn begin(x: *PtsExtractor, node: Index) Allocator.Error!u32 {
+        const ir = x.ir;
+        const c: u32 = @intCast(x.node.items.len);
+        var buf: [3]Index = undefined;
+        for (inputsOf(ir, node, &buf)) |in| try x.input(in, c);
+        switch (ir.tag(node)) {
+            .object => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| {
+                const cd = ir.data(child);
+                try x.input(@fromBackingInt(@intCast(if (ir.tag(child) == .property) cd.rhs else cd.lhs)), c);
+            },
+            .array => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| try x.input(child, c),
+            .call, .new_call => for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index)) |arg| try x.input(arg, c),
+            else => {},
+        }
+        try x.node.append(x.scratch, node.int());
+        try x.top.append(x.scratch, x.cur_top.int());
+        try x.inputs_end.append(x.scratch, @intCast(x.inputs.items.len));
+        try x.narrows_end.append(x.scratch, @intCast(x.narrows.items.len));
+        try x.step(.eval, c);
+        return c;
+    }
+
+    fn input(x: *PtsExtractor, node: Index, c: u32) Allocator.Error!void {
+        _ = c;
+        const from = x.last[node.int()];
+        if (from == none) return;
+        try x.inputs.append(x.scratch, .{ .node = node.int(), .cons = from });
+    }
+
+    /// The guards in view that name `node`'s chain and no kill killed
+    /// (`Pts.narrowed`'s recording), noted for constraint `c`.
+    fn narrowed(x: *PtsExtractor, c: u32, node: Index) Allocator.Error!void {
+        for (x.guards.items[x.guard_base..]) |g| {
+            if (!sameChain(x.ir, g.chain, node) or g.dead) continue;
+            const start: u32 = @intCast(x.kills.items.len);
+            try x.kills.appendSlice(x.scratch, x.reads.items[g.reads..]);
+            try x.narrows.append(x.scratch, .{ .nul = g.nul, .undef = g.undef, .start = start, .end = @intCast(x.kills.items.len) });
+        }
+        x.narrows_end.items[c] = @intCast(x.narrows.items.len);
+    }
+
+    /// `Pts.kill`: every guard in view dies.
+    fn kill(x: *PtsExtractor) void {
+        for (x.guards.items[x.guard_base..]) |*g| g.dead = true;
+    }
+
+    /// `Pts.killRead`: a read through object node `obj`, which kills the
+    /// guards in view once the object is `top`; one no constraint makes has
+    /// its one value, and if that is `top` they die now.
+    fn killRead(x: *PtsExtractor, obj: Index) Allocator.Error!void {
+        if (x.guards.items.len == x.guard_base) return;
+        const from = x.last[obj.int()];
+        if (from != none) return x.reads.append(x.scratch, from);
+        if (constantTop(x.ir, obj)) x.kill();
+    }
+
+    fn end(x: *PtsExtractor, c: u32, node: Index) void {
+        x.last[node.int()] = c;
+    }
+
+    /// `Pts.effectOf`: statement `node`'s own transfer.
+    fn effectOf(x: *PtsExtractor, node: Index) Allocator.Error!void {
+        _ = try x.begin(node);
+    }
+
+    fn stmt(x: *PtsExtractor, node: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+            .const_decl, .let_decl => {
+                const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
+                if (v.unwrap()) |value| try x.expr(value);
+                try x.effectOf(node);
+                x.kill();
+            },
+            .func_decl, .gen_decl => {
+                try x.step(.func_decl, node.int());
+                try x.body(@fromBackingInt(@intCast(d.rhs)), node);
+                x.kill();
+            },
+            .assign_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.rhs)));
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                const td = ir.data(target);
+                switch (ir.tag(target)) {
+                    .ident => {},
+                    .member => try x.expr(@fromBackingInt(@intCast(td.lhs))),
+                    .index_get => {
+                        try x.expr(@fromBackingInt(@intCast(td.rhs)));
+                        try x.expr(@fromBackingInt(@intCast(td.lhs)));
+                    },
+                    else => try x.expr(target),
+                }
+                try x.effectOf(node);
+                x.kill();
+            },
+            .return_stmt => {
+                const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
+                if (value) |v| try x.expr(v);
+                try x.effectOf(node);
+                if (value) |v| if (ir.tag(v) == .object) try x.step(.fresh, v.int());
+            },
+            .if_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                const t = nullTest(ir, @fromBackingInt(@intCast(d.lhs)));
+                try x.branch(branches.thenBody(), if (t) |g| (if (g.null_in_then) null else g) else null);
+                try x.branch(branches.elseBody(), if (t) |g| (if (g.null_in_then) g else null) else null);
+            },
+            .block_stmt => try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs)))),
+            .while_true => {
+                x.kill();
+                try x.step(.loop_begin, 0);
+                try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+                try x.step(.loop_end, 0);
+            },
+            .for_of => {
+                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                try x.expr(f.iterable);
+                try x.effectOf(node);
+                x.kill();
+                try x.step(.loop_begin, 0);
+                try x.list(f.body());
+                try x.step(.loop_end, 0);
+            },
+            .switch_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try x.stmt(c);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try x.expr(t);
+                try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            },
+            .expr_stmt => try x.expr(@fromBackingInt(@intCast(d.lhs))),
+            .throw_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                try x.effectOf(node);
+            },
+            .try_stmt => {
+                const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                try x.list(t.body());
+                x.kill();
+                try x.list(t.catchBody());
+                x.kill();
+                try x.list(t.finalBody());
+                x.kill();
+            },
+            else => try x.expr(node),
+        }
+    }
+
+    fn list(x: *PtsExtractor, range: JsIr.SubRange) Allocator.Error!void {
+        const ir = x.ir;
+        for (ir.extraSlice(range, Index), 0..) |node, k| {
+            switch (ir.tag(node)) {
+                .const_decl, .let_decl => {
+                    const v: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(node).rhs));
+                    if (v.unwrap()) |value| if (ir.tag(value) == .call) {
+                        try x.decl_calls.append(x.scratch, .{ .call = value.int(), .start = @backingInt(range.start), .end = @backingInt(range.end), .index = @intCast(k) });
+                    };
+                },
+                else => {},
+            }
+            try x.stmt(node);
+        }
+    }
+
+    fn branch(x: *PtsExtractor, range: JsIr.SubRange, guard: ?NullTest) Allocator.Error!void {
+        const base = x.guards.items.len;
+        defer x.guards.shrinkRetainingCapacity(base);
+        if (guard) |g| try x.guards.append(x.scratch, .{ .chain = g.chain, .nul = true, .undef = g.loose, .reads = @intCast(x.reads.items.len) });
+        try x.list(range);
+    }
+
+    /// `Pts.body`: the steps around a function's statements, which see no
+    /// guard outside them and whose reads kill none.
+    fn body(x: *PtsExtractor, record: ExtraIndex, node: Index) Allocator.Error!void {
+        const saved_base = x.guard_base;
+        defer x.guard_base = saved_base;
+        x.guard_base = x.guards.items.len;
+        const saved_reads = x.reads.items.len;
+        defer x.reads.shrinkRetainingCapacity(saved_reads);
+        try x.list(x.ir.extraData(record, JsIr.Func).body());
+        try x.step(.body_end, node.int());
+    }
+
+    /// `Pts.expr`.
+    fn expr(x: *PtsExtractor, root: Index) Allocator.Error!void {
+        const ir = x.ir;
+        if (isValueLeaf(ir.tag(root))) {
+            if (ir.tag(root) == .ident) {
+                const c = try x.begin(root);
+                try x.combine(c, root);
+                x.end(c, root);
+            } else try x.constants.append(x.scratch, root.int());
+            return;
+        }
+        const stack = &x.stack;
+        const base = stack.items.len;
+        defer stack.items.len = base;
+        try JsIr.pushOperand(x.scratch, stack, root);
+        while (stack.items.len > base) {
+            const raw = stack.items[stack.items.len - 1].int();
+            stack.items.len -= 1;
+            if (raw & post_bit == 0) {
+                const node: Index = @fromBackingInt(@intCast(raw));
+                const t = ir.tag(node);
+                if (t == .arrow) {
+                    try x.step(.arrow, raw);
+                    try x.body(@fromBackingInt(@intCast(ir.data(node).lhs)), node);
+                    continue;
+                }
+                if (isValueLeaf(t)) {
+                    if (t != .ident) {
+                        try x.constants.append(x.scratch, raw);
+                    } else {
+                        const c = try x.begin(node);
+                        try x.combine(c, node);
+                        x.end(c, node);
+                    }
+                    continue;
+                }
+                try JsIr.pushOperand(x.scratch, stack, @fromBackingInt(@intCast(raw | post_bit)));
+                try ir.pushOperands(x.scratch, stack, node);
+                continue;
+            }
+            const node: Index = @fromBackingInt(@intCast(raw & ~post_bit));
+            if (!constantValue(ir, node)) {
+                const c = try x.begin(node);
+                try x.combine(c, node);
+                x.end(c, node);
+            } else {
+                try x.constants.append(x.scratch, node.int());
+                // `combineNow` of a `yield`: what the generator is resumed
+                // with, and anything may have run.
+                if (ir.tag(node) == .unary and @as(JsIr.UnaryOp, @fromBackingInt(@intCast(ir.data(node).rhs))) == .yield) x.kill();
+            }
+        }
+    }
+
+    /// What `Pts.combineNow` of constraint `c`'s node does to the guards:
+    /// a name's and a member read's guards noted; a read through an object
+    /// kills them once it is `top`; a call or a `new` kills them.
+    fn combine(x: *PtsExtractor, c: u32, node: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .ident => try x.narrowed(c, node),
+            .member => {
+                try x.narrowed(c, node);
+                try x.killRead(@fromBackingInt(@intCast(d.lhs)));
+            },
+            .index_get => try x.killRead(@fromBackingInt(@intCast(d.lhs))),
+            .call, .new_call => x.kill(),
+            else => {},
+        }
+    }
+};
+
+/// The value of a node no constraint of fact 3 makes (`constantValue`, and
+/// every leaf but a name), as `Pts.combineNow` makes it.
+fn constantVal(ir: *const JsIr, node: Index) Pts.Val {
+    const t = ir.tag(node);
+    if (isValueLeaf(t)) return Pts.literal_vals[@backingInt(t)];
+    return if (constantTop(ir, node)) Pts.Val.top_val else Pts.Val.prim_val;
+}
+
+/// Whether a node no constraint of fact 3 makes is `top` for good
+/// (`Pts.literal_vals`, `Pts.combineNow` of a `constantValue` node).
+fn constantTop(ir: *const JsIr, node: Index) bool {
+    return switch (ir.tag(node)) {
+        .global_this, .this_lit => true,
+        .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(ir.data(node).rhs))) == .yield,
+        else => false,
+    };
+}
+
 const Pts = struct {
     s: *Spec,
     vars: std.ArrayList(VSet) = .empty,
@@ -10847,6 +11370,10 @@ const Pts = struct {
     sweeps: u32 = 0,
     /// Every site number, so that a value of one site is a slice of it.
     ones: []u32 = &.{},
+    /// The first sweep by constraints replays the extractions (`replayWalk`)
+    /// rather than walking the program and recording (`walkStatements`),
+    /// which only a safety build's check still does.
+    by_replay: bool = true,
     /// This sweep walks every statement: a sweep of `byUnits`, or the
     /// first of `byConstraints`.
     full: bool = false,
@@ -10937,6 +11464,10 @@ const Pts = struct {
         woken: bool = false,
         /// A member read's load cell (`load`), in `loads`.
         load: u32 = none,
+        /// Its guards came from the extraction (`replayWalk`) and are not yet
+        /// confirmed: the walk noted them only when the read's object was
+        /// not `top` at its first evaluation (`narrowed`).
+        narrow_open: bool = false,
     };
 
     /// A load cell: the var a member read gives. Every read of one property
@@ -13608,8 +14139,29 @@ const Pts = struct {
                 p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
                 std.mem.swap(RunArena, &p.tmp, &ref_tmp);
+                // The second reference: the first sweep by constraints walks
+                // the program and records them, as before the extractions
+                // (`replayWalk`), which must reach that state exactly — every
+                // site numbered as the walk numbers it.
+                var walk_tmp: RunArena = .init(p.s.gpa);
+                defer walk_tmp.deinit();
+                std.mem.swap(RunArena, &p.tmp, &walk_tmp);
+                p.by_replay = false;
+                try p.fixpointWith(false);
+                p.by_replay = true;
+                p.s.stats.pts_max_set = counted.pts_max_set;
+                p.s.stats.pts_set_words = counted.pts_set_words;
+                p.s.stats.pts_edges = counted.pts_edges;
+                p.s.stats.pts_load_cells = counted.pts_load_cells;
+                p.s.stats.pts_joins = counted.pts_joins;
+                p.s.stats.pts_joins_empty = counted.pts_joins_empty;
+                p.s.stats.pts_largest = counted.pts_largest;
+                p.s.stats.pts_largest_sites = counted.pts_largest_sites;
+                const walked = p.*;
+                std.mem.swap(RunArena, &p.tmp, &walk_tmp);
                 try p.fixpointWith(false);
                 try p.expectSame(&ref, false);
+                try p.expectSame(&walked, true);
                 return;
             }
         }
@@ -13969,12 +14521,14 @@ const Pts = struct {
                 }
             }
         }
-        p.recording = true;
-        p.full = true;
+        p.recording = !p.by_replay;
+        p.full = !p.by_replay;
         var sweep: u32 = 0;
         while (sweep < max_pts_sweeps) : (sweep += 1) {
             p.sweeps = sweep + 1;
-            if (sweep == 0) {
+            if (sweep == 0 and p.by_replay) {
+                try p.replayWalk();
+            } else if (sweep == 0) {
                 try p.walkStatements();
                 p.recording = false;
                 p.full = false;
@@ -13998,6 +14552,160 @@ const Pts = struct {
                 p.ok = true;
                 return;
             }
+        }
+    }
+
+    /// The first walk by constraints, from the modules' extractions
+    /// (`PtsExtract`, `backend.md` §9, *The combined solver*, slice 5): every
+    /// constraint and every step in the order the recording walk took them,
+    /// each constraint evaluated as `evaluate` evaluates one — its context,
+    /// its inputs where it reads them, its guards — and the steps between
+    /// done as the walk did them. The walk made the sites and vars in this
+    /// order, so the replay makes the same ones, numbered alike, and reaches
+    /// the state the recording walk did.
+    fn replayWalk(p: *Pts) Allocator.Error!void {
+        const s = p.s;
+        const a = p.tmp.allocator();
+        var scratch: Arena = .init(s.gpa);
+        defer scratch.deinit();
+        var program_nodes: usize = 0;
+        for (s.mods) |*m| program_nodes += m.ir.nodes.len;
+        for (s.mods, 0..) |*m, mi| {
+            if (m.pex.epoch == m.epoch and m.pex.nodes == m.ir.nodes.len) continue;
+            scratch.reset(.retain_capacity);
+            try PtsExtractor.run(scratch.allocator(), m, false, &m.pex);
+            // A safety build checks what a module kept against a walk of all
+            // of it, in a small program.
+            if (std.debug.runtime_safety and m.pex.reused != 0 and program_nodes <= max_checked_nodes) {
+                scratch.reset(.retain_capacity);
+                var walked: PtsExtract = .{};
+                defer walked.deinit();
+                try PtsExtractor.run(scratch.allocator(), m, true, &walked);
+                m.pex.expectSame(&walked, @intCast(mi));
+            }
+        }
+        // The constraints, numbered across modules in module order.
+        const base = try a.alloc(u32, s.mods.len);
+        var count: u32 = 0;
+        for (s.mods, base) |*m, *b| {
+            b.* = count;
+            count += @intCast(m.pex.node.len);
+        }
+        try p.cons.ensureTotalCapacity(a, count);
+        for (s.mods, base, 0..) |*m, b, mi| {
+            const x = &m.pex;
+            var in_from: u32 = 0;
+            var nar_from: u32 = 0;
+            for (x.node, x.top, x.inputs_end, x.narrows_end) |node, top, in_end, nar_end| {
+                const start: u32 = @intCast(p.inputs.items.len);
+                for (x.inputs[in_from..in_end]) |in| try lists.push(Read, &p.inputs, a, .{ .node = @fromBackingInt(@intCast(in.node)), .cons = b + in.cons });
+                var narrow: u32 = none;
+                for (x.narrows[nar_from..nar_end]) |n| {
+                    const k_start: u32 = @intCast(p.kills.items.len);
+                    for (x.kills[n.start..n.end]) |killer| try p.kills.append(a, b + killer);
+                    try p.narrows.append(a, .{ .nul = n.nul, .undef = n.undef, .start = k_start, .end = @intCast(p.kills.items.len), .next = narrow });
+                    narrow = @intCast(p.narrows.items.len - 1);
+                }
+                p.cons.appendAssumeCapacity(.{
+                    .module = @intCast(mi),
+                    .node = @fromBackingInt(@intCast(node)),
+                    .top = @fromBackingInt(@intCast(top)),
+                    .func = none,
+                    .start = start,
+                    .end = @intCast(p.inputs.items.len),
+                    .narrow = narrow,
+                    .narrow_open = narrow != none,
+                });
+                in_from = in_end;
+                nar_from = nar_end;
+            }
+            // A node no constraint makes has its tag's value, read by the
+            // constraints after it.
+            const vals = p.vals[mi];
+            for (x.constants) |c| vals[c] = constantVal(m.ir, @fromBackingInt(@intCast(c)));
+            for (x.decl_calls) |dc| try p.decl_call.put(p.run(), .{ .module = @intCast(mi), .node = dc.call }, .{
+                .range = .{ .start = @fromBackingInt(dc.start), .end = @fromBackingInt(dc.end) },
+                .index = dc.index,
+            });
+        }
+        p.waiting = try a.alloc(u64, std.math.divCeil(usize, p.cons.items.len, 64) catch unreachable);
+        @memset(p.waiting, 0);
+        p.evaluating = true;
+        // The context a function's body is walked in, and a loop's.
+        const Ctx = struct { cur: u32, walk: u32, once: bool, func: u32 };
+        var ctxs: std.ArrayList(Ctx) = .empty;
+        var loops: std.ArrayList(bool) = .empty;
+        var func: u32 = none;
+        defer p.cur = none;
+        for (s.mods, base, 0..) |*m, b, mi_usize| {
+            const mi: u32 = @intCast(mi_usize);
+            const ir = m.ir;
+            const vals = p.vals[mi];
+            for (m.pex.script) |st| switch (st.op) {
+                .stmt_begin => {
+                    p.cur = none;
+                    p.top = @fromBackingInt(@intCast(st.a));
+                    p.once_ctx = true;
+                    func = none;
+                },
+                .stmt_end => try p.drain(),
+                .eval => {
+                    const c = b + st.a;
+                    const k = &p.cons.items[c];
+                    for (p.inputs.items[k.start..k.end]) |in| try p.link(in.cons, c);
+                    p.top = p.cons.items[c].top;
+                    p.cur = c;
+                    p.next_walk += 1;
+                    p.walk = p.next_walk;
+                    const node = p.cons.items[c].node;
+                    if (ir.tag(node).isStatement()) {
+                        p.cons.items[c].func = func;
+                        try p.effect(mi, node, if (func == none) null else func);
+                    } else {
+                        vals[node.int()] = try p.combine(mi, node);
+                        p.cons.items[c].val = vals[node.int()];
+                        p.last[p.base[mi] + node.int()] = c;
+                    }
+                },
+                .arrow, .func_decl => {
+                    const node: Index = @fromBackingInt(@intCast(st.a));
+                    const d = ir.data(node);
+                    const record: ExtraIndex = @fromBackingInt(@intCast(if (st.op == .arrow) d.lhs else d.rhs));
+                    const site = try p.funcSite(mi, node, record);
+                    if (st.op == .func_decl) {
+                        if (ir.tag(node) == .gen_decl) try p.escapeSite(site);
+                        try p.enqueue(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), .{}, try p.single(site), false);
+                        // Its name holds it before the body, which may call it, is walked.
+                        try p.drain();
+                    }
+                    try ctxs.append(a, .{ .cur = p.cur, .walk = p.walk, .once = p.once_ctx, .func = func });
+                    p.cur = none;
+                    p.once_ctx = false;
+                    func = site;
+                },
+                .body_end => {
+                    const node: Index = @fromBackingInt(@intCast(st.a));
+                    const site = p.siteAt(mi, node).?;
+                    const d = ir.data(node);
+                    const record: ExtraIndex = @fromBackingInt(@intCast(if (ir.tag(node) == .arrow) d.lhs else d.rhs));
+                    if (fallsThrough(ir, ir.extraData(record, JsIr.Func).body())) try p.join(p.sites.items[site].ret, Val.undef_val);
+                    try p.drain();
+                    const ctx = ctxs.pop().?;
+                    p.cur = ctx.cur;
+                    p.walk = ctx.walk;
+                    p.once_ctx = ctx.once;
+                    func = ctx.func;
+                    if (ir.tag(node) == .arrow) vals[node.int()] = .{ .sites = p.ones[site..][0..1] };
+                },
+                .loop_begin => {
+                    try loops.append(a, p.once_ctx);
+                    p.once_ctx = false;
+                },
+                .loop_end => p.once_ctx = loops.pop().?,
+                .fresh => if (func != none) if (p.siteAt(mi, @fromBackingInt(@intCast(st.a)))) |o| {
+                    p.sites.items[o].fresh_fn = func;
+                },
+            };
         }
     }
 
@@ -14496,8 +15204,25 @@ const Pts = struct {
     fn narrowed(p: *Pts, mi: u32, node: Index, v: Val) Allocator.Error!Val {
         var out = v;
         const ir = p.s.mods[mi].ir;
-        if (ir.tag(node) == .member and p.vals[mi][ir.data(node).lhs].top) return out;
+        if (ir.tag(node) == .member and p.vals[mi][ir.data(node).lhs].top) {
+            // The first walk returned here before it noted any guard.
+            if (p.evaluating and p.cur != none and p.cons.items[p.cur].narrow_open) {
+                p.cons.items[p.cur].narrow = none;
+                p.cons.items[p.cur].narrow_open = false;
+            }
+            return out;
+        }
         if (p.evaluating) {
+            // Guards the extraction found, noted as the walk noted them: the
+            // reads that kill each wake this one.
+            if (p.cur != none and p.cons.items[p.cur].narrow_open) {
+                const c = p.cur;
+                p.cons.items[c].narrow_open = false;
+                var n = p.cons.items[c].narrow;
+                while (n != none) : (n = p.narrows.items[n].next) {
+                    for (p.kills.items[p.narrows.items[n].start..p.narrows.items[n].end]) |killer| try p.link(killer, c);
+                }
+            }
             var k = p.cons.items[p.cur].narrow;
             each: while (k != none) : (k = p.narrows.items[k].next) {
                 const n = p.narrows.items[k];
