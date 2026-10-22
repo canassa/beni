@@ -1345,3 +1345,11 @@ test "ownership everywhere: Page.sandbox gets the direct entry row" {
     const report = try w.runWith(&.{ "dump", "--stage=ownership", page, "--ownership-everywhere", main }, .{ .raw_diagnostics = true, .cwd = .inherit });
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
+
+test "ownership everywhere: tuple DAG keeps every path without repeated comparisons" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const checked = try w.runWith(&.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}

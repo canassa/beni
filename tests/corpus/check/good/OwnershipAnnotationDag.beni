@@ -1,9 +1,6 @@
 -- Repeated paths in a tuple DAG carry the same separation operands.
 -- Retain every path's guard without re-expanding identical comparisons.
 -- There are no list writes or mutable aliases in this program (#753).
-import Node exposing (Program)
-
-
 p x = ( x, x )
 
 
@@ -19,5 +16,4 @@ s x = r (r x)
 t x = s (s x)
 
 
-main : Program
-main = Node.printLines [ if t 1 == t 2 then "T" else "F" ]
+pub result = t 1 == t 2

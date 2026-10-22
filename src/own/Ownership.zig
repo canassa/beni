@@ -16039,36 +16039,32 @@ const Walker = struct {
             const selected = try w.composeRes(.{ .path = eps, .prov = t.a }, raw_selected, try w.grownArgs(ctx), &before, &cut);
             if (cut) try w.foldedPairs(before.items, selected);
             const other = try w.expand(try w.instProv(t.b, ctx));
-            // Repeated paths may name one cell. Conjunction is idempotent:
-            // compare each cell and approximation once, but retain every
-            // result path below. Keep the last approximation in source order.
-            var operands: std.ArrayList(Entry) = .empty;
-            var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
-            var last_approx: u32 = 0;
-            for (other) |f| {
-                if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
-                if (f.approx != 0) last_approx = f.approx;
-                const key = (@as(u64, f.cell) << 32) | f.approx;
-                const gop = try seen.getOrPut(w.a, key);
-                if (!gop.found_existing) try operands.append(w.a, f);
-            }
-            // The selected path does not affect its separation condition.
-            var compared: std.AutoHashMapUnmanaged(u64, u32) = .empty;
+            // A path does not affect its cell's separation condition. Reuse
+            // adjacent identical comparisons without allocating a table, and
+            // keep every path's guard and the last approximation as before.
+            const Comparison = struct { cell: u32, approx: u32, condition: u32, cause: u32 };
+            var previous: ?Comparison = null;
             for (selected) |e| {
                 if (w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
-                const approximate = if (last_approx != 0) last_approx else e.approx;
-                const key = (@as(u64, e.cell) << 32) | e.approx;
-                const k = compared.get(key) orelse blk: {
+                const comparison = blk: {
+                    if (previous) |p| if (p.cell == e.cell and p.approx == e.approx) break :blk p;
                     var acc: CondAcc = .{};
-                    for (operands.items) |f| {
+                    var approximate = e.approx;
+                    var last_operand: ?Entry = null;
+                    for (other) |f| {
+                        if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
+                        if (f.approx != 0) approximate = f.approx;
+                        if (last_operand) |p| if (p.cell == f.cell and p.approx == f.approx) continue;
+                        last_operand = f;
                         const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
                         if (separation == cond_yes) continue;
                         try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
                     }
-                    const condition = try w.condAndAll(&acc);
-                    try compared.put(w.a, key, condition);
-                    break :blk condition;
+                    break :blk Comparison{ .cell = e.cell, .approx = e.approx, .condition = try w.condAndAll(&acc), .cause = approximate };
                 };
+                previous = comparison;
+                const k = comparison.condition;
+                const approximate = comparison.cause;
                 if (k == cond_yes) continue;
                 for (cells) |root| {
                     if (root.path != eps) continue;
