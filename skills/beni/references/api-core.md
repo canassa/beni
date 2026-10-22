@@ -207,6 +207,7 @@ module Js
   value shiftRight : int, int → int
   value shiftRightZero : int, int → int
   value suspending : (⊤ → a) → a  -- suspends
+  value testHooks : ⊤ → bool
   value throw : Value → a  -- impure
   value to : Value → a
   value typeIs : Value, name → bool
@@ -622,7 +623,8 @@ module Task
   value running : Fiber a → Bool  -- impure
   value scheduler : (⊤ → ⊤) → Scheduler  -- impure
   value schedulerBusy : Scheduler → Bool  -- impure
-  value schedulerWith : ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
+  value schedulerWith : ((⊤ → ⊤) → ⊤), ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
+  value schedulersListed : ⊤ → Int  -- impure
   value scope : (Scope → a) → a  -- suspends
   value shutdown : Int, (Int → ⊤) → ⊤  -- impure
   value sleep : Duration → ⊤  -- suspends
