@@ -88,7 +88,8 @@ pub const magic = "BENIOWN\x00";
 /// the summary's `rxreq` after its `xreq`.
 /// 19 distinguishes value-scoped construction conditions from allocations.
 /// 20 carries each write's storage/deep extent (§32 amendment, #670).
-pub const version: u32 = 20;
+/// 21 writes a pairwise-apart atom as its groups (§16.7, amended 2026-10-22, #693).
+pub const version: u32 = 21;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -188,10 +189,16 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         }
 
         fn xsum(c: *@This(), x: XSum) Allocator.Error!void {
-            for (x.atoms) |a| {
-                try c.prov(a.a);
-                try c.prov(a.b);
+            for (x.atoms) |a| try c.atom(a);
+        }
+
+        fn atom(c: *@This(), a: XAtom) Allocator.Error!void {
+            if (a.isApart()) {
+                for (a.groups) |g| for (g) |p| try c.prov(p);
+                return;
             }
+            try c.prov(a.a);
+            try c.prov(a.b);
         }
 
         fn res(c: *@This(), r: ResEntry) Allocator.Error!void {
@@ -215,10 +222,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
                 try c.xsum(e.xc);
                 try c.xsum(e.rxc);
             };
-            for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| {
-                try c.prov(a.a);
-                try c.prov(a.b);
-            };
+            for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| try c.atom(a);
             for (s.slots) |sl| try c.path(sl[1]);
             for (s.klasses) |k| {
                 try c.summary(k.sum);
@@ -383,8 +387,44 @@ fn writeProv(w: *Writer, p: Prov) Allocator.Error!void {
     try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1 | @as(u8, @intFromBool(k.condition_only)) << 2);
 }
 
+fn provLess(w: *const Writer, p: Prov, q: Prov) bool {
+    return provKey(w, p).less(provKey(w, q));
+}
+
+/// Two groups of an apart, in the block's order.
+fn groupLess(w: *const Writer, g: []const Prov, h: []const Prov) bool {
+    for (g[0..@min(g.len, h.len)], h[0..@min(g.len, h.len)]) |p, q| {
+        if (provLess(w, p, q)) return true;
+        if (provLess(w, q, p)) return false;
+    }
+    return g.len < h.len;
+}
+
+/// An apart's groups in the block's order: each group's members, then the
+/// groups, by their provenances' keys (§16.7, #693).
+fn canonicalApart(w: *const Writer, arena: Allocator, x: XAtom) Allocator.Error!XAtom {
+    const gs = try arena.alloc([]const Prov, x.groups.len);
+    for (gs, x.groups) |*d, g| {
+        const m = try arena.dupe(Prov, g);
+        std.mem.sort(Prov, m, w, provLess);
+        d.* = m;
+    }
+    std.mem.sort([]const Prov, gs, w, groupLess);
+    var out = x;
+    out.groups = gs;
+    return out;
+}
+
 fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
     if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
+    if (x.isApart()) {
+        const n = @min(x.groups.len, y.groups.len);
+        for (x.groups[0..n], y.groups[0..n]) |g, h| {
+            if (groupLess(w, g, h)) return true;
+            if (groupLess(w, h, g)) return false;
+        }
+        return x.groups.len < y.groups.len;
+    }
     const xa = provKey(w, x.a);
     const ya = provKey(w, y.a);
     if (xa.less(ya) or ya.less(xa)) return xa.less(ya);
@@ -393,10 +433,22 @@ fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
 
 fn writeAtoms(w: *Writer, arena: Allocator, atoms: []const XAtom) Allocator.Error!void {
     const sorted = try arena.dupe(XAtom, atoms);
+    for (sorted) |*a| if (a.isApart()) {
+        a.* = try canonicalApart(w, arena, a.*);
+    };
     std.mem.sort(XAtom, sorted, w, atomLess);
     try w.int(@intCast(sorted.len));
     for (sorted) |a| {
         try w.byte(@backingInt(a.kind));
+        if (a.isApart()) {
+            // Its groups: their count, then each one's members.
+            try w.int(@intCast(a.groups.len));
+            for (a.groups) |g| {
+                try w.int(@intCast(g.len));
+                for (g) |p| try writeProv(w, p);
+            }
+            continue;
+        }
         try writeProv(w, a.a);
         try writeProv(w, a.b);
     }
@@ -704,14 +756,26 @@ fn readProv(r: *Reader) Error!Prov {
 
 fn readAtoms(r: *Reader) Error![]const XAtom {
     const n = try r.count(1 + 2 * 14);
-    const atoms = try r.arena.alloc(XAtom, n);
-    for (atoms) |*a| {
+    var atoms: std.ArrayList(XAtom) = .empty;
+    for (0..n) |_| {
         const kind = try r.enumOf(@FieldType(XAtom, "kind"));
+        if (kind == .apart or kind == .apart_spine) {
+            // Its groups, put in this run's canonical form.
+            const groups = try r.arena.alloc([]Prov, try r.count(4 + 14));
+            if (groups.len < 2) return error.Bad;
+            for (groups) |*g| {
+                g.* = try r.arena.alloc(Prov, try r.count(14));
+                if (g.len == 0) return error.Bad;
+                for (g.*) |*p| p.* = try readProv(r);
+            }
+            try Ownership.apartAtoms(r.arena, kind, groups, &atoms);
+            continue;
+        }
         const x = try readProv(r);
         const y = try readProv(r);
-        a.* = if (kind == .sep) Ownership.sepAtom(x, y) else .{ .kind = kind, .a = x, .b = y };
+        try atoms.append(r.arena, if (kind == .sep) Ownership.sepAtom(x, y) else .{ .kind = kind, .a = x, .b = y });
     }
-    return Ownership.sortAtoms(atoms);
+    return Ownership.sortAtoms(atoms.items);
 }
 
 fn readXSum(r: *Reader) Error!XSum {

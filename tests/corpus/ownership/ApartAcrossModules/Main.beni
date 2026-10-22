@@ -1,0 +1,31 @@
+-- ownership (project): #693, the importer's side. Taking the first row out
+-- of `Rows.four`'s result and pushing onto it is accepted only when the
+-- apart atom of `four`'s summary holds at the call: four distinct lists
+-- pass, one list handed twice does not.
+import Rows
+
+
+pub distinct : ⊤ → Int
+distinct ⊤ =
+    case Rows.four [ 1 ] [ 2 ] [ 3 ] [ 4 ] of
+        [ r, …rest ] →
+            List.length (List.push r 9) + List.length rest
+
+        [] →
+            0
+
+
+pub twice : List Int → Int
+twice xs =
+    case Rows.four xs [ 2 ] [ 3 ] xs of
+        [ r, …rest ] →
+            List.length (List.push r 9) + List.length rest
+
+        [] →
+            0
+
+
+pub boxed : List Int → Int
+boxed xs =
+    b = Rows.box xs [ 2 ] [ 3 ] [ 4 ]
+    List.length (List.push b.a 9) + List.length b.d

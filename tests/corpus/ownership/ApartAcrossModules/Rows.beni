@@ -1,0 +1,18 @@
+-- ownership (project): #693. A list literal of four parameters states that
+-- they are pairwise apart as one atom, `apart [π1] [π2] [π3] [π4]`
+-- (`ownership-checker.md` §16.7, amended 2026-10-22), and a constructor of
+-- four does the same. The importer reads both through the summary block
+-- (§28.4, version 21).
+type alias Box =
+    a : List Int
+    b : List Int
+    c : List Int
+    d : List Int
+
+
+pub four : List Int, List Int, List Int, List Int → List (List Int)
+four a b c d = [ a, b, c, d ]
+
+
+pub box : List Int, List Int, List Int, List Int → Box
+box a b c d = { a = a, b = b, c = c, d = d }
