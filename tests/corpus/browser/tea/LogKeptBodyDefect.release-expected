@@ -1,0 +1,29 @@
+-- load
+<body>
+  <main>
+    <p id="n">"0"</p>
+    <button id="plain">"plain"</button>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- click #plain
+console.info: a command made outside any context
+<body>
+  <main>
+    <p id="n">"1"</p>
+    <button id="plain">"plain"</button>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- throws click #go
+console.info: a kept body, before it throws {"request":"r1"}
+(threw: Error: TODO: a kept body threw)
+<body>
+  <main>
+    <p id="n">"2"</p>
+    <button id="plain">"plain"</button>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- click #plain
+(the DOM did not change)
