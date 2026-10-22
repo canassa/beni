@@ -1,0 +1,160 @@
+-- A read through Js.Value must name its full type, including List's argument.
+import Js
+
+
+pub ints : Js.Value → List Int
+ints value = Js.to value
+
+
+pub strings : Js.Value → List String
+strings value = Js.to value
+
+
+pub roundTrip : List Int → List Int
+roundTrip xs = Js.to (Js.from xs)
+
+
+-- A first cast into a full type remains one exact parameter place.
+pub first : Js.Value → List Int
+first value = List.push (ints value) 1
+
+
+-- A trailing cast boundary still names the original array.
+pub retained : List Int → List Int × List Int
+retained xs =
+    ys = roundTrip xs
+    ( List.push ys 1, xs )
+
+
+pub generic : List a → List a
+generic xs = Js.to (Js.from xs)
+
+
+pub genericRoundTrip : List Int → List Int
+genericRoundTrip xs = List.push (generic xs) 1
+
+
+pack : List a × Int → Js.Value
+pack value = Js.from value
+
+
+unpack : Js.Value → List a × Int
+unpack value = Js.to value
+
+
+-- Specialize both full types at this call, including their type arguments.
+pub genericPair : List Int → List Int
+genericPair xs =
+    ( ys, _ ) = unpack (pack ( xs, 0 ))
+    List.push ys 1
+
+
+pub retainedPair : List Int → List Int × List Int
+retainedPair xs =
+    ( ys, _ ) = unpack (pack ( xs, 0 ))
+    ( List.push ys 1, xs )
+
+
+pub exactPair : List Int → List Int
+exactPair xs =
+    pair : List Int × Int
+    pair = unpack (pack ( xs, 0 ))
+    ( ys, _ ) = pair
+    List.push ys 1
+
+
+pub storedTwice : Js.Value → List (List Int)
+storedTwice value =
+    xs = ints value
+    [ xs, roundTrip xs ]
+
+
+type alias Link =
+    parent : Js.Value
+    values : List Int
+
+
+linkOf : Js.Value → Link
+linkOf value = Js.to value
+
+
+pub collect : Int, Js.Value → List Int
+collect n value =
+    link = linkOf value
+    if n == 0 then link.values else collect (n - 1) link.parent
+
+
+-- The same list at two levels remains shared after folding and projection.
+pub atTwoLevels : List Int → List Int × List Int
+atTwoLevels xs =
+    leaf = Js.from { parent = Js.null, values = xs }
+    root = Js.from { parent = leaf, values = xs }
+    ( List.push (collect 1 root) 1, (linkOf root).values )
+
+
+pub sharedStorage : Js.Value → List (List Int)
+sharedStorage value =
+    xs = ints value
+    rows = [ xs, roundTrip xs ]
+    List.map rows λys → List.push ys 1
+
+
+pub intFunction : Js.Value → (Int → List Int)
+intFunction value = Js.to value
+
+
+pub stringFunction : Js.Value → (String → List Int)
+stringFunction value = Js.to value
+
+
+pub otherRecord : Js.Value → { parent : Js.Value, values : List String }
+otherRecord value = Js.to value
+
+
+recordPack : { r | values : List a } → Js.Value
+recordPack record = Js.from record
+
+
+recordUnpack : Js.Value → { r | values : List a }
+recordUnpack value = Js.to value
+
+
+pub exactExtended : List Int → List Int
+exactExtended xs =
+    record : { count : Int, values : List Int }
+    record = recordUnpack (recordPack { count = 0, values = xs })
+    List.push record.values 1
+
+
+pub retainedExtended : List Int → List Int × List Int
+retainedExtended xs =
+    record : { count : Int, values : List Int }
+    record = recordUnpack (recordPack { count = 0, values = xs })
+    ( List.push record.values 1, xs )
+
+
+pub extendedRoundTrip : { count : Int, values : List Int } → { count : Int, values : List Int }
+extendedRoundTrip record = recordUnpack (recordPack record)
+
+
+pub useExtended : List Int → List Int
+useExtended xs =
+    record = extendedRoundTrip { count = 0, values = xs }
+    List.push record.values 1
+
+
+pub retainExtended : List Int → List Int × List Int
+retainExtended xs =
+    record = extendedRoundTrip { count = 0, values = xs }
+    ( List.push record.values 1, xs )
+
+
+-- These views have different full types, but still share one physical array.
+pub stringView : List Int → List String
+stringView xs = Js.to (Js.from xs)
+
+
+pub retainedView : List Int → List String × List Int
+retainedView xs =
+    ys = stringView xs
+    ( List.push ys "tail", xs )

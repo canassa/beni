@@ -3245,7 +3245,7 @@ const Case = struct {
         const trace = try std.fmt.allocPrint(c.arena, "ownership-trace-{s}.json", .{name});
         const profile = try std.fmt.allocPrint(c.arena, "--self-profile={s}/{s}", .{ project, trace });
         for ([_][]const u8{ "writes", "reads" }) |pass| {
-            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, &.{ dir, profile, path } });
+            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, if (c.fixture.core) &.{"--core"} else &.{}, &.{ dir, profile, path } });
             const r = try c.w.runWith(cmd, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
             if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
                 detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });

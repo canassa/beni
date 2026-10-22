@@ -1,17 +1,9 @@
 module LimitSpine
   11:13 List.push a: accepted param
-  19:9 call LimitSpine.first <literal>[*]: rejected limit: the callee needs the list's elements not to share, and they may (LimitSpine.first writes π1[*]) (approx)
-  283:10 call List.map xs[*]: rejected limit: it was given to JavaScript, or kept by a callee; the callee's summary is past the checker's limits, so it is taken to write and keep its arguments (LimitSpine.wide writes what List.map supplies it) (approx)
-  283:10 update xs[*]: rejected limit: it was given to JavaScript, or kept by a callee; the callee's summary is past the checker's limits, so it is taken to write and keep its arguments (List.map writes it) (approx) [copy]
-  283:10 value LimitSpine.wide: accepted callback-param (List.map supplies it owned)
-  285:15 List.push a: rejected limit: it came from a callee whose summary is past the checker's limits (approx)
+  19:9 call LimitSpine.first <literal>[*]: accepted fresh (LimitSpine.first writes π1[*])
+  285:15 List.push a: accepted call
   summary first: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*][*]{excl π1}, fresh1 π1[*]{excl π1}; xreq excl π1
-  summary wide: π1 RAEwW{}; res ~⊤{lost}r{lost}; limit value-cells 258
-  summary mapped: π1 R, π1[*] EwW{}; res [*] fresh{lost} ~condition(fresh2) ~fresh2{lost} ~⊤limit{lost}r{lost}, [*][*] ~condition(fresh3) ~fresh{lost} ~⊤limit{lost}r{lost}, fresh1{lost}r{lost}; xreq excl π1
-  limit wide: value-cells 258, over 256
-  demands 5: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
-  records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
-total 5: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
-records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
-limits 1
-cause limit 3
+  summary wide: res fresh1
+  summary mapped: π1 R; res [*] fresh ~condition(fresh2) ~fresh2, [*][*] ~fresh, fresh1{lost}r{lost}
+  demands 3: accepted 3 (fresh 1, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 1, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

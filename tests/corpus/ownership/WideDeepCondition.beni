@@ -1,9 +1,5 @@
--- ownership (§16.7, issue #233): a condition the walk lowered because it
--- reached a limit is the limit's, not a second error. `first` writes an
--- element it takes from its list, so it needs the list's elements apart;
--- `wideCall`'s list holds 258 cells, past the `value-cells` limit, so that
--- condition is lost to the limit. Before, the call was also refused as
--- elements that may share, beside the limit; now it takes the `limit` cause.
+-- Deep conditions keep every cell beyond the former pairwise width limit.
+-- The fresh case is accepted; the borrowed twin remains refused.
 first : List (List Int) → List Int
 first xss =
     case xss of
@@ -274,3 +270,9 @@ wideCall ⊤ =
         , [ 255 ]
         , [ 256 ]
         ]
+
+
+pub sharing : List Int → List Int × List Int
+sharing xs =
+    result = first [ xs, xs ]
+    ( result, xs )

@@ -1,0 +1,21 @@
+import Js
+
+
+pub pack : List a × Int → Js.Value
+pack value = Js.from value
+
+
+pub unpack : Js.Value → List a × Int
+unpack value = Js.to value
+
+
+pub list : Js.Value → List a
+list value = Js.to value
+
+
+pub record : Js.Value → { r | values : List a }
+record value = Js.to value
+
+
+pub seal : { r | values : List a } → Js.Value
+seal value = Js.from value

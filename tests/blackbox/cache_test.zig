@@ -5613,3 +5613,53 @@ test "a cached hoist table round trips and an unknown version is a miss" {
 test "a cached hoist table with a placement outside its BIR is a miss" {
     try hoistCache(.placement);
 }
+
+test "cached full-type casts specialize in a freshly checked consumer" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Casts.beni",
+        \\import Js
+        \\
+        \\pub list : Js.Value → List a
+        \\list value = Js.to value
+        \\
+    );
+    try w.write("src/App.beni",
+        \\import Casts
+        \\import Js
+        \\
+        \\pub change : List Int → List Int
+        \\change xs = List.push (Casts.list (Js.from xs)) 1
+        \\
+    );
+    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-inline", "--core", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const cold = try w.runWith(&args, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    // Rebuild only the consumer, with different type-store allocations.
+    // Its provider's generic cast must come from the portable summary block.
+    try w.write("src/App.beni",
+        \\import Casts
+        \\import Js
+        \\
+        \\pub other : { label : String, rows : List String } → Int
+        \\other record = List.length record.rows + String.length record.label
+        \\
+        \\pub change : List Int → List Int × List Int
+        \\change xs =
+        \\    ys : List Int
+        \\    ys = Casts.list (Js.from xs)
+        \\    ( List.push ys 1, xs )
+        \\
+    );
+    const warm = try runCounted(&w, arena, &args, "cast-warm.json");
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--core", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), plain.exit_code);
+    try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
+    try testing.expectEqual(plain.exit_code, warm.result.exit_code);
+    try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+    try testing.expect(warm.counters.hits > 0);
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+}

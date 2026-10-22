@@ -1,0 +1,23 @@
+module Casts
+  summary pack: π1 RA; res π1
+  summary unpack: π1 R, π1⟨as tuple(33:1:List::List(16:var(0:Casts:1:0))15:1:Basics::Int())⟩ A; res π1⟨as tuple(33:1:List::List(16:var(0:Casts:1:0))15:1:Basics::Int())⟩
+  summary list: π1 R, π1⟨as 1:List::List(16:var(0:Casts:2:0))⟩ A; res π1⟨as 1:List::List(16:var(0:Casts:2:0))⟩
+  summary record: π1 R, π1⟨as record(6:values=33:1:List::List(16:var(0:Casts:3:0))|16:var(0:Casts:3:1))⟩ A; res π1⟨as record(6:values=33:1:List::List(16:var(0:Casts:3:0))|16:var(0:Casts:3:1))⟩
+  summary seal: π1 RA; res π1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  12:5 List.push ys: accepted param
+  20:7 List.push ys: rejected alias: xs holds it and is read at 20:5
+  24:15 List.push <call Casts.list>: accepted param
+  34:5 List.push record.values: accepted param
+  40:7 List.push record.values: rejected element: xs holds it and is read at 40:5 (approx)
+  summary fresh: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary retained: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary first: π1 R, π1⟨as 1:List::List(18:1:String::String())⟩ RAW[storage], π1⟨as 1:List::List(18:1:String::String())⟩[*] A; res [*] ~π1⟨as 1:List::List(18:1:String::String())⟩[*], π1⟨as 1:List::List(18:1:String::String())⟩
+  summary extended: π1 R, π1⟨as record(5:count=15:1:Basics::Int()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩ RA; res π1⟨as record(5:count=15:1:Basics::Int()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩
+  summary useExtended: π1 RAw[storage]; res [*]⋆ ~π1, ⋆ ~π1
+  summary retainExtended: π1 RAw[storage]; res .0[*]⋆ ~condition(fresh4) ~π1, .0⋆ ~condition(fresh3) ~π1, .1 ~condition(fresh2) π1, condition(fresh1){lost}
+  demands 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause alias 1
+cause element 1
