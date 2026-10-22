@@ -816,3 +816,27 @@ directly: the same raw size (brotli −12 to +6), or 18 raw smaller in `LogLevel
 `LogDefaultSink`, whose context loses `minimum:"Info"`. In the other 8 it cannot fold the context,
 and the call keeps `c.minimum===undefined?"Info":c.minimum`: +36 raw and −3 to +17 brotli. Every
 other build has the same size.
+
+*P7, fifth part, as built (2026-10-22; #597).* A page command's body keeps the log context of the
+place where the command was made, as the owner decided on 2026-10-21 (Cesar, dashboard
+`node-log-q3`; `boundary.md` §9.8.16 (b) and proposal §17.5 and §17.11, amended). `Hosted.job` and
+`Hosted.later` give each body to `Task.keepLogContext`, which reads the log-context slot and, when
+one is set, gives back a function that runs the body inside it. Its run path is `withLogContext`'s
+body without the write of `slotted` (`inLogContext`): with that write, every page that makes a
+command reached it, and the release optimiser could not fold the slots away. That first build cost
+release pages that set no slot +115 to +4 591 raw. Which context the `update` of a message that a
+body sends has is the owner's open question, `node-log-q4`. Fixtures: `browser/tea/LogContext`'s
+command lines now carry `request=r1`, and its `Debug` line is written; `browser/tea/LogCommandContext`
+covers `perform`, `keyed` and `task`, a body that waits and one that does not, `afterRender`, a span
+after a wait, `Cmd.map`, `withSink`, and a command made outside any context. Both fail on `master`,
+and mutants without the capture in `job`, in `later` or in `keepLogContext` fail them in development
+and release. **Bytes** (every `browser/tea` and `browser/dom` fixture and the six page examples, 612
+builds, one compiler with `master`'s `core/` and `platforms/` against the branch's, no source maps):
+release, the 4 pages that set a slot +213 to +450 raw; of the pages that set none, 31 the same raw
+size (brotli −7 to +41) and 23 +4 to +51 raw (#765: the optimiser keeps a field name and two empty
+cells of the code that it removes). Development, 81 pages +766 to +2 700 raw: nothing folds there,
+so a page that makes a command ships the slot code. **Instructions** (a Node loop, per call):
+`keepLogContext` costs 0 in a release build that sets no slot, about 270 where a slot is set but no
+context is in force, and a body run in a context about 1 150 more, against about 1 950 for one
+`Log.annotate`. **Ownership:** the summaries of 28 `ownership/` goldens lose precision, because the
+checker does not see through `keepLogContext`'s lambda (`{lost}` 582 → 1 099); no verdict changes.
