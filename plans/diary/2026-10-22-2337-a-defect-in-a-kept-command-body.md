@@ -20,6 +20,9 @@
   start one, create it empty and bless.
 - In this worktree's shell, `zig` is not on `PATH`; a locked job runs it
   with `nix develop --command`.
-- When a kept body with no fiber throws, `inLogContext` does not put the
-  old slots of the `outside` record back. The defect stops the page, so no
-  later code can read them; the fixture pins that the page stops.
+- When a kept body with no fiber throws, `inLogContext`'s restore stays a
+  finaliser of the `outside` record. The teardown runs it one macrotask
+  later, in a fiber of its own, so the old slots are put back. The gap is
+  elsewhere (#811, found by the review): that teardown fiber has no slots,
+  so a `bracket` release that the body left runs with the default context,
+  not the body's.
