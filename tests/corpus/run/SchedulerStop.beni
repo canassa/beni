@@ -1,0 +1,75 @@
+-- run: `Task.stopScheduler` stops one scheduler alone
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22). The fibers
+-- under it are cancelled and their releases run; a release that waits past
+-- the deadline is cut short and counted for `done`; a fiber under another
+-- scheduler runs on to its end meanwhile. The deadline is 1 ms: a timer
+-- fires only once every microtask has run, so the order does not depend on
+-- the machine. `z 3` comes first because the stop's teardown is queued and
+-- the main fiber goes on before it runs.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+steps : String, Int → ⊤
+steps name n =
+    if n == 0 then
+        ⊤
+    else
+        say "${name} ${String.fromInt n}"
+        Task.yieldNow ⊤
+        steps name (n - 1)
+
+
+held : String → ⊤
+held name = Task.bracket (λ⊤ → ⊤) (λ_ _ → say "${name} released") λ_ → Task.never ⊤
+
+
+-- A release that never ends: the deadline cuts it.
+stuck : String → ⊤
+stuck name =
+    Task.bracket
+        (λ⊤ → ⊤)
+        (λ_ _ →
+            say "${name} releasing"
+            Task.never ⊤
+        )
+        λ_ → Task.never ⊤
+
+
+report : Int → ⊤
+report cut =
+    _ = Debug.log "cut" cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    stopping = Task.scheduler λ⊤ → ⊤
+    other = Task.scheduler λ⊤ → ⊤
+
+    ( x, y ) = Task.withScheduler stopping λ⊤ →
+        pair = ( Task.spawn λ⊤ → held "x", Task.spawn λ⊤ → stuck "y" )
+        -- Queued behind `x` and `y` on their scheduler: when this fiber
+        -- goes on, both have run to their waits.
+        Task.yieldNow ⊤
+        pair
+    Task.stopScheduler stopping 1 report
+    Task.withScheduler other λ⊤ → steps "z" 3
+    _ = Debug.log "x" (outcome (Task.wait x))
+    _ = Debug.log "y" (outcome (Task.wait y))
+    Node.done
