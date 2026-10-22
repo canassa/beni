@@ -1,0 +1,13 @@
+--! A test platform that reads a function field of a record by a key made
+--! at run time, `r[name]`, and calls it (#685). The release specialiser's
+--! call graph must count the function as called.
+
+import Js
+
+
+--| `r.f n`, the field read by a name made at run time.
+pub viaKey : { f : Int → Int }, Int → Int
+viaKey r n =
+    name = Js.call (Js.from "f") "toString" []
+    g = Js.get (Js.from r) (Js.to name)
+    Js.to (Js.apply g [ Js.from n ])
