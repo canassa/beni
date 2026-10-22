@@ -69,8 +69,7 @@ handle request =
 - The bindings: `Worker.var (Worker.env ctx) name` is a plain-text variable (`Maybe String`),
   `Worker.service` a service binding, `Worker.objects` a Durable Object namespace. Each answers
   `Nothing` when the configuration does not declare the name.
-- A fiber that must run after the answer is started with `Task.spawnDetached`; it runs under
-  `waitUntil`, and the platform stops it 25 seconds after the answer.
+- A fiber started with `Task.spawnDetached` runs after the answer, for at most 25 seconds.
 - Build with `beni build --platform=cloudflare --out=out Main.beni` and point `wrangler.jsonc`'s
   `main` at `out/_worker.mjs`. The entry file exports the Durable Object classes the app's
   `beni.json` lists under `"exports"`.
@@ -88,10 +87,11 @@ handle request =
   objects is `Err Cycle`, a message that does not parse is `Err Unreadable`, and a `Reply` that
   no one can answer is `Err NoReply`. `Object.self ctx` is the object's own ref; inside an
   object, `Object.env ctx` holds the bindings.
-- `Worker.Storage.get ctx schema key`, `put`, `delete` and `keys ctx prefix` are the object's
-  key-value store, through schemas. A `put` over 2 000 000 bytes is `Err TooLarge`.
+- `Worker.Storage.get ctx schema key`, `put`, `delete` and `keys ctx prefix` are the store.
 - A defect in a handler stops the object: its fibers are cancelled, their `Task.bracket`
   releases run, the request in flight fails, and the next event starts a new instance.
+- A WebSocket is answered by the `request` handler with `Object.accept`; `references/websocket.md`
+  has the object's socket.
 
 ```beni platform=cloudflare
 import Schema

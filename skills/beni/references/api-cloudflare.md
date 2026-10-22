@@ -10,10 +10,25 @@ needs. Effects are inferred and never written; a value whose result reaches the 
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
 module WebSocket
+  type AttachError
+    TooLarge
+    Unprintable
   alias Close
     Close
+  type CloseError
+    InvalidCode
+    ReasonTooLong
   type Socket
+  type WriteError
+    NotOpen
+  value attach : Socket, Schema e a, a → Result AttachError ⊤  -- impure
+  value attachment : Socket, Schema e a → Result (List Issue) (Maybe a)  -- impure
+  value close : Socket, Close → Result CloseError ⊤  -- impure
   value eq : Socket, Socket → Bool
+  value id : Socket → String  -- impure
+  value protocol : Socket → String  -- impure
+  value tags : Socket → List String  -- impure
+  value write : Socket, String → Result WriteError ⊤  -- impure
 module Worker
   type Context
   type Definition
@@ -56,6 +71,11 @@ module Worker
   value var : Env, String → Maybe String  -- impure
   value withHeader : Response, String, String → Response  -- impure
 module Worker.Object
+  type AcceptError
+    NotAnUpgrade
+    TooManyTags
+    TooManySockets
+    ProtocolNotOffered
   type AskError
     Overloaded
     Reset
@@ -69,9 +89,12 @@ module Worker.Object
     Handlers
   alias Ref a
   type Reply a
+  value accept : Context msg, Request, List String → Result AcceptError (Socket × Response)  -- impure
+  value acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)  -- impure
   value alarmAt : Context msg, Int → ⊤  -- impure
   value alarmIn : Context msg, Duration → ⊤  -- impure
   value ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a  -- suspends
+  value autoReply : Context msg, String, String → ⊤  -- impure
   value body : Request → String  -- impure
   value cancelAlarm : Context msg → ⊤  -- impure
   value define : String, Schema e msg, (Context msg → state), Handlers state msg → Definition
