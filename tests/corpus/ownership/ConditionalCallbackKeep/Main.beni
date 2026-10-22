@@ -1,0 +1,26 @@
+-- The other module is read through its serialized summary, including
+-- the guarded ownership requirement. Read-only callbacks pass; a writer
+-- retains the refusal, and returned aliases still reach a later write.
+import Keep
+
+
+pub readOnly : ⊤ → (List Int × Int) × List Int
+readOnly ⊤ = Keep.wrapped (λxs → ( xs, 1 )) λxs → xs
+
+
+pub shared : ⊤ → (List Int × Int) × List Int
+shared ⊤ = Keep.wrapped (λxs → ( xs, 1 )) λxs → List.push xs 9
+
+
+pub recursiveReadOnly : ⊤ → (List Int × Int) × List Int
+recursiveReadOnly ⊤ = Keep.recursive 1 (λxs → ( xs, 1 )) λxs → xs
+
+
+pub recursiveShared : ⊤ → (List Int × Int) × List Int
+recursiveShared ⊤ = Keep.recursive 1 (λxs → ( xs, 1 )) λxs → List.push xs 9
+
+
+pub returnedSharing : ⊤ → (List Int × Int) × List Int
+returnedSharing ⊤ =
+    ( kept, xs ) = Keep.wrapped (λys → ( ys, 1 )) λys → ys
+    ( kept, List.push xs 9 )

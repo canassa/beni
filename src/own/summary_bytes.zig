@@ -93,7 +93,8 @@ pub const magic = "BENIOWN\x00";
 /// 23 carries projection-aware container conditions and their sep_root atom (#720).
 /// 24 invalidates rows before declaration-selected hosted entry protocols (#750).
 /// 25 preserves conditional container facts for folded Dict tree positions.
-pub const version: u32 = 25;
+/// 26 preserves each callback owned-result requirement's possible writers.
+pub const version: u32 = 26;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -566,6 +567,8 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
         try w.byte(@backingInt(f.calls));
         try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1 | @as(u8, @intFromBool(f.sends)) << 2 | @as(u8, @intFromBool(f.rneed)) << 3);
         try w.int(f.send);
+        try w.int(@intCast(f.need_if.len));
+        for (f.need_if) |writer| try w.int(writer);
     }
 
     try writeAtoms(w, arena, s.xreq);
@@ -851,13 +854,16 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     const supply = try readSupply(r);
     const rsupply = try readSupply(r);
 
-    const funs = try r.arena.alloc(FunFacts, try r.count(10));
+    const funs = try r.arena.alloc(FunFacts, try r.count(14));
     for (funs) |*f| {
         const param = try r.int();
         const calls = try r.enumOf(Ownership.Calls);
         const bits = try r.byte();
         if (bits > 15) return error.Bad;
         f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .sends = bits & 4 != 0, .rneed = bits & 8 != 0, .send = try r.int() };
+        const guards = try r.arena.alloc(u32, try r.count(4));
+        for (guards) |*writer| writer.* = try r.int();
+        f.need_if = guards;
     }
 
     const xreq = try readAtoms(r);

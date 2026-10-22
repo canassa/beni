@@ -785,6 +785,8 @@ pub const Calls = enum(u8) { zero, once, many };
 
 pub const FunFacts = struct {
     param: u32,
+    /// Owned result required if any named callback may write a list.
+    need_if: []const u32 = &.{},
     calls: Calls = .zero,
     need: bool = false,
     /// §31.5: what this parameter returns is a record the callee writes, so
@@ -2005,7 +2007,13 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
             a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc)) return false;
     }
-    for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
+    for (x.funs, y.funs) |a, b| {
+        var aa = a;
+        var bb = b;
+        aa.need_if = &.{};
+        bb.need_if = &.{};
+        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if)) return false;
+    }
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     if (x.rxreq.len != y.rxreq.len) return false;
     for (x.rxreq, y.rxreq) |a, b| if (!a.eql(b)) return false;
@@ -2309,7 +2317,9 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.supply = supply;
     out.objs = objs;
     out.rsupply = rsupply;
-    out.funs = try keep.dupe(FunFacts, s.funs);
+    const funs = try keep.dupe(FunFacts, s.funs);
+    for (funs) |*f| f.need_if = try keep.dupe(u32, f.need_if);
+    out.funs = funs;
     out.xreq = try dupeAtoms(keep, s.xreq);
     out.rxreq = try dupeAtoms(keep, s.rxreq);
     out.slots = try keep.dupe([2]u32, s.slots);
@@ -2327,7 +2337,13 @@ fn summaryEql(x: Summary, y: Summary) bool {
     for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
     if (x.rsupply.len != y.rsupply.len) return false;
     for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc)) return false;
-    for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
+    for (x.funs, y.funs) |a, b| {
+        var aa = a;
+        var bb = b;
+        aa.need_if = &.{};
+        bb.need_if = &.{};
+        if (!std.meta.eql(aa, bb) or !std.mem.eql(u32, a.need_if, b.need_if)) return false;
+    }
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     if (x.rxreq.len != y.rxreq.len) return false;
@@ -2460,8 +2476,9 @@ fn carriedProtocol(a: Allocator, s: *const Summary) Allocator.Error![]const u32 
     var key: std.ArrayList(u32) = .empty;
     try key.appendSlice(a, &.{ s.params, @intCast(s.slots.len) });
     for (s.slots) |slot| try key.appendSlice(a, &slot);
-    for (s.funs) |f| if (f.send != none or f.rneed) {
-        try key.appendSlice(a, &.{ f.param, f.send, @intFromBool(f.rneed) });
+    for (s.funs) |f| if (f.send != none or f.rneed or f.need_if.len != 0) {
+        try key.appendSlice(a, &.{ f.param, f.send, @intFromBool(f.rneed), @intCast(f.need_if.len) });
+        try key.appendSlice(a, f.need_if);
     };
     return key.items;
 }
@@ -2591,6 +2608,22 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     });
 }
 
+/// A finite set of possible writers. Unlike a field write set, its empty
+/// set means no dependency, so joining it never discards another set.
+fn unionGuards(a: Allocator, x: []const u32, y: []const u32) Allocator.Error![]const u32 {
+    const out = try a.alloc(u32, x.len + y.len);
+    @memcpy(out[0..x.len], x);
+    @memcpy(out[x.len..], y);
+    std.mem.sort(u32, out, {}, std.sort.asc(u32));
+    var n: usize = 0;
+    for (out) |writer| {
+        if (n != 0 and out[n - 1] == writer) continue;
+        out[n] = writer;
+        n += 1;
+    }
+    return out[0..n];
+}
+
 /// Sorted, merged, and within the checker's limits (§16.7): a summary that
 /// needs more entries than they allow is the pessimistic one, and the
 /// declaration it belongs to is an error. Nothing is ever cut to fit.
@@ -2606,7 +2639,8 @@ const Over = struct { limit: Limit, at: u32 };
 /// The first of §16.7's limits a normalized summary is past, with what it
 /// measured: its entries in all, then its entries at one path.
 fn overLimit(s: Summary) ?Over {
-    const total = s.uses.len + s.res.len + s.objs.len + s.supply.len + s.rsupply.len;
+    var total = s.uses.len + s.res.len + s.objs.len + s.supply.len + s.rsupply.len;
+    for (s.funs) |f| total += f.need_if.len;
     if (total > entry_cap) return .{ .limit = .entries, .at = @intCast(@min(total, std.math.maxInt(u32))) };
     var most: usize = 0;
     var streak: usize = 0;
@@ -2911,13 +2945,18 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
             p.calls = @fromBackingInt(@max(@backingInt(p.calls), @backingInt(f.calls)));
             p.sends = (p.need or f.need) and (!p.need or p.sends) and (!f.need or f.sends);
             p.need = p.need or f.need;
+            p.need_if = try unionGuards(keep, p.need_if, f.need_if);
             p.seen = p.seen and f.seen;
             if (p.send == none) p.send = f.send;
             continue;
         }
         funs[nf] = f;
+        funs[nf].need_if = try unionGuards(keep, f.need_if, &.{});
         nf += 1;
     }
+    for (funs[0..nf]) |*f| if (f.need) {
+        f.need_if = &.{};
+    };
     const out: Summary = .{
         .params = s.params,
         .uses = uses[0..nu],
@@ -4400,6 +4439,16 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
             .many => "many",
         } }) catch return error.OutOfMemory;
         if (f.need) wr.writeAll(", need owned") catch return error.OutOfMemory;
+        var guards: std.ArrayList([]const u8) = .empty;
+        for (f.need_if) |writer| {
+            const name = if (writer >= s.params and writer - s.params < s.slots.len)
+                try std.fmt.allocPrint(arena, "π{d}{s}", .{ s.slots[writer - s.params][0] + 1, try o.pathText(s.slots[writer - s.params][1]) })
+            else
+                try std.fmt.allocPrint(arena, "π{d}", .{writer + 1});
+            try guards.append(arena, name);
+        }
+        sortText(guards.items);
+        for (guards.items) |name| wr.print(", need owned if {s} writes", .{name}) catch return error.OutOfMemory;
         if (f.rneed) wr.writeAll(", need owned record") catch return error.OutOfMemory;
         if (!f.seen) wr.writeAll(", unseen") catch return error.OutOfMemory;
         if (f.send != none) wr.print(", sends π{d}", .{f.send + 1}) catch return error.OutOfMemory;
@@ -6496,6 +6545,7 @@ const PatSite = struct { list: Inst.Index, index: u32, spread: bool, scrut: AV =
 
 /// What the walk learns about a function-typed parameter (§16.2).
 const FnState = struct {
+    need_if: std.ArrayList(u32) = .empty,
     is_fn: bool = false,
     calls: Calls = .zero,
     need: bool = false,
@@ -13707,14 +13757,20 @@ const Walker = struct {
     fn callbackKeeps(w: *Walker, inst: Inst.Index, callee: Callee, s: *const Summary, args: []const Inst.Index, avs: []const AV, j: u32) Allocator.Error!void {
         for (s.supply, 0..) |e, ei| {
             if (e.fun != j or e.owned or e.prov.kind != .param) continue;
+            var writers: std.ArrayList(u32) = .empty;
             const written = for (s.uses) |u| {
                 if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.writeOverlap(u.path, e.prov.path, u.extent)) break true;
-            } else try w.writtenByCallback(s, avs, e, ei);
-            if (!written) continue;
+            } else try w.writtenByCallback(s, avs, e, ei, &writers);
+            if (!written and writers.items.len == 0) continue;
             const actual = (try w.actualOf(s, avs, j)) orelse continue;
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
-                w.fn_state.items[jj].need = true;
-                w.fn_state.items[jj].need_edit = true;
+                if (written) {
+                    w.fn_state.items[jj].need = true;
+                    w.fn_state.items[jj].need_edit = true;
+                } else for (writers.items) |writer| {
+                    if (std.mem.indexOfScalar(u32, w.fn_state.items[jj].need_if.items, writer) == null)
+                        try w.fn_state.items[jj].need_if.append(w.a, writer);
+                }
                 continue;
             }
             const classes = try w.classesOf(actual);
@@ -13763,12 +13819,16 @@ const Walker = struct {
     /// Whether the callee hands `πᵢ` of supply `e` (index `ei`) to another
     /// callback too, whose actual writes it: a class that writes the part
     /// supplied, one with no class, or the caller's own function parameter,
-    /// whose writes are decided outside (#281).
-    fn writtenByCallback(w: *Walker, s: *const Summary, avs: []const AV, e: SupplyEntry, ei: usize) Allocator.Error!bool {
+    /// whose writes are decided outside (#281). Those symbolic writers
+    /// are collected as guards instead of forcing an unconditional need.
+    fn writtenByCallback(w: *Walker, s: *const Summary, avs: []const AV, e: SupplyEntry, ei: usize, writers: *std.ArrayList(u32)) Allocator.Error!bool {
         for (s.supply, 0..) |x, xi| {
             if (xi == ei or x.prov.kind != .param or x.prov.a != e.prov.a or !w.o.overlap(x.prov.path, e.prov.path)) continue;
             const actual = (try w.actualOf(s, avs, x.fun)) orelse continue;
-            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |_| return true;
+            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |writer| {
+                if (std.mem.indexOfScalar(u32, writers.items, writer) == null) try writers.append(w.a, writer);
+                continue;
+            }
             const classes = try w.classesOf(actual);
             if (classes.len == 0) return true;
             for (classes) |cls| {
@@ -15268,7 +15328,7 @@ const Walker = struct {
         if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 };
         const classes = try w.classesOf(actual);
-        try w.checkClasses(inst, callee, args, avs, j, ff, actual, ictx, classes);
+        try w.checkClasses(inst, callee, args, avs, j, try w.resolveNeed(s, avs, ff), actual, ictx, classes);
     }
 
     /// §24.9: a callee's function slot — a function it calls that is stored
@@ -15276,10 +15336,11 @@ const Walker = struct {
     /// passed on; a function value the caller wrote went through `sight`
     /// where it was stored, so what remains is what the callee does with
     /// what it returns (`need`).
-    fn checkSlot(w: *Walker, inst: Inst.Index, slot_callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, ff: FunFacts, actual: AV) Allocator.Error!void {
+    fn checkSlot(w: *Walker, inst: Inst.Index, slot_callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, facts: FunFacts, actual: AV) Allocator.Error!void {
         const s = slot_callee.sum;
         const callee = slot_callee.name;
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, facts, jj);
+        const ff = try w.resolveNeed(s, avs, facts);
         if (!ff.need) return;
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
         const classes = try w.classesOf(actual);
@@ -15343,10 +15404,51 @@ const Walker = struct {
         });
     }
 
+    /// A callback with no list write cannot be the writer of a keep edge.
+    /// Unknown classes and callbacks called through its own parameters keep
+    /// the conservative requirement.
+    fn mayWrite(w: *Walker, actual: AV) Allocator.Error!bool {
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |_| return true;
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) return true;
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return true;
+            if (c.limit != .none or c.writesAny()) return true;
+            for (c.funs) |f| if (f.calls != .zero or !f.seen) return true;
+        }
+        return false;
+    }
+
+    fn resolveNeed(w: *Walker, s: *const Summary, avs: []const AV, facts: FunFacts) Allocator.Error!FunFacts {
+        var ff = facts;
+        for (facts.need_if) |writer| {
+            const actual = (try w.actualOf(s, avs, writer)) orelse {
+                ff.need = true;
+                break;
+            };
+            if (try w.mayWrite(actual)) {
+                ff.need = true;
+                break;
+            }
+        }
+        return ff;
+    }
+
     /// The caller's own function parameter or slot `jj`, handed to the
     /// callee's function parameter or slot `j`: it takes the callee's facts
     /// (§16.4 item 4).
-    fn passOn(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, j: u32, ff: FunFacts, jj: u32) Allocator.Error!void {
+    fn passOn(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, j: u32, facts: FunFacts, jj: u32) Allocator.Error!void {
+        var ff = facts;
+        var deps: std.ArrayList(u32) = .empty;
+        for (facts.need_if) |writer| {
+            const actual = (try w.actualOf(s, avs, writer)) orelse {
+                ff.need = true;
+                continue;
+            };
+            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |mapped| {
+                if (std.mem.indexOfScalar(u32, deps.items, mapped) == null) try deps.append(w.a, mapped);
+            } else if (try w.mayWrite(actual)) ff.need = true;
+        }
         {
             const st = &w.fn_state.items[jj];
             // §23.3: a function parameter handed on to a send position.
@@ -15362,6 +15464,7 @@ const Walker = struct {
                 }
             }
             st.need = st.need or ff.need;
+            for (deps.items) |writer| if (std.mem.indexOfScalar(u32, st.need_if.items, writer) == null) try st.need_if.append(w.a, writer);
             st.rneed = st.rneed or ff.rneed;
             if (ff.need and !ff.sends) st.need_edit = true;
             st.seen = st.seen and ff.seen;
@@ -18611,7 +18714,7 @@ const Walker = struct {
                         }
                     }
                 }
-                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
+                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need_if = try keep.dupe(u32, st.need_if.items), .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
             }
         } else {
             // A lambda's own function parameters: its class does not follow

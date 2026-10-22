@@ -1010,6 +1010,26 @@ is relied on — a rejected `need` or a borrowed supply is reported as before, w
 
 A call whose callee has no summary is §6.1's conservative call, unchanged (§15 decision 2).
 
+*Amended 2026-10-22 (#210, CK-268): keep the possible writer conditional.*
+When a keep edge's only possible writer is another function parameter or slot
+of the enclosing declaration, its keeper gains an owned-result requirement
+conditional on that writer, rather than an unconditional `need`. The summary
+names each such writer by its function parameter or slot. Through a wrapper,
+its actual is mapped to the wrapper's own function parameter or slot. A known
+actual with no list write discharges this condition; a known writer, an unknown
+class, a limit, or a class whose own callbacks may write keeps the requirement.
+A concrete write in the callee still requires an owned result unconditionally.
+When the keeper is already concrete but its writer remains unknown, the
+existing conservative keep-edge check remains. No unknown callable is made
+known, no opaque value is made fresh, and no record obligation changes.
+
+The dependencies are sorted and deduplicated, joined monotonically and counted
+under the existing summary entry limit. Summary block v26 encodes them and
+summary equality compares their contents. `ConditionalCallbackKeep` pins the
+nonwriting and sharing cases through a record slot and wrapper;
+`ScalarCallbackSlots` pins a unit-state Durable Object. The latter's opaque
+response needs no freshness assertion: its concrete handlers write no list.
+
 ### 16.5 Function values
 
 A **class** is what a summary is for a function value: a lambda's or local function's, read off its frame at

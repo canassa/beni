@@ -1,0 +1,21 @@
+module Keep
+  summary keepThenEdit: π1.edit R, π1.keep R, π2 R; res .0 cb(π1.keep){excl cb(π1.keep)}r{excl cb(π1.keep)} condition(fresh2), .1 cb(π1.edit){excl cb(π1.edit)}r{excl cb(π1.edit)} condition(fresh3), condition(fresh1){sep cb(π1.keep) cb(π1.edit)}r{sep cb(π1.keep) cb(π1.edit)}; π1.keep calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}; π1.edit calls ≤1, supply 1 π2 owned{excl π2}r{excl π2}
+  summary wrapped: π1 R, π2 R; res .0 cb1{excl cb1}r{excl cb1} condition(fresh2), .1 cb2{excl cb2}r{excl cb2} condition(fresh3), condition(fresh1){sep cb1 cb2}; π1 calls ≤1, need owned if π2 writes, unseen, supply 1 fresh borrowed; π2 calls ≤1, unseen, supply 1 fresh owned
+  summary recursive: π2 R, π3 R; res .0 cb2{excl cb2}r{excl cb2} condition(fresh2), .1 cb3{excl cb3}r{excl cb3} condition(fresh3), condition(fresh1){sep cb2 cb3}; π2 calls many, need owned if π3 writes, unseen, supply 1 fresh borrowed; π3 calls many, unseen, supply 1 fresh owned
+  summary relay: π2 R, π3 R; res .0 cb2{excl cb2}r{excl cb2} condition(fresh2), .1 cb3{excl cb3}r{excl cb3} condition(fresh3), condition(fresh1){sep cb2 cb3}; π2 calls many, need owned if π3 writes, unseen, supply 1 fresh borrowed; π3 calls many, unseen, supply 1 fresh owned
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Main
+  12:12 value <lambda>: rejected need: Keep.wrapped edits what it returns, which may be a list it does not own
+  12:49 List.push xs: pending: Keep.wrapped loses sight of what calls it
+  20:21 value <lambda>: rejected need: Keep.recursive edits what it returns, which may be a list it does not own
+  20:62 List.push xs: pending: Keep.recursive loses sight of what calls it
+  26:13 List.push xs: rejected alias: kept.0 holds it and is read at 26:5
+  summary readOnly: res .0 condition(fresh2), .0.0 condition(fresh3) fresh5{lost}r{lost}, .1 condition(fresh4) fresh5{lost}r{lost}, condition(fresh1){shared}
+  summary shared: res .0 condition(fresh2), .0.0 fresh6{lost}r{lost} ~condition(fresh3), .1 condition(fresh4) fresh6{lost}r{lost}, .1[*] ~condition(fresh5) ~fresh5{lost}r{lost}, condition(fresh1){shared}
+  summary recursiveReadOnly: res .0 condition(fresh2), .0.0 condition(fresh3) fresh5{lost}r{lost}, .1 condition(fresh4) fresh5{lost}r{lost}, condition(fresh1){shared}
+  summary recursiveShared: res .0 condition(fresh2), .0.0 fresh6{lost}r{lost} ~condition(fresh3), .1 condition(fresh4) fresh6{lost}r{lost}, .1[*] ~condition(fresh5) ~fresh5{lost}r{lost}, condition(fresh1){shared}
+  summary returnedSharing: res .0 condition(fresh1), .0.0 condition(fresh2) fresh4{lost}r{lost} ~condition(fresh7), .1 condition(fresh3) fresh4{lost}r{lost}, .1[*] ~condition(fresh5) ~fresh5{lost}r{lost}, condition(fresh6){shared}r{shared}
+  demands 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 3
+total 5: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 3
+cause alias 1
+cause need 2
