@@ -91,8 +91,8 @@ The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `o
 - `Html.pointerEvent p` is the same event as an `Html.Event`, for `Html.preventDefault` and the
   modifier keys.
 - A `Pointer` stays correct after the dispatch, so a message can carry it into `update`.
-- The API lists `Html.pointer`, but only the events call it. A program cannot call it, because its
-  parameter type is private to `Html`.
+- The pointer events name their extractor `pointer` (`via pointer`). It is private to `Html`, so
+  a program cannot call it.
 - To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
   `preventDefault` cannot stop them. On iOS, a double-tap still zooms an element with
   `position: absolute` (WebKit bug 218015).

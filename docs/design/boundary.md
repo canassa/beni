@@ -5157,9 +5157,10 @@ a reader that ran later — in `update`, on a `Pointer` that a message carries �
 or a wrong box. **No program can call `pointer`**: on another event, such as a delegated `onClick`
 under `dom`, the element would be the document, which has no box. Its type is `pointer : Dispatched
 → Pointer`, and `Dispatched` is a `foreign type` of `Html` that is not `pub`: no event hands one to a
-handler and no function returns one. `pointer` itself is `pub` until issue #532 is fixed: today the
-lowering finds an extractor in the vocabulary module's interface, which holds only `pub` values, and
-a non-`pub` extractor is accepted by the checker and then replaced by the raw event.
+handler and no function returns one. *Amended 2026-10-22* (#696): `pointer` itself is not `pub`
+either, so a program cannot name it. A `via` can name a value that is not `pub` (§9.3, amended
+2026-10-21, #532). Before that fix, the lowering found an extractor only in the vocabulary module's
+interface, which holds only `pub` values, so `pointer` was `pub`.
 
 **A lowering's obligation.** The pointer events are not `delegated`, so a lowering calls their
 extractor **synchronously, in the listener of the element that has the handler, while the event is
@@ -5241,12 +5242,16 @@ after its dispatch, and a handler that the view changes in place. `browser/dom/P
 the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot steered toward the
 pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
 a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
+*Amended 2026-10-22* (#696): the first is refused with `private_name`, because `pointer` is not
+`pub`.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
 
 - **The extractor is `pub`**, as (d) says. A non-`pub` `via` is accepted by the checker, and the
-  lowering then hands the handler the raw event (issue #532).
+  lowering then hands the handler the raw event (issue #532). *Amended 2026-10-22* (#696): #532 is
+  fixed, and `pointer` is not `pub`. `api-html.md` does not list it, and a program that names
+  `Html.pointer` gets `private_name`.
 - **Measured** (`bench/size.mjs --pages-only`, the compiler before and after this change): every
   release figure is the same, and TodoMVC's release file is the same bytes. Every page that reaches
   no `foreign` of `Html` is the same in development too. TodoMVC and Conduit reach `targetValue`, and

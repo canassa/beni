@@ -24,7 +24,6 @@ module Html
   value localY : Pointer → Float  -- impure
   value map : Html a, (a → b) → Html b
   value metaKey : Event → Bool  -- impure
-  value pointer : Dispatched → Pointer  -- impure
   value pointerEvent : Pointer → Event  -- impure
   value pointerId : Pointer → Int  -- impure
   value pointerType : Pointer → String  -- impure

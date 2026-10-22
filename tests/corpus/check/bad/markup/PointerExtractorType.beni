@@ -1,5 +1,6 @@
 -- A program cannot name the pointer extractor's parameter type
--- (boundary.md §9.8.20 (d)): `Html.Dispatched` is not `pub`.
+-- (boundary.md §9.8.20 (d)): `Html.Dispatched` is not `pub`. Since
+-- 2026-10-22 the extractor `Html.pointer` is not `pub` either.
 import Html
 
 
