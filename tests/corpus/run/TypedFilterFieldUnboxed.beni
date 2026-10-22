@@ -1,0 +1,51 @@
+-- run: a record's field of a type of one constructor with one field, which
+-- is its field at run time (`backend.md` §9, *Declared-type filtering of
+-- fact 3*: the field's key is its representation's). Literals of the inner
+-- record reach the field through a generic helper, and both builds read
+-- them.
+import Node
+
+
+type alias Inner =
+    x : Int
+    y : Int
+
+
+type Wrap
+    = Wrap Inner
+
+
+type alias Outer =
+    wrap : Wrap
+    other : Inner
+
+
+choose : Maybe v, v → v
+choose found otherwise =
+    case found of
+        Just v →
+            v
+
+        Nothing →
+            otherwise
+
+
+find : Int, v → Maybe v
+find n v = if n > 2 then Just v else Nothing
+
+
+show : Outer → List String
+show outer =
+    case outer.wrap of
+        Wrap inner →
+            [ String.fromInt inner.x, String.fromInt outer.other.y ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (show
+            { wrap = choose (find 3 (Wrap { x = 1, y = 2 })) (Wrap { x = 5, y = 6 })
+            , other = choose (find 1 { x = 3, y = 4 }) { x = 7, y = 8 }
+            }
+        )

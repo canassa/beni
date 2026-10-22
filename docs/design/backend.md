@@ -9271,6 +9271,32 @@ call's node and none at a site's property var (the plan's slice 5), and `top` ke
 is not taken). Neither `max_sites` (#442) nor the inliner changes: the owner declined a cap and the
 inliner shortcut on 2026-10-20. `core` and the platforms are wild until a later version keys them.
 
+*Amended 2026-10-22 (issue #722): the filter at a site's property var.* **A site's own var of a
+property holds only sites of that field's key.** A record's key is canonical, with its fields
+ordered, so the key of each field follows from the site's own key. `Emit` lists, for every record
+representation, the key of each field under its property id (`Spec.Input.field_keys`), and
+`Pts.ownField` gives the var it makes that filter (`Pts.fieldFilter`). The var is wild in three
+cases: the site is wild, the field's key is in the wild set, or the field's type is a function,
+since an arrow is keyed by what it returns and not by its type. A field shared by a spread
+(`shareField`) keeps its wild var, because one shared var serves the fields of every site that
+spreads one record. The summary-link rule applies as for any var: a copy into a stricter filter
+folds. It is sound for the reason a binder's filter is: a value of a closed record type holds in
+each field a value of that field's type, and the type's parts are wild wherever the JavaScript does
+not follow the type. **Two key losses went with it.** `Mod.copyNode`, and so `foldTo`, keeps an
+allocation's key on the node it moves into, which is now that allocation. And `Copy` keeps every
+key, of a node and of a name made afresh: a key is a closed type, the same at every instantiation of
+the body it is in, so the rule *Copy keeps the keys of a body only when its declaration's type holds
+no type variable* buys nothing. As built it was stricter still, since it read whether the checker
+had keyed the declaration, so a declaration with a host-typed parameter (`step : Msg, Model →
+Model`, with `Value` inside `Msg`) lost every key. `JsIr.closed_decls` is gone. On the N = 64
+dashboard the solve after the structural pass no longer merges every widget's model into each field
+of `Main.Model`: it makes 1 623 folds where it made 10 569, 124 973 copies where it made 348 518,
+and 18 124 edges where it made 110 018. Its output goes from 104 494 to 103 200 bytes, and the build from 1.102 to 0.997 billion instructions. Fixtures:
+`run/TypedFilterField*`, which cover a function field, an unboxed field, a `Js.from`/`Js.to` cast
+into a field and the dashboard's `withDefault` into fields; `TypedFilterFieldFunctions` fails when
+a function field is filtered. Precision: `emit/release/app/FieldKeyFilter`. There is still no filter
+at a member read's or a call's node.
+
 **In a `browser-tea` page the filter changes nothing, in either direction.** The hosted runtime
 keeps the program's model in a `Js.ref` and reads it back with `Js.to`
 (`platforms/browser/Browser.beni`, `model = Js.ref (Js.to Js.null)` and `Js.write model (p.update

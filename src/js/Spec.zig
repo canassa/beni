@@ -258,6 +258,18 @@ pub const Module = struct {
 
 /// `Lower.Result`'s `effect_keep`, `pure_discards`, `unobserved` and
 /// `mutable`, as lists slice 5 may append to.
+/// A record's field: its representation key under a property id.
+pub const FieldKey = struct {
+    record: u32,
+    prop: u32,
+    key: JsIr.RepKey,
+
+    pub fn lessThan(_: void, a: FieldKey, b: FieldKey) bool {
+        if (a.record != b.record) return a.record < b.record;
+        return a.prop < b.prop;
+    }
+};
+
 pub const Tables = struct {
     keep: std.ArrayList(Index) = .empty,
     discards: std.ArrayList(Index) = .empty,
@@ -317,6 +329,11 @@ pub const Input = struct {
     /// the keys in the IR's columns are wild (`backend.md` §9,
     /// *Declared-type filtering of fact 3*). Null: every key is.
     rep_keys: ?*const RepKeys = null,
+    /// Per record representation and property: the representation key of
+    /// that field, sorted by record then property. A site's own var of the
+    /// property holds only sites of that key (*Declared-type filtering of
+    /// fact 3*, amended for #722).
+    field_keys: []const FieldKey = &.{},
     /// The build's workers (`backend.md` §9, *The combined solver — Where
     /// it runs*): the combined solver extracts the modules that changed on
     /// them. Null: on the calling thread.
@@ -852,8 +869,6 @@ const Mod = struct {
     /// unless `Copy` gives one its source's (`backend.md` §9,
     /// *Declared-type filtering of fact 3*).
     node_keys: std.ArrayList(JsIr.KeyedNode),
-    /// `JsIr.closed_decls`, a statement leaving it when it is rewritten.
-    closed_decls: std.ArrayList(Index),
     name_key: std.ArrayList(JsIr.RepKey),
     tables: ?*Tables,
     self: JsIr.Symbol.Optional,
@@ -1001,10 +1016,6 @@ const Mod = struct {
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
-        if (m.closed_decls.items.len != 0) if (std.sort.binarySearch(Index, m.closed_decls.items, node, orderIndex)) |at| {
-            _ = m.closed_decls.orderedRemove(at);
-            m.ir.closed_decls = m.closed_decls.items;
-        };
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -1033,10 +1044,27 @@ const Mod = struct {
 
     /// Make `node` what `from` is: same tag and operands. Every operand is
     /// an index, so the two nodes now share their children; `from` itself
-    /// is no longer reached from anywhere but `node`.
-    fn copyNode(m: *Mod, node: Index, from: Index) void {
+    /// is no longer reached from anywhere but `node`. An allocation's key
+    /// goes with it: `node` is now the allocation `from` was, of the type
+    /// lowering keyed it by (*Declared-type filtering of fact 3*, amended
+    /// for #722).
+    fn copyNode(m: *Mod, gpa: Allocator, node: Index, from: Index) Allocator.Error!void {
         const d = m.ir.data(from);
-        m.setNode(node, m.ir.tag(from), d.lhs, d.rhs);
+        const tag = m.ir.tag(from);
+        const key: JsIr.RepKey = switch (tag) {
+            .object, .array, .arrow => if (JsIr.keyRow(m.node_keys.items, from)) |at| m.node_keys.items[at].key else .wild,
+            else => .wild,
+        };
+        m.setNode(node, tag, d.lhs, d.rhs);
+        if (key == .wild) return;
+        if (JsIr.keyRow(m.node_keys.items, node)) |at| {
+            m.node_keys.items[at].key = key;
+            return;
+        }
+        var at: usize = m.node_keys.items.len;
+        while (at > 0 and m.node_keys.items[at - 1].node.int() > node.int()) at -= 1;
+        try m.node_keys.insert(gpa, at, .{ .node = node, .key = key });
+        m.ir.node_keys = m.node_keys.items;
     }
 
     /// `copyNode` for a fold: `node`, a decided `cond`, `&&` or `||`, is
@@ -1044,8 +1072,8 @@ const Mod = struct {
     /// what runs, so a map names where it was written and not the test
     /// that decided it; a call kept this way is also the site a copy into
     /// it takes (`Copy.site`; `backend.md` §11.2, item 6).
-    fn foldTo(m: *Mod, node: Index, from: Index) void {
-        m.copyNode(node, from);
+    fn foldTo(m: *Mod, gpa: Allocator, node: Index, from: Index) Allocator.Error!void {
+        try m.copyNode(gpa, node, from);
         m.ir.nodes.items(.pos)[node.int()] = m.ir.pos(from);
     }
 
@@ -1447,7 +1475,6 @@ const Spec = struct {
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len, .pointer_stability = .{} },
                 .names = .{ .items = @constCast(ir.names), .capacity = ir.names.len, .pointer_stability = .{} },
                 .node_keys = .{ .items = @constCast(ir.node_keys), .capacity = ir.node_keys.len, .pointer_stability = .{} },
-                .closed_decls = .{ .items = @constCast(ir.closed_decls), .capacity = ir.closed_decls.len, .pointer_stability = .{} },
                 .name_key = .{ .items = @constCast(ir.name_key), .capacity = ir.name_key.len, .pointer_stability = .{} },
                 .tables = src.tables,
                 .self = src.self,
@@ -1614,7 +1641,6 @@ const Spec = struct {
             m.ir.names = try m.names.toOwnedSlice(s.gpa);
             // A development build's columns are empty and own nothing.
             if (m.node_keys.capacity != 0) m.ir.node_keys = try m.node_keys.toOwnedSlice(s.gpa);
-            if (m.closed_decls.capacity != 0) m.ir.closed_decls = try m.closed_decls.toOwnedSlice(s.gpa);
             if (m.name_key.capacity != 0) m.ir.name_key = try m.name_key.toOwnedSlice(s.gpa);
         }
     }
@@ -4099,7 +4125,7 @@ const Spec = struct {
                 // Fact 5's second case: the branch the test takes is the
                 // read it tested.
                 if (try s.decidedBranch(m, node)) |b| {
-                    m.foldTo(node, b);
+                    try m.foldTo(s.gpa, node, b);
                     m.memo[node.int()] = m.memo[b.int()];
                     try JsIr.pushOperand(s.arena, &stack, node);
                     any = true;
@@ -4116,7 +4142,7 @@ const Spec = struct {
                         .bot, .unknown => null,
                     };
                     if (taken) |b| {
-                        m.foldTo(node, b);
+                        try m.foldTo(s.gpa, node, b);
                         m.memo[node.int()] = m.memo[b.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
@@ -4149,7 +4175,7 @@ const Spec = struct {
                     else
                         null;
                     if (kept) |k| {
-                        m.foldTo(node, k);
+                        try m.foldTo(s.gpa, node, k);
                         m.memo[node.int()] = m.memo[k.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
@@ -5104,7 +5130,6 @@ const Spec = struct {
                     if ((try s.usesOf(m, top, x)).?.idents != 1) break :intoReturn;
                     var c: Copy = .{
                         .s = s,
-                        .keys = s.keepsKeys(m, top),
                         .src = m,
                         .dst = m,
                         .cross = false,
@@ -5167,7 +5192,6 @@ const Spec = struct {
                         const x2 = try s.freshLocal(m);
                         var copy: Copy = .{
                             .s = s,
-                            .keys = s.keepsKeys(m, top),
                             .src = m,
                             .dst = m,
                             .cross = false,
@@ -5262,7 +5286,6 @@ const Spec = struct {
         const cross = small.module != m.index;
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -5560,7 +5583,7 @@ const Spec = struct {
                 if (mm.ir.tag(node) == .ident) if (mm.globalOf(@fromBackingInt(@intCast(mm.ir.data(node).lhs)))) |x| if (x == g) return;
             }
         };
-        m.copyNode(value, callee);
+        try m.copyNode(s.gpa, value, callee);
     }
     /// `backend.md` §9, *A function that only calls a function is that
     /// function*: in statement `items[at]`'s own expressions, `() => g()`
@@ -5959,7 +5982,7 @@ const Spec = struct {
             if (m.ir.tag(node) != .member) continue;
             const id = s.pts.propId(m.index, @fromBackingInt(@intCast(m.ir.data(node).rhs)));
             const k = std.mem.indexOfScalar(u32, ids, id).?;
-            if (atoms[k]) |a| m.copyNode(node, a) else m.setNode(node, .ident, names[k].int(), 0);
+            if (atoms[k]) |a| try m.copyNode(s.gpa, node, a) else m.setNode(node, .ident, names[k].int(), 0);
         }
         if (delta) |r| try s.extend(m, top, r, roots);
         return true;
@@ -5982,25 +6005,6 @@ const Spec = struct {
             },
             else => return false,
         }
-    }
-
-    /// Whether a `Copy` of the body of top-level statement `stmt` of `m`
-    /// keeps its keys (`Copy.keys`): `backend.md` §9 lets it only when the
-    /// declaration's type holds no type variable, which is when the checker
-    /// keyed it (checker-v2.md §36, the declarations) and lowering listed
-    /// its statement in `JsIr.closed_decls`. A statement rewritten since has
-    /// left the list.
-    fn keepsKeys(s: *const Spec, m: *const Mod, stmt: Index) bool {
-        _ = s;
-        return std.sort.binarySearch(Index, m.closed_decls.items, stmt, orderIndex) != null;
-    }
-
-    /// `keepsKeys` for the function a `Small` is: the top-level declaration
-    /// it names, or none.
-    fn keepsKeysOf(s: *const Spec, small: Small) bool {
-        if (small.owner == none or small.owner >= s.decl.len) return false;
-        const d = s.decl[small.owner] orelse return false;
-        return s.keepsKeys(&s.mods[d.module], d.stmt);
     }
 
     /// A local name no name of the module has.
@@ -6254,7 +6258,6 @@ const Spec = struct {
         const cross = small.module != mi;
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -6285,7 +6288,7 @@ const Spec = struct {
             c.subst[pi] = a.toOptional();
         };
         const copied = try c.stmt(small.ret, 0);
-        m.copyNode(stmt, copied);
+        try m.copyNode(s.gpa, stmt, copied);
     }
 
     /// Arrow `value` of module `module` as slice 8 sees it, or null: one
@@ -6653,7 +6656,6 @@ const Spec = struct {
         const cross = small.module != mi;
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -6685,7 +6687,7 @@ const Spec = struct {
         const e = try c.expr(small.ret, 0);
         // As `inlineAt` writes a call as an expression.
         const delta = try s.retractCall(m, top, call, e);
-        m.copyNode(call, e);
+        try m.copyNode(s.gpa, call, e);
         if (delta) |r| try s.extend(m, top, r, &.{call.int()});
         return true;
     }
@@ -6879,7 +6881,7 @@ const Spec = struct {
         s.noteCopy(mi, g);
         const e = try c.expr(value, 0);
         for (scratch.locals.items) |i| scratch.renamed.items[i] = none;
-        m.foldTo(site, e);
+        try m.foldTo(s.gpa, site, e);
         // The table lowering handed the printer names the copy's root; the
         // root is now `site`.
         if (m.tables) |t| if (std.mem.indexOfScalar(Index, t.unobserved.items, e) != null) try t.unobserved.append(s.arena, site);
@@ -8582,7 +8584,6 @@ const Spec = struct {
 
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeys(fm, decl.stmt),
             .src = fm,
             .dst = cm,
             .cross = cross,
@@ -8625,7 +8626,7 @@ const Spec = struct {
                 const ret: Index = @fromBackingInt(@intCast(fm.ir.data(body[0]).lhs));
                 const e = try c.expr(ret, 0);
                 delta = try s.retractCall(cm, site.top, site.call, e);
-                cm.copyNode(site.call, e);
+                try cm.copyNode(s.gpa, site.call, e);
                 new_roots = try s.arena.dupe(u32, &.{site.call.int()});
             },
             .ret => {
@@ -8884,7 +8885,6 @@ const Spec = struct {
             const cont: Cont = .{ .x = fit.x, .rest = fit.rest, .top = fit.site.top, .call = fit.site.call, .inspected = inspected, .args = args, .assigned = assigned };
             var c: Copy = .{
                 .s = s,
-                .keys = s.keepsKeys(fm, decl.stmt),
                 .src = fm,
                 .dst = cm,
                 .cross = decl.module != fit.site.module,
@@ -9103,7 +9103,6 @@ const Spec = struct {
             try s.stableChain(m, cont, p);
         var k: Copy = .{
             .s = s,
-            .keys = s.keepsKeys(m, cont.top),
             .src = m,
             .dst = m,
             .cross = false,
@@ -9338,12 +9337,6 @@ const Spec = struct {
         /// While the rest of a fused site's list is copied for one `return
         /// P`: its binding `x` is known to be `p`, a node of the module.
         known: ?Known = null,
-        /// Every object, array and arrow copied as itself keeps its source's
-        /// key, and every local named afresh its source name's: set only
-        /// for the body of a declaration whose type holds no type variable
-        /// (`backend.md` §9, *Declared-type filtering of fact 3*;
-        /// `Spec.keepsKeys`). Else every copy is wild.
-        keys: bool = false,
 
         fn gpa(c: *Copy) Allocator {
             return c.s.gpa;
@@ -9537,7 +9530,11 @@ const Spec = struct {
             const at = try c.dst.addName(c.gpa(), name);
             if (global) try c.s.addGlobal(c.dst, at);
             c.renamed[n] = at.int();
-            if (c.keys and !global) {
+            // A local named afresh keeps its source name's key: a key is a
+            // closed type, the same at every instantiation of the body it is
+            // in (`backend.md` §9, *Declared-type filtering of fact 3*,
+            // amended for #722).
+            if (!global) {
                 const k = c.src.ir.nameKey(@fromBackingInt(@intCast(n)));
                 if (k != .wild) try c.dst.setNameKey(c.gpa(), at, k);
             }
@@ -9567,7 +9564,7 @@ const Spec = struct {
             const pos: u32 = if (c.cross) c.site else c.src.ir.pos(from);
             const to = try c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
             // An allocation copied as itself is still one of its type.
-            if (c.keys and tag == c.src.ir.tag(from)) switch (tag) {
+            if (tag == c.src.ir.tag(from)) switch (tag) {
                 .object, .array, .arrow => {
                     const k = c.src.ir.nodeKey(from);
                     if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
@@ -12944,6 +12941,26 @@ const Pts = struct {
     /// `k` as a filter or a site's key: itself when it is closed, `wild`
     /// when it is wild or in the build's wild set (`RepKeys.isWild`), and
     /// always `wild` without the build's keys.
+    /// The filter of site `site`'s own var of property `id`: the field's
+    /// key when the site's key is a closed record that has the field, wild
+    /// otherwise. A value of a closed record type holds in each field a
+    /// value of that field's type, and a site is keyed only where its type
+    /// is closed and does not cross into JavaScript (`closedKey`).
+    fn fieldFilter(p: *const Pts, site: u32, id: u32) JsIr.RepKey {
+        const k = p.sites.items[site].key;
+        if (k == .wild or id == none) return .wild;
+        const fields = p.s.in.field_keys;
+        var lo: usize = 0;
+        var hi: usize = fields.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            const f = fields[mid];
+            if (f.record < k.int() or (f.record == k.int() and f.prop < id)) lo = mid + 1 else hi = mid;
+        }
+        if (lo == fields.len or fields[lo].record != k.int() or fields[lo].prop != id) return .wild;
+        return p.closedKey(fields[lo].key);
+    }
+
     fn closedKey(p: *const Pts, k: JsIr.RepKey) JsIr.RepKey {
         const keys = p.s.in.rep_keys orelse return .wild;
         return if (keys.isWild(k)) .wild else k;
@@ -14314,6 +14331,7 @@ const Pts = struct {
         const outs = pr.outs;
         const v = try p.newVar();
         p.links_of.items[v].site_var = true;
+        p.links_of.items[v].allow = p.fieldFilter(site, id);
         if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
         const own = &p.sites.items[site].props.items[at];
         own.vals = v;

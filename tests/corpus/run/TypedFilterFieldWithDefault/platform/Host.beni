@@ -1,0 +1,8 @@
+--! A test platform whose host hands the program a value it parsed itself,
+--! as the dashboard's host pushes a state the program reads with a schema.
+
+import Schema exposing (Value)
+
+
+--| The JSON text as a host value, or `null` when it does not parse.
+pub foreign pure parse : String → Value

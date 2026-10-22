@@ -316,14 +316,6 @@ pub fn declResult(r: *const RepKeys, m: Graph.Index, decl: u32) RepKey {
     return if (decl < out.len) out[decl] else .wild;
 }
 
-/// Whether the checker found declaration `decl` of module `m` closed: its
-/// type holds no variable and nothing wild (checker-v2.md §36), which is
-/// when `Copy` may keep its body's keys.
-pub fn declClosed(r: *const RepKeys, m: Graph.Index, decl: u32) bool {
-    if (m.int() >= r.in.artifacts.len) return false;
-    return r.in.artifacts[m.int()].declKey(decl) != .wild;
-}
-
 /// What the lambda `inst` of module `m` returns: its arrow's key.
 pub fn lambdaResult(r: *const RepKeys, m: Graph.Index, inst: Inst.Index) RepKey {
     if (m.int() >= r.columns.len) return .wild;
