@@ -500,7 +500,7 @@ build to the checkout (`scripts/audit.sh HEAD .lake`), so `lake build` there
 replays it instead of building the proofs a second time (#738). A warm
 `lake build` alone can miss a `sorry` (#255), and an `export-ignore` can
 remove a file from the audit's export (#262). The audit is the job's floor:
-about 12 minutes on a GitHub runner, where a pull request took 20. The
+7 to 13 minutes on a GitHub runner (it took 404 to 776 s), and `lake build` 1 s. The
 job does not run `lake exe ownership ci` (#259). `proofs/ownership/README.md`,
 *CI*.
 

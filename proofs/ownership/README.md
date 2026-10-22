@@ -122,6 +122,7 @@ The guard `check` needs this job, so a failed proof blocks a merge.
 - Until #738, `lake build` started from master's cached `.lake`, and built the proofs a second time when a pull request changed a base module.
   On run 39773374078 (a pull request, 20 min), the audit took 710 s and that second build 480 s.
   The audit alone builds from nothing, so its time is the floor of the job.
+  On master after #738 (run 39782408151), the audit took 776 s, `lake build` 1 s, and the job 13 min 49 s; on master runs the audit took 404 to 776 s.
 
 ## Audit memory and replay
 
