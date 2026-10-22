@@ -715,6 +715,8 @@ fn measureEmit(gpa: std.mem.Allocator, io: Io, corpus: []const u8, iterations: u
             defer overlay.deinit(gpa);
             var lowered = try JsLower.lower(gpa, arena.allocator(), &overlay, .{
                 .bir = birs[i],
+                .birs = birs,
+                .provenance = session.resolution.provenance,
                 .token_starts = tokens.starts,
                 .module = module,
                 .graph = &session.graph,
