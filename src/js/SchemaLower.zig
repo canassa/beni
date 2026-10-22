@@ -1346,7 +1346,8 @@ const Fn = struct {
     fn pathArgs(w: *Fn, at: At) ![3]Node.Index {
         // A validator makes no issue, so no path is read: its children and
         // conversions are handed none (`schema.md` §6, *A run whose failure is
-        // never read is a validator*).
+        // never read is a validator*). Keep in step with `SchemaGraph.coreNeeds`,
+        // which ships no `pathAt` for a validator.
         if (w.op == .valid) return .{ try w.g.lit(.null_lit), try w.g.lit(.null_lit), try w.g.lit(.null_lit) };
         const parent = switch (at.parent) {
             .path => |n| try w.g.id(n),
