@@ -1143,6 +1143,34 @@ fn wideUpdates(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.toOwnedSlice(arena);
 }
 
+// `==` on a type whose constructors are all nullary is `===` on the tag,
+// and resolving each one read every constructor again, so n comparisons of
+// an enumeration of n constructors cost O(n²) (issue #808). The verdict is
+// now kept per type (checker-v2.md §18, amended 2026-10-22). Calibration
+// (ReleaseFast, instructions): read at every comparison 56.6M / 119.4M /
+// 299.1M / 877.3M at 1 000 / 2 000 / 4 000 / 8 000, a ratio climbing from
+// 2.1 to 2.9; kept per type 47.6M / 83.5M / 155.2M / 301.6M, 1.8 to 1.9.
+// n = 4 000.
+test "== on an enumeration once per declaration is linear in the enumeration" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("Enum.beni", try enumComparisons(s.arena(), 4_000));
+    try s.w.write("Enum2.beni", try enumComparisons(s.arena(), 8_000));
+    const verdict = try s.ratio("Enum.beni", "Enum2.beni", 4_000);
+    try s.finish("== on a wide enumeration", verdict);
+}
+
+/// `type Msg = M0 | M1 | …` of `count` constructors, and `count`
+/// declarations `fi m = m == Mi`.
+fn enumComparisons(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type Msg\n    = M0\n");
+    for (1..count) |i| try out.print(arena, "    | M{d}\n", .{i});
+    try out.appendSlice(arena, "\n\n");
+    for (0..count) |i| try out.print(arena, "f{d} : Msg → Bool\nf{d} m = m == M{d}\n\n\n", .{ i, i, i });
+    return out.toOwnedSlice(arena);
+}
+
 /// `mk` a record literal nested `depth` deep, and `uses` declarations
 /// comparing it with itself.
 fn nestedRecord(arena: std.mem.Allocator, depth: usize, uses: usize) ![]const u8 {

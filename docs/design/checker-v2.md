@@ -4525,6 +4525,14 @@ growth copies 29 413 → 25 611, user instructions 793.6 M → 787.4 M (−0.8 %
 faults unchanged. The time saved is inside run-to-run noise, as `research/37` §3.3 predicted: what
 the allocations cost was never much.
 
+*Amended 2026-10-22 (#808).* **A type's all-nullary verdict is read once.** A derived `==` on a
+nominal type whose constructors are all nullary is `===` on the tag (§9.3 step 5, A.18), and
+`Instances.allNullary` read the constructors, from the Bir or the interface, at every comparison:
+an enumeration of *n* constructors compared *n* times cost O(*n*²) (4 000 comparisons of a
+4 000-constructor enumeration, 298.8M instructions, 144.2M of them in that loop). The verdict is
+kept per type in `Resolve.State.nullary`; a type's constructors do not change while a module is
+checked, so every answer is the one it was. `test-perf` holds the comparisons linear.
+
 ---
 
 ## 19. What is kept from the current code
