@@ -1,0 +1,47 @@
+-- A command's body has the log context of the `update` arm that made it
+-- (boundary.md §9.8.16 (b), amended 2026-10-22), and a defect stops the
+-- program (§9.8.14): the crash screen in development (§9.8.10 (c)), the
+-- page as it was in release. Here the body does not wait, so it runs in
+-- no fiber, inside the arm's `annotate`: its line carries the annotation,
+-- then it throws. A command made outside any context works before the
+-- defect, and after it the same click changes nothing.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Plain
+    | Go
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Plain →
+            ( n + 1, Cmd.log Log.Info "a command made outside any context" )
+
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λ_ →
+                    Log.info "a kept body, before it throws"
+                    Debug.todo "a kept body threw"
+                )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="plain" onClick={Plain}>plain</button>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
