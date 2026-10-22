@@ -1493,3 +1493,24 @@ test "dict keys: late schema facts survive a cached opaque boundary" {
     try testing.expectEqual(@as(u8, 1), cold.exit_code);
     try testing.expectEqualStrings(warm.stderr, cold.stderr);
 }
+
+test "full-type casts keep distinct nested nonrecursive constructor places" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Js
+        \\
+        \\pub nested : Js.Value → List Int
+        \\nested value =
+        \\    decoded : Maybe (Maybe (List Int))
+        \\    decoded = Js.to value
+        \\    case decoded of
+        \\        Just (Just xs) → List.push xs 1
+        \\        _ → []
+        \\
+    );
+    const r = try w.runWith(&.{ "dump", "--stage=ownership", "--core", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "#Just.0#Just.0") != null);
+    try testing.expect(std.mem.indexOf(u8, r.stdout, "accepted param") != null);
+}

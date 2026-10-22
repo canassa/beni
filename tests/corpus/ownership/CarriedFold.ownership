@@ -1,6 +1,6 @@
 module CarriedFold
   summary run: π1 R, π1#Decoder.0 R, π2 R; res cb(π1#Decoder.0){excl cb(π1#Decoder.0)}; π1#Decoder.0 calls ≤1, supply 1 π2 owned{excl π2}
   summary field: π2 RA; res #Decoder.0 λr{lost}, #Decoder.0◇ π2; π2#Decoder.0 calls many, supply 1 ⊤ borrowed{lost}
-  summary at: π1 R, π2 RA; res #Decoder.0 ~λ?r{lost}, #Decoder.0◇ ~π2, ~π2
+  summary at: π1 R, π2 RA; res #Decoder.0 ~λ?r{lost}, #Decoder.0◇ ~π2, #Decoder.0◇⟨◇⟩◇ ~π2, ~π2
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

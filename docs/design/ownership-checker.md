@@ -1557,6 +1557,12 @@ budget override. The full cross-check passes core, the ownership/core fixtures,
 WideDeepCondition and SchemaAnswers; the wider run exposed the unrelated
 #427 and #694 failures, reproduced on unchanged master `daa996be1`. Neither check is weakened.
 
+*Amended 2026-10-22 (#712, nested nonrecursive constructors):* the historical
+constructor-head fold for nonrecursive types is retired with the cast marker.
+`Maybe (Maybe a)` has two distinct constructor places; neither is a recursive
+level. Host round trips now fold only at a repeated full cast type. The existing
+recursive nominal rules and core Dict’s tree rule remain separate.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
