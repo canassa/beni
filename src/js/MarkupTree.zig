@@ -176,10 +176,10 @@ pub const Built = struct {
     /// Parallel to `tree.items`: an event's payload extractor, as a value
     /// of the vocabulary module's interface, or `Dispatch.Markup.no_row`.
     extractors: []const u32,
-    /// Parallel to `tree.items`. Set when `extractors` is `no_row` and the
-    /// vocabulary row still names a `via`. That `foreign` need not be `pub`,
-    /// so it has no interface index (`checker-v2.md` §25.8).
-    extractor_names: []const InternPool.Symbol.Optional,
+    /// Parallel to `tree.items`: an event's row in the vocabulary module's
+    /// record when `extractors` is `no_row`, so that a `via` that is not
+    /// `pub` can be found by it (`Reach.privateExtractor`), or `no_row`.
+    extractor_rows: []const u32,
     /// Parallel to `tree.roots`: the declaration the root is in, or none.
     root_decls: []const u32,
     /// Parallel to `tree.roots`: whether the root's values can be
@@ -244,7 +244,7 @@ pub const empty: Built = .{
     .rows = &.{},
     .components = &.{},
     .extractors = &.{},
-    .extractor_names = &.{},
+    .extractor_rows = &.{},
     .root_decls = &.{},
     .groupable = &.{},
     .moved_lets = &.{},
@@ -302,7 +302,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
         .rows = b.row_sources.items,
         .components = b.component_sources.items,
         .extractors = b.extractors.items,
-        .extractor_names = b.extractor_names.items,
+        .extractor_rows = b.extractor_rows.items,
         .item_tokens = b.item_tokens.items,
         .root_decls = reads.root_decls,
         .groupable = reads.groupable,
@@ -340,9 +340,9 @@ const Builder = struct {
     /// Parallel to `items`: an event's payload extractor, as a value of the
     /// vocabulary module's interface, or `Dispatch.Markup.no_row`.
     extractors: std.ArrayList(u32) = .empty,
-    /// Parallel to `items`. The `via` name when the extractor is not an
-    /// interface value.
-    extractor_names: std.ArrayList(InternPool.Symbol.Optional) = .empty,
+    /// Parallel to `items`: an event's vocabulary row when its extractor is
+    /// no interface value, or `Dispatch.Markup.no_row`.
+    extractor_rows: std.ArrayList(u32) = .empty,
     item_tokens: std.ArrayList(u32) = .empty,
     entries: std.ArrayList(m.Entry) = .empty,
     props: std.ArrayList(m.Prop) = .empty,
@@ -2013,20 +2013,10 @@ const Builder = struct {
             try b.items.append(b.arena, out);
             const extractor = if (kind == .event) if (row) |r| r.extractor else Dispatch.Markup.no_row else Dispatch.Markup.no_row;
             try b.extractors.append(b.arena, extractor);
-            try b.extractor_names.append(b.arena, if (kind == .event) if (row) |r| b.privateVia(r) else .none else .none);
+            try b.extractor_rows.append(b.arena, if (kind == .event and extractor == Dispatch.Markup.no_row) if (row) |r| r.row else Dispatch.Markup.no_row else Dispatch.Markup.no_row);
             try b.item_tokens.append(b.arena, item.token);
         }
         return .{ .start = range_start, .len = @as(u32, @intCast(b.items.items.len)) - range_start };
-    }
-
-    /// The `via` name of an event whose extractor is not a `pub` value.
-    /// `none` when the row has an interface index, or no `via`.
-    fn privateVia(b: *const Builder, row: Dispatch.Markup) InternPool.Symbol.Optional {
-        if (row.extractor != Dispatch.Markup.no_row) return .none;
-        if (row.row >= b.in.vocabulary.events.len) return .none;
-        const via = b.in.vocabulary.events[row.row].via.unwrap() orelse return .none;
-        if (@backingInt(via) >= b.in.vocabulary.symbols.len) return .none;
-        return b.in.vocabulary.symbols[@backingInt(via)].toOptional();
     }
 
     fn itemValue(b: *Builder, item: Bir.MarkupItem) !m.ItemValue {

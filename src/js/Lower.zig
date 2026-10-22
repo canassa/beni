@@ -3573,19 +3573,19 @@ pub const Lowerer = struct {
             if (d.is_pub or !l.emitterCalled(@intCast(i))) continue;
             if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
         }
-        // A payload extractor that is not `pub` is not an interface value,
-        // and the module that uses the event imports it by name. Export it
-        // when the event survived, which is when the declaration is live.
+        // A payload extractor that is not `pub` is in no interface, and a
+        // module that lowers its event imports it by name
+        // (`Reach.privateExtractor`). Exported when it is live: reachability
+        // keeps it only for a surviving markup root that names an event with
+        // that `via`. Two events can name one extractor.
         if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
             const iface = &l.in.interfaces[l.in.module.int()];
-            for (l.bir.decls, 0..) |d, i| {
-                if (d.is_pub or d.kind != .foreign_value or !l.liveDecl(@intCast(i))) continue;
-                const symbol = l.bir.symbol(d.name);
-                const named = for (iface.events) |ev| {
-                    const via = ev.via.unwrap() orelse continue;
-                    if (@backingInt(via) < iface.symbols.len and iface.symbols[@backingInt(via)] == symbol) break true;
-                } else false;
-                if (named) try names.append(l.scratch, try l.topName(@intCast(i)));
+            const first = names.items.len;
+            for (0..iface.events.len) |row| {
+                const decl = Reach.privateExtractor(iface, l.bir, @intCast(row)) orelse continue;
+                if (!l.liveDecl(decl)) continue;
+                const exported = try l.topName(decl);
+                if (std.mem.indexOfScalar(JsIr.NameIndex, names.items[first..], exported) == null) try names.append(l.scratch, exported);
             }
         };
         // `core/Schema`'s core-private values the specialised path calls
@@ -17545,9 +17545,9 @@ const markup_vtable: beni_markup.VTable = struct {
 
     /// An event's payload extractor, as a `foreign` of the vocabulary
     /// module. A `pub` one is an interface value. One that is not `pub` is
-    /// named by the vocabulary row and imported by that name, the way a
-    /// core-private value is (`checker-v2.md` §25.8, amended 2026-10-21).
-    /// Reachability keeps either alive.
+    /// found by the vocabulary row (`Reach.privateExtractor`) and imported
+    /// by its name, the way a core-private value is (`checker-v2.md` §25.8,
+    /// amended 2026-10-21). Reachability keeps either alive.
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
@@ -17556,22 +17556,25 @@ const markup_vtable: beni_markup.VTable = struct {
         if (!st.built.tree.eventFacts(it.event).has_extractor) return null;
         const extractor_value = st.built.extractors[item_index];
         const module = l.in.graph.markup.vocabulary orelse return null;
-        if (extractor_value == Dispatch.Markup.no_row) {
-            if (item_index >= st.built.extractor_names.len) return null;
-            const symbol = st.built.extractor_names[item_index].unwrap() orelse return null;
-            if (module == l.in.module) {
-                for (l.bir.decls, 0..) |d, i| {
-                    if (d.kind != .foreign_value or l.bir.symbol(d.name) != symbol) continue;
-                    return expr(try l.ident(try l.topName(@intCast(i)), pos(l)));
-                }
-                return null;
-            }
-            const entry: Lowerer.Needed = .{ .module = module, .base = symbol.toOptional() };
-            try l.needName(entry);
-            return expr(try l.ident(try l.neededName(entry), pos(l)));
+        if (extractor_value != Dispatch.Markup.no_row) {
+            try l.need(module, extractor_value);
+            return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
         }
-        try l.need(module, extractor_value);
-        return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
+        const vbir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
+        // The event has a `via`, and the checker bound it to a `foreign` of
+        // the vocabulary module (§25.8), so finding none is a compiler bug.
+        // The identity a lowering writes for a null hands the handler the
+        // event instead of the extractor's result.
+        const decl = Reach.privateExtractor(&l.in.interfaces[module.int()], vbir, st.built.extractor_rows[item_index]) orelse {
+            if (std.debug.runtime_safety) std.debug.panic("markup: event item {d} has a `via` that names no `foreign` of the vocabulary module", .{item_index});
+            return null;
+        };
+        if (module == l.in.module) return expr(try l.ident(try l.topName(decl), pos(l)));
+        const base = vbir.symbol(vbir.decls[decl].name);
+        if (std.debug.runtime_safety) if (l.in.live) |r| try l.requireLive(r.decl(module, decl), l.text(base));
+        const entry: Lowerer.Needed = .{ .module = module, .base = base.toOptional() };
+        try l.needName(entry);
+        return expr(try l.ident(try l.neededName(entry), pos(l)));
     }
 
     /// `Maybe`'s representation is `{ $: "Just" | "Nothing", a }` with the

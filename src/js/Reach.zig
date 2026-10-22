@@ -479,6 +479,22 @@ pub fn mainOf(bir: *const Bir) ?u32 {
     return null;
 }
 
+/// The declaration of the `foreign` that event `row` of the vocabulary
+/// module's record names as its `via`, when that `foreign` is not `pub` and
+/// so is no interface value (`checker-v2.md` §25.8, amended 2026-10-21);
+/// null for an event with no `via`, or a `pub` one. `bir` is the vocabulary
+/// module's. The edge to it (`Builder`), its export (`Lower.exports`) and
+/// its import where the event is lowered all find it here.
+pub fn privateExtractor(vocabulary: *const Interface, bir: *const Bir, row: u32) ?u32 {
+    if (row >= vocabulary.events.len) return null;
+    const via = vocabulary.events[row].via.unwrap() orelse return null;
+    const symbol = vocabulary.symbols[@backingInt(via)];
+    for (bir.decls, 0..) |d, i| {
+        if (d.kind == .foreign_value and !d.is_pub and bir.symbol(d.name) == symbol) return @intCast(i);
+    }
+    return null;
+}
+
 /// Build the graph, walk it from the roots, and answer with one survivor
 /// set per module. Everything lives in `scratch`, the caller's arena: the
 /// answer is read by `Lower` during the same `Emit.run` and by nothing
@@ -1108,29 +1124,21 @@ pub const Builder = struct {
                 }
             }
             // A `via` that is not `pub` has no interface index, so the
-            // markup leg above does not name it. The vocabulary row still
-            // holds the name (`checker-v2.md` §25.8).
+            // markup leg above does not name it; the vocabulary row names
+            // its declaration (`privateExtractor`). The edge is at the
+            // row's markup root, as each of the leg's is (`Edges.markupWalk`).
             if (b.in.vocabulary) |vocabulary| if (vocabulary.int() < b.in.interfaces.len) {
                 const iface = &b.in.interfaces[vocabulary.int()];
                 const vbir = b.in.birOf(vocabulary);
-                const start_inst = d.inst_start.int();
-                const end_inst = d.inst_end.int();
                 for (dispatch.markup) |row| {
                     if (row.kind != .event or row.extractor != Dispatch.Markup.no_row) continue;
                     const at = row.root.int();
-                    if (at < start_inst or at >= end_inst or b.cut(m, at)) continue;
-                    if (row.row >= iface.events.len) continue;
-                    const via = iface.events[row.row].via.unwrap() orelse continue;
-                    if (@backingInt(via) >= iface.symbols.len) continue;
-                    const symbol = iface.symbols[@backingInt(via)];
-                    for (vbir.decls, 0..) |decl, di| {
-                        if (decl.kind != .foreign_value or vbir.symbol(decl.name) != symbol) continue;
-                        try decl_targets.append(b.scratch, .{
-                            .node = .{ .module = vocabulary, .kind = .decl, .index = @intCast(di) },
-                            .chain = guards.at(at),
-                        });
-                        break;
-                    }
+                    if (at < d.inst_start.int() or at >= d.inst_end.int() or b.cut(m, at)) continue;
+                    const decl = privateExtractor(iface, vbir, row.row) orelse continue;
+                    try decl_targets.append(b.scratch, .{
+                        .node = .{ .module = vocabulary, .kind = .decl, .index = decl },
+                        .chain = guards.at(at),
+                    });
                 }
             };
             try guards.constructions(&decl_targets);
