@@ -1,0 +1,132 @@
+-- A command's body has the log context of the `update` arm that made it
+-- (boundary.md §9.8.16 (b), amended 2026-10-22): the arm's annotations,
+-- its spans, the minimum that `Log.minimum` set and the sink that
+-- `Log.withSink` set. A body that waits runs in a fiber (the second
+-- `perform` and `keyed`); one that does not runs in none (`task`,
+-- `afterRender`, the first `perform` and `keyed`): both have it. A span's
+-- milliseconds run to where the line is written, so `save=5ms` after a
+-- wait of 5 ms. `Cmd.map` keeps the context of the child's command, which
+-- holds its parent's annotation. A command made outside any context has
+-- the default one. `Done` writes no line: which context the `update` of a
+-- message that a body sends has is the owner's open question
+-- (`node-log-q4`).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log exposing (Entry)
+import Ref exposing (Ref)
+import Sub
+import Tea
+import Time
+
+
+type Msg
+    = Perform
+    | Keyed
+    | Task
+    | Done Int
+    | After
+    | Mapped
+    | Plain
+    | Sink
+    | Show
+
+
+type alias Model =
+    n : Int
+    kept : Ref (List String)
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    next = { model | n = model.n + 1 }
+    case msg of
+        Perform →
+            Log.annotate "request" "p1" λ⊤ →
+                Log.minimum Log.Debug λ⊤ →
+                    ( next
+                    , Cmd.batch
+                        [ Cmd.perform λ_ → Log.debug "a body that does not wait"
+                        , Cmd.perform λ_ →
+                            Time.sleep (Time.millis 5)
+                            Log.debug "a body after a wait"
+                        ]
+                    )
+
+        Keyed →
+            Log.annotate "request" "k1" λ⊤ →
+                Log.span "save" λ⊤ →
+                    ( next
+                    , Cmd.batch
+                        [ Cmd.keyed "now" Cmd.Restart λ_ →
+                            Log.info "a keyed body that does not wait"
+                        , Cmd.keyed "later" Cmd.Restart λ_ →
+                            Time.sleep (Time.millis 5)
+                            Log.info "a keyed body after a wait"
+                        ]
+                    )
+
+        Task →
+            Log.annotate "request" "t1" λ⊤ →
+                ( next
+                , Cmd.task
+                    (λ⊤ →
+                        Log.info "a task"
+                        7
+                    )
+                    Done
+                )
+
+        Done _ →
+            ( next, Cmd.none )
+
+        After →
+            Log.annotate "request" "a1" λ⊤ →
+                ( next, Cmd.afterRender λ_ → Log.info "after the render" )
+
+        Mapped →
+            Log.annotate "parent" "x" λ⊤ → ( next, Cmd.map (child ⊤) ⊤ λm → m )
+
+        Plain →
+            ( next, Cmd.log Log.Info "a command made outside any context" )
+
+        Sink →
+            Log.withSink (keep model.kept _) λ⊤ → ( next, Cmd.log Log.Info "to update's sink" )
+
+        Show →
+            kept = String.join (Ref.get model.kept) ", "
+            Log.info "the sink kept: ${kept}"
+            ( next, Cmd.none )
+
+
+-- A child's `update`, which its parent calls inside its own `annotate`.
+child : ⊤ → Cmd Msg
+child ⊤ = Log.annotate "child" "y" λ⊤ → Cmd.log Log.Info "a child's command"
+
+
+keep : Ref (List String), Entry → ⊤
+keep kept entry = Ref.update kept λlines → [ …List.copy lines, entry.message ]
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="perform" onClick={Perform}>perform</button>
+        <button id="keyed" onClick={Keyed}>keyed</button>
+        <button id="task" onClick={Task}>task</button>
+        <button id="after" onClick={After}>after</button>
+        <button id="mapped" onClick={Mapped}>mapped</button>
+        <button id="plain" onClick={Plain}>plain</button>
+        <button id="sink" onClick={Sink}>sink</button>
+        <button id="show" onClick={Show}>show</button>
+        <p>{String.fromInt model.n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { n = 0, kept = Ref.make [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

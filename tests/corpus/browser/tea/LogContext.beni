@@ -6,9 +6,10 @@
 -- key comes first (§17.12 item 12). Under `Log.minimum Log.Trace`, `Trace`
 -- and `Debug` lines are `console.debug`; under the default minimum they
 -- are not written. `Cmd.log` writes its line when the command runs, after
--- `update` returned, so with the default context: no annotation of
--- `update`'s, and the minimum `Info` (boundary.md §9.8.16 (b)). No time
--- passes on the page, so a span is `0ms`.
+-- `update` returned, with the log context of the arm that made the
+-- command: `update`'s annotation, and its minimum `Trace`
+-- (boundary.md §9.8.16 (b), amended 2026-10-22). No time passes on the
+-- page, so a span is `0ms`.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log
@@ -41,8 +42,8 @@ update msg n =
                     ( n + 1
                     , Cmd.batch
                         [ Cmd.log Log.Warn "from a command"
-                        , Cmd.log Log.Error "an error from a command, without update's annotation"
-                        , Cmd.log Log.Debug "not written: a command has the default minimum"
+                        , Cmd.log Log.Error "an error from a command, with update's annotation"
+                        , Cmd.log Log.Debug "a debug line from a command, under update's minimum"
                         ]
                     )
 

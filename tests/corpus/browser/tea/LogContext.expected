@@ -18,8 +18,9 @@ console.debug: a debug line
   </main>
 </body>
 -- click #command
-console.warn: from a command
-console.error: an error from a command, without update's annotation
+console.warn: from a command {"request":"r1"}
+console.error: an error from a command, with update's annotation {"request":"r1"}
+console.debug: a debug line from a command, under update's minimum {"request":"r1"}
 <body>
   <main>
     <button id="direct">"direct"</button>

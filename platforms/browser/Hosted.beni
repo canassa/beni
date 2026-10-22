@@ -104,9 +104,11 @@ close o = Js.setAt (host o) 1 (Js.from False)
 pub foreign type Job msg
 
 
---| A body as a job: the body itself, a function of its `send`.
+--| A body as a job: the body itself, a function of its `send`, which runs
+--| with the log context of the place where the job is made
+--| (`Task.keepLogContext`; `boundary.md` §9.8.16 (b), amended 2026-10-22).
 pub job : (Browser.Send msg → ⊤) → Job msg
-job body = guest (host body)
+job body = guest (host (Task.keepLogContext body))
 
 
 --| The same job, its messages passed through `tag`.
@@ -134,10 +136,11 @@ pub foreign type Later msg
 
 
 --| After-render work: `body` runs synchronously in the after-render phase
---| of the flush that follows, handed a function that sends to the program.
+--| of the flush that follows, handed a function that sends to the program,
+--| with the log context of the place where the work is made, as a job's.
 --| `[ f, t ]`: the body, and the tagger its messages go through or null.
 pub later : sync (Browser.Send msg → ⊤) → Later msg
-later body = guest (Js.array [ host body, Js.null ])
+later body = guest (Js.array [ host (Task.keepLogContext body), Js.null ])
 
 
 --| The same work, its messages passed through `tag`.

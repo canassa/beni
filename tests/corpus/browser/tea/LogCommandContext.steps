@@ -1,0 +1,10 @@
+click #perform
+advance 5
+click #keyed
+advance 5
+click #task
+click #after
+click #mapped
+click #plain
+click #sink
+click #show
