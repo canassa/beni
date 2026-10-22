@@ -6286,3 +6286,14 @@ is promoted to `tests/corpus/ownership/DictTupleFocus.beni`;
 `DictTupleFocusSharing` keeps tuple-field and key/value sharing refused.
 The four browser regressions are recovered, and all earlier ownership verdicts,
 including #720's twins and the #663 deferred refusal, are unchanged.
+
+## CK-267 — two fresh dictionary values lose exclusivity at focus (2026-10-22)
+
+**Issue:** #663; deferred by the owner to #294.
+**Fixture:** `tests/pending/ownership/DictFocusGrow.beni`.
+Two distinct fresh lists at distinct dictionary keys share nothing. The
+callback write should be accepted, but the folded tree's representative loses
+exclusivity before Maybe.map receives its value. The accepted golden remains
+red. This records the existing, explicitly deferred case; it does not extend
+the exception to a different safe program or bless the refusal. The fixture
+now names its finding and its checked red signature in `tests/pending/RED`.
