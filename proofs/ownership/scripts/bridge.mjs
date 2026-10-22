@@ -66,6 +66,7 @@ else {
   }
 }
 if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-selftest.mjs'),`--input=${inputs[0]}`,`--compiler=${compiler}`]);
+if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-read-selftest.mjs'),`--input=${inputs[0]}`,`--compiler=${compiler}`]);
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
     ambiguousAgreement:0,ambiguousPrecision:0 },
@@ -242,6 +243,9 @@ function parseDump(text, programs) {
     // there, not at a demand site. Kept beside the module's demands.
     m = line.match(/^  limit (\S+): (\S+) (\d+), over (\d+)$/);
     if (m && current) { (current.limits ??= []).push({ declaration:m[1], kind:m[2], at:+m[3], cap:+m[4] }); continue; }
+    // Record-read staging details carry positions, not demand verdicts.
+    // The demand/record count partition above still checks every verdict.
+    if (/^  (?:capture|hoist) \S+: read \d+:\d+; (?:before|after operands) \d+:\d+$/.test(line)) continue;
     // `records` (#391): the record demands' counts, in total.
     if (/^  (summary |value )|^(total |cause |pending |limits |records )/.test(line)) continue;
     throw Error(`unparsed ownership dump: ${line}`);
