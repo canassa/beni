@@ -1,0 +1,11 @@
+-- A function a platform keeps in a JavaScript array and takes out again by
+-- a method whose name is made at run time, `frames[name]()`, is still a
+-- function the program calls (#685): `--check-call-graph`, which the
+-- corpus's release pass builds with, would make the call throw if fact 3's
+-- call graph missed it. Expected `42`.
+import Node exposing (Program)
+import Probe
+
+
+main : Program
+main = Node.printLines [ String.fromInt (Probe.viaComputed (λx → x + 1) 41) ]

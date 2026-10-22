@@ -2153,7 +2153,9 @@ const Spec = struct {
             .queued = try .initEmpty(a, cons),
             .exec_base = exec_base,
             .on = try .initEmpty(a, execs),
+            .site_exec = try a.alloc(u32, s.pts.sites.items.len),
         };
+        @memset(sv.site_exec, none);
         @memset(sv.lat, .bot);
         @memset(sv.aux, none);
         // The rewrite's dependency lists, as `sweeps` sets them up.
@@ -2313,11 +2315,13 @@ const Spec = struct {
             sv.prd[fill[p]] = con;
             fill[p] += 1;
         };
-        // ---- Executability's roots (*Executability*, amended for #685):
-        // every module's top level and every function body. Fact 3's call
-        // graph misses calls the program makes (a function called through
-        // a fiber's stack of frames has no caller in it), so a body it
-        // finds no executable call of may still run.
+        // ---- Executability's roots (*Executability*, amended for #685, the
+        // completeness argument): every module's top level; a function body
+        // fact 3 made no site for, whose site escaped, that something other
+        // than a call runs (`new`, the entry file: `odd_caller`), or that is
+        // held under a key the host reads unasked or one the pass does not
+        // know. Any other body runs when an executable call reaches its site
+        // (`calls`).
         // A top-level statement runs, with every body in it, unless it is a
         // declaration nothing live refers to, which `prune` drops after the
         // rewrite: what refers to it can only shrink (*Reading off*).
@@ -2328,8 +2332,29 @@ const Spec = struct {
                 defer from = st.execs;
                 if (!live[sb + k]) continue;
                 for (m.ex.execs[from..st.execs], from..) |e, i| switch (e.kind) {
-                    .top, .body => sv.on.set(eb + @as(u32, @intCast(i))),
+                    .top => sv.on.set(eb + @as(u32, @intCast(i))),
+                    .body => {
+                        const site = if (s.pts.ok) s.pts.siteAt(m.index, @fromBackingInt(@intCast(e.a))) else null;
+                        const fs = site orelse {
+                            sv.on.set(eb + @as(u32, @intCast(i)));
+                            continue;
+                        };
+                        sv.site_exec[fs] = @intCast(i);
+                        const st_fn = &s.pts.sites.items[fs];
+                        if (st_fn.escaped or st_fn.odd_caller) sv.on.set(eb + @as(u32, @intCast(i)));
+                    },
                     else => {},
+                };
+            }
+        }
+        if (s.pts.ok) {
+            var si: usize = 0;
+            while (si < s.pts.sites.items.len) : (si += 1) {
+                const st = &s.pts.sites.items[si];
+                if (st.any != none) try sv.held(try s.pts.view(st.any));
+                for (st.props.items) |pr| if (s.pts.hostImplicit(pr.id)) {
+                    if (pr.vals != none) try sv.held(try s.pts.view(pr.vals));
+                    if (pr.from != none) try sv.held(try s.pts.view(pr.from));
                 };
             }
         }
@@ -11194,6 +11219,9 @@ const Solver = struct {
     /// and which exec cells are true.
     exec_base: []u32,
     on: std.DynamicBitSetUnmanaged,
+    /// Per fact 3 site of a function: its body's exec cell in its module
+    /// (`none`: no body extracted).
+    site_exec: []u32,
     /// The names' cells (`Spec.nameInit`): which name each source cell is
     /// the initialiser of, and per name the `global` reads of it,
     /// `nrd[nrd_off[g]..nrd_off[g + 1]]`.
@@ -11304,6 +11332,22 @@ const Solver = struct {
         const base = sv.con_base[mi];
         for (x.ec[x.ec_off[e]..x.ec_off[e + 1]]) |j| try sv.enqueue(base + j);
         for (x.ek[x.ek_off[e]..x.ek_off[e + 1]]) |child| try sv.armCheck(mi, child);
+    }
+
+    /// The bodies of the functions in `v` are roots: the host may call them.
+    fn held(sv: *Solver, v: Pts.Val) Allocator.Error!void {
+        for (v.sites) |site| {
+            if (site >= sv.site_exec.len or sv.site_exec[site] == none) continue;
+            sv.on.set(sv.exec_base[sv.s.pts.sites.items[site].module] + sv.site_exec[site]);
+        }
+    }
+
+    /// The bodies of the functions in `v` run: something that runs calls them.
+    fn calls(sv: *Solver, v: Pts.Val) Allocator.Error!void {
+        for (v.sites) |site| {
+            if (site >= sv.site_exec.len or sv.site_exec[site] == none) continue;
+            try sv.turnOn(sv.s.pts.sites.items[site].module, sv.site_exec[site]);
+        }
     }
 
     inline fn runs(sv: *const Solver, mi: usize, j: usize) bool {
@@ -11420,6 +11464,8 @@ const Solver = struct {
                     const n = x.pool[a + 1];
                     for (x.pool[a + 2 ..][0..n], 0..) |c, i| try sv.joinParam(sv.aux[con] + @as(u32, @intCast(i)), sv.lat[sv.cellOf(mi, c)]);
                 }
+                // The functions it may call run.
+                if (s.pts.ok) try sv.calls(s.pts.vals[mi][ir.data(node).lhs]);
                 break :call try s.callValue(m, node);
             },
             .template => try s.templateValue(m, node, CellValues{ .sv = sv, .mi = mi, .cells = x.pool[a + 1 ..][0..x.pool[a]] }),
@@ -16040,7 +16086,9 @@ const Pts = struct {
         }
         if (unknown) {
             for (args) |a| try p.escape(vals[a.int()]);
-            if (ir.tag(callee) == .member) try p.escape(vals[ir.data(callee).lhs]);
+            // A method the pass does not know may do anything with its
+            // receiver, however its name is written (#685).
+            if (ir.tag(callee) == .member or ir.tag(callee) == .index_get) try p.escape(vals[ir.data(callee).lhs]);
             out = try p.unionOf(out, Val.top_val);
         }
         return out;
