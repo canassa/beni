@@ -4661,6 +4661,14 @@ not weaken an allocation globally. Summary blocks carry the container
 condition of a supplied annotation as well as its existing deep and record
 conditions. Old blocks are invalidated.
 
+*Amended 2026-10-22 (#773).* At a call, such an annotation with no deep
+condition is never an alternative allocation at its result path, whatever
+its record condition says: whether a path has several choices decides how
+the entries of a list are approximated, and a list's line reads no record
+condition (§31.4 item 6). Before, a failing record condition made the
+annotation a second choice, and the list lines of four corpus programs
+moved under `--ownership-records-lost`.
+
 The dictionary's existing asserted focus row (§20.8) states the tree algorithm's
 structural separation itself. Construction annotations made inside that
 algorithm are not additional arrivals or results of the primitive: the row

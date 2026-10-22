@@ -1250,6 +1250,34 @@ test "ownership everywhere: its cache entries are kept in a subdirectory of thei
     try testing.expect(std.mem.startsWith(u8, blocked.stderr, "beni: cannot write 'd'"));
 }
 
+// §31.4 item 6: a list's line reads no record condition. With every record
+// condition failing (the hidden `--ownership-records-lost`), the list lines
+// are the same. A construction's guard (`condition(fresh2)` at `.0`, #720)
+// once counted as a second choice at its path when its record condition
+// failed, which made `t.0` approximate: `call` where it is `alias` (#773).
+test "ownership records lost: a guard beside a result path does not move a list line" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\w1 x = ( x, x )
+        \\
+        \\
+        \\pub wide : List Int → Int
+        \\wide xs =
+        \\    t = w1 xs
+        \\    ys = [ …t.0, 1 ]
+        \\    List.length ys + List.length xs
+        \\
+    );
+    const plain = try w.runWith(&.{ "dump", "--stage=ownership", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    const lost = try w.runWith(&.{ "dump", "--stage=ownership", "--ownership-records-lost", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), lost.exit_code);
+    const line = "  7:12 construction t.0: rejected alias: xs holds it and is read at 8:22\n";
+    try testing.expect(std.mem.indexOf(u8, plain.stdout, line) != null);
+    try testing.expect(std.mem.indexOf(u8, lost.stdout, line) != null);
+}
+
 /// §30.5, §30.7 (O1): under the flag, the modules of core or of a platform
 /// hold no rejected and no pending line — `browser-tea`'s `Tea.application`
 /// held two before O1, its taggers forwarded inside a lambda (§30.9).
