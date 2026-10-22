@@ -9672,6 +9672,49 @@ last evaluation. Outputs are byte for byte the same. Measured as in slice 4, bef
 instructions TodoMVC 1 394M → 1 400M, the 16 400 arms 2 918M → 2 908M, the 100 000 lines
 15 704M → 15 642M (peak RSS 339 → 334 MB).
 
+**As built 2026-10-22 — slice 5, part 2: fact 3's constraints from the extraction** (issue #649).
+`Pts`' first sweep by constraints no longer walks the program to record its constraints
+(`walkStatements` with `recording`). Each module's are extracted from its IR (`PtsExtract`,
+`PtsExtractor`) and replayed (`Pts.replayWalk`). The extraction follows the recording walk's own
+order, which is not the solver's: an assignment's value comes before its target's object, and a
+`try`'s `catch` before its `finally`. It also follows the walk's flow-sensitive guards exactly. A
+read's candidate guards are the ones in view whose chain it reads and that no unconditional kill
+(a call, a `new`, a `yield`, a declaration, an assignment, a loop's turn, a `try`'s part) has
+killed. Each carries its kill list, the reads through an object between its push and this read,
+and a read through a constant `top` object kills outright. Beside the constraints the extraction
+keeps the script of what the walk did between them, in its order. That is: a function's site and,
+for a declaration, its name holding it; a body's begin and end, with `undefined` returned when it
+may run off its end; the drains; the context a site is made in (`once`); `fresh_fn`; and every
+`const x = f(…)` (`decl_call`).
+
+**One choice the walk made at run time**, kept as it was. It noted a member read's guards only when
+the read's object was not `top` at its first evaluation (`narrowed` returns first otherwise), and
+whether a read has a guard decides whether a binding of it is a copy or a join (`copySource`). So
+the replay holds each read's candidate guards open (`Cons.narrow_open`) and decides at its first
+evaluation under the same test. It links a constraint's inputs and its guards' killers then, as
+the walk did.
+
+Replayed in this order, the first sweep makes the sites and vars the walk made, numbered alike, and
+reaches the state the walk reached. **Checked**: a safety build of a program of at most 1 500 nodes
+runs fact 3 three times. They are the shuffled-order sweeps (`byUnits`, as before), the recording
+walk, and the replay, which must equal the walk exactly, every site numbered as it was
+(`expectSame` numbered). With the node limit lifted and no instruction budget, the replay equals
+the recording walk on every corpus program, as a measurement. The shuffled-order comparison with
+the limit lifted fails on four programs on master before this change (`browser/tea/MapLambda` and
+three of Conduit's, a site's property entries): issue #657, which this check rests on and which is
+not this slice's. A statement's fact-3 constraints read only its own, so one whose nodes stand is
+copied into the next extraction with its ids shifted (`PtsExtractor.reuse`), checked against a
+fresh walk in the same small programs. Every output is byte for byte the same.
+Measured on dagon, master at `b271a9704` before, under a load of 5 to 19 from other work (so the
+instructions are the figures to read): instructions of the ReleaseFast compiler on the dashboard
+N = 16 340M → 348M, N = 64 1 440M → 1 465M, without `withDefault` 1 326M → 1 350M (+1.7 to
++2.2%); of the ReleaseSafe compiler TodoMVC 1 399M → 1 431M, the 16 400 arms 2 908M → 2 937M, the
+100 000 lines 15 645M → 16 009M (+1.0 to +2.3%); peak RSS within 2%. The replay itself costs less
+than the recording walk it replaces. What is added is the extraction of the statements that
+changed since the last analysis, and copying each run's constraints out of the extractions. What
+is left of the walker, the recording path and `byUnits`, goes in the next part with
+`max_pts_sweeps`.
+
 ### Compact statements
 
 ### Compact statements
