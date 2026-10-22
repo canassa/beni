@@ -198,6 +198,15 @@ is normative — and it is the place to read what the feature *is*. What that do
 | `equatable` | **kept and now redundant.** A type that has an `eq` is equatable and a function type has neither, so the marker overlaps the constraint. Neither mechanism was removed; `not_equatable` survives as the better message for `==` on a function (spec §3.4) |
 | The four ruled-out mechanisms above | beni takes the fifth: **caller-threaded evidence with no whole-program specialisation** — one hidden leading argument per constraint, in a canonical order both sides compute from the scheme record (spec §7.2, §8.1). It is the dictionary-passing row done per constraint rather than per class, and the row's own runtime objection was already retracted for a JS target by report 18 §1.1 and §1.5 |
 
+*Amended 2026-10-22 (#294), specifying the owner's 2026-10-17 decision:*
+Dict keys and Set members are restricted to **Int or String**. This supersedes
+the adoption table's `where k.compare` promise for these two collections.
+It adds a closed scalar membership obligation, carried with the key type
+variable; it adds no user-defined method, evidence parameter or recursive
+`comparable` walk. `number` and `appendable` keep their existing meaning and
+intersect the key obligation normally: a numeric key must be Int, an
+appendable key must be String. `checker-v2.md` §37 owns its propagation.
+
 **The evidence, and it is not one-sided.** Report 19 §6 measures the runtime win — 7.2× on
 structural `==`, 3.2× on a sort, 1.28× on a dictionary build — and §9 the ergonomic one: the tax of
 17 argument sites, 15 comparator parameters and two sugar modules goes to zero. Against that, §2

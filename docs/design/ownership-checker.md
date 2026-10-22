@@ -6163,3 +6163,161 @@ one form at two variants of one field (#410, 28), its `ChangedUrl` address (#412
 platforms (6): `Direct.beni`'s state read back from JavaScript (`Tea.commands (Js.to self)`) and `perform`'s
 `List.foldl` accumulator, whose record supply the checker does not yet follow through the callback's loans.
 Those wait for the checker (R2d) or a decision on the driver's state; none was rewritten to pass.
+
+---
+
+## 32. Ordered Dict and Set (specified 2026-10-22)
+
+*Specifies the owner's decisions of 2026-10-17 and 2026-10-19 (#294), before
+implementation. Amends §4.4, §16.7, §16.8, §20.8, §20.9 and §24. The API is
+`language.md` §6.8, the representation `backend.md` §4, **Ordered dictionaries**.
+These rules take effect together with the representation change. Until then
+the tree's existing rules remain the implementation contract.*
+
+### 32.1 Places and storage
+
+A dictionary owns mutable collection storage, independently of whether its value
+type holds a cell. Its entries are key/value pairs, and its index maps scalar
+keys to positions. Keys cross: only Int and String are valid. Every value has
+its own concrete place. The finite ownership summary uses `[*]` for the values'
+representative, as for List, never a recursive Tree path. The root `ε` names the
+collection's storage (header, entries, private pairs and Map treated as one
+allocation unit), and `[*]q` names place `q` of its stored values. Nested
+collections retain their own roots under that step.
+
+The representative does not mean that distinct keys alias. `excl d` says the
+values at distinct positions are disjoint from each other and from the
+collection storage; repeated references inside a value also count, following
+the existing deep conditions. Storing the same List at two keys fails it.
+Storing a tuple or record containing that List at two keys fails it too. The
+property belongs to that particular dictionary value, not to the allocation of
+one operand or to a globally interned path. The sound construction conditions
+of #456 stay intact. No Dict exemption is added to recover acceptance.
+
+An edit of the collection's storage demands ownership of `d` at `ε`, not of
+all cells in its values. A callback that writes a selected value adds its own
+demand on the supplied place; it does not indiscriminately write every value.
+A borrowed lookup aliases the selected value and grants no exclusive loan.
+Reading the old dictionary after a writer prevents the storage write even if
+the read observes only size. A copy separates storage but retains every value
+alias, including tuple/record payloads and their deep sharing conditions.
+
+This is the meaning of the finite insertion-ordered map and `dictFocus` in
+#522/#580: get, body, insert-or-remove, on one entries allocation. The Lean
+model uses Int keys and a Result for Maybe; String is another scalar key and
+Maybe has the corresponding payload path. It is not necessary to change its
+meaning model to match the host's index. The model's read-then-replace `reads`
+program is refused while the original dictionary remains live (#579). That
+program writes storage despite only reading the supplied value. This work
+makes no theorem claim beyond the proof work's own stated coverage.
+
+### 32.2 Primitive rows
+
+Every foreign declaration carries its summary in core, beside its type. These
+are precise primitive rows, like List's element-supply rows; §24's coarse words
+alone cannot express a root-only write or a conditional destructive supply.
+They must not be replaced by a deep `consumed Dict` row, which would require
+ownership of values an insertion never edits. The declared row is validated,
+published in interfaces and summary caches, used for function-value calls, and
+printed by `dump --stage=ownership`. A name in an unrelated module cannot
+acquire a Dict row. Missing declarations are conservative foreign calls, never
+optimistic borrowed calls.
+
+In the table, `D` is argument 1, `V` its `[*]` representative, `W ε` is a demand
+on collection storage only, and `fresh` means fresh storage with the listed
+value aliases. A row keeps no host reference after the call. Scalar arguments
+cross. Callback results include their captured aliases and retain their full
+conditions; fresh storage never implies exclusive values.
+
+| Dict primitive | Uses and result | Callback supply and conditions |
+|---|---|---|
+| empty construction | fresh root; no value cells; exclusive | none; each construction is fresh, even though `empty` has a constant-shaped API |
+| `singleton k v` | read/alias argument 2 at result `[*]`; fresh root | exclusivity is that of `v`, with no other entry |
+| `get d k` | read `ε` and `V`; result `#Just.0` aliases `V`, or Nothing | borrowed; result is not fresh value storage |
+| `member d k`, `size d`, `isEmpty d` | read `ε`; scalar result | no value read or write |
+| `insert d k v`, `insertAt d i k v` | read and `W ε`; return root `D`; retain old values plus supplied value | result exclusivity requires exclusive stored values and separation of the arrival from retained values; no value write |
+| `remove d k` | read and `W ε`; return `D` and retained values | preserves their exclusivity; conservative value provenance may retain the removed value |
+| `swap d a b` | read and `W ε`; return `D` with the same values | permutation preserves both value and spine conditions |
+| `sortBy d f` | read and `W ε`; return `D` with the same values | call `f` once per entry, in order, key scalar and value borrowed; callback results are temporary sort keys, not retained values; writes to supplied values are refused |
+| private `focus d k f` | read and `W ε`; return `D`, retained values and callback's Just payload | call argument 3 exactly once with Maybe v; its `#Just.0` aliases the selected `V`, taken and owned conditionally on `excl D`; absence supplies no value |
+| `copy d` | read `ε` and `V`; fresh root; values alias `V` | preserves value exclusivity internally, but shares them with `d`; no demand on input storage |
+| `keys d` | read `ε`; fresh exclusive List of scalar keys | no value alias |
+| `values d` | read `ε` and `V`; fresh List, result `[*]` aliases `V` | preserves internal exclusivity, shares with `d` |
+| `toList d` | read `ε` and `V`; fresh List and tuples; result `[*].1` aliases `V` | tuple keys cross; private entry pairs never escape |
+| `eq left right` | read both roots and value representatives; scalar result | sync value-equality evidence borrows each value; identity shortcut first |
+
+Private storage primitives used by beni loops have the corresponding subset
+of these rows. In particular, an internal index read is borrowed; a store
+writes only `ε` and aliases the value at `[*]`; a fresh builder has no values;
+a builder finish transfers the same root and its precise stored-value aliases.
+No unworded host operation may erase the builder's aliases or conditions.
+
+A focus removes the selected occurrence from the dictionary's holders for the
+callback, as List.focus does. Ownership of its supplied value is conditional
+on the dictionary being exclusive and the collection being owned and dead
+outside this call. The loan cannot overlap a value kept elsewhere, in another
+key, in a capture, or in a callback result that remains live at a later write.
+When the callback returns its taken value with shape preserved, the write-back
+recovers its exclusivity and spine conditions. A replacement must be separated
+from the other retained values; an unknown or aliasing callback does not gain
+that property by assertion. A callback that only reads needs no value loan,
+but focus still demands the storage write. `update` is a beni wrapper over
+focus with its inferred summary, not a second independent assertion.
+
+### 32.3 Derived operations and Set
+
+The following public bodies are inferred from the primitives and their actual
+beni callback loops. This table fixes the behaviour their inferred rows must
+express; a foreign implementation must declare the equivalent precise row.
+The callback protocol, including suspension and accumulator loans, is the
+existing one (§18 and §28).
+
+| Operation | Ownership contract |
+|---|---|
+| `Dict.fromList pairs` | fresh dictionary root; values alias `pairs[*].1`; repeated entries may lose exclusivity; reading and building never consumes the input List |
+| `Dict.map d f` | fresh dictionary root; callback results at `[*]`; callbacks in insertion order; each value supplied taken/owned only under `excl d` and the usual call-site demand when the actual edits it; retained outputs participate in subsequent holder checks |
+| `Dict.foldl`, `Dict.foldr` | borrowed dictionary values, no destructive value supply; accumulator supply/result follows the fold invariant; callback order forward/reverse; result is the final accumulator and may alias inputs through it |
+| `Dict.filter d f` | fresh root, retained values alias `V`; callback borrows each key/value; no value ownership granted; preserve order |
+| `Dict.partition d f` | two distinct fresh roots, each retaining input values; callback borrows; a representative may approximate both partitions, never fabricate their separation |
+| `Dict.union left right` | fresh root; left values and right-only values alias the inputs; exclusivity requires separation between retained values, even at distinct keys |
+| `Dict.intersect`, `Dict.diff` | fresh root; retained left values alias the left; right is borrowed for membership only |
+| `Dict.merge` | both dictionaries borrowed; one of three callbacks per distinct key; accumulator supply/result follows the folds; no taken value supply from either dictionary |
+| `Dict.update` | exactly focus's inferred row, including the unconditional root write |
+| `Set.empty`, `singleton`, `fromList`, `map` | fresh dictionary storage; members cross; map callbacks borrowed, outputs checked as valid scalar keys |
+| `Set.insert`, `remove`, `swap`, `insertAt`, `sortBy` | Dict's root-write row on the wrapped dictionary; same root returned; sort keys transient |
+| `Set.copy`, `filter`, `union`, `intersect`, `diff` | fresh dictionary storage; inputs read only; no member cells |
+| `Set.partition` | two distinct fresh dictionary roots; scalar members |
+| `Set.member`, `size`, `isEmpty`, `eq` | read wrapped dictionary roots; scalar result |
+| `Set.toList` | fresh exclusive List of scalar members |
+| `Set.foldl`, `Set.foldr` | scalar members borrowed; accumulator protocol unchanged |
+
+Set has no independently asserted row: its wrapper bodies infer these contracts
+through Dict. Neither Dict nor Set has a compare primitive or derived compare.
+Dict storage is a mutable cell even with a crossing value type; Set's wrapper
+therefore does not cross merely because its members are scalar.
+
+### 32.4 Removal of the tree exceptions and acceptance evidence
+
+Once the ordered representation and rows are built, delete `dictTree`, its
+path helper where unused, the `unmarked` branch in projection and the Dict skip
+in call-site other-place checks. Remove the tree-specific self-separation and
+fold exemptions from §16.7 and the trusted-surface exemption from §20.9.
+Retain the precise focus row on the trusted surface: the tree's exemption is
+withdrawn, not the need to audit a destructive loan.
+
+Runtime fixtures pin insertion order, duplicate replacement, remove/reinsert,
+forward/reverse folds, ordered equality, stable sort with callback order,
+swap (including missing keys), insert-at (including existing keys and clamped
+bounds), in-place storage edits and explicit shallow copies. Set gets the same
+behavioural checks. Build refusals name the scalar-key restriction and
+`Dict.copy`/`Set.copy` for a live old collection. A copied collection whose
+shared List payload is edited remains refused unless the payload itself is
+copied. No identity test is allowed to excuse a rendering error.
+
+The pending `DictFocus.grow` acceptance must recover and return to the corpus
+(#663), preserving the refused twins for repeated values, tuple/record
+payloads, captured aliases and live old dictionaries. The read-then-replace
+case in #579 must now refuse. An unexpected safe refusal or an instruction
+budget failure is a stop condition, not a reason to weaken the rows or tests.
+This section adds no keyed For, Dict write-set positions (O3), or recogniser
+for List.map keyed updates. Those belong to the rendering work.

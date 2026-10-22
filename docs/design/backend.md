@@ -479,6 +479,79 @@ The last five are static dispatch's, and
 call shapes and the evidence convention, §9 for the exact JavaScript of every derived function.
 Nothing here reopens a representation decision — §9.4's shapes are what derivation walks.
 
+### Ordered dictionaries
+
+*Added 2026-10-22 (#294), specifying the owner's 2026-10-17 and 2026-10-19
+decisions; specified before implementation. This extends §4's table and
+*Every platform edits in place* to Dict and Set. It supersedes tree-based
+representation and iteration claims. `language.md` §6.8 owns the public API.*
+
+`core/Dict` declares `pub equatable foreign type Dict k v`. Its JavaScript
+value is `{ entries, index }`: `entries` is a dense array of private two-slot
+arrays `[key, value]` in insertion order; `index` is a native `Map` from key to
+the pair's zero-based position. The value is stored in the entry, never in the
+Map. Each entry carries its key, so iteration reads `entries[i][0]` and
+`entries[i][1]` without a Map lookup. Both fields and each entry pair are
+private runtime storage, never a beni record, tuple or List exposed to callers.
+
+The invariant is a bijection: `index.size === entries.length`, each key occurs
+once, and `index.get(entries[i][0]) === i`. No tombstones, holes or parallel key
+array exist. A lookup uses `Map.get`; distinguish absence with `position ===
+undefined`, since zero is a valid position and a stored value can be `⊤`.
+Keys are checked `Int` or `String`; native SameValueZero agrees with their
+key identity (`-0` and `0` name one Int key). No key encoding, comparator,
+object-property lookup or broad catch is involved. These Map operations have
+no expected failure to catch (rule 9).
+
+`insert` overwrites the entry's value when present, otherwise appends a new
+pair and records its position. `remove` splices the pair and reindexes the
+tail. `swap` exchanges two pairs and updates two index positions. `insertAt`
+removes the previous occurrence before clamping and inserting, then reindexes
+the affected tail. `sortBy` evaluates its callback once per entry in entry
+order, stably sorts decorated entries by the supplied comparison evidence,
+writes the permutation back and rebuilds the index. Temporaries used to sort
+are algorithmic workspace, not a persistent or copying fallback. Callback
+loops preserve the effects contract, including suspension; a native sort
+comparator cannot call a suspendable beni callback. No half-updated collection
+is handed to a callback.
+
+Lookup, membership and size take expected O(1). Replacing an existing entry,
+append insertion and swap take expected/amortised O(1). Removing and insert-at
+take O(n); iteration, copying and rebuilding an index take O(n). Sorting takes
+O(n log n), plus the callback's work. These are representation costs, not
+measurements or claims about a browser benchmark.
+
+Every accepted writer mutates this storage on every platform. Ownership is
+required even when the dynamic operation does nothing. There is one writer,
+with no persistent alternative or silent copy. `copy` allocates a new header,
+entries array, entry pairs and Map, while retaining the values themselves.
+This prevents replacing a value in one copy from changing another's pair.
+`toList` also builds fresh beni tuples and a fresh List; `values` builds a fresh
+List of the values, and neither exposes the private entries array or pairs.
+`Set` stays an opaque wrapper over `Dict t ⊤` and delegates its storage to it.
+
+Empty builders must allocate fresh storage per construction, including every
+use of `Dict.empty` or `Set.empty` as a building seed. They must never mutate a
+module-level singleton Map. Keep the constant-shaped source API: the compiler
+lowers those seed references to a fresh empty construction. An ordinary binding
+that stores a seed still aliases that one constructed value and follows the
+usual ownership rule; its later reads do not construct it again. Constructors
+and function-value uses must carry the same freshness through wrappers and
+caches.
+
+`eq` checks header identity first, then length and scalar keys and value `eq`
+in one array walk. No `compare` is emitted or structurally derived for either
+collection. In-place edits must never meet renderer identity comparisons of
+the collection or entries (`browser-direct.md` §7.4), the same obligation as
+for List. This work does not add keyed `For` or write-set positions (O3).
+
+The sibling follows `boundary.md` §4's four checks: the foreign type has the
+accepted shape, exports match declarations exactly, imports name declared
+dependencies, and exported functions write countable parameter lists with
+evidence parameters first. Higher-order loops may remain in beni over private
+primitives; moving them to a synchronous host callback must not lose effects
+or the declared ownership summaries (`ownership-checker.md` §32).
+
 ### Corrections to the representation
 
 Three rows of that table did not survive contact with the code. Each is a
