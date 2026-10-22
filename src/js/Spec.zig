@@ -1169,6 +1169,10 @@ const Spec = struct {
     /// a function asks for it, and the table's probe, hashing the key a
     /// byte at a time, is generic code Zig's own backend compiles poorly.
     name_lits: []u32 = &.{},
+    /// Per whole-program name: what the last solve found its initialiser
+    /// to be (`Solver`'s name cells), as a `Lat`'s bits, `none` for a name
+    /// whose value is not its initialiser's (`globalValue`).
+    name_solved: []u32 = &.{},
     /// `countExpr`'s stack, shared by the walks it nests: each owns the
     /// entries above the length it found.
     names: std.ArrayList(Index) = .empty,
@@ -1938,6 +1942,27 @@ const Spec = struct {
         // arguments' effects, spreads.
         const gval = try a.alloc(u32, s.globals);
         @memset(gval, none);
+        // The names' cells: each name whose value is its initialiser's
+        // reads that node's cell (`nameInit`).
+        s.name_solved = try growSlice(s.arena, u32, &.{}, s.globals, none);
+        const name_src = try a.alloc(u32, s.globals);
+        @memset(name_src, none);
+        var name_of: std.ArrayList(Solver.NameSrc) = .empty;
+        for (0..s.globals) |g| if (s.nameInit(@intCast(g))) |ini| {
+            if (ini.node.int() >= mods[ini.module].ex.nodes) continue;
+            name_src[g] = cell_base[ini.module] + ini.node.int();
+            try name_of.append(a, .{ .cell = name_src[g], .g = @intCast(g) });
+        };
+        std.mem.sortUnstable(Solver.NameSrc, name_of.items, {}, struct {
+            fn less(_: void, x: Solver.NameSrc, y: Solver.NameSrc) bool {
+                return x.cell < y.cell;
+            }
+        }.less);
+        sv.name_of = name_of.items;
+        sv.name_src = try .initEmpty(a, cells);
+        for (name_of.items) |n| sv.name_src.set(n.cell);
+        sv.nrd_off = try a.alloc(u32, s.globals + 1);
+        @memset(sv.nrd_off, 0);
         @memset(sv.prd_off, 0);
         for (mods, 0..) |*m, mi_usize| {
             const mi: u32 = @intCast(mi_usize);
@@ -1972,6 +1997,13 @@ const Spec = struct {
                         .literal => sv.lat[cell_base[mi] + x.node[j]] = try s.literalValue(m, x.nodeAt(j)),
                         .global => {
                             const g = x.a[j];
+                            // A name whose value is its initialiser's reads
+                            // that cell (`nameInit`), and is woken with it.
+                            if (g < name_src.len and name_src[g] != none) {
+                                sv.aux[con] = name_src[g];
+                                sv.nrd_off[g + 1] += 1;
+                                continue;
+                            }
                             if (gval[g] == none) gval[g] = @bitCast(s.globalValue(g));
                             sv.lat[cell_base[mi] + x.node[j]] = @bitCast(gval[g]);
                         },
@@ -2001,6 +2033,17 @@ const Spec = struct {
                     }
                 }
             }
+        }
+        // ---- The names' readers, by counting sort.
+        for (1..sv.nrd_off.len) |i| sv.nrd_off[i] += sv.nrd_off[i - 1];
+        sv.nrd = try a.alloc(u32, sv.nrd_off[s.globals]);
+        {
+            const nfill = try a.dupe(u32, sv.nrd_off[0..s.globals]);
+            for (mods, con_base) |*m, base| for (m.ex.code, m.ex.a, 0..) |code, g, j| if (code.op == .global) {
+                if (g >= name_src.len or name_src[g] == none) continue;
+                sv.nrd[nfill[g]] = base + @as(u32, @intCast(j));
+                nfill[g] += 1;
+            };
         }
         // ---- The parameters' readers, by counting sort.
         for (1..sv.prd_off.len) |i| sv.prd_off[i] += sv.prd_off[i - 1];
@@ -2062,6 +2105,9 @@ const Spec = struct {
             }
         }
         @memcpy(s.params.items, sv.lat[param_base..]);
+        for (name_src, s.name_solved) |src, *out| if (src != none) {
+            out.* = @bitCast(sv.lat[src]);
+        };
     }
 
     /// Statement `w` reads whole-program name `g` (`readsName`).
@@ -2998,6 +3044,8 @@ const Spec = struct {
             };
             if (fresh) return s.nameLat(g) catch .nonnull;
         };
+        // Its initialiser's cell, as the last solve left it.
+        if (g < s.name_solved.len and s.name_solved[g] != none) return @bitCast(s.name_solved[g]);
         if (s.escaped[g] and s.decl[g] != null and s.decl[g].?.func != null) return .top;
         if (s.assigned[g]) return .top;
         const decl = s.decl[g] orelse return .top;
@@ -3017,6 +3065,29 @@ const Spec = struct {
             else => {},
         };
         return v;
+    }
+
+    /// The initialiser of whole-program name `g`, when every read of it is
+    /// that value (*Cells*, the name cells): its one declaration, a `const`
+    /// or a `let` nothing assigns, of a value `globalValue` does not answer
+    /// for by itself. A read before the declaration throws, so it has no
+    /// value at all.
+    fn nameInit(s: *Spec, g: u32) ?struct { module: u32, node: Index } {
+        const decl = s.decl[g] orelse return null;
+        if (s.assigned[g]) return null;
+        const dm = &s.mods[decl.module];
+        const d = dm.ir.data(decl.stmt);
+        const value: Index = switch (dm.ir.tag(decl.stmt)) {
+            .const_decl => @fromBackingInt(@intCast(d.rhs)),
+            .let_decl => (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap() orelse return null),
+            else => return null,
+        };
+        switch (dm.ir.tag(value)) {
+            .arrow => return null,
+            .object, .array => if (dm.ir.tag(decl.stmt) == .const_decl) return null,
+            else => {},
+        }
+        return .{ .module = decl.module, .node = value };
     }
 
     fn globalOfDecl(s: *Spec, d: Decl) u32 {
@@ -10678,8 +10749,17 @@ const Solver = struct {
     exec_base: []u32,
     on: std.DynamicBitSetUnmanaged,
     site_exec: []u32,
+    /// The names' cells (`Spec.nameInit`): which name each source cell is
+    /// the initialiser of, and per name the `global` reads of it,
+    /// `nrd[nrd_off[g]..nrd_off[g + 1]]`.
+    name_src: std.DynamicBitSetUnmanaged = .{},
+    name_of: []NameSrc = &.{},
+    nrd_off: []u32 = &.{},
+    nrd: []u32 = &.{},
 
     const Reader = struct { con: u32, next: u32 };
+    /// A name's initialiser cell and the name, sorted by cell.
+    const NameSrc = struct { cell: u32, g: u32 };
 
     /// The work budget (*The worklist*, *Termination*): evaluations per
     /// constraint and cell.
@@ -10727,6 +10807,16 @@ const Solver = struct {
         const x = &sv.s.mods[mi].ex;
         const base = sv.con_base[mi];
         for (x.rd[x.rd_off[local]..x.rd_off[local + 1]]) |j| try sv.enqueue(base + j);
+        // The reads of the name it is the initialiser of.
+        if (sv.name_src.bit_length != 0 and sv.name_src.isSet(cell)) {
+            const at = std.sort.binarySearch(NameSrc, sv.name_of, cell, struct {
+                fn order(c: u32, n: NameSrc) std.math.Order {
+                    return std.math.order(c, n.cell);
+                }
+            }.order).?;
+            const g = sv.name_of[at].g;
+            for (sv.nrd[sv.nrd_off[g]..sv.nrd_off[g + 1]]) |con| try sv.enqueue(con);
+        }
         // The arms it is the test of.
         for (x.et[x.et_off[local]..x.et_off[local + 1]]) |e| try sv.armCheck(mi, e);
     }
@@ -10860,8 +10950,9 @@ const Solver = struct {
         const node = x.nodeAt(j);
         const a = x.a[j];
         const v: Lat = switch (code.op) {
-            // Written at the merge.
-            .constant, .literal, .global => return,
+            // Written at the merge, but a name's read of its cell.
+            .constant, .literal => return,
+            .global => if (sv.aux[con] == none) return else sv.lat[sv.aux[con]],
             .local, .param => read: {
                 const from: u32 = if (code.op == .local) (if (a == none) none else sv.cellOf(mi, a)) else sv.aux[con];
                 const got = if (from == none) Lat.top else sv.lat[from];
@@ -10979,7 +11070,12 @@ const Solver = struct {
             for (m.ex.stmts, 0..) |st, k| {
                 defer first = st.cons;
                 for (first..st.cons) |j| switch (m.ex.code[j].op) {
-                    .constant, .literal, .global => {},
+                    .constant, .literal => {},
+                    .global => if (sv.aux[base + j] != none and sv.runs(mi, j)) {
+                        const con = base + @as(u32, @intCast(j));
+                        try sv.budget(con, limit);
+                        try sv.eval(con, @intCast(mi), j, @intCast(k));
+                    },
                     else => if (sv.runs(mi, j)) {
                         const con = base + @as(u32, @intCast(j));
                         try sv.budget(con, limit);

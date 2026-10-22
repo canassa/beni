@@ -40,9 +40,9 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 b85a28b7579fd27fcd2fcc827ac5bfdcc4d73ce7bc46b548342fbadcb74f9d11
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 6a0d7233000b4025fa4db83894d0090b4a404c9eef1eb556700e15b156567d23
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 d2bbce13fdeb36740b21e3ec385aec22a33cc502fdf83d05979d7b1d5b62aab6
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 9cb2c32c97750a08fa0a3c54f6ebde9258e4cfc84ab219a60dff1c8274342be1
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 f4a10236f289c709c11e49cb2ea11648c0f664bd70f345617c851ee8dca016c1
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 daf37a1fa19ec2fdcbb3d87937ddb72eb308d948166d1bd200fd0daf9a32bc1a
