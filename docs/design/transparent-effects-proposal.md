@@ -2358,6 +2358,8 @@ pub scheduler : sync (⊤ → ⊤) → Scheduler                       -- drains
 pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, and the defect hook
 pub withScheduler : Scheduler, (⊤ → a) → a                     -- the slot's writer, scoped to `work` as every slot change is
 pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutdown` for one scheduler
+pub schedulerBusy : Scheduler → Bool                           -- whether a fiber of it still runs (the Worker slice, 2026-10-22)
+pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` once, the next time none does; at once when none does now
 ```
 
 - **A scheduler is a queue of its own**: the ready work of its fibers, FIFO, drained as the
@@ -2421,8 +2423,18 @@ pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutd
   the deadline it was given — and the cleanups cut short under a scheduler count in `shutdown`'s
   `done` (*P699-8*), so nothing outlives the program and nothing cut goes uncounted. A
   scheduler that has stopped for good leaves the kernel's list, so a platform that makes one per
-  request holds none of them. What the `cloudflare` platform asks of a scheduler after a request's
-  answer is the Worker slice's (§9.12 (d)).
+  request holds none of them. *Added with the Worker slice (2026-10-22; `boundary.md` §9.12 (d)):*
+  **`schedulerBusy`** says whether a fiber of a scheduler still runs — belonging or lent, running
+  or parked; false before any has started and once every one has ended. **`onSchedulerIdle s f`**
+  calls `f` once, the next time no fiber of `s` runs, and at once, during the call, when none
+  does now; one `f` waits, the last one given replacing the one before; `f` runs at the end of
+  the last fiber, where that fiber's `complete` or its leave from `withScheduler` counts it off,
+  with that fiber still the current one, so a `resume` from `f` is queued as any other and a
+  `spawn` makes a child of the fiber that ended; during a stop it runs when the last fiber ends,
+  before `done`. They are what the `cloudflare` platform asks after a request's answer: with no
+  fiber running nothing is held, otherwise `waitUntil` holds a promise that `onSchedulerIdle`
+  settles when the last fiber ends, or the deadline's timer settles by stopping the scheduler.
+  The `workers/` fixtures cover them in the host (§9.12 (k)).
 - **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
   the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
   scheduler's: a wake under a scheduler always goes through its `run`.

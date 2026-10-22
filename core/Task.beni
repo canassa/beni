@@ -2061,6 +2061,7 @@ newScheduler runner hook more =
             , expired = False
             , head = 0
             , hook = hook
+            , idle = Js.null
             , lent = Js.construct (Js.global "Map") []
             , live = 0
             , members = Js.construct (Js.global "Set") []
@@ -2174,6 +2175,34 @@ unlend fiber s old =
         Js.to (Js.call (Js.get s "lent") "set" [ fiber, Js.from (Js.to depth - 1) ])
 
 
+--| Whether a fiber of the scheduler still runs: one that belongs to it, or
+--| one lent to it by `withScheduler`, running or parked. `False` once every
+--| one has ended, and before any has started. What the `cloudflare`
+--| platform asks after a request's answer, to know whether work outlives
+--| it (`boundary.md` §9.12 (d)).
+pub schedulerBusy : Scheduler → Bool
+schedulerBusy sched = Js.to (Js.get (Js.from sched) "live") > 0
+
+
+--| Call `f` once, the next time no fiber of the scheduler runs — at once,
+--| during this call, when none does now. One `f` waits: the last one given
+--| replaces the one before. It runs at the end of the last fiber, where
+--| that fiber's `complete` or its leave from `withScheduler` counts it off,
+--| with that fiber still the current one: a `resume` from `f` is queued as
+--| any other, and a `spawn` makes a child of the fiber that ended. During
+--| a stop it runs when the last fiber ends, before `done`. What the
+--| `cloudflare` platform holds a request open with under `waitUntil`
+--| while work outlives the answer, and lets go of the request with as soon
+--| as that work ends (`boundary.md` §9.12 (d)).
+pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤
+onSchedulerIdle sched f =
+    s = Js.from sched
+    if Js.to (Js.get s "live") == 0 then
+        f ⊤
+    else
+        Js.set s "idle" (Js.from f)
+
+
 --| Stop one scheduler, as `shutdown` stops the program: close its root
 --| scopes, cancel its fibers and run their cleanup, drop its queued work
 --| and start nothing new under it. Cleanup that suspends is given
@@ -2244,6 +2273,13 @@ countDown s =
     n : Int
     n = Js.to (Js.get s "live") - 1
     Js.set s "live" (Js.from n)
+    if n == 0 then
+        f = Js.get s "idle"
+        if Js.isNull f then
+            ⊤
+        else
+            Js.set s "idle" Js.null
+            Js.to (Js.apply f [ Js.null ])
     if n == 0 && Js.to (Js.get s "phase") == 2 then Js.to (Js.apply (Js.get s "ended") [ Js.null ])
 
 
