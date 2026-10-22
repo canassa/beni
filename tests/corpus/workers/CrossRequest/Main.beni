@@ -2,9 +2,11 @@
 -- (d); transparent-effects-proposal.md §17.5). Two requests park on their
 -- own timers at once and each answers in its own context when woken; a
 -- fiber started with `Task.spawnDetached` runs after its answer under
--- `waitUntil`, and a later request reads what it wrote. Two requests of
+-- `waitUntil`, and a later request reads what it wrote; one that parks
+-- is held there until it ends, which the hook `/__beni/holds` shows. Two requests of
 -- one Miniflare share an isolate, which a program never relies on: the
 -- shared cell is the test's device.
+import Deferred exposing (Deferred)
 import Duration
 import Ref exposing (Ref)
 import String
@@ -18,6 +20,12 @@ main = Worker.program { fetch = route, objects = [] }
 
 seen : Ref String
 seen = Ref.make "nothing yet"
+
+
+-- What the long-lived fiber waits for: completed by `/release`, so no
+-- step depends on a timer.
+gate : Deferred ⊤
+gate = Deferred.make ⊤
 
 
 route : Context, Request → Response
@@ -37,6 +45,18 @@ route ctx request =
             -- is given, in the same turn, so no step depends on a timer.
             _ = Task.spawnDetached λ⊤ → Ref.set seen "the detached fiber ran after the answer"
             Worker.text 200 "answered first"
+
+        [ "", "outlive-gate" ] →
+            -- A fiber that outlives the answer: it parks until `/release`,
+            -- held under `waitUntil` meanwhile.
+            _ = Task.spawnDetached λ⊤ →
+                Deferred.wait gate
+                Ref.set seen "the gated fiber ran after its release"
+            Worker.text 200 "answered, the fiber waits"
+
+        [ "", "release" ] →
+            _ = Deferred.complete gate ⊤
+            Worker.text 200 "released"
 
         [ "", "seen" ] →
             Worker.text 200 (Ref.get seen)
