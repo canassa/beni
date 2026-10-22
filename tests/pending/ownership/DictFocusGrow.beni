@@ -1,6 +1,6 @@
--- #663: the owner accepted this false refusal while #294 replaces Dict's
--- folded tree. Two distinct fresh lists share nothing. Keep expecting the
--- callback write to be accepted; promote this fixture when #294 recovers it.
+-- CK-267: two fresh Dict values retain separate ownership (#663).
+-- The owner deferred this folded-tree false refusal to #294. Expect the
+-- callback write accepted; promote when #294 recovers the two-key case.
 import Dict exposing (Dict)
 
 

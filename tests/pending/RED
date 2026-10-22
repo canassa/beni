@@ -125,7 +125,6 @@ tests/pending/emit/release/inline/Reader exit=0 js-differs
 tests/pending/emit/release/inline/ResearchS2 exit=0 js-differs
 tests/pending/emit/release/inline/ResearchS3 exit=0 js-differs
 tests/pending/emit/release/inline/Texts exit=0 js-differs
-tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
 
 # CK-260, CK-261, CK-262 (2026-10-19, issue #315): the three record demands of
 # #315 checked at the entry (ownership-checker.md §31.6, §31.8). Red until R2c
@@ -134,3 +133,6 @@ tests/pending/ownership/RecordForItem.beni exit=0 browser-inline.ownership-diffe
 # #419 (CK-264): a split element stored back into its own list is taken
 # as apart from it, for records as for lists. Golden: the verdict with the fix.
 tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
+
+# CK-267 (#663): two fresh dictionary values, deferred to #294.
+tests/pending/ownership/DictFocusGrow.beni exit=0 ownership-differs
