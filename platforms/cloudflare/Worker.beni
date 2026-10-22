@@ -752,7 +752,11 @@ reserved at =
     if not (String.contains at "/__beni/") then
         False
     else if Js.testHooks ⊤ then
-        not (String.endsWith at "/__beni/tick" || String.endsWith at "/__beni/alarm")
+        not
+            (String.endsWith at "/__beni/tick"
+                || String.endsWith at "/__beni/alarm"
+                || String.endsWith at "/__beni/hold"
+            )
     else
         True
 
