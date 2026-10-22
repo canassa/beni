@@ -5060,7 +5060,6 @@ const Emitter = struct {
         profile.addCounter(.spec_points_to_reused, stats.points_to_reused);
         profile.addCounter(.spec_points_to_sweeps, stats.points_to_sweeps);
         profile.addCounter(.spec_passes, stats.passes);
-        profile.addCounter(.spec_points_to_declined, stats.points_to_declined);
         profile.addCounter(.spec_rounds_capped, stats.rounds_capped);
         profile.addCounter(.spec_passes_capped, stats.passes_capped);
         profile.addCounter(.spec_init_capped, stats.init_capped);
