@@ -145,10 +145,10 @@ ordering_test.test.an annotated recursive group calls an own method written belo
 ordering_test.test.mutually recursive schema declarations print the same reversed #0 6c59d06fc52d54feca46ff539cadc85eaac1ca749a71f877458bfbd62bc57655
 ordering_test.test.nullary methods and record defaults print the same reversed #0 759ab1983b71da5fee5c4695545896e1251fef5f8af51ce6cd8ae5acd5defee0
 page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 42393cc3bd5bcac110a79e10f703824f0b2ac75f7ec74be5ee7e0d6cd040542a
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 5669073051890c2b8152f582761d1ea76641e40afab690509bd5dcefa04fd841
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 16aee595f02e747c4904b93af9de2b01cc2a6298a74689f9ea69115398650c3a
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 5d43be25456f9c966456361cdfe39ea4f4ed9be1850ebeef77a7e004e4ff90d6
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 7262cde0633c8594eb3ba9250ca8f6c65c6f724f675b96e9e5c1ad1ad3e2e1b2
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 ef41b1b5608eaa7a1eaab96f2edca3137057c5370ce5b55142ab6b8f6a8a48f2
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 09aedf97b817d73d5a8de7135d5f134f98ef98da9a66cfbef02c3d3419e82738
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 d57b3634e1824912ad3fedc68fabd05fc4242fed69096b0c13e0fb1e2626d8df
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 40782182f9b2f9c7c827ee403ce76944fab543eaa86d60473f0ed10ac2fe0d95
 page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 4c394b6a00cf669ccd3e47726050dfe8447eb0ee798315e7043bf1341e0118a1
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 7ff84ef8333f5ef550c251e36b3ab198f640dd2b9110f37cf0f0f2d089db1f70
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 689ebd7f2dd6115d98d14aa07f2a329f5c121d50073c38f35b6c417141754768
