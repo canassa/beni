@@ -11,6 +11,7 @@ module RecordCallbackEntry
   56:23 update _: accepted callback-param (RecordCallbackEntry.onForm supplies it owned)
   74:5 update entry RecordCallbackEntry.update model: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx) [copy]
   74:5 update entry RecordCallbackEntry.update model.form: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx) [copy]
+  hoist model.form: read 49:93; after operands 49:15
   summary setName: π2 W{name}; res π2◦
   summary onForm: π1 R, π2 W{form}, π2.form R; res .form cb1r{excl cb1}, π2◦; π1 calls ≤1, supply 1 π2.form ownedr{excl π2.form}
   summary update: π1 R, π2 RW{form}, π2.form RW{name}; res .0 π2 π2◦, .0.form π2.form◦, .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λr{lost} λr{lost} λr{lost}, .1#Cmd.0[*]#Perform.0 λr{lost} λr{lost} λr{lost}, .1#Cmd.0[*]#Perform.0◇ π2 π2.form, condition(fresh2){shared}r{shared}

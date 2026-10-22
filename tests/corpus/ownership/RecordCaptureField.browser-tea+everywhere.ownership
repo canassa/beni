@@ -3,6 +3,7 @@ module RecordCaptureField
   38:32 update form: accepted param
   53:5 update entry RecordCaptureField.update model: accepted entry
   53:5 update entry RecordCaptureField.update model.form: accepted entry
+  capture model.form.name: read 34:64; before 34:34
   summary update: π2 RW{form}, π2.form RW{name}, π2.form.name R; res .0 π2 π2◦, .0.form π2.form◦, .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λr{lost}, .1#Cmd.0[*]#Perform.0 λr{lost}
   summary view: res ⟨render⟩ fresh1{lost}r{lost}
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

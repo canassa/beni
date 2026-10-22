@@ -7,6 +7,7 @@ module RecordFold
   42:23 update state: accepted param (RecordFold.perform writes it) [hoisted 1]
   50:15 update <record>: accepted fresh (List.foldl writes it)
   51:35 update s: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  hoist state.count: read 42:49; before 42:23
   summary item: π2 RW{count, last}, π2.count R; res π2 π2◦
   summary perform: π1 R, π2 RW{count, last}; res ~π2 ~π2◦
   summary runs: π1 R; res ~fresh501◦

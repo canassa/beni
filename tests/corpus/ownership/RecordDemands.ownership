@@ -23,6 +23,14 @@ module RecordDemands
   209:9 update r: accepted param [hoisted 1]
   215:9 update r: accepted param [hoisted 1]
   226:9 update r: accepted fresh [hoisted 1]
+  hoist p.x: read 62:12; after operands 61:9
+  hoist p.x: read 115:15; after operands 114:9
+  hoist p.tags: read 122:27; after operands 121:9
+  hoist p.x: read 130:11; after operands 129:9
+  hoist p.x: read 137:13; after operands 136:9
+  hoist r.a: read 210:25; after operands 209:9
+  hoist r.a: read 216:28; after operands 215:9
+  hoist r.x: read 227:12; after operands 226:9
   summary untouched: π1 W{x}, π1.tags R, π1.x R, π1.y R
   summary hoisted: π1 W{x}, π1.tags R, π1.x R
   summary whole: π1 RAW{x}, π1.tags RA; res .0 π1◦, .0.tags π1.tags, .1 π1, condition(fresh1){shared}r{shared}

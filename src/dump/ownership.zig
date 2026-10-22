@@ -153,6 +153,7 @@ pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_
             try w.writeByte('\n');
         }
         if (!options.totals_only) {
+            for (r.hoist_lines) |s| try w.print("  {s}\n", .{s.text});
             for (r.summaries) |s| try w.print("  {s}\n", .{s.text});
             for (r.limits) |h| switch (h.limit) {
                 .rounds, .fixpoint => try w.print("  limit {s}: {s}, unsettled after {d}\n", .{ h.name, h.limit.text(), h.limit.cap() }),

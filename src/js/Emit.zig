@@ -4790,6 +4790,7 @@ const Emitter = struct {
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
                 .dispatch = e.dispatchOf(m),
+                .ownership = e.session.checked.hoists[m.int()],
                 .types = &e.session.checked.types,
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,

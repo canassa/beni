@@ -73,6 +73,7 @@ const SchemaCtor = @import("SchemaCtor.zig");
 const SchemaLower = @import("SchemaLower.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
+const Hoists = @import("../own/Hoists.zig");
 const beni_markup = @import("beni_markup");
 
 const Inst = Bir.Inst;
@@ -212,6 +213,8 @@ pub const Input = struct {
     /// (static-dispatch-spike.md §7). Lowering reads it; what it cannot
     /// honour is REFUSED rather than emitted wrongly.
     dispatch: *const Dispatch,
+    /// The checked or installed module-local ownership facts (§31.10).
+    ownership: Hoists.Table = .empty,
     /// The session's type table, read as a **name, declaration and
     /// derivability service** and as nothing else.
     ///
@@ -5539,6 +5542,10 @@ pub const Lowerer = struct {
             .list => return l.arrayNode(try l.exprList(out, Bir.inlineRange(d)), p),
             .record => return l.recordNode(out, Bir.inlineRange(d), p),
             .record_update => {
+                // A clean channel is the prerequisite of every future store.
+                // This slice retains the spread, including in clean modules.
+                if (l.in.ownership.clean) l.in.ownership.assertAccepted(inst);
+
                 // The base, then the updated fields in written order
                 // (`language.md` §6). Nothing is sorted — a spread carries
                 // the key order of the record it spreads — so the only

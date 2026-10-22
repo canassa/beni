@@ -1,0 +1,56 @@
+-- The channel pins the old-field read before the accepted write's stores.
+pub old : { x : Int }, Int → Int
+old p n =
+    q = { p | x = n }
+    q.x + p.x
+
+
+-- A write in one arm must read the old value before the branch.
+pub joined : { x : Int }, Bool → Int
+joined p yes =
+    q = if yes then { p | x = 2 } else { x = 3 }
+    q.x + p.x
+
+
+-- A writing callee uses the same channel at the caller.
+pub shift : { x : Int }, Int → { x : Int }
+shift p n = { p | x = n }
+
+
+pub called : { x : Int } → Int
+called p =
+    q = shift p 4
+    q.x + p.x
+
+
+-- An old alias and a record-pattern binding name the pre-write version.
+pub aliased : { x : Int } → Int
+aliased p =
+    before = p
+    q = { p | x = 5 }
+    { x } = before
+    q.x + x
+
+
+-- Captures after a write need both eager reads and pre-write placement.
+pub captured : { x : Int } → Int
+captured p =
+    q = { p | x = 6 }
+    get = λ⊤ → p.x
+    q.x + get ⊤
+
+
+-- The first write invalidates the old read, even with another write later.
+pub twice : { x : Int } → Int
+twice p =
+    q = { p | x = 7 }
+    next = { q | x = 8 }
+    next.x + p.x
+
+
+-- Source paths in the channel remain exact beyond the checker's old path cut.
+pub deep : { a : { b : { c : { d : { e : { f : { g : { h : { i : { j : Int } } } } } } } } } } → Int
+deep p =
+    get = λ⊤ → p.a.b.c.d.e.f.g.h.i.j
+    q = { p | a = { b = { c = { d = { e = { f = { g = { h = { i = { j = 11 } } } } } } } } } }
+    q.a.b.c.d.e.f.g.h.i.j + get ⊤

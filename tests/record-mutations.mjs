@@ -8,12 +8,12 @@
 // Each mutation builds the compiler again (`-Downership-record-mutation=…`)
 // and runs the `ownership/Record` fixtures. A mutation the fixtures do not
 // catch fails the step. The fourth control of §31.12, a hoist published with
-// the wrong placement, waits for the hoist table (R5).
+// the wrong placement is pinned by the published table.
 
 import { spawnSync } from "node:child_process";
 
 const zig = process.argv[2] ?? "zig";
-const mutations = ["hoist-whole", "no-held-operand", "no-disjoint", "call-as-hoist"];
+const mutations = ["hoist-whole", "no-held-operand", "no-disjoint", "call-as-hoist", "wrong-placement"];
 let missed = 0;
 for (const m of mutations) {
   const r = spawnSync(zig, ["build", "test-blackbox", "-Dcorpus=ownership/Record", `-Downership-record-mutation=${m}`], {
