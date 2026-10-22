@@ -327,12 +327,8 @@ zig build --list-steps
 Options: `-Dtest-filter=<text>` (tests whose name contains it),
 `-Dcorpus=<text>` (corpus fixtures whose path contains it; matching nothing
 fails), `zig build test-blackbox-<file>` (one black-box file), `-Dllvm` (see
-below), `-Dtest-budget=<millions>` (profiling only),
-`-Downership-full-cross-check` (the ownership checker cross-checks every
-spine condition, not only those of values of eight entries or fewer; slow,
-so give it `-Dtest-budget=0`). `gates` refuses the filters,
-and it refuses to run on a host that cannot count the budget (*Every test has a
-budget*, below).
+below). `-Downership-full-cross-check` cross-checks every ownership spine
+condition (slow). `gates` refuses filters and deliberate checker mutations.
 
 **Running the tests.** `zig build gates` takes about 6 s with nothing changed
 and 10 s after an edit under `src/` (quiet machine), so run it whenever you
@@ -375,81 +371,11 @@ and CI sets `~/.cache/zig`, the path its cache entries hold. Outside a dev
 shell, set the variable yourself. `flake.nix`'s `zigGlobalCache` has the full
 argument.
 
-**Every test has a budget of 4 300 million instructions** (about one second of
-quiet CPU), counted for the test and every process it starts; a test over it
-fails. Instructions, not time, so load does not move it. A test over budget is
-fixed by the smallest input that reaches its branch, a small-stack unit test
-for a "does not recurse" claim, one test per branch, or deletion when another
-test reaches the branch — never an exemption the owner has not granted. Corpus cases are budgeted
-one by one; the owner may grant a large program its own budget, or a case whose cost comes from
-a compiler defect with an open issue, until the case fits 4 300M: a `.budget` file beside the case
-with its limit and reason (`tests/corpus/README.md`, *Budgets*). A separately granted
-value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
-**The owner delegated these grants (2026-10-15): don't ask, set them.** A large program's corpus
-case, or one whose cost comes from a compiler defect with an open issue, gets a `.budget` (or
-`.fuzz-budget`) of its count on the x86-64 Linux reference plus about 10% — never a CPU-time
-estimate — with the reason, a removal condition and an issue that tracks bringing it down; a
-grant the count has fallen below is lowered the same way. This covers corpus cases only: an
-ordinary test is still shrunk, and a case that got slower because of a defect is a defect to fix,
-not a grant to raise (rule 10).
-The corpus grants are `browser/tea/`'s (re-sized or added when `browser-direct` was retired,
-2026-10-19, #423): Conduit's three pages (12 000M, 2026-10-08) and their value fuzz (11 300M,
-#433); Sternhalma's page and value fuzz (5 200M and 5 600M, #435); and TodoPage's page and value
-fuzz (4 850M and 5 150M, #361). Every `browser/direct/` grant went with its page. Outside the
-corpus, the two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
-(`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
-input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with
-`zig build test-playground` in CI on every pull request; granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`).
-Also outside the corpus, and also the owner's own grant, the `tests/blackbox/check_test.zig` case
-*ownership words: core's are catalogued* has 4 750M (`core_surface_budget_millions`): it runs the
-ownership stage on the whole of `core/`, so its count grows with every line of core, and the log
-context (#358) put it 10M over the 4 300M. Jayson Reis decided it on 2026-10-20 (dashboard
-`node-log-q2`); it goes when the case is back under 4 300M (#514). `world.withOwnBudget` holds both
-grants.
-
-**Owner amendment, 2026-10-22 (#456):** the core surface test now has 5 300M
-(`core_surface_budget_millions`), and *ownership everywhere: core holds no rejected or pending line*
-has 5 300M (`core_clean_budget_millions`). Value-scoped construction conditions raised their counts
-to 4 810M and 4 794M; the owner authorized these grants, with about 10% headroom. Their assertions
-are unchanged. Issue #514 tracks reducing and removing the grants. The same owner authorization
-covers `ownership/Conduit` at 4 760M (4 320M observed plus about 10%); its
-`_expected.budget` names #286 and is removed when the case fits 4 300M again.
-
-**Owner amendment, 2026-10-22 (#720):** the owner explicitly authorized increasing
-budgets for projection-aware fold conditions. Normal self-hosted gates reported
-11 060M for core surface, 10 767M for core clean, 5 706M for browser ownership
-words, 4 931M for browser-tea clean, 5 545M for Conduit ownership, 8 930M for
-WideModel ownership and 18 292M for OwnershipEntryRounds. Their grants are,
-respectively, 12 170M, 11 850M, 6 280M, 5 430M, 6 100M, 9 830M and 20 130M
-(about 10% headroom). Assertions remain unchanged. Issue #732 tracks reducing
-these costs and retiring the grants, alongside #514 for core and #286 for
-Conduit. No separate measurement run was performed.
-
-**The budget has one unit and one reference build** (2026-10-14). The count
-is the kernel's hardware count of user-space instructions (`perf_event_open`)
-on **x86-64 Linux**, and every binary the build makes is built for one
-reference CPU, `x86_64_v3+sha`, whatever CPU the host has. The reference is the
-self-hosted gate: `zig build gates -Dllvm` builds the compiler the tests spawn
-with LLVM, which counts another number, so a case can pass it and fail
-`zig build gates`. Before, one case could get two verdicts. CPU time, the old
-fallback, passed on macOS `browser/direct/HttpJson`, which costs 111% of the
-budget on Linux, and failed tests there that cost 7% of it. And a build for the
-host's own CPU followed its features: built for a baseline CPU, the compiler
-and the harness put seven more corpus cases over the budget, most of it the
-run-hash check's SHA-256 in software. On the one host measured (a Zen 2), the
-pinned build counted within 0.13% of the native one, and a case moved by under
-1% from run to run, with load and with the core count. Processes the build
-does not compile still follow the host: Node, when a run hash is stale, and the
-configure step of a child `zig build`. **`zig build gates` refuses to run
-where it cannot take the count** — another OS or architecture,
-`perf_event_paranoid` above 2, a virtual machine with no PMU (GitHub's hosted
-x86-64 runners), a hybrid Intel CPU (a plain counter misses what its E-cores
-run), a CPU without the reference's features — and it refuses `-Dtest-budget`,
-`-Dtarget`, `-Dcpu`, `-Doptimize` and `--release` as it refuses the filters.
-On such a host the other test steps hold no test to the budget and say so
-once. **A session on such a host** runs `zig build test test-blackbox
-fmt-check beni-fmt-check`, opens the PR, and states in its body that the gate
-is owed on an x86-64 Linux host.
+**Every test has a 120-second wall-clock hang guard**, including each corpus
+case independently. A timeout fails with the test or case name. It kills hangs;
+performance belongs to `test-perf` and `bench`, outside the gates.
+`zig build gates` runs on macOS and hosts without hardware performance counters
+as well as Linux. Test binaries use the ordinary native target by default.
 
 **Node runs only on unverified JavaScript.** Each program a test runs has a
 recorded SHA-256 of its emitted output, its expected result and the Node
@@ -661,13 +587,13 @@ error type names that failure: `BadUrl`, `QuotaExceeded`, `NotFound`, …).
 ### 10. Never bend the design to make a check pass — stop and report
 
 The owner, 2026-10-02, after an agent rewrote `core/Schema`'s engine in JavaScript
-because the beni version pushed tests over the instruction budget: **a failing test, a
-budget, a gate or a slow compile is a finding, never a reason to change the design.**
+because the beni version made tests expensive: **a failing test, a
+gate or a slow compile is a finding, never a reason to change the design.**
 When the intended design (core written in beni, a decided syntax, a decided
 representation) hits a wall, **stop, keep the intended design, and report the wall as the
 defect to fix** — here, "the compiler checks all of `core/` in every process". Never
-switch language, representation or approach, weaken a test, raise a budget, or move code
-behind `foreign` to get green, unless the owner agrees first. A manager who merges such
+switch language, representation or approach, weaken a test, disable its hang guard,
+or move code behind `foreign` to get green, unless the owner agrees first. A manager who merges such
 a workaround is equally at fault.
 
 ## Operational
@@ -698,10 +624,8 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
 (`canassa/beni`); nothing is pushed to `master` directly.
 
 1. Branch from an up-to-date `origin/master`, one slice per branch, named for
-   what it does. Run `zig build gates` green before opening the PR (rule 4;
-   on a host that cannot count the budget, *Every test has a budget* says
-   what to do instead); a branch that rebased past a run-hash change
-   re-records its hashes first.
+   what it does. Run `zig build gates` green before opening the PR (rule 4). A branch that
+   rebased past a run-hash change re-records its hashes first.
 2. Open the PR with `gh pr create`. The body names its issue (`Closes #N` or
    `Part of #N`), says what changes and why, the
    measurements a claim rests on, any known debt accepted on purpose, and
@@ -713,7 +637,7 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
 4. **The review is advice, not law.** Answer every finding: fix it in a new
    commit, or reply on the PR saying why you disagree. This document and the
    design documents outrank the reviewer — a suggestion that would break a rule
-   here (raise a budget, add a broad `catch`, bend the design) is declined with
+   here (disable a hang guard, add a broad `catch`, bend the design) is declined with
    the rule named.
 5. Merge when the gates are green and every finding is fixed or answered:
    `gh pr merge --rebase --delete-branch`, so each slice keeps its own commits

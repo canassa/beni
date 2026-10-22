@@ -1,1 +1,0 @@
-5200 Sternhalma (a large application page) on browser-tea, built for development and release with Node running both pages: measured 4 723M on the x86-64 Linux reference on 2026-10-19, plus 10%; it fits the default when its run hash lets the pages skip. Re-sized from the paired browser-direct grant (10 000M), delegated. Remove when it fits 4 300M with Node running (#435).

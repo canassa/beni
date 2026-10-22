@@ -780,9 +780,7 @@ below the minimum 3.8 against Effect's `logDebug` 366; a line written to a count
 part's compiler against this one, 522 programs and pages): only the two programs that log through
 the default or a program's sink change, `run/LogDefaultSink` +234 raw and +84 brotli in release and
 `run/LogSetSink` +255 and +81: the slot read and the context each call carries. An `Io.run` program
-that never logs is unchanged. **A budget grant**: the test *ownership words: core's are catalogued*
-runs the ownership stage on all of `core/`, and this part put it 10M over 4 300M; the owner granted
-it 4 750M on 2026-10-20 (dashboard `node-log-q2`), until #514 brings it back.
+that never logs is unchanged.
 
 *P7, third part, as built (2026-10-20; #358).* The browser's `Log` moved into core:
 `platforms/browser/Log.beni` is removed, so a page program imports core's `Log`, and the default

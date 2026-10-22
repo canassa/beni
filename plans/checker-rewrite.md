@@ -1,5 +1,12 @@
 # Checker rewrite — the slice plan
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 Written 2026-09-24 at `master` = `7427828`. It executes
 [`docs/design/checker-v2.md`](../docs/design/checker-v2.md), the normative architecture, against
 [`checker-findings.md`](checker-findings.md), the bug catalogue CK-01 … CK-61. Queue row 78 tracks

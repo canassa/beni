@@ -1,5 +1,12 @@
 # 97 — Conduit's message latency and compiled bytes
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-15. Draft PR #98, unchanged Conduit sources. Before: `ff82485e5`;
 measured compiler SHA-256 `5be2212c013adae893c701ed83e42c86ef4bc618fc24e58968163d28fd73e033`.
 The profiled compiler is rebased onto `d9ae082e0`; that rebase changes no compiler,

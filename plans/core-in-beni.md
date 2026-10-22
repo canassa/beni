@@ -1,5 +1,12 @@
 # Core's hand-written JavaScript, moved to beni one piece at a time
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *Started 2026-10-01.* The owner's direction: `core/`'s hand-written JavaScript is rewritten in beni
 over the `Js` intrinsics (`core/Js.beni`, `boundary.md` §4.2), gradually, **each step at least as
 good as the JavaScript it replaces** — R47-3's bar (`plans/browser-decisions.md`), which

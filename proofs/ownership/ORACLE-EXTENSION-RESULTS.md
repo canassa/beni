@@ -1,5 +1,12 @@
 # Result, recursive payload and initialization oracle — 2026-10-15
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 The Lean core now models typed Result constructors and elimination, a CPS
 lowering of `?` scoped to its definition, the unbounded recursive type
 `Chain a = End | Link a (Chain a)`, and private initialization transfer with

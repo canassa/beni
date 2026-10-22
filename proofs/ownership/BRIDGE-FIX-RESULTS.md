@@ -1,5 +1,12 @@
 # Ownership result soundness fixes — 2026-10-15
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 The subsequent [Lean oracle extension campaign](ORACLE-EXTENSION-RESULTS.md)
 adds Result, recursive payloads and initialization projections while retaining
 zero confirmed unsafe leads. The measurements below are the pre-extension fix campaign.

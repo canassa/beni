@@ -1,5 +1,12 @@
 # Conduit measurements
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 The 2026-10-14 artifacts retain the built-platform measurements and the
 criterion-7 stop. [Research 94](../../../docs/design/research/94-browser-direct-conduit.md)
 explains the subjects, units, limits and generating commands (§6).

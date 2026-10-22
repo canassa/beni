@@ -1,5 +1,12 @@
 # The direct browser platform — compiling The Elm Architecture to the page a vanilla author writes
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-09. The normative design of a second browser platform, `browser-direct`, built beside
 today's `browser`/`browser-tea` so the two can be measured against each other. The owner's brief
 (2026-10-08): "Stop patching and rewrite P3 from scratch and first principles … The target is fast

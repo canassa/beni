@@ -1,5 +1,12 @@
 # Backend implementation contract (M3)
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for M3. [`fast-compiler.md`](fast-compiler.md) §9 says *why* the backend is
 shaped this way and §2 what it must measure; [`boundary.md`](boundary.md) says how emitted code
 meets JavaScript; [`research/12-js-output-and-chunking.md`](research/12-js-output-and-chunking.md)

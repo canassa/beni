@@ -1,5 +1,12 @@
 # TodoMVC's size against Solid 1, Solid 2, Svelte 5 and Svelte 4
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** research, 2026-10-02. Not normative. Commissioned by the owner's question: *"10kb
 looks big for a simple [TodoMVC]. Check it against Solid 1 and Svelte implementations."*
 `tests/corpus/browser/tea/TodoMVC.beni`, built `--release --platform=browser-tea`, is 27 779 bytes

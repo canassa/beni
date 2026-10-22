@@ -354,33 +354,10 @@ not its wall column. A spawn that bypasses `World` (a bare
 `std.process.run`) is invisible to it except as "unrecorded" child CPU, so
 spawn through `world.spawnAndCapture`/`spawnAndCaptureIn`.
 
-**Every test fits in a second's work: 4 300 million instructions.** The
-runner fails a test in the gates that retires more user-space
-instructions — its own and those of every thread and process it creates —
-and the corpus walker holds each case (each build of a `run/` fixture) to
-the same budget. 4 300 million is what one second of CPU retires on this
-code on a quiet machine; unlike CPU time, the count does not move with the
-machine's load, so a test that fits once fits every time. There is one
-budget and no exemption. Measure a new test with `-Dtest-budget=1` (in
-millions of instructions), which makes every selected test fail with its
-count printed (`zig build test-blackbox-<file> -Dtest-filter=<name>
--Dtest-budget=1`), or run the binary by hand. A test that does not fit is
-made to fit, by the owner's rule that a few hand-picked tests reach
-specific branches:
-
-- size the input just past the limit it tests, never a round number past it;
-- move a "the walk does not recurse" claim to a unit test that runs its
-  body on `src/small_stack.zig`'s 1 MiB stack, so the tree need only be as
-  deep as a recursive walk survives there;
-- split a test that checks several branches into one test per branch;
-- build only the modes that have a branch of their own;
-- put a random sweep or stress loop under `zig build fuzz` (`BENI_FUZZ`)
-  and keep one hand-picked input in the gates;
-- delete a test whose branch another test reaches — shown by breaking the
-  guard and watching the other test go red.
-
-If none of these fits it, the claim needs a design decision; report it, do
-not raise the budget for it.
+**Every test has a 120-second wall-clock hang guard.** Corpus workers guard
+each individual case, including value fuzz independently. Timeout failures name
+the test or case. Keep inputs focused on the branch being tested; performance
+claims belong in `test-perf` and `bench`, outside the gates.
 
 **What the tests reach.** `zig build coverage` (x86-64 Linux, a few
 seconds of tests after a two-minute LLVM compile) runs the black-box

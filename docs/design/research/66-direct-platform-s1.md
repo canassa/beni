@@ -1,5 +1,12 @@
 # 66 — The direct platform, slice S1: holes, handlers, the two oracles, and kill criterion 3
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-09. What `browser-direct.md` §14's slice S1 built, and what it measured against
 §13's kill criterion 3. S1 covers text and attribute holes, constancy and baking, groups and
 slots, one handler per message key, direct listeners, the `*` key, the development verify mode and

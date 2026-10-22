@@ -1,5 +1,12 @@
 # Beni: design for an extremely fast Elm-like → JavaScript compiler
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Host language:** Zig. **Target:** JavaScript (ESM). **Source language:** Elm-like — ML family,
 full Hindley-Milner inference, ADTs, records, modules; no typeclasses, no macros, no type-level
 computation. Ad-hoc polymorphism is **static dispatch** — methods named on a type's declaring
