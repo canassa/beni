@@ -2026,8 +2026,10 @@ with a plain `sep` that one of its pairs repeats, because a conjunction that sta
 same thing.
 
 **Computing it, in one pass.** The pass gives the conjunction of §18.2's `sepCells` over every pair of members
-of distinct groups, the same verdict and the same atoms. It forms only the pairs whose kinds do not settle
-them alone, as §16.3's amendment does for a result's spine conditions:
+of distinct groups, the same verdict and the same atoms. A condition whose operands' cells have no more pairs
+than members is its expansion (above), and it is computed pair by pair, which is its definition. The pass
+forms only the pairs whose kinds do not settle them alone, as §16.3's amendment does for a result's spine
+conditions:
 
 - a closure, a function value and a condition-only cell are `yes` against every cell. A top-level value's
   cell and a cell the body made are `yes` against every cell of another family, except that a made cell
@@ -2079,6 +2081,31 @@ conditions of N − 1 atoms each, a star around each entry and not a clique insi
 entry would still hold N(N − 1) members in all. A linear form needs one condition shared by the entries,
 which is a change to the `res` entry's format, and this amendment does not make it. These conditions stay
 pairwise, and #665's parent was already quadratic through them.
+
+*As built 2026-10-22 (#693).* As specified. `pairwiseApart` is the one pass, `pairwiseApartByPairs` the
+definition it is checked against, and `instPairwiseApart` the instantiation. The summary atom is
+`XAtom.groups`, and in the walk an `apart` atom's `a` indexes an interned table of groups. A call's `xreq`
+apart that fails is discharged again pair by pair (`relyReqs`). The entry protocol and a callback's `xreq`
+read the expansion. The construction keeps #684's order of reading the operands' cells. Every verdict and
+diagnostic is unchanged. Six ownership goldens print new condition text and no other change:
+`FoldAccumulators` (browser-tea+everywhere), `LevelRecursiveUpdates`, `ListOfParams`, `MarkerAcross`,
+`SplitCap` (browser-inline) and `WideFieldConditions`. The last golden fell from 261 KB to 79 KB, and what
+is left of it is its 833 update lines. `ownership/ApartAcrossModules` reads a list literal's apart and a
+record's apart through another module's summary. Its distinct operands are accepted and a list handed twice
+is refused. `-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and
+`LevelPlacesKinds` (#694), as on `master`, and `test-records-lost` shows no difference in 1 091 programs.
+The ownership phase's instructions (callgrind, ReleaseFast, `build --release --no-cache --jobs=1`) on the
+research dashboard went from 25.2M to 23.3M at N = 16, from 121M to 87.8M at N = 64, and from 1 140M to 597M
+at N = 256. On `nowd` they went from 122M to 90.4M. #665's parent measured 23.2M, 85.9M, 571M and 85.4M. Every
+output hash is unchanged. On the safe binary, which is the budget's reference, `WideFieldConditions` fell from
+2 617M to 1 579M. The two core ownership tests rose from 4 716M to 4 755M (*surface*) and from 4 563M to
+4 603M (*clean*), and Conduit's dump rose from 3 160M to 3 189M. Of each rise, 21M to 23M is the safety
+build's check against the expansion, which builds each checked condition a second time, and 8M to 17M is
+the one pass's own bookkeeping. A condition no longer than its members is built pair by pair, so a
+construction of two or three operands costs what it did. From N = 64 to 256 the phase still grows ×6.8,
+as #665's parent did (×6.6), and the construction conditions are not the cause. At N = 256,
+`containingCondition` and `instPairwiseApart` take 43M of the phase's 597M, and the entry protocol
+(`entryFn`) takes 501M (#716).
 
 ### 16.8 The library
 
