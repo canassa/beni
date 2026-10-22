@@ -1481,7 +1481,70 @@ fn crossCheckSummaries(o: *Ownership, sh: *Ownership, m: u32) Allocator.Error!vo
                 try res.put(a, try std.fmt.allocPrint(a, "{s} {s}", .{ try o.pathText(p), try o.provText(pv) }), {});
             };
         }
+        // A fresh number names the result paths that may hold one new cell
+        // (§16.3), and each run numbers its cells in an order of its own:
+        // the canonical run, coarser, may state a cell that the expanded
+        // one does not, which moves every later number (#763). So a numbered
+        // fresh provenance is compared by what it names. An allocation's
+        // number says which paths may hold one cell: the cell the expanded
+        // run numbers `n` is one the canonical run numbers alike at every
+        // place where the expanded run puts it (`cands`, per expanded
+        // number, the canonical numbers that are). An annotation's number
+        // only says which entries instantiate as one cell, which shares
+        // nothing (`sepCells`) and holds every condition its entries state:
+        // each place the expanded run annotates, the canonical run annotates
+        // too (`cnotes`).
+        var cplaces: std.AutoHashMapUnmanaged(u64, std.StringHashMapUnmanaged(void)) = .empty;
+        var cnotes: std.StringHashMapUnmanaged(void) = .empty;
+        for (c.res) |r| {
+            const n = freshLabel(r.prov) orelse continue;
+            places.clearRetainingCapacity();
+            try o.expandedPlaces(r.path, false, &places);
+            if (r.prov.condition_only) {
+                for (places.items) |p| try cnotes.put(a, try std.fmt.allocPrint(a, "{d} {s}", .{ n >> 32, try o.pathText(p) }), {});
+                continue;
+            }
+            const g = try cplaces.getOrPut(a, n);
+            if (!g.found_existing) g.value_ptr.* = .empty;
+            for (places.items) |p| try g.value_ptr.put(a, try o.pathText(p), {});
+        }
+        var epaths: std.AutoArrayHashMapUnmanaged(u64, std.ArrayList([]const u8)) = .empty;
         for (e.res) |r| {
+            const n = freshLabel(r.prov) orelse continue;
+            if (r.prov.condition_only) {
+                const t = try sh.pathText(r.path);
+                if (!cnotes.contains(try std.fmt.allocPrint(a, "{d} {s}", .{ n >> 32, t }))) return crossFail(o, m, @intCast(d), try std.fmt.allocPrint(a, "{s} {s}", .{ t, try sh.provText(r.prov) }));
+                continue;
+            }
+            const g = try epaths.getOrPut(a, n);
+            if (!g.found_existing) g.value_ptr.* = .empty;
+            try g.value_ptr.append(a, try sh.pathText(r.path));
+        }
+        var cands: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty;
+        {
+            var it = epaths.iterator();
+            while (it.next()) |en| {
+                var found: std.ArrayList(u32) = .empty;
+                var cit = cplaces.iterator();
+                while (cit.next()) |cn| {
+                    if (cn.key_ptr.* >> 32 != en.key_ptr.* >> 32) continue;
+                    for (en.value_ptr.items) |t| {
+                        if (!cn.value_ptr.contains(t)) break;
+                    } else try found.append(a, @truncate(cn.key_ptr.*));
+                }
+                if (found.items.len == 0) {
+                    var pv: Prov = undefined;
+                    for (e.res) |r| if (freshLabel(r.prov) == en.key_ptr.*) {
+                        pv = r.prov;
+                        break;
+                    };
+                    return crossFail(o, m, @intCast(d), try std.fmt.allocPrint(a, "{s} at {s}", .{ try sh.provText(pv), try std.mem.join(a, ", ", en.value_ptr.items) }));
+                }
+                try cands.put(a, en.key_ptr.*, found);
+            }
+        }
+        for (e.res) |r| {
+            if (freshLabel(r.prov) != null) continue;
             const k = try std.fmt.allocPrint(a, "{s} {s}", .{ try sh.pathText(r.path), try sh.provText(r.prov) });
             if (!res.contains(k)) return crossFail(o, m, @intCast(d), k);
         }
@@ -1490,16 +1553,47 @@ fn crossCheckSummaries(o: *Ownership, sh: *Ownership, m: u32) Allocator.Error!vo
             places.clearRetainingCapacity();
             try o.expandedPlaces(r.path, false, &places);
             for (places.items) |p| {
-                const g = try sup.getOrPut(a, try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try o.pathText(p), try o.provText(r.prov) }));
+                const g = try sup.getOrPut(a, try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try o.pathText(p), try supplyProvText(o, r.prov) }));
                 g.value_ptr.* = if (g.found_existing) g.value_ptr.* or r.owned else r.owned;
             }
         }
         for (e.supply) |r| {
-            const k = try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try sh.pathText(r.path), try sh.provText(r.prov) });
+            const k = try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try sh.pathText(r.path), try supplyProvText(sh, r.prov) });
+            // A numbered cell: supplied under one of its canonical numbers;
+            // an annotation, under any number (`supplyProvText`).
+            if (freshLabel(r.prov)) |n| {
+                if (!r.prov.condition_only) {
+                    const ns = (cands.get(n) orelse return crossFail(o, m, @intCast(d), k)).items;
+                    for (ns) |cn| {
+                        var pv = r.prov;
+                        pv.a = cn;
+                        const owned = sup.get(try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try sh.pathText(r.path), try o.provText(pv) })) orelse continue;
+                        if (!owned or r.owned) break;
+                    } else return crossFail(o, m, @intCast(d), k);
+                    continue;
+                }
+            }
             const owned = sup.get(k) orelse return crossFail(o, m, @intCast(d), k);
             if (owned and !r.owned) return crossFail(o, m, @intCast(d), k);
         }
     }
+}
+
+/// A supply's provenance as `crossCheckSummaries` keys it: as printed,
+/// but an annotation's fresh number left out (see `cnotes` there).
+fn supplyProvText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
+    if (p.condition_only and freshLabel(p) != null) return if (p.kind == .esc) "condition(esc)" else "condition(fresh)";
+    return o.provText(p);
+}
+
+/// A numbered fresh provenance as `crossCheckSummaries` keys it: its kind
+/// and whether it is an annotation above, its number below; null for one
+/// with no number, or a record object's (§31.7), which is compared as text.
+fn freshLabel(p: Prov) ?u64 {
+    if (p.kind != .fresh and p.kind != .esc) return null;
+    if (p.a == 0 or p.a >= Walker.obj_fresh_base or p.obj) return null;
+    const class: u64 = @as(u64, @intFromBool(p.kind == .esc)) | @as(u64, @intFromBool(p.condition_only)) << 1;
+    return class << 32 | p.a;
 }
 
 fn crossFail(o: *Ownership, m: u32, d: u32, what: []const u8) noreturn {
@@ -7238,7 +7332,7 @@ const Walker = struct {
         const normed = try w.norm(try w.a.dupe(Entry, out.items));
         // A value wider than the deep condition's cap is judged pessimistic
         // there; its pairs are not looked at.
-        if (normed.len > deep_cap) return .{ .av = normed };
+        if (w.pairedCells(normed) > deep_cap) return .{ .av = normed };
         // Only entries at one path can be a merged pair: sort by path and
         // look within each run.
         const order = try w.a.alloc(u32, out.items.len);
@@ -8448,6 +8542,19 @@ const Walker = struct {
         return out[0..n];
     }
 
+    /// The entries of `ex` that `value-cells` counts (§16.7): those whose
+    /// cells the deep condition compares pair by pair. An annotation
+    /// (`condition_only`: a construction's or a summary's condition on the
+    /// value, #720) is no allocation, and every pair it is in holds
+    /// (`sepCells`), so it is not counted (#763).
+    fn pairedCells(w: *const Walker, ex: AV) usize {
+        var n: usize = 0;
+        for (ex) |e| {
+            if (!w.cells.items[e.cell].condition_only) n += 1;
+        }
+        return n;
+    }
+
     /// A value's deep condition (§18.2): every cell it holds, and no cell at
     /// two of its paths neither of which is a prefix of the other.
     fn deepCond(w: *Walker, av: AV) Allocator.Error!u32 {
@@ -8457,8 +8564,9 @@ const Walker = struct {
         // A value this wide is not told apart cell by cell: the pairs are
         // quadratic. The answer is the pessimistic one, and the declaration
         // an error (§16.7).
-        if (ex.len > deep_cap) {
-            try w.o.hitLimit(.value_cells, @intCast(@min(ex.len, std.math.maxInt(u32))));
+        const paired = w.pairedCells(ex);
+        if (paired > deep_cap) {
+            try w.o.hitLimit(.value_cells, @intCast(@min(paired, std.math.maxInt(u32))));
             return cond_limit;
         }
         var acc: CondAcc = .{};
