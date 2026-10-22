@@ -6243,3 +6243,18 @@ domain takes a taken element to be apart from its container's elements
 (`sepCells`), and the record domain copies the rule (`rsepCells`), so `mark`'s
 write is accepted. `tests/pending/ownership/RecordSplitPushBack.beni`, red until
 #419's fix, which changes both domains.
+
+
+## CK-265 — approximate projections hide an alias at two recursive levels (2026-10-19)
+
+**Issue:** #456. **Fixed:** #665. **Fixture:** `tests/corpus/ownership/ApproximateAliasLevels.beni`.
+
+Projecting `ee` through `wrap`, then storing that alias beside `ee` at another
+recursive level, made two simultaneous occurrences appear to be approximate
+views of one occurrence. The constructor-alias and helper routes had the same
+hole. Value-scoped construction conditions now retain the separation obligation
+through placement, folding, projection and summaries. Discarding an unused
+alias-bearing subtree restores exclusivity (`ConstructorDiscardedAlias`).
+The rejected `restMayBeEmpty` tightening is not part of the fix; ValuePath and
+EntryInvariantCommand remain accepted. The approximate-copy assumption in #447
+is withdrawn, rather than asserted as an invariant.

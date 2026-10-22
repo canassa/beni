@@ -1,0 +1,22 @@
+module OneListTwoLevels
+  32:23 List.push a: accepted param
+  44:5 call OneListTwoLevels.f <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (OneListTwoLevels.f writes π1[*])
+  54:21 call OneListTwoLevels.f zs[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (OneListTwoLevels.f writes π1[*])
+  66:5 call OneListTwoLevels.f <call List.push>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (OneListTwoLevels.f writes π1[*])
+  66:8 List.push <literal>: accepted fresh
+  73:15 List.push a: accepted param
+  82:5 call OneListTwoLevels.h <literal>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (OneListTwoLevels.h writes π1[*])
+  96:23 List.push a: accepted param
+  108:5 call OneListTwoLevels.wr <RN …>⟨R⟩⁺#RN.0: rejected exclusive: the callee needs the list's elements not to share, and they may (OneListTwoLevels.wr writes π1⟨R⟩⁺#RN.0)
+  summary wrap: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
+  summary f: π1 R, π1[*] RAW, π1[*][*] RA; res .0 fresh3 π1[*]{excl π1}, .0[*] ~fresh1 ~π1[*][*]{excl π1}, .1 fresh4 π1[*][*]{excl π1}, condition(fresh2){sep π1[*] π1[*][*], sep π1[*][*] π1[*][*]}; xreq excl π1
+  summary direct: res .0 ~fresh1{shared} ~fresh2{shared}, .0[*] ~fresh1{shared} ~fresh3, .1 ~fresh1{shared} ~fresh5, condition(fresh4){shared}
+  summary throughWrap: res .0 fresh8 ~fresh1{shared} ~fresh2{shared} ~fresh6 ~fresh{shared}r{lost}, .0[*] ~fresh1{shared} ~fresh4 ~fresh{shared}r{lost}, .0[*]⋆ ~fresh1{shared} ~fresh2{shared} ~fresh3{shared}r{shared}, .0⋆ ~fresh1{shared} ~fresh2{shared} ~fresh3{shared}r{shared}, .1 fresh9 ~fresh1{shared} ~fresh7 ~fresh{shared}r{lost}, .1⋆ ~fresh1{shared} ~fresh2{shared} ~fresh3{shared}r{shared}, condition(fresh5){lost}
+  summary viaPush: res .0 ~fresh1{shared} ~fresh2{shared}, .0[*] ~fresh1{shared} ~fresh3, .1 ~fresh1{shared} ~fresh5, condition(fresh4){lost}
+  summary h: π1 R, π1[*] RAW, π1[*][*] RA, π1[*][*][*] RA; res .0 fresh5 π1[*]{excl π1}, .0[*] ~fresh1 ~π1[*][*]{excl π1}, .1 fresh2{lost}, .1[*] ~fresh3{lost} ~π1[*][*][*]{excl π1}, condition(fresh4){sep π1[*] π1[*][*][*], sep π1[*][*] π1[*][*][*]}r{sep π1[*] π1[*][*][*], sep π1[*][*] π1[*][*][*]}; xreq excl π1
+  summary viaConcat: res .0 ~fresh1{shared} ~fresh2{shared}, .0[*] ~fresh1{shared} ~fresh3, .1 fresh4{lost}, .1[*] ~fresh5{lost}, condition(fresh6)
+  summary wr: π1 R, π1⟨R⟩⁺#RN.0 RAW, π1⟨R⟩⁺#RN.0[*] A, π1⟨R⟩⁺#RN.0[*][*] RA; res .0 fresh3 π1⟨R⟩⁺#RN.0, .0[*] ~fresh1 ~π1⟨R⟩⁺#RN.0[*], .1 fresh4 π1⟨R⟩⁺#RN.0[*][*]{excl π1#RN.1⟨R⟩#RN.0}, condition(fresh2){lost}
+  summary viaParam: res .0 ~fresh1 ~fresh3, .0[*] ~fresh2, .0[*][*] ~fresh1, .1 ~fresh1 ~fresh5, condition(fresh4){lost}
+  demands 9: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 9: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause exclusive 5
