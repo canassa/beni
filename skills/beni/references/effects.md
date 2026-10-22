@@ -127,6 +127,9 @@ main = Io.run λ⊤ →
   minimum for the whole program, and `Log.minimum Log.Debug λ⊤ → …` for one function. The default
   sink is the console at the line's level; the `node` platform writes one `logfmt` line per entry
   to standard error.
+- On a page, a command's body has the log context of the `update` arm that made the command. The
+  context stops at the body: a message that the body sends runs its `update` with the program's
+  context.
 - A log line is text. Format a value yourself; `Debug.toString`'s text is not a promise.
 
 ```beni

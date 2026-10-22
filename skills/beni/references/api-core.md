@@ -596,6 +596,7 @@ module Task
   value forEach : List a, Int, (a → b) → List b  -- suspends
   value forEachOk : List a, Int, (a → Result e b) → Result e (List b)  -- suspends
   value fromHost : (⊤ → ⊤) → ⊤  -- impure
+  value hasLogContext : ⊤ → Bool  -- impure
   value isWaiting : a → Bool
   value join : Fiber a → a  -- suspends
   value joinAll : List (Fiber a) → List a  -- suspends
@@ -643,6 +644,7 @@ module Task
   value withClock : Value, (⊤ → a) → a  -- impure
   value withLogContext : Value, (⊤ → a) → a  -- impure
   value withScheduler : Scheduler, (⊤ → a) → a  -- suspends
+  value withoutLogContext : (⊤ → a) → a  -- impure
   value yieldNow : ⊤ → ⊤  -- suspends
 module Url
   type Protocol
