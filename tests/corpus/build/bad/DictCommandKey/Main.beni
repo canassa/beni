@@ -1,0 +1,10 @@
+import Cmd
+import Dict
+import Sub
+
+
+bad = Cmd.keyed (Dict.singleton 1 0) Cmd.Restart λ_ → ⊤
+
+
+main : Int
+main = 0

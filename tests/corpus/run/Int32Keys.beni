@@ -51,13 +51,13 @@ samples : List Int32
 samples = [ Int32.fromInt 0xFFFFFFFF, Int32.minValue, Int32.one, Int32.zero, Int32.maxValue ]
 
 
-counts : Dict Int32 String
+counts : Dict Int String
 counts =
     Dict.fromList
-        [ ( Int32.fromInt 7, "seven" )
-        , ( Int32.minValue, "min" )
-        , ( Int32.fromInt (-1), "minus one" )
-        , ( Int32.maxValue, "max" )
+        [ ( 7, "seven" )
+        , ( Int32.toInt Int32.minValue, "min" )
+        , ( -1, "minus one" )
+        , ( Int32.toInt Int32.maxValue, "max" )
         ]
 
 
@@ -65,11 +65,13 @@ main : Program
 main =
     Node.printLines
         (List.map (List.sort samples) show
-            ++ List.map (Set.toList (Set.fromList (List.copy samples ++ samples))) show
-            ++ List.map (Dict.keys counts) show
+            ++ List.map
+                (Set.toList (Set.fromList (List.map (List.copy samples ++ samples) Int32.toInt)))
+                String.fromInt
+            ++ List.map (Dict.keys counts) String.fromInt
             ++ Dict.values counts
-            ++ [ yesNo (Dict.member counts Int32.minValue)
-               , yesNo (Dict.member counts Int32.zero)
+            ++ [ yesNo (Dict.member counts (Int32.toInt Int32.minValue))
+               , yesNo (Dict.member counts 0)
                , yesNo (Int32.fromInt 0xFFFFFFFF == Int32.fromInt (-1))
                , yesNo (Int32.minValue < Int32.zero)
                , yesNo (Int32.fromInt 0xFFFFFFFF < Int32.zero)

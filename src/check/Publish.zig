@@ -315,6 +315,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
             const decl = prov.typeDecl(i) orelse continue;
             const id = cx.types.ofDecl(cx.module, decl);
             if (id == .none) continue;
+            t.key_kinds = try facts.keyKinds(id);
             if (t.kind == .alias) {
                 t.eq = .{ .status = .alias };
                 t.compare = .{ .status = .alias };
@@ -378,6 +379,19 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
                 .params = cx.bir.declTypeParams(d),
             }, body);
             try through.appendSlice(cx.scratch, local.items);
+            const keys = try facts.keyKinds(id);
+            if (keys != Interface.no_terms and iface.findType(cx.interner, entry.name) == null) {
+                try hidden.append(gpa, .{
+                    .name = @fromBackingInt(@intCast(try writer.symbolIndex(entry.name))),
+                    .arity = entry.arity,
+                    .kind = .alias,
+                    .is_equatable = false,
+                    .key_kinds = keys,
+                    .eq = .{ .status = .alias },
+                    .compare = .{ .status = .alias },
+                });
+                try names.append(cx.scratch, entry.name);
+            }
             continue;
         }
         if (iface.findType(cx.interner, entry.name) != null) continue;
@@ -390,6 +404,7 @@ fn typeFacts(p: *Publisher, prov: *const Interface.Provenance, iface: *Interface
             // tagged schema endpoint's among them, §11.5).
             .no_function = entry.kind == .adt and ((try Marker.functionFree(cx, contexts, null, id)) orelse true),
             .payload_params = try facts.payloadParams(entry.decl, entry.kind, entry.arity),
+            .key_kinds = try facts.keyKinds(id),
             .eq = try facts.derived(id, .eq),
             .compare = try facts.derived(id, .compare),
         });
@@ -429,6 +444,17 @@ const Facts = struct {
     fn deinit(f: *Facts) void {
         f.words.deinit(f.cx.gpa);
         f.slots.deinit(f.cx.scratch);
+    }
+
+    fn keyKinds(f: *Facts, id: Types.TypeId) Error!u32 {
+        const kinds = f.cx.types.keyKinds(id);
+        const needed = for (kinds) |kind| {
+            if (kind.isKey()) break true;
+        } else false;
+        if (!needed) return Interface.no_terms;
+        f.words.clearRetainingCapacity();
+        for (kinds) |kind| try f.words.append(f.cx.gpa, @backingInt(kind));
+        return f.writer.addRange(f.words.items);
     }
 
     fn payloadParams(f: *Facts, decl: Bir.DeclIndex, kind: Interface.TypeKind, arity: u16) Error!u32 {

@@ -21,7 +21,9 @@ main =
         { init =
             λ⊤ →
                 sub = Sub.listen 1 (λ_ → ⊤) λ_ → {}
-                build (Sub.taps (Sub.batch [ sub, sub ]))
+                build
+                    (List.map (Sub.taps (Sub.batch [ sub, sub ])) λ( _, how, tap ) → ( 0, how, tap )
+                    )
         , update = λ_ model → model
         , view =
             λmodel →

@@ -1,0 +1,9 @@
+import Set
+
+
+bad : Bool
+bad = Set.singleton 1 < Set.singleton 1
+
+
+main : Int
+main = 0

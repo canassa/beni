@@ -1,0 +1,25 @@
+import Dict
+import Node exposing (Program)
+import Set
+
+
+type Wrapped
+    = Wrapped (Dict.Dict Int Int)
+
+
+pub compare : Wrapped, Wrapped → Order
+compare (Wrapped left) (Wrapped right) = Basics.compare (Dict.size left) (Dict.size right)
+
+
+main : Program
+main =
+    -- U+E000 sorts before U+10000 by scalar value, unlike UTF-16 code units.
+    strings = Dict.fromList [ ( "𐀀", 2 ), ( "", 1 ) ]
+    integers = Dict.fromList [ ( 10, "ten" ), ( 2, "two" ) ]
+    wrapped = List.sort [ Wrapped (Dict.singleton 1 0), Wrapped Dict.empty ]
+    Node.printLines
+        [ String.join (List.map (Dict.values strings) String.fromInt) ","
+        , String.join (Dict.values integers) ","
+        , String.fromInt (Set.size (Set.fromList [ "𐀀", "", "𐀀" ]))
+        , String.join (List.map wrapped λ(Wrapped dict) → String.fromInt (Dict.size dict)) ","
+        ]

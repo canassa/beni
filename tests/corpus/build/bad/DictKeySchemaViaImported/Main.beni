@@ -1,0 +1,10 @@
+import Models
+import Node exposing (Program)
+
+
+bad : Models.Box Bool
+bad = Debug.todo "checker-only annotation"
+
+
+main : Program
+main = Node.print ""

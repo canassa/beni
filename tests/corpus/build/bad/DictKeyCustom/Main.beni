@@ -1,0 +1,20 @@
+import Dict
+
+
+type Key
+    = Key Int
+
+
+pub compare : Key, Key → Order
+compare (Key a) (Key b) = a.compare b
+
+
+key : Key
+key = Key 1
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

@@ -1,0 +1,12 @@
+import Dict
+
+
+key : Dict.Dict String Int
+key = Dict.singleton "inner" 1
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

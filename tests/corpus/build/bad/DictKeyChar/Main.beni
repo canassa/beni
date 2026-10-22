@@ -1,0 +1,12 @@
+import Dict
+
+
+key : Char
+key = 'x'
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

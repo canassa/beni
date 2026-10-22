@@ -232,6 +232,16 @@ pub fn mismatch(r: *Report, region: Bir.Inst.Index, category: Category, expected
     try r.flush();
 }
 
+pub fn invalidDictKey(r: *Report, region: Bir.Inst.Index, actual: Var) Error!void {
+    try r.texts.invalidDictKey(region, actual);
+    try r.flush();
+}
+
+pub fn keyScalarMismatch(r: *Report, region: Bir.Inst.Index, kind: TypeStore.Kind, actual: Var) Error!void {
+    try r.texts.keyScalarMismatch(region, kind, actual);
+    try r.flush();
+}
+
 pub fn kindMismatch(r: *Report, region: Bir.Inst.Index, left: TypeStore.Kind, right: TypeStore.Kind) Error!void {
     try r.texts.kindMismatch(region, left, right);
     try r.flush();

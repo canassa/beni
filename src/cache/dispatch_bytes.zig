@@ -89,7 +89,7 @@ pub const magic = "BENIDSP\x00";
 /// tags, `identity` (its parts in `args`) and `text` (a range of `text`).
 /// 12 since derived codecs (schema.md §12.10): a `codec` term, its index the
 /// module's schema plan's `codecs` and its slots' evidence in `args`.
-pub const format_version: u32 = 12;
+pub const format_version: u32 = 13;
 
 pub const Column = enum(u32) {
     terms,

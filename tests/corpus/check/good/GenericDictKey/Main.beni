@@ -1,0 +1,27 @@
+import Dict
+import Keys
+import Set
+
+
+found : Maybe Int
+found = Keys.lookup (Keys.make "a") "a"
+
+
+present : Bool
+present = Keys.member (Set.singleton 1) 1
+
+
+main : Int
+main = Dict.size (Keys.make "a")
+
+
+integer : Dict.Dict Int Int
+integer = Keys.divided 4
+
+
+text : Dict.Dict String Int
+text = Keys.suffixed "a"
+
+
+kept : String
+kept = Keys.keep "yes"

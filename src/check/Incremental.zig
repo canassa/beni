@@ -337,6 +337,7 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     const ref_ids = &d.types.ref_ids[m.int()];
     gpa.free(ref_ids.*);
     ref_ids.* = try d.types.resolveRefs(gpa, &d.interfaces[m.int()], d.graph);
+    d.types.installKeyKinds(m, &d.interfaces[m.int()], d.interner);
 
     // 4. The diagnostics, replayed. The message is the prose the
     //    checker rendered when it wrote the entry; the SPAN is not

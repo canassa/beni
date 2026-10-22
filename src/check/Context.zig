@@ -19,6 +19,7 @@ const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
 const Schema = @import("Schema.zig");
 const reads = @import("reads.zig");
+const KeyKinds = @import("KeyKinds.zig");
 
 const Context = @This();
 
@@ -41,6 +42,7 @@ schemas: *Schema.State,
 /// points at: sorted, deduplicated and
 /// reported once at the end of P8 (`Module.reportTooDeep`).
 too_deep: *std.ArrayList(TooDeep),
+key_errors: ?*std.ArrayList(KeyKinds.Issue) = null,
 /// The run keeps the module's tables for `dump --stage=types`: each
 /// annotated declaration gets a reading of its annotation that nothing
 /// unifies, which the dump prints (`constrain/Decl.zig`'s `Member.display`).
@@ -96,6 +98,7 @@ pub fn iface(cx: *const Context, m: Graph.Index) *const Interface {
 /// reader `Env.builder` makes, so an annotation reads the same here.
 pub fn builder(cx: *const Context, mode: Types.VarMode, rank: u32) Types.Builder {
     var b: Types.Builder = .init(cx.store, cx.types, cx.graph, cx.artifacts, cx.module, cx.bir, mode, rank, cx.scratch, cx.interner);
+    b.key_errors = cx.key_errors;
     b.schema_context = cx.schemas;
     b.schema_lookup = Schema.State.lookupOpaque;
     b.interfaces = cx.interfaces;

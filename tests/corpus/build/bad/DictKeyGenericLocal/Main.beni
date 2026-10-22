@@ -1,0 +1,7 @@
+import Dict
+
+
+main : Int
+main =
+    make key = Dict.singleton key 0
+    Dict.size (make True)

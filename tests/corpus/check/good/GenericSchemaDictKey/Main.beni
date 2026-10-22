@@ -1,0 +1,21 @@
+import Models
+
+
+integer : Models.Box Int
+integer = Debug.todo "checker-only annotation"
+
+
+text : Models.Box String
+text = Debug.todo "checker-only annotation"
+
+
+good : String
+good = Models.preserve "yes" text
+
+
+main : Int
+main = 0
+
+
+plainBool : Models.Pass.Type Bool
+plainBool = True

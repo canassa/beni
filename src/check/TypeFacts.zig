@@ -50,6 +50,8 @@ pub fn settle(
     defer queue.deinit(gpa);
     // `comparable` is the SAME fixpoint over the SAME edges, so it rides
     // along: one body walk, two properties, two queues (A.54).
+    var collection_queue: std.ArrayList(u32) = .empty;
+    defer collection_queue.deinit(gpa);
     var order_queue: std.ArrayList(u32) = .empty;
     defer order_queue.deinit(gpa);
     // And `has_function` is the same fixpoint run the other way up (A.58):
@@ -90,6 +92,14 @@ pub fn settle(
                 declaresPubCompare(types, e.module, bir, @fromBackingInt(@intCast(i)));
             if (!e.comparable) try order_queue.append(gpa, @intCast(i));
             continue;
+        }
+        if (types.well_known.dict.int() == i or
+            types.well_known.set.int() == i)
+        {
+            e.comparable = false;
+            e.holds_collection = true;
+            try collection_queue.append(gpa, @intCast(i));
+            try order_queue.append(gpa, @intCast(i));
         }
         deps.clearRetainingCapacity();
         var has_function = false;
@@ -139,6 +149,14 @@ pub fn settle(
     for (edge_from.items, edge_to.items) |from, to| {
         dependents[cursor[from]] = to;
         cursor[from] += 1;
+    }
+
+    while (collection_queue.pop()) |id| {
+        for (dependents[starts[id]..starts[id + 1]]) |dependent| {
+            if (types.entries[dependent].holds_collection) continue;
+            types.entries[dependent].holds_collection = true;
+            try collection_queue.append(gpa, dependent);
+        }
     }
 
     // Propagate. Each type is pushed at most once — it is pushed only on

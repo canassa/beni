@@ -1358,6 +1358,13 @@ function is `foreign`.
 comparable keys, persistent trees and `Dict.compare`/`Set.compare`, including
 §2.5's statement that `Int32` is a dictionary key or set member.*
 
+*Implementation sequencing, 2026-10-22 (the owner, #294):* the Int/String key
+restriction and withdrawal of collection comparison land before O4 (#681).
+Until that storage work lands, Dict keeps today's tree, constant empty value,
+key-order iteration and existing equality implementation. The insertion-order
+storage behavior and new storage APIs specified below await O4; this slice does
+not replace the tree or add a copying fallback.
+
 `Dict k v` is an ordered keyed collection. `k` must resolve to `Int` or `String`.
 An alias for either is accepted. `Char`, `Int32`, `Float`, tuples, records,
 custom types and collections are refused, even if they have `eq` or `compare`.
@@ -1544,7 +1551,7 @@ question_in_lambda  question_outside_function
 shadowing  duplicate_pattern_variable  duplicate_type_parameter  unbound_type_variable
 unknown_module  duplicate_module  import_cycle  unknown_import_name  private_name
 opaque_constructor  wrong_type_arity  recursive_alias
-type_mismatch  rigid_mismatch  infinite_type  kind_mismatch
+type_mismatch  rigid_mismatch  infinite_type  kind_mismatch  invalid_dict_key
 too_few_args  too_many_args  not_a_function
 missing_field  unknown_field  record_not_closed
 not_equatable  not_interpolatable  ambiguous_interpolation  ambiguous_tuple

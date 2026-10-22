@@ -5,7 +5,7 @@
 -- `run/NestedConstrainedCalls` nests two calls of one constrained function
 -- over a `let`-bound seed, which joins their two `k.compare` constraints
 -- onto one. This one makes the KEY a type whose own method is constrained
--- — `List Int`, `Pair Int`, a `Dict` keyed on a list — so resolving the
+-- — `List Int`, `Pair Int`, a list nested inside a custom key — so resolving the
 -- joined constraint has to instantiate the callee's own `where` clause
 -- once per instruction the constraint answers. Instantiating it for the
 -- first instruction alone left the inner call one hidden argument short:
@@ -21,7 +21,7 @@
 -- than the `ext` one. `same` and `different` are the same nesting under
 -- `eq`, and they differ in the answer, so a comparison that always says
 -- `True` fails one of them. The `Dict` lines are where a user meets it:
--- two inserts over a `let`-bound `Dict.empty`, then a hit on each key and
+-- two scalar-key inserts over a `let`-bound `Dict.empty`, then a hit on each key and
 -- a miss on a third.
 --
 -- `dispatch/JoinedConstraintNested` is the table underneath, and it is the
@@ -114,15 +114,15 @@ main =
     same = keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 2 ]
     different = keepEqual (keepEqual seed [ 1, 2 ]) [ 1, 3 ]
     emptyDict = Dict.empty
-    dict = Dict.insert (Dict.insert emptyDict [ 1, 2 ] "a") [ 3 ] "b"
+    dict = Dict.insert (Dict.insert emptyDict "one-two" "a") "three" "b"
     Node.printLines
         [ showBoxList lists
         , showBoxList listsReversed
         , showBoxPair pairs
         , showBoxList same
         , showBoxList different
-        , Maybe.withDefault (Dict.get dict [ 1, 2 ]) "?"
-        , Maybe.withDefault (Dict.get dict [ 3 ]) "?"
-        , Maybe.withDefault (Dict.get dict [ 9 ]) "?"
+        , Maybe.withDefault (Dict.get dict "one-two") "?"
+        , Maybe.withDefault (Dict.get dict "three") "?"
+        , Maybe.withDefault (Dict.get dict "nine") "?"
         , String.fromInt (Dict.size dict)
         ]

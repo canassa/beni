@@ -1,0 +1,8 @@
+module Keys
+  value divided : number → Dict number Int
+  value keep : key → key
+  value lookup : Dict key v, key → Maybe v
+  value make : key → Dict key Int
+  value member : Set key, key → Bool
+  value suffixed : appendable → Dict appendable Int
+module Main

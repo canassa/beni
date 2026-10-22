@@ -1,0 +1,8 @@
+import Keys
+
+
+bad = Keys.keep False
+
+
+main : Int
+main = 0

@@ -653,6 +653,12 @@ fn reportFailureText(s: *Solve, region: Bir.Inst.Index, category: Category, expe
     switch (p) {
         .kinds => |k| try r.kindMismatch(region, k.left, k.right),
         .kind_not_satisfied => |k| try r.kindNotSatisfied(region, category, k.kind, expected, actual),
+        .invalid_dict_key => |key| {
+            if (key.kind != .dict_key and @import("KeyKinds.zig").allows(s.store(), s.cx.types, .dict_key, key.actual))
+                try r.keyScalarMismatch(region, key.kind, key.actual)
+            else
+                try r.invalidDictKey(region, key.actual);
+        },
         .not_equatable_rigid => |v| try r.notEquatableRigid(region, v, if (category.tag == .call_arg) category.owner else .none),
         .missing_field => |f| try r.missingField(region, f.names, f.actual, f.expected),
         .unknown_field => |f| try r.unknownField(region, f.names, f.actual, f.expected),

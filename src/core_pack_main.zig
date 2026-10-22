@@ -443,6 +443,7 @@ const Maker = struct {
             .eq_prim = lowered.comparators & 1 != 0,
             .compare_prim = lowered.comparators & 2 != 0,
             .compare_char = lowered.comparators & 4 != 0,
+            .compare_key = lowered.comparators & 8 != 0,
         };
         var runtime: u8 = 0;
         var covered = lowered.head_len;

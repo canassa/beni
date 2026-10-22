@@ -90,7 +90,8 @@ pub const magic = "BENIIFC\x00";
 /// the quantifier's type identity as a hidden parameter (checker-v2.md §33).
 /// 13: and bit 10, `crosses`: what the quantifier is instantiated at crosses
 /// into JavaScript (checker-v2.md §36).
-pub const format_version: u32 = 13;
+/// 14: closed scalar-key kinds and published parameter domains.
+pub const format_version: u32 = 14;
 
 /// The eighteen columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
@@ -124,13 +125,13 @@ pub const Column = enum(u32) {
     pub fn width(c: Column) u32 {
         return switch (c) {
             .values => 12,
-            .types => 32,
+            .types => 36,
             .ctors => 28,
             .schemes => 16,
             .term_tags => 1,
             .term_lhs, .term_rhs, .extra, .symbols => 4,
             .type_refs => 16,
-            .hidden_types => 24,
+            .hidden_types => 28,
             .elements, .attributes, .events => 24,
             .schemas => 32,
             .schema_members, .schema_ctors => 16,
@@ -367,7 +368,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@backingInt(Column.types)]..];
         for (iface.types, 0..) |t, i| {
-            const row = out[i * 32 ..][0..32];
+            const row = out[i * 36 ..][0..36];
             std.mem.writeInt(u32, row[0..4], @backingInt(t.name), .little);
             std.mem.writeInt(u32, row[4..8], t.ctors_start, .little);
             std.mem.writeInt(u32, row[8..12], t.ctors_end, .little);
@@ -375,6 +376,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
             row[14] = @backingInt(t.kind);
             row[15] = @as(u8, @intFromBool(t.is_opaque)) | (@as(u8, @intFromBool(t.is_equatable)) << 1) | (@as(u8, @intFromBool(t.no_function)) << 2);
             std.mem.writeInt(u32, row[16..20], t.payload_params, .little);
+            std.mem.writeInt(u32, row[32..36], t.key_kinds, .little);
             std.mem.writeInt(u32, row[20..24], t.eq.context, .little);
             std.mem.writeInt(u32, row[24..28], t.compare.context, .little);
             row[28] = @backingInt(t.eq.status);
@@ -427,12 +429,13 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     {
         const out = bytes[offsets_of[@backingInt(Column.hidden_types)]..];
         for (iface.hidden_types, 0..) |t, i| {
-            const row = out[i * 24 ..][0..24];
+            const row = out[i * 28 ..][0..28];
             std.mem.writeInt(u32, row[0..4], @backingInt(t.name), .little);
             std.mem.writeInt(u16, row[4..6], t.arity, .little);
             row[6] = @backingInt(t.kind);
             row[7] = @as(u8, @intFromBool(t.is_equatable)) | (@as(u8, @intFromBool(t.no_function)) << 1);
             std.mem.writeInt(u32, row[8..12], t.payload_params, .little);
+            std.mem.writeInt(u32, row[24..28], t.key_kinds, .little);
             std.mem.writeInt(u32, row[12..16], t.eq.context, .little);
             std.mem.writeInt(u32, row[16..20], t.compare.context, .little);
             row[20] = @backingInt(t.eq.status);
@@ -672,7 +675,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const types = try gpa.alloc(Interface.Type, lengths[@backingInt(Column.types)]);
         iface.types = types;
         for (types, 0..) |*t, i| {
-            const row = in[i * 32 ..][0..32];
+            const row = in[i * 36 ..][0..36];
             // Flags past bit 1 and the padding are zero in every record a
             // writer produced (`checker.md` §7: padding is not a field).
             if (row[15] & ~@as(u8, 7) != 0 or row[30] != 0 or row[31] != 0) return error.BadRecord;
@@ -686,6 +689,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .is_equatable = (row[15] >> 1) & 1 == 1,
                 .no_function = (row[15] >> 2) & 1 == 1,
                 .payload_params = std.mem.readInt(u32, row[16..20], .little),
+                .key_kinds = std.mem.readInt(u32, row[32..36], .little),
                 .eq = .{
                     .context = std.mem.readInt(u32, row[20..24], .little),
                     .status = std.enums.fromInt(Interface.Derived.Status, row[28]) orelse return error.BadRecord,
@@ -771,7 +775,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         const hidden = try gpa.alloc(Interface.HiddenType, lengths[@backingInt(Column.hidden_types)]);
         iface.hidden_types = hidden;
         for (hidden, 0..) |*t, i| {
-            const row = in[i * 24 ..][0..24];
+            const row = in[i * 28 ..][0..28];
             if (row[7] & ~@as(u8, 3) != 0 or row[22] != 0 or row[23] != 0) return error.BadRecord;
             t.* = .{
                 .name = @fromBackingInt(@intCast(std.mem.readInt(u32, row[0..4], .little))),
@@ -780,6 +784,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
                 .is_equatable = row[7] & 1 == 1,
                 .no_function = (row[7] >> 1) & 1 == 1,
                 .payload_params = std.mem.readInt(u32, row[8..12], .little),
+                .key_kinds = std.mem.readInt(u32, row[24..28], .little),
                 .eq = .{
                     .context = std.mem.readInt(u32, row[12..16], .little),
                     .status = std.enums.fromInt(Interface.Derived.Status, row[20]) orelse return error.BadRecord,
@@ -899,12 +904,12 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
     for (iface.types) |t| {
         if (@backingInt(t.name) >= symbols) return false;
         if (t.ctors_start > t.ctors_end or t.ctors_end > iface.ctors.len) return false;
-        if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.eq, t.compare)) return false;
+        if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.key_kinds, t.eq, t.compare)) return false;
     }
     for (iface.hidden_types, 0..) |t, i| {
         if (@backingInt(t.name) >= symbols) return false;
-        if (t.kind == .alias) return false;
-        if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.eq, t.compare)) return false;
+        if (t.kind == .alias and (t.key_kinds == Interface.no_terms or t.eq.status != .alias or t.compare.status != .alias)) return false;
+        if (!verifyFacts(iface, interner, t.arity, t.payload_params, t.key_kinds, t.eq, t.compare)) return false;
         // Sorted by name text, each name once (`Interface.typeFacts`
         // binary-searches it).
         if (i != 0) {
@@ -943,6 +948,8 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
         if (block > iface.extra.len) return false;
         for (0..s.quantified_count) |i| {
             const at = s.quantified_start + i * Interface.Quantified.words;
+            const flag_word = iface.extra[at];
+            if (flag_word & ~@as(u32, 0x7ff) != 0 or flag_word & 0xff > 5) return false;
             const name = iface.extra[at + 1];
             if (name != std.math.maxInt(u32) and name >= symbols) return false;
             const start = iface.extra[at + 2];
@@ -1080,8 +1087,13 @@ pub fn verify(iface: *const Interface, interner: *const InternPool.Global) bool 
 /// `(param, symbol slot, scheme or none)` triples, parameters below the
 /// arity, strictly increasing by `(param, method text)`, or absent with
 /// `no_terms`.
-fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arity: u16, payload_params: u32, eq: Interface.Derived, compare: Interface.Derived) bool {
+fn verifyFacts(iface: *const Interface, interner: *const InternPool.Global, arity: u16, payload_params: u32, key_kinds: u32, eq: Interface.Derived, compare: Interface.Derived) bool {
     const symbols = iface.symbols.len;
+    if (key_kinds != Interface.no_terms) {
+        const kinds = rangeOf(iface, key_kinds) orelse return false;
+        if (kinds.len != arity) return false;
+        for (kinds) |kind| if (kind != 0 and (kind < 3 or kind > 5)) return false;
+    }
     if (payload_params != Interface.no_terms) {
         const bits = rangeOf(iface, payload_params) orelse return false;
         if (bits.len != (@as(usize, arity) + 31) / 32) return false;

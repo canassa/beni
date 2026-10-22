@@ -19,7 +19,7 @@ pub type alias Cell =
 
 pub type alias Board =
     cells : List Cell
-    coordToIndex : Dict (Int × Int) Int
+    coordToIndex : Dict String Int
 
 
 pub type Triangle
@@ -29,6 +29,11 @@ pub type Triangle
     | Bottom
     | BottomLeft
     | TopLeft
+
+
+-- Coordinates are integer pairs; a separator makes this scalar key unambiguous.
+coordKey : Coord → String
+coordKey c = String.fromInt c.x ++ ":" ++ String.fromInt c.z
 
 
 --| Generate the 6-pointed star board with exactly 121 cells.
@@ -45,7 +50,7 @@ init ⊤ =
         , occupant = Nothing
         }
     coordToIndex = List.foldl indexed Dict.empty λcell dict →
-        Dict.insert dict ( cell.coord.x, cell.coord.z ) cell.index
+        Dict.insert dict (coordKey cell.coord) cell.index
     { cells = indexed
     , coordToIndex = coordToIndex
     }
@@ -312,12 +317,12 @@ getCell index board = List.get board.cells index
 
 pub getCellByCoord : Coord, Board → Maybe Cell
 getCellByCoord c board =
-    Dict.get board.coordToIndex ( c.x, c.z )
+    Dict.get board.coordToIndex (coordKey c)
         ▷ Maybe.andThen λidx → getCell idx board
 
 
 pub isValidCoord : Coord, Board → Bool
-isValidCoord c board = Dict.member board.coordToIndex ( c.x, c.z )
+isValidCoord c board = Dict.member board.coordToIndex (coordKey c)
 
 
 pub setOccupant : Int, Maybe PlayerId, Board → Board

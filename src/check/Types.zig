@@ -61,6 +61,7 @@ const InterfaceTerms = @import("InterfaceTerms.zig");
 const SchemaPlan = @import("SchemaPlan.zig");
 const Injective = @import("Injective.zig");
 const TypeFacts = @import("TypeFacts.zig");
+const KeyKinds = @import("KeyKinds.zig");
 
 const Types = @This();
 
@@ -83,6 +84,7 @@ pub const Entry = struct {
     /// Number of type parameters. Types are always fully applied
     /// (checker.md Appendix A), so this is also every use's argument count.
     arity: u16,
+    key_start: u32 = 0,
     kind: Interface.TypeKind,
     /// May be compared with `==` when every argument can (see the header).
     equatable: bool,
@@ -116,6 +118,7 @@ pub const Entry = struct {
     /// in a `foreign`'s signature (checker-v2.md §25.2). False in a build
     /// with no markup type.
     holds_markup: bool = false,
+    holds_collection: bool = false,
     /// Compiler-generated endpoint identity owned by a schema declaration.
     /// These entries have no ordinary type declaration body for the
     /// equatability walk to inspect.
@@ -133,6 +136,7 @@ pub const Entry = struct {
 
 /// Owned. One per declared type, in topological module order.
 entries: []Entry,
+key_kinds: []TypeStore.Kind,
 /// Borrowed session interface slots, used to map schema member references
 /// back to their endpoint identity.
 interfaces: []const Interface,
@@ -202,6 +206,8 @@ pub const WellKnown = struct {
     string: TypeId = .none,
     bool: TypeId = .none,
     list: TypeId = .none,
+    dict: TypeId = .none,
+    set: TypeId = .none,
     maybe: TypeId = .none,
     result: TypeId = .none,
     /// The two the well-known method table of static-dispatch-spike.md §3.2
@@ -220,6 +226,7 @@ pub const WellKnown = struct {
 
 pub const empty: Types = .{
     .entries = &.{},
+    .key_kinds = &.{},
     .interfaces = &.{},
     .by_decl = &.{},
     .schema_type_by_decl = &.{},
@@ -238,6 +245,7 @@ pub const empty: Types = .{
 
 pub fn deinit(types: *Types, gpa: Allocator) void {
     gpa.free(types.entries);
+    gpa.free(types.key_kinds);
     gpa.free(types.by_decl);
     gpa.free(types.schema_type_by_decl);
     gpa.free(types.schema_encoded_by_decl);
@@ -623,9 +631,46 @@ pub fn build(
     // alongside `equatable`, and a `Char` is comparable because the table
     // says so and not because `core/Char.beni` declares anything.
     types.findWellKnown(graph, interfaces, interner);
+    var key_count: u32 = 0;
+    for (types.entries) |*e| {
+        e.key_start = key_count;
+        key_count += e.arity;
+    }
+    types.key_kinds = try gpa.alloc(TypeStore.Kind, key_count);
+    @memset(types.key_kinds, .any);
+    for ([_]TypeId{ types.well_known.dict, types.well_known.set }) |id| if (id != .none) {
+        const e = types.entries[id.int()];
+        if (e.arity != 0) types.key_kinds[e.key_start] = .dict_key;
+    };
     try TypeFacts.settle(&types, gpa, graph, artifacts);
     try Injective.settle(&types, gpa, graph, artifacts);
     return types;
+}
+
+/// Immutable once the declaring module has prepared its types. A cache
+/// hit installs the same published parameter facts before its dependents.
+pub fn keyKinds(types: *const Types, id: TypeId) []const TypeStore.Kind {
+    if (types.key_kinds.len == 0) {
+        std.debug.assert(types.well_known.dict == .none and types.well_known.set == .none);
+        return &.{};
+    }
+    const e = types.entry(id);
+    return types.key_kinds[e.key_start..][0..e.arity];
+}
+
+/// Install a cached module's checked domains, including private aliases
+/// reachable through its public surface. No other module's rows are written.
+pub fn installKeyKinds(types: *Types, module: Graph.Index, iface: *const Interface, interner: *const InternPool.Global) void {
+    const first = types.entry_offsets[module.int()];
+    const last = types.entry_offsets[module.int() + 1];
+    for (types.entries[first..last]) |e| {
+        const facts = iface.typeFacts(interner, e.name) orelse continue;
+        if (facts.key_kinds == Interface.no_terms) continue;
+        const len = iface.extra[facts.key_kinds];
+        const kinds = iface.extra[facts.key_kinds + 1 ..][0..len];
+        std.debug.assert(kinds.len == e.arity);
+        for (kinds, types.key_kinds[e.key_start..][0..e.arity]) |kind, *out| out.* = @fromBackingInt(@intCast(kind));
+    }
 }
 
 /// Whether alias `id` is injective (`Entry.injective`).
@@ -702,6 +747,15 @@ fn findWellKnown(types: *Types, graph: *const Graph, interfaces: []const Interfa
         const index = iface.findType(interner, p.type_name.symbol()) orelse continue;
         p.slot.* = types.ofInterface(m, index);
     }
+    // Core identity, resolved once. A user module with either spelling is
+    // a different package and cannot acquire these invariants.
+    for (types.entries, 0..) |e, i| {
+        if (e.package != .core) continue;
+        const module = interner.slice(e.module_name);
+        const type_name = interner.slice(e.name);
+        if (std.mem.eql(u8, module, "Dict") and std.mem.eql(u8, type_name, "Dict")) types.well_known.dict = @fromBackingInt(@intCast(i));
+        if (std.mem.eql(u8, module, "Set") and std.mem.eql(u8, type_name, "Set")) types.well_known.set = @fromBackingInt(@intCast(i));
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -752,6 +806,10 @@ pub const Builder = struct {
     /// (transparent-effects-proposal.md §15.2, §15.5), and only a top-level
     /// signature can hold one.
     syncs: ?*std.ArrayList(SyncMark) = null,
+    key_errors: ?*std.ArrayList(KeyKinds.Issue) = null,
+    key_observer: ?KeyKinds.Observer = null,
+    key_region: Bir.Inst.Index = @fromBackingInt(0),
+    key_external_region: bool = false,
     sync_bir: ?*const Bir = null,
     sync_tags: []const Token.Tag = &.{},
     /// The annotation's type variables, in first-appearance order. A
@@ -871,6 +929,9 @@ pub const Builder = struct {
 
     /// Read one written type. `inst` must be a type instruction of `b.bir`.
     pub fn read(b: *Builder, inst: Bir.Inst.Index) Error!Var {
+        const saved_key_region = b.key_region;
+        if (!b.key_external_region) b.key_region = inst;
+        defer b.key_region = saved_key_region;
         b.depth += 1;
         defer b.depth -= 1;
         if (b.depth > max_depth) {
@@ -1112,6 +1173,20 @@ pub const Builder = struct {
     pub fn apply(b: *Builder, id: TypeId, args: []const Var) Error!Var {
         const e = b.types.entry(id);
         if (args.len != e.arity) return b.store.freshErr(b.varRank());
+        if (b.key_observer) |observer| {
+            try observer.note(observer.context, id, args, b.key_region);
+        } else {
+            var invalid = false;
+            for (b.types.keyKinds(id), 0..) |required, i| {
+                const actual = args[i];
+                if (!required.isKey()) continue;
+                if (KeyKinds.constrain(b.store, b.types, actual, required, b.key_region)) |issue| {
+                    if (b.key_errors) |errors| try errors.append(b.scratch, issue);
+                    invalid = true;
+                }
+            }
+            if (invalid) return b.store.freshErr(b.varRank());
+        }
         if (e.kind != .alias and args.len == 0) {
             return b.store.fresh(.{ .structure = .{ .app = .{ .type = id, .args = .empty } } }, b.varRank());
         }
@@ -1180,6 +1255,10 @@ pub const Builder = struct {
         // scope inside it and must not leak into it.
         var inner: Builder = .init(b.store, b.types, b.graph, b.artifacts, e.module, bir, b.mode, b.rank, b.scratch, b.interner);
         inner.depth = b.depth;
+        inner.key_errors = b.key_errors;
+        inner.key_observer = b.key_observer;
+        inner.key_region = b.key_region;
+        inner.key_external_region = true;
         const here: Expansion = .{ .id = id, .outer = b.expanding };
         inner.expanding = &here;
         inner.shared = b.memo();

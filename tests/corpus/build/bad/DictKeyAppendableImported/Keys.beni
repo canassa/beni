@@ -1,0 +1,5 @@
+import Dict
+
+
+pub make : appendable → Dict.Dict appendable Int
+make key = Dict.singleton key 0

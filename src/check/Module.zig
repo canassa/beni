@@ -45,6 +45,7 @@ const SchemaPlan = @import("SchemaPlan.zig");
 const SchemaPlanBuild = @import("SchemaPlanBuild.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const KeyKinds = @import("KeyKinds.zig");
 const dispatch_bytes = @import("../cache/dispatch_bytes.zig");
 const schema_plan_bytes = @import("../cache/schema_plan_bytes.zig");
 const type_keys_bytes = @import("../cache/type_keys_bytes.zig");
@@ -165,7 +166,13 @@ pub fn check(in: Input) Error!Check.Counters {
 
     var schemas = try Schema.State.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir);
     defer schemas.deinit();
+    var key_errors: std.ArrayList(KeyKinds.Issue) = .empty;
+    var key_preparation = try KeyKinds.Preparation.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir, &schemas, &key_errors);
+    schemas.key_observer = key_preparation.observer();
     try schemas.buildAll();
+    try key_preparation.run();
+    schemas.key_observer = null;
+    schemas.key_errors = &key_errors;
     var too_deep: std.ArrayList(Context.TooDeep) = .empty;
     defer too_deep.deinit(scratch);
     var cx: Context = .{
@@ -181,6 +188,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .bir = bir,
         .schemas = &schemas,
         .too_deep = &too_deep,
+        .key_errors = &key_errors,
         .keep_display = in.keep != null,
         .inst_type = inst_type,
     };
@@ -303,10 +311,23 @@ pub fn check(in: Input) Error!Check.Counters {
     const constrain_ns = groups.constrain_ns;
     const solve_ns = p4_ns -| constrain_ns;
 
+    // A via conversion is a value: its target can become known only in P4.
+    // Finish the parameter facts before publishing any scheme, and validate
+    // earlier live applications if a domain narrowed after their formation.
+    for (bir.decls) |d| if (d.kind == .schema) {
+        var final_keys = try KeyKinds.Preparation.init(scratch, store, in.types, in.graph, in.artifacts, in.interfaces, in.interner, in.module, bir, &schemas, &key_errors);
+        try final_keys.run();
+        if (final_keys.changed) try KeyKinds.validateFormations(scratch, store, in.types, bir, inst_type, decl_scheme, &key_errors);
+        break;
+    };
+
     // What P2 and P4 found too deep, reported now so its declaration's
     // failure bit is set before P7 reads it.
     var reported_deep: std.ArrayList(Bir.Inst.Index) = .empty;
     defer reported_deep.deinit(scratch);
+    var reported_keys = try std.DynamicBitSetUnmanaged.initEmpty(scratch, bir.insts.len);
+    defer reported_keys.deinit(scratch);
+    try reportKeyErrors(&report, key_errors.items, &reported_keys);
     try reportTooDeep(&report, too_deep.items, &reported_deep, scratch);
     const p4_notes = too_deep.items.len;
 
@@ -446,6 +467,7 @@ pub fn check(in: Input) Error!Check.Counters {
         .dispatch = in.dispatch,
         .crossing = if (type_keys) |t| t.crossing else &.{},
     });
+    try reportKeyErrors(&report, key_errors.items, &reported_keys);
     try reportTooDeep(&report, too_deep.items[p4_notes..], &reported_deep, scratch);
     if (in.profile) |p| p.end(in.tid, p8_token.?, .publish, file.int(), 0);
 
@@ -478,6 +500,7 @@ pub fn check(in: Input) Error!Check.Counters {
         bodies.shallow = true;
         break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties, &bodies, &solver.codecs);
     } else .empty;
+    try reportKeyErrors(&report, key_errors.items, &reported_keys);
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
 
@@ -721,11 +744,23 @@ fn bindingGroups(scratch: Allocator, bir: *const Bir) Error!Scc.IndexGroups {
     return Scc.sccGroups(scratch, n, edges.items, edge_start);
 }
 
-/// One `nesting_too_deep` per over-deep type, sorted and deduplicated: the
-/// same annotation is read more than once, and one mistake is one message.
-/// Called twice — after P4, so the declaration's failure bit is set before
-/// P7 reads it, and after P8 for what publication noted — and
-/// `reported` keeps the second from repeating the first.
+/// Type formation can read one annotation in several passes; report each
+/// offending key region once, including errors discovered during publication.
+fn reportKeyErrors(report: *Report, issues: []const KeyKinds.Issue, seen: *std.DynamicBitSetUnmanaged) Error!void {
+    const previous = report.current;
+    report.at(null);
+    defer report.at(previous);
+    for (issues) |issue| {
+        if (seen.isSet(issue.region.int())) continue;
+        seen.set(issue.region.int());
+        if (issue.incompatible) |kind| {
+            try report.kindMismatch(issue.region, kind, issue.required);
+        } else if (issue.required != .dict_key and KeyKinds.allows(report.env.store, report.env.types, .dict_key, issue.actual)) {
+            try report.keyScalarMismatch(issue.region, issue.required, issue.actual);
+        } else try report.invalidDictKey(issue.region, issue.actual);
+    }
+}
+
 fn reportTooDeep(report: *Report, notes: []Context.TooDeep, reported: *std.ArrayList(Bir.Inst.Index), scratch: Allocator) Error!void {
     if (notes.len == 0) return;
     std.mem.sort(Context.TooDeep, notes, {}, noteLessThan);

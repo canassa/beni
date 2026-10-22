@@ -1,0 +1,13 @@
+import Dict
+
+
+type Wrapped
+    = Wrapped (Dict.Dict Int Int)
+
+
+bad : Bool
+bad = Wrapped (Dict.singleton 1 0) < Wrapped (Dict.singleton 1 0)
+
+
+main : Int
+main = 0

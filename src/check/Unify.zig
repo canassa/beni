@@ -44,6 +44,7 @@ const InternPool = @import("../InternPool.zig");
 const Parse = @import("../parse/Parse.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const KeyKinds = @import("KeyKinds.zig");
 const Generalize = @import("Generalize.zig");
 const Walk = @import("Walk.zig");
 const Obligations = @import("Obligations.zig");
@@ -61,6 +62,7 @@ pub const Error = Allocator.Error;
 pub const Problem = union(enum) {
     kinds: struct { left: TypeStore.Kind, right: TypeStore.Kind },
     kind_not_satisfied: struct { kind: TypeStore.Kind },
+    invalid_dict_key: struct { kind: TypeStore.Kind, actual: Var },
     not_equatable_rigid: Var,
     missing_field: Fields,
     unknown_field: Fields,
@@ -317,7 +319,7 @@ fn unionWants(u: *Unify, fa: TypeStore.Flags, fb: TypeStore.Flags, kind: TypeSto
     const st = u.store;
     const sa = fa.constraints;
     const sb = fb.constraints;
-    const bridged = kind == .number and (fa.kind != .number or fb.kind != .number);
+    const bridged = kind.scalar() and (fa.kind != kind or fb.kind != kind);
     if (!bridged) {
         if (sa == .none) return sb;
         if (sb == .none) return sa;
@@ -616,7 +618,7 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content,
         .rigid => |fb| {
             // A rigid is a promise about ALL types: a `number` flex meeting a
             // rigid `a` wants more than the annotation said.
-            if (fa.kind != .any and fa.kind != fb.kind) return false;
+            if (!fa.kind.permits(fb.kind)) return false;
             if (fa.equatable and !fb.equatable and !u.equatableRigidDeferred(fa)) return u.fail(.{ .not_equatable_rigid = rb });
             try u.bind(ra, fa, rb, cb);
             return true;
@@ -624,7 +626,7 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content,
         .alias => unreachable, // `throughAlias`
         .structure => {
             if (fa.kind != .any and !u.kindAccepts(fa.kind, rb)) {
-                return u.fail(.{ .kind_not_satisfied = .{ .kind = fa.kind } });
+                return u.kindFailure(fa.kind, rb);
             }
             try u.equatableMeets(fa, rb);
             try u.bind(ra, fa, rb, cb);
@@ -633,8 +635,13 @@ fn flex(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content,
     }
 }
 
+fn kindFailure(u: *Unify, kind: TypeStore.Kind, actual: Var) Error!bool {
+    return if (kind.isKey()) u.fail(.{ .invalid_dict_key = .{ .kind = kind, .actual = actual } }) else u.fail(.{ .kind_not_satisfied = .{ .kind = kind } });
+}
+
 /// The flat membership test for `number` and `appendable`.
 fn kindAccepts(u: *Unify, kind: TypeStore.Kind, v: Var) bool {
+    if (kind.isKey()) return KeyKinds.allows(u.store, u.types, kind, v);
     const wk = u.types.well_known;
     const app = switch (u.store.resolvedContent(v)) {
         .structure => |s| switch (s) {
@@ -647,6 +654,7 @@ fn kindAccepts(u: *Unify, kind: TypeStore.Kind, v: Var) bool {
     return switch (kind) {
         .any => true,
         .number => app.args.len == 0 and (app.type == wk.int or app.type == wk.float),
+        .dict_key, .int_key, .string_key => unreachable,
         .appendable => (app.args.len == 0 and app.type == wk.string) or
             (app.args.len == 1 and app.type == wk.list),
     };
@@ -659,14 +667,15 @@ fn rigid(u: *Unify, ra: Var, fa: TypeStore.Flags, rb: Var, cb: TypeStore.Content
             return true;
         },
         .flex => |fb| {
-            if (fb.kind != .any and fb.kind != fa.kind) return false;
+            if (!fb.kind.permits(fa.kind)) return false;
             if (fb.equatable and !fa.equatable and !u.equatableRigidDeferred(fb)) return u.fail(.{ .not_equatable_rigid = ra });
             try u.bind(rb, fb, ra, .{ .rigid = fa });
             return true;
         },
         // Two rigids, or a rigid against a real type: the annotation
         // promised more than the code delivers.
-        .rigid, .structure => return false,
+        .rigid => |fb| return (fa.kind == .int_key or fa.kind == .string_key) and fa.kind == fb.kind,
+        .structure => return (fa.kind == .int_key or fa.kind == .string_key) and u.kindAccepts(fa.kind, rb),
         .alias => unreachable, // `throughAlias`
     }
 }
@@ -794,7 +803,7 @@ fn throughAlias(u: *Unify, ra: Var, ca: TypeStore.Content, rb: Var, cb: TypeStor
             // The flex takes the alias's name.
             else => {
                 if (f.kind != .any and !u.kindAccepts(f.kind, named)) {
-                    return u.fail(.{ .kind_not_satisfied = .{ .kind = f.kind } });
+                    return u.kindFailure(f.kind, named);
                 }
                 try u.equatableMeets(f, named);
                 try u.takeName(r, f, named);
@@ -907,13 +916,13 @@ fn structure(u: *Unify, ra: Var, sa: TypeStore.Structure, rb: Var, cb: TypeStore
         },
         .flex => |fb| {
             if (fb.kind != .any and !u.kindAccepts(fb.kind, ra)) {
-                return u.fail(.{ .kind_not_satisfied = .{ .kind = fb.kind } });
+                return u.kindFailure(fb.kind, ra);
             }
             try u.equatableMeets(fb, ra);
             try u.bind(rb, fb, ra, .{ .structure = sa });
             return true;
         },
-        .rigid => return false,
+        .rigid => |fb| return (fb.kind == .int_key or fb.kind == .string_key) and u.kindAccepts(fb.kind, ra),
         .alias => unreachable, // `throughAlias`
         .structure => |sb| return u.flat(ra, sa, rb, sb),
     }

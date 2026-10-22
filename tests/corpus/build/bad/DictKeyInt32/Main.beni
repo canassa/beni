@@ -1,0 +1,13 @@
+import Dict
+import Int32
+
+
+key : Int32.Int32
+key = Int32.fromInt 1
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

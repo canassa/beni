@@ -1,0 +1,1 @@
+[{"code":"invalid_dict_key","severity":"error","span":{"file":"Main.beni","start":{"line":8,"col":22},"end":{"line":8,"col":25}},"title":"INVALID DICTIONARY KEY","message":"Dict keys and Set members must be Int or String.\n\nThis key has type:\n\n    List Int\n\nAn alias of Int or String is accepted. Other types cannot be keys, even\nwhen they have eq or compare.\n"}]

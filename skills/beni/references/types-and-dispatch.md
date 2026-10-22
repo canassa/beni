@@ -82,9 +82,12 @@ operands have the same type.
   field by field, each by its own `eq`. The same for `compare`, in declaration order.
 - A module declares `pub eq : T, T → Bool` or `pub compare : T, T → Order` to replace the derived
   one.
-- `Dict k v` and `Set a` order their keys by `compare`, so a key type needs one. `List.sort`
-  needs `compare`; `List.member` needs `eq`. A `where` clause carries the need through a generic
-  function.
+- `Dict k v` keys and `Set a` members must be `Int` or `String` (aliases are accepted).
+  The constraint survives generic functions and module boundaries without comparison evidence.
+  Dict and Set have no compare because insertion order is part of their value; enclosing
+  shapes cannot derive it either. Your own wrapper may declare its own `pub compare`.
+  `List.sort` needs `compare`; `List.member` needs `eq`. A `where` clause carries those
+  method requirements through a generic function.
 - A function has no `eq`, so a record that holds one cannot be compared.
 
 ```beni

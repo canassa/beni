@@ -296,9 +296,32 @@ pub fn report(s: *Solve, origin: Bir.Inst.Index, root: Var, method: Symbol, verd
         .opaque_type => if (is_eq) {
             try s.report.notEquatable(w.origin, root, .opaque_type, use);
         } else {
-            try s.report.noMethodsOnShape(w.origin, w.method, root, .not_orderable);
+            try s.report.noMethodsOnShape(w.origin, w.method, root, if (try holdsCollection(s, root)) .collection else .not_orderable);
         },
     }
+}
+
+fn holdsCollection(s: *Solve, root: Var) Error!bool {
+    var seen = try std.DynamicBitSetUnmanaged.initEmpty(s.cx.scratch, s.store().count());
+    defer seen.deinit(s.cx.scratch);
+    var stack: std.ArrayList(Var) = .empty;
+    defer stack.deinit(s.cx.scratch);
+    try stack.append(s.cx.scratch, root);
+    while (stack.pop()) |raw| {
+        const v = s.store().find(raw);
+        if (seen.isSet(v.int())) continue;
+        seen.set(v.int());
+        const c = s.store().content(v);
+        if (c == .alias) {
+            try stack.append(s.cx.scratch, c.alias.actual);
+            continue;
+        }
+        if (c == .structure and c.structure == .app and s.cx.types.entry(c.structure.app.type).holds_collection) return true;
+        var child: u32 = 0;
+        while (Walk.owned(s.store(), null, v, child)) |next| : (child += 1)
+            try stack.append(s.cx.scratch, next);
+    }
+    return false;
 }
 
 /// The unit of `root`'s head when `root` is an own derived type whose
@@ -538,6 +561,7 @@ fn head(s: *Solve, w: *Walker, key: PairKey, a: TypeStore.Structure.App, forced:
     const st = s.store();
     const scratch = cx.scratch;
     if (isWellKnownType(s, a)) return null;
+    if (key.kind == .compare and (a.type == cx.types.well_known.dict or a.type == cx.types.well_known.set)) return .opaque_type;
     const name = Contexts.methodName(key.kind);
     const entry = cx.types.entry(a.type);
     const args = try scratch.dupe(Var, Walk.positions(st, key.root));

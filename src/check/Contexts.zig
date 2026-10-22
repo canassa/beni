@@ -1158,6 +1158,8 @@ fn pass(s: *Solve, ri: u32, t: u32, kind: Kind, slot: u32) Error!Answer {
         try r.in_flight.append(cx.scratch, .{ .slot = slot, .decl = schema, .method = methodName(kind), .post = true, .type_id = c.id(t) });
         return .{ .status = .present };
     }
+    if (kind == .compare and (c.id(t) == cx.types.well_known.dict or c.id(t) == cx.types.well_known.set))
+        return .{ .status = .absent_other };
     const p = (try readPayloads(s, t)) orelse return .{ .status = .absent_other };
     c.runs.items[ri].markers = p.markers;
     const ids = try resolvePayloads(s, p, kind);

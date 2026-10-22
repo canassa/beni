@@ -12,28 +12,25 @@ want k kind t d = Dict.update d k λcurrent →
 
 
 pub listLeft : List (k × kind × tap) → Dict k (kind × List tap)
-    where k.compare : k, k → Order
 listLeft declared = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
 
 
 pub listRight : List (k × kind × tap) → Dict k (kind × List tap)
-    where k.compare : k, k → Order
 listRight declared = List.foldr declared Dict.empty λ( k, kind, t ) d → want k kind t d
 
 
 pub dictLeft : Dict a (k × kind × tap) → Dict k (kind × List tap)
-    where k.compare : k, k → Order
 dictLeft declared = Dict.foldl declared Dict.empty λ_ ( k, kind, t ) d → want k kind t d
 
 
 pub dictRight : Dict a (k × kind × tap) → Dict k (kind × List tap)
-    where k.compare : k, k → Order
 dictRight declared = Dict.foldr declared Dict.empty λ_ ( k, kind, t ) d → want k kind t d
 
 
 pub subscribed ⊤ =
     sub = Sub.listen 1 (λ_ → ⊤) λ_ → {}
-    listLeft (Sub.taps (Sub.batch [ sub, sub ]))
+    listLeft
+        (List.indexedMap (Sub.taps (Sub.batch [ sub, sub ])) λi ( _, kind, tap ) → ( i, kind, tap ))
 
 
 pub escaped xs = List.foldl xs [] λx acc →

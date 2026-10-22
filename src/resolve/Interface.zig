@@ -534,6 +534,8 @@ pub const Type = struct {
     /// opaque type's hidden ones included, which is the point: the marker
     /// walk must not read them from another module. `no_terms` until then.
     payload_params: u32 = no_terms,
+    /// Closed key domain per parameter, an extra range of arity words.
+    key_kinds: u32 = no_terms,
     /// What an importer resolves `==` and `compare` on this type against
     /// when the type declares no method of its own (§11.2, §14.2): the
     /// derived function's context, or why there is none. Filled when the
@@ -572,6 +574,8 @@ pub const HiddenType = struct {
     /// As `Type.no_function`.
     no_function: bool = false,
     payload_params: u32 = no_terms,
+    /// Closed key domain per parameter, an extra range of arity words.
+    key_kinds: u32 = no_terms,
     eq: Derived = .{},
     compare: Derived = .{},
 };
@@ -586,6 +590,7 @@ pub const TypeFacts = struct {
     /// The row's §11.4 gate for an `adt` (`Type.no_function`).
     no_function: bool,
     payload_params: u32,
+    key_kinds: u32,
     eq: Derived,
     compare: Derived,
 
@@ -605,11 +610,11 @@ pub const TypeFacts = struct {
 pub fn typeFacts(iface: *const Interface, interner: *const InternPool.Global, name: Symbol) ?TypeFacts {
     if (find(iface, interner, Type, iface.types, name)) |i| {
         const t = iface.types[i];
-        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
+        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .key_kinds = t.key_kinds, .eq = t.eq, .compare = t.compare };
     }
     if (find(iface, interner, HiddenType, iface.hidden_types, name)) |i| {
         const t = iface.hidden_types[i];
-        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .eq = t.eq, .compare = t.compare };
+        return .{ .arity = t.arity, .kind = t.kind, .is_equatable = t.is_equatable, .no_function = t.no_function, .payload_params = t.payload_params, .key_kinds = t.key_kinds, .eq = t.eq, .compare = t.compare };
     }
     return null;
 }

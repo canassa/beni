@@ -1,0 +1,9 @@
+import Maps
+
+
+type alias Refused =
+    Maps.Wrapped Bool
+
+
+main : Int
+main = 0

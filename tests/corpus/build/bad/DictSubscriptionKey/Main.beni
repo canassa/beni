@@ -1,0 +1,10 @@
+import Cmd
+import Dict
+import Sub
+
+
+bad = Sub.listen (Dict.singleton 1 0) (λ_ → ⊤) identity
+
+
+main : Int
+main = 0
