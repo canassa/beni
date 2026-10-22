@@ -4,7 +4,7 @@ module LambdaParamNeed
   52:15 List.push xs: accepted param
   61:5 entry LambdaParamNeed.update msg#Got.1: accepted entry
   summary kept: res .run λ?r{lost}, fresh501◦
-  summary update: π1 R, π1#Got.1 RAW[storage], π1#Got.1[*] A, π2 RA; res .0 ~condition(fresh6) π1#Got.1 π2, .0[*] ~π1#Got.1[*], .1#Cmd.0 fresh4{lost}r{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~condition(fresh1) ~fresh1{lost}r{lost}, .1#Cmd.0[*]#Now.0 ~λ?r{lost}, .1#Cmd.0[*]#Now.0◇ ~condition(fresh3) ~⊤{lost}r{lost}, .1#Cmd.0[*]#Perform.0 ~λ?r{lost}, .1#Cmd.0[*]#Perform.0◇ ~condition(fresh2) ~⊤{lost}r{lost}, condition(fresh5){lost}
+  summary update: π1 R, π1#Got.1 RAW[storage], π1#Got.1[*] A, π2 RA; res .0 ~condition(fresh6) π1#Got.1 π2, .0[*] ~π1#Got.1[*], .1#Cmd.0 fresh4{lost}r{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~condition(fresh1) ~fresh1{lost}r{lost}, .1#Cmd.0[*]#Now.0 ~λ?r{lost}, .1#Cmd.0[*]#Now.0⟨as fn(40:fn(24:0:LambdaParamNeed::Msg()→4:unit)→4:unit)⟩◇ ~condition(fresh3) ~⊤{lost}r{lost}, .1#Cmd.0[*]#Perform.0 ~λ?r{lost}, .1#Cmd.0[*]#Perform.0⟨as fn(40:fn(24:0:LambdaParamNeed::Msg()→4:unit)→4:unit)⟩◇ ~condition(fresh2) ~⊤{lost}r{lost}, condition(fresh5){lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
 total 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
