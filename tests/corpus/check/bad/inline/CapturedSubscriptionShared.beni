@@ -1,0 +1,28 @@
+-- CK-709: a generic subscription wrapper returns a captured message.
+-- A message holding no list must be accepted at the wrapper and its caller;
+-- a list-bearing message must stay refused where the caller supplies it.
+import Sub exposing (Sub)
+
+
+type Key
+    = Tick
+
+
+type Msg
+    = Ticked
+
+
+start : (⊤ → ⊤) → (⊤ → ⊤)
+start _ = λ⊤ → ⊤
+
+
+every : msg → Sub msg
+every msg = Sub.on Tick start λ_ → msg
+
+
+pub scalar : ⊤ → Sub Msg
+scalar ⊤ = every Ticked
+
+
+pub shared : ⊤ → Sub (List Int)
+shared ⊤ = every [ 1 ]

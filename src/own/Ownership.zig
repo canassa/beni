@@ -13980,7 +13980,7 @@ const Walker = struct {
             // The callee edits what the callback returns (§16.2's need).
             var need_bad = false;
             if (ff.need) {
-                if (!try w.returnsOwned(c, s, avs, ictx, j, 0, none))
+                if (!(if (ff.sends) try w.taggerReturnsOwned(c, s, avs, j, cls, ictx) else try w.returnsOwned(c, s, avs, ictx, j, 0, none)))
                     need_bad = true
                 else
                     try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
