@@ -494,11 +494,13 @@ a `.gitattributes` file; otherwise it skips them and passes. The job runs the
 pull request's own audit files, so it does not catch a pull request that
 weakens them: #263 adds `.github/CODEOWNERS`, which names the owner for them,
 and when the ruleset on `master` requires a review from code owners, such a
-change needs the owner's review. It restores `.lake` from `master`. The audit
-never reads that directory, so the cache cannot hide a broken proof from the
-job; a warm `lake build` alone can miss a `sorry` (#255), and an
-`export-ignore` can remove a file from the audit's export (#262). A cold run
-takes 9 to 14 minutes, and a warm cache makes only `lake build` faster. The
+change needs the owner's review. The audit builds its export from nothing and
+never reads a `.lake` it did not build; once every check passed, it hands that
+build to the checkout (`scripts/audit.sh HEAD .lake`), so `lake build` there
+replays it instead of building the proofs a second time (#738). A warm
+`lake build` alone can miss a `sorry` (#255), and an `export-ignore` can
+remove a file from the audit's export (#262). The audit is the job's floor:
+about 12 minutes on a GitHub runner, where a pull request took 20. The
 job does not run `lake exe ownership ci` (#259). `proofs/ownership/README.md`,
 *CI*.
 

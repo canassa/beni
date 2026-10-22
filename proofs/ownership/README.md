@@ -97,7 +97,7 @@ macOS requires `zorg` on PATH).
 The job `lean` of `.github/workflows/ci.yml` checks the proofs.
 The guard `check` needs this job, so a failed proof blocks a merge.
 
-- The job runs `scripts/audit.sh HEAD`, then `lake build`, in `nix develop .#ownership`.
+- The job runs `scripts/audit.sh HEAD .lake`, then `lake build`, in `nix develop .#ownership`.
   The audit runs first. Its source scan rejects `#eval` and the other banned commands before any audited code runs.
   An `#eval` in an audited module runs during `lake build` and can rewrite the audit files.
   After `lake build`, the job fails when the build changed or added a file that git does not ignore.
@@ -109,18 +109,19 @@ The guard `check` needs this job, so a failed proof blocks a merge.
   #263 adds `.github/CODEOWNERS`, which names `@canassa` for these files.
   When the ruleset on `master` requires a review from code owners, a change to them needs the owner's review.
 - An `export-ignore` in a `.gitattributes` file removes a file from the export of `scripts/audit.sh` (#262).
-- The job restores `.lake` from the newest build on `master`.
-  Lake builds a module again when the hash of its source, its imports, its options or Lean's commit changes.
-- With a restored `.lake`, `lake build` does not run the source scan of `Axioms.lean` again when only a file outside its imports changes.
-  For example, a new `sorry` in `Triage.lean` passes a warm `lake build`.
-  `scripts/audit.sh` does not read `.lake`: it builds a clean export and scans every source, so CI catches that `sorry`.
+- `scripts/audit.sh` always builds a clean export from nothing and never reads a `.lake` that it did not build.
+  The job gives it a second argument, the checkout's `.lake`.
+  After every check of the audit passed, the script moves the build of the export there.
+- `lake build` in the checkout then finds every module up to date, and replays the logs of the audit's build, the source scan of `Axioms.lean` included.
+  Lake builds a module again when the hash of its source, its imports, its options or Lean's commit changes, so a module whose checkout source differs from the export is built again.
+- A warm `lake build` does not run the source scan of `Axioms.lean` again when only a file outside its imports changes (#255).
+  For example, a new `sorry` in `Triage.lean` passes a warm `lake build` on a local `.lake`.
+  `scripts/audit.sh` builds a clean export and scans every source, so CI catches that `sorry`.
 - The job does not run `lake exe ownership ci` (#259).
   The bridge of that command builds the beni compiler, so it depends on `src/` too.
-- On a GitHub runner, a cold run of the job took 9 to 14 minutes.
-  `lake build` took 184 to 310 s, and `scripts/audit.sh` took 257 to 428 s.
-- A restored `.lake` makes only `lake build` faster.
-  The audit always builds from nothing, so its time does not change.
-  Two warm runs took 7 min 45 s and 8 min 14 s: `lake build` took 1 s, and the audit took 410 s and 434 s.
+- Until #738, `lake build` started from master's cached `.lake`, and built the proofs a second time when a pull request changed a base module.
+  On run 39773374078 (a pull request, 20 min), the audit took 710 s and that second build 480 s.
+  The audit alone builds from nothing, so its time is the floor of the job.
 
 ## Audit memory and replay
 
