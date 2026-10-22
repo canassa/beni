@@ -1563,6 +1563,38 @@ constructor-head fold for nonrecursive types is retired with the cast marker.
 level. Host round trips now fold only at a repeated full cast type. The existing
 recursive nominal rules and core Dict’s tree rule remain separate.
 
+*Amended 2026-10-22 (after the owner’s repository-wide budget retirement):*
+final validation uses ordinary `zig build gates` on current master. The earlier
+`-Dtest-budget=0` runs above record the pre-retirement validation; that override
+is no longer needed or supported. Existing hang guards remain unchanged.
+
+*Stopped 2026-10-22 (#760, the owner’s safe-program stop rule):* the checks
+above describe the candidate, not a merged implementation. The unchanged
+integration base `b8724f19e` accepts this reduced core-mode program; the candidate
+refuses it because its summary does not settle in 32 rounds:
+
+```text
+import Js
+
+pub build : Int, a → Js.Value
+build n xs =
+    if n == 0 then
+        Js.from [ xs ]
+    else
+        build (n - 1) [ xs ]
+```
+
+`check --core --ownership-everywhere --platform=node Main.beni` exits 0 on the
+baseline and 1 on the candidate. The function only allocates arrays. Its recursive
+call instantiates `a` with `List a`, producing the distinct full cast types
+`List a`, `List (List a)`, and so on. There is no repeated full type for this rule
+to fold. The existing path cut cannot bound a growing alphabet of type ids, and
+interning a type DAG cannot make infinitely many instantiated types finite.
+Erased polymorphic recursion therefore needs an additional rule before this
+candidate can merge. No head fold, approximate first cast, limit raise or weakened
+check is substituted for that decision. PR #748 stays draft; #760 records the
+accepted baseline, refused candidate and preserved reproducer.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
