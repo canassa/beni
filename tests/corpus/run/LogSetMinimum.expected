@@ -1,4 +1,6 @@
 debug after setMinimum Debug
 warn under Log.minimum Warn
 debug in a child started before setMinimum
+debug inside annotate after setMinimum Debug
+debug in a child started inside annotate before setMinimum Debug
 error after setMinimum Error
