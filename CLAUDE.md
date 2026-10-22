@@ -499,8 +499,8 @@ never reads a `.lake` it did not build; once every check passed, it hands that
 build to the checkout (`scripts/audit.sh HEAD .lake`), so `lake build` there
 replays it instead of building the proofs a second time (#738). A warm
 `lake build` alone can miss a `sorry` (#255), and an `export-ignore` can
-remove a file from the audit's export (#262). The audit is the job's floor:
-7 to 13 minutes on a GitHub runner (it took 404 to 776 s), and `lake build` 1 s. The
+remove a file from the audit's export (#262). The audit, 404 to 776 s
+on a GitHub runner, is the floor of a job of 8 to 14 minutes. The
 job does not run `lake exe ownership ci` (#259). `proofs/ownership/README.md`,
 *CI*.
 
