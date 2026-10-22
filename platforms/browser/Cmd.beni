@@ -89,7 +89,9 @@ items (Cmd list) = list
 
 --| Run `body` in a fiber of its own — or, when it never waits, with no
 --| fiber, where that fiber would have started. Nothing can cancel it but
---| the program's end.
+--| the program's end. The body has the log context of the place where the
+--| command is made: the annotations, spans, minimum and sink that `Log`
+--| set around the `update` arm (`docs/design/boundary.md` §9.8.16 (b)).
 pub perform : (Send msg → ⊤) → Cmd msg
 perform body =
     if Js.maySuspend body then
@@ -99,8 +101,9 @@ perform body =
 
 
 --| Run `body` in a fiber of its own under `key` (with no fiber when it
---| never waits, as `perform`), doing what `policy` says when a body
---| already runs under it:
+--| never waits, and with the log context of the place where the command
+--| is made, as `perform`), doing what `policy` says when a body already
+--| runs under it:
 --|
 --|   - `Restart` cancels the running body, waits for its cleanup, then
 --|     starts this one. The cancelled body's `send` does nothing from the
@@ -186,7 +189,8 @@ extended path segment = [ …[ segment ], …path ]
 --| Run `body` in the after-render phase of the flush that renders this
 --| update's model: after every write of the render, before the next
 --| message, synchronously, so the nodes it rendered exist and a focus or
---| a measurement costs no frame. It must not wait.
+--| a measurement costs no frame. It must not wait. It has the log context
+--| of the place where the command is made, as `perform`'s body has.
 pub afterRender : (Send msg → ⊤) → Cmd msg
 afterRender body = Cmd [ After (Hosted.later body) ]
 
@@ -205,9 +209,11 @@ do work = perform λ_ → work ⊤
 --| The command form of `Log.log`: the line, written at `level` when the
 --| command runs. The line is a value, formatted when the command is made,
 --| never a function that reads the model later (`docs/design/boundary.md`
---| §9.8.16). It runs after `update` has returned, so its line has the
---| default log context: no annotation or span of `update`'s, and the
---| program's minimum when it runs, `Info` until a `Log.setMinimum`.
+--| §9.8.16). It runs after `update` has returned, with the log context of
+--| the place where the command is made, as `perform`'s body: the
+--| annotations, spans and `Log.minimum` of the `update` arm. With no
+--| `Log.minimum` there, its minimum is the program's when it runs, `Info`
+--| until a `Log.setMinimum`.
 --|
 --|     Saved ms →
 --|         ( model, Cmd.log Log.Info "saving took ${String.fromInt ms} ms" )

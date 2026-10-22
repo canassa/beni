@@ -2001,10 +2001,40 @@ currentLogContext ⊤ =
 --| `withClock` does. Fibers `work` starts copy it. For core's
 --| `Log.annotate`, `span`, `minimum` and `withSink`: a program has no
 --| `Js.Value` to give it. The body is `withClock`'s, with the slot's name
---| written as a literal: change the two together.
+--| written as a literal: change the two together, and `inLogContext`.
 pub withLogContext : Js.Value, (⊤ → a) → a
 withLogContext context work =
     Js.write slotted True
+    fiber = here ⊤
+    old = Js.get fiber "slots"
+    next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
+    Js.set next "logContext" context
+    Js.set fiber "slots" next
+    putSlots fiber old (work (pushFinalizer ⊤ λ⊤ → Js.set fiber "slots" old))
+
+
+--| `work` as a function that runs with the calling fiber's log context,
+--| the one in force here, wherever it is called later; `work` itself when
+--| no log context is set. For `browser`'s commands, whose bodies run after
+--| `update` has returned (`boundary.md` §9.8.16 (b), amended 2026-10-22).
+--| It reads `slotted` itself, so in a build in which nothing sets a slot it
+--| is `work`, and a release build keeps no call of it.
+pub keepLogContext : (a → b) → (a → b)
+keepLogContext work =
+    if Js.read slotted then
+        r = slotRecord ⊤
+        context = if Js.isNullish r then Js.undefined else Js.get r "logContext"
+        if Js.isUndefined context then work else λx → inLogContext context λ⊤ → work x
+    else
+        work
+
+
+-- `withLogContext` without its write of `slotted`, for a context that
+-- `keepLogContext` read, when a slot was set already. A build in which
+-- nothing sets a slot must reach no write of `slotted`, or it cannot fold
+-- the slots away (§17.5's amendment of 2026-10-02).
+inLogContext : V, (⊤ → a) → a
+inLogContext context work =
     fiber = here ⊤
     old = Js.get fiber "slots"
     next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]

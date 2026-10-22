@@ -1,0 +1,139 @@
+-- load
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #perform
+console.debug: a body that does not wait {"request":"p1"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- advance 5
+console.debug: a body after a wait {"request":"p1"}
+(the DOM did not change)
+-- click #keyed
+console.info: a keyed body that does not wait save=0ms {"request":"k1"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"2"</p>
+  </main>
+</body>
+-- advance 5
+console.info: a keyed body after a wait save=5ms {"request":"k1"}
+(the DOM did not change)
+-- click #task
+console.info: a task {"request":"t1"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"4"</p>
+  </main>
+</body>
+-- click #after
+console.info: after the render {"request":"a1"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"5"</p>
+  </main>
+</body>
+-- click #mapped
+console.info: a child's command {"parent":"x","child":"y"}
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"6"</p>
+  </main>
+</body>
+-- click #plain
+console.info: a command made outside any context
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"7"</p>
+  </main>
+</body>
+-- click #sink
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"8"</p>
+  </main>
+</body>
+-- click #show
+console.info: the sink kept: to update's sink
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <p>"9"</p>
+  </main>
+</body>
