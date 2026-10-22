@@ -36,3 +36,4 @@ core:Task -> core:List
 core:Task -> core:Maybe
 core:Task -> core:Result
 core:Task -> core:Schedule
+core:Task -> core:String

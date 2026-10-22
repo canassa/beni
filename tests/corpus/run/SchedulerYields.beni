@@ -1,0 +1,39 @@
+-- run: a program's scheduler does not starve the host
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22). After 64
+-- resumptions its drain goes on in a macrotask, as the program's does, so
+-- a timer fires while a fiber under it keeps yielding: the timer's line
+-- comes before the loop's end.
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+yields : Int → ⊤
+yields n =
+    if n == 0 then
+        ⊤
+    else
+        Task.yieldNow ⊤
+        yields (n - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+
+    timer = Task.spawn λ⊤ →
+        Task.sleep (Duration.millis 1)
+        say "timer"
+
+    looper = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            yields 100000
+            say "loop ended"
+    Task.join looper
+    Task.join timer
+    Node.done

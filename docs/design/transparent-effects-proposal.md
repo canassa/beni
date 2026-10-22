@@ -2354,10 +2354,12 @@ own request or object.
 ```elm
 -- core/Task.beni
 pub foreign type Scheduler
-pub scheduler : (⊤ → ⊤) → Scheduler                            -- drains in a microtask of its own; the defect hook; what a program uses
-pub schedulerWith : sync ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, and the defect hook
+pub scheduler : sync (⊤ → ⊤) → Scheduler                       -- drains in a microtask of its own; the defect hook; what a program uses
+pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, and the defect hook
 pub withScheduler : Scheduler, (⊤ → a) → a                     -- the slot's writer, scoped to `work` as every slot change is
 pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutdown` for one scheduler
+pub schedulerBusy : Scheduler → Bool                           -- whether a fiber of it, belonging or lent, still runs
+pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` once, the next time none does; at once when none does now
 ```
 
 - **A scheduler is a queue of its own**: the ready work of its fibers, FIFO, drained as the
@@ -2365,8 +2367,11 @@ pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutd
   which `run` queues. The kernel calls `run` once per batch, when work arrives at an empty queue,
   with the drain as its argument; `run` must run the drain **later** — in a microtask, a promise
   reaction, a host callback — and never during the call, which would run a woken fiber inside
-  the call that woke it (§17.1 item 3). `scheduler hook`'s `run` is `queueMicrotask`. The budget's
-  continuation goes through `run` as well, not through the program's macrotask, so the platform
+  the call that woke it (§17.1 item 3); a `run` that calls the drain during the call is a defect
+  the drain names (*2026-10-22, P699-10*). `scheduler hook`'s `run` is `queueMicrotask`, and the
+  rest of a drain that has used its 64 resumptions goes on in the program's macrotask, as the
+  program's own drain does, so a timer, I/O or a render gets its turn while a fiber under it keeps
+  yielding (*P699-4*). `schedulerWith`'s continuation goes through `run` again, so the platform
   decides where a scheduler's fibers run: on `cloudflare`, through a promise made in the request's
   own context, so that a continuation runs where its I/O is allowed (§9.12 (d)).
 - **The slot's writer.** `withScheduler s work` sets the calling fiber's scheduler slot to `s` for
@@ -2376,22 +2381,33 @@ pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutd
   (*Inheritance*) and **belong** to `s`: a fiber belongs to the scheduler its slot names when it
   starts — `spawn`, `spawnIn`, `spawnDetached`, a combinator's child — for its whole life, whatever
   its slot is set to later; and a root scope (`openRoot`) belongs to the scheduler of the first
-  fiber it is given. `start`'s root fiber belongs to the program's scheduler, as before: a platform
+  fiber it is given. A fiber inside `withScheduler` of one scheduler twice is lent once, for the
+  whole of the outer call (*P699-2*). `start`'s root fiber belongs to the program's scheduler, as before: a platform
   that wants a request's fiber on a scheduler of its own writes `Task.start (λ⊤ → Task.withScheduler
   s body) report`, and the root is lent for the whole of `body`.
 - **A defect under a scheduler stops that scheduler alone** — §9.8.14 (b)'s three phases, for one
   scheduler. A throw that leaves `s`'s drain: in the **stop**, `s` enters *stopping*, runs nothing
   more and calls its defect hook, `schedulerWith`'s second argument, the per-scheduler form of
-  `onDefect` under the same rule — no program code, no finaliser and no canceller runs there;
-  `scheduler hook` takes the same hook, `λ⊤ → ⊤` when nothing needs to know; the throw then goes on to the **host** unchanged, out of whatever
+  `onDefect` under the same rule — the hook is `sync`, the one piece of program code that runs
+  there, and no finaliser and no canceller does; `scheduler hook` takes the same hook, `λ⊤ → ⊤`
+  when nothing needs to know (*P699-6*); the throw then goes on to the **host** unchanged, out of whatever
   `run` queued the drain in, so a promise `run` used rejects with it; then the **teardown** of `s`
   runs, queued through `run` and not through the program's macrotask: every root scope of `s` is
   closed, every fiber that belongs to `s` and every fiber lent to it is interrupted, the culprit
-  is unwound, their finalisers run under `s`'s deadline, and when the last has ended `s` is
-  *stopped* for good. The program's scheduler and every other scheduler are not touched: their
-  fibers run on and their queues drain as before. A fiber started under a stopped scheduler is
-  cancelled before it runs, as `fork` does while the program stops. A throw that leaves the
-  program's drain is what it was: the program stops, and every scheduler with it (below).
+  is unwound, their finalisers run under `s`'s deadline — the deferred finalisers of its root
+  scopes (`Task.defer`) in a fiber of `s`'s own, under the same deadline and before `done`
+  (*P699-3*) — and when the last has ended `s` is *stopped* for good. The program's scheduler and
+  every other scheduler are not touched: their fibers run on and their queues drain as before. A
+  throw that leaves the program's drain is what it was: the program stops, and every scheduler
+  with it (below).
+- **A scheduler that has stopped for good is a dead end** (*P699-1*). A fiber resumed through it
+  afterwards — one that names it in its slot, or one lent to it — is cancelled, and its cleanup
+  runs on the program's queue; a fiber started under it is cancelled before it runs, as `fork`
+  does while the program stops. `withScheduler` of such a scheduler cancels the calling fiber at
+  once, as `join` of a cancelled fiber does, and `work` never runs; outside any fiber `work` runs,
+  and every fiber it starts is cancelled before it runs. `soon` work queued under it is dropped.
+  Nothing waits on the dead queue, so a program that kept the `Scheduler` value ends as it would
+  have.
 - **`stopScheduler s deadline done`** is `shutdown` for one scheduler: it closes `s`'s root scopes,
   cancels its fibers and the fibers lent to it, drops its queued work and starts nothing new under
   it; a finaliser that waits is given `deadline` milliseconds from the call, and `done` is called
@@ -2400,25 +2416,45 @@ pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutd
   calls at a request's deadline (§9.12 (d)), and what an object's defect hook calls before
   `ctx.abort` (§9.12 (f)). A lent fiber is cancelled whole, its children included, whichever
   scheduler they belong to, because cancellation is structured (§16.4). **The program's `shutdown`**
-  stops every scheduler made as well, with its own deadline, so nothing outlives the program.
+  stops every scheduler made as well, with its own deadline — a scheduler already stopping keeps
+  the deadline it was given — and the cleanups cut short under a scheduler count in `shutdown`'s
+  `done` (*P699-8*), so nothing outlives the program and nothing cut goes uncounted. A
+  scheduler that has stopped for good leaves the kernel's list, so a platform that makes one per
+  request holds none of them; `schedulerBusy` says whether a fiber of a scheduler still runs, and
+  `onSchedulerIdle` calls a function once when the last one ends: what the `cloudflare` platform
+  asks after a request's answer, to hold the request open under `waitUntil` only while work
+  outlives it, and to let go as soon as that work ends rather than at the deadline.
 - **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
   the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
   scheduler's: a wake under a scheduler always goes through its `run`.
 - **The clock, the log context and the seed are slots of their own.** A scheduler changes nothing
   of them, and `Log.setSink` stays program-wide (§17.11).
-- **Cost** (§17.1 item 6). A program that makes no scheduler pays nothing: the kernel asks whether
-  one exists behind a cell that only `scheduler`, `schedulerWith` and `withScheduler` write, and a
-  release build that reaches none of them folds the question away, as it folds `slotted`; the
-  pull request measures the bytes and the instructions of the corpus, as #688 did. A fiber that
-  belongs to a scheduler carries one field more — the scheduler it belongs to, written at its
-  start — and a drain of a scheduler costs what the program's costs, plus the `run` call per batch.
+- **Cost** (§17.1 item 6). A program that makes no scheduler pays nothing in a release build: the
+  kernel asks whether one exists behind a cell that only `scheduler`, `schedulerWith` and
+  `withScheduler` write, and a release build that reaches none of them folds the question away, as
+  it folds `slotted`, measured on every corpus program (the pull request, as #688 did). **A
+  development build pays**: nothing folds there, so every program that reaches the kernel carries
+  the helpers the hot paths call behind that cell, about 2.9 kB raw and 0.5 kB brotli of
+  `_core/Task.mjs`; the teardown itself is reachable only through the record a maker fills, which
+  is what keeps the cost at that. Moving the hot-path helpers behind the same record removes it:
+  issue #700. A fiber that belongs to a scheduler carries one field more — the scheduler it
+  belongs to, written at its start — and a drain of a scheduler costs what the program's costs,
+  plus the `run` call per batch.
 - **Fixtures.** `run/SchedulerOwnQueue`: two fibers that yield under two schedulers run one after
   the other, where under one scheduler they alternate — a fiber resumes through its own queue.
   `run/SchedulerStop`: `stopScheduler` on one scheduler cancels its fibers and runs their
   finalisers, cuts one that waits past the deadline and tells `done` 1, while a fiber under
   another scheduler runs on and ends. `run/SchedulerDefect`: a throw under one scheduler runs that
   scheduler's hook and not the other's, and ends the program as every defect on `node` does
-  (`.crash`). The `cloudflare` fixtures of §9.12 (k) take the rest when the platform lands.
+  (`.crash`). *Added 2026-10-22 (the review of #699):* `run/SchedulerConfined`, a project whose
+  test platform's `run` hands a throw to a promise, so the process goes on: the throwing
+  scheduler's hook runs, its other fiber's release runs, the second scheduler's fibers run to
+  their ends and the program exits 0; `run/SchedulerWakeQueued` (a wake across schedulers queues
+  the woken fiber: the waker's next line comes first); `run/SchedulerStopped` (`withScheduler` of
+  a stopped scheduler cancels the caller); `run/SchedulerNested` (lent once, cancelled whole);
+  `run/SchedulerDeferred` (a root scope's deferred finaliser runs under the scheduler's deadline,
+  cut and counted); `run/SchedulerYields` (a timer fires while a fiber under a scheduler keeps
+  yielding). The `cloudflare` fixtures of §9.12 (k) take the rest when the platform lands.
 
 ### 17.6 Time: `Duration`, `Task.sleep`, `Clock` (P2)
 
