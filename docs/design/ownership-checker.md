@@ -1123,7 +1123,7 @@ positions, rounds of a fixpoint:
 | `conditions` | 1 048 576 | the atoms of its conditions (§18.3) in all |
 | `rounds` | 32 | the rounds of a recursive group (§16.6) or of a block's local functions (§18.7) |
 | `owned-atoms` | 8 | the distinct `returns owned` atoms `(j, q)` its `owned` bits rest on (§16.4 item 5) |
-| `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16. *Amended 2026-10-22 (#763):* an annotation (a `condition(…)` entry, a condition on the value and no allocation) is not counted, since every pair it is in holds; #720's per-path guards had put values with 130 cells past the limit |
+| `value-cells` | retired 2026-10-22 (#712) | the same deep condition is computed through a cell-family index; the wire ordinal is kept, but no walk produces this limit |
 | `fixpoint` | 32 | the rounds of a fixpoint inside a walk: the model at entry and its exclusivity invariant (§20.4), a callback's result, a fold's shape and its spine (§16.4 item 6). *Amended 2026-10-16 (#229):* their cells are finite, so they settle in a bounded number of rounds (§28's dated amendment *the entry's fixpoints settle*); before, each ended on a silent backstop: 8 rounds for the model, 4 for a callback's result and a fold's shape, 32 for the invariant and a fold's spine |
 | `callbacks` | 4 | *Added 2026-10-16 (#271):* a chain of callbacks, each instantiated inside the one before or handed the result of the one before (§16.4 items 5 and 6). Before, a fifth callback ended the walk silently: a demand was dropped, or a callback's result became a `⊤` with no alias of what the chain was handed |
 
@@ -1367,7 +1367,8 @@ amendment does for a field that is the type itself ("here").
   lists (`sep π1 π2`) and two parts of a tree (`sep π1#Node.0 π1#Node.1`): each is master's condition, and each
   was wrong before this amendment.
 
-**F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
+**F2. A cast marker that records the type it was read at.** *The measured head-only
+prototype below is historical; the dated 2026-10-22 amendments supersede it.* Today `Js.from` and `Js.to` are `returned`: the
 answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new
 type by the old type's paths. Projected again across a recursive call, those paths grow without bound —
 `Schema.unpack`'s `π1.0.0.0…`, `collect`'s `π1.parent.parent…`, `run`'s `π1.fail#Just.0#NonNull.0…` — and
@@ -1413,6 +1414,148 @@ is no cast, since the concrete caller casts):
   type, which keeps `Schema`'s own round trips (`Step` to `Js.Value` and back) exact only at the first level —
   and raising `value-cells` (which the bounds paragraph above sets from measured summaries, and which a pairwise
   condition makes quadratic). Neither is measured yet.
+
+*Amended 2026-10-22 (issue #286, the owner’s full-type decision): cast markers.*
+A cast marker names the entire resolved structural type: nominal identity and every
+argument, each tuple member, record field and extension, and all function parameters
+and its result. Aliases are read through their expansion. Unresolved variables keep
+their identity; a variable at the root on either side is not a cast. Type keys are
+interned and compared by identity after structural equality, never by a type head or
+an unchecked hash. Cached summaries store the complete key, not a session type id.
+
+A returned parameter crossing between an opaque foreign type and a concrete type
+uses the call’s instantiated types. Into the opaque type, entries below the root
+are placed under ⟨as T⟩; the root itself is the same object. Out of it, entries
+marked with precisely T lose that marker; mismatched or unmarked contents become
+approximate ⋆ entries. A symbolic root is read through ⟨as T⟩, preserving the
+relation to its source. These rules also apply when a summary projects a cast.
+A second entry into T folds the intervening walk under the first marker, retaining
+a second ⟨as T⟩ for deeper levels. Projection keeps folded contents approximately;
+overlap treats a cast boundary conservatively, and a trailing boundary never makes
+one physical object separate from itself. Every merged occurrence remains subject
+to the existing construction conditions. Interning, projection and summary encoding
+must share the same full-type identity. No cap, condition or budget changes here.
+
+The soundness argument is preservation of every holder: exact cancellation requires
+full type equality, other reads retain all contents at ⋆, and a folded marker retains
+the deeper occurrences rather than dropping them. Each type has at most two cast
+markers on a path. The existing path cut remains until the separate cut-removal
+change; this amendment does not claim that it has been removed. Validation starts
+with a fixture red before implementation, then the unchanged gates. Any newly refused
+safe program or exceeded budget stops this work and is reported on #286. The owner’s
+current no-measurement instruction supersedes the historical prerequisite above.
+
+*Amended 2026-10-22 (issue #712, resumed under the owner’s precision clarification):*
+The first entry into a full type is an exact cast boundary, not a representative
+place. Only re-entry into the same full type folds, with a distinct folded step
+that represents the deeper occurrences. Exact boundaries cancel on a matching read
+and do not lower conditions merely because they are cast boundaries. This corrects
+the first candidate’s treatment of every cast as a representative. Physical-object
+identity ignores trailing exact boundaries; folded occurrences retain the containing
+value’s construction conditions. Full-type keys in caches must be portable, including
+the identity of variables, and must never serialize a TypeStore index as that identity.
+
+*Amended 2026-10-22 (issue #712): deep conditions scale with cast paths.*
+The value-cells backstop is retired: above the old pairwise threshold the checker
+computes the same deep condition through the cell-family index used for spine
+conditions. It omits only pairs whose cell kinds prove separation unconditionally;
+all potentially sharing pairs still use nested and sepCells, and every entry keeps
+its own condition. A safety cross-check compares the indexed and pairwise answers
+on small values, or on every value under ownership-full-cross-check. The conditions
+limit still guards actual atom growth. This replaces the old width refusal with
+the full check, not a larger allowance or a pessimistic approximation.
+
+The implementation also makes the marker's type vocabulary portable. A variable
+is named by its declaring module, BIR declaration and its ordinal in a traversal
+of the declared type, instruction types and locals in source order (record labels
+in text order), never by a TypeStore node index. A summary that uses this vocabulary
+carries its full function type. At a call, its variable keys are substituted with
+the call's full parameter and result types throughout paths, atoms, callback supplies
+and carried classes; substituted result entries are sorted again. The summary block
+is version 24, after version 23's projection-aware conditions, and carries these
+function signatures and full cast keys. Malformed encoded type keys are refused on read.
+
+An exact trailing cast boundary names the same physical object as its source.
+`coversAt`, list and record separation, and the indexed spine condition use that
+identity. Comparing incompatible typed views below that object remains approximate;
+a matching first type boundary itself is exact. A cast boundary ends the old nominal
+region, so two `Maybe` applications cannot fold merely because their heads match.
+Only re-entry into the same full cast type folds. Folded projection retains symbolic
+places and every concrete matching boundary; storing aliases at two levels keeps
+the containing value's separation annotation. The existing path cut remains for its
+separate removal; this change does not claim that it is gone.
+
+`ownership/core/FullCast` pins different nominal arguments, tuple members, record
+fields and function parameters; first-entry writes, trailing alias refusals, generic
+specialization, repeated record casts, and containing-value sharing. `core/CastAcross`
+pins imports and cached signatures. The former `OwnershipLimitValueCells` input is
+now `ownership/WideDeepCondition`: the whole fresh input is accepted by the full
+condition check, with an aliasing twin still refused. No ownership check is dropped
+and no budget is raised.
+
+The full keys are stored once in a canonical type table in each summary block;
+cast steps and signatures name that table by index. Reading a key already interned
+compares its complete bytes and reuses it. Validation is done when a full key first
+enters the session, not once per path that refers to it. Closed keys are memoized by
+module and solved store node only in memory; open keys retain the declaration's
+portable variable scope. None of these memos changes type equality or a verdict.
+
+Analysis slots are not physical fields. A cast preserves a root's `⟨decoded⟩`,
+`⟨encoded⟩` and markup slots at the root, and a slot query ignores physical paths
+under a cast marker. An unknown runtime suffix is `any` with argument 1; ordinary
+unknown suffixes keep argument 0. Both overlap physical paths conservatively; the
+runtime suffix cannot introduce a synthetic analysis slot. The argument is carried
+in version 24's path encoding. Schema's conversion-slot analysis reads its engine-owned
+`Pair` representation at its complete record type before projecting `there` and `back`.
+
+*Amended 2026-10-22 (#712): the full type is an interned graph.* Type nodes
+retain their complete head, labels and child identities. Equality compares that
+complete structural key; a child identity is assigned only after equal structure
+has been interned. A parent never embeds a fresh copy of its child's text. The
+summary's type table orders children before parents, in canonical depth and key
+order, and a parent references only earlier entries of that block. Reading checks
+these references and rebuilds the same full structure in the receiving session.
+These are block-local references, never TypeStore or session identities. Human
+reports expand the graph only when printed. This changes representation and cost,
+not any fold point or condition.
+
+*Amended 2026-10-22 (#712, after the written-element-path rule):* format 24
+follows format 22’s recursive classes and format 23’s projection-aware conditions. A variable’s
+scope also includes the declaring platform package’s manifest name for a platform
+layer; nominal identities use the same scope. Package bytes are escaped so that
+they cannot collide with type-key delimiters.
+
+Nominal keys delimit module and type names separately: a schema member named
+`Bar.Type` in `Foo` cannot be the type `Type` in the nested module `Foo.Bar`.
+
+The deep-condition and spine indexes also retain the exact failure that takes
+precedence over an approximate one: after a conjunction is already false, candidates
+that can prove exact sharing are still checked. Physical prefix buckets name those
+ordinary-cell candidates, and taken/except wrappers keep the general relation.
+Pairs at one abstract path are alternative provenances, not two placements. The
+pairwise definitions remain the safety cross-checks. Record-pair deduplication uses
+an indexed set of `(cell, cell, exact)` keys instead of a linear scan of prior pairs.
+
+*Amended 2026-10-22 (the owner's validation instruction):* instruction budgets
+are ignored for this work. Run the complete unit, black-box and formatting checks
+with budgets disabled; do not change budget grants. This supersedes the budget-stop
+condition above. A newly refused safe program still requires fixing the precision
+or reporting a reduced case if the intended design itself cannot accept it.
+
+*Amended 2026-10-22 (#712, cast and nominal regions):* a summary with cast
+paths retains the expanded nominal facts. The nominal canonical abbreviation
+inserts a level marker; composing that abbreviation with a cast prefix can
+consume the existing path cut before the expanded fact does. Retaining those
+facts avoids that loss. The canonical/expanded cross-check stays unchanged.
+
+*As built 2026-10-22 (#712):* the exact-first rule accepts every existing
+core list line (117 accepted, none pending or rejected). FullCast pins trailing
+views with different types as an exact physical alias. A changed consumer of a
+cached generic provider gives the same alias diagnostic as an uncached check.
+The complete unit, black-box and formatting checks pass with the owner-directed
+budget override. The full cross-check passes core, the ownership/core fixtures,
+WideDeepCondition and SchemaAnswers; the wider run exposed the unrelated
+#427 and #694 failures, reproduced on unchanged master `daa996be1`. Neither check is weakened.
 
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
