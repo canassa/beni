@@ -1,0 +1,1 @@
+{ "platform": true, "name": "entry-test", "program": "Prog.Program", "runtime": "runtime.js" }

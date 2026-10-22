@@ -1,0 +1,31 @@
+import Browser
+import Html
+import List
+
+
+type alias State =
+    rows : List Int
+    held : List Int
+    linked : Bool
+
+
+update : Browser.Host Int, Int, State → State
+update _ n state =
+    if n == 0 then
+        { state | held = state.rows }
+    else
+        { state | rows = List.push state.rows n }
+
+
+settle : Browser.Host Int, State → State
+settle _ state = state
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → { rows = [], held = [], linked = True }
+        , update = update
+        , settle = settle
+        , view = λ_ → <button onClick={0}>step</button>
+        }

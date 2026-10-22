@@ -1,0 +1,11 @@
+import Start
+
+
+update : Int, List Int × Int → List Int × Int
+update n ( rows, count ) = ( List.push rows n, count + 1 )
+
+
+main : Start.Program
+main =
+    Start.launch 7
+        { init = λ⊤ → ( [], 0 ), update = update, view = λ( rows, _ ) → List.length rows }

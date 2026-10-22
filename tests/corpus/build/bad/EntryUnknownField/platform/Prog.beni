@@ -1,0 +1,6 @@
+pub type Program
+    = Program
+
+
+pub bad : entry { init : ⊤ → ⊤, mystery : Int } → ⊤
+bad _ = ⊤

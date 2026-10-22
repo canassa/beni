@@ -91,7 +91,8 @@ pub const magic = "BENIOWN\x00";
 /// 21 writes a pairwise-apart atom as its groups (§16.7, amended 2026-10-22, #693).
 /// 22 retains recursive function slots and returned classes, including unknown alternatives.
 /// 23 carries projection-aware container conditions and their sep_root atom (#720).
-pub const version: u32 = 23;
+/// 24 invalidates rows before declaration-selected hosted entry protocols (#750).
+pub const version: u32 = 24;
 
 pub const Error = error{Bad} || Allocator.Error;
 

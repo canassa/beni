@@ -1,0 +1,5 @@
+module HostedEntryFresh
+  7:5 entry <update> model: accepted entry
+  9:33 List.push state: accepted callback-param (decided at its calls)
+  demands 2: accepted 2 (fresh 0, call 0, param 0, callback-param 1, once 0, entry 1; assumed 0), pending 0, rejected 0
+total 2: accepted 2 (fresh 0, call 0, param 0, callback-param 1, once 0, entry 1; assumed 0), pending 0, rejected 0

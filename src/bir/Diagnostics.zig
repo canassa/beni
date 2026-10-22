@@ -97,6 +97,7 @@ pub const Item = struct {
         own_result_word,
         own_parameter_word,
         own_impossible,
+        own_not_entry_record,
     };
 };
 
@@ -200,6 +201,14 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                 \\of a parameter of the signature's arrow or in front of its result:
                 \\`join : borrowed List String, String → String`. Move it there, or remove it.
             , .{text}),
+            .own_not_entry_record => try w.writeAll(
+                \\The entry word describes a program's callback record, and this is not a
+                \\valid record type written out.
+                \\
+                \\Write the record in the parameter's signature. Its fields may be init,
+                \\update, settle, view, subscriptions, onUrlRequest and onUrlChange.
+                \\An alias of a record and an unknown callback field cannot declare an entry row.
+            ),
             .own_not_function => try w.print(
                 \\`{s}` describes a function parameter, and this parameter's type is not a
                 \\function written out.

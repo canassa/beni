@@ -1,0 +1,13 @@
+module HostedEntryDuplicateUpdate
+  15:9 update state: accepted param
+  17:9 update state: accepted param
+  17:26 List.push state.rows: accepted param
+  26:5 entry HostedEntryDuplicateUpdate.update model.rows: rejected disjoint: another path of the model may hold it after some message: update's arms are joined, so the entry cannot tell them apart (§20.4) (approx)
+  26:5 update entry HostedEntryDuplicateUpdate.update model: accepted entry
+  summary update: π3 W{held, rows}, π3.held RA, π3.rows RAW[storage], π3.rows[*] A; res .held condition(fresh2) ~condition(fresh3) π3.held π3.rows, .rows condition(fresh1) π3.rows, .rows[*] ~condition(fresh4) ~π3.rows[*], π3◦
+  summary settle: π2 RA; res π2
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+cause disjoint 1

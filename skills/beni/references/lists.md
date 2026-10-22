@@ -149,3 +149,19 @@ are the same list, the update is refused. A later write to a key must also
 pass the ownership check.
 
 Source: `ownership-checker.md` §16.4, fold amendment of 2026-10-22.
+
+## Program entry records
+
+Core and platform packages can put `entry` before a written-out callback record
+parameter. Other packages cannot use this ownership word. The allowed fields
+are `init`, `update`, `settle`, `view`, `subscriptions`, `onUrlRequest`, and
+`onUrlChange`. A different field or a record alias causes
+`misplaced_ownership_word`.
+
+`Browser.hosted` gives the current state to `update` and `settle` with ownership.
+It installs each result. It calls `settle` before `view`. A list kept by a view
+handler, a command, or a Host callback cannot be written through the state.
+The Host argument crosses the runtime boundary; it does not supply an owned
+state value.
+
+Source: `ownership-checker.md` §20.2–§20.6, §24.2–§24.4, and §30.3.

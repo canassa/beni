@@ -651,6 +651,7 @@ pub const OwnWord = enum(u5) {
     exclusive,
     unknown,
     crossing,
+    entry,
 
     /// The word a signature's identifier is, `crossing` excepted: that one
     /// is read only in front of `foreign`.

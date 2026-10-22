@@ -1,0 +1,7 @@
+module EntryDeclaredShared
+  9:28 List.push xs: accepted param
+  14:5 entry EntryDeclaredShared.update model.0: rejected top-level: EntryDeclaredShared.rows is a top-level value
+  summary update: π2.0 RAW[storage], π2.0[*] A; res .0 π2.0, .0[*] ~π2.0[*]
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause top-level 1

@@ -1,0 +1,10 @@
+pub type Program
+    = Program
+
+
+type alias Callbacks =
+    init : ⊤ → ⊤
+
+
+pub bad : entry Callbacks → ⊤
+bad _ = ⊤
