@@ -6293,7 +6293,7 @@ conditions; fresh storage never implies exclusive values.
 
 | Dict primitive | Uses and result | Callback supply and conditions |
 |---|---|---|
-| empty construction | fresh root; no value cells; exclusive | none; each construction is fresh, even though `empty` has a constant-shaped API |
+| `empty ⊤` | fresh root; no value cells; exclusive | an ordinary unit function, fresh on every call, including calls through function values |
 | `singleton k v` | read/alias argument 2 at result `[*]`; fresh root | exclusivity is that of `v`, with no other entry |
 | `get d k` | read `ε` and `V`; result `#Just.0` aliases `V`, or Nothing | borrowed; result is not fresh value storage |
 | `member d k`, `size d`, `isEmpty d` | read `ε`; scalar result | no value read or write |
@@ -6345,7 +6345,7 @@ existing one (§18 and §28).
 | `Dict.intersect`, `Dict.diff` | fresh root; retained left values alias the left; right is borrowed for membership only |
 | `Dict.merge` | both dictionaries borrowed; one of three callbacks per distinct key; accumulator supply/result follows the folds; no taken value supply from either dictionary |
 | `Dict.update` | exactly focus's inferred row, including the unconditional root write |
-| `Set.empty`, `singleton`, `fromList`, `map` | fresh dictionary storage; members cross; map callbacks borrowed, outputs checked as valid scalar keys |
+| `Set.empty ⊤`, `singleton`, `fromList`, `map` | fresh dictionary storage; members cross; map callbacks borrowed, outputs checked as valid scalar keys |
 | `Set.insert`, `remove`, `swap`, `insertAt`, `sortBy` | Dict's root-write row on the wrapped dictionary; same root returned; sort keys transient |
 | `Set.copy`, `filter`, `union`, `intersect`, `diff` | fresh dictionary storage; inputs read only; no member cells |
 | `Set.partition` | two distinct fresh dictionary roots; scalar members |

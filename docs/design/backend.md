@@ -530,14 +530,14 @@ This prevents replacing a value in one copy from changing another's pair.
 List of the values, and neither exposes the private entries array or pairs.
 `Set` stays an opaque wrapper over `Dict t ⊤` and delegates its storage to it.
 
-Empty builders must allocate fresh storage per construction, including every
-use of `Dict.empty` or `Set.empty` as a building seed. They must never mutate a
-module-level singleton Map. Keep the constant-shaped source API: the compiler
-lowers those seed references to a fresh empty construction. An ordinary binding
-that stores a seed still aliases that one constructed value and follows the
-usual ownership rule; its later reads do not construct it again. Constructors
-and function-value uses must carry the same freshness through wrappers and
-caches.
+*Amended 2026-10-22, the owner's review of #664:* empty builders are ordinary
+functions of `⊤`: `Dict.empty ⊤` and `Set.empty ⊤`, following
+`Schema.defaultOptions`'s change of 2026-10-19. Each call allocates fresh
+storage. There is no compiler special case for either name and no mutable
+module-level singleton Map. An ordinary binding that stores a call's result
+aliases that one constructed value; its later reads do not construct it again.
+Passing `Dict.empty` or `Set.empty` as a function value follows the ordinary
+calling convention and constructs fresh storage at each call too.
 
 `eq` checks header identity first, then length and scalar keys and value `eq`
 in one array walk. No `compare` is emitted or structurally derived for either

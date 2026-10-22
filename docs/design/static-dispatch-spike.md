@@ -3611,8 +3611,11 @@ without key-comparison evidence. This supersedes §5.3–§5.4's comparable-key
 and compare-method promises and the closure note above. The complete API is
 `language.md` §6.8, *Ordered dictionaries and sets*; key-constraint propagation
 is `checker-v2.md` §37, and storage and equality are `backend.md` §4,
-*Ordered dictionaries*. The constant-shaped empty API stays, with fresh
-storage per construction as that section specifies.
+*Ordered dictionaries*. *The owner's review of #664, 2026-10-22:* empty is an
+ordinary unit function in each module, `Dict.empty ⊤` and `Set.empty ⊤`, with
+fresh storage per call and no compiler special case. This supersedes A.8 and
+A.70's constant-empty decision, as `Schema.defaultOptions` became a function
+of `⊤` on 2026-10-19.
 
 ### Stretch, only after the measurement
 
