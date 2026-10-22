@@ -1,0 +1,15 @@
+-- A callback receives one cell at a representative prefix and below it.
+-- Acyclicity does not prove that these are one stored place. The recursive
+-- supplies must state shared, rather than losing their condition later.
+-- ownership-checker.md §16.7, review of #447 after #456.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+pub supply : Int, a, (T a → Int) → Int
+supply n x callback =
+    if n == 0 then
+        callback (Leaf x)
+    else
+        supply (n - 1) [ x ] λt → callback (Wrap t)
