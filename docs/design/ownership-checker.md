@@ -4557,6 +4557,70 @@ The new capture-after-append rejection closes an existing unsound acceptance:
 master accepted that retained-closure twin. Its negative regression fails with
 the fix set aside; no pre-existing golden is changed.
 
+### *Amended 2026-10-22 (#720):* fold ownership follows the written path
+
+Amends §16.4 item 6 and the dated fold-invariant amendment above. A fold's
+accumulator conditions distinguish each element path. In a table of pairs,
+`acc[*].0` may hold shared comparison keys while `acc[*].1` holds separately
+owned value-list containers. Sharing the keys does not refute ownership of the
+outer table array or of the value-list arrays. It does refute a write of the
+keys unless their own conditions establish ownership.
+
+The greatest must-invariant retains each written container's `spine` condition
+and its `sep_spine` conditions against every other result position, including
+unwritten keys. A focus's `keep_spine` selects the replacement at the written
+path; its descendants are not implicitly owned. A container write relies on
+these path-qualified conditions rather than deep exclusivity of the entire
+accumulator element. Deep writes retain their deep conditions. This changes
+neither the initial-value check nor the non-escape and liveness obligations.
+
+The induction is per written path: its initial containers are owned; each
+callback transfers them once or creates fresh replacements; separation from
+all retained positions preserves the next step. Keys may alias each other,
+but a key that aliases a written value list refutes separation, and writing a
+key still held by the table refutes liveness. The list-key table fold of #720
+must be accepted, with its String-key and explicit-call controls; both unsafe
+twins must remain refused. No table representation change is required.
+
+**Construction evidence.** Before equal `[*]` entries are merged, a construction
+records a value-scoped container condition at each path whose containers must
+be separated from another operand's containers. Repeated placement at that
+path refutes its condition. A duplicate at the key path therefore refutes the
+key condition without refuting the value path. These annotations follow the
+containing value through projection, results and callback supplies; they do
+not weaken an allocation globally. Summary blocks carry the container
+condition of a supplied annotation as well as its existing deep and record
+conditions. Old blocks are invalidated.
+
+The dictionary's existing asserted focus row (§20.8) states the tree algorithm's
+structural separation itself. Construction annotations made inside that
+algorithm are not additional arrivals or results of the primitive: the row
+publishes the actual selected value under its existing conditional loan and
+the actual result under its existing keep/keep_spine proof. Caller annotations
+on the selected value still follow projection and remain checked. In
+particular, a caller's duplicate value or key/value alias is not an internal
+tree annotation and is never discarded by this rule.
+
+**A symbolic operand keeps a projection rule.** A guard for two whole parameter
+values cannot be reduced to a fixed root condition: `[ row, row ]` also shares
+`row.1`, and two different rows may share that field. The guard records
+`sep_root(a, b)`: the array at the selected root of `a` is separate from every
+array reachable in `b`. Projecting the annotation projects `a` and retains `b`.
+Instantiation distributes it over the actual entries of `a`, at their own
+relative result paths, and over all entries of `b`, before equal entries merge.
+Thus a guard over an opaque tuple becomes distinct guards for its key and value
+paths when the tuple is supplied. It is asymmetric and is never canonicalised
+by swapping its operands. Callback supplies and cached summaries retain the
+projection rule. This requires neither a path enumeration cap nor a deep
+exclusivity assumption for an unwritten sibling.
+
+At a polymorphic-recursive call, an annotation uses the same variable boundary
+and first-mark/next-fold rule as its selected source. The boundary remains
+anchored when distributing the annotation has already expanded its result
+path. Folding merges the annotations at that boundary and creates no new
+array provenance. These marks are cleared before a settled summary is
+published, as the existing data-path marks are.
+
 ### *Amended 2026-10-14 (markup slots):* rendered data is not an event payload
 
 The platform-declared markup type has two internal opaque slots in the sense
