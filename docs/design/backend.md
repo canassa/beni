@@ -8831,6 +8831,11 @@ And *Where it runs*' "a module whose `Mod.version` did not change keeps its arra
 statement since slice 4 (*As built 2026-10-22*, below): the rewrite patches nearly every module,
 so whole modules were never kept.
 
+*Amended 2026-10-22 (issue #649).* Slice 5's double run against `Pts` survives `Pts`' walker as a
+shuffled replay: a safety build of a small program replays fact 3's extracted statements in a
+shuffled order and compares every fact with the replay in program order. That is the check
+*Determinism* specifies, and what goes is the recording walk and `byUnits`, not the order check.
+
 **As built 2026-10-19 — copy edges, field summaries and load cells inside `Pts`** (issue #464; a
 step toward slice 5, not slice 5). A release build of the research dashboard with 64 widgets
 allocated tens of GiB and never finished: `Pts` evaluated a spread `{...model, w: v}` as one
@@ -9726,6 +9731,21 @@ than the recording walk it replaces. What is added is the extraction of the stat
 changed since the last analysis, and copying each run's constraints out of the extractions. What
 is left of the walker, the recording path and `byUnits`, goes in the next part with
 `max_pts_sweeps`.
+
+**As built 2026-10-22 — slice 5, part 3: `Pts`' walker and `max_pts_sweeps` go** (issue #649).
+The first sweep by constraints always replays the extractions (part 2). So the recording walk
+(`walkStatements` and the `stmt`, `list`, `branch`, `body` and `expr` it walked with), the guard
+and kill bookkeeping it carried at run time (`Guard`, `guards`, `reads`, `kill`, `killRead`, the
+recording branch of `narrowed`), `byUnits` (the sweep of everything a safety build compared
+against) and the cap of 64 sweeps are gone, with `spec_points_to_declined`, which counted fixpoints
+the cap stopped. A fixpoint runs until nothing changes. The order check is the *Amended* paragraph's
+shuffled replay, which with the node limit lifted and no instruction budget passes on the whole
+corpus (#657's fix, comparing effective facts, is on master). Every output is byte for byte the
+same.
+Measured on dagon against master at `21fa7eb22` (part 2): outputs byte for byte the same;
+instructions of the ReleaseFast compiler on the dashboard N = 16 348M → 347M, N = 64 1 465M →
+1 462M, without `withDefault` 1 350M → 1 348M; of the ReleaseSafe compiler TodoMVC 1 431M →
+1 430M, the 16 400 arms and the 100 000 lines unchanged (2 937M, 16 009M); peak RSS the same.
 
 ### Compact statements
 
