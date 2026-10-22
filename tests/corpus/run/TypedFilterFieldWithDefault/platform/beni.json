@@ -1,0 +1,1 @@
+{ "platform": true, "name": "host", "platforms": ["node"], "reexports": ["Node"] }

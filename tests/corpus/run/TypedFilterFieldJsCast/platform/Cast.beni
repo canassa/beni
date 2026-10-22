@@ -1,0 +1,10 @@
+--! A test platform that hands a value through JavaScript at a type
+--! variable and reads it back at another (`boundary.md` §4.2: `Js.from` and
+--! `Js.to` are unchecked, and the caller answers for the type).
+
+import Js
+
+
+--| The value it is given, as whatever type the caller asks for.
+pub launder : a → b
+launder x = Js.to (Js.from x)

@@ -5238,6 +5238,21 @@ const Emitter = struct {
         const declared_before = try e.scratch.alloc(bool, ids.count());
         @memset(declared_before, false);
         for (modules.items) |mod| topDeclared(mod.ir, mod.global, declared_before);
+        // Per record representation and property of the program, the key of
+        // that field (`backend.md` §9, *Declared-type filtering of fact 3*,
+        // amended for #722): what a site of the record holds under the key.
+        var field_keys: std.ArrayList(Spec.FieldKey) = .empty;
+        if (e.rep_keys) |*r| for (r.nodes.items, 0..) |n, i| {
+            if (n.kind != .record or i >= r.reps.items.len or r.reps.items[i] != i) continue;
+            for (r.labels.items[n.value..][0..n.len], r.args.items[n.start..][0..n.len]) |label, child| {
+                // A function is keyed by what it returns (`RepKeys`), so a
+                // field of function type filters nothing.
+                if (child >= r.nodes.items.len or r.nodes.items[child].kind == .function) continue;
+                const id = props.get(e.session.interner.slice(label)) orelse continue;
+                try field_keys.append(e.scratch, .{ .record = @intCast(i), .prop = id, .key = @fromBackingInt(child) });
+            }
+        };
+        std.mem.sortUnstable(Spec.FieldKey, field_keys.items, {}, Spec.FieldKey.lessThan);
         var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
             .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
@@ -5255,6 +5270,7 @@ const Emitter = struct {
             .one_scope = one_scope,
             .trace_largest = e.options.points_to_largest,
             .rep_keys = if (e.rep_keys) |*k| k else null,
+            .field_keys = field_keys.items,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
             .insert_before = if (props.get("insertBefore")) |id| .{
                 .insert_before = id,
@@ -7812,7 +7828,6 @@ fn sameIr(a: *const JsIr, ao: *const InternPool.Overlay, b: *const JsIr, bo: *co
     if (!std.mem.eql(u32, a.extra, b.extra) or !std.mem.eql(u8, a.string_bytes, b.string_bytes)) return false;
     if (!std.meta.eql(a.body, b.body)) return false;
     if (!std.mem.eql(u8, bytes(a.node_keys), bytes(b.node_keys)) or !std.mem.eql(u8, bytes(a.name_key), bytes(b.name_key))) return false;
-    if (!std.mem.eql(JsIr.Node.Index, a.closed_decls, b.closed_decls)) return false;
     for (a.names, b.names) |x, y| {
         if (x.tag != y.tag or (x.module == .none) != (y.module == .none)) return false;
         if (!std.mem.eql(u8, ao.slice(x.base), bo.slice(y.base))) return false;
