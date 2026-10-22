@@ -212,6 +212,64 @@ const send = (step, signal) =>
 // Requests the script sent and has not taken the answer of, by name.
 const detached = new Map();
 
+// WebSocket clients the script opened, by name: Miniflare's client over
+// `dispatchFetch` with `upgrade: websocket` (`res.webSocket`). What the
+// server sends is kept, in order, until a `receive` step takes it.
+const sockets = new Map();
+const socketNamed = (name) => {
+  const ws = sockets.get(name);
+  if (ws === undefined) throw new Error(`no socket named ${name}`);
+  return ws;
+};
+const openSocket = async (step) => {
+  const name = step.socket;
+  const protocols = step.protocols ?? [];
+  say(`> (socket ${name}) GET ${step.path}${protocols.length === 0 ? "" : ` ${JSON.stringify(protocols)}`}`);
+  const headers = { upgrade: "websocket", ...(step.headers ?? {}) };
+  if (protocols.length !== 0) headers["sec-websocket-protocol"] = protocols.join(", ");
+  const outcome = await within(() => mf.dispatchFetch(`${base}${step.path}`, { headers }));
+  if (outcome.late || outcome.error || outcome.value.status !== 101) {
+    await printOutcome(outcome, `(socket ${name}) `);
+    return;
+  }
+  const res = outcome.value;
+  say(`(socket ${name}) < 101`);
+  for (const [h, value] of res.headers) {
+    if (h.startsWith("mf-") || h === "transfer-encoding") continue;
+    // The accept key answers the client's random key: shown as present.
+    say(`(socket ${name}) < ${h}: ${h === "sec-websocket-accept" ? "(the key)" : value}`);
+  }
+  const ws = res.webSocket;
+  const entry = { ws, inbox: [], waiter: null, ended: false };
+  const arrived = (line) => {
+    entry.inbox.push(line);
+    if (entry.waiter !== null) entry.waiter();
+  };
+  ws.addEventListener("message", (e) => arrived(typeof e.data === "string" ? JSON.stringify(e.data) : `binary ${e.data.byteLength} bytes`));
+  ws.addEventListener("close", (e) => {
+    entry.ended = true;
+    arrived(`close ${e.code} ${JSON.stringify(e.reason)}`);
+  });
+  ws.addEventListener("error", (e) => arrived(`error ${e.message ?? ""}`));
+  ws.accept();
+  sockets.set(name, entry);
+};
+// The next thing the socket got, waiting up to the step limit for it.
+const receiveOne = (entry) =>
+  entry.inbox.length !== 0
+    ? Promise.resolve(entry.inbox.shift())
+    : new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          entry.waiter = null;
+          resolve(null);
+        }, stepLimit);
+        entry.waiter = () => {
+          clearTimeout(timer);
+          entry.waiter = null;
+          resolve(entry.inbox.shift());
+        };
+      });
+
 for (const step of steps) {
   if (step.answer !== undefined) {
     const pending = detached.get(step.answer);
@@ -237,6 +295,32 @@ for (const step of steps) {
     controller.abort();
     const outcome = await pending;
     say(outcome.error ? `< (aborted: ${outcome.error.name})` : outcome.late ? `< (no response in ${stepLimit} ms)` : `< ${outcome.value.status} (answered before the abort)`);
+  } else if (step.socket !== undefined) {
+    await openSocket(step);
+  } else if (step.send !== undefined) {
+    say(`> (socket ${step.send}) ${JSON.stringify(step.text)}`);
+    socketNamed(step.send).ws.send(step.text);
+  } else if (step.close !== undefined) {
+    say(`> (socket ${step.close}) close${step.code === undefined ? "" : ` ${step.code} ${JSON.stringify(step.reason ?? "")}`}`);
+    if (step.code === undefined) socketNamed(step.close).ws.close();
+    else socketNamed(step.close).ws.close(step.code, step.reason ?? "");
+  } else if (step.receive !== undefined && step.count !== undefined) {
+    const entry = socketNamed(step.receive);
+    let messages = 0;
+    let bytes = 0;
+    while (messages < step.count) {
+      const line = await receiveOne(entry);
+      if (line === null || !line.startsWith('"')) {
+        if (line !== null) entry.inbox.unshift(line);
+        break;
+      }
+      messages += 1;
+      bytes += JSON.parse(line).length;
+    }
+    say(`< (socket ${step.receive}) ${messages} messages, ${bytes} bytes`);
+  } else if (step.receive !== undefined) {
+    const line = await receiveOne(socketNamed(step.receive));
+    say(`< (socket ${step.receive}) ${line === null ? "(nothing arrived)" : line}`);
   } else {
     printRequest(step);
     await printOutcome(await within(() => send(step)));

@@ -1,0 +1,7 @@
+{
+  "name": "object-socket",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": { "bindings": [{ "name": "ARENAS", "class_name": "Arena" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Arena"] }],
+}
