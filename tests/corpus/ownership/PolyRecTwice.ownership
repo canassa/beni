@@ -6,7 +6,7 @@ module PolyRecTwice
   71:15 call PolyRecTwice.once xs: rejected call: xs is read again at 71:25; the callee writes it only through an approximate step (PolyRecTwice.once writes π1) (approx)
   75:21 call PolyRecTwice.once xs: rejected call: xs is read again at 75:19; the callee writes it only through an approximate step (PolyRecTwice.once writes π1) (approx)
   summary wm: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨M⟩⁺#MLeaf.0#Just.0[*] π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
-  summary wm2: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 condition(fresh3) condition(fresh4) condition(fresh5) fresh1{shared}r{shared} ~fresh3{shared}r{shared}, ⟨M⟩⁺#MLeaf.0#Just.0[*] condition(fresh2) condition(fresh4) condition(fresh6) π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~condition(fresh2) ~condition(fresh4) ~condition(fresh5) ~condition(fresh6) ~fresh1{shared}r{shared} ~fresh3{shared}r{shared} ~π2, ⟨M⟩⁺#MLeaf.0#Just.0⋆ ~condition(fresh4) ~condition(fresh5) ~condition(fresh6), ⟨M⟩⁺#MLeaf.0⋆ condition(fresh4) condition(fresh5) condition(fresh6)
+  summary wm2: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 condition(fresh3) condition(fresh4) condition(fresh6) fresh1{shared}r{shared} ~fresh3{shared}r{shared}, ⟨M⟩⁺#MLeaf.0#Just.0[*] condition(fresh2) condition(fresh4) condition(fresh5) π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~condition(fresh2) ~condition(fresh4) ~condition(fresh7) ~fresh1{shared}r{shared} ~fresh3{shared}r{shared} ~π2, ⟨M⟩⁺#MLeaf.0⋆ condition(fresh4) condition(fresh5) condition(fresh6) condition(fresh8)
   summary once: π1 Rw[storage]; xreq excl π1
   summary twice: π1 Rw[storage]
   summary twiceDeep: π1 Rw[storage], π1#Just.0[*] Rw[storage]

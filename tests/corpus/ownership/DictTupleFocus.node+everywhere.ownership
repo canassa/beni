@@ -1,6 +1,6 @@
 module DictTupleFocus
   10:5 call Dict.update d#Dict.0#Node.2.1: accepted fresh (<lambda> writes what Dict.update supplies it)
   12:23 List.append taps: accepted callback-param (Dict.update supplies it owned)
-  summary grow: res #Dict.0#Node.1 ~condition(fresh2) ~condition(fresh4){lost}r{lost} ~condition(fresh6){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost} ~condition(fresh7){lost}r{lost}, #Dict.0#Node.2.1 ~fresh1{lost}, #Dict.0#Node.3 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost} ~condition(fresh6){lost}r{lost} ~condition(fresh7){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost} ~condition(fresh6){lost}r{lost} ~condition(fresh7){lost}r{lost}
+  summary grow: res #Dict.0#Node.1 ~condition(fresh2) ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost} ~condition(fresh6){lost}r{lost}, #Dict.0#Node.2.1 ~fresh1{lost}, #Dict.0#Node.3 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost} ~condition(fresh6){lost}r{lost} ~condition(fresh7){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost} ~condition(fresh6){lost}r{lost} ~condition(fresh7){lost}r{lost}
   demands 2: accepted 2 (fresh 1, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 2: accepted 2 (fresh 1, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1062,6 +1062,21 @@ round, so the chain would never settle. Merging them is sound (two cells taken f
 aliasing) and loses nothing the group's callers see, since a caller outside the group instantiates the
 final summary.
 
+*Amended 2026-10-22 (#754): an annotation with a container condition is one per result path.* The rule above
+merged a member's annotations too (the `condition(…)` entries of the dated amendment *fold ownership follows
+the written path* under §28, #720). An annotation's container condition (`sep_root a b`) names the arrays at
+its own place: at a call, its guards go under the entry's path, one for each array of `a`. Merged, one
+annotation stood at every path any of them stood at and carried all their conditions, so each place put the
+other places' guards under itself, `[*]` at a tuple's root and `.0[*][*]` below a list. The next round read
+those guards off and put theirs a level deeper again, until the cut of §16.7: `Result.partitionHelp` and
+`List.unzipHelp` took 18 rounds, and their summaries held guards at every depth down to the cut. Inside the
+group, a call now makes one annotation per result path for each entry whose container condition has a
+`sep_root` atom, numbered apart from every fresh and callback number, and still one cell for the member's
+allocations and for its other annotations, whose deep and record conditions name cells and not places. The
+numbering stays finite, since the result paths do. This is the instantiation a caller outside the group makes,
+so it is as sound as that one is. No verdict of the corpus or of core changed;
+`ownership/RecursiveTupleGuards` settles in 3 rounds.
+
 ### 16.7 Limits, and no width cap
 
 *Amended 2026-10-16 (the owner, #220): the width cap of 64 paths and coarsening are deleted. The text they

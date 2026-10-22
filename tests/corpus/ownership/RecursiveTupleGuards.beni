@@ -1,0 +1,21 @@
+-- ownership: a recursive group returns a tuple of two lists and pushes onto
+-- one of them before it calls itself. Inside the group, a call of a member
+-- makes one fresh cell for all the allocations of its summary (§16.6), but
+-- one annotation per result path for those with a container condition,
+-- which names the arrays at its own place (#720). Taken for one cell, each
+-- place's annotation carried the other places' conditions and put their
+-- guards under itself, `[*]` at the tuple and `.0[*][*]` below the lists,
+-- a level deeper every two rounds until the cut (§16.7): the summary held
+-- guards at every depth down to it, and the group took 18 rounds (#754).
+-- Now it settles in 3, with guards at `.0`, `.1` and their elements alone.
+pub split : List Int, List Int, List Int → List Int × List Int
+split items small large =
+    case items of
+        [] →
+            ( small, large )
+
+        [ first, …rest ] →
+            if first < 10 then
+                split rest (List.push small first) large
+            else
+                split rest small (List.push large first)
