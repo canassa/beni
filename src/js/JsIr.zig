@@ -1031,7 +1031,7 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         },
 
         .ident, .field_name => try ir.verifyName(@fromBackingInt(@intCast(d.lhs)), false),
-        .field_name, .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
+        .number, .string, .template_chunk, .regex => try ir.verifyBytes(d),
         .template => {
             const parts = inlineRange(d);
             if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
