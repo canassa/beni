@@ -252,7 +252,7 @@ pub fn build(b: *std.Build) void {
     // way on purpose, which `test-record-mutations` runs against the record
     // fixtures and which must fail at least one. Hidden from usage; never
     // given to the gates.
-    const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist); `gates` refuses it") orelse "none";
+    const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist, wrong-placement); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     ownership_options = own_opts.createModule();
     // #608: a release build lowers a module once when the walk from the

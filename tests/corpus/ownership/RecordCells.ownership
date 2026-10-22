@@ -4,6 +4,8 @@ module RecordCells
   36:19 construction s.items: accepted fresh
   41:9 update r: accepted param [hoisted 1]
   42:19 construction s.items: accepted fresh
+  hoist b.items: read 36:48; after operands 35:9
+  hoist r.items: read 42:48; after operands 41:9
   summary distance: π1.x R, π1.y R
   summary literal: π1 R
   summary closed: π1 W{items}, π1.items R

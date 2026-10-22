@@ -579,7 +579,8 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
         targets.append(gpa, @intCast(m.int())) catch return fail(stderr, "beni: out of memory", .{});
     }
     if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
-    const input: Ownership.Input = ins.input(gpa, session);
+    var input: Ownership.Input = ins.input(gpa, session);
+    input.format_hoists = true;
     const Run = struct {
         fn go(own: *Ownership, ts: []const u32) std.mem.Allocator.Error![]const Ownership.ModuleReport {
             return own.run(ts);
