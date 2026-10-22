@@ -552,6 +552,18 @@ evidence parameters first. Higher-order loops may remain in beni over private
 primitives; moving them to a synchronous host callback must not lose effects
 or the declared ownership summaries (`ownership-checker.md` §32).
 
+*Amended 2026-10-22 (#294, the owner's Tea decision):* the platform's job
+and subscription tables are private sorted arrays of `(key, value)` pairs,
+searched by binary search with `Hosted.compare`. Jobs use lexicographic
+`List Hosted.Key` paths; subscription tables use `Hosted.Key`. They are
+edited in place under ownership,
+with no copying fallback. They are not Dicts and do not encode a key as an
+Int or String: a type's own comparator can equate distinct representations.
+`boundary.md` §9.8.3 specifies search, replacement, iteration and the contiguous
+prefix range used by `cancelAll`. W47's type identities and comparison evidence
+remain unchanged. Dict and Set themselves no longer have `compare` and are
+refused as keys with the reason named in the diagnostic.
+
 ### Corrections to the representation
 
 Three rows of that table did not survive contact with the code. Each is a
