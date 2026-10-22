@@ -1,0 +1,10 @@
+module RecursiveTupleGuards
+  19:17 call RecursiveTupleGuards.split <call List.push>: accepted param (RecursiveTupleGuards.split writes π2)
+  19:17 call RecursiveTupleGuards.split large: accepted param (RecursiveTupleGuards.split writes π3)
+  19:29 List.push small: accepted param
+  21:17 call RecursiveTupleGuards.split <call List.push>: accepted param (RecursiveTupleGuards.split writes π3)
+  21:17 call RecursiveTupleGuards.split small: accepted param (RecursiveTupleGuards.split writes π2)
+  21:35 List.push large: accepted param
+  summary split: π1 R, π2 RAW[storage], π2[*] RA, π3 RAW[storage], π3[*] RA; res .0 condition(fresh2) π2, .0[*] ~condition(fresh4) ~π2[*], .1 condition(fresh3) π3, .1[*] ~condition(fresh5) ~π3[*], condition(fresh1){sep π2 π3, sep π2 π3[*], sep π2[*] π3, sep π2[*] π3[*]}
+  demands 6: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 6 (fresh 0, call 0, param 6, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
