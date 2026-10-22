@@ -1,4 +1,5 @@
 import Ownership.Smoke
+import Ownership.Tree.Print
 import Ownership.Oracle
 import Ownership.Fixtures
 import Ownership.Report
@@ -21,6 +22,18 @@ def main (args : List String) : IO UInt32 := do
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
+  -- The tree fragment (Tree/Enumerate.lean): the level marker of §16.7, its
+  -- fixtures and every program of its bounded product, with its holes.
+  if mode == "tree" then
+    let depth := positional[0]?.bind String.toNat? |>.getD 2
+    let nodes := positional[1]?.bind String.toNat? |>.getD 3
+    return if ← Tree.Enumerate.run depth nodes then 0 else 1
+  if mode == "tree-export" then
+    let depth := positional[0]?.bind String.toNat? |>.getD 2
+    let nodes := positional[1]?.bind String.toNat? |>.getD 3
+    let out := (flagValue args "out").getD "../../zig-out/scratch/tree-export"
+    IO.println s!"tree-export: {← Tree.Print.exportAll out depth nodes} modules in {out}"
+    return 0
   if mode == "diagnostics" then
     let count := positional[0]?.bind String.toNat? |>.getD 20000
     let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 2
@@ -194,6 +207,8 @@ def main (args : List String) : IO UInt32 := do
     let (ok, _) ← Enumerate.run bound
     if !ok then return 1
     if !(← Targeted.run) then return 1
+    -- The tree fragment: the level marker's fixtures, product and holes.
+    if !(← Tree.Enumerate.run 2 3) then return 1
     for (hole, _) in Sync.holes do
       IO.println s!"CI targeted control {hole.name}"
       if !(← Targeted.run {mutant := some hole} .control) then return 1

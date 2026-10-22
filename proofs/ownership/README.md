@@ -366,3 +366,14 @@ mutant and zero-size falsification fail. CI retains original and shrunk
 campaign witnesses plus failing fixture ASTs; failed audits retain the exported
 work directory and logs. `scripts/campaigns.sh` publishes logs only when every
 child succeeds. `nofix1` is an alias of `oncethroughcall`, counted once.
+
+## The tree fragment and the level marker (2026-10-18)
+
+`Ownership/Tree/` is a self-contained fragment for `ownership-checker.md` §16.7's level marker `⟨T⟩` (#379):
+one recursive type `Tree = Leaf | Node Tree (List Int) Tree`, pairs, `List.push`, cases and calls of earlier declarations.
+It has its own value and in-place interpreters and a path-based checker in `src/own/`'s shape: symbolic cells `param(j, q)` with
+the marker's fold, overlap, holding and projection as §16.7's amendment states them, and the call-site condition between two
+paths of one parameter. `lake exe ownership tree [depth nodes]` checks the fixtures and every program of a bounded product
+(127,484 at the default 2, 3), and requires each of its four holes to be caught; `ownership ci` runs it.
+`lake exe ownership tree-export [depth nodes] --out=DIR` writes the product as beni modules with the oracle's verdicts, and
+`node scripts/tree-bridge.mjs --dir=DIR --compiler=/abs/beni` compares them declaration by declaration. COVERAGE.md has the results.

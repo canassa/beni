@@ -881,3 +881,91 @@ coverage is confined to the Lean model, since entry/private-root programs remain
 explicit shipping-bridge skips. The zero-confirmed count covers the translated
 common subset, not initialization transfer. The historical fixed-stream pin has
 independent source/verdict/order/removal controls in the bridge CI self-test.
+
+## The level marker `⟨T⟩` — 2026-10-18 (#379)
+
+`Ownership/Tree/` models §16.7's amendment "the level marker `⟨T⟩` replaces (d)" (spec text at 5120ba491). Kernel-checked,
+no `sorry`: `Marker.conflict_complete` (on canonical paths the amendment's overlap and holding miss no concrete
+holder: whenever a concrete path one stands for is a prefix of one the other stands for, they conflict),
+`Marker.extend_sound` (the fold keeps every concrete path), `Marker.master_fold_unsound` (master's fold does not),
+`root_apart`, `sides_apart`, `subtree_holds`. The checker's soundness as a whole is not proved; the product is the evidence.
+
+Fixture verdicts, each by `decide +kernel` in `Tree/Fixtures.lean`:
+
+| Program | Expected | Oracle |
+|---|---|---|
+| `DeeperLevel.inner` | rejected | rejected: `l` (`π1#Node.0`) holds `zs` (`π1#Node.0⟨Tree⟩#Node.1`) |
+| `DeeperLevel.pick` | — | accepted |
+| `DeeperLevel.outer` | rejected | rejected: `l` holds the list `pick` returns |
+| `ParamHole.hole` | accepted | accepted, on condition `sep π1#Node.1 π1#Node.0` |
+| `ParamHole.shared` | refused | refused at its call: `xs` is at `#Node.1` and at `#Node.0⟨Tree⟩#Node.1` |
+| `deepShare` (the known limit) | refused | refused, also when the two lists are distinct (`deepDistinct_refused`) |
+
+Under master (`marker := false, levelSep := false`) every declaration of the first two modules is accepted and a call of
+`inner`, `outer` or `shared` makes the interpreters disagree. The marker alone (`levelSep := false`) leaves `shared`'s
+hole; the condition alone (`marker := false`) leaves `inner`'s: master's fold moves the left subtree's list to `#Node.1`,
+so nothing lies below `#Node.0` for the condition to compare — (d) as first written cannot be built, as the amendment says.
+
+`ownership tree 2 3`: 127,484 programs, 62,628 accepted, 9,396 of them show an in-place write, 0 disagree. Holes caught
+(accepted programs that disagree): master 2,010, no-marker 2,010, no-level-sep 1,020, no-approx 684.
+Against master's `beni` (64c1fa7b4), at bound 1 2: 1,722 of 7,667 declarations diverge, as expected without the
+marker: 1,256 that the oracle accepts are refused (writes of one level's list while another level is held, which master
+folds onto one path) and 466 that it refuses are accepted (the #379 and `paramHole` holes). The bridge is to be run against the
+compiler that builds the marker.
+
+*Amended 2026-10-19 (spec 161f77eea, exact overlap).* `overlap` and `holds` follow the exact rule: a marker overlaps
+a region step, or what its rest overlaps through the empty expansion; holding has the three approximate cases.
+`conflict_complete` is proved again under it, and `Canon` now includes the canonical form's root marker
+`⟨Tree⟩r`; `extend_canon` closes the fold over canonical tree positions, and the enumerator checks that every
+summary path is canonical and that writing summaries in the expanded form changes no verdict. The fixture
+verdicts, the counts above and the four holes are unchanged. The `⋆`-like overlap of 5120ba491, kept as
+`starOverlap`, is sound and here no coarser: 62,628 accepted, as with the exact rule, 0 disagree. On the paths these
+programs make a marker sits right after a first step both paths share, so it is never compared with a step the
+other path has not passed; the rules differ only at a root marker (`exact_finer_than_star`: `⟨Tree⟩#Node.0` does
+not hold `#Node.1`). `master` and `no-marker` catch the same 2,010: with master's fold the call-site condition
+finds no list below `#Node.0` (it was moved to `#Node.1`), so recording it changes nothing.
+At depth 3 (`ownership tree 3 3`, about 9 minutes, not in `ci`), where a third subtree step folds onto the marker
+already there: 574,620 programs, 278,468 accepted, 10,356 of them show a write, 0 disagree; every summary path
+canonical; the four holes catch the same 2,010, 2,010, 1,020 and 684; star overlap accepts 278,468, as exact.
+
+*Amended 2026-10-19 (#393's review: two levels written, a subtree passed).* `Fixtures.viaLeftMain` is the review's
+`two`/`viaLeft`/`demo`: `two` is accepted on condition `sep π1#Node.1 π1#Node.0⟨Tree⟩#Node.1`, and `viaLeft`'s call
+is refused, since both of `two`'s places instantiate to the one cell `π1#Node.0⟨Tree⟩#Node.1` of its parameter
+(`viaLeft_verdicts`); by value `demo` is `( [0, 1], [0, 2] )`, in place `( [0, 1, 2], [0, 1, 2] )`
+(`viaLeft_disagrees`); without the level condition the call is accepted (`viaLeft_noLevelSep`). The product did not
+have the shape: every declaration wrote one list. The family `levels` adds it, two written list places and a caller that
+passes its left subtree: 15,386 programs at depth 2, none accepted, since every list of the subtree is one cell there
+(the known limit of one region), and `no-level-sep` catches 36 more disagreements among them (1,056 in all).
+
+*Amended 2026-10-19 (#399, #401, #400: the bridge against #393 at 6b83db9a8).*
+
+- **#399, `viaLeft`: the oracle adopts the reliance.** A callee's condition `sep π1.p π1.q` whose two sides, at a
+  call, both come from the root entry of one argument, a subvalue `param(k, r)` of the caller's parameter, is no
+  longer refused when the two cells are one (`#Node.0⟨Tree⟩#Node.1` for `two`'s `#Node.1` and
+  `#Node.0⟨Tree⟩#Node.1` under `#Node.0`). It becomes the requirement `excl π(k).r` on the caller's caller
+  (`Summary.excls`), as `src/own/` records `xreq excl π1#Node.0`. Why it is sound: `p` and `q` do not conflict, so by
+  `conflict_complete` no concrete position one stands for is a prefix of one the other stands for; prefixed by the
+  same `r` they stay so; so the two writes are at two disjoint positions of the subvalue at `r`, and they name
+  distinct arrays whenever the arrays at any two such positions are distinct, which is what `excl` states. At a call
+  the requirement is checked on the argument's entries under the path: any two must be apart (or apart on
+  condition) and each parameter cell among them is required exclusive in turn. One entry is one position: the
+  canonical form is now applied to a summary's writes only, not to its result's entries, since merging three
+  entries into `P⟨T⟩r` would hide that one array sits at three positions. The reliance applies only to the root
+  entry of one argument; one argument passed twice, or two entries that share a cell, are still refused.
+  `viaLeft_verdicts`: `viaLeft` accepted with `excl (0, [#Node.0])`, `demo` refused at its call, the same with distinct
+  lists accepted and agreeing. `exclReliance := false` keeps the refusal (sound, coarser); `checkExcl := false`
+  is a fifth required hole: it accepts `demo` and the runs disagree.
+- **#401, runs that call a refused callee: deliberate.** A demand that fails is reported once, at its site, and
+  puts no condition in the summary: only a demand that passes on condition records one (`Rel.sep`). The program
+  is refused either way (`Config.accepts` needs every declaration). The oracle's caller verdict says only that
+  no demand of the caller fails given the callee's published summary, so a caller of a refused callee can be
+  accepted. `src/own/` instead carries the failed demand's fact into the summary and refuses the caller too. Both are
+  sound, since the program fails in both; the bridge class compares declaration verdicts, not program verdicts.
+- **#400, for information.** A write under a marker while the region holds one list at several levels is refused by
+  `src/own/` and accepted by the oracle, whose runs of them agree, so the oracle does not change; the planned
+  write-many bit is on the Zig side.
+
+`ownership tree` with the reliance (depth 2, 3 nodes): 142,870 programs, 70,248 accepted (62,628 without it, all of
+the 7,620 more in `levels`), 9,516 of them show a write, 0 disagree. Holes: master 2,010, no-marker 2,010,
+no-level-sep 1,056, no-approx 684, excl-unchecked 36 (each a `levels` caller that shares a list at two levels of the
+subtree it passes). Star overlap and no-excl-reliance are sound: 70,248 and 62,628 accepted, 0 disagree.

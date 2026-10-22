@@ -523,3 +523,10 @@ Keep every audit check intact.
 
 Fetch `origin/master` before each later branch.
 If a model rule changes, add its cases and source baseline here before its proof.
+
+## The tree fragment (2026-10-18)
+
+`Ownership/Tree/` stands apart from the core and the flat fragment: it shares no definition with them and changes
+neither. Proved: the marker's overlap and holding are complete on canonical paths, and its fold keeps every concrete
+path. Open: the fragment's checker soundness (a write's cells against every live holder, through calls); a root
+marker `⟨T⟩r` (from `concat`) and types whose region holds non-`T` fields are outside `Canon`.

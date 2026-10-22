@@ -3,7 +3,7 @@ import Ownership.Config
 namespace Ownership.Cli
 
 def modes := ["bridge-reduce", "bridge-export", "all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries",
-  "verdict-diff", "falsify", "accepted", "enumerate", "enumerate-targeted", "source-sweep", "diagnostics"]
+  "verdict-diff", "falsify", "accepted", "enumerate", "enumerate-targeted", "source-sweep", "diagnostics", "tree", "tree-export"]
 
 /-- Reject inputs that would otherwise silently select defaults or ignore work. -/
 def validate (args : List String) : Except String (String × List String) := do
@@ -15,7 +15,7 @@ def validate (args : List String) : Except String (String × List String) := do
   let maxPos := if ["bridge-reduce", "fixtures", "summaries", "enumerate-targeted"].contains mode then 0 else if mode == "enumerate" then 1 else 2
   if pos.length > maxPos then throw s!"too many arguments for {mode}"
   for p in pos do unless p.toNat?.isSome do throw s!"invalid natural number {p}"
-  if (pos[0]?.bind String.toNat?) == some 0 && !["source-sweep", "accepted", "enumerate"].contains mode then
+  if (pos[0]?.bind String.toNat?) == some 0 && !["source-sweep", "accepted", "enumerate", "tree", "tree-export"].contains mode then
     throw s!"{mode} requires a positive count or bound"
   let general := ["all", "oracle"].contains mode
   let booleans := if general then ["--reinfer", "--cross-check", "--old-rule", "--old-escape-rule"]
@@ -30,6 +30,7 @@ def validate (args : List String) : Except String (String × List String) := do
     (if mode == "ci" then ["enumerate-bound"] else []) ++
     (if mode == "diagnostics" then ["enumerate-bound", "out"] else []) ++
     (if mode == "bridge-reduce" then ["input", "out"] else []) ++
+    (if mode == "tree-export" then ["out"] else []) ++
     (if mode == "bridge-export" then ["enumerate-bound", "out", "suite"] else []) ++
     (if mode == "source-sweep" then ["baseline-accepted"] else []) ++
     (if mode == "summaries" then ["fixture"] else []) ++
