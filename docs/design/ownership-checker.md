@@ -1595,6 +1595,63 @@ candidate can merge. No head fold, approximate first cast, limit raise or weaken
 check is substituted for that decision. PR #748 stays draft; #760 records the
 accepted baseline, refused candidate and preserved reproducer.
 
+*Amended 2026-10-22 (#760, the owner's composed-type fold):* the stop above
+is superseded. The adopted composed-path fold in point 4 also applies inside
+a cast marker's full type. At a group-internal growing call, match the complete
+declared and actual parameter types to find the variables instantiated at a
+structure. Substitution of those variables in a marker crosses the same growth
+boundary as composition of a value path. The first crossing keeps the complete
+substituted type and sets the entry's existing crossed-growing-call mark. A later
+crossing replaces only the growing substituted term with the type wildcard `⋆`.
+The fixed surrounding type remains complete. Outside a growing call, all type
+substitutions remain exact. The mark follows the same projection, composition,
+join, binding and group-settlement rules as the path fold.
+
+A wildcard type denotes all instantiations of its term. It never proves an exact
+cast cancellation or separation: a read whose type contains a wildcard retains
+all possible holders approximately. Folding can therefore merge places and their
+conditions, but cannot discard an alias or turn a failed construction condition
+into exclusivity. As with the value-path fold, the containing value's occurrence
+conditions remain in force when the merged entries are normalized. Exact trailing
+casts continue to denote their source's physical object. Closed fixed types,
+including `List Int` and `List String`, never acquire a wildcard through this rule.
+The finite declared type context and the one exact crossing bound growing marker
+types; the wildcard absorbs further substitutions. This supplies the missing bound
+on the marker alphabet without a depth cap or a change to any existing check.
+
+The implementation computes exact and folded type alternatives before composing
+result and callback-supply entries, and chooses with the existing crossing mark.
+It retains the exact source paths for the existing merged-occurrence check.
+The same entry mark governs types in its provenance and condition paths too.
+A carried body crosses when its enclosing call instantiates it, even if the body
+will be invoked later: its first substitution records the mark, and subsequent
+ones fold the growing terms and keep the resulting view approximate. Merged
+entries conjoin their list, spine and record conditions; deferred instantiation
+retains those conditions and all holder provenances.
+Read, write and escape effects carry the same mark while their group is solved;
+otherwise a read alone could keep growing an alphabet of cast types after the
+result stabilized. Read-off and record-split memoization distinguish marks, and
+normalization joins them. Settlement clears effect marks with result and supply
+marks, so cache blocks never depend on these in-memory crossing bits.
+Local functions and lambdas also carry their full function signature when their
+markers are open. Their signatures use the checked body and pattern variables,
+including the complete type of unused parameters, so call-site specialization
+closes their markers as precisely as a top-level declaration's. A cached returned
+local class is specialized by the freshly checked consumer too. Callback
+invocation uses the checked full function type, following record, tuple, list
+and constructor slots with their type arguments. Result, effect and ownership
+queries use the same specialization. Lazy definition references and memoized
+structural views retain complete types without mutating the checker store.
+Record-object rows carry the mark through composition, read-off, cloning and
+settlement too; otherwise record growth would leave the marker alphabet unbounded.
+A wildcard key is interned and encoded as part of the same full-type DAG, and its
+presence is memoized on DAG nodes. Both new and decoded wildcard casts are folded
+steps, never cancellable exact steps. A holder retained as unknown contents after
+a cast cannot be discarded by comparing its old static type with the view's type:
+that comparison ceased to prove physical separation at the host boundary.
+The summary block is version 26, following version 25's folded-Dict condition
+invalidation; old blocks are rechecked rather than decoded as full-type keys.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
