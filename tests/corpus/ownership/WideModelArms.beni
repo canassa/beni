@@ -1,0 +1,1840 @@
+-- ownership: a model 256 parts wide, one message per part, each arm
+-- `{ model | pᵢ = bump model.pᵢ }` (#716). Each arm's value holds the other
+-- 255 parts (§31.3's closed split), each demand has `model` as its holder, and
+-- the entry asks of each part's write whether the model's other parts reach
+-- it (§20.6). Each is the model's width once, not its square: the report costs
+-- 2 517M instructions on the safe build where it cost 4 438M. Every update is
+-- accepted, and every entry line is `platform`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Part =
+    count : Int
+    label : String
+
+
+type alias Model =
+    p1 : Part
+    p2 : Part
+    p3 : Part
+    p4 : Part
+    p5 : Part
+    p6 : Part
+    p7 : Part
+    p8 : Part
+    p9 : Part
+    p10 : Part
+    p11 : Part
+    p12 : Part
+    p13 : Part
+    p14 : Part
+    p15 : Part
+    p16 : Part
+    p17 : Part
+    p18 : Part
+    p19 : Part
+    p20 : Part
+    p21 : Part
+    p22 : Part
+    p23 : Part
+    p24 : Part
+    p25 : Part
+    p26 : Part
+    p27 : Part
+    p28 : Part
+    p29 : Part
+    p30 : Part
+    p31 : Part
+    p32 : Part
+    p33 : Part
+    p34 : Part
+    p35 : Part
+    p36 : Part
+    p37 : Part
+    p38 : Part
+    p39 : Part
+    p40 : Part
+    p41 : Part
+    p42 : Part
+    p43 : Part
+    p44 : Part
+    p45 : Part
+    p46 : Part
+    p47 : Part
+    p48 : Part
+    p49 : Part
+    p50 : Part
+    p51 : Part
+    p52 : Part
+    p53 : Part
+    p54 : Part
+    p55 : Part
+    p56 : Part
+    p57 : Part
+    p58 : Part
+    p59 : Part
+    p60 : Part
+    p61 : Part
+    p62 : Part
+    p63 : Part
+    p64 : Part
+    p65 : Part
+    p66 : Part
+    p67 : Part
+    p68 : Part
+    p69 : Part
+    p70 : Part
+    p71 : Part
+    p72 : Part
+    p73 : Part
+    p74 : Part
+    p75 : Part
+    p76 : Part
+    p77 : Part
+    p78 : Part
+    p79 : Part
+    p80 : Part
+    p81 : Part
+    p82 : Part
+    p83 : Part
+    p84 : Part
+    p85 : Part
+    p86 : Part
+    p87 : Part
+    p88 : Part
+    p89 : Part
+    p90 : Part
+    p91 : Part
+    p92 : Part
+    p93 : Part
+    p94 : Part
+    p95 : Part
+    p96 : Part
+    p97 : Part
+    p98 : Part
+    p99 : Part
+    p100 : Part
+    p101 : Part
+    p102 : Part
+    p103 : Part
+    p104 : Part
+    p105 : Part
+    p106 : Part
+    p107 : Part
+    p108 : Part
+    p109 : Part
+    p110 : Part
+    p111 : Part
+    p112 : Part
+    p113 : Part
+    p114 : Part
+    p115 : Part
+    p116 : Part
+    p117 : Part
+    p118 : Part
+    p119 : Part
+    p120 : Part
+    p121 : Part
+    p122 : Part
+    p123 : Part
+    p124 : Part
+    p125 : Part
+    p126 : Part
+    p127 : Part
+    p128 : Part
+    p129 : Part
+    p130 : Part
+    p131 : Part
+    p132 : Part
+    p133 : Part
+    p134 : Part
+    p135 : Part
+    p136 : Part
+    p137 : Part
+    p138 : Part
+    p139 : Part
+    p140 : Part
+    p141 : Part
+    p142 : Part
+    p143 : Part
+    p144 : Part
+    p145 : Part
+    p146 : Part
+    p147 : Part
+    p148 : Part
+    p149 : Part
+    p150 : Part
+    p151 : Part
+    p152 : Part
+    p153 : Part
+    p154 : Part
+    p155 : Part
+    p156 : Part
+    p157 : Part
+    p158 : Part
+    p159 : Part
+    p160 : Part
+    p161 : Part
+    p162 : Part
+    p163 : Part
+    p164 : Part
+    p165 : Part
+    p166 : Part
+    p167 : Part
+    p168 : Part
+    p169 : Part
+    p170 : Part
+    p171 : Part
+    p172 : Part
+    p173 : Part
+    p174 : Part
+    p175 : Part
+    p176 : Part
+    p177 : Part
+    p178 : Part
+    p179 : Part
+    p180 : Part
+    p181 : Part
+    p182 : Part
+    p183 : Part
+    p184 : Part
+    p185 : Part
+    p186 : Part
+    p187 : Part
+    p188 : Part
+    p189 : Part
+    p190 : Part
+    p191 : Part
+    p192 : Part
+    p193 : Part
+    p194 : Part
+    p195 : Part
+    p196 : Part
+    p197 : Part
+    p198 : Part
+    p199 : Part
+    p200 : Part
+    p201 : Part
+    p202 : Part
+    p203 : Part
+    p204 : Part
+    p205 : Part
+    p206 : Part
+    p207 : Part
+    p208 : Part
+    p209 : Part
+    p210 : Part
+    p211 : Part
+    p212 : Part
+    p213 : Part
+    p214 : Part
+    p215 : Part
+    p216 : Part
+    p217 : Part
+    p218 : Part
+    p219 : Part
+    p220 : Part
+    p221 : Part
+    p222 : Part
+    p223 : Part
+    p224 : Part
+    p225 : Part
+    p226 : Part
+    p227 : Part
+    p228 : Part
+    p229 : Part
+    p230 : Part
+    p231 : Part
+    p232 : Part
+    p233 : Part
+    p234 : Part
+    p235 : Part
+    p236 : Part
+    p237 : Part
+    p238 : Part
+    p239 : Part
+    p240 : Part
+    p241 : Part
+    p242 : Part
+    p243 : Part
+    p244 : Part
+    p245 : Part
+    p246 : Part
+    p247 : Part
+    p248 : Part
+    p249 : Part
+    p250 : Part
+    p251 : Part
+    p252 : Part
+    p253 : Part
+    p254 : Part
+    p255 : Part
+    p256 : Part
+
+
+type Msg
+    = Bump1
+    | Bump2
+    | Bump3
+    | Bump4
+    | Bump5
+    | Bump6
+    | Bump7
+    | Bump8
+    | Bump9
+    | Bump10
+    | Bump11
+    | Bump12
+    | Bump13
+    | Bump14
+    | Bump15
+    | Bump16
+    | Bump17
+    | Bump18
+    | Bump19
+    | Bump20
+    | Bump21
+    | Bump22
+    | Bump23
+    | Bump24
+    | Bump25
+    | Bump26
+    | Bump27
+    | Bump28
+    | Bump29
+    | Bump30
+    | Bump31
+    | Bump32
+    | Bump33
+    | Bump34
+    | Bump35
+    | Bump36
+    | Bump37
+    | Bump38
+    | Bump39
+    | Bump40
+    | Bump41
+    | Bump42
+    | Bump43
+    | Bump44
+    | Bump45
+    | Bump46
+    | Bump47
+    | Bump48
+    | Bump49
+    | Bump50
+    | Bump51
+    | Bump52
+    | Bump53
+    | Bump54
+    | Bump55
+    | Bump56
+    | Bump57
+    | Bump58
+    | Bump59
+    | Bump60
+    | Bump61
+    | Bump62
+    | Bump63
+    | Bump64
+    | Bump65
+    | Bump66
+    | Bump67
+    | Bump68
+    | Bump69
+    | Bump70
+    | Bump71
+    | Bump72
+    | Bump73
+    | Bump74
+    | Bump75
+    | Bump76
+    | Bump77
+    | Bump78
+    | Bump79
+    | Bump80
+    | Bump81
+    | Bump82
+    | Bump83
+    | Bump84
+    | Bump85
+    | Bump86
+    | Bump87
+    | Bump88
+    | Bump89
+    | Bump90
+    | Bump91
+    | Bump92
+    | Bump93
+    | Bump94
+    | Bump95
+    | Bump96
+    | Bump97
+    | Bump98
+    | Bump99
+    | Bump100
+    | Bump101
+    | Bump102
+    | Bump103
+    | Bump104
+    | Bump105
+    | Bump106
+    | Bump107
+    | Bump108
+    | Bump109
+    | Bump110
+    | Bump111
+    | Bump112
+    | Bump113
+    | Bump114
+    | Bump115
+    | Bump116
+    | Bump117
+    | Bump118
+    | Bump119
+    | Bump120
+    | Bump121
+    | Bump122
+    | Bump123
+    | Bump124
+    | Bump125
+    | Bump126
+    | Bump127
+    | Bump128
+    | Bump129
+    | Bump130
+    | Bump131
+    | Bump132
+    | Bump133
+    | Bump134
+    | Bump135
+    | Bump136
+    | Bump137
+    | Bump138
+    | Bump139
+    | Bump140
+    | Bump141
+    | Bump142
+    | Bump143
+    | Bump144
+    | Bump145
+    | Bump146
+    | Bump147
+    | Bump148
+    | Bump149
+    | Bump150
+    | Bump151
+    | Bump152
+    | Bump153
+    | Bump154
+    | Bump155
+    | Bump156
+    | Bump157
+    | Bump158
+    | Bump159
+    | Bump160
+    | Bump161
+    | Bump162
+    | Bump163
+    | Bump164
+    | Bump165
+    | Bump166
+    | Bump167
+    | Bump168
+    | Bump169
+    | Bump170
+    | Bump171
+    | Bump172
+    | Bump173
+    | Bump174
+    | Bump175
+    | Bump176
+    | Bump177
+    | Bump178
+    | Bump179
+    | Bump180
+    | Bump181
+    | Bump182
+    | Bump183
+    | Bump184
+    | Bump185
+    | Bump186
+    | Bump187
+    | Bump188
+    | Bump189
+    | Bump190
+    | Bump191
+    | Bump192
+    | Bump193
+    | Bump194
+    | Bump195
+    | Bump196
+    | Bump197
+    | Bump198
+    | Bump199
+    | Bump200
+    | Bump201
+    | Bump202
+    | Bump203
+    | Bump204
+    | Bump205
+    | Bump206
+    | Bump207
+    | Bump208
+    | Bump209
+    | Bump210
+    | Bump211
+    | Bump212
+    | Bump213
+    | Bump214
+    | Bump215
+    | Bump216
+    | Bump217
+    | Bump218
+    | Bump219
+    | Bump220
+    | Bump221
+    | Bump222
+    | Bump223
+    | Bump224
+    | Bump225
+    | Bump226
+    | Bump227
+    | Bump228
+    | Bump229
+    | Bump230
+    | Bump231
+    | Bump232
+    | Bump233
+    | Bump234
+    | Bump235
+    | Bump236
+    | Bump237
+    | Bump238
+    | Bump239
+    | Bump240
+    | Bump241
+    | Bump242
+    | Bump243
+    | Bump244
+    | Bump245
+    | Bump246
+    | Bump247
+    | Bump248
+    | Bump249
+    | Bump250
+    | Bump251
+    | Bump252
+    | Bump253
+    | Bump254
+    | Bump255
+    | Bump256
+
+
+fresh : ⊤ → Part
+fresh ⊤ = { count = 0, label = "" }
+
+
+init : ⊤ → Model
+init ⊤ =
+    { p1 = fresh ⊤
+    , p2 = fresh ⊤
+    , p3 = fresh ⊤
+    , p4 = fresh ⊤
+    , p5 = fresh ⊤
+    , p6 = fresh ⊤
+    , p7 = fresh ⊤
+    , p8 = fresh ⊤
+    , p9 = fresh ⊤
+    , p10 = fresh ⊤
+    , p11 = fresh ⊤
+    , p12 = fresh ⊤
+    , p13 = fresh ⊤
+    , p14 = fresh ⊤
+    , p15 = fresh ⊤
+    , p16 = fresh ⊤
+    , p17 = fresh ⊤
+    , p18 = fresh ⊤
+    , p19 = fresh ⊤
+    , p20 = fresh ⊤
+    , p21 = fresh ⊤
+    , p22 = fresh ⊤
+    , p23 = fresh ⊤
+    , p24 = fresh ⊤
+    , p25 = fresh ⊤
+    , p26 = fresh ⊤
+    , p27 = fresh ⊤
+    , p28 = fresh ⊤
+    , p29 = fresh ⊤
+    , p30 = fresh ⊤
+    , p31 = fresh ⊤
+    , p32 = fresh ⊤
+    , p33 = fresh ⊤
+    , p34 = fresh ⊤
+    , p35 = fresh ⊤
+    , p36 = fresh ⊤
+    , p37 = fresh ⊤
+    , p38 = fresh ⊤
+    , p39 = fresh ⊤
+    , p40 = fresh ⊤
+    , p41 = fresh ⊤
+    , p42 = fresh ⊤
+    , p43 = fresh ⊤
+    , p44 = fresh ⊤
+    , p45 = fresh ⊤
+    , p46 = fresh ⊤
+    , p47 = fresh ⊤
+    , p48 = fresh ⊤
+    , p49 = fresh ⊤
+    , p50 = fresh ⊤
+    , p51 = fresh ⊤
+    , p52 = fresh ⊤
+    , p53 = fresh ⊤
+    , p54 = fresh ⊤
+    , p55 = fresh ⊤
+    , p56 = fresh ⊤
+    , p57 = fresh ⊤
+    , p58 = fresh ⊤
+    , p59 = fresh ⊤
+    , p60 = fresh ⊤
+    , p61 = fresh ⊤
+    , p62 = fresh ⊤
+    , p63 = fresh ⊤
+    , p64 = fresh ⊤
+    , p65 = fresh ⊤
+    , p66 = fresh ⊤
+    , p67 = fresh ⊤
+    , p68 = fresh ⊤
+    , p69 = fresh ⊤
+    , p70 = fresh ⊤
+    , p71 = fresh ⊤
+    , p72 = fresh ⊤
+    , p73 = fresh ⊤
+    , p74 = fresh ⊤
+    , p75 = fresh ⊤
+    , p76 = fresh ⊤
+    , p77 = fresh ⊤
+    , p78 = fresh ⊤
+    , p79 = fresh ⊤
+    , p80 = fresh ⊤
+    , p81 = fresh ⊤
+    , p82 = fresh ⊤
+    , p83 = fresh ⊤
+    , p84 = fresh ⊤
+    , p85 = fresh ⊤
+    , p86 = fresh ⊤
+    , p87 = fresh ⊤
+    , p88 = fresh ⊤
+    , p89 = fresh ⊤
+    , p90 = fresh ⊤
+    , p91 = fresh ⊤
+    , p92 = fresh ⊤
+    , p93 = fresh ⊤
+    , p94 = fresh ⊤
+    , p95 = fresh ⊤
+    , p96 = fresh ⊤
+    , p97 = fresh ⊤
+    , p98 = fresh ⊤
+    , p99 = fresh ⊤
+    , p100 = fresh ⊤
+    , p101 = fresh ⊤
+    , p102 = fresh ⊤
+    , p103 = fresh ⊤
+    , p104 = fresh ⊤
+    , p105 = fresh ⊤
+    , p106 = fresh ⊤
+    , p107 = fresh ⊤
+    , p108 = fresh ⊤
+    , p109 = fresh ⊤
+    , p110 = fresh ⊤
+    , p111 = fresh ⊤
+    , p112 = fresh ⊤
+    , p113 = fresh ⊤
+    , p114 = fresh ⊤
+    , p115 = fresh ⊤
+    , p116 = fresh ⊤
+    , p117 = fresh ⊤
+    , p118 = fresh ⊤
+    , p119 = fresh ⊤
+    , p120 = fresh ⊤
+    , p121 = fresh ⊤
+    , p122 = fresh ⊤
+    , p123 = fresh ⊤
+    , p124 = fresh ⊤
+    , p125 = fresh ⊤
+    , p126 = fresh ⊤
+    , p127 = fresh ⊤
+    , p128 = fresh ⊤
+    , p129 = fresh ⊤
+    , p130 = fresh ⊤
+    , p131 = fresh ⊤
+    , p132 = fresh ⊤
+    , p133 = fresh ⊤
+    , p134 = fresh ⊤
+    , p135 = fresh ⊤
+    , p136 = fresh ⊤
+    , p137 = fresh ⊤
+    , p138 = fresh ⊤
+    , p139 = fresh ⊤
+    , p140 = fresh ⊤
+    , p141 = fresh ⊤
+    , p142 = fresh ⊤
+    , p143 = fresh ⊤
+    , p144 = fresh ⊤
+    , p145 = fresh ⊤
+    , p146 = fresh ⊤
+    , p147 = fresh ⊤
+    , p148 = fresh ⊤
+    , p149 = fresh ⊤
+    , p150 = fresh ⊤
+    , p151 = fresh ⊤
+    , p152 = fresh ⊤
+    , p153 = fresh ⊤
+    , p154 = fresh ⊤
+    , p155 = fresh ⊤
+    , p156 = fresh ⊤
+    , p157 = fresh ⊤
+    , p158 = fresh ⊤
+    , p159 = fresh ⊤
+    , p160 = fresh ⊤
+    , p161 = fresh ⊤
+    , p162 = fresh ⊤
+    , p163 = fresh ⊤
+    , p164 = fresh ⊤
+    , p165 = fresh ⊤
+    , p166 = fresh ⊤
+    , p167 = fresh ⊤
+    , p168 = fresh ⊤
+    , p169 = fresh ⊤
+    , p170 = fresh ⊤
+    , p171 = fresh ⊤
+    , p172 = fresh ⊤
+    , p173 = fresh ⊤
+    , p174 = fresh ⊤
+    , p175 = fresh ⊤
+    , p176 = fresh ⊤
+    , p177 = fresh ⊤
+    , p178 = fresh ⊤
+    , p179 = fresh ⊤
+    , p180 = fresh ⊤
+    , p181 = fresh ⊤
+    , p182 = fresh ⊤
+    , p183 = fresh ⊤
+    , p184 = fresh ⊤
+    , p185 = fresh ⊤
+    , p186 = fresh ⊤
+    , p187 = fresh ⊤
+    , p188 = fresh ⊤
+    , p189 = fresh ⊤
+    , p190 = fresh ⊤
+    , p191 = fresh ⊤
+    , p192 = fresh ⊤
+    , p193 = fresh ⊤
+    , p194 = fresh ⊤
+    , p195 = fresh ⊤
+    , p196 = fresh ⊤
+    , p197 = fresh ⊤
+    , p198 = fresh ⊤
+    , p199 = fresh ⊤
+    , p200 = fresh ⊤
+    , p201 = fresh ⊤
+    , p202 = fresh ⊤
+    , p203 = fresh ⊤
+    , p204 = fresh ⊤
+    , p205 = fresh ⊤
+    , p206 = fresh ⊤
+    , p207 = fresh ⊤
+    , p208 = fresh ⊤
+    , p209 = fresh ⊤
+    , p210 = fresh ⊤
+    , p211 = fresh ⊤
+    , p212 = fresh ⊤
+    , p213 = fresh ⊤
+    , p214 = fresh ⊤
+    , p215 = fresh ⊤
+    , p216 = fresh ⊤
+    , p217 = fresh ⊤
+    , p218 = fresh ⊤
+    , p219 = fresh ⊤
+    , p220 = fresh ⊤
+    , p221 = fresh ⊤
+    , p222 = fresh ⊤
+    , p223 = fresh ⊤
+    , p224 = fresh ⊤
+    , p225 = fresh ⊤
+    , p226 = fresh ⊤
+    , p227 = fresh ⊤
+    , p228 = fresh ⊤
+    , p229 = fresh ⊤
+    , p230 = fresh ⊤
+    , p231 = fresh ⊤
+    , p232 = fresh ⊤
+    , p233 = fresh ⊤
+    , p234 = fresh ⊤
+    , p235 = fresh ⊤
+    , p236 = fresh ⊤
+    , p237 = fresh ⊤
+    , p238 = fresh ⊤
+    , p239 = fresh ⊤
+    , p240 = fresh ⊤
+    , p241 = fresh ⊤
+    , p242 = fresh ⊤
+    , p243 = fresh ⊤
+    , p244 = fresh ⊤
+    , p245 = fresh ⊤
+    , p246 = fresh ⊤
+    , p247 = fresh ⊤
+    , p248 = fresh ⊤
+    , p249 = fresh ⊤
+    , p250 = fresh ⊤
+    , p251 = fresh ⊤
+    , p252 = fresh ⊤
+    , p253 = fresh ⊤
+    , p254 = fresh ⊤
+    , p255 = fresh ⊤
+    , p256 = fresh ⊤
+    }
+
+
+bump : Part → Part
+bump part = { part | count = part.count + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump1 →
+            { model | p1 = bump model.p1 }
+
+        Bump2 →
+            { model | p2 = bump model.p2 }
+
+        Bump3 →
+            { model | p3 = bump model.p3 }
+
+        Bump4 →
+            { model | p4 = bump model.p4 }
+
+        Bump5 →
+            { model | p5 = bump model.p5 }
+
+        Bump6 →
+            { model | p6 = bump model.p6 }
+
+        Bump7 →
+            { model | p7 = bump model.p7 }
+
+        Bump8 →
+            { model | p8 = bump model.p8 }
+
+        Bump9 →
+            { model | p9 = bump model.p9 }
+
+        Bump10 →
+            { model | p10 = bump model.p10 }
+
+        Bump11 →
+            { model | p11 = bump model.p11 }
+
+        Bump12 →
+            { model | p12 = bump model.p12 }
+
+        Bump13 →
+            { model | p13 = bump model.p13 }
+
+        Bump14 →
+            { model | p14 = bump model.p14 }
+
+        Bump15 →
+            { model | p15 = bump model.p15 }
+
+        Bump16 →
+            { model | p16 = bump model.p16 }
+
+        Bump17 →
+            { model | p17 = bump model.p17 }
+
+        Bump18 →
+            { model | p18 = bump model.p18 }
+
+        Bump19 →
+            { model | p19 = bump model.p19 }
+
+        Bump20 →
+            { model | p20 = bump model.p20 }
+
+        Bump21 →
+            { model | p21 = bump model.p21 }
+
+        Bump22 →
+            { model | p22 = bump model.p22 }
+
+        Bump23 →
+            { model | p23 = bump model.p23 }
+
+        Bump24 →
+            { model | p24 = bump model.p24 }
+
+        Bump25 →
+            { model | p25 = bump model.p25 }
+
+        Bump26 →
+            { model | p26 = bump model.p26 }
+
+        Bump27 →
+            { model | p27 = bump model.p27 }
+
+        Bump28 →
+            { model | p28 = bump model.p28 }
+
+        Bump29 →
+            { model | p29 = bump model.p29 }
+
+        Bump30 →
+            { model | p30 = bump model.p30 }
+
+        Bump31 →
+            { model | p31 = bump model.p31 }
+
+        Bump32 →
+            { model | p32 = bump model.p32 }
+
+        Bump33 →
+            { model | p33 = bump model.p33 }
+
+        Bump34 →
+            { model | p34 = bump model.p34 }
+
+        Bump35 →
+            { model | p35 = bump model.p35 }
+
+        Bump36 →
+            { model | p36 = bump model.p36 }
+
+        Bump37 →
+            { model | p37 = bump model.p37 }
+
+        Bump38 →
+            { model | p38 = bump model.p38 }
+
+        Bump39 →
+            { model | p39 = bump model.p39 }
+
+        Bump40 →
+            { model | p40 = bump model.p40 }
+
+        Bump41 →
+            { model | p41 = bump model.p41 }
+
+        Bump42 →
+            { model | p42 = bump model.p42 }
+
+        Bump43 →
+            { model | p43 = bump model.p43 }
+
+        Bump44 →
+            { model | p44 = bump model.p44 }
+
+        Bump45 →
+            { model | p45 = bump model.p45 }
+
+        Bump46 →
+            { model | p46 = bump model.p46 }
+
+        Bump47 →
+            { model | p47 = bump model.p47 }
+
+        Bump48 →
+            { model | p48 = bump model.p48 }
+
+        Bump49 →
+            { model | p49 = bump model.p49 }
+
+        Bump50 →
+            { model | p50 = bump model.p50 }
+
+        Bump51 →
+            { model | p51 = bump model.p51 }
+
+        Bump52 →
+            { model | p52 = bump model.p52 }
+
+        Bump53 →
+            { model | p53 = bump model.p53 }
+
+        Bump54 →
+            { model | p54 = bump model.p54 }
+
+        Bump55 →
+            { model | p55 = bump model.p55 }
+
+        Bump56 →
+            { model | p56 = bump model.p56 }
+
+        Bump57 →
+            { model | p57 = bump model.p57 }
+
+        Bump58 →
+            { model | p58 = bump model.p58 }
+
+        Bump59 →
+            { model | p59 = bump model.p59 }
+
+        Bump60 →
+            { model | p60 = bump model.p60 }
+
+        Bump61 →
+            { model | p61 = bump model.p61 }
+
+        Bump62 →
+            { model | p62 = bump model.p62 }
+
+        Bump63 →
+            { model | p63 = bump model.p63 }
+
+        Bump64 →
+            { model | p64 = bump model.p64 }
+
+        Bump65 →
+            { model | p65 = bump model.p65 }
+
+        Bump66 →
+            { model | p66 = bump model.p66 }
+
+        Bump67 →
+            { model | p67 = bump model.p67 }
+
+        Bump68 →
+            { model | p68 = bump model.p68 }
+
+        Bump69 →
+            { model | p69 = bump model.p69 }
+
+        Bump70 →
+            { model | p70 = bump model.p70 }
+
+        Bump71 →
+            { model | p71 = bump model.p71 }
+
+        Bump72 →
+            { model | p72 = bump model.p72 }
+
+        Bump73 →
+            { model | p73 = bump model.p73 }
+
+        Bump74 →
+            { model | p74 = bump model.p74 }
+
+        Bump75 →
+            { model | p75 = bump model.p75 }
+
+        Bump76 →
+            { model | p76 = bump model.p76 }
+
+        Bump77 →
+            { model | p77 = bump model.p77 }
+
+        Bump78 →
+            { model | p78 = bump model.p78 }
+
+        Bump79 →
+            { model | p79 = bump model.p79 }
+
+        Bump80 →
+            { model | p80 = bump model.p80 }
+
+        Bump81 →
+            { model | p81 = bump model.p81 }
+
+        Bump82 →
+            { model | p82 = bump model.p82 }
+
+        Bump83 →
+            { model | p83 = bump model.p83 }
+
+        Bump84 →
+            { model | p84 = bump model.p84 }
+
+        Bump85 →
+            { model | p85 = bump model.p85 }
+
+        Bump86 →
+            { model | p86 = bump model.p86 }
+
+        Bump87 →
+            { model | p87 = bump model.p87 }
+
+        Bump88 →
+            { model | p88 = bump model.p88 }
+
+        Bump89 →
+            { model | p89 = bump model.p89 }
+
+        Bump90 →
+            { model | p90 = bump model.p90 }
+
+        Bump91 →
+            { model | p91 = bump model.p91 }
+
+        Bump92 →
+            { model | p92 = bump model.p92 }
+
+        Bump93 →
+            { model | p93 = bump model.p93 }
+
+        Bump94 →
+            { model | p94 = bump model.p94 }
+
+        Bump95 →
+            { model | p95 = bump model.p95 }
+
+        Bump96 →
+            { model | p96 = bump model.p96 }
+
+        Bump97 →
+            { model | p97 = bump model.p97 }
+
+        Bump98 →
+            { model | p98 = bump model.p98 }
+
+        Bump99 →
+            { model | p99 = bump model.p99 }
+
+        Bump100 →
+            { model | p100 = bump model.p100 }
+
+        Bump101 →
+            { model | p101 = bump model.p101 }
+
+        Bump102 →
+            { model | p102 = bump model.p102 }
+
+        Bump103 →
+            { model | p103 = bump model.p103 }
+
+        Bump104 →
+            { model | p104 = bump model.p104 }
+
+        Bump105 →
+            { model | p105 = bump model.p105 }
+
+        Bump106 →
+            { model | p106 = bump model.p106 }
+
+        Bump107 →
+            { model | p107 = bump model.p107 }
+
+        Bump108 →
+            { model | p108 = bump model.p108 }
+
+        Bump109 →
+            { model | p109 = bump model.p109 }
+
+        Bump110 →
+            { model | p110 = bump model.p110 }
+
+        Bump111 →
+            { model | p111 = bump model.p111 }
+
+        Bump112 →
+            { model | p112 = bump model.p112 }
+
+        Bump113 →
+            { model | p113 = bump model.p113 }
+
+        Bump114 →
+            { model | p114 = bump model.p114 }
+
+        Bump115 →
+            { model | p115 = bump model.p115 }
+
+        Bump116 →
+            { model | p116 = bump model.p116 }
+
+        Bump117 →
+            { model | p117 = bump model.p117 }
+
+        Bump118 →
+            { model | p118 = bump model.p118 }
+
+        Bump119 →
+            { model | p119 = bump model.p119 }
+
+        Bump120 →
+            { model | p120 = bump model.p120 }
+
+        Bump121 →
+            { model | p121 = bump model.p121 }
+
+        Bump122 →
+            { model | p122 = bump model.p122 }
+
+        Bump123 →
+            { model | p123 = bump model.p123 }
+
+        Bump124 →
+            { model | p124 = bump model.p124 }
+
+        Bump125 →
+            { model | p125 = bump model.p125 }
+
+        Bump126 →
+            { model | p126 = bump model.p126 }
+
+        Bump127 →
+            { model | p127 = bump model.p127 }
+
+        Bump128 →
+            { model | p128 = bump model.p128 }
+
+        Bump129 →
+            { model | p129 = bump model.p129 }
+
+        Bump130 →
+            { model | p130 = bump model.p130 }
+
+        Bump131 →
+            { model | p131 = bump model.p131 }
+
+        Bump132 →
+            { model | p132 = bump model.p132 }
+
+        Bump133 →
+            { model | p133 = bump model.p133 }
+
+        Bump134 →
+            { model | p134 = bump model.p134 }
+
+        Bump135 →
+            { model | p135 = bump model.p135 }
+
+        Bump136 →
+            { model | p136 = bump model.p136 }
+
+        Bump137 →
+            { model | p137 = bump model.p137 }
+
+        Bump138 →
+            { model | p138 = bump model.p138 }
+
+        Bump139 →
+            { model | p139 = bump model.p139 }
+
+        Bump140 →
+            { model | p140 = bump model.p140 }
+
+        Bump141 →
+            { model | p141 = bump model.p141 }
+
+        Bump142 →
+            { model | p142 = bump model.p142 }
+
+        Bump143 →
+            { model | p143 = bump model.p143 }
+
+        Bump144 →
+            { model | p144 = bump model.p144 }
+
+        Bump145 →
+            { model | p145 = bump model.p145 }
+
+        Bump146 →
+            { model | p146 = bump model.p146 }
+
+        Bump147 →
+            { model | p147 = bump model.p147 }
+
+        Bump148 →
+            { model | p148 = bump model.p148 }
+
+        Bump149 →
+            { model | p149 = bump model.p149 }
+
+        Bump150 →
+            { model | p150 = bump model.p150 }
+
+        Bump151 →
+            { model | p151 = bump model.p151 }
+
+        Bump152 →
+            { model | p152 = bump model.p152 }
+
+        Bump153 →
+            { model | p153 = bump model.p153 }
+
+        Bump154 →
+            { model | p154 = bump model.p154 }
+
+        Bump155 →
+            { model | p155 = bump model.p155 }
+
+        Bump156 →
+            { model | p156 = bump model.p156 }
+
+        Bump157 →
+            { model | p157 = bump model.p157 }
+
+        Bump158 →
+            { model | p158 = bump model.p158 }
+
+        Bump159 →
+            { model | p159 = bump model.p159 }
+
+        Bump160 →
+            { model | p160 = bump model.p160 }
+
+        Bump161 →
+            { model | p161 = bump model.p161 }
+
+        Bump162 →
+            { model | p162 = bump model.p162 }
+
+        Bump163 →
+            { model | p163 = bump model.p163 }
+
+        Bump164 →
+            { model | p164 = bump model.p164 }
+
+        Bump165 →
+            { model | p165 = bump model.p165 }
+
+        Bump166 →
+            { model | p166 = bump model.p166 }
+
+        Bump167 →
+            { model | p167 = bump model.p167 }
+
+        Bump168 →
+            { model | p168 = bump model.p168 }
+
+        Bump169 →
+            { model | p169 = bump model.p169 }
+
+        Bump170 →
+            { model | p170 = bump model.p170 }
+
+        Bump171 →
+            { model | p171 = bump model.p171 }
+
+        Bump172 →
+            { model | p172 = bump model.p172 }
+
+        Bump173 →
+            { model | p173 = bump model.p173 }
+
+        Bump174 →
+            { model | p174 = bump model.p174 }
+
+        Bump175 →
+            { model | p175 = bump model.p175 }
+
+        Bump176 →
+            { model | p176 = bump model.p176 }
+
+        Bump177 →
+            { model | p177 = bump model.p177 }
+
+        Bump178 →
+            { model | p178 = bump model.p178 }
+
+        Bump179 →
+            { model | p179 = bump model.p179 }
+
+        Bump180 →
+            { model | p180 = bump model.p180 }
+
+        Bump181 →
+            { model | p181 = bump model.p181 }
+
+        Bump182 →
+            { model | p182 = bump model.p182 }
+
+        Bump183 →
+            { model | p183 = bump model.p183 }
+
+        Bump184 →
+            { model | p184 = bump model.p184 }
+
+        Bump185 →
+            { model | p185 = bump model.p185 }
+
+        Bump186 →
+            { model | p186 = bump model.p186 }
+
+        Bump187 →
+            { model | p187 = bump model.p187 }
+
+        Bump188 →
+            { model | p188 = bump model.p188 }
+
+        Bump189 →
+            { model | p189 = bump model.p189 }
+
+        Bump190 →
+            { model | p190 = bump model.p190 }
+
+        Bump191 →
+            { model | p191 = bump model.p191 }
+
+        Bump192 →
+            { model | p192 = bump model.p192 }
+
+        Bump193 →
+            { model | p193 = bump model.p193 }
+
+        Bump194 →
+            { model | p194 = bump model.p194 }
+
+        Bump195 →
+            { model | p195 = bump model.p195 }
+
+        Bump196 →
+            { model | p196 = bump model.p196 }
+
+        Bump197 →
+            { model | p197 = bump model.p197 }
+
+        Bump198 →
+            { model | p198 = bump model.p198 }
+
+        Bump199 →
+            { model | p199 = bump model.p199 }
+
+        Bump200 →
+            { model | p200 = bump model.p200 }
+
+        Bump201 →
+            { model | p201 = bump model.p201 }
+
+        Bump202 →
+            { model | p202 = bump model.p202 }
+
+        Bump203 →
+            { model | p203 = bump model.p203 }
+
+        Bump204 →
+            { model | p204 = bump model.p204 }
+
+        Bump205 →
+            { model | p205 = bump model.p205 }
+
+        Bump206 →
+            { model | p206 = bump model.p206 }
+
+        Bump207 →
+            { model | p207 = bump model.p207 }
+
+        Bump208 →
+            { model | p208 = bump model.p208 }
+
+        Bump209 →
+            { model | p209 = bump model.p209 }
+
+        Bump210 →
+            { model | p210 = bump model.p210 }
+
+        Bump211 →
+            { model | p211 = bump model.p211 }
+
+        Bump212 →
+            { model | p212 = bump model.p212 }
+
+        Bump213 →
+            { model | p213 = bump model.p213 }
+
+        Bump214 →
+            { model | p214 = bump model.p214 }
+
+        Bump215 →
+            { model | p215 = bump model.p215 }
+
+        Bump216 →
+            { model | p216 = bump model.p216 }
+
+        Bump217 →
+            { model | p217 = bump model.p217 }
+
+        Bump218 →
+            { model | p218 = bump model.p218 }
+
+        Bump219 →
+            { model | p219 = bump model.p219 }
+
+        Bump220 →
+            { model | p220 = bump model.p220 }
+
+        Bump221 →
+            { model | p221 = bump model.p221 }
+
+        Bump222 →
+            { model | p222 = bump model.p222 }
+
+        Bump223 →
+            { model | p223 = bump model.p223 }
+
+        Bump224 →
+            { model | p224 = bump model.p224 }
+
+        Bump225 →
+            { model | p225 = bump model.p225 }
+
+        Bump226 →
+            { model | p226 = bump model.p226 }
+
+        Bump227 →
+            { model | p227 = bump model.p227 }
+
+        Bump228 →
+            { model | p228 = bump model.p228 }
+
+        Bump229 →
+            { model | p229 = bump model.p229 }
+
+        Bump230 →
+            { model | p230 = bump model.p230 }
+
+        Bump231 →
+            { model | p231 = bump model.p231 }
+
+        Bump232 →
+            { model | p232 = bump model.p232 }
+
+        Bump233 →
+            { model | p233 = bump model.p233 }
+
+        Bump234 →
+            { model | p234 = bump model.p234 }
+
+        Bump235 →
+            { model | p235 = bump model.p235 }
+
+        Bump236 →
+            { model | p236 = bump model.p236 }
+
+        Bump237 →
+            { model | p237 = bump model.p237 }
+
+        Bump238 →
+            { model | p238 = bump model.p238 }
+
+        Bump239 →
+            { model | p239 = bump model.p239 }
+
+        Bump240 →
+            { model | p240 = bump model.p240 }
+
+        Bump241 →
+            { model | p241 = bump model.p241 }
+
+        Bump242 →
+            { model | p242 = bump model.p242 }
+
+        Bump243 →
+            { model | p243 = bump model.p243 }
+
+        Bump244 →
+            { model | p244 = bump model.p244 }
+
+        Bump245 →
+            { model | p245 = bump model.p245 }
+
+        Bump246 →
+            { model | p246 = bump model.p246 }
+
+        Bump247 →
+            { model | p247 = bump model.p247 }
+
+        Bump248 →
+            { model | p248 = bump model.p248 }
+
+        Bump249 →
+            { model | p249 = bump model.p249 }
+
+        Bump250 →
+            { model | p250 = bump model.p250 }
+
+        Bump251 →
+            { model | p251 = bump model.p251 }
+
+        Bump252 →
+            { model | p252 = bump model.p252 }
+
+        Bump253 →
+            { model | p253 = bump model.p253 }
+
+        Bump254 →
+            { model | p254 = bump model.p254 }
+
+        Bump255 →
+            { model | p255 = bump model.p255 }
+
+        Bump256 →
+            { model | p256 = bump model.p256 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Bump1}>{String.fromInt model.p1.count}</button>
+        <button onClick={Bump2}>{String.fromInt model.p2.count}</button>
+        <button onClick={Bump3}>{String.fromInt model.p3.count}</button>
+        <button onClick={Bump4}>{String.fromInt model.p4.count}</button>
+        <button onClick={Bump5}>{String.fromInt model.p5.count}</button>
+        <button onClick={Bump6}>{String.fromInt model.p6.count}</button>
+        <button onClick={Bump7}>{String.fromInt model.p7.count}</button>
+        <button onClick={Bump8}>{String.fromInt model.p8.count}</button>
+        <button onClick={Bump9}>{String.fromInt model.p9.count}</button>
+        <button onClick={Bump10}>{String.fromInt model.p10.count}</button>
+        <button onClick={Bump11}>{String.fromInt model.p11.count}</button>
+        <button onClick={Bump12}>{String.fromInt model.p12.count}</button>
+        <button onClick={Bump13}>{String.fromInt model.p13.count}</button>
+        <button onClick={Bump14}>{String.fromInt model.p14.count}</button>
+        <button onClick={Bump15}>{String.fromInt model.p15.count}</button>
+        <button onClick={Bump16}>{String.fromInt model.p16.count}</button>
+        <button onClick={Bump17}>{String.fromInt model.p17.count}</button>
+        <button onClick={Bump18}>{String.fromInt model.p18.count}</button>
+        <button onClick={Bump19}>{String.fromInt model.p19.count}</button>
+        <button onClick={Bump20}>{String.fromInt model.p20.count}</button>
+        <button onClick={Bump21}>{String.fromInt model.p21.count}</button>
+        <button onClick={Bump22}>{String.fromInt model.p22.count}</button>
+        <button onClick={Bump23}>{String.fromInt model.p23.count}</button>
+        <button onClick={Bump24}>{String.fromInt model.p24.count}</button>
+        <button onClick={Bump25}>{String.fromInt model.p25.count}</button>
+        <button onClick={Bump26}>{String.fromInt model.p26.count}</button>
+        <button onClick={Bump27}>{String.fromInt model.p27.count}</button>
+        <button onClick={Bump28}>{String.fromInt model.p28.count}</button>
+        <button onClick={Bump29}>{String.fromInt model.p29.count}</button>
+        <button onClick={Bump30}>{String.fromInt model.p30.count}</button>
+        <button onClick={Bump31}>{String.fromInt model.p31.count}</button>
+        <button onClick={Bump32}>{String.fromInt model.p32.count}</button>
+        <button onClick={Bump33}>{String.fromInt model.p33.count}</button>
+        <button onClick={Bump34}>{String.fromInt model.p34.count}</button>
+        <button onClick={Bump35}>{String.fromInt model.p35.count}</button>
+        <button onClick={Bump36}>{String.fromInt model.p36.count}</button>
+        <button onClick={Bump37}>{String.fromInt model.p37.count}</button>
+        <button onClick={Bump38}>{String.fromInt model.p38.count}</button>
+        <button onClick={Bump39}>{String.fromInt model.p39.count}</button>
+        <button onClick={Bump40}>{String.fromInt model.p40.count}</button>
+        <button onClick={Bump41}>{String.fromInt model.p41.count}</button>
+        <button onClick={Bump42}>{String.fromInt model.p42.count}</button>
+        <button onClick={Bump43}>{String.fromInt model.p43.count}</button>
+        <button onClick={Bump44}>{String.fromInt model.p44.count}</button>
+        <button onClick={Bump45}>{String.fromInt model.p45.count}</button>
+        <button onClick={Bump46}>{String.fromInt model.p46.count}</button>
+        <button onClick={Bump47}>{String.fromInt model.p47.count}</button>
+        <button onClick={Bump48}>{String.fromInt model.p48.count}</button>
+        <button onClick={Bump49}>{String.fromInt model.p49.count}</button>
+        <button onClick={Bump50}>{String.fromInt model.p50.count}</button>
+        <button onClick={Bump51}>{String.fromInt model.p51.count}</button>
+        <button onClick={Bump52}>{String.fromInt model.p52.count}</button>
+        <button onClick={Bump53}>{String.fromInt model.p53.count}</button>
+        <button onClick={Bump54}>{String.fromInt model.p54.count}</button>
+        <button onClick={Bump55}>{String.fromInt model.p55.count}</button>
+        <button onClick={Bump56}>{String.fromInt model.p56.count}</button>
+        <button onClick={Bump57}>{String.fromInt model.p57.count}</button>
+        <button onClick={Bump58}>{String.fromInt model.p58.count}</button>
+        <button onClick={Bump59}>{String.fromInt model.p59.count}</button>
+        <button onClick={Bump60}>{String.fromInt model.p60.count}</button>
+        <button onClick={Bump61}>{String.fromInt model.p61.count}</button>
+        <button onClick={Bump62}>{String.fromInt model.p62.count}</button>
+        <button onClick={Bump63}>{String.fromInt model.p63.count}</button>
+        <button onClick={Bump64}>{String.fromInt model.p64.count}</button>
+        <button onClick={Bump65}>{String.fromInt model.p65.count}</button>
+        <button onClick={Bump66}>{String.fromInt model.p66.count}</button>
+        <button onClick={Bump67}>{String.fromInt model.p67.count}</button>
+        <button onClick={Bump68}>{String.fromInt model.p68.count}</button>
+        <button onClick={Bump69}>{String.fromInt model.p69.count}</button>
+        <button onClick={Bump70}>{String.fromInt model.p70.count}</button>
+        <button onClick={Bump71}>{String.fromInt model.p71.count}</button>
+        <button onClick={Bump72}>{String.fromInt model.p72.count}</button>
+        <button onClick={Bump73}>{String.fromInt model.p73.count}</button>
+        <button onClick={Bump74}>{String.fromInt model.p74.count}</button>
+        <button onClick={Bump75}>{String.fromInt model.p75.count}</button>
+        <button onClick={Bump76}>{String.fromInt model.p76.count}</button>
+        <button onClick={Bump77}>{String.fromInt model.p77.count}</button>
+        <button onClick={Bump78}>{String.fromInt model.p78.count}</button>
+        <button onClick={Bump79}>{String.fromInt model.p79.count}</button>
+        <button onClick={Bump80}>{String.fromInt model.p80.count}</button>
+        <button onClick={Bump81}>{String.fromInt model.p81.count}</button>
+        <button onClick={Bump82}>{String.fromInt model.p82.count}</button>
+        <button onClick={Bump83}>{String.fromInt model.p83.count}</button>
+        <button onClick={Bump84}>{String.fromInt model.p84.count}</button>
+        <button onClick={Bump85}>{String.fromInt model.p85.count}</button>
+        <button onClick={Bump86}>{String.fromInt model.p86.count}</button>
+        <button onClick={Bump87}>{String.fromInt model.p87.count}</button>
+        <button onClick={Bump88}>{String.fromInt model.p88.count}</button>
+        <button onClick={Bump89}>{String.fromInt model.p89.count}</button>
+        <button onClick={Bump90}>{String.fromInt model.p90.count}</button>
+        <button onClick={Bump91}>{String.fromInt model.p91.count}</button>
+        <button onClick={Bump92}>{String.fromInt model.p92.count}</button>
+        <button onClick={Bump93}>{String.fromInt model.p93.count}</button>
+        <button onClick={Bump94}>{String.fromInt model.p94.count}</button>
+        <button onClick={Bump95}>{String.fromInt model.p95.count}</button>
+        <button onClick={Bump96}>{String.fromInt model.p96.count}</button>
+        <button onClick={Bump97}>{String.fromInt model.p97.count}</button>
+        <button onClick={Bump98}>{String.fromInt model.p98.count}</button>
+        <button onClick={Bump99}>{String.fromInt model.p99.count}</button>
+        <button onClick={Bump100}>{String.fromInt model.p100.count}</button>
+        <button onClick={Bump101}>{String.fromInt model.p101.count}</button>
+        <button onClick={Bump102}>{String.fromInt model.p102.count}</button>
+        <button onClick={Bump103}>{String.fromInt model.p103.count}</button>
+        <button onClick={Bump104}>{String.fromInt model.p104.count}</button>
+        <button onClick={Bump105}>{String.fromInt model.p105.count}</button>
+        <button onClick={Bump106}>{String.fromInt model.p106.count}</button>
+        <button onClick={Bump107}>{String.fromInt model.p107.count}</button>
+        <button onClick={Bump108}>{String.fromInt model.p108.count}</button>
+        <button onClick={Bump109}>{String.fromInt model.p109.count}</button>
+        <button onClick={Bump110}>{String.fromInt model.p110.count}</button>
+        <button onClick={Bump111}>{String.fromInt model.p111.count}</button>
+        <button onClick={Bump112}>{String.fromInt model.p112.count}</button>
+        <button onClick={Bump113}>{String.fromInt model.p113.count}</button>
+        <button onClick={Bump114}>{String.fromInt model.p114.count}</button>
+        <button onClick={Bump115}>{String.fromInt model.p115.count}</button>
+        <button onClick={Bump116}>{String.fromInt model.p116.count}</button>
+        <button onClick={Bump117}>{String.fromInt model.p117.count}</button>
+        <button onClick={Bump118}>{String.fromInt model.p118.count}</button>
+        <button onClick={Bump119}>{String.fromInt model.p119.count}</button>
+        <button onClick={Bump120}>{String.fromInt model.p120.count}</button>
+        <button onClick={Bump121}>{String.fromInt model.p121.count}</button>
+        <button onClick={Bump122}>{String.fromInt model.p122.count}</button>
+        <button onClick={Bump123}>{String.fromInt model.p123.count}</button>
+        <button onClick={Bump124}>{String.fromInt model.p124.count}</button>
+        <button onClick={Bump125}>{String.fromInt model.p125.count}</button>
+        <button onClick={Bump126}>{String.fromInt model.p126.count}</button>
+        <button onClick={Bump127}>{String.fromInt model.p127.count}</button>
+        <button onClick={Bump128}>{String.fromInt model.p128.count}</button>
+        <button onClick={Bump129}>{String.fromInt model.p129.count}</button>
+        <button onClick={Bump130}>{String.fromInt model.p130.count}</button>
+        <button onClick={Bump131}>{String.fromInt model.p131.count}</button>
+        <button onClick={Bump132}>{String.fromInt model.p132.count}</button>
+        <button onClick={Bump133}>{String.fromInt model.p133.count}</button>
+        <button onClick={Bump134}>{String.fromInt model.p134.count}</button>
+        <button onClick={Bump135}>{String.fromInt model.p135.count}</button>
+        <button onClick={Bump136}>{String.fromInt model.p136.count}</button>
+        <button onClick={Bump137}>{String.fromInt model.p137.count}</button>
+        <button onClick={Bump138}>{String.fromInt model.p138.count}</button>
+        <button onClick={Bump139}>{String.fromInt model.p139.count}</button>
+        <button onClick={Bump140}>{String.fromInt model.p140.count}</button>
+        <button onClick={Bump141}>{String.fromInt model.p141.count}</button>
+        <button onClick={Bump142}>{String.fromInt model.p142.count}</button>
+        <button onClick={Bump143}>{String.fromInt model.p143.count}</button>
+        <button onClick={Bump144}>{String.fromInt model.p144.count}</button>
+        <button onClick={Bump145}>{String.fromInt model.p145.count}</button>
+        <button onClick={Bump146}>{String.fromInt model.p146.count}</button>
+        <button onClick={Bump147}>{String.fromInt model.p147.count}</button>
+        <button onClick={Bump148}>{String.fromInt model.p148.count}</button>
+        <button onClick={Bump149}>{String.fromInt model.p149.count}</button>
+        <button onClick={Bump150}>{String.fromInt model.p150.count}</button>
+        <button onClick={Bump151}>{String.fromInt model.p151.count}</button>
+        <button onClick={Bump152}>{String.fromInt model.p152.count}</button>
+        <button onClick={Bump153}>{String.fromInt model.p153.count}</button>
+        <button onClick={Bump154}>{String.fromInt model.p154.count}</button>
+        <button onClick={Bump155}>{String.fromInt model.p155.count}</button>
+        <button onClick={Bump156}>{String.fromInt model.p156.count}</button>
+        <button onClick={Bump157}>{String.fromInt model.p157.count}</button>
+        <button onClick={Bump158}>{String.fromInt model.p158.count}</button>
+        <button onClick={Bump159}>{String.fromInt model.p159.count}</button>
+        <button onClick={Bump160}>{String.fromInt model.p160.count}</button>
+        <button onClick={Bump161}>{String.fromInt model.p161.count}</button>
+        <button onClick={Bump162}>{String.fromInt model.p162.count}</button>
+        <button onClick={Bump163}>{String.fromInt model.p163.count}</button>
+        <button onClick={Bump164}>{String.fromInt model.p164.count}</button>
+        <button onClick={Bump165}>{String.fromInt model.p165.count}</button>
+        <button onClick={Bump166}>{String.fromInt model.p166.count}</button>
+        <button onClick={Bump167}>{String.fromInt model.p167.count}</button>
+        <button onClick={Bump168}>{String.fromInt model.p168.count}</button>
+        <button onClick={Bump169}>{String.fromInt model.p169.count}</button>
+        <button onClick={Bump170}>{String.fromInt model.p170.count}</button>
+        <button onClick={Bump171}>{String.fromInt model.p171.count}</button>
+        <button onClick={Bump172}>{String.fromInt model.p172.count}</button>
+        <button onClick={Bump173}>{String.fromInt model.p173.count}</button>
+        <button onClick={Bump174}>{String.fromInt model.p174.count}</button>
+        <button onClick={Bump175}>{String.fromInt model.p175.count}</button>
+        <button onClick={Bump176}>{String.fromInt model.p176.count}</button>
+        <button onClick={Bump177}>{String.fromInt model.p177.count}</button>
+        <button onClick={Bump178}>{String.fromInt model.p178.count}</button>
+        <button onClick={Bump179}>{String.fromInt model.p179.count}</button>
+        <button onClick={Bump180}>{String.fromInt model.p180.count}</button>
+        <button onClick={Bump181}>{String.fromInt model.p181.count}</button>
+        <button onClick={Bump182}>{String.fromInt model.p182.count}</button>
+        <button onClick={Bump183}>{String.fromInt model.p183.count}</button>
+        <button onClick={Bump184}>{String.fromInt model.p184.count}</button>
+        <button onClick={Bump185}>{String.fromInt model.p185.count}</button>
+        <button onClick={Bump186}>{String.fromInt model.p186.count}</button>
+        <button onClick={Bump187}>{String.fromInt model.p187.count}</button>
+        <button onClick={Bump188}>{String.fromInt model.p188.count}</button>
+        <button onClick={Bump189}>{String.fromInt model.p189.count}</button>
+        <button onClick={Bump190}>{String.fromInt model.p190.count}</button>
+        <button onClick={Bump191}>{String.fromInt model.p191.count}</button>
+        <button onClick={Bump192}>{String.fromInt model.p192.count}</button>
+        <button onClick={Bump193}>{String.fromInt model.p193.count}</button>
+        <button onClick={Bump194}>{String.fromInt model.p194.count}</button>
+        <button onClick={Bump195}>{String.fromInt model.p195.count}</button>
+        <button onClick={Bump196}>{String.fromInt model.p196.count}</button>
+        <button onClick={Bump197}>{String.fromInt model.p197.count}</button>
+        <button onClick={Bump198}>{String.fromInt model.p198.count}</button>
+        <button onClick={Bump199}>{String.fromInt model.p199.count}</button>
+        <button onClick={Bump200}>{String.fromInt model.p200.count}</button>
+        <button onClick={Bump201}>{String.fromInt model.p201.count}</button>
+        <button onClick={Bump202}>{String.fromInt model.p202.count}</button>
+        <button onClick={Bump203}>{String.fromInt model.p203.count}</button>
+        <button onClick={Bump204}>{String.fromInt model.p204.count}</button>
+        <button onClick={Bump205}>{String.fromInt model.p205.count}</button>
+        <button onClick={Bump206}>{String.fromInt model.p206.count}</button>
+        <button onClick={Bump207}>{String.fromInt model.p207.count}</button>
+        <button onClick={Bump208}>{String.fromInt model.p208.count}</button>
+        <button onClick={Bump209}>{String.fromInt model.p209.count}</button>
+        <button onClick={Bump210}>{String.fromInt model.p210.count}</button>
+        <button onClick={Bump211}>{String.fromInt model.p211.count}</button>
+        <button onClick={Bump212}>{String.fromInt model.p212.count}</button>
+        <button onClick={Bump213}>{String.fromInt model.p213.count}</button>
+        <button onClick={Bump214}>{String.fromInt model.p214.count}</button>
+        <button onClick={Bump215}>{String.fromInt model.p215.count}</button>
+        <button onClick={Bump216}>{String.fromInt model.p216.count}</button>
+        <button onClick={Bump217}>{String.fromInt model.p217.count}</button>
+        <button onClick={Bump218}>{String.fromInt model.p218.count}</button>
+        <button onClick={Bump219}>{String.fromInt model.p219.count}</button>
+        <button onClick={Bump220}>{String.fromInt model.p220.count}</button>
+        <button onClick={Bump221}>{String.fromInt model.p221.count}</button>
+        <button onClick={Bump222}>{String.fromInt model.p222.count}</button>
+        <button onClick={Bump223}>{String.fromInt model.p223.count}</button>
+        <button onClick={Bump224}>{String.fromInt model.p224.count}</button>
+        <button onClick={Bump225}>{String.fromInt model.p225.count}</button>
+        <button onClick={Bump226}>{String.fromInt model.p226.count}</button>
+        <button onClick={Bump227}>{String.fromInt model.p227.count}</button>
+        <button onClick={Bump228}>{String.fromInt model.p228.count}</button>
+        <button onClick={Bump229}>{String.fromInt model.p229.count}</button>
+        <button onClick={Bump230}>{String.fromInt model.p230.count}</button>
+        <button onClick={Bump231}>{String.fromInt model.p231.count}</button>
+        <button onClick={Bump232}>{String.fromInt model.p232.count}</button>
+        <button onClick={Bump233}>{String.fromInt model.p233.count}</button>
+        <button onClick={Bump234}>{String.fromInt model.p234.count}</button>
+        <button onClick={Bump235}>{String.fromInt model.p235.count}</button>
+        <button onClick={Bump236}>{String.fromInt model.p236.count}</button>
+        <button onClick={Bump237}>{String.fromInt model.p237.count}</button>
+        <button onClick={Bump238}>{String.fromInt model.p238.count}</button>
+        <button onClick={Bump239}>{String.fromInt model.p239.count}</button>
+        <button onClick={Bump240}>{String.fromInt model.p240.count}</button>
+        <button onClick={Bump241}>{String.fromInt model.p241.count}</button>
+        <button onClick={Bump242}>{String.fromInt model.p242.count}</button>
+        <button onClick={Bump243}>{String.fromInt model.p243.count}</button>
+        <button onClick={Bump244}>{String.fromInt model.p244.count}</button>
+        <button onClick={Bump245}>{String.fromInt model.p245.count}</button>
+        <button onClick={Bump246}>{String.fromInt model.p246.count}</button>
+        <button onClick={Bump247}>{String.fromInt model.p247.count}</button>
+        <button onClick={Bump248}>{String.fromInt model.p248.count}</button>
+        <button onClick={Bump249}>{String.fromInt model.p249.count}</button>
+        <button onClick={Bump250}>{String.fromInt model.p250.count}</button>
+        <button onClick={Bump251}>{String.fromInt model.p251.count}</button>
+        <button onClick={Bump252}>{String.fromInt model.p252.count}</button>
+        <button onClick={Bump253}>{String.fromInt model.p253.count}</button>
+        <button onClick={Bump254}>{String.fromInt model.p254.count}</button>
+        <button onClick={Bump255}>{String.fromInt model.p255.count}</button>
+        <button onClick={Bump256}>{String.fromInt model.p256.count}</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = init, update = update, view = view }
