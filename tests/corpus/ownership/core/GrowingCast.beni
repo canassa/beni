@@ -1,0 +1,227 @@
+-- Erasing a growing type must settle without losing its full fixed context.
+import Js
+
+
+pub build : Int, a → Js.Value
+build n xs =
+    if n == 0 then
+        Js.from [ xs ]
+    else
+        build (n - 1) [ xs ]
+
+
+-- The erased result keeps the original list alive.
+pub retained : List Int → List Int × Js.Value
+retained xs =
+    held = build 2 xs
+    ( List.push xs 1, held )
+
+
+-- A write through a host view still writes that same original list.
+pub retainedView : List Int → List Int × Js.Value
+retainedView xs =
+    held = build 2 xs
+    ys : List Int
+    ys = Js.to (Js.from xs)
+    ( List.push ys 1, held )
+
+
+-- The growing recursive function itself must retain a cast write's alias.
+pub writing : Int, List a → Js.Value × List a
+writing n xs =
+    if n == 0 then
+        ys : List a
+        ys = Js.to (Js.from xs)
+        case ys of
+            [ x, …_ ] →
+                ( Js.from (List.push ys x), xs )
+            _ →
+                ( Js.from ys, xs )
+    else
+        ( value, _ ) = writing (n - 1) [ xs ]
+        ( value, xs )
+
+
+-- Decode the grown result itself and write the retained original array.
+pub writtenThroughFold : List Int → List Int × List Int
+writtenThroughFold xs =
+    decoded : List (List (List (List Int)))
+    decoded = Js.to (build 2 xs)
+    case decoded of
+        [ [ [ ys ] ] ] →
+            ( List.push ys 1, xs )
+        _ →
+            ( [], xs )
+
+
+-- A different full type cannot hide the same storage behind a folded view.
+pub writtenOtherView : List Int → List String × List Int
+writtenOtherView xs =
+    decoded : List (List (List (List String)))
+    decoded = Js.to (build 2 xs)
+    case decoded of
+        [ [ [ ys ] ] ] →
+            ( List.push ys "x", xs )
+        _ →
+            ( [], xs )
+
+
+-- Growth folds the payload variable, preserving the fixed record field.
+pub record : Int, a → Js.Value
+record n value =
+    if n == 0 then
+        Js.from { fixed = [ "fixed" ], payload = value }
+    else
+        record (n - 1) [ value ]
+
+
+pub tuple : Int, a → Js.Value
+tuple n value =
+    if n == 0 then
+        Js.from ( value, [ 0 ] )
+    else
+        tuple (n - 1) [ value ]
+
+
+-- Record-object rows must carry the same composed-path crossing mark.
+pub recordGrowth : Int, a → Js.Value
+recordGrowth n value =
+    if n == 0 then
+        Js.from [ value ]
+    else
+        recordGrowth (n - 1) { item = value }
+
+
+-- The same type growth through a forwarded continuation supply.
+pub cps : Int, a, (Js.Value → Int) → Int
+cps n value k =
+    if n == 0 then
+        k (Js.from [ value ])
+    else
+        cps (n - 1) { item = value } k
+
+
+flatten : a, List (List a) → List a
+flatten _ xs = List.concat xs
+
+
+-- A growing type can occur in the source of a result, not just its place.
+pub provenance : Int, a, Js.Value → Js.Value
+provenance n x value =
+    if n == 0 then
+        Js.from (flatten x (Js.to value))
+    else
+        provenance (n - 1) [ x ] value
+
+
+-- A carried body's type coordinates cross the call before it is invoked.
+pub thunk : Int, a → (⊤ → Js.Value)
+thunk n xs =
+    if n == 0 then
+        λ⊤ → Js.from [ xs ]
+    else
+        thunk (n - 1) [ xs ]
+
+
+pub writtenViaCps : List Int → Int
+writtenViaCps xs = cps 2 xs λvalue →
+    decoded : List { item : { item : List Int } }
+    decoded = Js.to value
+    case decoded of
+        [ box ] →
+            List.length (List.push box.item.item 1) + List.length xs
+        _ →
+            0
+
+
+pub writtenThunk : List Int → Int
+writtenThunk xs =
+    make = thunk 2 xs
+    decoded : List (List (List (List Int)))
+    decoded = Js.to (make ⊤)
+    case decoded of
+        [ [ [ ys ] ] ] →
+            List.length (List.push ys 1) + List.length xs
+        _ →
+            0
+
+
+-- A local generic builder specializes its full marker at the call too.
+pub localBuilder : List Int → List (List Int) × List Int
+localBuilder xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    decoded : List (List Int)
+    decoded = Js.to (pack xs)
+    ( List.push decoded [], xs )
+
+
+pub localRetained : List Int → List Int × List Int
+localRetained xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    decoded : List (List Int)
+    decoded = Js.to (pack xs)
+    case decoded of
+        [ ys ] →
+            ( List.push ys 1, xs )
+        _ →
+            ( [], xs )
+
+
+pub callbackBuilder : List Int → List (List Int) × List Int
+callbackBuilder xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    encoded = List.map [ xs ] pack
+    case encoded of
+        [ value ] →
+            decoded : List (List Int)
+            decoded = Js.to value
+            ( List.push decoded [], xs )
+        _ →
+            ( [], xs )
+
+
+pub callbackRetained : List Int → List Int × List Int
+callbackRetained xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    encoded = List.map [ xs ] pack
+    case encoded of
+        [ value ] →
+            decoded : List (List Int)
+            decoded = Js.to value
+            case decoded of
+                [ ys ] →
+                    ( List.push ys 1, xs )
+                _ →
+                    ( [], xs )
+        _ →
+            ( [], xs )
+
+
+applySlot : { f : a → Js.Value }, a → Js.Value
+applySlot rec value = rec.f value
+
+
+pub slotBuilder : List Int → List (List Int) × List Int
+slotBuilder xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    decoded : List (List Int)
+    decoded = Js.to (applySlot { f = pack } xs)
+    ( List.push decoded [], xs )
+
+
+pub slotRetained : List Int → List Int × List Int
+slotRetained xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    decoded : List (List Int)
+    decoded = Js.to (applySlot { f = pack } xs)
+    case decoded of
+        [ ys ] →
+            ( List.push ys 1, xs )
+        _ →
+            ( [], xs )

@@ -5623,8 +5623,11 @@ test "cached full-type casts specialize in a freshly checked consumer" {
     try w.write("src/Casts.beni",
         \\import Js
         \\
-        \\pub list : Js.Value → List a
-        \\list value = Js.to value
+        \\pub listMaker : ⊤ → (Js.Value → List a)
+        \\listMaker _ =
+        \\    decode : Js.Value → List a
+        \\    decode value = Js.to value
+        \\    decode
         \\
     );
     try w.write("src/App.beni",
@@ -5632,7 +5635,7 @@ test "cached full-type casts specialize in a freshly checked consumer" {
         \\import Js
         \\
         \\pub change : List Int → List Int
-        \\change xs = List.push (Casts.list (Js.from xs)) 1
+        \\change xs = List.push ((Casts.listMaker ⊤) (Js.from xs)) 1
         \\
     );
     const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-inline", "--core", "--diagnostics=json", "--cache-dir=cache", "src" };
@@ -5650,7 +5653,7 @@ test "cached full-type casts specialize in a freshly checked consumer" {
         \\pub change : List Int → List Int × List Int
         \\change xs =
         \\    ys : List Int
-        \\    ys = Casts.list (Js.from xs)
+        \\    ys = (Casts.listMaker ⊤) (Js.from xs)
         \\    ( List.push ys 1, xs )
         \\
     );
