@@ -1,0 +1,4 @@
+b waits: ⊤
+a completed, still running: ⊤
+a after its wait: ⊤
+b woke with x: ⊤

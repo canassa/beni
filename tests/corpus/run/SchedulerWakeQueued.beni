@@ -1,0 +1,41 @@
+-- run: a wake across schedulers queues the woken fiber and does not run it
+-- (transparent-effects-proposal.md §17.1 item 3, §17.5 amended 2026-10-22).
+-- A fiber under one scheduler completes a deferred that a fiber under
+-- another waits on, and logs a line before its next wait: that line comes
+-- before the woken fiber's. Its drain then goes on with its own queue, so
+-- its line after the wait comes before the woken fiber's too: the woken
+-- fiber runs in a turn of its own scheduler.
+import Deferred
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    first = Task.scheduler λ⊤ → ⊤
+    second = Task.scheduler λ⊤ → ⊤
+    d = Deferred.make ⊤
+
+    waiter = Task.spawn λ⊤ →
+        Task.withScheduler second λ⊤ →
+            say "b waits"
+            value : String
+            value = Deferred.wait d
+            say "b woke with ${value}"
+
+    completer = Task.spawn λ⊤ →
+        Task.withScheduler first λ⊤ →
+            -- Let the waiter park first.
+            Task.yieldNow ⊤
+            _ = Deferred.complete d "x"
+            say "a completed, still running"
+            Task.yieldNow ⊤
+            say "a after its wait"
+    Task.join waiter
+    Task.join completer
+    Node.done
