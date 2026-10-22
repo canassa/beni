@@ -6788,6 +6788,30 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
   … the client disconnects" — under the same `deadline`. That the hold works after an
   abort is #600's second half.
+- *Amended 2026-10-22 (the Worker slice, as built).* **The scheduler per request, as built**
+  (`platforms/cloudflare/Worker.beni`, `handle`): the host's `fetch` makes a scheduler with
+  `Task.schedulerWith`, whose `run` queues each drain through a promise made in the request's own
+  context and re-armed from inside its reaction — a reaction registered in a request's context runs
+  there whoever resolves the promise (*measured*, above) — and starts the handler with
+  `Task.spawnDetached` from inside `Task.withScheduler` outside any fiber, so the handler's first
+  step is already the scheduler's. The fiber resolves the host's promise with the response; a throw
+  leaves the drain, the scheduler stops, its hook stops the scheduler with §9.8.14's deadline and
+  holds the teardown's promise in `waitUntil`, and the throw reaches the host's promise through the
+  trampoline's chain (`then(null, reject)`: handed on unchanged, nothing caught), so the host
+  answers 1101 with it. **A fiber that outlives the response is one `fetch` started with
+  `Task.spawnDetached`**; a `Task.spawn` child ends with `fetch`'s fiber, as everywhere. After the
+  answer, the platform asks `Task.schedulerBusy`: with no fiber running nothing is held; otherwise a
+  promise is held in `waitUntil` that `Task.onSchedulerIdle` settles when the last fiber ends, or
+  the deadline's timer settles by stopping the scheduler. **A Worker's `forward` starts a fresh
+  chain per call** (`crypto.randomUUID()`), since a Worker parks in no object and so begins no
+  cycle; an object's `forward` passes its chain on ((e.3), the object slice). **Two requests do not
+  wait on each other through memory** (*measured* under workerd): a request parked on a wait that
+  no host operation of its own will answer — a `Deferred` another request completes — is cancelled
+  by the host as hung ("the Workers runtime canceled this request because it detected that your
+  Worker's code had hung"); coordination between requests goes through a Durable Object, and two
+  requests need not share an isolate in production. The per-request scheduler is for a request's
+  own I/O: two requests parked on their own timers each answer in their own context (the fixture
+  `workers/CrossRequest`).
 
 The example of (i) becomes:
 
@@ -7498,6 +7522,25 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   runs — so a case starts Miniflare once, and the `run/` habit of a development and a `--release`
   pass in one case does not fit. A `workers/` fixture is therefore **two cases**, `<name>` and
   `<name>.release`, each one build and one Miniflare start over the same sources and script.
+- *Amended 2026-10-22 (the Worker slice, as built).* **The `workers/` corpus kind**
+  (`tests/corpus/README.md`, *A Worker*; `tests/blackbox/workers.zig`): a fixture is a project
+  under `tests/corpus/workers/<Name>/` — its modules, `beni.json` with the `"exports"` list,
+  `wrangler.jsonc` as (i) writes it, `_expected.steps` — and two cases, the development build and
+  the `--release --allow-debug` build, each one Miniflare start (the budget above), each with a
+  record file of its own (`_expected.run-hash`, `_expected.release-run-hash`), so neither case
+  writes the other's. The driver takes Miniflare's entry file as `--miniflare=`, from
+  `BENI_MINIFLARE` (`nix develop .#workers`, #698) or `-Dminiflare=`, because a program the harness
+  spawns gets an empty environment; it maps `compatibility_date`, `compatibility_flags`, `vars`
+  and `durable_objects` with `migrations` to Miniflare's options, passes `cf: false`, listens on
+  127.0.0.1 and disposes at the end. `zig build test-workers` runs the kind; it is not a gate, and
+  no CI job runs it yet (#697). The transcript prints each request, its answer with the headers
+  sorted as the host keeps them, and the Worker's console lines after each step. The script's
+  steps in this slice: a request, `detach`/`answer`, and `abort`. **Two facts measured under
+  Miniflare 4.20260518.0**: a client that leaves — through `dispatchFetch`'s signal or a raw
+  connection destroyed — never reaches the Worker's `request.signal`, because the Worker's client
+  is Miniflare's own entry worker, so #600's second half is owed to a run under `wrangler dev`;
+  and a request parked on a wait no host operation of its own answers is cancelled as hung ((d)).
+  The `--test-hooks` flag is the object slice's, with `tick` and `alarm`.
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of
