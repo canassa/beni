@@ -800,3 +800,21 @@ maps): only the 13 pages that call `Log` change (12 under `browser/tea`, and
 `master` build has `Log.write`, +958 raw and +330 brotli: the entry, the time, the slot read and the
 list helpers of the spans and the annotations. A fold in the console sink took 119 raw and 38 brotli
 of it off. Every other page and every example is byte for byte the same.
+
+*P7, fourth part, as built (2026-10-22; #551).* `Log.setMinimum : Level → ⊤` sets the program's
+minimum, as the owner decided on 2026-10-21 (Cesar, dashboard `node-log-q3`; proposal §17.11 and
+`boundary.md` §9.8.16 (b), amended). A log context's `minimum` is now `undefined` until
+`Log.minimum` sets one, and a call then reads the program's cell, `Info` until a `setMinimum`. So a
+page that calls `Log.setMinimum Log.Debug` in `init` writes a `Cmd.log Log.Debug`. Fixtures:
+`run/LogSetMinimum` (a child started before the call writes its `Debug` line after it;
+`Log.minimum` still wins for its function; the last call wins) and the page
+`browser/tea/LogSetMinimum`. Both fail to build on `master`, which has no `setMinimum`. **Bytes**
+(every `browser/tea`, `browser/dom` and single-file `run/` fixture and the five examples, one
+compiler with `master`'s `core/` against this branch's through `--core-root`, development and
+release, no source maps): 41 of the 1 344 builds change, all of programs that reach `Log`.
+Development, 23 builds: +115 raw and +12 to +37 brotli each. Release, 18 builds: in 10 the optimiser
+folds the log context and the cell that nothing writes, so the call compares the level with `Info`
+directly: the same raw size (brotli −12 to +6), or 18 raw smaller in `LogLevels` and
+`LogDefaultSink`, whose context loses `minimum:"Info"`. In the other 8 it cannot fold the context,
+and the call keeps `c.minimum===undefined?"Info":c.minimum`: +36 raw and −3 to +17 brotli. Every
+other build has the same size.
