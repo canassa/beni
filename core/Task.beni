@@ -2083,6 +2083,7 @@ newScheduler runner hook more =
             , swept = 0
             , timer = Js.null
             , torn = False
+            , watch = Js.null
             , whenDone = Js.null
             }
     Js.set s "drain" (Js.from λ⊤ → drainS s)
@@ -2222,6 +2223,24 @@ pub schedulersListed : ⊤ → Int
 schedulersListed ⊤ = Js.to (Js.get schedulers "length")
 
 
+--| How many fibers of the scheduler still run: belonging or lent, running
+--| or parked. What the `cloudflare` platform asks of an object's
+--| scheduler, whose one consumer fiber always runs: more than one means a
+--| fiber a handler started is still alive (`boundary.md` §9.12 (e.10)).
+pub schedulerFibers : Scheduler → Int
+schedulerFibers sched = Js.to (Js.get (Js.from sched) "live")
+
+
+--| Call `f` with the count each time a fiber of the scheduler ends or
+--| leaves it, from the end of that fiber, with it still the current one,
+--| as `onSchedulerIdle`'s function runs. One `f` watches: the last one
+--| given replaces the one before. What the `cloudflare` platform answers
+--| an `ask` with `NoReply` through, when the last fiber that could reply
+--| has ended (`boundary.md` §9.12 (e.10)).
+pub onSchedulerCount : Scheduler, sync (Int → ⊤) → ⊤
+onSchedulerCount sched f = Js.set (Js.from sched) "watch" (Js.from f)
+
+
 --| Stop one scheduler, as `shutdown` stops the program: close its root
 --| scopes, cancel its fibers and run their cleanup, drop its queued work
 --| and start nothing new under it. Cleanup that suspends is given
@@ -2292,6 +2311,8 @@ countDown s =
     n : Int
     n = Js.to (Js.get s "live") - 1
     Js.set s "live" (Js.from n)
+    w = Js.get s "watch"
+    if Js.isNull w then ⊤ else Js.to (Js.apply w [ Js.from n ])
     if n == 0 then
         f = Js.get s "idle"
         if Js.isNull f then
