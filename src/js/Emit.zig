@@ -301,6 +301,11 @@ pub const Options = struct {
     /// that the corpus's `--release` second pass can keep running the
     /// fixtures whose instrument is `Debug.log`.
     allow_debug: bool = false,
+    /// `--test-hooks`, the hidden test-only flag (`src/Cli.zig`): what
+    /// `Js.testHooks ()` is (`backend.md` §4, *`Js.testHooks` is the
+    /// build's test hooks*); a platform's test hooks are in the build only
+    /// with it.
+    test_hooks: bool = false,
     /// `--schema-library`, the hidden test-only flag (`src/Cli.zig`): every
     /// schema declaration's `parse` and `print` run its description through
     /// the library interpreter, and no worker is written — the forced
@@ -3950,6 +3955,7 @@ const Emitter = struct {
             .extra_roots = e.extra_roots,
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
+            .test_hooks = e.options.test_hooks,
             .forwarding_foreigns = e.forwarding_foreigns,
             .cuts = e.cuts,
             .pinned = e.lift_roots,
@@ -3978,7 +3984,10 @@ const Emitter = struct {
         for (rows, birs, 0..) |*row, b, i| {
             const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             row.* = null;
-            if (e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
+            // No packed row holds `--test-hooks`: that build makes every
+            // edge list afresh (`backend.md` §4, *`Js.testHooks` is the
+            // build's test hooks*).
+            if (!e.options.test_hooks and e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
                 row.* = e.session.pack.find(.edges, EdgePack.key(e.session.keys.of(m), options));
             }
             if (row.* == null) built_insts += b.insts.len;
@@ -4905,7 +4914,7 @@ const Emitter = struct {
             // The cross-check (`crossCheck`) lowers a module again only to
             // compare trees, so it reads no row either: its units are fresh
             // and must compare with the first lowering's.
-            if (read_rows and !t.lower_only and !e.options.release and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+            if (read_rows and !t.lower_only and !e.options.release and !e.options.test_hooks and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
                 const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
                 if (e.session.pack.find(.emit, key)) |bytes| {
                     if (try EmitPack.decode(scratch, bytes)) |decoded| {
@@ -4937,6 +4946,7 @@ const Emitter = struct {
                 .inline_once = e.options.release,
                 .unit_results = e.options.release,
                 .development = !e.options.release,
+                .test_hooks = e.options.test_hooks,
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
                 .schema_library = e.options.schema_library,

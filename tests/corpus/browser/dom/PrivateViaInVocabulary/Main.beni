@@ -1,0 +1,23 @@
+-- The page names no event. Its one handler is in `Probe.button`, in the
+-- vocabulary module, beside `probe`, which is not `pub`. A build that hands
+-- the handler the event itself shows a different text.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+view : String → Html String
+view text =
+    <main>
+        {Probe.button}
+        <p id="out">{text}</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → "none"
+        , update = λnext _ → next
+        , view = view
+        }

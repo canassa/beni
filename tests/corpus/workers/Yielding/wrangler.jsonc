@@ -1,0 +1,5 @@
+{
+  "name": "yielding",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+}

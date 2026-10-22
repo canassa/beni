@@ -1,0 +1,23 @@
+module SchemaMutualTagged
+  schema Even
+    type Type : Even.Type
+    type Encoded : Even.Encoded
+    value schema : ⊤ → Schema Even.Encoded Even.Type
+    value parse : String → Result (List Issue) Even.Type
+    value print : Even.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Even.Type
+    value printWith : Options, Even.Type → Result (List Issue) String
+    ctor type.EvenMore/1 : { next : List Odd.Type } → Even.Type
+    ctor type.EvenEnd : Even.Type
+    ctor encoded.EvenMore/1 : { next : List Odd.Encoded } → Even.Encoded
+    ctor encoded.EvenEnd : Even.Encoded
+  schema Odd
+    type Type : Odd.Type
+    type Encoded : Odd.Encoded
+    value schema : ⊤ → Schema Odd.Encoded Odd.Type
+    value parse : String → Result (List Issue) Odd.Type
+    value print : Odd.Type → Result (List Issue) String
+    value parseWith : Options, String → Result (List Issue) Odd.Type
+    value printWith : Options, Odd.Type → Result (List Issue) String
+    ctor type.OddOne/1 : { next : List Even.Type } → Odd.Type
+    ctor encoded.OddOne/1 : { next : List Even.Encoded } → Odd.Encoded

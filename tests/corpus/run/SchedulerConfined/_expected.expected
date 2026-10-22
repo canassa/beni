@@ -1,0 +1,10 @@
+b 3: ⊤
+about to throw: ⊤
+a stopped: ⊤
+b 2: ⊤
+b 1: ⊤
+a's release: Cancelled: ⊤
+a: the drain threw "TODO: the fiber threw"
+other: "Done"
+held: "Cancelled"
+thrower: "Cancelled"

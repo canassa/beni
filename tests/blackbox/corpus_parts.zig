@@ -30,4 +30,9 @@ pub const Part = enum {
     run_release,
     /// `browser/`: both builds of each fixture, each loaded into a page.
     browser,
+    /// `workers/`: each build of each fixture, run under Miniflare
+    /// (`workers.zig`). Not a gate: `zig build test-workers` runs it in
+    /// `nix develop .#workers`, which has Miniflare (`BENI_MINIFLARE`);
+    /// `build.zig` leaves it out of `test-blackbox`.
+    workers,
 };

@@ -1,0 +1,39 @@
+-- run: the deferred finalisers of a scheduler's root scope run in a fiber
+-- of that scheduler (transparent-effects-proposal.md §17.5, amended
+-- 2026-10-22): under its deadline, which cuts one that waits too long and
+-- counts it, and before its `done`.
+import Deferred exposing (Deferred)
+import Duration
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+finish : Deferred Int, Int → ⊤
+finish done cut =
+    _ = Deferred.complete done cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+    done = Deferred.make ⊤
+    root = Task.openRoot ⊤
+
+    Task.withScheduler s λ⊤ →
+        -- The root scope belongs to the scheduler of its first fiber.
+        _ = Task.spawnIn root λ⊤ → ⊤
+
+        Task.defer root λ_ →
+            say "deferred start"
+            Task.sleep (Duration.millis 20)
+            say "deferred end"
+        Task.yieldNow ⊤
+    Task.stopScheduler s 1 (finish done _)
+    _ = Debug.log "cut" (Deferred.wait done)
+    Node.done

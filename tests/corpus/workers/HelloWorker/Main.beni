@@ -1,0 +1,84 @@
+-- workers: a Worker's `fetch` answers each request (boundary.md §9.12 (d)):
+-- a text, an HTML and an empty body, a header appended, a redirect
+-- resolved against the request's URL, a plain-text binding, and a 404. An
+-- invalid response — a body on a 204, a status out of range, a header name
+-- that is not a token, a value with a control character, a redirect whose
+-- target does not resolve or whose status is not a redirect's — is a 500
+-- with an empty body and no header of the program's, and one
+-- `console.error` line names the fault; `Worker.header` with a name that
+-- is not a token answers `Nothing`.
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.path request of
+        "/" →
+            Worker.text 200 "hello from beni"
+
+        "/html" →
+            Worker.withHeader (Worker.html 201 "<p>hi</p>") "x-made-by" "beni"
+
+        "/empty" →
+            Worker.empty 204
+
+        "/bad" →
+            Worker.text 204 "a body"
+
+        "/platform-header" →
+            Worker.withHeader (Worker.text 200 "never seen") "X-Beni-Cycle" "1"
+
+        "/redirect" →
+            Worker.redirect request "/html" 302
+
+        "/redirect-bad-status" →
+            Worker.redirect request "/html" 200
+
+        "/redirect-bad-target" →
+            Worker.redirect request "http://[" 302
+
+        "/status-999" →
+            Worker.text 999 "out of range"
+
+        "/bad-name" →
+            Worker.withHeader (Worker.text 200 "never seen") "x name" "1"
+
+        "/bad-value" →
+            Worker.withHeader (Worker.text 200 "never seen") "x-value" "a\nb"
+
+        "/invalid-then-header" →
+            Worker.withHeader (Worker.text 999 "never seen") "x-program" "kept?"
+
+        "/header-bad" →
+            case Worker.header request "not a token" of
+                Just _ →
+                    Worker.text 500 "a header with that name?"
+
+                Nothing →
+                    Worker.text 200 "no such header, and no crash"
+
+        "/method" →
+            Worker.text 200 "${Worker.method request} ${Worker.url request}"
+
+        "/var" →
+            case Worker.var (Worker.env ctx) "GREETING" of
+                Just greeting →
+                    Worker.text 200 greeting
+
+                Nothing →
+                    Worker.text 500 "no GREETING"
+
+        "/missing" →
+            case Worker.var (Worker.env ctx) "NOT_DECLARED" of
+                Just _ →
+                    Worker.text 500 "declared after all"
+
+                Nothing →
+                    Worker.text 200 "not declared, and no crash"
+
+        _ →
+            Worker.text 404 "no such page: ${Worker.path request}"

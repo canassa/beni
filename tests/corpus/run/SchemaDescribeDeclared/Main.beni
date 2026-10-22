@@ -7,7 +7,14 @@
 -- definitions of recursive declarations — one per nongeneric declaration
 -- however often it is named, numbered in the order `describe` first meets
 -- them, and one per use of a generic recursive declaration, since each use
--- makes its own (mutual recursion is #196).
+-- makes its own. Two declarations that name each other are two definitions,
+-- each named once: `Odd` and `Even` as constants, and the generic `Ping` and
+-- `Pong`, whose descriptions hand their parameter round, close the cycle
+-- inside one use rather than make a new definition per reference; so do
+-- `Rock`, `Paper` and `Scissors`, each of which names the other two. A
+-- cycle of mixed arity, the generic `Bounce a` naming the nongeneric
+-- `Flat`, which names `Bounce Int`, has no cells: `Flat` is a constant, so
+-- `Bounce String` is three definitions, `Bounce Int` its own use.
 import Node
 import Schema exposing (Conversion, Definition, FieldShape, Schema, Shape, VariantShape)
 
@@ -41,6 +48,61 @@ schema Chain a tagged "k" of
 schema Pair =
     left : Chain Int
     right : Chain Int
+
+
+schema Odd tagged "o" of
+    OddOne as "one"
+        next : List Even
+
+
+schema Even tagged "e" of
+    EvenMore as "more"
+        next : List Odd
+    EvenEnd as "end"
+
+
+schema Ping a tagged "ping" of
+    PingValue as "value"
+        value : a
+        pong : Pong a
+    PingEnd as "end"
+
+
+schema Pong a tagged "pong" of
+    PongNext as "next"
+        ping : Ping a
+
+
+schema Rock a tagged "r" of
+    RockBeats as "beats"
+        value : a
+        paper : List (Paper a)
+        scissors : List (Scissors a)
+
+
+schema Paper a tagged "p" of
+    PaperBeats as "beats"
+        rock : List (Rock a)
+        scissors : List (Scissors a)
+
+
+schema Scissors a tagged "s" of
+    ScissorsBeats as "beats"
+        rock : List (Rock a)
+        paper : List (Paper a)
+
+
+schema Bounce a tagged "b" of
+    BounceValue as "value"
+        value : a
+        flat : Flat
+    BounceEnd as "end"
+
+
+schema Flat tagged "f" of
+    FlatNext as "next"
+        bounce : Bounce Int
+    FlatEnd as "end"
 
 
 decimalInt : Conversion String Int
@@ -193,6 +255,12 @@ main =
         , describe (Chain.schema (Schema.list (Note.schema ⊤)))
         , describe (Pair.schema ⊤)
         , describe (Schema.converted Schema.string decimalInt)
+        , describe (Odd.schema ⊤)
+        , describe (Schema.list (Even.schema ⊤))
+        , describe (Ping.schema Schema.int)
+        , describe (Pong.schema Schema.string)
+        , describe (Rock.schema Schema.bool)
+        , describe (Bounce.schema Schema.string)
         , case Schema.parse (Tree.schema ⊤) "{\"node\":\"leaf\",\"label\":\"a\"}" of
             Ok _ →
                 "parsed"

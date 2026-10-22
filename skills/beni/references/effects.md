@@ -55,6 +55,30 @@ pub patient : (⊤ → Int) → Maybe Int
 patient work = Task.timeout (Duration.seconds 2) work
 ```
 
+### A scheduler of its own
+
+Every fiber resumes through the program's one queue. `Task.scheduler hook` makes a queue of its
+own, and `Task.withScheduler scheduler (λ⊤ → work)` runs `work` on it: `work`'s fiber resumes
+through that queue while inside, and the fibers `work` starts belong to the scheduler. A defect
+under a scheduler runs its `hook` and stops that scheduler alone: its fibers are cancelled and
+their releases run; on `node` the throw then ends the process, as every defect does.
+`Task.stopScheduler scheduler deadline done` cancels the fibers of one scheduler — the fibers
+started under it and the fiber inside its `withScheduler`, whole — runs their releases, and calls
+`done` with how many releases the deadline cut short; the fibers of every other scheduler run on.
+A platform uses this to give each request or each object a runtime of its own.
+
+```beni
+import Task
+
+
+pub apart : (⊤ → Int), (⊤ → Int) → Int
+apart left right =
+    own = Task.scheduler λ⊤ → ⊤
+    a = Task.spawn λ⊤ → Task.withScheduler own left
+    b = Task.spawn right
+    Task.join a + Task.join b
+```
+
 ## Cells and signals
 
 - `Ref a`: a mutable cell. `Ref.make v`, `Ref.get r`, `Ref.set r v`, `Ref.update r f`,
@@ -115,4 +139,4 @@ save ms =
         Log.warn "saving took ${ms} ms"
 ```
 
-Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16; `core/Task.beni`; `core/Log.beni`; `platforms/node/Io.beni`.
+Sources: `docs/design/transparent-effects-proposal.md` §2, §14.7, §16, §17.5; `core/Task.beni`; `core/Log.beni`; `platforms/node/Io.beni`.

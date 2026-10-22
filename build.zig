@@ -560,6 +560,7 @@ pub fn build(b: *std.Build) void {
         .wasm_install = &wasm_install.step,
         .shipped_wasm_install = &shipped_wasm_install.step,
         .chrome = b.option([]const u8, "chrome", "The Chrome or Chromium `test-browser` runs pages in (default: the first of chromium, google-chrome-stable and google-chrome on PATH)") orelse "",
+        .miniflare = b.option([]const u8, "miniflare", "Miniflare's entry file, which `test-workers` runs Workers under (default: BENI_MINIFLARE, set by `nix develop .#workers`)") orelse "",
     };
     // A process that runs an emitted program skips Node when the run's
     // hash is recorded (`tests/blackbox/run_hash.zig`); every process of the
@@ -599,6 +600,9 @@ pub fn build(b: *std.Build) void {
     const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
     const corpus_summary = runHashSummary(b, summary_exe, counts_dir, &.{});
     for (std.enums.values(corpus_parts.Part)) |part| {
+        // `workers/` needs Miniflare, which only `nix develop .#workers`
+        // has: `test-workers` runs it, below, and the gates do not.
+        if (part == .workers) continue;
         corpus_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .report_dir = counts_dir }).step);
         gate_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = @tagName(part), .report_dir = gate_counts_dir }).step);
     }
@@ -654,6 +658,16 @@ pub fn build(b: *std.Build) void {
     // so. Takes `-Dcorpus`; not a gate. Each case has its own hang guard.
     const browser_step = b.step("test-browser", "Run the browser/ corpus in a headless Chrome instead of happy-dom");
     browser_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .browser = "chrome" }).step);
+
+    // `workers/`: the `cloudflare` platform's fixtures, each build run under
+    // Miniflare (docs/design/boundary.md §9.12 (k); tests/blackbox/workers.zig).
+    // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
+    // `-Dminiflare=`; with neither the step fails and says so. Not a gate
+    // (no CI job runs it yet, #697); a case starts Miniflare once
+    // (§9.12 (k)). Takes `-Dcorpus`. Its run hashes are recorded by
+    // `test-run-hashes` only in the same shell.
+    const workers_step = b.step("test-workers", "Run the workers/ corpus under Miniflare (nix develop .#workers)");
+    workers_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "workers" }).step);
 
     // The page fuzzer's long sweep (docs/design/browser-direct.md §8.3):
     // every fuzzed `browser/` fixture with fifty seeds of sixty steps, where
@@ -2195,6 +2209,9 @@ const Blackbox = struct {
     /// `-Dchrome`, pinned as `BENI_CHROME` on every run: the Chrome
     /// `test-browser` runs pages in, or empty to find one on `PATH`.
     chrome: []const u8,
+    /// `-Dminiflare`, pinned as `BENI_MINIFLARE` when given: Miniflare's
+    /// entry file for `test-workers`; empty keeps the shell's variable.
+    miniflare: []const u8,
 
     /// `test-blackbox-<file>`: the step that runs one black-box test file.
     fn fileStep(bb: Blackbox, root: []const u8) *std.Build.Step {
@@ -2270,6 +2287,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
         r.setEnvironmentVariable("BENI_BROWSER", env.browser);
         r.setEnvironmentVariable("BENI_CHROME", bb.chrome);
+        if (bb.miniflare.len != 0) r.setEnvironmentVariable("BENI_MINIFLARE", bb.miniflare);
         r.setEnvironmentVariable("BENI_FUZZ_SEEDS", env.fuzz_seeds);
         r.setEnvironmentVariable("BENI_FUZZ_STEPS", env.fuzz_steps);
         const exe_dir = switch (env.exe) {

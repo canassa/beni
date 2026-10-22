@@ -1,0 +1,67 @@
+> GET /
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< hello from beni
+> GET /html
+< 201
+< content-type: text/html; charset=utf-8
+< x-made-by: beni
+<
+< <p>hi</p>
+> GET /empty
+< 204
+> GET /bad
+< 500
+| err: beni: invalid response: a 204 response takes no body
+> GET /platform-header
+< 500
+| err: beni: invalid response: the header name "X-Beni-Cycle" is the platform's: x-beni- names are refused
+> GET /redirect
+< 302
+< location: http://127.0.0.1/html
+> GET /redirect-bad-status
+< 500
+| err: beni: invalid response: a redirect's status is 301, 302, 303, 307 or 308, not 200
+> GET /redirect-bad-target
+< 500
+| err: beni: invalid response: the redirect target "http://[" does not resolve against the request's URL
+> GET /status-999
+< 500
+| err: beni: invalid response: a status is an integer from 200 to 599, not 999
+> GET /bad-name
+< 500
+| err: beni: invalid response: the header name "x name" is not a token
+> GET /bad-value
+< 500
+| err: beni: invalid response: the value of the header "x-value" holds a control character
+> GET /invalid-then-header
+< 500
+| err: beni: invalid response: a status is an integer from 200 to 599, not 999
+> GET /header-bad
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< no such header, and no crash
+> POST /method?x=1
+>
+> ignored
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< POST http://127.0.0.1/method?x=1
+> GET /var
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< hi there
+> GET /missing
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< not declared, and no crash
+> GET /nope
+< 404
+< content-type: text/plain; charset=utf-8
+<
+< no such page: /nope

@@ -207,6 +207,7 @@ module Js
   value shiftRight : int, int → int
   value shiftRightZero : int, int → int
   value suspending : (⊤ → a) → a  -- suspends
+  value testHooks : ⊤ → bool
   value throw : Value → a  -- impure
   value to : Value → a
   value typeIs : Value, name → bool
@@ -580,6 +581,7 @@ module Task
   type Fiber a
   type Restore
   type Resume a
+  type Scheduler
   type Scope
   type Soon
   value adjustClock : Value, Value → ⊤  -- suspends
@@ -602,6 +604,7 @@ module Task
   value never : ⊤ → a  -- suspends
   value onDefect : (⊤ → ⊤) → ⊤  -- impure
   value onExit : (⊤ → a), (Exit a → ⊤) → a  -- impure
+  value onSchedulerIdle : Scheduler, (⊤ → ⊤) → ⊤  -- impure
   value onShutdown : (⊤ → ⊤) → ⊤  -- impure
   value onTurn : ((⊤ → ⊤) → ⊤) → ⊤  -- impure
   value openRoot : ⊤ → Scope  -- impure
@@ -618,6 +621,10 @@ module Task
   value resume : Resume a, a → ⊤  -- impure
   value retry : (Schedule e), (⊤ → Result e a) → Result e a  -- suspends
   value running : Fiber a → Bool  -- impure
+  value scheduler : (⊤ → ⊤) → Scheduler  -- impure
+  value schedulerBusy : Scheduler → Bool  -- impure
+  value schedulerWith : ((⊤ → ⊤) → ⊤), ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
+  value schedulersListed : ⊤ → Int  -- impure
   value scope : (Scope → a) → a  -- suspends
   value shutdown : Int, (Int → ⊤) → ⊤  -- impure
   value sleep : Duration → ⊤  -- suspends
@@ -626,6 +633,7 @@ module Task
   value spawnDetached : (⊤ → a) → Fiber a  -- impure
   value spawnIn : Scope, (⊤ → a) → Fiber a  -- impure
   value start : (⊤ → a), (Exit a → ⊤) → ⊤  -- impure
+  value stopScheduler : Scheduler, Int, (Int → ⊤) → ⊤  -- impure
   value timeout : Duration, (⊤ → a) → Maybe a  -- suspends
   value uninterruptible : (⊤ → a) → a  -- impure
   value uninterruptibleMask : (Restore → a) → a  -- impure
@@ -633,6 +641,7 @@ module Task
   value wait : Fiber a → Exit a  -- suspends
   value withClock : Value, (⊤ → a) → a  -- impure
   value withLogContext : Value, (⊤ → a) → a  -- impure
+  value withScheduler : Scheduler, (⊤ → a) → a  -- suspends
   value yieldNow : ⊤ → ⊤  -- suspends
 module Url
   type Protocol

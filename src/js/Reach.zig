@@ -307,6 +307,8 @@ pub const Input = struct {
     /// `--schema-library`: a schema's directions run its description
     /// through the library and call no worker.
     schema_library: bool = false,
+    /// `--test-hooks`: what `Js.testHooks` is (`JsIntrinsic.droppedArm`).
+    test_hooks: bool = false,
     /// Whether the program's shape runs take their shapes (`SchemaValid`,
     /// `shape_threshold`), decided once for the whole program by `Emit`.
     /// An embedded module's packed edges are made with it false.
@@ -475,6 +477,22 @@ pub fn mainOf(bir: *const Bir) ?u32 {
         if (d.kind != .value or d.body == .none) continue;
         if (bir.symbol(d.name) != InternPool.WellKnown.main.symbol()) continue;
         return @intCast(i);
+    }
+    return null;
+}
+
+/// The declaration of the `foreign` that event `row` of the vocabulary
+/// module's record names as its `via`, when that `foreign` is not `pub` and
+/// so is no interface value (`checker-v2.md` §25.8, amended 2026-10-21);
+/// null for an event with no `via`, or a `pub` one. `bir` is the vocabulary
+/// module's. The edge to it (`Builder`), its export (`Lower.exports`) and
+/// its import where the event is lowered all find it here.
+pub fn privateExtractor(vocabulary: *const Interface, bir: *const Bir, row: u32) ?u32 {
+    if (row >= vocabulary.events.len) return null;
+    const via = vocabulary.events[row].via.unwrap() orelse return null;
+    const symbol = vocabulary.symbols[@backingInt(via)];
+    for (bir.decls, 0..) |d, i| {
+        if (d.kind == .foreign_value and !d.is_pub and bir.symbol(d.name) == symbol) return @intCast(i);
     }
     return null;
 }
@@ -1107,6 +1125,24 @@ pub const Builder = struct {
                     try decl_targets.append(b.scratch, .{ .node = node, .chain = chain });
                 }
             }
+            // A `via` that is not `pub` has no interface index, so the
+            // markup leg above does not name it; the vocabulary row names
+            // its declaration (`privateExtractor`). The edge is at the
+            // row's markup root, as each of the leg's is (`Edges.markupWalk`).
+            if (b.in.vocabulary) |vocabulary| if (vocabulary.int() < b.in.interfaces.len) {
+                const iface = &b.in.interfaces[vocabulary.int()];
+                const vbir = b.in.birOf(vocabulary);
+                for (dispatch.markup) |row| {
+                    if (row.kind != .event or row.extractor != Dispatch.Markup.no_row) continue;
+                    const at = row.root.int();
+                    if (at < d.inst_start.int() or at >= d.inst_end.int() or b.cut(m, at)) continue;
+                    const decl = privateExtractor(iface, vbir, row.row) orelse continue;
+                    try decl_targets.append(b.scratch, .{
+                        .node = .{ .module = vocabulary, .kind = .decl, .index = decl },
+                        .chain = guards.at(at),
+                    });
+                }
+            };
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
             try b.listEdges(m, bir, d, &decl_targets);
@@ -1200,7 +1236,7 @@ pub const Builder = struct {
                 }
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
-                if (which == .null or which == .undefined or which == .development) marks[i] = true;
+                if (which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;
             },
             else => {},
         };
@@ -1604,7 +1640,7 @@ pub const Builder = struct {
                 .case => if (g.b.in.interner) |interner| {
                     const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
                     const never: Node = .{ .module = g.m, .kind = .ctor, .index = never_ctor };
-                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release)) |branch| {
+                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
                         continue;
                     }

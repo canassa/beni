@@ -334,6 +334,9 @@ pub const Input = struct {
     /// What `Js.development` is: `false` under `--release` (`backend.md`
     /// §4, *`Js.development` is the build's mode*).
     development: bool = true,
+    /// What `Js.testHooks` is: `true` under the hidden `--test-hooks`
+    /// (`backend.md` §4, *`Js.testHooks` is the build's test hooks*).
+    test_hooks: bool = false,
     /// The build's schema plans and what reads them (`schema.md` §6), when
     /// a module declares or uses a schema. Null: the module emits none.
     schemas: ?*const SchemaGraph = null,
@@ -2013,7 +2016,7 @@ pub const Lowerer = struct {
         // followed nothing out of it, with or without a survivor set.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development) orelse continue;
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks) orelse continue;
             const body = l.bir.instData(branch).rhs;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
@@ -2102,7 +2105,8 @@ pub const Lowerer = struct {
     /// that body alone, with no test, and the dropped arm not at all.
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         l.askSelf(.development, l.in.development, 0, 0);
-        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse
+        l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
+        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks) orelse
             l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
         for (branches) |branch| {
@@ -2792,6 +2796,7 @@ pub const Lowerer = struct {
                 break :blk dead.isSet(fact.index);
             },
             .development => l.in.development,
+            .test_hooks => l.in.test_hooks,
             .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
             .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
             // All three are asked with a constant `true` when the unit needs
@@ -3580,6 +3585,21 @@ pub const Lowerer = struct {
             if (d.is_pub or !l.emitterCalled(@intCast(i))) continue;
             if (l.liveDecl(@intCast(i))) try names.append(l.scratch, try l.topName(@intCast(i)));
         }
+        // A payload extractor that is not `pub` is in no interface, and a
+        // module that lowers its event imports it by name
+        // (`Reach.privateExtractor`). Exported when it is live: reachability
+        // keeps it for a surviving markup root that names an event with that
+        // `via`. Two events can name one extractor.
+        if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
+            const iface = &l.in.interfaces[l.in.module.int()];
+            const first = names.items.len;
+            for (0..iface.events.len) |row| {
+                const decl = Reach.privateExtractor(iface, l.bir, @intCast(row)) orelse continue;
+                if (!l.liveDecl(decl)) continue;
+                const exported = try l.topName(decl);
+                if (std.mem.indexOfScalar(JsIr.NameIndex, names.items[first..], exported) == null) try names.append(l.scratch, exported);
+            }
+        };
         // `core/Schema`'s core-private values the specialised path calls
         // (`schema.md` §6), on the same terms.
         if (l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) == l.in.module) {
@@ -6430,6 +6450,10 @@ pub const Lowerer = struct {
             .development => {
                 l.askSelf(.development, l.in.development, 0, 0);
                 return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            .testHooks => {
+                l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
+                return l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
             // A function passed as a value is the sibling's (`core/Js.js`).
             else => {},
@@ -10333,6 +10357,10 @@ pub const Lowerer = struct {
             W.development => blk: {
                 l.askSelf(.development, l.in.development, 0, 0);
                 break :blk l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            W.testHooks => blk: {
+                l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
+                break :blk l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
@@ -17656,9 +17684,11 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     /// An event's payload extractor, as a `foreign` of the vocabulary
-    /// module, imported as any other module's value is. Reachability keeps
-    /// it alive through the markup leg of `check/Edges.zig`
-    /// (`checker-v2.md` §25.7).
+    /// module. A `pub` one is an interface value. One that is not `pub` is
+    /// found by the vocabulary row (`Reach.privateExtractor`) and imported
+    /// by its name, the way a core-private value is (`checker-v2.md` §25.8,
+    /// amended 2026-10-21). In the vocabulary module itself, either is
+    /// written by its local name. Reachability keeps either alive.
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
@@ -17667,9 +17697,31 @@ const markup_vtable: beni_markup.VTable = struct {
         if (!st.built.tree.eventFacts(it.event).has_extractor) return null;
         const extractor_value = st.built.extractors[item_index];
         const module = l.in.graph.markup.vocabulary orelse return null;
-        if (extractor_value == Dispatch.Markup.no_row) return null;
-        try l.need(module, extractor_value);
-        return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
+        const private = extractor_value == Dispatch.Markup.no_row;
+        if (!private and module != l.in.module) {
+            try l.need(module, extractor_value);
+            return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
+        }
+        const vbir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
+        // The event has a `via`, and the checker bound it to a `foreign` of
+        // the vocabulary module (§25.8), so finding no declaration is a
+        // compiler bug. The identity a lowering writes for a null hands the
+        // handler the event instead of the extractor's result.
+        const found: ?u32 = if (private)
+            Reach.privateExtractor(&l.in.interfaces[module.int()], vbir, st.built.extractor_rows[item_index])
+        else if (l.in.provenance[module.int()].valueDecl(extractor_value)) |d| d.int() else null;
+        const decl = found orelse {
+            if (std.debug.runtime_safety) std.debug.panic("markup: event item {d} has a `via` that names no declaration of the vocabulary module", .{item_index});
+            return null;
+        };
+        // The vocabulary module's own markup: the extractor is a declaration
+        // of this module, and an import would declare its name a second time.
+        if (module == l.in.module) return expr(try l.ident(try l.topName(decl), pos(l)));
+        const base = vbir.symbol(vbir.decls[decl].name);
+        if (std.debug.runtime_safety) if (l.in.live) |r| try l.requireLive(r.decl(module, decl), l.text(base));
+        const entry: Lowerer.Needed = .{ .module = module, .base = base.toOptional() };
+        try l.needName(entry);
+        return expr(try l.ident(try l.neededName(entry), pos(l)));
     }
 
     /// `Maybe`'s representation is `{ $: "Just" | "Nothing", a }` with the

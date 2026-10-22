@@ -1,0 +1,41 @@
+-- workers: a defect fails only its own request (boundary.md §9.12 (d)). A
+-- handler that throws answers the host's error while a request in flight
+-- at the same time answers 200; a throw after the answer, from a fiber
+-- that outlives it, reaches the host as an unhandled rejection on the
+-- console, never dropped (rule 9); and each request's scheduler leaves
+-- the kernel's list once nothing of it runs: the test hook
+-- `/__beni/schedulers`, which makes no scheduler of its own, counts none.
+import Duration
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+route : Context, Request → Response
+route ctx request =
+    case String.split (Worker.path request) "/" of
+        [ "", "slow", ms ] →
+            case String.toInt ms of
+                Just n →
+                    Task.sleep (Duration.millis n)
+                    Worker.text 200 "slept ${ms}"
+
+                Nothing →
+                    Worker.text 400 "not a number"
+
+        [ "", "throw" ] →
+            Task.yieldNow ⊤
+            Debug.todo "the handler threw"
+
+        [ "", "late-throw" ] →
+            -- Queued behind this handler's answer: it throws after the
+            -- answer, in the same turn, so the line is this step's.
+            _ = Task.spawnDetached λ⊤ → Debug.todo "the late fiber threw"
+            Worker.text 200 "answered before the late throw"
+
+        _ →
+            Worker.text 404 "no such page"

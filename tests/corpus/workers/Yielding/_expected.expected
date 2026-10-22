@@ -1,0 +1,11 @@
+> GET /spin/200000 (detached as long)
+> GET /short
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< the long request is running
+> (answer long)
+(long) < 200
+(long) < content-type: text/plain; charset=utf-8
+(long) <
+(long) < spun 200000

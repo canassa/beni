@@ -3681,6 +3681,97 @@ test "a page with no delegated event calls no start and ships no listener" {
     try testing.expect(std.mem.indexOf(u8, try w.read("clicks-out/_main.mjs"), "addEventListener") != null);
 }
 
+test "a `via` that is not `pub` ships only when a surviving root names its event" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §25.8, amended 2026-10-21: an extractor that is not
+    // `pub` is kept by the vocabulary row's name, so it is exported, and
+    // its sibling export kept, only when a root that survives names its
+    // event. Two such extractors in one vocabulary; the page names one.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{
+        \\  "platform": true,
+        \\  "name": "probe",
+        \\  "platforms": ["browser"],
+        \\  "reexports": ["Html", "Browser"],
+        \\  "markup": { "vocabulary": "Probe", "type": "Html.Html" }
+        \\}
+        \\
+    );
+    try w.write("platform/Probe.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub foreign type Event
+        \\
+        \\
+        \\pub markup text : String → Html msg
+        \\
+        \\
+        \\pub markup map : Html a, (a → b) → Html b
+        \\
+        \\
+        \\pub element "*"
+        \\
+        \\
+        \\pub attribute "*" : String
+        \\
+        \\
+        \\pub event "onProbe" name "probe" via probe : String
+        \\
+        \\
+        \\pub event "onOther" name "other" via other : String
+        \\
+        \\
+        \\foreign impure probe : Event → String
+        \\
+        \\
+        \\foreign impure other : Event → String
+        \\
+    );
+    try w.write("platform/Probe.js",
+        \\export const probe = (e) => `dropped ${e.detail}`;
+        \\export const other = (e) => `kept ${e.detail}`;
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : String → Html String
+        \\view text =
+        \\    <button onOther={λvalue → value}>{text}</button>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = λ⊤ → "none", update = λnext _ → next, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dev = try w.runWith(&.{ "build", "--platform=platform", "--out=dev", "Main.beni" }, .{ .raw_diagnostics = true });
+    const release = try w.runWith(&.{ "build", "--platform=platform", "--release", "--out=release", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(dev);
+    try expectBuilt(release);
+    const vocabulary = try w.read("dev/_platform/Probe.mjs");
+    try testing.expect(std.mem.indexOf(u8, vocabulary, "Probe$other") != null);
+    try testing.expect(std.mem.indexOf(u8, vocabulary, "Probe$probe") == null);
+    const shipped = try w.read("release/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, shipped, "`kept ") != null);
+    try testing.expect(std.mem.indexOf(u8, shipped, "`dropped ") == null);
+}
+
 /// A page on `Tea.element` whose `update` returns `cmd`, for the two tests
 /// below.
 fn elementPage(comptime cmd: []const u8) []const u8 {
@@ -7187,4 +7278,114 @@ test "a project's exports list that is a string is the manifest's exit-2 failure
     try testing.expectEqual(@as(u8, 2), built.exit_code);
     try testing.expectEqualStrings("beni: beni.json's \"exports\" must be a list of names, not a string\n", built.stderr);
     try testing.expect(!w.exists("out"));
+}
+
+test "the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // backend.md §4, *`Js.testHooks` is the build's test hooks*: the flag
+    // the corpus passes to every `workers/` build (boundary.md §9.12 (k)).
+    // A test platform's module reads it; the arm the build does not take is
+    // not written, so its text is absent from the output.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("hooked/beni.json",
+        \\{ "platform": true, "name": "hooked", "platforms": ["node"], "reexports": ["Node"] }
+    );
+    try w.write("hooked/Hooks.beni",
+        \\import Js
+        \\
+        \\
+        \\--| What the build holds of the test hooks.
+        \\pub probe : ⊤ → String
+        \\probe ⊤ = if Js.testHooks ⊤ then "the hooks are compiled in" else "no hooks in this build"
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Hooks
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main = Node.print (Hooks.probe ⊤)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.run(&.{ "build", "--platform=hooked", "--out=plain", "Main.beni" });
+    const hooked = try w.run(&.{ "build", "--platform=hooked", "--test-hooks", "--out=hooked", "Main.beni" });
+    const release = try w.run(&.{ "build", "--platform=hooked", "--test-hooks", "--release", "--out=rel", "Main.beni" });
+    const plain_release = try w.run(&.{ "build", "--platform=hooked", "--release", "--out=plain-rel", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ plain, hooked, release, plain_release }) |r| try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try w.expectProgram("plain/_main.mjs", .{ .stdout = "no hooks in this build\n" });
+    try w.expectProgram("hooked/_main.mjs", .{ .stdout = "the hooks are compiled in\n" });
+    try w.expectProgram("rel/_main.mjs", .{ .stdout = "the hooks are compiled in\n" });
+    try w.expectProgram("plain-rel/_main.mjs", .{ .stdout = "no hooks in this build\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The dropped arm's text is in no file of the build that dropped it.
+    const plain_module = try w.read("plain/_platform/Hooks.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_module, "the hooks are compiled in") == null);
+    try testing.expect(std.mem.indexOf(u8, plain_module, "no hooks in this build") != null);
+    const hooked_module = try w.read("hooked/_platform/Hooks.mjs");
+    try testing.expect(std.mem.indexOf(u8, hooked_module, "no hooks in this build") == null);
+    const hoisted = try w.read("rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, hoisted, "no hooks in this build") == null);
+    const plain_hoisted = try w.read("plain-rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_hoisted, "the hooks are compiled in") == null);
+}
+
+test "a Worker built without --test-hooks holds no hook text, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §9.12 (k): the Worker's test hooks — `/__beni/mark/<n>`
+    // and `/__beni/schedulers` — are in a `--test-hooks` build only; the
+    // test on `Js.testHooks` is nested, not joined with `&&`, so the hook
+    // code is dropped from a build without the flag (backend.md §4).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Worker exposing (Context, Request, Response)
+        \\
+        \\
+        \\main : Worker.Program
+        \\main = Worker.program { fetch = route, objects = [] }
+        \\
+        \\
+        \\route : Context, Request → Response
+        \\route _ request = Worker.text 200 (Worker.path request)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.run(&.{ "build", "--platform=cloudflare", "--out=plain", "Main.beni" });
+    const hooked = try w.run(&.{ "build", "--platform=cloudflare", "--test-hooks", "--out=hooked", "Main.beni" });
+    const release = try w.run(&.{ "build", "--platform=cloudflare", "--release", "--out=rel", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ plain, hooked, release }) |r| try testing.expectEqual(@as(u8, 0), r.exit_code);
+    const plain_worker = try w.read("plain/_platform/Worker.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_worker, "beni:mark") == null);
+    try testing.expect(std.mem.indexOf(u8, plain_worker, "/__beni/") == null);
+    const plain_task = try w.read("plain/_core/Task.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_task, "schedulersListed") == null);
+    const hooked_worker = try w.read("hooked/_platform/Worker.mjs");
+    try testing.expect(std.mem.indexOf(u8, hooked_worker, "beni:mark") != null);
+    const hoisted = try w.read("rel/_worker.mjs");
+    try testing.expect(std.mem.indexOf(u8, hoisted, "beni:mark") == null);
+    try testing.expect(std.mem.indexOf(u8, hoisted, "/__beni/") == null);
 }

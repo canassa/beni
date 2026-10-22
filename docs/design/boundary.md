@@ -1426,6 +1426,11 @@ version of the lowering interface (§9.4.6).
 String` names `foreign targetValue : Event -> String` of the same module, which is bound to an
 export of the module's sibling and held to all four of §4's checks like any other. So the one piece
 of a vocabulary that runs JavaScript at an event is exactly as walled as everything else that does.
+*Amended 2026-10-21.* The `foreign` need not be `pub`. Visibility is about names (`language.md`
+§5). A program cannot call the extractor, and the event can. The vocabulary row stores the
+name. A build that reaches the event imports that name, or writes it in the vocabulary module
+itself, and the vocabulary module exports the declaration, as it exports a core-private value.
+The runtime's `identity` stays the extractor of an event with no `via`.
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
@@ -4185,6 +4190,11 @@ runs, closed or not ((d) step 5).)*
 `deadline` is a constant of the `browser` platform, **1 000 ms** (choice 3 below), as W3's slice
 and budget are the platform's.
 
+*Amended 2026-10-22 (#596):* `Task.stopScheduler` is `shutdown` for one scheduler of
+`transparent-effects-proposal.md` §17.5's amendment of that date — the same three phases, for the
+fibers of that scheduler alone — and `shutdown` itself stops every scheduler made. The `cloudflare`
+platform calls it per request and per object (§9.12 (d), (f)).
+
 **(d) The teardown, step by step.** Every step runs in the teardown's macrotask or in the drains
 after it; each is deterministic, ordered by creation and by the scheduler's FIFO.
 
@@ -6787,6 +6797,38 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
   … the client disconnects" — under the same `deadline`. That the hold works after an
   abort is #600's second half.
+- *Amended 2026-10-22 (the Worker slice, as built).* **The scheduler per request, as built**
+  (`platforms/cloudflare/Worker.beni`, `handle`): the host's `fetch` makes a scheduler with
+  `Task.schedulerWith`, whose `run` queues each drain through a promise made in the request's own
+  context and re-armed from inside its reaction — a reaction registered in a request's context runs
+  there whoever resolves the promise (*measured*, above) — and starts the handler with
+  `Task.spawnDetached` from inside `Task.withScheduler` outside any fiber, so the handler's first
+  step is already the scheduler's. The fiber resolves the host's promise with the response; a throw
+  leaves the drain, the scheduler stops, its hook stops the scheduler with §9.8.14's deadline and
+  holds the teardown's promise in `waitUntil`, and the throw reaches the host's promise through the
+  trampoline's chain (`then(null, reject)`: handed on unchanged, nothing caught), so the host
+  answers 1101 with it. **A fiber that outlives the response is one `fetch` started with
+  `Task.spawnDetached`**; a `Task.spawn` child ends with `fetch`'s fiber, as everywhere. After the
+  answer, the platform asks `Task.schedulerBusy`: with no fiber running the scheduler is stopped at
+  once, so it leaves the kernel's list (*P705-1*); otherwise a promise is held in `waitUntil` that
+  `Task.onSchedulerIdle` settles when the last fiber ends, stopping the scheduler then, or the
+  deadline's timer settles by stopping it. A throw out of a drain after the answer is thrown
+  again from the trampoline's chain, where it is an unhandled rejection the host reports: never
+  dropped in silence (*P705-2*, rule 9). The scheduler's continuation after 64 resumptions is a
+  timer of zero in the request's context (`schedulerWith`'s `more`, §17.5), so a request that
+  keeps yielding starves no other request of the isolate (*P705-5*). One path keeps a scheduler
+  listed: a request that never answers — one the host cancels as hung — reaches neither the
+  answer, nor a defect, nor an abort, nor the deadline, which starts after the answer; its
+  scheduler stays in the list with the request's objects (*R2-6*, an edge; #707). **A Worker's `forward` starts a fresh
+  chain per call** (`crypto.randomUUID()`), since a Worker parks in no object and so begins no
+  cycle; an object's `forward` passes its chain on ((e.3), the object slice). **Two requests do not
+  wait on each other through memory** (*measured* under workerd): a request parked on a wait that
+  no host operation of its own will answer — a `Deferred` another request completes — is cancelled
+  by the host as hung ("the Workers runtime canceled this request because it detected that your
+  Worker's code had hung"); coordination between requests goes through a Durable Object, and two
+  requests need not share an isolate in production. The per-request scheduler is for a request's
+  own I/O: two requests parked on their own timers each answer in their own context (the fixture
+  `workers/CrossRequest`).
 
 The example of (i) becomes:
 
@@ -6854,8 +6896,14 @@ with the block above, the block holds.*
   or NUL; and `redirect`'s target is resolved against the request's URL in beni (`new URL(target,
   base)`, whose `TypeError` is caught from that call alone and is the fault). **An invalid
   response is a 500 with an empty body and no header of the program's, and one `console.error`
-  line names the fault**, in both builds; it is not a defect, for §9.10 (d)'s reason. `withHeader`
-  appends to a response the platform built, so nothing is immutable.
+  line names the fault**, in both builds; it is not a defect, for §9.10 (d)'s reason, and a
+  `withHeader` on it leaves it as it is (*amended 2026-10-22, P705-7*). `withHeader` appends to
+  a response the platform built; a response from `forward` or `callService` is the host's, whose
+  headers are immutable (*measured*, "Can't modify immutable headers"), so `withHeader` copies it
+  once before the first append — `new Response(body, response)`, the copy the platform's from
+  then on — and a 101, whose socket no copy keeps, is an invalid response under `withHeader`
+  (*amended 2026-10-22, P705-4*). `Worker.header` with a name that is not a token answers
+  `Nothing`, since no request has such a header and the host would throw (*P705-3*).
 - **The log** keeps core's default sink, the console method of each level: the host's logs collect
   what `console` writes. `node`'s `logfmt` line on standard error has no equivalent here.
 - **Bindings are read by name and answer `Maybe`**: a binding the configuration does not declare
@@ -7472,8 +7520,8 @@ Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not 
 it.
 
 **(k) The tests.** A Worker runs in `workerd`, which nixpkgs carries inside `wrangler` 4.93.0
-with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GB
-of disk in the store). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
+with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GiB
+of disk in the store, the dev shell `workers` of #698). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
 Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the design:*
 
 - **The driver is Miniflare's API, not a `wrangler` process**: `tests/workers/driver.mjs` imports
@@ -7497,6 +7545,33 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   runs — so a case starts Miniflare once, and the `run/` habit of a development and a `--release`
   pass in one case does not fit. A `workers/` fixture is therefore **two cases**, `<name>` and
   `<name>.release`, each one build and one Miniflare start over the same sources and script.
+- *Amended 2026-10-22 (the Worker slice, as built).* **The `workers/` corpus kind**
+  (`tests/corpus/README.md`, *A Worker*; `tests/blackbox/workers.zig`): a fixture is a project
+  under `tests/corpus/workers/<Name>/` — its modules, `beni.json` with the `"exports"` list,
+  `wrangler.jsonc` as (i) writes it, `_expected.steps` — and two cases, the development build and
+  the `--release --allow-debug` build, each one Miniflare start (the budget above), each with a
+  record file of its own (`_expected.run-hash`, `_expected.release-run-hash`), so neither case
+  writes the other's. The driver takes Miniflare's entry file as `--miniflare=`, from
+  `BENI_MINIFLARE` (`nix develop .#workers`, #698) or `-Dminiflare=`, because a program the harness
+  spawns gets an empty environment; it maps `compatibility_date`, `compatibility_flags`, `vars`
+  and `durable_objects` with `migrations` to Miniflare's options, passes `cf: false`, listens on
+  127.0.0.1 and disposes at the end. `zig build test-workers` runs the kind; it is not a gate, and
+  no CI job runs it yet (#697). The transcript prints each request, its answer with the headers
+  sorted as the host keeps them, and the Worker's console lines after each step. The script's
+  steps in this slice: a request, `detach`/`answer`, and `abort`. **Two facts measured under
+  Miniflare 4.20260518.0**: a client that leaves — through `dispatchFetch`'s signal or a raw
+  connection destroyed — never reaches the Worker's `request.signal`, because the Worker's client
+  is Miniflare's own entry worker, so #600's second half is owed to a run under `wrangler dev`;
+  and a request parked on a wait no host operation of its own answers is cancelled as hung ((d)).
+  **Both halves of #600 stay open** (*P705-8*): the first — a release that runs before the
+  platform's deadline, and the deadline's value, 25 000 ms in the code — has no fixture either,
+  since driving 25 seconds needs a hook (#707). The Worker's own test hooks, in a `--test-hooks`
+  build: `/__beni/mark/<text>` writes `beni:mark <text>` to the console, which the driver waits
+  for after each step so that a step's console lines never land under the next (*P705-9*), and
+  `/__beni/schedulers` answers how many schedulers the kernel lists, so a fixture sees that a
+  request's leaves it, and `/__beni/holds` how many answered requests still hold work under
+  `waitUntil` (R4-1 of #705's review: `CrossRequest` parks a detached fiber on a `Deferred` a
+  later request completes, and the count goes 0, 1, 0). The flag's `tick` and `alarm` hooks are the object slice's.
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of

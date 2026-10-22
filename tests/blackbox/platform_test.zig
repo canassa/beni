@@ -243,7 +243,7 @@ test "a platform that depends on nothing that exists is refused" {
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 2), checked.exit_code);
     try testing.expectEqualStrings(
-        "beni: platform 'a' depends on '../nowhere' (\"platforms\"), which is neither a platform that ships with the compiler (browser, browser-inline, browser-tea, html, node) nor a directory holding one\n",
+        "beni: platform 'a' depends on '../nowhere' (\"platforms\"), which is neither a platform that ships with the compiler (browser, browser-inline, browser-tea, cloudflare, html, node) nor a directory holding one\n",
         checked.stderr,
     );
 }

@@ -2,7 +2,7 @@
 
 A program is built for one platform. The platform owns `Program`, the type of `main`, and supplies
 the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or with
-`--platform=<name>`. Five ship in the compiler.
+`--platform=<name>`. Six ship in the compiler.
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
@@ -11,6 +11,7 @@ the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or w
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
 | `html` | none | — | the markup vocabulary the four above share |
+| `cloudflare` | `Worker.Program` | a Cloudflare Worker | `Worker`: the request, the response, the bindings, Durable Object references |
 
 `api-<platform>.md` lists each module's public interface. `websocket.md` tells how to use a
 WebSocket on a server and in a page.
@@ -52,6 +53,52 @@ handle request =
         Server.text 200 "hello"
     else
         Server.text 404 "not found"
+```
+
+## `cloudflare`
+
+- `main = Worker.program { fetch = route, objects = [] }`. `fetch : Worker.Context, Request →
+  Response` answers each request and may wait: `Task.sleep`, `Worker.forward ref request`,
+  `Worker.callService service request`. Each request runs on a scheduler of its own, so a defect
+  fails only that request.
+- Read a request with `Worker.method`, `Worker.url`, `Worker.path`, `Worker.header request name`
+  and `Worker.headers`. Build a response with `Worker.text status body`, `Worker.html status body`,
+  `Worker.empty status`, `Worker.redirect request target status` and `Worker.withHeader response
+  name value`. An invalid response (a status outside 200 to 599, a body on a 204, a bad header) is
+  a 500, and one `console.error` line names the fault.
+- The bindings: `Worker.var (Worker.env ctx) name` is a plain-text variable (`Maybe String`),
+  `Worker.service` a service binding, `Worker.objects` a Durable Object namespace. Each answers
+  `Nothing` when the configuration does not declare the name.
+- A fiber that must run after the answer is started with `Task.spawnDetached`; it runs under
+  `waitUntil`, and the platform stops it 25 seconds after the answer.
+- Build with `beni build --platform=cloudflare --out=out Main.beni` and point `wrangler.jsonc`'s
+  `main` at `out/_worker.mjs`. The entry file exports the Durable Object classes the app's
+  `beni.json` lists under `"exports"`.
+
+```beni platform=cloudflare
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.path request of
+        "/" →
+            Worker.text 200 "hello"
+
+        "/greeting" →
+            case Worker.var (Worker.env ctx) "GREETING" of
+                Just greeting →
+                    Worker.text 200 greeting
+
+                Nothing →
+                    Worker.text 500 "GREETING is not declared"
+
+        _ →
+            Worker.text 404 "not found"
 ```
 
 ## `browser`
@@ -189,4 +236,4 @@ payload each event carries (`onInput` gives the input's value as a `String`; `on
 `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this platform;
 the others include it.
 
-Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10; `platforms/*/beni.json`; the modules' doc comments.
+Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10, §9.12; `platforms/*/beni.json`; the modules' doc comments.

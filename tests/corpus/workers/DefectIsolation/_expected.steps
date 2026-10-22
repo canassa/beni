@@ -1,0 +1,9 @@
+# A request in flight while another throws answers all the same.
+{"path": "/slow/60", "detach": "slow"}
+{"path": "/throw"}
+{"answer": "slow"}
+# A throw after the answer reaches the console.
+{"path": "/late-throw"}
+{"path": "/slow/20"}
+# Every request's scheduler has left the list; the hook makes none.
+{"path": "/__beni/schedulers"}
