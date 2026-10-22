@@ -2624,9 +2624,8 @@ reflective walk.
   key applied to the two values**. Two keys of one identity are of one type, so either key's
   evidence orders both.
 - **What it guarantees.** Two keys are one key exactly when they are of one type and that type's
-  `compare` says `EQ`: two equal `Set`s or `Dict`s built in different orders are one key (their
-  modules' own `compare`, `static-dispatch-spike.md` §3.5), and so are two values of a program's
-  type with a hand-written `compare` that calls them equal; `Alpha.Key 1` and `Beta.Key 1`, and
+  `compare` says `EQ`, including two different values of a program's type with a hand-written
+  `compare` that calls them equal; `Alpha.Key 1` and `Beta.Key 1`, and
   `Id User` and `Id Post` over one `Int`, are two. `tests/corpus/browser/tea/ValueKeyRestart` and
   `browser/tea/TypedKeys` pin both, for commands and for subscriptions. The rule of thumb above,
   and the requirement that a library key `Sub.listen` by a type of its own, are withdrawn as
@@ -2637,8 +2636,8 @@ reflective walk.
   infers and supplies, never written (`static-dispatch-spike.md` §8.6). A program's function that
   is generic over a key and calls one of them — `restart key name = Cmd.keyed key Cmd.Restart …`,
   annotated with `where k.compare` or not — is handed the identity by its own callers the same
-  way. The one program refused is one whose key type mentions a type variable its declaration
-  has no requirement on, `type_identity_unknown` (§8.6).
+  way. A key type that mentions a type variable its declaration has no requirement on is refused
+  with `type_identity_unknown` (§8.6).
 - **The order of keys changed for keys of one type**: it is that type's `compare`, so a derived
   one orders constructors by declaration and records by field name, the same in a development and
   a release build (renamed fields and integer tags reach neither the identity nor the evidence).
@@ -2646,6 +2645,51 @@ reflective walk.
   the walk compared the tags' text. Keys of two types are ordered by their identities' text.
 - **The cost.** A program that keys nothing is byte for byte what it was. A keyed call passes one
   string literal more, and a declaration generic over a key one parameter more.
+
+*Amended 2026-10-22 (#294, the owner's decision):* Dict and Set no longer
+have `compare`, and neither is a valid command or subscription key. The earlier
+examples of equal dictionaries or sets as keys are withdrawn. Passing one to
+`Hosted.key`, `Cmd.keyed`, `Cmd.cancel`, `Cmd.map`, `Sub.listen`, or another API
+requiring its `compare` is a type error. Its message must explain that **Dict
+and Set have no compare because insertion order is part of their value**;
+an unexplained missing-method error is insufficient. This also applies when
+comparison of an enclosing tuple, list, record or custom type would require
+a Dict or Set comparison. A program's explicit comparator on its own type
+remains its own policy; it must not request a missing collection comparator.
+
+Tea's tables do not encode these keys as Int or String, and do not store
+`Hosted.Key` in Dict. W47's type identity and per-type comparison remain the
+contract. The private ordered table specified below preserves them.
+
+**Tea's private ordered tables — added 2026-10-22 (#294, the owner's
+decision).** Tea stores jobs and live subscription tables in its own private
+sorted array of `(key, value)` pairs. A live or wanted subscription uses
+`Hosted.Key`; a jobs entry uses a `List Hosted.Key` path. A binary search finds
+the lower bound using `Hosted.compare`, or lexicographic path comparison with
+`Hosted.compare` on each segment (a proper prefix sorts first). A matching
+entry is exactly a comparison result of `EQ`, including distinct values that
+a type's own comparator calls equal. Search must not use JavaScript identity,
+string encoding, hashing by representation, or Dict's scalar-key index.
+
+Insertion replaces the value at an equal key, retaining its position and key,
+or inserts at the lower bound. Removal closes the gap. Iteration is in sorted
+key order, preserving command and subscription lifecycle ordering. These
+are internal platform operations, with no new public API. Empty tables are
+constructed afresh for each program or diff. The table uses owned array operations; every accepted write edits in place,
+and a write ownership cannot prove safe is a compile error. There is no
+persistent or copying fallback and no ownership exemption for the table.
+Callbacks and subscription bodies retain their existing effect contracts.
+
+All paths with a given prefix form one contiguous range: `cancelAll` finds
+its beginning by lower-bound search, scans to the first nonmatching prefix,
+cancels those jobs in path order, and removes that range. It does not partition
+an insertion-ordered Dict. Subscription lookup, replacement and the live /
+wanted diff use the same sorted-table comparison rule. The existing keyed
+browser fixtures, including `TupleKeyRestart`, `ListKeyRestart`
+and `TypedKeys`, continue unchanged. `ValueKeyRestart` retains its program-type
+comparison coverage; its direct Dict and Set key cases become refusal fixtures
+under the restriction above. A fixture with two distinct values whose own
+`compare` returns `EQ` pins matching for commands and subscriptions.
 
 #### 9.8.4 Running a command, and the dispatch order (W53)
 
