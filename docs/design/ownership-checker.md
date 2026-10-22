@@ -5341,6 +5341,31 @@ behaviour changes.
   of `browser-tea`'s `Tea.application` none. The three left wait on the owner: `ApiItems` and `ApiLogin`
   on what `Schema.parse`'s answer holds (#218), `RefModify` on whether a `Ref`'s value may be lent
   owned (#219). Until they are answered O1 is not accepted.
+  *Amended 2026-10-22 (the owner's 2026-10-18 plan for #315):* O1's
+  acceptance condition counts **LIST** demands only. Record-update refusals
+  remain report-only input to R4; R4 enforces and clears them after #286.
+
+  *As built (2026-10-22, #210):* the #737 folded Dict tree regression is
+  recovered by #761, with #720 and its negative twins preserved. #780 repairs
+  the pending index; the owner-deferred #663 DictFocusGrow keeps its checked
+  red signature under #294. #782 narrows PointerEvents' handler capture to
+  the scalar it reads. #792 builds the Cloudflare host conversions as native
+  fresh lists. #794 retains the possible writer on generic callback keep
+  edges until the concrete callback is known, recovering the Workers
+  corpus without ownership assertions. The remaining four genuine Ref
+  sharings use explicit List.copy in the fixture, the two server apps and
+  LogSetMinimum, following #219. The Ref API is unchanged.
+
+  The complete audit covers **1,505 roots/module sets and 1,295 LIST
+  lines: 0 rejected, 0 pending**, with no check or dump errors. It includes
+  the positive corpus and its platform variants, development Debug fixtures,
+  the Workers corpus, every example, live benchmark app, core and platform
+  surface, including the schema prototype's platform. Intentional LIST
+  refusal controls retain their verdicts. The audit driver and result are
+  attached to #210. Record reports are separately inventoried for R4 on
+  #315 (comment 6349557915), with every site and cause in its two linked
+  inventory parts.
+
 - **O2 — the pass on the DAG, and the block in the interface** (§28.11 item 1, §16.9–§16.10).
   - *Accepted when:* the firewall holds for every build, as `cache_test.zig` shows. The 100 000-line
     benchmark, Conduit and the corpus pages meet §28.8's target with the pass on, or the miss is reported
