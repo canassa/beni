@@ -60,10 +60,12 @@ patient work = Task.timeout (Duration.seconds 2) work
 Every fiber resumes through the program's one queue. `Task.scheduler hook` makes a queue of its
 own, and `Task.withScheduler scheduler (λ⊤ → work)` runs `work` on it: `work`'s fiber resumes
 through that queue while inside, and the fibers `work` starts belong to the scheduler. A defect
-under a scheduler runs its `hook`, then ends the program as every defect does. `Task.stopScheduler
-scheduler deadline done` cancels the fibers of one scheduler, runs their releases, and calls `done`
-with how many releases the deadline cut short; every other fiber runs on. A platform uses this to
-give each request or each object a runtime of its own.
+under a scheduler runs its `hook` and stops that scheduler alone: its fibers are cancelled and
+their releases run; on `node` the throw then ends the process, as every defect does.
+`Task.stopScheduler scheduler deadline done` cancels the fibers of one scheduler — the fibers
+started under it and the fiber inside its `withScheduler`, whole — runs their releases, and calls
+`done` with how many releases the deadline cut short; the fibers of every other scheduler run on.
+A platform uses this to give each request or each object a runtime of its own.
 
 ```beni
 import Task
