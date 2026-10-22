@@ -5483,7 +5483,9 @@ test "a release build lowers the representation keys a cold check gives from a w
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const oracle = try runCounted(&w, arena, &no_cache, "oracle.json");
+    const oracle_js = try w.read("out/_main.mjs");
     const warm = try coldThenWarm(&w, arena, &cached, &cached);
+    const warm_js = try w.read("out/_main.mjs");
     // A comment in `Main`: it is checked again, against `Shapes` installed
     // from the cache.
     try w.write("Main.beni", "-- edited\n" ++ main_source);
@@ -5495,6 +5497,7 @@ test "a release build lowers the representation keys a cold check gives from a w
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
     try testing.expectEqualStrings(oracle.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(oracle_js, warm_js);
     try testing.expectEqualStrings(edited_oracle.result.stdout, edited.result.stdout);
     // The keys are there to compare: `Main` keys names and nodes, and the
     // table names `Shapes`' type.

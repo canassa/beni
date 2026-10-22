@@ -3732,6 +3732,63 @@ const Emitter = struct {
         return false;
     }
 
+    /// Complete record facts, independent of reachability of object literals.
+    /// Checker rows include nested/instantiated records and ctor payloads;
+    /// BIR supplies embedded core/platforms and alias constructors; plans
+    /// supply shape copies and validator workers. Unknown updates extend
+    /// nothing safely colourable: every written field conflicts globally.
+    fn fieldConflicts(e: *Emitter, counts: []const Fields.Count) !Fields.Conflicts {
+        var g = try Fields.Conflicts.init(e.scratch, counts);
+        var names: std.ArrayList([]const u8) = .empty;
+        for (e.session.checked.type_keys) |*a| {
+            for (a.records) |r| {
+                names.clearRetainingCapacity();
+                for (a.record_labels[r.fields.start..][0..r.fields.len]) |name| try names.append(e.scratch, e.session.interner.slice(name));
+                try g.record(names.items, r.open);
+            }
+        }
+        if (e.rep_keys) |*r| for (r.nodes.items) |n| {
+            if (n.kind != .record) continue;
+            names.clearRetainingCapacity();
+            for (r.labels.items[n.value..][0..n.len]) |name| try names.append(e.scratch, e.session.interner.slice(name));
+            try g.record(names.items, false);
+        };
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
+            const module_bir = e.bir(m);
+            for (module_bir.insts.items(.tag), 0..) |tag, ii| {
+                const inst: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                const d = module_bir.instData(inst);
+                const fs = switch (tag) {
+                    .record, .type_record => module_bir.extraSlice(Bir.inlineRange(d), Bir.Field),
+                    .record_update, .type_record_ext => module_bir.extraSlice(module_bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field),
+                    else => continue,
+                };
+                names.clearRetainingCapacity();
+                for (fs) |field| try names.append(e.scratch, e.session.interner.slice(module_bir.symbol(field.name)));
+                var open = tag == .record_update or tag == .type_record_ext;
+                if (tag == .record_update and mi < e.session.checked.type_keys.len) {
+                    const a = &e.session.checked.type_keys[mi];
+                    if (a.instKey(inst)) |ik| if (ik.key != .wild and a.nodes[ik.key.int()].kind == .record) {
+                        names.clearRetainingCapacity();
+                        for (a.labelsOf(ik.key)) |name| try names.append(e.scratch, e.session.interner.slice(name));
+                        open = false;
+                    };
+                }
+                try g.record(names.items, open);
+            }
+        }
+        for (e.session.checked.plans) |*plan| {
+            for (plan.nodes.items(.tag), 0..) |tag, ni| {
+                if (tag != .record) continue;
+                names.clearRetainingCapacity();
+                for (SchemaGraph.fields(plan, @fromBackingInt(@intCast(ni)))) |field| try names.append(e.scratch, e.session.interner.slice(SchemaGraph.symbol(plan, field.name)));
+                try g.record(names.items, false);
+            }
+        }
+        return g;
+    }
+
     /// §9, *Item 4, taken up*: every record field's short spelling, from the
     /// optimised trees of every module, in module order. A field keeps its
     /// text when the boundary pins it or when the build also writes it as a
@@ -3743,6 +3800,8 @@ const Emitter = struct {
     fn assignFields(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) !void {
         e.field_table = null;
         const boundary = &(e.boundary orelse return);
+        const ObjectFields = struct { names: []const []const u8, open: bool };
+        var object_fields: std.ArrayList(ObjectFields) = .empty;
         var uses: std.StringArrayHashMapUnmanaged(u32) = .empty;
         var plain: std.StringHashMapUnmanaged(void) = .empty;
         var stack: std.ArrayList(JsIr.Node.Index) = .empty;
@@ -3760,6 +3819,19 @@ const Emitter = struct {
                 seen.set(node.int());
                 try Spec.pushChildren(e.scratch, ir, node, &stack);
                 const d = ir.data(node);
+                if (ir.tag(node) == .object) {
+                    var spread = false;
+                    var names: std.ArrayList([]const u8) = .empty;
+                    for (ir.extraSlice(JsIr.inlineRange(d), JsIr.Node.Index)) |prop| {
+                        if (ir.tag(prop) == .spread_property) spread = true;
+                        if (ir.tag(prop) != .property) continue;
+                        const name = ir.name(@fromBackingInt(@intCast(ir.data(prop).lhs)));
+                        if (name.module == .none and name.isField()) try names.append(e.scratch, try e.scratch.dupe(u8, slot.overlay.slice(name.base)));
+                    }
+                    const key = ir.nodeKey(node);
+                    const closed = if (e.rep_keys) |*r| key != .wild and key.int() < r.nodes.items.len and r.nodes.items[key.int()].kind == .record else false;
+                    try object_fields.append(e.scratch, .{ .names = names.items, .open = spread and !closed });
+                }
                 const index: JsIr.NameIndex = switch (ir.tag(node)) {
                     .member => @fromBackingInt(@intCast(d.rhs)),
                     .property, .field_name => @fromBackingInt(@intCast(d.lhs)),
@@ -3782,7 +3854,9 @@ const Emitter = struct {
         }
         const counts = try e.scratch.alloc(Fields.Count, uses.count());
         for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
-        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain);
+        var conflicts = try e.fieldConflicts(counts);
+        for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
+        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
     }
 
     /// §9's elimination: every module's edge lists, on the workers, then

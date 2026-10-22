@@ -17,8 +17,8 @@
 //!     (`assign`): one short spelling per field name that is neither pinned
 //!     by the boundary nor written as a non-field property anywhere in the
 //!     build, ranked by how often the build names it, ties by text. Scheme (i)
-//!     of the section: no two names share a spelling, so no two fields on one
-//!     object can.
+//!     amended 2026-10-22: colours may be reused outside a co-occurring set.
+//!     Unknown rows conflict with every text.
 //!
 //! Everything here is keyed by TEXT or by input-derived indices and walked
 //! in module order, so `--jobs` cannot move a byte (CLAUDE.md rule 5).
@@ -282,7 +282,61 @@ const Walk = struct {
 /// One field text and how often the build names it.
 pub const Count = struct { text: []const u8, uses: u32 };
 
-/// The spellings (see the header). `counts` holds every field text the
+/// Co-occurrence of field texts. Dense indices follow the input counts;
+/// cliques are stored as field sets, avoiding a quadratic edge allocation
+/// for a wide record. Membership lists give each text its neighbours.
+pub const Conflicts = struct {
+    arena: Allocator,
+    texts: std.StringArrayHashMapUnmanaged(void) = .empty,
+    groups: []std.ArrayList(u32),
+    sets: std.ArrayList([]const u32) = .empty,
+    known: []bool,
+    universal: []bool,
+    seen: std.HashMapUnmanaged([]const u32, void, SetContext, std.hash_map.default_max_load_percentage) = .empty,
+
+    const SetContext = struct {
+        pub fn hash(_: SetContext, set: []const u32) u64 {
+            return std.hash.Wyhash.hash(0, std.mem.sliceAsBytes(set));
+        }
+        pub fn eql(_: SetContext, a: []const u32, b: []const u32) bool {
+            return std.mem.eql(u32, a, b);
+        }
+    };
+
+    pub fn init(arena: Allocator, counts: []const Count) Allocator.Error!Conflicts {
+        var g: Conflicts = .{
+            .arena = arena,
+            .groups = try arena.alloc(std.ArrayList(u32), counts.len),
+            .known = try arena.alloc(bool, counts.len),
+            .universal = try arena.alloc(bool, counts.len),
+        };
+        @memset(g.groups, .empty);
+        @memset(g.known, false);
+        @memset(g.universal, false);
+        for (counts) |c| try g.texts.put(arena, c.text, {});
+        return g;
+    }
+
+    pub fn record(g: *Conflicts, fields: []const []const u8, open: bool) Allocator.Error!void {
+        var ids: std.ArrayList(u32) = .empty;
+        for (fields) |field| {
+            const id: u32 = @intCast(g.texts.getIndex(field) orelse continue);
+            g.known[id] = true;
+            if (open) g.universal[id] = true;
+            try ids.append(g.arena, id);
+        }
+        if (open or ids.items.len < 2) return;
+        std.mem.sort(u32, ids.items, {}, std.sort.asc(u32));
+        const set = try g.seen.getOrPut(g.arena, ids.items);
+        if (set.found_existing) return;
+        const group: u32 = @intCast(g.sets.items.len);
+        try g.sets.append(g.arena, ids.items);
+        for (ids.items) |id| try g.groups[id].append(g.arena, group);
+    }
+};
+
+/// The spellings (see the header).
+/// `counts` holds every field text the
 /// build names, each once; `pinned` the boundary's; `plain` every property
 /// text the build writes that is not a field's. A field in either set keeps
 /// its text. No spelling holds a `$`, and none is the text of a field that
@@ -295,6 +349,7 @@ pub fn assign(
     counts: []Count,
     pinned: *const std.StringHashMapUnmanaged(void),
     plain: *const std.StringHashMapUnmanaged(void),
+    conflicts: *const Conflicts,
 ) Allocator.Error!Table {
     const Order = struct {
         fn lessThan(_: void, a: Count, b: Count) bool {
@@ -308,18 +363,46 @@ pub fn assign(
     for (counts) |c| {
         if (pinned.contains(c.text) or plain.contains(c.text)) try kept.put(arena, c.text, {});
     }
-    var ordinal: u32 = 0;
-    for (counts) |c| {
-        if (kept.contains(c.text)) continue;
-        while (true) : (ordinal += 1) {
+    // Colours are indices into an alphabet filtered once for kept names and
+    // `$`. At most one new colour per renamed field is ever necessary.
+    const alphabet = try arena.alloc([]const u8, counts.len);
+    var next: u32 = 0;
+    for (alphabet) |*slot| {
+        while (true) : (next += 1) {
             var buf: [8]u8 = undefined;
-            const spelled = Rename.spell(ordinal, &buf);
-            if (std.mem.indexOfScalar(u8, spelled, '$') != null) continue;
-            if (kept.contains(spelled)) continue;
-            try table.map.put(arena, c.text, try arena.dupe(u8, spelled));
-            ordinal += 1;
+            const spelled = Rename.spell(next, &buf);
+            if (std.mem.indexOfScalar(u8, spelled, '$') != null or kept.contains(spelled)) continue;
+            slot.* = try arena.dupe(u8, spelled);
+            next += 1;
             break;
         }
+    }
+    const uncoloured = std.math.maxInt(u32);
+    const colours = try arena.alloc(u32, counts.len);
+    @memset(colours, uncoloured);
+    const forbidden = try arena.alloc(bool, counts.len);
+    const universal_colours = try arena.alloc(bool, counts.len);
+    @memset(universal_colours, false);
+
+    for (counts) |c| {
+        if (kept.contains(c.text)) continue;
+        const id = conflicts.texts.getIndex(c.text).?;
+        const universal = conflicts.universal[id] or !conflicts.known[id];
+        @memcpy(forbidden, universal_colours);
+        if (universal) {
+            for (colours) |colour| if (colour != uncoloured) {
+                forbidden[colour] = true;
+            };
+        } else {
+            for (conflicts.groups[id].items) |group| for (conflicts.sets.items[group]) |neighbour| {
+                const colour = colours[neighbour];
+                if (colour != uncoloured) forbidden[colour] = true;
+            };
+        }
+        const colour: u32 = @intCast(std.mem.indexOfScalar(bool, forbidden, false).?);
+        colours[id] = colour;
+        if (universal) universal_colours[colour] = true;
+        try table.map.put(arena, c.text, alphabet[colour]);
     }
     return table;
 }
@@ -342,7 +425,8 @@ test "assign ranks by use, keeps pinned and plain-named fields, and spells aroun
     // that is also a plain property keeps its text, so no field takes it.
     try plain.put(arena, "a", {});
     try plain.put(arena, "b", {});
-    const t = try assign(arena, &counts, &pinned, &plain);
+    const conflicts = try Conflicts.init(arena, &counts);
+    const t = try assign(arena, &counts, &pinned, &plain, &conflicts);
     try std.testing.expectEqual(@as(?[]const u8, null), t.get("node"));
     try std.testing.expectEqual(@as(?[]const u8, null), t.get("b"));
     try std.testing.expectEqualStrings("a", t.get("id").?);

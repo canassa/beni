@@ -1,0 +1,203 @@
+-- Twenty-nine direct validators select the shape copy loop. Its record,
+-- the worker's record and an update must agree on every output field name.
+import Node
+import Schema
+
+
+schema Cup =
+    cups : Int
+    bids : Int
+
+
+finish : Cup.Type → Int
+finish row =
+    changed = { row | cups = row.cups + row.bids }
+    changed.cups
+
+
+main : Node.Program
+main =
+    values =
+        [ case Cup.parse "{\"cups\":1,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":2,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":3,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":4,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":5,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":6,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":7,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":8,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":9,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":10,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":11,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":12,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":13,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":14,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":15,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":16,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":17,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":18,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":19,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":20,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":21,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":22,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":23,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":24,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":25,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":26,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":27,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":28,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        , case Cup.parse "{\"cups\":29,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err _ →
+                0
+        ]
+    worker =
+        case Cup.parse "{\"cups\":1,\"bids\":2}" of
+            Ok row →
+                finish row
+
+            Err issues →
+                List.length issues
+    Node.print (String.fromInt (List.sum values + worker))
