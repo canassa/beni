@@ -839,4 +839,9 @@ so a page that makes a command ships the slot code. **Instructions** (a Node loo
 `keepLogContext` costs 0 in a release build that sets no slot, about 270 where a slot is set but no
 context is in force, and a body run in a context about 1 150 more, against about 1 950 for one
 `Log.annotate`. **Ownership:** the summaries of 28 `ownership/` goldens lose precision, because the
-checker does not see through `keepLogContext`'s lambda (`{lost}` 582 → 1 099); no verdict changes.
+checker does not see through `keepLogContext`'s lambda (`{lost}` +517 in those files, #774); no
+verdict changes. **Purity:** to make a command now reads the slot, so 17 functions that make one are
+`impure` (`boundary.md` §9.8.16 (b), proposal §6.6, amended). After the review, the page also covers
+`Restart`, `Queue`, `Ignore` and `Concurrent` over a running body, a body queued behind a fiber, a
+`Cmd.task` that waits, `Cmd.map` of an after-render body, and a subscription declared inside
+`annotate` (not changed); a defect in a kept body is #775.
