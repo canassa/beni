@@ -9,8 +9,8 @@ module EntryKeepsOld
   57:8 update entry EntryKeepsOld.keepOld model: accepted entry
   61:10 entry EntryKeepsOld.saveCopy model.items: accepted entry
   61:10 update entry EntryKeepsOld.saveCopy model: accepted entry
-  summary keepOld: π2 W{items, saved}, π2.items RAW, π2.items[*] A, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved π2.items π2.saved, π2◦
-  summary saveCopy: π2 W{items, saved}, π2.items RAW, π2.items[*] RA, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved fresh1{lost} π2.saved, .saved[*] π2.items[*], π2◦
+  summary keepOld: π2 W{items, saved}, π2.items RAW[storage], π2.items[*] A, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved π2.items π2.saved, π2◦
+  summary saveCopy: π2 W{items, saved}, π2.items RAW[storage], π2.items[*] RA, π2.saved RA; res .items π2.items, .items[*] ~π2.items[*], .saved fresh1{lost} π2.saved, .saved[*] π2.items[*], π2◦
   summary view: π1.items R, π1.saved R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
   records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

@@ -1,8 +1,8 @@
 module ParamHole
   20:15 List.push ys: accepted param
   27:13 call ParamHole.hole <Node …>#Node.1: rejected disjoint: another operand of the same operation reaches it (ParamHole.hole writes π1#Node.1)
-  summary hole: π1 R, π1#Node.0 RA, π1#Node.1 RAW, π1#Node.1[*] A; res .0 fresh2 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1#Node.0, condition(fresh1){sep π1#Node.0 π1#Node.1, sep π1#Node.0 π1#Node.1[*]}r{sep π1#Node.0 π1#Node.1[*]}
-  summary shared: π1 RAW, π1[*] A; res .0 ~fresh2 ~π1, .0[*] ~π1[*], .1⟨Tree⟩#Node.1 π1, condition(fresh1){shared}
+  summary hole: π1 R, π1#Node.0 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A; res .0 fresh2 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1#Node.0, condition(fresh1){sep π1#Node.0 π1#Node.1, sep π1#Node.0 π1#Node.1[*]}r{sep π1#Node.0 π1#Node.1[*]}
+  summary shared: π1 RAW[storage], π1[*] A; res .0 ~fresh2 ~π1, .0[*] ~π1[*], .1⟨Tree⟩#Node.1 π1, condition(fresh1){shared}
   demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause disjoint 1

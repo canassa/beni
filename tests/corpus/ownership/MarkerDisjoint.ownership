@@ -3,8 +3,8 @@ module MarkerDisjoint
   52:13 call MarkerDisjoint.push <call MarkerDisjoint.pick>: rejected call: another operand may be it, through the call at 52:21 (MarkerDisjoint.push writes π2) (approx)
   summary pick: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 RA, π1⟨Tree⟩#Node.2 R; res fresh1 ~fresh2 ~π1⟨Tree⟩⁺#Node.1 π1#Node.1
   summary size: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
-  summary push: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R, π2 RAW, π2[*] A; res .0 π2, .0[*] ~π2[*]
-  summary outer: π1 R, π1#Node.1 Aw, π1#Node.1[*] A, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R, π1⟨Tree⟩⁺#Node.1 Aw, π1⟨Tree⟩⁺#Node.1[*] A; res .0 fresh1 ~fresh2 ~π1#Node.1 ~π1⟨Tree⟩⁺#Node.1, .0[*] ~fresh3 ~π1#Node.1[*] ~π1⟨Tree⟩⁺#Node.1[*]
+  summary push: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R, π2 RAW[storage], π2[*] A; res .0 π2, .0[*] ~π2[*]
+  summary outer: π1 R, π1#Node.1 Aw[storage], π1#Node.1[*] A, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R, π1⟨Tree⟩⁺#Node.1 Aw[storage], π1⟨Tree⟩⁺#Node.1[*] A; res .0 fresh1 ~fresh2 ~π1#Node.1 ~π1⟨Tree⟩⁺#Node.1, .0[*] ~fresh3 ~π1#Node.1[*] ~π1⟨Tree⟩⁺#Node.1[*]
   demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause call 1

@@ -129,3 +129,13 @@ A record update keeps the identity of every field it does not name, so a view th
 field by identity sees no change when the list did not change.
 
 Sources: `docs/design/language.md` §6.8; `docs/design/backend.md` §4; `docs/design/ownership-checker.md` §30.
+
+## Kept values and storage writes
+
+A swap changes the list's slots and order. It does not change the values in
+those slots. A callback can keep a borrowed element while the containing list
+is reordered. The containing list must still be owned for the swap. A callback
+that keeps the list itself prevents the swap. A later write to a kept element
+requires ownership of that element.
+
+Source: `ownership-checker.md` §16.4 and §32, amendment of 2026-10-22.

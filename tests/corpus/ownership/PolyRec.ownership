@@ -9,9 +9,9 @@ module PolyRec
   summary pwrap: π2 RA; res #PLeaf.0 π2, ⟨P⟩⁺#PLeaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨P⟩⁺#PLeaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨P⟩⁺#PLeaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
   summary uwrap: π2 RA; res #ULeaf.0◇ π2, #UWrap.0⟨U⟩#ULeaf.0◇ fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, #UWrap.0⟨U⟩#ULeaf.0◇[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, #UWrap.0⟨U⟩#ULeaf.0◇[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
   summary pushInner: π1 R
-  summary pushArg: π1 Rw; xreq excl π1
+  summary pushArg: π1 Rw[storage]; xreq excl π1
   summary pushFresh: unused
-  summary callG: π1 RW, π1[*] R
+  summary callG: π1 RW[storage], π1[*] R
   demands 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 4: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause call 1

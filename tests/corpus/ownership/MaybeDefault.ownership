@@ -22,16 +22,16 @@ module MaybeDefault
   68:73 update model: rejected later-use: model is read again at 68:5 [copy]
   72:65 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 72:19
   72:65 update model: rejected later-use: model is read again at 72:19 [copy]
-  summary handle: π1 W{items}, π1.items RAW, π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other, π1◦
-  summary handler: π1 RW{items, other}, π1.items RAW, π1.items[*] RA, π1.other RA; res ◇ π1◦, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
-  summary step: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
-  summary stepLambda: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
-  summary stepCase: π2 RAW{items}, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2 π2◦
-  summary readAfter: π2 RW{items}, π2.items RW, π2.items[*] R
-  summary eagerHandler: π2 RAW{items, other}, π2.items RAW, π2.items[*] RA, π2.other RA; res ~π2 ~⊤call{lost}r{lost}, ⋆ ~π2.items ~π2.items[*] ~π2.other ~π2◦
-  summary defaultReads: π2 RW{items, other}, π2.items RAW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other, ~π2◦
-  summary editInMaybe: π1 RAW{items}, π1.items RAW, π1.items[*] A, π1.other A; res .items ~π1.items, .items[*] ~π1.items[*], .other ~π1.other, ~π1 ~π1◦
-  summary andThen: π2 RAW{items}, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
+  summary handle: π1 W{items}, π1.items RAW[storage], π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other, π1◦
+  summary handler: π1 RW{items, other}, π1.items RAW[storage], π1.items[*] RA, π1.other RA; res ◇ π1◦, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
+  summary step: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
+  summary stepLambda: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
+  summary stepCase: π2 RAW{items}, π2.items RAW[storage], π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2 π2◦
+  summary readAfter: π2 RW{items}, π2.items RW[storage], π2.items[*] R
+  summary eagerHandler: π2 RAW{items, other}, π2.items RAW[storage], π2.items[*] RA, π2.other RA; res ~π2 ~⊤call{lost}r{lost}, ⋆ ~π2.items ~π2.items[*] ~π2.other ~π2◦
+  summary defaultReads: π2 RW{items, other}, π2.items RAW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other, ~π2◦
+  summary editInMaybe: π1 RAW{items}, π1.items RAW[storage], π1.items[*] A, π1.other A; res .items ~π1.items, .items[*] ~π1.items[*], .other ~π1.other, ~π1 ~π1◦
+  summary andThen: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   demands 11: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 6
   records 12: accepted 5, pending 1, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
 total 11: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 6

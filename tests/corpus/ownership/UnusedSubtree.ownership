@@ -3,8 +3,8 @@ module UnusedSubtree
   27:15 List.push xs: rejected alias: t#Node.1 holds it and is read at 27:13
   36:5 call UnusedSubtree.f <Node …>#Node.1: accepted fresh (UnusedSubtree.f writes π1#Node.1)
   42:5 call UnusedSubtree.keepAll <Node …>#Node.1: rejected disjoint: another operand of the same operation reaches it (UnusedSubtree.keepAll writes π1#Node.1)
-  summary f: π1 R, π1#Node.0 RA, π1#Node.1 RAW, π1#Node.1[*] A; res .0 fresh2 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1#Node.0, condition(fresh1){sep π1#Node.0 π1#Node.1, sep π1#Node.0 π1#Node.1[*]}r{sep π1#Node.0 π1#Node.1[*]}
-  summary keepAll: π1 RA, π1#Node.1 RAW, π1#Node.1[*] A; res .0 fresh2 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1, condition(fresh1){shared}r{lost}
+  summary f: π1 R, π1#Node.0 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A; res .0 fresh2 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1#Node.0, condition(fresh1){sep π1#Node.0 π1#Node.1, sep π1#Node.0 π1#Node.1[*]}r{sep π1#Node.0 π1#Node.1[*]}
+  summary keepAll: π1 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A; res .0 fresh2 π1#Node.1, .0[*] ~π1#Node.1[*], .1 π1, condition(fresh1){shared}r{lost}
   summary run: res .0 ~fresh1, condition(fresh2)
   summary runAll: res .0 ~fresh1 ~fresh4, .1 condition(fresh2){shared}r{shared}, .1#Node.1 fresh1, .1#Node.2⟨Tree⟩#Node.1 fresh1, condition(fresh3){shared}r{lost}
   demands 4: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2

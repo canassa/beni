@@ -3,7 +3,7 @@ module RecursiveHolds
   33:20 List.push <call List.copy>: accepted call
   39:9 call RecursiveHolds.pushed <literal>: accepted fresh (RecursiveHolds.pushed writes π2)
   43:12 call RecursiveHolds.pushed <literal>: accepted fresh (RecursiveHolds.pushed writes π2)
-  summary pushed: π1 R, π1[*] RA, π2 RAW, π2[*] A; res [*] condition(fresh1){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, [*].1 π2{lost}r{lost}, [*].1[*] ~π2[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, fresh2{lost}r{lost}
+  summary pushed: π1 R, π1[*] RA, π2 RAW[storage], π2[*] A; res [*] condition(fresh1){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, [*].1 π2{lost}r{lost}, [*].1[*] ~π2[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, fresh2{lost}r{lost}
   summary copied: π1 R, π1[*] RA, π2 RA, π2[*] RA; res [*] condition(fresh3){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2, [*].1 fresh1{lost}r{lost}, [*].1[*] ~fresh2{lost}r{lost} ~⊤call{lost}r{lost} π2[*], [*].1[*]⋆ ~π1[*]{excl π1} ~π2, fresh4{lost}r{lost}
   summary run: res [*] condition(fresh2){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1{lost}r{lost} ~λr{lost}, [*].1 fresh1{lost}r{lost}, [*].1[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1{lost}r{lost} ~λr{lost}, fresh3{lost}r{lost}
   summary runOne: res [*] condition(fresh2){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1{lost}r{lost} ~λr{lost}, [*].1 fresh1{lost}r{lost}, [*].1[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1{lost}r{lost} ~λr{lost}, fresh3{lost}r{lost}

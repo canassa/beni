@@ -414,10 +414,14 @@ fn entryBits(bits: u16) u8 {
 /// The bits a list's facts read.
 const list_bits: u16 = bit_r | bit_a | bit_e | bit_w | bit_x | bit_j | bit_d;
 
+/// §32's dated write-extent amendment. Unclassified writes remain deep.
+pub const WriteExtent = enum(u8) { storage, deep };
+
 pub const UseEntry = struct {
     param: u32,
     path: u32,
     bits: u16,
+    extent: WriteExtent = .deep,
     /// With `bit_f`: the fields a record update writes at the path, sorted
     /// (§31.7). Empty is every field (`unionFields`): a write a block could
     /// not name, an open type's, a callback's loan.
@@ -425,7 +429,7 @@ pub const UseEntry = struct {
 };
 
 fn useEql(a: UseEntry, b: UseEntry) bool {
-    return a.param == b.param and a.path == b.path and a.bits == b.bits and std.mem.eql(u32, a.fields, b.fields);
+    return a.param == b.param and a.path == b.path and a.bits == b.bits and a.extent == b.extent and std.mem.eql(u32, a.fields, b.fields);
 }
 
 pub const ProvKind = enum(u8) { param, fresh, esc, shared, top, cb, env, klass };
@@ -2373,10 +2377,14 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
             if (was and is) {
                 uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
             } else if (is) uses[nu - 1].fields = u.fields;
+            if (u.bits & bit_w != 0) {
+                if (uses[nu - 1].bits & bit_w == 0 or u.extent == .deep) uses[nu - 1].extent = u.extent;
+            }
             uses[nu - 1].bits |= u.bits;
             continue;
         }
         uses[nu] = u;
+        if (u.bits & bit_w == 0) uses[nu].extent = .deep;
         nu += 1;
     }
     const res = try sortedRes(keep, s.res);
@@ -2447,10 +2455,10 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
             e.path = p;
         }
         fn same(x: UseEntry, y: UseEntry) bool {
-            return x.bits == y.bits;
+            return x.bits == y.bits and x.extent == y.extent;
         }
         fn subsumes(y: UseEntry, x: UseEntry) bool {
-            return x.bits | y.bits == y.bits;
+            return x.bits | y.bits == y.bits and (x.bits & bit_w == 0 or y.extent == .deep or x.extent == .storage);
         }
     });
     const res = try o.canonicalList(ResEntry, s.res, struct {
@@ -2834,16 +2842,16 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     if (eqlAny(name, &.{ "set", "insertAt", "put" })) {
         // A writer whose base is π₁ and which stores π₃ (§18.3: the base
         // stays exclusive when π₃ is and shares nothing with its elements).
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 2, .path = eps, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 2, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 2, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(2, eps) } });
     } else if (std.mem.eql(u8, name, "push")) {
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 1, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, eps) } });
     } else if (eqlAny(name, &.{ "pop", "removeAt", "swap", "done" })) {
         // A writer that stores nothing new: it drops an element, or permutes
         // two (`swap`, §22.5), so the list stays exclusive when it was
         // (thesis §3.11's row: `excl if π₁ excl`).
-        uses = &.{.{ .param = 0, .path = eps, .bits = R | A | W }};
+        uses = &.{.{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }};
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
     } else if (std.mem.eql(u8, name, "cons")) {
         // §3.1 as amended for slice 3f: a prepend copies, so it reads its
@@ -2859,7 +2867,7 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = .{ .atoms = sortAtoms(made) } }, .{ .path = eps, .prov = p(1, eps) }, .{ .path = elem, .prov = p(1, elem) }, .{ .path = elem, .prov = p(0, eps) } });
     } else if (std.mem.eql(u8, name, "append")) {
         // Copying in the elements of a list that lives on (thesis §3.8).
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R }, .{ .param = 1, .path = elem, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R }, .{ .param = 1, .path = elem, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = lost }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, elem) } });
     } else if (eqlAny(name, &.{ "copy", "sliceOf" })) {
         uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A } };
@@ -2877,7 +2885,7 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         // §18.5, the focus primitive: the element taken out, handed to the
         // callback owned when the list is exclusive, and its result put
         // back; the list stays exclusive when the callback keeps shape.
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 0, .path = elem, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 0, .path = elem, .bits = A } };
         const kept_shape = try keep.dupe(XAtom, &.{.{ .kind = .keep, .a = .{ .kind = .cb, .a = 2 }, .b = p(0, eps) }});
         res = try keep.dupe(ResEntry, &.{
             .{ .path = eps, .prov = p(0, eps), .xc = .{ .atoms = kept_shape } },
@@ -3798,6 +3806,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         if (u.bits & bit_w != 0) wr.writeAll(if (u.bits & bit_d != 0)
             (if (u.bits & bit_x != 0) "S" else "s")
         else if (u.bits & bit_x != 0) "W" else "w") catch return error.OutOfMemory;
+        if (u.bits & bit_w != 0 and u.extent == .storage) wr.writeAll("[storage]") catch return error.OutOfMemory;
         // §31.7: a record's write, with the fields it writes; `W{}` when a
         // block read back could not say which.
         if (u.bits & bit_f != 0) {
@@ -4475,6 +4484,15 @@ fn overlap(o: *const Ownership, p: u32, q: u32) bool {
     return o.overlapSteps(p, q);
 }
 
+/// A storage write does not write a strict descendant value (§32 amendment).
+/// Match the loan as ancestor of the written place, including marker expansions.
+fn writeOverlap(o: *const Ownership, written: u32, loan: u32, extent: WriteExtent) bool {
+    if (extent == .deep) return o.overlap(written, loan);
+    var wb: [k_limit + 1]u32 = undefined;
+    var lb: [k_limit + 1]u32 = undefined;
+    return o.match(o.pathNodes(loan, &lb), o.pathNodes(written, &wb), .loan);
+}
+
 /// `overlap`, step by step.
 fn overlapSteps(o: *const Ownership, p: u32, q: u32) bool {
     var bp: [k_limit + 1]u32 = undefined;
@@ -4507,7 +4525,7 @@ fn overlapNodes(o: *const Ownership, a: []const u32, b: []const u32) bool {
 /// What `match` asks of two sets of places: that one place of each is a
 /// prefix of the other (`overlap`), or that one of `a`'s is a prefix of one
 /// of `b`'s (`holds`).
-const MatchMode = enum { overlap, holds };
+const MatchMode = enum { overlap, holds, loan };
 
 /// §16.7: two paths' remaining nodes, read as the sets of concrete places
 /// they stand for, `⋆` any steps and a marker any steps of its expansion.
@@ -4515,7 +4533,15 @@ const MatchMode = enum { overlap, holds };
 /// asks, one step at a time.
 fn match(o: *const Ownership, a: []const u32, b: []const u32, mode: MatchMode) bool {
     if (a.len == 0) return true;
-    if (b.len == 0) return mode == .overlap;
+    if (b.len == 0) {
+        if (mode != .loan) return mode == .overlap;
+        // A loan of an unknown suffix or a nullable level may be the
+        // written storage itself. Keep the older holds relation unchanged.
+        const k = o.paths.kind.items[a[0]];
+        if (k == .any) return true;
+        if (k == .level) return o.expand(o.markerKind(o.paths.arg.items[a[0]]), a[0], a[1..], b, mode, true);
+        return false;
+    }
     const x = a[0];
     const y = b[0];
     const kx = o.paths.kind.items[x];
@@ -5680,7 +5706,7 @@ const U32SliceContext = struct {
 /// below the path (§23.2).
 /// `fields`: a record write of the capture, with the fields it writes
 /// (§31.4 item 4); null for a list's.
-const Capture = struct { local: u32, path: u32, deep: bool = false, fields: ?[]const u32 = null };
+const Capture = struct { local: u32, path: u32, deep: bool = false, extent: WriteExtent = .deep, fields: ?[]const u32 = null };
 
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
@@ -5831,6 +5857,7 @@ const DemandRec = struct {
     entry: ?EntryRow = null,
     /// §23.2: a send's demand, on every cell of its base; read off as `S`.
     deep: bool = false,
+    extent: WriteExtent = .deep,
     /// §28.6: the edit's and the base's tokens, the top-level value a
     /// `top-level` rejection names, the call or operand a `call` or
     /// `held-operand` one does, and the function a `need` one names.
@@ -9799,7 +9826,7 @@ const Walker = struct {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 if (c.kind != .env) continue;
                 if (c.a < w.local_frame.len and w.local_av[c.a] != null and w.local_frame[c.a] == id) continue;
-                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep, .fields = if (rec.fields) |fs| try w.a.dupe(u32, fs) else null });
+                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep, .extent = rec.extent, .fields = if (rec.fields) |fs| try w.a.dupe(u32, fs) else null });
             }
         }
         w.closures.items[ci].env_writes = try env_writes.toOwnedSlice(w.a);
@@ -9838,7 +9865,7 @@ const Walker = struct {
             else
                 try w.single(.{ .kind = .env, .a = cap.local, .path = cap.path });
             // §31.4 item 4: a record's write of the capture, at its fields.
-            const p = try w.onceDemandFields(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep, cap.fields);
+            const p = try w.onceDemandFields(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep, cap.extent, cap.fields);
             try w.closures.items[ci].once_probes.append(w.a, p);
         }
     }
@@ -10943,7 +10970,7 @@ const Walker = struct {
         // One demand per path written, its derivation and exclusivity the
         // worst any of update's classes gives (an exact write beats an
         // approximate one, a failed `xreq` beats a held one).
-        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely, deep: bool };
+        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent };
         var written: std.ArrayList(Written) = .empty;
         for (upd.classes, upd.sums) |cls, s| for (s.uses) |u| {
             if (u.bits & bit_w == 0 or u.param > 1) continue;
@@ -10968,17 +10995,18 @@ const Walker = struct {
                 if (x.param != u.param or x.path != u.path) continue;
                 found = true;
                 x.deep = x.deep or deep;
+                if (u.extent == .deep) x.extent = .deep;
                 if (origin == .exact or (origin == .approx and x.origin == .limit)) x.origin = origin;
                 if (xfail) |r| x.xfail = Rely.worse(x.xfail, r);
             }
-            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail, .deep = deep });
+            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail, .deep = deep, .extent = u.extent });
         };
         for (written.items) |x| {
             if (x.param == 0) {
                 // §20.5, §23.6: update writes its message in place — what a
                 // send gave up, or what a view event built from the model.
                 const at = try w.projPath(msg, x.path, null);
-                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep);
+                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep, x.extent);
                 continue;
             }
             var rest: std.ArrayList(Entry) = .empty;
@@ -10986,7 +11014,7 @@ const Walker = struct {
             const at = try w.projPath(model, x.path, null);
             // Not Disjoint against this message: what a send put in the
             // model was another send's, given up there (§23.6).
-            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep);
+            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep, x.extent);
         }
         // §31.8: each record update writes is an `update` demand at the entry,
         // with the fields written; reported, not enforced (R4).
@@ -11180,7 +11208,7 @@ const Walker = struct {
 
     /// A demand at the entry (§20.6): a call-site demand on the entry model
     /// at one path, or on the message.
-    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool) Allocator.Error!void {
+    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent) Allocator.Error!void {
         try w.demandOn(.{
             .kind = .callsite,
             .token = tok,
@@ -11195,6 +11223,7 @@ const Walker = struct {
             .entry = row,
             .payload_from = payload_from,
             .deep = deep,
+            .extent = extent,
         });
     }
 
@@ -11794,7 +11823,7 @@ const Walker = struct {
             // A named writer's line keeps its slice-1 form; any other call
             // names the summary that wrote.
             const note = if (w.mode != .report or s.asserted or std.mem.startsWith(u8, callee.op, "List.")) "" else try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes π{d}{s}", .{ callee.name, u.param + 1, try w.o.pathText(u.path) });
-            try w.callSiteDemandDeep(inst, callee.op, args, avs, callee_av, u.param, u.path, note, if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, xfail[u.param], u.bits & bit_d != 0);
+            try w.callSiteDemandDeep(inst, callee.op, args, avs, callee_av, u.param, u.path, note, if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, xfail[u.param], u.bits & bit_d != 0, u.extent);
             xfail[u.param] = null;
         }
         for (xfail, 0..) |f, i| {
@@ -11920,7 +11949,7 @@ const Walker = struct {
         for (s.supply, 0..) |e, ei| {
             if (e.fun != j or e.owned or e.prov.kind != .param) continue;
             const written = for (s.uses) |u| {
-                if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.overlap(u.path, e.prov.path)) break true;
+                if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.writeOverlap(u.path, e.prov.path, u.extent)) break true;
             } else try w.writtenByCallback(s, avs, e, ei);
             if (!written) continue;
             const actual = (try w.actualOf(s, avs, j)) orelse continue;
@@ -11985,7 +12014,14 @@ const Walker = struct {
             if (classes.len == 0) return true;
             for (classes) |cls| {
                 const c = (try w.classSummary(cls)) orelse return true;
-                for (c.uses) |u| if (u.param == x.k and u.bits & bit_w != 0 and w.o.overlap(u.path, x.path)) return true;
+                for (c.uses) |u| {
+                    if (u.param != x.k or u.bits & bit_w == 0 or !w.o.writeOverlap(u.path, x.path, u.extent)) continue;
+                    // Translate the other callback's write to the callee's
+                    // parameter before comparing it with the kept loan.
+                    var written = x.prov.path;
+                    if (try w.o.suffix(x.path, u.path)) |rest| written = try w.o.concat(written, rest);
+                    if (w.o.writeOverlap(written, e.prov.path, u.extent)) return true;
+                }
             }
         }
         return false;
@@ -12626,12 +12662,12 @@ const Walker = struct {
     /// A call-site demand (§16.4 item 3): argument `i`'s cells at `q`,
     /// Disjoint against every other argument and every other path of `i`.
     fn callSiteDemand(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely) Allocator.Error!void {
-        return w.callSiteDemandDeep(inst, op, args, avs, &.{}, i, q, note, origin, xfail, false);
+        return w.callSiteDemandDeep(inst, op, args, avs, &.{}, i, q, note, origin, xfail, false, .deep);
     }
 
     /// `deep`: a send's demand (§23.2), on every cell at or below `q`; one
     /// on no cell gives nothing up and is no line.
-    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail_in: ?Rely, deep: bool) Allocator.Error!void {
+    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail_in: ?Rely, deep: bool, extent: WriteExtent) Allocator.Error!void {
         const at = try w.projPath(avs[i], q, null);
         // §16.7: a written place under a marker is the lists of every level
         // it stands for, written one by one; they are distinct lists only
@@ -12713,6 +12749,7 @@ const Walker = struct {
             .origin = origin,
             .xfail = xfail,
             .deep = deep,
+            .extent = extent,
             .base_inst = if (q == eps) args[i] else null,
         });
     }
@@ -12821,11 +12858,11 @@ const Walker = struct {
     }
 
     fn onceDemandDeep(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool) Allocator.Error!u32 {
-        return w.onceDemandFields(kind, tok, base, base_ref, ci, deep, null);
+        return w.onceDemandFields(kind, tok, base, base_ref, ci, deep, .deep, null);
     }
 
     /// `onceDemandDeep` with a record write's fields: a record demand.
-    fn onceDemandFields(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool, fields: ?[]const u32) Allocator.Error!u32 {
+    fn onceDemandFields(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool, extent: WriteExtent, fields: ?[]const u32) Allocator.Error!u32 {
         // `deep` is a send's, which gives up a list's cells (§23.2); no record
         // demand is one, so a capture written with fields is never deep.
         std.debug.assert(!(deep and fields != null));
@@ -12847,6 +12884,7 @@ const Walker = struct {
             .closures = true,
             .creation_ci = if (kind == .creation) ci else none,
             .deep = deep,
+            .extent = extent,
             .fields = fields,
         });
         return idx;
@@ -13326,7 +13364,7 @@ const Walker = struct {
                 continue;
             };
             if (try w.returnsOwned(c, s, avs, ictx, j, 0, none)) {
-                try w.returnedParamDemands(inst, slot_callee, args, avs, c, j, eps, true, 0);
+                try w.returnedParamDemands(inst, slot_callee, args, avs, c, j, eps, true, .deep, 0);
                 continue;
             }
             const name: []const u8 = switch (cls) {
@@ -13523,7 +13561,7 @@ const Walker = struct {
                     .fixed = .{ .verdict = .{ .rejected = .need }, .detail = why },
                     .prelim = .{ .cause = .need, .detail = why, .approx = approx },
                 });
-            } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+            } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
             return;
         } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name, ff.sends);
         // §31.5: a callee that writes a record πⱼ returns needs one it may
@@ -13578,7 +13616,7 @@ const Walker = struct {
                     if (!try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
                         try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0, cls)
                     else
-                        try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+                        try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
                 }
                 // §31.5: a closure that writes only a record is decided by its
                 // consumers too; a function value's line is a list's.
@@ -13689,13 +13727,13 @@ const Walker = struct {
             for (c.uses) |u| {
                 if (u.bits & bit_w == 0 or u.param >= c.params) continue;
                 for (s.supply) |e| {
-                    if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
+                    if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.writeOverlap(u.path, e.path, u.extent)) continue;
                     // The path the callback writes, within what the supply holds.
                     const written = (try w.o.suffix(e.path, u.path)) orelse eps;
                     // A returned destructive loan must also be dead in the
                     // caller for the lifetime of the feedback result (§29).
                     if (e.owned and e.prov.kind == .cb) {
-                        try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, u.bits & bit_d != 0, 0);
+                        try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, u.bits & bit_d != 0, u.extent, 0);
                     }
                     const owned = e.owned and try w.provOwned(e.prov, s, avs, ictx, none, 0, written);
                     if (!owned) {
@@ -13758,7 +13796,7 @@ const Walker = struct {
                         var path = e.prov.path;
                         if (try w.o.suffix(e.path, u.path)) |rest| path = try w.o.concat(path, rest);
                         const note = if (w.mode != .report) "" else try std.fmt.allocPrint(arena, "{s} writes what {s} supplies it", .{ name, callee.name });
-                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, path, note, if (s.limit != .none or c.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, null, u.bits & bit_d != 0);
+                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, path, note, if (s.limit != .none or c.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, null, u.bits & bit_d != 0, u.extent);
                     }
                 }
             }
@@ -13779,7 +13817,7 @@ const Walker = struct {
                 if (!try w.returnsOwned(c, s, avs, ictx, j, 0, none))
                     need_bad = true
                 else
-                    try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+                    try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
             }
             switch (cls) {
                 .send => if (bad[0]) |why| try w.demands.append(w.a, .{
@@ -14010,19 +14048,19 @@ const Walker = struct {
     /// the caller's argument is what is written, so it gets a call-site
     /// demand. A supply of another callback's result asks the same of that
     /// callback's actual. §29's taken-item loans are the case it began with.
-    fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
+    fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, extent: WriteExtent, depth: u32) Allocator.Error!void {
         // Past the limit a demand would be dropped: an error instead (§16.7).
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const actual = (try w.actualOf(callee.sum, avs, j)) orelse return;
         for (try w.classesOf(actual)) |cls| {
             const c = (try w.classSummary(cls)) orelse continue;
-            try w.returnedParamDemands(inst, callee, args, avs, c, j, written, deep, depth);
+            try w.returnedParamDemands(inst, callee, args, avs, c, j, written, deep, extent, depth);
         }
     }
 
     /// `callbackLoanDemands` for one class `c` of the actual for `j` — also a
     /// constructor's row (§23.5) or an unseen tagger's.
-    fn returnedParamDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
+    fn returnedParamDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, written: u32, deep: bool, extent: WriteExtent, depth: u32) Allocator.Error!void {
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const s = callee.sum;
         for (c.res) |r| {
@@ -14043,11 +14081,11 @@ const Walker = struct {
                 var path = p.path;
                 if (try w.o.suffix(supply.path, at)) |rest| path = try w.o.concat(path, rest);
                 switch (p.kind) {
-                    .cb => if (p.a != j) try w.callbackLoanDemands(inst, callee, args, avs, p.a, path, deep, depth + 1),
+                    .cb => if (p.a != j) try w.callbackLoanDemands(inst, callee, args, avs, p.a, path, deep, extent, depth + 1),
                     .param => if (p.a < args.len) {
                         const origin: Origin = if (s.limit != .none or c.limit != .none) .limit else if (supply.approx or r.approx) .approx else .exact;
                         const note = if (w.mode != .report) "" else if (p.taken) "a returned item is transferred to a later written callback result" else try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes what its callback returns, and the callback returns this argument", .{callee.name});
-                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, p.a, path, note, origin, null, deep);
+                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, p.a, path, note, origin, null, deep, extent);
                     },
                     else => {},
                 }
@@ -14899,6 +14937,7 @@ const Walker = struct {
         payload_from: AV = &.{},
         /// §23.2: a send's demand, its base already flattened.
         deep: bool = false,
+        extent: WriteExtent = .deep,
         /// §28.6: the base's instruction, when the source writes it.
         base_inst: ?Inst.Index = null,
         /// §31.3: a record update's demand on its base's object, and the
@@ -14947,6 +14986,7 @@ const Walker = struct {
             .origin = spec.origin,
             .entry = spec.entry,
             .deep = spec.deep,
+            .extent = spec.extent,
             .fields = spec.fields,
         };
         if (w.mode == .report) {
@@ -15896,7 +15936,7 @@ const Walker = struct {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 const deep: u16 = if (rec.deep) bit_d else 0;
                 if (rec.frame == frame) {
-                    if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields });
+                    if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields, .extent = rec.extent });
                 }
                 if (c.kind == .env and rec.frame != frame) {
                     const held = w.local_av[c.a] orelse continue;
@@ -15904,7 +15944,7 @@ const Walker = struct {
                     for (try w.projPath(held, c.path, null)) |h| {
                         if (h.path != eps) continue;
                         const hc = w.cells.items[h.cell];
-                        if (w.paramIndex(hc, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = hc.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and h.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields });
+                        if (w.paramIndex(hc, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = hc.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and h.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields, .extent = rec.extent });
                     }
                 }
             }
@@ -16227,3 +16267,38 @@ const Walker = struct {
         }
     }
 };
+
+test "write extents preserve unknown loans and join deep over storage" {
+    const gpa = std.testing.allocator;
+    var o: Ownership = .init(.{
+        .gpa = gpa,
+        .graph = undefined,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = undefined,
+        .canonical = false,
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    const elem = try o.child(eps, .elem, 0);
+    const any = try o.child(eps, .any, 0);
+    try std.testing.expect(!o.writeOverlap(eps, elem, .storage));
+    try std.testing.expect(o.writeOverlap(eps, elem, .deep));
+    try std.testing.expect(o.writeOverlap(eps, any, .storage));
+    try std.testing.expect(o.writeOverlap(elem, eps, .storage));
+    try std.testing.expect(o.writeOverlap(elem, elem, .storage));
+    const storage: UseEntry = .{ .param = 0, .path = eps, .bits = bit_w | bit_x, .extent = .storage };
+    const deep: UseEntry = .{ .param = 0, .path = eps, .bits = bit_w | bit_x };
+    const read: UseEntry = .{ .param = 0, .path = eps, .bits = bit_r };
+    const joined = try o.normalize(.{ .params = 1, .uses = &.{ storage, read, deep } });
+    try std.testing.expectEqualDeep(&[_]UseEntry{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_r, .extent = .deep }}, joined.uses);
+    const read_storage = try o.normalize(.{ .params = 1, .uses = &.{ read, storage } });
+    try std.testing.expectEqualDeep(&[_]UseEntry{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_r, .extent = .storage }}, read_storage.uses);
+}
