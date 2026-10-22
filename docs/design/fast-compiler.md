@@ -935,7 +935,18 @@ there Zig 0.17's build runner keeps one compiler process per compiled artifact a
 file of the first build. The step re-runs and writes the right id, and the binary does not get it —
 nor a new checked core, nor a new embedded core or platform manifest, which move the same way. The
 property holds for every build that starts a compiler: a one-shot build, `--watch` without
-`-fincremental`, and every gate.)* *Rejected: hashing the installed binary at runtime — correct, and ~2 ms
+`-fincremental`, and every gate.)* *(Amended 2026-10-23, built: **`-Dstable-generated` closes the
+`-fincremental --watch` case.** Under it `build.zig` copies each generated module root the installed
+compiler reads — its `build_options`, the checked core's `core_pack.zig` and `core.pack`, the
+embedded core's and platforms' manifests and files — to a fixed path, `.zig-cache/stable/<key>/`, with
+an update-source-files step the compile depends on. The key names what the files are for (core
+directory, optimize mode, target, backend, platform set), never their content, so an edit changes the
+bytes at a path the compiler process already holds, and incremental compilation sees them. Measured
+with Zorg 0.17.1, Debug: an edit under `src/`, `core/` or `platforms/` gives a binary whose id and
+embedded core match a clean build's, in about 4–8 s, where a one-shot build takes about 40 s. The
+watcher sees the copies as edits and runs one or two extra builds per edit; the build runner, not
+beni, is where that is fixed. The option is off by default, and the hermetic test library never uses
+it.)* *Rejected: hashing the installed binary at runtime — correct, and ~2 ms
 of a 15 ms budget.* A test forces a different one with the hidden
 `--cache-build-id=<s>`, whose bytes replace the build-id term; it is hidden for
 `--roundtrip-interfaces`' reasons and is how the "a compiler-build change discards the whole cache"

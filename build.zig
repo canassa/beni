@@ -225,6 +225,7 @@ pub fn build(b: *std.Build) void {
     // The ownership checker's own cross-check of an indexed spine condition
     // against the pairwise one runs in safety builds for values of eight
     // entries or fewer; this runs it for every value, at a cost in time.
+    stable_generated = b.option(bool, "stable-generated", "Copy the build id and the checked core to fixed paths under .zig-cache/stable/, so `--watch -fincremental` sees their new contents instead of keeping the first build's") orelse false;
     const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (safety builds; slow)") orelse false;
     const own_opts = b.addOptions();
     own_opts.addOption(bool, "full_cross_check", own_full_check);
@@ -266,13 +267,13 @@ pub fn build(b: *std.Build) void {
     // list generated from the directory at configure time so adding a core
     // module is dropping in a file. It is part of the compiler, not of a
     // test, so it hangs off the library module every root imports.
-    beni_mod.addImport("core_package", embedCore(b, shipped_core));
+    beni_mod.addImport("core_package", embedCore(b, shipped_core, false).module);
     // The platform packages (boundary.md §8, B2), embedded the same way:
     // the ones under `platforms/`, and any `-Dplatform=<dir>` adds
     // (`docs/design/boundary.md` §9.5), with their markup lowerings.
     const platform_dirs = b.option([]const []const u8, "platform", "Compile the platform package in this directory into beni, its Zig markup lowerings included, as if it shipped with it (repeatable; docs/design/boundary.md §9.5)") orelse &.{};
     const platform_sources = platformSources(b, platform_dirs);
-    beni_mod.addImport("platform_packages", embedPlatforms(b, platform_sources));
+    beni_mod.addImport("platform_packages", embedPlatforms(b, platform_sources, false).module);
     const markup = markupModules(b, platform_sources, null);
     beni_mod.addImport("beni_markup", markup.interface);
     beni_mod.addImport("markup_lowerings", markup.registry);
@@ -300,15 +301,18 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
         .imports = &.{.{ .name = "diagnostic", .module = diagnostic_mod }},
     });
-    exe_beni.addImport("core_package", embedCore(b, shipped_core));
-    exe_beni.addImport("platform_packages", embedPlatforms(b, platform_sources));
+    const default_core = embedCore(b, shipped_core, true);
+    const default_platforms = embedPlatforms(b, platform_sources, true);
+    exe_beni.addImport("core_package", default_core.module);
+    exe_beni.addImport("platform_packages", default_platforms.module);
     exe_beni.addImport("beni_markup", markup.interface);
     exe_beni.addImport("markup_lowerings", markup.registry);
     exe_beni.addImport("markup_entity_table", entityTable(b));
-    exe_beni.addImport("build_options", default_id.options);
+    exe_beni.addImport("build_options", default_id.stable.module);
     exe_beni.addImport("ownership_options", ownership_options.?);
     exe_beni.addImport("emit_options", emit_options.?);
-    exe_beni.addImport("core_pack", corePack(b, shipped_core, platform_sources, default_id));
+    const default_pack = corePack(b, shipped_core, platform_sources, default_id);
+    exe_beni.addImport("core_pack", default_pack.module);
 
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -322,6 +326,9 @@ pub fn build(b: *std.Build) void {
             },
         }),
     });
+    for ([_]Stable{ default_id.stable, default_pack, default_core, default_platforms }) |made| {
+        if (made.step) |s| exe.step.dependOn(s);
+    }
     b.installArtifact(exe);
 
     // The skill for coding agents (`docs/design/frontend.md` §12.2): the
@@ -1264,17 +1271,20 @@ fn compiler(
         .strip = strip,
         .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
     });
-    beni.addImport("core_package", embedCore(b, core));
-    beni.addImport("platform_packages", embedPlatforms(b, sources));
+    const embedded_core = embedCore(b, core, true);
+    const embedded_platforms = embedPlatforms(b, sources, true);
+    beni.addImport("core_package", embedded_core.module);
+    beni.addImport("platform_packages", embedded_platforms.module);
     const markup = markupModules(b, sources, null);
     beni.addImport("beni_markup", markup.interface);
     beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
     const id = compilerBuildId(b, target, mode, backend, core, sources);
-    beni.addImport("build_options", id.options);
+    beni.addImport("build_options", id.stable.module);
     beni.addImport("ownership_options", ownership_options.?);
     beni.addImport("emit_options", emit_options.?);
-    beni.addImport("core_pack", corePack(b, core, sources, id));
+    const pack = corePack(b, core, sources, id);
+    beni.addImport("core_pack", pack.module);
     const exe = b.addExecutable(.{
         .name = "beni",
         .use_llvm = backend == .llvm,
@@ -1289,6 +1299,9 @@ fn compiler(
             },
         }),
     });
+    for ([_]Stable{ id.stable, pack, embedded_core, embedded_platforms }) |made| {
+        if (made.step) |s| exe.step.dependOn(s);
+    }
     return .{ .beni = beni, .diagnostic = diagnostic, .exe = exe };
 }
 
@@ -1347,7 +1360,7 @@ const DebugInfo = enum {
 /// module and check the split by joining it back
 /// (`src/core_pack_main.zig`), so the maker's compile and its runs are what
 /// an edit under `src/` adds to the path of every compiler.
-fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) *std.Build.Module {
+fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) Stable {
     const run = b.addRunArtifact(corePackMaker(b));
     run.setName(b.fmt("check {s} for a compiler", .{if (core.extra == null) core.dir else "variant core"}));
     run.addDirectoryArg(coreDirectory(b, core));
@@ -1359,13 +1372,15 @@ fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: Buil
         run.addDirectoryArg(platformDirectory(b, source));
     }
     const wf = b.addWriteFiles();
-    _ = wf.addCopyFile(pack, "core.pack");
     const root = wf.add("core_pack.zig",
         \\//! Generated by build.zig: the checked core (fast-compiler.md §8).
         \\pub const bytes: []const u8 = @embedFile("core.pack");
         \\
     );
-    return b.createModule(.{ .root_source_file = root });
+    return stable(b, b.fmt("pack-{s}", .{id.key}), &.{
+        .{ .from = root, .name = "core_pack.zig" },
+        .{ .from = pack, .name = "core.pack" },
+    });
 }
 
 /// `source`'s files in a directory of their own, for the maker: the files
@@ -1413,15 +1428,18 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
         .optimize = mode,
         .imports = &.{.{ .name = "diagnostic", .module = diagnostic }},
     });
-    beni.addImport("core_package", embedCore(b, shipped_core));
-    beni.addImport("platform_packages", embedPlatforms(b, &.{}));
+    const maker_core = embedCore(b, shipped_core, true);
+    const maker_platforms = embedPlatforms(b, &.{}, true);
+    beni.addImport("core_package", maker_core.module);
+    beni.addImport("platform_packages", maker_platforms.module);
     const markup = markupModules(b, &.{}, null);
     beni.addImport("beni_markup", markup.interface);
     beni.addImport("markup_lowerings", markup.registry);
     beni.addImport("markup_entity_table", entityTable(b));
     // Its own id is never a key's term: every key it computes takes the id
     // of the compiler it makes the pack for.
-    beni.addImport("build_options", compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{}).options);
+    const maker_id = compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{});
+    beni.addImport("build_options", maker_id.stable.module);
     beni.addImport("ownership_options", ownership_options.?);
     beni.addImport("emit_options", emit_options.?);
     beni.addImport("core_pack", emptyCorePack(b));
@@ -1435,6 +1453,9 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
             .imports = &.{.{ .name = "beni", .module = beni }},
         }),
     });
+    for ([_]Stable{ maker_id.stable, maker_core, maker_platforms }) |made| {
+        if (made.step) |s| exe.step.dependOn(s);
+    }
     core_pack_maker = exe;
     return exe;
 }
@@ -1502,11 +1523,80 @@ fn compilerBuildId(
         run.addArg(source.name);
         run.addDirectoryArg(treeCopy(b, source.dir, buildInputPath(b, source.dir)));
     }
-    return .{ .options = b.createModule(.{ .root_source_file = options }), .hex = hex };
+    var h: std.hash.Wyhash = .init(0);
+    h.update(if (core.extra == null) core.dir else "variant core");
+    h.update(@tagName(optimize));
+    h.update(target.result.zigTriple(b.allocator) catch @panic("OOM"));
+    h.update(if (backend) |be| @tagName(be) else "-");
+    for (sources) |source| {
+        h.update(source.name);
+        h.update(source.dir);
+    }
+    const key = b.fmt("{x:0>16}", .{h.final()});
+    const at = stable(b, b.fmt("id-{s}", .{key}), &.{.{ .from = options, .name = "build_options.zig" }});
+    return .{
+        .options = b.createModule(.{ .root_source_file = options }),
+        .stable = at,
+        .hex = hex,
+        .key = key,
+    };
 }
+
+/// A generated module, and under `-Dstable-generated` the step that copies
+/// its files to their fixed paths, which every compile of it depends on.
+const Stable = struct { module: *std.Build.Module, step: ?*std.Build.Step };
+
+var stable_generated = false;
+
+/// A module rooted at `files[0]`, the others beside it. Under
+/// `-Dstable-generated` the files are copied to `.zig-cache/stable/<key>/`
+/// first: `zig build --watch -fincremental` keeps one compiler process per
+/// artifact and sends it only "update", never a new command line, so a
+/// module rooted in a cache directory named by its contents keeps the first
+/// build's files. A fixed path whose contents change is what it does see.
+fn stable(b: *std.Build, key: []const u8, files: []const StableFile) Stable {
+    return stableIf(b, stable_generated, key, files);
+}
+
+/// `stable`, with the fixed path only when `fixed`: the hermetic suite's
+/// library keeps the cache path, since nothing waits on a copy for it.
+fn stableIf(b: *std.Build, fixed: bool, key: []const u8, files: []const StableFile) Stable {
+    if (fixed) {
+        if (stable_made.get(key)) |made| return made;
+    }
+    const made = stableMake(b, fixed, key, files);
+    if (fixed) stable_made.put(b.allocator, b.dupe(key), made) catch @panic("OOM");
+    return made;
+}
+
+var stable_made: std.StringHashMapUnmanaged(Stable) = .empty;
+
+fn stableMake(b: *std.Build, fixed: bool, key: []const u8, files: []const StableFile) Stable {
+    if (!fixed) {
+        const wf = b.addWriteFiles();
+        var root: ?std.Build.LazyPath = null;
+        for (files) |f| {
+            const p = wf.addCopyFile(f.from, f.name);
+            if (root == null) root = p;
+        }
+        return .{ .module = b.createModule(.{ .root_source_file = root.? }), .step = null };
+    }
+    const usf = b.addUpdateSourceFiles();
+    for (files) |f| usf.addCopyFileToSource(f.from, b.fmt(".zig-cache/stable/{s}/{s}", .{ key, f.name }));
+    return .{
+        .module = b.createModule(.{ .root_source_file = b.path(b.fmt(".zig-cache/stable/{s}/{s}", .{ key, files[0].name })) }),
+        .step = &usf.step,
+    };
+}
+
+const StableFile = struct { from: std.Build.LazyPath, name: []const u8 };
 
 /// What `compilerBuildId` makes.
 const BuildId = struct {
+    /// `options` for the compilers' own modules: at a fixed path under
+    /// `-Dstable-generated` (`stable`), with the step that copies it.
+    stable: Stable,
+    key: []const u8,
     /// The `build_options` module: `build_id: [16]u8`.
     options: *std.Build.Module,
     /// A file holding the id as 32 lowercase hex digits.
@@ -1651,14 +1741,16 @@ fn embedCorpus(b: *std.Build, dir: []const u8) *std.Build.Module {
 /// — but the paths keep their subdirectories, because a `core/Dict/Int.beni`
 /// would be the module `Dict.Int` and the path IS the name. Nothing under
 /// `core/` is nested today; the mechanism outlives the modules that used it.
-fn embedCore(b: *std.Build, core: Core) *std.Build.Module {
+fn embedCore(b: *std.Build, core: Core, fixed: bool) Stable {
     const dir = core.dir;
     const files = coreFiles(b, core);
     const wf = b.addWriteFiles();
-    for (files) |file| switch (file.origin) {
-        .disk => |full| _ = wf.addCopyFile(b.path(full), file.rel),
-        .text => |text| _ = wf.add(file.rel, text),
-    };
+    var copies: std.ArrayList(StableFile) = .empty;
+    copies.append(b.allocator, undefined) catch @panic("OOM");
+    for (files) |file| copies.append(b.allocator, .{ .name = file.rel, .from = switch (file.origin) {
+        .disk => |full| b.path(full),
+        .text => |text| wf.add(file.rel, text),
+    } }) catch @panic("OOM");
     var manifest: std.ArrayList(u8) = .empty;
     manifest.appendSlice(b.allocator,
         \\//! Generated by build.zig: the core package, embedded (checker.md §3,
@@ -1690,7 +1782,8 @@ fn embedCore(b: *std.Build, core: Core) *std.Build.Module {
         manifest.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\") }},\n", .{ dir, file.rel, file.rel })) catch @panic("OOM");
     }
     manifest.appendSlice(b.allocator, "};\n") catch @panic("OOM");
-    return b.createModule(.{ .root_source_file = wf.add("core_package.zig", manifest.items) });
+    copies.items[0] = .{ .from = wf.add("core_package.zig", manifest.items), .name = "core_package.zig" };
+    return stableIf(b, fixed and stable_generated, b.fmt("core-{s}", .{if (core.extra == null) core.dir else "variant"}), copies.items);
 }
 
 /// The core package a compiler embeds: the files under `dir`, and `extra`
@@ -2031,8 +2124,11 @@ pub fn addPlatform(b: *std.Build, options: struct { dir: []const u8, dependency:
 /// directory (boundary.md §5.1: supporting a runtime is a package, not a
 /// compiler change). A platform added with `-Dplatform` is spelled
 /// `platforms/<name>` in paths, as one that ships is.
-fn embedPlatforms(b: *std.Build, sources: []const PlatformSource) *std.Build.Module {
+fn embedPlatforms(b: *std.Build, sources: []const PlatformSource, fixed: bool) Stable {
     const wf = b.addWriteFiles();
+    var copies: std.ArrayList(StableFile) = .empty;
+    copies.append(b.allocator, undefined) catch @panic("OOM");
+    var h: std.hash.Wyhash = .init(0);
     var manifest: std.ArrayList(u8) = .empty;
     manifest.appendSlice(b.allocator,
         \\//! Generated by build.zig: the platform packages that ship with the
@@ -2065,12 +2161,14 @@ fn embedPlatforms(b: *std.Build, sources: []const PlatformSource) *std.Build.Mod
         sortPaths(&assets);
         if (files.items.len == 0) std.debug.panic("the platform package at {s} has no modules", .{source.dir});
 
+        h.update(name);
+        h.update(source.dir);
         const manifest_rel = b.fmt("{s}/beni.json", .{name});
-        _ = wf.addCopyFile(platformFile(b, source, "beni.json"), manifest_rel);
+        copies.append(b.allocator, .{ .from = platformFile(b, source, "beni.json"), .name = manifest_rel }) catch @panic("OOM");
         bodies.appendSlice(b.allocator, b.fmt("const files_{d} = [_]File{{\n", .{index})) catch @panic("OOM");
         for (files.items) |rel| {
             const key = b.fmt("{s}/{s}", .{ name, rel });
-            _ = wf.addCopyFile(platformFile(b, source, rel), key);
+            copies.append(b.allocator, .{ .from = platformFile(b, source, rel), .name = key }) catch @panic("OOM");
             bodies.appendSlice(b.allocator, b.fmt("    .{{ .rel = \"{s}\", .source = @embedFile(\"{s}\") }},\n", .{ rel, key })) catch @panic("OOM");
         }
         bodies.appendSlice(b.allocator, b.fmt("}};\nconst assets_{d} = [_]Asset{{\n", .{index})) catch @panic("OOM");
@@ -2078,7 +2176,7 @@ fn embedPlatforms(b: *std.Build, sources: []const PlatformSource) *std.Build.Mod
             if (std.mem.eql(u8, rel, "beni.json")) continue;
             if (std.mem.endsWith(u8, rel, ".zig")) continue;
             const key = b.fmt("{s}/{s}", .{ name, rel });
-            _ = wf.addCopyFile(platformFile(b, source, rel), key);
+            copies.append(b.allocator, .{ .from = platformFile(b, source, rel), .name = key }) catch @panic("OOM");
             bodies.appendSlice(b.allocator, b.fmt("    .{{ .path = \"{s}/{s}\", .bytes = @embedFile(\"{s}\") }},\n", .{ root, rel, key })) catch @panic("OOM");
         }
         bodies.appendSlice(b.allocator, "};\n") catch @panic("OOM");
@@ -2090,7 +2188,8 @@ fn embedPlatforms(b: *std.Build, sources: []const PlatformSource) *std.Build.Mod
     table.appendSlice(b.allocator, "};\n") catch @panic("OOM");
     manifest.appendSlice(b.allocator, bodies.items) catch @panic("OOM");
     manifest.appendSlice(b.allocator, table.items) catch @panic("OOM");
-    return b.createModule(.{ .root_source_file = wf.add("platform_packages.zig", manifest.items) });
+    copies.items[0] = .{ .from = wf.add("platform_packages.zig", manifest.items), .name = "platform_packages.zig" };
+    return stableIf(b, fixed and stable_generated, b.fmt("platforms-{x:0>16}", .{h.final()}), copies.items);
 }
 
 fn sortPaths(list: *std.ArrayList([]const u8)) void {

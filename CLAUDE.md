@@ -341,6 +341,52 @@ want an answer; to iterate on one failing test, use `-Dtest-filter` or
 - never re-run a green result to double-check it;
 - read a failure from the log (`… > zig-out/gates.log 2>&1`), don't re-run it.
 
+**Use the incremental watcher while you edit.** It is faster: a one-shot
+`zig build` after an edit under `src/` takes about 40 s on a loaded machine,
+the watcher about 4.5 s. Start it once per worktree, in the background, and
+leave it running:
+
+```sh
+mkdir -p zig-out
+setsid zig build -Dstable-generated -fincremental --watch > zig-out/watch.log 2>&1 &
+echo $! > zig-out/watch.pid            # stop it with: kill -- -$(cat zig-out/watch.pid)
+```
+
+- Stop it by that process group. Do not use `pkill -f`: the pattern also
+  matches your own shell and kills it.
+- The first build takes about 10 s. The first edit after it can be slow to
+  show up: wait for the first `Build Summary:` in the log before you edit.
+- Each build prints one `Build Summary:` block. The log has no timestamps.
+  After each edit, wait until the log has not grown for about 4 s. One edit
+  gives two or three blocks: the real build, then one or two short extra
+  builds, because the watcher sees the files the build itself writes under
+  `.zig-cache/stable/`.
+- Then read the last block. `compile exe beni … success` means
+  `./zig-out/bin/beni` is new. **A failed build keeps the old binary**, which
+  is easy to take for a good one: look for `error:` with
+  `grep -n 'error:' zig-out/watch.log | tail`.
+- `./zig-out/bin/beni version` prints a build id that changes with every
+  change to `src/`, `core/` or `platforms/`. It is the quick proof that the
+  binary is the new one.
+- `-Dstable-generated` is necessary. Without it, `--watch -fincremental`
+  installs a beni that keeps the first build's build id, embedded core and
+  platforms after every edit (`fast-compiler.md` §8).
+- The watcher builds only the installed Debug `beni`. It does not run tests.
+  The gate is still one-shot `zig build gates`, with no `--watch`.
+- Run one watcher per worktree, and stop it (kill the process) when you are
+  done. Do not run the gates while it builds: they fight for the same cores.
+- Incremental compilation is experimental in Zig 0.17. If a build gives an
+  error or a behaviour that you cannot explain, stop the watcher, run a
+  one-shot `zig build` and compare before you believe it.
+
+**Never run `zig` on AArch64.** On an AArch64 host, Zig 0.17's self-hosted
+AArch64 backend uses all the memory and the machine stops (OOM). Use `zorg`
+there, from `nix develop .#ownership`, with the same commands (`zorg build
+gates`, `zorg build -Dstable-generated -fincremental --watch`). Zorg reads
+`ZORG_GLOBAL_CACHE_DIR`, not `ZIG_GLOBAL_CACHE_DIR`. When you capture
+`nix develop`'s output, ignore its `… has maximum number of links` lines.
+Also do not build beni for an AArch64 target with `zig` on any host.
+
 **Which beni the tests run.** A ReleaseSafe beni built by Zig's self-hosted
 backend (`zig-out/safe/bin/`): it compiles in about 3 s, keeps debug info, and
 every safety check fires. Invariant checks in `src/` are gated on
