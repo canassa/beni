@@ -1,0 +1,30 @@
+import Browser
+import Hosted
+import Html
+import List
+
+
+retain : Browser.Host Int, List Int → ⊤
+retain host state =
+    Hosted.afterRender host
+        (Hosted.later λ_ → Debug.log (String.fromInt (List.length state)) ⊤)
+
+
+update : Browser.Host Int, Int, List Int → List Int
+update host n state = state
+
+
+settle : Browser.Host Int, List Int → List Int
+settle host state =
+    retain host state
+    List.push state 0
+
+
+main : Browser.Program
+main =
+    Browser.hosted
+        { init = λ_ → []
+        , update = update
+        , settle = settle
+        , view = λ_ → <button onClick={1}>step</button>
+        }

@@ -888,6 +888,8 @@ fn expectSurface(package: []const u8, args: []const []const u8) !void {
             rest["summary ".len..std.mem.indexOfScalar(u8, rest, ':').?]
         else if (std.mem.startsWith(u8, rest, "crossing "))
             rest["crossing ".len .. rest.len - " (words)".len]
+        else if (std.mem.startsWith(u8, rest, "entry "))
+            rest["entry ".len .. rest.len - " (words)".len]
         else
             continue;
         try printed.append(arena, try std.fmt.allocPrint(arena, "{s}.{s}", .{ module, name }));
@@ -1179,7 +1181,7 @@ fn expectBrowserSurfaces() !void {
     try expectSurface("browser-inline", &.{ "dump", "--stage=ownership", "--platform=browser-inline", "platforms/browser-inline" });
 }
 
-test "ownership words: browser-tea and browser-inline carry none" {
+test "ownership words: browser-tea and browser-inline are catalogued" {
     try expectBrowserSurfaces();
 }
 
@@ -1332,4 +1334,67 @@ test "ownership everywhere: tuple DAG keeps every path without repeated comparis
     const checked = try w.runWith(&.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}
+
+test "ownership entry: hosted update and settle own their state" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const out = try std.fmt.allocPrint(w.arena.allocator(), "--out={s}/out", .{try w.projectPath()});
+    const built = try w.runWith(&.{ "build", "--platform=browser", "--ownership-everywhere", "--no-cache", out, "tests/corpus/ownership/HostedEntry.beni" }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+}
+
+fn expectHostedRefusal(path: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const result = try w.runWith(&.{ "check", "--platform=browser", "--ownership-everywhere", "--no-cache", path }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), result.exit_code);
+    try testing.expect(result.diagnostics.len != 0);
+    for (result.diagnostics) |d| try testing.expectEqual(.list_may_be_shared, d.code);
+}
+
+test "ownership entry: update cannot share a duplicate state path" {
+    try expectHostedRefusal("tests/corpus/ownership/HostedEntryDuplicateUpdate.beni");
+}
+
+test "ownership entry: settle cannot share a duplicate state path" {
+    try expectHostedRefusal("tests/corpus/ownership/HostedEntryDuplicateSettle.beni");
+}
+
+test "ownership entry: update cannot write a view handler's state" {
+    try expectHostedRefusal("tests/corpus/ownership/HostedEntryViewUpdate.beni");
+}
+
+test "ownership entry: settle cannot write a view handler's state" {
+    try expectHostedRefusal("tests/corpus/ownership/HostedEntryViewSettle.beni");
+}
+
+test "ownership entry: update cannot write state retained by Host" {
+    try expectHostedRefusal("tests/corpus/ownership/HostedEntryHostUpdate.beni");
+}
+
+test "ownership entry: settle cannot write state retained by Host" {
+    try expectHostedRefusal("tests/corpus/ownership/HostedEntryHostSettle.beni");
+}
+
+test "ownership entry: the hosted word changes the verdict" {
+    try expectFlips("ownership/HostedEntry.beni", &.{ "--platform=browser", "--ownership-everywhere" });
+}
+
+test "ownership entry: the program word changes the verdict" {
+    try expectFlips("ownership/EntryInitProgram.beni", &.{ "--platform=browser", "--ownership-everywhere" });
+}
+
+test "ownership entry: Page's word is catalogued" {
+    try expectSurface("page", &.{ "dump", "--stage=ownership", "--platform=tests/platforms/page", "tests/platforms/page" });
+}
+
+test "ownership entry: an unsupported settle shape leaves its writer pending" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(&.{ "check", "--diagnostics=json", "--no-cache", "--platform=tests/platforms/entry-shape", "--ownership-everywhere", "tests/corpus/ownership/EntryMalformedSettle.beni" }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(r.diagnostics.len != 0);
+    for (r.diagnostics) |d| try testing.expectEqual(.list_may_be_shared, d.code);
 }

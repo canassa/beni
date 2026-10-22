@@ -1,0 +1,11 @@
+import Start
+
+
+main : Start.Program
+main =
+    Start.launch
+        { init = λ⊤ → []
+        , update = λ⊤ _ state → state
+        , settle = λstate → List.push state 0
+        , view = List.length
+        }

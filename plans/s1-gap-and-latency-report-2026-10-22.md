@@ -275,6 +275,8 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #659 (`03e033ec1`) | 254.1 | | 1 504 | 67 384 | 1.11 | 1.57 |
 | after #667 (`ca7e47772`) | 253.4 | | 1 497 | 67 165 | 1.10 | 1.57 |
 | after #718 (`ba7b817f2`) | 245.7 | | 1 486 | 65 166 | 1.09 | 1.52 |
+| just before #610 (`3a3402528`; −10.5 from merges after #718, likely #722, not isolated) | 235.2 | | 1 453 | 62 403 | 1.07 | 1.46 |
+| after #610 (`202424b77`; +5.9: its handler-at-wiring and guards, pending #645) | 241.1 | | 1 461 | 64 017 | 1.08 | 1.49 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are

@@ -2751,6 +2751,10 @@ the focus relies on:
 
 ### 20.9 The trusted surface
 
+*Amended 2026-10-22:* Browser.hosted writes entry on its callback record.
+The hosted row and its P1–P4 and P7 obligations are specified and audited in
+§30.3, including update and settle installing their returned state.
+
 What the checker takes on trust, each item privileged code whose error is a correctness bug (thesis §6.5):
 
 - `core/List`'s asserted primitive rows (§16.8, §18.5);
@@ -3272,7 +3276,7 @@ A word on a parameter or a result whose type crosses (§4.4) is allowed and says
 Signature := Owned (',' Owned)* '→' Owned                  -- a top-level signature of a function
 Owned     := OwnWord* Product
 OwnWord   := 'unused' | 'borrowed' | 'aliased' | 'returned' | 'escaped' | 'consumed'
-           | 'once' | 'many' | 'owned' | 'fresh' | 'exclusive' | 'unknown'
+           | 'once' | 'many' | 'owned' | 'fresh' | 'exclusive' | 'unknown' | 'entry'
 Foreign   := 'crossing'? 'equatable'? 'foreign' 'type' upper_ident lower_ident*
 ```
 
@@ -3324,7 +3328,8 @@ lowers as written):
 | nested | a word anywhere but in front of a parameter of the signature's outermost arrow or its result — inside a type, or on a value that is not a function, which every reader shares and nothing makes per call |
 | not a function | `once`, `many` or `owned` on a parameter whose type is not a function written out |
 | on the result / on a parameter | a result word (`fresh`, `exclusive`, `unknown`) on a parameter, or a parameter word (`unused`, `borrowed`, `aliased`, `returned`, `consumed`, `once`, `many`, `owned`) on the result |
-| impossible | two words that cannot both hold: a word twice; `unused` or `borrowed` with any other; `aliased` with `returned`; `consumed` on a function; `once` with `many`; `owned` without `once` or `many`; two of `fresh`, `escaped`, `unknown`; `exclusive` without `fresh` |
+| not an entry record | entry on a parameter other than a written-out record, or with an unknown callback field (§30.3) |
+| impossible | two words that cannot both hold: a word twice; `unused`, `borrowed` or `entry` with any other; `aliased` with `returned`; `consumed` on a function; `once` with `many`; `owned` without `once` or `many`; two of `fresh`, `escaped`, `unknown`; `exclusive` without `fresh` |
 
 `crossing` is read only directly in front of `foreign` (or `equatable foreign`) and is refused outside a
 platform with the same code.
@@ -3444,6 +3449,20 @@ what it is handed), `Io.finish` and `Io.startRead` (kept by the runtime) — kee
 `Hosted.compareKeys` only reads, but only the runtime's own key comparisons reach it, where every key has already
 escaped with its command (§20.4): no verdict depends on its row, so it keeps the default, which is the safe side. `core/List`'s primitives, `Dict.focus`, `Hosted`'s send positions and the program constructors
 keep their rows in the checker (§24.5).
+
+*Entry-word audit, 2026-10-22 (#750).* The entry word is a protocol, not a
+replacement for the inferred body summary. Its obligations are audited in
+§20.9 and §30.3. Browser.program adapts its callbacks to Browser.hosted;
+Browser.hosted and host install each state result and retain no previous state.
+Tea.sandbox, element, document and application adapt their callbacks to that
+hosted driver. Browser-inline's foreign constructors are lowering markers;
+the inline runtime owns its current state. Page.sandbox packages the callbacks,
+and its runtime's run, patch, create and renderAttributes retain only the
+current rendered view, with messages dispatched through the installed state.
+The constructor bodies and the browser and page runtime helpers are pinned in
+word-bodies.txt. Entry declarations print an entry line marked (words), separate
+from their inferred summaries. Removing entry in a flip exposes the callback
+writers as pending; the hosted and ordinary-program fixtures pin that boundary.
 
 ### 24.9 The decoder in `Expect`
 
@@ -5048,7 +5067,7 @@ a parameter that is not a record written out is refused the same way. The words 
 |---|---|---|
 | `browser-direct` | `Tea.sandbox`, `element`, `document`, `application` | as today, by word instead of by name |
 | `browser-tea` | `Tea.sandbox`, `element`, `document`, `application` | was the template row |
-| `browser` | `Browser.program` | was the template row. `programs` and `mountAt` take `Program` values, not records of functions, and need none |
+| `browser` | `Browser.program`, `Browser.hosted` | program was the template row; hosted uses the dated amendment below. `programs` and `mountAt` take `Program` values, not records of functions, and need none |
 | `tests/platforms/page` | `Page.sandbox` (a `foreign`) | had no row |
 | `node` | none | `main` is a value. `print`, `printLines` and `exitWith` take values and carry words. `Io.run`'s body is beni, and its summary is inferred |
 | `html`, `tests/platforms/toy`, `layered`, `oracle` | none | no program takes functions |
@@ -5069,6 +5088,74 @@ how its runtime meets them:
     list's identity.
 - **`Page.sandbox`**: its `runtime.js` renders the whole view after every message and keeps no list. Its
   entry in the trusted surface says so, and a fixture pins it.
+
+*Amended 2026-10-22 (the owner, #750, #319, #294): hosted programs and the
+first implementation of the entry word.* The word, rather than a declaration's
+name or package name, selects the entry protocol. The record's callback types
+determine whether a result is the whole state or a state/command pair, and
+whether init receives application arguments. Renaming a constructor changes no
+ownership verdict. All existing entry demands and refusals remain in force.
+
+This first piece preserves existing verdicts while the rest of O3 is pending:
+the existing renderer-mode check (the in-place platform property, or
+ownership-everywhere for checking the future universal contract) still decides
+whether an otherwise accepted entry write is reported as platform-refused.
+The declaration is selected only by entry, never by a constructor's name.
+Browser-inline's Tea.sandbox and Tea.element also carry entry, preserving the
+rows the existing in-place-property lookup gave them.
+
+A record with a settle field declares the **hosted protocol**. Its callbacks
+are init : Host msg → state; update : Host msg, msg, state → state;
+settle : Host msg, state → state; and view : state → Html msg. Here Host
+is Browser.Host: the Host argument is crossing at these runtime calls, including
+init, update and settle; it supplies no owned application cell. This is a fact
+of this argument, not a declaration that arbitrary Host values cannot retain a
+callback. A callback that stores state through a Host operation still escapes
+that state and is refused when the escaped state is written.
+
+The runtime installs init's result, applies settle before the first view, and
+thereafter installs every update result. At a render it calls settle on the
+current state, installs its result, and then calls view on that state. Update
+and settle receive the state owned. Neither can leave an old state available to
+a later runtime read. Settle may change the state, so its uses, escapes, result
+aliases, exclusivity requirements and writes participate in the same entry
+analysis as update's. The finite state invariant includes init and both
+transitions, with separate fresh-cell namespaces for update and settle.
+A view event's retained cells, callback captures, and values escaped by either
+transition are checked against both writers. View remains read only.
+
+This adds settle to the allowed field names of an entry record. An unknown
+field name, a parameter that is not a record written out, a nested entry word,
+or entry on a result is misplaced_ownership_word. Entry is a protocol on the
+record, not an assertion replacing the constructor's inferred summary with
+unknown defaults. Other ownership words retain §24.2's defaults. The row requires update to
+have the protocol's two or three parameters and hosted settle to have two;
+a hosted update returns the whole state. An unsupported shape supplies no entry
+row and leaves its writers pending, rather than dropping a state parameter.
+
+Browser.hosted joins §20.9's trusted surface. Its implementation in
+platforms/browser/Browser.beni (hosted, host) meets the obligations:
+
+- **P1:** host reads its model reference, calls update or settle synchronously,
+  and writes the returned state to that reference. It keeps no previous state.
+  Init is called once per mount; its result goes through settle before view.
+- **P2:** after either callback returns, host reads only the installed result.
+  Reentrant messages enter the inbox while dispatching; rendering is guarded
+  during dispatch and settlement. No old state is handed to a concurrent call.
+- **P3:** handlers and messages retained by view are part of the entry's event
+  slots. Their captures are checked against writes by update and settle; a
+  rendered handler retaining a written list is refused.
+- **P4:** after settlement host recomputes the whole view from the installed
+  state. It retains the rendered result, not an extra snapshot of state.
+- **P7:** the renderer must not use a written list's identity to decide that it
+  is unchanged (backend.md §15.5). The hosted adapter adds no such comparison;
+  its dirty/started flags decide whether a render is due, not whether a list
+  value changed.
+
+These are privileged runtime obligations, not an exemption for Tea or private
+tables. User code cannot write entry. Shared initial state, duplicate state
+paths, retained callback captures, view-event aliases and state stored through
+a Host continue to be judged and refused by the ordinary entry checks.
 
 ### 30.4 A writer handed as a value
 

@@ -36,10 +36,10 @@ pub type UrlRequest
 --| the page calls them while it mounts, handles an event or renders, so
 --| none may suspend.
 pub program :
-      { init : sync (⊤ → model)
-      , update : sync (msg, model → model)
-      , view : sync (model → Html msg)
-      }
+      entry { init : sync (⊤ → model)
+            , update : sync (msg, model → model)
+            , view : sync (model → Html msg)
+            }
     → Program
 program p =
     -- One mount, `{ a, n }`: the record, and no element id. Written in beni
@@ -109,11 +109,11 @@ pub foreign type Host msg
 --| returns the model that is. All four are `sync`: the page calls them
 --| while it handles an event or renders.
 pub hosted :
-      { init : sync (Host msg → model)
-      , update : sync (Host msg, msg, model → model)
-      , settle : sync (Host msg, model → model)
-      , view : sync (model → Html msg)
-      }
+      entry { init : sync (Host msg → model)
+            , update : sync (Host msg, msg, model → model)
+            , settle : sync (Host msg, model → model)
+            , view : sync (model → Html msg)
+            }
     → Program
 hosted p =
     -- One mount, `{ h, n }`: no element id, and the function the runtime

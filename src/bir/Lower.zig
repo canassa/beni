@@ -2042,6 +2042,22 @@ fn isListOfFunctions(l: *Lower, inst: u32) bool {
     return args.len == 1 and tags[args[0]] == .type_fn;
 }
 
+/// An entry row names only runtime callbacks, on a record written out.
+fn entryRecord(l: *const Lower, inst: u32) bool {
+    if (l.insts.items(.tag)[inst] != .type_record) return false;
+    const data = l.insts.items(.data)[inst];
+    var at = data.lhs;
+    while (at < data.rhs) : (at += 2) {
+        const name = l.interner.slice(l.symbols.items[l.extra.items[at]]);
+        var known = false;
+        for ([_][]const u8{ "init", "update", "settle", "view", "subscriptions", "onUrlRequest", "onUrlChange" }) |field| {
+            if (std.mem.eql(u8, name, field)) known = true;
+        }
+        if (!known) return false;
+    }
+    return true;
+}
+
 fn reportOwn(l: *Lower, token: TokenIndex, reading: Diagnostics.Item.Markup) Allocator.Error!void {
     try l.diagnostics.append(l.gpa, .{ .code = .misplaced_ownership_word, .start = l.starts[token], .end = l.tokenEnd(token), .markup = reading });
 }
@@ -2082,12 +2098,20 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
             const inst = l.extra.items[l.extra.items[at] + slot];
             break :blk l.insts.items(.tag)[inst] == .type_fn or l.isListOfFunctions(inst);
         };
+        const param_entry = slot != Bir.own_result and is_fn_type and blk: {
+            const at = l.insts.items(.data)[t.int()].lhs;
+            break :blk l.entryRecord(l.extra.items[l.extra.items[at] + slot]);
+        };
         var bits: u32 = 0;
         var firsts: [16]TokenIndex = undefined;
         for (seen[i..j]) |s| {
             const word: W = @fromBackingInt(@intCast(s[1]));
             const b = word.bit();
             const token: TokenIndex = s[2];
+            if (word == .entry and slot != Bir.own_result and !param_entry) {
+                try l.reportOwn(token, .own_not_entry_record);
+                continue;
+            }
             if (slot == Bir.own_result) {
                 if (b & (result_words | W.escaped.bit()) == 0) {
                     try l.reportOwn(token, .own_parameter_word);
@@ -2103,7 +2127,7 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
                     continue;
                 }
             }
-            const alone = W.unused.bit() | W.borrowed.bit();
+            const alone = W.unused.bit() | W.borrowed.bit() | W.entry.bit();
             const results = W.fresh.bit() | W.escaped.bit() | W.unknown.bit();
             const impossible = bits & b != 0 or
                 (bits != 0 and (b & alone != 0 or bits & alone != 0)) or
