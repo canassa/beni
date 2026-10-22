@@ -1,0 +1,7 @@
+module DictFocusGrow
+  10:5 call Dict.update d#Dict.0#Node.2: accepted fresh (<lambda> writes what Dict.update supplies it)
+  10:26 call Maybe.map m#Just.0: accepted callback-param (Dict.update supplies it owned)
+  10:43 List.push v: accepted callback-param (Maybe.map supplies it owned)
+  summary grow: res #Dict.0#Node.2 ~fresh1r{lost}
+  demands 3: accepted 3 (fresh 1, call 0, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 1, call 0, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0

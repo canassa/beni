@@ -11,12 +11,12 @@ module RecordSupply
   summary shift: π1 W{x}, π1.x R; res π1◦
   summary applyTo: π1 R, π2 R; res cb1r{excl cb1}; π1 calls ≤1, supply 1 π2 ownedr{excl π2}
   summary twice: π1 R, π2 R; res cb1r{excl cb1}; π1 calls many, supply 1 cb1 ownedr{excl cb1}, supply 1 π2 ownedr{excl π2}
-  summary both: π1 R, π2 R; res .0 cb1r{excl cb1}, .1 π2; π1 calls ≤1, supply 1 π2 borrowedr{excl π2}
+  summary both: π1 R, π2 R; res .0 cb1r{excl cb1}, .1 π2, condition(fresh1)r{sep π2 cb1}; π1 calls ≤1, supply 1 π2 borrowedr{excl π2}
   summary keepIt: π1 R; res λr{lost}, ◇ π1
   summary mapBoth: π1 R, π2 R; res [*] ~cb1{excl cb1}r{excl cb1} ~fresh2{excl cb1, sep cb1 cb1}r{excl cb1, sep cb1 cb1}, fresh1{excl cb1, sep cb1 cb1}r{excl cb1, sep cb1 cb1}; π1 calls many, supply 1 π2[*] owned takenr{excl π2}
   summary e1: res .1 fresh501◦
   summary e2: res .1 fresh501◦
-  summary e3: res .1 fresh501◦
+  summary e3: res .1 fresh501◦, condition(fresh1)
   summary e4: res .0 fresh501◦
   summary e5: res .0 fresh2, .0[*] ~fresh3, .1 fresh1, .1[*] fresh501◦
   summary e6: π1 RW{x, y}

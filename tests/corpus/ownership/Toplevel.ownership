@@ -12,8 +12,8 @@ module Toplevel
   summary init: res .todos fresh1, fresh501◦
   summary addFresh: res .todos fresh1, fresh501◦
   summary reading: res fresh1
-  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1r{lost}, #Dict.0#Node.2 ~fresh1{lost} ~π1#Dict.0#Node.2{lost}r{lost}, #Dict.0#Node.3 ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}, #Dict.0#Node.4 ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}
-  summary fromEmpty: res #Dict.0#Node.2 ~fresh1{lost}
+  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0 ~condition(fresh1){lost}, #Dict.0#Node.1 ~π1#Dict.0#Node.1r{lost}, #Dict.0#Node.2 ~fresh4{lost} ~π1#Dict.0#Node.2{lost}r{lost}, #Dict.0#Node.3 ~condition(fresh2){lost} ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}, #Dict.0#Node.4 ~condition(fresh2){lost} ~condition(fresh3){lost} ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}
+  summary fromEmpty: res #Dict.0 ~condition(fresh1){lost}, #Dict.0#Node.2 ~fresh4{lost}, #Dict.0#Node.3 ~condition(fresh2){lost}, #Dict.0#Node.4 ~condition(fresh2){lost} ~condition(fresh3){lost}
   demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
   records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
 total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3

@@ -1162,7 +1162,11 @@ test "ownership words: the bodies they describe have not changed" {
 /// `ffc2fdb84`, and 4 310M once the log context (#358) landed, about 3 050M
 /// of it in the ownership stage. The limit is that count plus about 10%. It
 /// goes when the test is back under 4 300M: issue #514.
-const core_surface_budget_millions = 4_750;
+// The owner authorized both core tests at 5 300M on 2026-10-22, for
+// value-scoped construction conditions (#456). Observed: 4 810M and
+// 4 794M, plus about 10%. Reduce/remove these grants under #514.
+const core_surface_budget_millions = 5_300;
+const core_clean_budget_millions = 5_300;
 
 fn expectCoreSurface() !void {
     try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
@@ -1274,8 +1278,12 @@ fn expectPlatformClean(argv: []const []const u8) !void {
     }
 }
 
-test "ownership everywhere: core holds no rejected or pending line" {
+fn expectCoreClean() !void {
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "core" });
+}
+
+test "ownership everywhere: core holds no rejected or pending line" {
+    try world.withOwnBudget("the core ownership test", core_clean_budget_millions, expectCoreClean);
 }
 
 test "ownership everywhere: the node platform holds no rejected or pending line" {

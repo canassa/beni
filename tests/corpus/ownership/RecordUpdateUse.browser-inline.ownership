@@ -9,10 +9,10 @@ module RecordUpdateUse
   49:13 update r: accepted fresh
   59:10 List.push xs: accepted fresh
   60:10 update r: accepted fresh
-  summary pushThenUpdate: res .p fresh1, .q fresh1, fresh501◦
-  summary ofParam: π1 RAW, π1[*] RA; res .0 fresh501◦, .0.a π1, .1 π1, .1[*] ~π1[*]
-  summary nested: res .p fresh1, .q fresh1, fresh501◦
-  summary inBranch: res .p fresh1 fresh2, .q fresh1, fresh501◦
+  summary pushThenUpdate: res .p fresh1, .q fresh1, condition(fresh2){shared}r{shared} fresh501◦
+  summary ofParam: π1 RAW, π1[*] RA; res .0 fresh501◦, .0.a π1, .1 π1, .1[*] ~π1[*], condition(fresh1){shared}
+  summary nested: res .p fresh1, .q fresh1, condition(fresh2){shared}r{shared} fresh501◦
+  summary inBranch: res .p fresh1 fresh2, .q fresh1, condition(fresh3){shared}r{shared} fresh501◦
   summary replaced: res .p fresh2, .q fresh1, fresh501◦
   demands 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
   records 5: accepted 5, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

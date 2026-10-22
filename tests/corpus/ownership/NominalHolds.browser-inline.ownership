@@ -11,8 +11,8 @@ module NominalHolds
   summary firstOf: π1 RA; res ◇ π1
   summary check: res #Invalid.0 ~⊤call{lost}r{lost}, #Invalid.0[*] ⊤call{lost}r{lost}, #Valid.0 ⊤call{lost}r{lost}, #Valid.0⋆ ~⊤call{lost}r{lost}
   summary twice: res #Invalid.0 ~fresh1{lost}, #Valid.0 ⊤call{lost}r{lost}
-  summary held: res .0 fresh1, .1 ⊤call{lost}r{lost}
-  summary heldLists: π1 R, π1[*] RA, π2 RAW, π2[*] A; res .0 π2, .0[*] ~π2[*], .1 π2 ⊤call{lost}r{lost}, .1⋆ ~π1[*]{excl π1} ~π2
+  summary held: res .0 fresh1, .1 ⊤call{lost}r{lost}, condition(fresh2){lost}
+  summary heldLists: π1 R, π1[*] RA, π2 RAW, π2[*] A; res .0 π2, .0[*] ~π2[*], .1 π2 ⊤call{lost}r{lost}, .1⋆ ~π1[*]{excl π1} ~π2, condition(fresh1){shared}r{lost}
   demands 7: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 total 7: accepted 3 (fresh 2, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause unknown 2

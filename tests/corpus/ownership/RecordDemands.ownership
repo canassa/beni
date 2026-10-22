@@ -25,7 +25,7 @@ module RecordDemands
   226:9 update r: accepted fresh [hoisted 1]
   summary untouched: π1 W{x}, π1.tags R, π1.x R, π1.y R
   summary hoisted: π1 W{x}, π1.tags R, π1.x R
-  summary whole: π1 RAW{x}, π1.tags RA; res .0 π1◦, .0.tags π1.tags, .1 π1
+  summary whole: π1 RAW{x}, π1.tags RA; res .0 π1◦, .0.tags π1.tags, .1 π1, condition(fresh1){shared}r{shared}
   summary bound: π1 RAW{x}, π1.tags R; res π1
   summary rebased: π1 RW{count, heard}, π1.form R, π1.heard RA; res .form π1.form, .heard fresh1 π1.heard, π1◦
   summary nested: π1 W{form}, π1.form RW{name}, π1.heard RA; res .form π1.form◦, .heard π1.heard, π1◦

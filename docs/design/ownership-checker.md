@@ -1894,6 +1894,68 @@ that spills, not a limit), and the summary block's one-byte path length and `n_s
 program can have a larger finite type and path; neither storage nor serialization may impose the old
 constant-length bound.
 
+*Amended 2026-10-22 (issue #456, the owner's implementation decision): construction conditions belong to the containing value.*
+**Implementation and accepted precision debt (the owner, 2026-10-22):** the two core ownership
+tests have budgets of 5 300M. The one known false refusal is `DictFocus.grow`, whose folded
+dictionary construction annotations have lost deep conditions; `tests/pending/ownership/DictFocusGrow`
+still expects acceptance. The additional rejected callback inside `DictFocus.readLater` has the
+same cause; that complete program was already rejected for reading the dictionary after updating it.
+Both are accepted debt until #294 replaces the folded tree, tracked by #663. This is a temporary
+precision defect, not real sharing or a language restriction. Any other whole program moving from
+accepted to rejected stops landing.
+An approximate entry is not evidence that two occurrences are one. Projecting `ee` through `wrap`, then
+storing that alias beside `ee` at another recursive level, makes two simultaneous occurrences even when
+one or both entries are approximate. The approximate-copy exception of `nested` cannot supply the missing
+proof. Neither can a stricter path-overlap test: the missing fact is that two operands coexist in one
+construction. Permanently lowering either operand's cell condition is wrong too: selecting one operand
+and discarding the other must recover its original exclusivity (`ConstructorDiscardedAlias`).
+
+The level marker of issue #379 remains the single spatial abstraction for recursive values. A use of
+that marker carries the conditions of the constructions it represents. The interned marker `(type, kind)`
+cannot itself carry a condition: it is shared by unrelated values, whereas a condition belongs to one
+containing value. Transport the condition at that construction's result-relative path through the same
+placement, fold and projection as its entries. No second matcher, unfolding identity, or depth/count cap
+is introduced.
+
+- A tuple, record or constructor records, at its root, the conjunction of separation of its stored
+  operands, before folding their positions. List and record separation use their independent domains.
+  Lists already record these obligations on their real container. A trivial conjunction needs no entry.
+- A condition-only entry represents this annotation, not an allocation. It has an explicit discriminator
+  in local cells and summary provenance. It cannot be a mutation target, a holder, an escape, a fresh
+  allocation, a returned spine, or evidence that an allocation is owned. Deep list and record queries
+  read its respective conditions; allocation separation ignores it.
+- Placement prefixes its containing path once. A fold carries it under the existing level marker.
+  Projection selecting one operand discards an annotation at the discarded construction root. An
+  annotation inside the selected value survives, rebased by the ordinary projection; a marked path
+  retains the possible containing constructions exactly as the marker's existing expansion specifies.
+  Multiple approximate views do not become multiple allocations.
+- A branch union carries only annotations made within each arm. It creates no separation between
+  operands returned by mutually exclusive arms (`chooseNode`).
+- Direct constructors, constructor-function summaries and ordinary helpers publish the same condition.
+  Calls instantiate it on a result-owned annotation, never on either actual operand's allocation.
+  Captures, callback supplies, top-level values and imported/cache summaries retain both the discriminator
+  and the condition. The summary block is version 19; provenance flag bit 2 denotes an annotation.
+- A call-site demand under a marker queries the deep condition at the existing marker anchor before
+  projecting the target. That query sees the surviving construction conditions. A later query after
+  a subtree was discarded does not inherit a condition on the discarded container. Ordinary live-holder
+  and escape checks still reject aliases outside the selected value.
+
+The invariant is conditional deep exclusivity: for every concrete value represented by an abstract value,
+its allocation/container conditions and surviving construction annotations together imply that mutable
+allocations in different stored operands are separate. The operands of one annotation belong to the
+same concrete construction when its marker expands; they are not independently chosen recursive levels.
+Projection preserves that implication for retained subvalues and may discard a condition only with its
+containing construction. Substitution preserves annotation scope and allocation identity; branch union
+preserves the implication separately for each alternative. This is the obligation for the ownership
+oracle as well as for the compiler, not a claim that the current Lean model proves it.
+
+The owner withdrew the pre-implementation cost-report conditions on 2026-10-22. The owner also authorized the two core ownership test budgets of 5 300M
+on 2026-10-22; no assertion changes. Both projected-alias twins and constructor/helper routes must be refused;
+`ConstructorDiscardedAlias`, `EntryInvariantCommand` and the retained `ValuePath` program must stay
+accepted. The owner accepts the pending `DictFocusGrow` false refusal and the extra callback
+refusal inside the already-rejected `DictFocus.readLater` (#663, until #294); any other whole program
+changing from accepted to rejected stops landing. The incorrect `restMayBeEmpty` tightening is excluded.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
