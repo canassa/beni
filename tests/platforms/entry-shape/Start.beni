@@ -1,0 +1,12 @@
+pub type Program
+    = Program
+
+
+pub launch :
+      entry { init : ⊤ → model
+            , update : ⊤, Int, model → model
+            , settle : model → model
+            , view : model → Int
+            }
+    → Program
+launch _ = Program
