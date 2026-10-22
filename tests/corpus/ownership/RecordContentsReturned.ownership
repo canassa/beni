@@ -19,19 +19,19 @@ module RecordContentsReturned
   73:14 update <call List.push>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsReturned.flip writes it) (approx) [copy]
   73:20 List.push <call List.map>: accepted call
   77:9 update <call List.map>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsReturned.flip writes it) (approx) [copy]
-  summary flip: π1 R, π1[*] W{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary flip: π1 R, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
   summary dupRec: π2 R, π3 RAW[storage]; res [*] ~π2 ~π3[*], π3r{lost}
-  summary e1: π1 RW{done}; res [*] ~fresh2r{lost} ~π1◦, fresh1r{lost}
-  summary twiceOf: π1 RA; res [*] π1, fresh1{shared}r{shared}
-  summary e3: π1 RW{done}; res [*] ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
-  summary pushTwice: π1 RAW[storage], π1[*] A, π2 RA; res [*] ~π1[*] ~π2, π1{lost}r{lost}
-  summary e4: π1 RW{done}; res [*] ~fresh2r{lost} ~π1◦, fresh1r{lost}
-  summary e6: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦ ~fresh502◦r{lost} ~fresh503◦r{lost} ~π1◦, fresh1r{lost}
-  summary e7: π1 RA, π1[*] RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1[*]◦r{excl π1}, fresh1r{lost} π1
-  summary e8: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦ ~fresh502◦r{lost} ~fresh503◦r{lost} ~π1◦, fresh1r{lost}
-  summary e9: π1 RW{done}; res [*] ~fresh2r{shared} ~π1◦, fresh1r{shared}
-  summary e10: π1 R, π2 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π2◦, fresh1r{lost}
-  summary e11: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
+  summary e1: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1◦, fresh1r{lost}
+  summary twiceOf: π1 RA; res [*] condition(fresh2) π1, fresh1{shared}r{shared}
+  summary e3: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
+  summary pushTwice: π1 RAW[storage], π1[*] A, π2 RA; res [*] ~condition(fresh1) ~π1[*] ~π2, π1{lost}r{lost}
+  summary e4: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1◦, fresh1r{lost}
+  summary e6: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦ ~fresh502◦r{lost} ~fresh503◦r{lost} ~π1◦, fresh1r{lost}
+  summary e7: π1 RA, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1[*]◦r{excl π1}, fresh1r{lost} π1
+  summary e8: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦ ~fresh502◦r{lost} ~fresh503◦r{lost} ~π1◦, fresh1r{lost}
+  summary e9: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~π1◦, fresh1r{shared}
+  summary e10: π1 R, π2 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π2◦, fresh1r{lost}
+  summary e11: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   demands 9: accepted 9 (fresh 4, call 1, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 11: accepted 2, pending 0, rejected 9 (copy 9, restructure 0); hoisted 0, eager reads 0
 total 9: accepted 9 (fresh 4, call 1, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

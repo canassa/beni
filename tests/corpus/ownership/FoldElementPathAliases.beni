@@ -1,0 +1,43 @@
+import List
+
+
+put : List ((List Int) × List Int), List Int, Int → List ((List Int) × List Int)
+put rows key value =
+    case List.get rows 0 of
+        Just ( stored, _ ) →
+            if List.compare stored key == EQ then
+                List.update rows 0 λ( kept, values ) → ( kept, List.push values value )
+            else
+                List.insertAt rows 0 ( key, [ value ] )
+
+        Nothing →
+            List.push rows ( key, [ value ] )
+
+
+pub keyIsValue ⊤ =
+    xs = [ 1 ]
+    List.foldl [ xs, xs ] [ ( xs, xs ) ] λkey acc → put acc key 7
+
+
+pub keyWrittenLater ⊤ =
+    key = [ 1 ]
+    rows = List.foldl [ key, key ] [] λk acc → put acc k 7
+    ( rows, List.push key 2 )
+
+
+-- Duplicating an opaque row duplicates its value list too.
+pub repeatedRow row =
+    ( key, _ ) = row
+    List.foldl [ key ] [ row, row ] λk acc → put acc k 7
+
+
+pub repeatedRowFresh ⊤ = repeatedRow ( [ 1 ], [ 0 ] )
+
+
+pairRows left right = [ left, right ]
+
+
+pub sameValuesOpaque ⊤ =
+    values = [ 0 ]
+    rows = pairRows ( [ 1 ], values ) ( [ 1 ], values )
+    List.foldl [ [ 1 ] ] rows λkey acc → put acc key 7

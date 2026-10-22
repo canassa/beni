@@ -1165,8 +1165,14 @@ test "ownership words: the bodies they describe have not changed" {
 // The owner authorized both core tests at 5 300M on 2026-10-22, for
 // value-scoped construction conditions (#456). Observed: 4 810M and
 // 4 794M, plus about 10%. Reduce/remove these grants under #514.
-const core_surface_budget_millions = 5_300;
-const core_clean_budget_millions = 5_300;
+// Owner-authorized 2026-10-22 (#720): normal gates observed 11 060M
+// and 10 767M. About 10% headroom; retire under #732 and #514.
+const core_surface_budget_millions = 12_170;
+const core_clean_budget_millions = 11_850;
+// The same authorization covers browser surfaces (5 706M) and Tea clean
+// (4 931M), with about 10% headroom. Reduce/remove under #732.
+const browser_surface_budget_millions = 6_280;
+const tea_clean_budget_millions = 5_430;
 
 fn expectCoreSurface() !void {
     try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
@@ -1188,9 +1194,13 @@ test "ownership words: the node platform's are catalogued" {
     try expectSurface("node", &.{ "dump", "--stage=ownership", "--platform=node", "platforms/node" });
 }
 
-test "ownership words: browser-tea and browser-inline carry none" {
+fn expectBrowserSurfaces() !void {
     try expectSurface("browser-tea", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser-tea" });
     try expectSurface("browser-inline", &.{ "dump", "--stage=ownership", "--platform=browser-inline", "platforms/browser-inline" });
+}
+
+test "ownership words: browser-tea and browser-inline carry none" {
+    try world.withOwnBudget("browser ownership surfaces", browser_surface_budget_millions, expectBrowserSurfaces);
 }
 
 // ---------------------------------------------------------------------------
@@ -1302,8 +1312,12 @@ test "ownership everywhere: the browser-inline platform holds no rejected or pen
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-inline", "platforms/browser-inline" });
 }
 
-test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {
+fn expectTeaClean() !void {
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-tea", "platforms/browser-tea" });
+}
+
+test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {
+    try world.withOwnBudget("browser-tea ownership", tea_clean_budget_millions, expectTeaClean);
 }
 
 test "ownership everywhere: Page.sandbox gets the direct entry row" {

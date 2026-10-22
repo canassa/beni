@@ -1,0 +1,39 @@
+import List
+import Node
+
+
+put : List ((List Int) × List Int), List Int, Int → List ((List Int) × List Int)
+put rows key value =
+    case List.get rows 0 of
+        Just ( stored, _ ) →
+            if List.compare stored key == EQ then
+                List.update rows 0 λ( kept, values ) → ( kept, List.push values value )
+            else
+                List.insertAt rows 0 ( key, [ value ] )
+
+        Nothing →
+            List.push rows ( key, [ value ] )
+
+
+main : Node.Program
+main =
+    rows = List.foldl [ [ 1 ], [ 1 ] ] [] λkey acc → put acc key 7
+    Node.print (String.fromInt (List.length rows))
+
+
+-- One read-only key is shared by every input position and by both tables.
+pub sharedKeys ⊤ =
+    key = [ 1 ]
+    folded = List.foldl [ key, key ] [] λk acc → put acc k 7
+    first = put [] key 7
+    ( folded, put first key 7 )
+
+
+pairRows left right = [ left, right ]
+
+
+-- The generic helper reveals the two paths only when its tuples are supplied.
+pub opaqueSharedKeys ⊤ =
+    key = [ 1 ]
+    rows = pairRows ( key, [ 0 ] ) ( key, [ 1 ] )
+    List.foldl [ key ] rows λk acc → put acc k 7

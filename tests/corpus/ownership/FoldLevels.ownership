@@ -3,12 +3,12 @@ module FoldLevels
   49:31 List.push zs: rejected element: xs holds it and is read at 49:29 (approx)
   62:21 List.push zs: accepted fresh
   94:23 List.push xs: rejected call: l⟨Tree⟩#Node.1 may hold it through the call at 91:9, and is read at 94:15 (approx)
-  summary sub: π1 RAw[storage], π1[*] A; res .0 fresh2 ~π1, .0[*] ~π1[*], .1 π1, condition(fresh1){lost}
-  summary rose: π1 RAw[storage], π1[*] A; res .0 fresh3 ~π1, .0[*] ~π1[*], .0[*]⟨Rose⟩#Rose.0 ~π1, .0[*]⟨Rose⟩#Rose.1 ~fresh1, .0⟨Rose⟩#Rose.0 ~π1, .0⟨Rose⟩#Rose.1 ~fresh1, .1 π1, condition(fresh2){lost}
+  summary sub: π1 RAw[storage], π1[*] A; res .0 fresh5 ~condition(fresh2) ~π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){lost}
+  summary rose: π1 RAw[storage], π1[*] A; res .0 fresh8 ~condition(fresh3) ~π1, .0[*] ~condition(fresh4) ~π1[*], .0[*]⟨Rose⟩#Rose.0 ~condition(fresh7) ~π1, .0[*]⟨Rose⟩#Rose.1 ~fresh1, .0⟨Rose⟩#Rose.0 ~condition(fresh6) ~π1, .0⟨Rose⟩#Rose.1 ~fresh1, .1 ~condition(fresh5) π1, condition(fresh2){lost}
   summary fresh: res fresh2 ~fresh1
   summary build: res #Node.0⟨Tree⟩#Node.1 fresh1{shared}r{shared}, #Node.1 fresh1 fresh2, #Node.2⟨Tree⟩#Node.1 fresh3{shared}r{shared}
   summary size: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
-  summary pushRoot: res .0 condition(fresh4){lost}r{lost}, .0#Node.0⟨Tree⟩#Node.1 fresh1{shared}r{shared}, .0#Node.1[*] ~fresh2{shared}r{shared}, .0#Node.2⟨Tree⟩#Node.1 fresh3{shared}r{shared}
+  summary pushRoot: res .0 condition(fresh4){lost}r{lost}, .0#Node.0⟨Tree⟩#Node.1 fresh1{shared}r{shared} ~condition(fresh5), .0#Node.1[*] ~condition(fresh2) ~fresh2{shared}r{shared}, .0#Node.2⟨Tree⟩#Node.1 fresh3{shared}r{shared}
   demands 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause element 2

@@ -11,7 +11,7 @@ module WordsBrowser
   summary update: π2 RAW{draft, items}, π2.draft R, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary view: π1.items RA; res ⟨render⟩ fresh1{lost}r{lost}, ⟨render⟩⋆ ~π1.items
   summary keys: unused
-  summary keysHeld: res .0#Cmd.0 fresh5{lost}r{lost}, .0#Cmd.0[*] condition(fresh4), .0#Cmd.0[*]#Keyed.0 fresh3{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*] fresh2{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*]⋆ ~fresh1, .0#Cmd.0[*]#Keyed.2 λr{lost}, .0#Cmd.0[*]#KeyedNow.0 fresh7{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*] fresh6{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*]⋆ ~fresh1, .0#Cmd.0[*]#KeyedNow.2 λr{lost}
+  summary keysHeld: res .0#Cmd.0 fresh7{lost}r{lost}, .0#Cmd.0[*] condition(fresh4), .0#Cmd.0[*]#Keyed.0 fresh3{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*] fresh2{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*]⋆ ~condition(fresh5) ~fresh1, .0#Cmd.0[*]#Keyed.2 ~condition(fresh6) λr{lost}, .0#Cmd.0[*]#KeyedNow.0 fresh9{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*] fresh8{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*]⋆ ~condition(fresh10) ~fresh1, .0#Cmd.0[*]#KeyedNow.2 ~condition(fresh11) λr{lost}
   demands 5: accepted 4 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
   records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 5: accepted 4 (fresh 1, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1

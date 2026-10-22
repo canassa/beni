@@ -1,1 +1,1 @@
-4760 Conduit's complete ownership report reaches 4320M with #456's construction conditions on the self-hosted x86-64 Linux reference. The owner authorized increasing the budget on 2026-10-22; this is the observed count plus about 10%. Remove when the ownership work tracked by #286 brings this case below 4300M.
+6100 Owner-authorized on 2026-10-22 (#720): projection-aware container conditions bring normal self-hosted x86-64 Linux gates to 5545M; about 10% headroom. Remove when #732/#286 brings the case below 4300M. Supersedes the #456 grant of 4760M.
