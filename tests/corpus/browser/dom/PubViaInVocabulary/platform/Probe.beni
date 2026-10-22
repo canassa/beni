@@ -1,0 +1,35 @@
+--! A payload extractor that is `pub`, and the one markup that names it is
+--! in this module (checker-v2.md §25.7, amended 2026-10-21). The extractor
+--! is an interface value and also a declaration of this module, so the
+--! build writes its local name and imports nothing for it.
+
+import Html exposing (Html)
+
+
+--| The event object the extractor is handed.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it.
+pub markup text : String → Html msg
+
+
+--| The same markup, its messages passed through the function.
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onProbe" name "probe" via probe : String
+
+
+pub foreign impure probe : Event → String
+
+
+--| A button whose handler takes the extractor's `String`.
+pub button : Html String
+button = <button id="box" onProbe={λvalue → value}>send</button>
