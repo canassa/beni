@@ -1,0 +1,12 @@
+-- CK-266: a fresh tuple's list at one fresh dictionary key stays exclusive.
+-- #759: the earlier compiler accepts this safe edit; current master refuses.
+-- No old dictionary or list version is retained and no callback captures it.
+import Dict exposing (Dict)
+
+
+pub grow : ⊤ → Dict Int (Int × List Int)
+grow ⊤ =
+    d = Dict.insert Dict.empty 1 ( 0, [ 1 ] )
+    Dict.update d 1 λcurrent →
+        ( first, taps ) = Maybe.withDefault current ( 0, [] )
+        Just ( first, List.append taps [ 2 ] )
