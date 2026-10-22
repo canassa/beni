@@ -1,0 +1,45 @@
+-- element "root"
+-- load
+console.log: argument: 3
+<body>
+  <div id="root">
+    <div>
+      <button data-role="pick">"3"</button>
+      <p>"0"</p>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=pick]
+console.log: update: 3
+<body>
+  <div id="root">
+    <div>
+      <button data-role="pick">"3"</button>
+      <p>"3"</p>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+console.log: argument: 4
+<body>
+  <div id="root">
+    <div>
+      <button data-role="pick">"4"</button>
+      <p>"3"</p>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=pick]
+console.log: update: 4
+<body>
+  <div id="root">
+    <div>
+      <button data-role="pick">"4"</button>
+      <p>"4"</p>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>

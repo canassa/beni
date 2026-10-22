@@ -3167,12 +3167,13 @@ const Emitter = struct {
             // while the public S0 dump continues to count only leaf holes.
             var consumers = prog.*;
             consumers.vholes = try std.mem.concat(a, Writes.Hole, &.{ prog.vholes, prog.vedges });
-            const all_holes = try a.alloc(Lower.Direct.Hole, consumers.vholes.len);
+            const grouped = try std.mem.concat(a, Writes.Hole, &.{ consumers.vholes, prog.vargs });
+            const all_holes = try a.alloc(Lower.Direct.Hole, grouped.len);
             const holes = all_holes[0..prog.vholes.len];
-            const group_of = try a.alloc(u32, consumers.vholes.len);
+            const group_of = try a.alloc(u32, grouped.len);
             const rho = [_]u32{Writes.rho_path};
             const unbound = [_]u8{0};
-            for (consumers.vholes, all_holes, group_of) |h, *o, *go| {
+            for (grouped, all_holes, group_of) |h, *o, *go| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
                 const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
                 const group = try groups.of(reads, bounds);
@@ -3188,7 +3189,8 @@ const Emitter = struct {
                     .path = try a.dupe(u64, h.path),
                 };
             }
-            out.edges = all_holes[prog.vholes.len..];
+            out.edges = all_holes[prog.vholes.len..][0..prog.vedges.len];
+            out.arguments = all_holes[prog.vholes.len + prog.vedges.len ..];
             // Version 1.10: each `let`'s read set, a group as a hole's is.
             const lets = try a.alloc(Lower.Direct.Let, prog.vlets.len);
             for (prog.vlets, lets) |h, *o| {
@@ -3277,7 +3279,7 @@ const Emitter = struct {
             }
             out.lost_sites = lost_sites.items;
             // Version 1.8: the lists, and K3's per-row texts.
-            var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of, .holes = all_holes, .written = conflicts.written };
+            var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of[0..consumers.vholes.len], .holes = all_holes[0..consumers.vholes.len], .written = conflicts.written };
             try lists.build();
             std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
                 fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
@@ -3285,6 +3287,14 @@ const Emitter = struct {
                 }
             }.less);
             out.holes = holes;
+            const arms = try a.alloc(Lower.Direct.ViewArm, prog.varms.len);
+            for (arms, prog.varms) |*arm, visit| arm.* = .{ .module = visit.module, .body = visit.body, .path = try a.dupe(u64, visit.path), .live = visit.live };
+            std.mem.sort(Lower.Direct.ViewArm, arms, {}, struct {
+                fn less(_: void, x: Lower.Direct.ViewArm, y: Lower.Direct.ViewArm) bool {
+                    return Lower.Direct.placeLess(x.module, x.body, x.path, y.module, y.body, y.path);
+                }
+            }.less);
+            out.arms = arms;
             out.groups = @intCast(groups.reads.items.len);
             out.key_groups = conflicts.key_groups;
             out.written = conflicts.written;
@@ -4928,6 +4938,7 @@ const Emitter = struct {
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,
                 .entry_decl = e.entryDeclOf(m, t.entry),
+                .public_roots = e.options.library and e.session.store.package(file) == .app,
                 .live = &e.live,
                 .derived_runtime = slot.derived_runtime,
                 .markup = slot.markup,

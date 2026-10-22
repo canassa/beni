@@ -1,0 +1,30 @@
+-- Each DOM wiring contains its key's arm, even when two events send that
+-- key. The development shape keeps the old shared handler visible before
+-- release's single-use inlining (browser-inline.md §8.3).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add Int
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        Add n →
+            model + n
+
+
+view : Int → Html Msg
+view model =
+    <main>
+        <output>{model}</output>
+        <button onClick={Add 1}>one</button>
+        <button onClick={Add 2}>two</button>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root"

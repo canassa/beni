@@ -1,0 +1,75 @@
+-- Nested guarded arms overlap a retained helper event capture (#619).
+-- An unused throwing argument reads a field absent from all DOM leaves.
+-- Reveal must finish the shared preflight before any visibility or text write.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    unused : Int
+    inner : Bool
+    shown : Bool
+
+
+type Msg
+    = Cup
+    | Toggle
+    | Stored Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Cup →
+            { model | unused = model.unused + 1 }
+
+        Toggle →
+            { model | shown = not model.shown }
+
+        Stored n →
+            { model | unused = n }
+
+
+boom : Int → Int
+boom n = if n > 0 then Debug.todo "selected helper boom" else n
+
+
+pair : Int, Int, Bool → Html Msg
+pair first ignored shown =
+    <section>
+        {if shown then
+            <button data-role="inner" onClick={Stored first}>static</button>
+         else
+            <></>
+        }
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {if model.shown then
+            <section>
+                <p data-role="hole">{model.cups}</p>
+                {pair (Debug.log "before" model.cups) (boom model.unused) model.inner}
+            </section>
+         else
+            <></>
+        }
+        <button data-role="cup" onClick={Cup}>Cup</button>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { cups = 0, unused = 0, inner = True, shown = False }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

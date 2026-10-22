@@ -1,0 +1,58 @@
+-- Sibling calls of the same outer helper have separate argument bindings;
+-- nested calls read their own restored parent parameters (#436 review).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+pair : Int, Model → Html Msg
+pair label model =
+    <>
+        <p>{label} {model.cups}</p>
+        {if model.cups == 0 then
+            <p>{label} {model.cups}</p>
+         else
+            <></>
+        }
+    </>
+
+
+outer : Int, Model → Html Msg
+outer offset model = <section>{pair (Debug.log "nested" (offset + model.cups)) model}</section>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {outer (Debug.log "outer" model.cups) model}
+        {outer (Debug.log "sibling" (model.cups + 10)) model}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+        <button data-role="coin" onClick={AddCoin}>Coin</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"

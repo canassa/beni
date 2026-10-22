@@ -1,0 +1,9 @@
+element "root"
+event window old
+event window next
+event window old
+event window next
+event window old
+event window current
+stop
+event window afterstop

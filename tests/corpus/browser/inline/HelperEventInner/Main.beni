@@ -1,0 +1,76 @@
+-- An outer call evaluates even with its inner handler hidden. The same call
+-- inside a hidden outer arm does not. Dispatch reads the current binding.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    shown : Bool
+    outer : Bool
+    value : Int
+    picked : Int
+
+
+type Msg
+    = Pick Int
+    | Host Int
+
+
+type Key
+    = HostProbe
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Pick n →
+            ( { model | picked = Debug.log "picked" n }, Cmd.none )
+        Host n →
+            case n of
+                1 →
+                    ( { model | value = model.value + 1 }, Cmd.none )
+                2 →
+                    ( { model | shown = not model.shown }, Cmd.none )
+                _ →
+                    ( { model | outer = not model.outer }, Cmd.none )
+
+
+helper : Int, Bool → Html Msg
+helper n shown =
+    <section>{if shown then <button onClickGuard={Pick n}>Pick</button> else <></>}</section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section data-role="outside">
+            {helper (Debug.log "outside" model.value) model.shown}
+        </section>
+        {if model.outer then
+            <section data-role="inside">
+                {helper (Debug.log "inside" (model.value + 100)) model.shown}
+            </section>
+         else
+            <></>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element
+            { init =
+                λ⊤ →
+                    Probe.install ⊤
+                    ( { shown = False, outer = False, value = 3, picked = 0 }, Cmd.none )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.on HostProbe Probe.start Host
+            }
+        )
+        "root"

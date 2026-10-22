@@ -1,0 +1,30 @@
+-- Three-way case selectors use numeric arm indices, while a two-arm if
+-- may use a boolean. Effects execute in only the selected arm (#459).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Next
+
+
+view : Int → Html Msg
+view n =
+    <div>
+        {case Int.mod n 3 of
+            0 →
+                <p>{Debug.log "zero" n}</p>
+
+            1 →
+                <p>{Debug.log "one" n}</p>
+
+            _ →
+                <></>
+        }
+        <button data-role="next" onClick={Next}>Next</button>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λNext n → n + 1, view = view }) "root"

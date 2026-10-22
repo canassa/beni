@@ -1,0 +1,32 @@
+-- element "root"
+-- load
+console.log: first: 0
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"0"</p>
+        <button data-role="pick">"0"</button>
+      </section>
+      <p>"9"</p>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=pick]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"0"</p>
+        <button data-role="pick">"0"</button>
+      </section>
+      <p>"0"</p>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- throws click [data-role=bump]
+console.log: first: 1
+(threw: Error: TODO: event argument failed)
+(the DOM did not change)

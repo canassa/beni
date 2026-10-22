@@ -1,0 +1,53 @@
+-- A nested eager arm shares a binding function with its helper. Entering both
+-- contexts must evaluate the helper argument only once (#436 review).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+pair : Int, Model → Html Msg
+pair label model =
+    <>
+        <p>{label} {model.cups}</p>
+        {if model.cups == 0 then
+            <p>{label} {model.cups}</p>
+         else
+            <></>
+        }
+    </>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {pair (Debug.log "label" model.cups) model}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+        <button data-role="coin" onClick={AddCoin}>Coin</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"

@@ -574,3 +574,101 @@ test "the driver's cache pruning keeps the entries of the last hour" {
     defer w.deinit();
     try testing.expectEqual(@as(u32, 1025), try entriesLeft(&w, 1025, 60));
 }
+
+test "a partial primitive helper argument is bound only in its selected arm" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    // Expose the real primitive in this isolated core only. Public List.get
+    // is an ordinary call and would not exercise the safety-predicate split.
+    try w.copyTreeInto("core", "mycore", "_");
+    const list = try w.read("mycore/List.beni");
+    const private = "foreign pure at :";
+    if (std.mem.count(u8, list, private) != 1) return error.CoreChanged;
+    try w.write("mycore/List.beni", try std.mem.replaceOwned(u8, arena, list, private, "pub foreign pure at :"));
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\type alias Model = { values : List { n : Int }, shown : Bool, picked : Int }
+        \\type Msg = Fill | Toggle | Pick Int
+        \\
+        \\update : Msg, Model → Model
+        \\update msg model =
+        \\    case msg of
+        \\        Fill → { model | values = [ { n = 7 } ] }
+        \\        Toggle → { model | shown = not model.shown }
+        \\        Pick n → { model | picked = n }
+        \\
+        \\helper : Int → Html Msg
+        \\helper n = <button id="pick" onClick={Pick n}>{n}</button>
+        \\
+        \\view : Model → Html Msg
+        \\view model =
+        \\    <main>
+        \\        {if model.shown then
+        \\            <section>{helper (List.at model.values 0).n}</section>
+        \\         else
+        \\            <></>
+        \\        }
+        \\        <p>{model.picked}</p>
+        \\        <button id="fill" onClick={Fill}>Fill</button>
+        \\        <button id="toggle" onClick={Toggle}>Toggle</button>
+        \\    </main>
+        \\
+        \\main : Tea.Program
+        \\main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { values = [], shown = False, picked = 0 }, update = update, view = view }) "root"
+        \\
+    );
+    try w.write("page.steps", "element \"root\"\nclick #fill\nclick #toggle\nclick #pick\n");
+    const h = try browser.harness(testing.io);
+    // The empty list would throw on its field read if evaluated while hidden.
+    // A reveal must bind the newly filled list, and dispatch must use that 7.
+    const built = try w.run(&.{ "build", "--core-root=mycore", "--platform=browser-inline", "--no-cache", "--out=out", "Main.beni" });
+    try expectExit(0, built);
+    const shown = try browser.drive(&w, h, null, "out/_main.mjs", "page.steps", world.default_timeout_ms);
+    try expectExit(0, shown);
+    try testing.expect(std.mem.indexOf(u8, shown.stdout, "<button id=\"pick\">\"7\"</button>") != null);
+    try testing.expect(std.mem.indexOf(u8, shown.stdout, "<p>\"7\"</p>") != null);
+}
+
+test "a public library markup helper receives the markup-value diagnostic" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\pub helper : Int → Html msg
+        \\helper n = <p>{n}</p>
+        \\
+        \\
+        \\view : Int → Html Int
+        \\view n = <div>{helper n}</div>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }
+        \\
+    );
+    // Warm the same module cache as an application first. Public roots
+    // must change the recorded consumed decision for the library build.
+    const app = try w.run(&.{ "build", "--platform=browser-inline", "--out=appout", "Main.beni" });
+    try expectExit(0, app);
+    try testing.expectEqualStrings("", app.stdout);
+    try testing.expectEqualStrings("", app.stderr);
+    const r = try w.run(&.{ "build", "--library", "--platform=browser-inline", "--out=out", "Main.beni" });
+    try expectExit(1, r);
+    const diagnostic = @import("diagnostic");
+    try testing.expectEqualStrings("", r.stdout);
+    try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{.{
+        .code = .not_implemented,
+        .severity = .@"error",
+        .span = .{ .file = "Main.beni", .start = .{ .line = 6, .col = 12 }, .end = .{ .line = 6, .col = 13 } },
+        .title = "NOT IMPLEMENTED YET",
+        .message = "A limit of the compiler: `browser-inline` has no markup value yet; it compiles\nmarkup only as a program's `view`, written in place\n(`docs/design/browser-inline.md` §5, class 1). Write markup held, passed or\nreturned by a helper in place in the `view`, or build this program with\n`--platform=browser-tea`.",
+    }}), r.diagnostics);
+    try testing.expect(!w.exists("out"));
+}

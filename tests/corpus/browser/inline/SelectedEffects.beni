@@ -1,0 +1,53 @@
+-- Effects of eager markup must execute only in the selected arm (#459).
+-- Hidden data changes stay silent; revealing the arm evaluates its current
+-- values, including helper arguments, once and in source order.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    shown : Bool
+
+
+type Msg
+    = Cup
+    | Toggle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Cup →
+            { model | cups = model.cups + 1 }
+
+        Toggle →
+            { model | shown = not model.shown }
+
+
+pair : Int, Model → Html Msg
+pair label model = <p data-role="helper">{label} {model.cups}</p>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {if model.shown then
+            <section>
+                <p data-role="hole">{Debug.log "hole" model.cups}</p>
+                {pair (Debug.log "arg" model.cups) model}
+            </section>
+         else
+            <></>
+        }
+        <button data-role="cup" onClick={Cup}>Cup</button>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, shown = False }, update = update, view = view })
+        "root"

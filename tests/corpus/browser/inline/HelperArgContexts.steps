@@ -1,0 +1,4 @@
+element "root"
+click [data-role=cup]
+click [data-role=cup]
+click [data-role=coin]

@@ -1,0 +1,17 @@
+element "root"
+event window fire
+event window bump
+event window fire
+event window shown
+event window fire
+event window outer
+event window fire
+event window shown
+event window fire
+event window bump
+event window shown
+event window fire
+event window bump
+event window fire
+stop
+event window fire

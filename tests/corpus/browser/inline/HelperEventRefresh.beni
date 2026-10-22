@@ -1,0 +1,54 @@
+-- Handler-only arguments refresh on their full source-call read set.
+-- Two calls of one helper retain separate bindings; dispatch never logs.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    label : Int
+    value : Int
+    picked : Int
+
+
+type Msg
+    = Pick Int
+    | Bump
+    | Label
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick n →
+            { model | picked = n }
+        Bump →
+            { model | value = model.value + 1 }
+        Label →
+            { model | label = model.label + 1 }
+
+
+helper : Int, Int → Html Msg
+helper label value = <button onClick={Pick value}>{label}</button>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <section data-role="first">{helper model.label (Debug.log "first" model.value)}</section>
+        <section data-role="second">
+            {helper (model.label + 100) (Debug.log "second" (model.value + 100))}
+        </section>
+        <p>{model.picked}</p>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+        <button data-role="label" onClick={Label}>Label</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { label = 1, value = 3, picked = 0 }, update = update, view = view }
+        )
+        "root"

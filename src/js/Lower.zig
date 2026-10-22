@@ -296,6 +296,9 @@ pub const Input = struct {
     /// a program's own modules call — the same reason a chunked build's
     /// `lazy` declarations will be exported from their chunks.
     entry_decl: ?u32 = null,
+    /// A library roots every public value of its root package, even when
+    /// no code inside the build names that declaration.
+    public_roots: bool = false,
     /// `--release`: what JavaScript sees (`Fields.close`), which decides
     /// the types whose constructors have integer tags (`backend.md` §9,
     /// *Item 4, taken up*). Null in a development build: every tag is a
@@ -458,6 +461,8 @@ pub const Direct = struct {
         return arm.ctor_index < ctor_index;
     }
 
+    pub const ViewArm = struct { module: u32, body: u32, path: []const u64, live: bool };
+
     pub const Site = struct {
         module: u32,
         token: u32,
@@ -499,6 +504,8 @@ pub const Direct = struct {
         /// Sorted by module, then token.
         holes: []const Hole,
         edges: []const Hole = &.{},
+        arguments: []const Hole = &.{},
+        arms: []const ViewArm = &.{},
         /// The number of distinct read sets.
         groups: u32,
         /// Per key, the read sets its write set conflicts with, sorted,
@@ -4023,63 +4030,80 @@ pub const Lowerer = struct {
     }
 
     fn branchesReach(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+        return l.branchesReachProjected(inst, probe, &.{}, &.{});
+    }
+
+    fn reaches(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+        return l.reachesProjected(inst, probe, &.{}, &.{});
+    }
+
+    fn anyReaches(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe) bool {
+        return l.anyReachesProjected(insts, probe, &.{}, &.{});
+    }
+
+    // The same checked-effect walk over the source projection actually
+    // emitted by a branch override; empty exclusions preserve whole-expression
+    // queries. Omitted arm bodies and skipped definitions evaluate nothing.
+    fn branchesReachProjected(l: *Lowerer, inst: Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
         for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index)) |branch| {
             if (l.bir.instTag(branch) != .branch) continue;
-            if (l.reaches(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), probe)) return true;
+            if (l.reachesProjected(@fromBackingInt(@intCast(l.bir.instData(branch).rhs)), probe, omitted, skipped)) return true;
         }
         return false;
     }
 
     /// Whether evaluating `inst` reaches a call `probe` hits, outside any
     /// function it makes.
-    fn reaches(l: *Lowerer, inst: Inst.Index, comptime probe: Probe) bool {
+    fn reachesProjected(l: *Lowerer, inst: Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
+        if (std.mem.indexOfScalar(Inst.Index, omitted, inst) != null) return false;
         const d = l.bir.instData(inst);
         switch (l.bir.instTag(inst)) {
             .call => {
                 if (l.callHits(inst, probe)) return true;
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
-                return l.anyReaches(l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), probe);
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
+                return l.anyReachesProjected(l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index), probe, omitted, skipped);
             },
             .method_call => {
                 if (l.callHits(inst, probe)) return true;
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
                 const m = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.MethodCall);
-                return l.anyReaches(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe);
+                return l.anyReachesProjected(l.bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Inst.Index), probe, omitted, skipped);
             },
             .type_dispatch => {
                 if (l.callHits(inst, probe)) return true;
                 const t = l.bir.extraData(@fromBackingInt(@intCast(d.rhs)), Bir.TypeDispatch);
-                return l.anyReaches(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe);
+                return l.anyReachesProjected(l.bir.extraSlice(.{ .start = t.args_start, .end = t.args_end }, Inst.Index), probe, omitted, skipped);
             },
             .let => {
                 for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index)) |def| {
+                    if (std.mem.indexOfScalar(Inst.Index, skipped, def) != null) continue;
                     const dd = l.bir.instData(def);
                     switch (l.bir.instTag(def)) {
                         .let_def => {
                             const payload = l.bir.extraData(@fromBackingInt(@intCast(dd.lhs)), Bir.LetDef);
                             if (payload.params_end != payload.params_start) continue;
-                            if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true;
+                            if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true;
                         },
-                        .let_pattern => if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true,
-                        .let_stmt => if (l.reaches(@fromBackingInt(@intCast(dd.rhs)), probe)) return true,
+                        .let_pattern => if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true,
+                        .let_stmt => if (l.reachesProjected(@fromBackingInt(@intCast(dd.rhs)), probe, omitted, skipped)) return true,
                         else => {},
                     }
                 }
-                return l.reaches(@fromBackingInt(@intCast(d.rhs)), probe);
+                return l.reachesProjected(@fromBackingInt(@intCast(d.rhs)), probe, omitted, skipped);
             },
             .case => {
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
-                return l.branchesReach(inst, probe);
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
+                return l.branchesReachProjected(inst, probe, omitted, skipped);
             },
-            .@"try", .field_access, .tuple_index => return l.reaches(@fromBackingInt(@intCast(d.lhs)), probe),
-            .tuple, .list, .interp => return l.anyReaches(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe),
+            .@"try", .field_access, .tuple_index => return l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped),
+            .tuple, .list, .interp => return l.anyReachesProjected(l.bir.extraSlice(Bir.inlineRange(d), Inst.Index), probe, omitted, skipped),
             .record => {
-                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
+                for (l.bir.extraSlice(Bir.inlineRange(d), Bir.Field)) |f| if (l.reachesProjected(f.value, probe, omitted, skipped)) return true;
                 return false;
             },
             .record_update => {
-                if (l.reaches(@fromBackingInt(@intCast(d.lhs)), probe)) return true;
-                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (l.reaches(f.value, probe)) return true;
+                if (l.reachesProjected(@fromBackingInt(@intCast(d.lhs)), probe, omitted, skipped)) return true;
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field)) |f| if (l.reachesProjected(f.value, probe, omitted, skipped)) return true;
                 return false;
             },
             // Markup is not walked. For a suspension the answer stays no, as
@@ -4091,8 +4115,8 @@ pub const Lowerer = struct {
         }
     }
 
-    fn anyReaches(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe) bool {
-        for (insts) |inst| if (l.reaches(inst, probe)) return true;
+    fn anyReachesProjected(l: *Lowerer, insts: []const Inst.Index, comptime probe: Probe, omitted: []const Inst.Index, skipped: []const Inst.Index) bool {
+        for (insts) |inst| if (l.reachesProjected(inst, probe, omitted, skipped)) return true;
         return false;
     }
 
@@ -13846,6 +13870,16 @@ pub const Lowerer = struct {
         return l.templateArray(values.items);
     }
 
+    fn markupValuePureTotal(l: *Lowerer, v: beni_markup.Value.Index) bool {
+        const st = l.mk orelse return false;
+        return switch (st.built.values[@backingInt(v)]) {
+            .inst => |i| l.instSafeMode(i, true),
+            .let_value => |lv| l.instSafeMode(lv.inst, true),
+            .capture, .read, .input, .probe, .string, .true, .callee => true,
+            else => false,
+        };
+    }
+
     /// `cx.programHole`.
     fn directHole(l: *Lowerer, ref: beni_markup.Program.HoleRef) beni_markup.Program.HoleFacts {
         const unknown: beni_markup.Program.HoleFacts = .{ .group = std.math.maxInt(u32), .static = false, .bake = null };
@@ -13862,14 +13896,29 @@ pub const Lowerer = struct {
         };
         const producer = ref == .node and switch (st.built.tree.kind(ref.node)) {
             .component, .for_, .show => true,
+            .hole => st.built.tree.hole(ref.node).kind == .html and st.built.tree.hole(ref.node).call != null,
             else => false,
         };
         const h = if (producer) found: {
             for (d.edges) |*edge| if (edge.module == l.in.module.int() and edge.token == token and std.mem.eql(u64, edge.path, l.inline_path.items)) break :found edge;
             return unknown;
         } else l.directHoleAt(d, token) orelse return unknown;
+        var entry_groups: std.ArrayList(u32) = .empty;
+        if (producer and st.built.tree.kind(ref.node) == .hole) {
+            const invocation = st.built.tree.hole(ref.node).call.?;
+            const path = l.scratch.alloc(u64, l.inline_path.items.len + 1) catch return unknown;
+            @memcpy(path[0..l.inline_path.items.len], l.inline_path.items);
+            path[path.len - 1] = (@as(u64, l.in.module.int()) << 32) | token;
+            for (0..invocation.args.len) |i| {
+                if (l.markupValuePureTotal(invocation.args.at(@intCast(i)))) continue;
+                const arg = for (d.arguments) |arg| {
+                    if (arg.module == l.in.module.int() and arg.token == i and std.mem.eql(u64, arg.path, path)) break arg;
+                } else return unknown;
+                entry_groups.append(l.scratch, arg.group) catch return unknown;
+            }
+        }
         const static = h.group < d.written.len and !d.written[h.group];
-        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where };
+        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where, .entry_groups = entry_groups.items };
     }
 
     /// The pass's hole at `token` of this module on the current call path
@@ -14181,9 +14230,31 @@ pub const Lowerer = struct {
 
     /// The declarations this module writes only as pieces.
     fn markPieceDecls(l: *Lowerer) Allocator.Error!void {
+        // Under a lowering that has no markup value, a function whose body
+        // is markup is written only where a program's markup calls it, in
+        // place (`browser-inline.md` §8.4, *A view helper*, 2026-10-19): left
+        // out unless code names it after all (`wanted`, then refused as a
+        // markup value, as before).
+        if (l.in.markup) |mk| if (mk.lowering.no_markup_values != null) for (l.bir.decls, 0..) |dc, i| {
+            if (dc.kind != .value or dc.params == 0) continue;
+            if (l.in.public_roots and dc.is_pub) continue;
+            var body = dc.body.unwrap() orelse continue;
+            while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
+            if (l.bir.instTag(body) != .markup) continue;
+            if (l.consumed.len == 0) {
+                l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
+                @memset(l.consumed, false);
+            }
+            if (l.wanted.len == 0) {
+                l.wanted = try l.scratch.alloc(bool, l.bir.decls.len);
+                @memset(l.wanted, false);
+            }
+            l.consumed[i] = true;
+        };
         const d = l.in.direct orelse return;
         for (d.view_pieces) |vp| {
             if (vp.module != l.in.module.int() or !vp.consumed or vp.decl >= l.bir.decls.len) continue;
+            if (l.in.public_roots and l.bir.decls[vp.decl].is_pub) continue;
             if (l.consumed.len == 0) {
                 l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
                 @memset(l.consumed, false);
@@ -14939,6 +15010,10 @@ pub const Lowerer = struct {
     /// locals, field and tuple reads, `if`s and `case`s, interpolation and
     /// calls of the basic operators (`Operator.of`) of such.
     fn instSafe(l: *Lowerer, inst: Inst.Index) bool {
+        return l.instSafeMode(inst, false);
+    }
+
+    fn instSafeMode(l: *Lowerer, inst: Inst.Index, total: bool) bool {
         var stack: std.ArrayList(Inst.Index) = .empty;
         stack.append(l.scratch, inst) catch return false;
         var budget: u32 = 4096;
@@ -14948,9 +15023,18 @@ pub const Lowerer = struct {
             const d = l.bir.instData(at);
             switch (l.bir.instTag(at)) {
                 .local, .int, .float, .char, .string => {},
+                // A branch's markup arm: choosing the arm evaluates nothing of it.
+                .markup => {},
                 .field_access, .tuple_index, .case, .interp => l.instChildren(at, &stack) catch return false,
                 .call => {
-                    if (l.operatorOf(@fromBackingInt(@intCast(d.lhs))) == null) return false;
+                    const op = l.operatorOf(@fromBackingInt(@intCast(d.lhs))) orelse return false;
+                    if (total) {
+                        if (!l.callsOperator(at)) return false;
+                        switch (op) {
+                            .list_put, .list_at, .list_traverseAt => return false,
+                            else => {},
+                        }
+                    }
                     stack.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) catch return false;
                 },
                 else => return false,
@@ -15298,8 +15382,33 @@ pub const Lowerer = struct {
         return .{ .call = root };
     }
 
-    /// `cx.programBranch` (version 1.10): an `html` hole whose value, past
-    /// its `let`s, is a `case` — which an `if` is too — and its arms.
+    /// A completed view walk proves this arm dead on this call path.
+    /// Missing facts are unknown, never a dead-arm proof.
+    fn directArmDead(l: *Lowerer, node: beni_markup.Node.Index, body: Inst.Index) bool {
+        const pc = l.program_now orelse return false;
+        const d = pc.direct orelse return false;
+        const st = l.mk orelse return false;
+        const module = l.in.module.int();
+        const path = l.inline_path.items;
+        const extra: usize = if (node == .none) 0 else 1;
+        const token: u64 = if (node == .none) 0 else (@as(u64, module) << 32) | st.built.node_tokens[@backingInt(node)];
+        // Match the current branch's path without changing its caller state.
+        const full = l.scratch.alloc(u64, path.len + extra) catch return false;
+        @memcpy(full[0..path.len], path);
+        if (extra != 0) full[path.len] = token;
+        var lo: usize = 0;
+        var hi = d.arms.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            const arm = d.arms[mid];
+            if (Direct.placeLess(arm.module, arm.body, arm.path, module, body.int(), full)) lo = mid + 1 else hi = mid;
+        }
+        if (lo == d.arms.len) return false;
+        const arm = d.arms[lo];
+        return arm.module == module and arm.body == body.int() and std.mem.eql(u64, arm.path, full) and !arm.live;
+    }
+
+    /// The arms of the current markup choice.
     fn directBranch(l: *Lowerer, node: beni_markup.Node.Index) ?beni_markup.Program.Branch {
         const arms = (l.branchArms(node) catch return null) orelse return null;
         if (arms.document) return .{
@@ -15313,7 +15422,7 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
+            o.* = .{ .what = what, .dead = l.deadArm(b) or l.directArmDead(node, b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
         }
         return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
     }
@@ -15478,6 +15587,13 @@ pub const Lowerer = struct {
             try stmts.append(l.scratch, try l.add(.if_stmt, p, condition.int(), @backingInt(record)));
         } else if (inner.items.len == 0) {
             try l.constDecl(&stmts, n, result, p);
+            // Index lowering replaces each arm body with a number. Only
+            // its remaining control expression can affect this initializer.
+            const effect = if (ov.mode == .index)
+                l.reachesProjected(ov.arms.value, .effect, ov.arms.bodies, skip)
+            else
+                l.mayHaveEffect(ov.arms.value);
+            if (effect) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
         } else {
             try stmts.append(l.scratch, try l.add(.let_decl, p, @backingInt(n), @backingInt(Node.OptionalIndex.none)));
             try inner.append(l.scratch, try l.add(.assign_stmt, p, (try l.ident(n, p)).int(), result.int()));
@@ -15993,7 +16109,17 @@ pub const Lowerer = struct {
                 frame.entered = true;
                 for (chain.params, 0..) |param, k| {
                     if (k >= values.len) break;
-                    try l.bindParam(&stmts, param, values[k]);
+                    // The caller may place an argument elsewhere too (an
+                    // event binding's captured arguments): bind a copy of a
+                    // literal, so a pass that rewrites this initialiser in
+                    // place (`Spec`'s dead bindings) never reaches the other.
+                    const value = values[k];
+                    const tag = l.b.tagOf(value);
+                    const own = if (atom_literals[@backingInt(tag)])
+                        try l.add(tag, l.b.nodes.items(.pos)[value.int()], l.b.dataOf(value).lhs, l.b.dataOf(value).rhs)
+                    else
+                        value;
+                    try l.bindParam(&stmts, param, own);
                 }
                 // The body's `let`s its markup does not read, where the
                 // call's markup is made.
@@ -16929,6 +17055,7 @@ pub const Lowerer = struct {
             else => blk: {
                 const n = try l.fresh(l.well.temp);
                 try l.constDecl(out, n, value, l.pos(inst));
+                if (l.mayHaveEffect(inst)) try l.effect_keep.append(l.scratch, out.items[out.items.len - 1]);
                 break :blk .{ .name = n };
             },
         };
@@ -17789,6 +17916,13 @@ const markup_vtable: beni_markup.VTable = struct {
         return l.instSafe(i);
     }
 
+    /// An eager arm may evaluate only a proven pure, total expression.
+    /// Ordinary calls (including foreign and recursive calls) are unknown;
+    /// native operators exclude writes and unchecked indexed reads.
+    fn valuePureTotal(impl: *anyopaque, v: M.Value.Index) bool {
+        return lowerer(impl).markupValuePureTotal(v);
+    }
+
     fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {
         return lowerer(impl).pieceEventCtor(v, payload);
     }
@@ -18129,6 +18263,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .root_let_readers = rootLetReaders,
         .value_reads_let = valueReadsLet,
         .value_safe = valueSafe,
+        .value_pure_total = valuePureTotal,
         .piece_export = pieceExport,
         .program_piece = programPiece,
         .program_piece_name = programPieceName,

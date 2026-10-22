@@ -1,0 +1,7 @@
+element "root"
+click [data-role=cup]
+click [data-role=toggle]
+click [data-role=cup]
+click [data-role=toggle]
+click [data-role=cup]
+click [data-role=toggle]

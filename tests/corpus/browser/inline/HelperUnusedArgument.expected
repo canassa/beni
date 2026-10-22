@@ -1,0 +1,16 @@
+-- load
+console.log: argument: 0
+<body>
+  <main>
+    <button>"static"</button>
+    <output>"0"</output>
+  </main>
+</body>
+-- click button
+console.log: argument: 1
+<body>
+  <main>
+    <button>"static"</button>
+    <output>"1"</output>
+  </main>
+</body>

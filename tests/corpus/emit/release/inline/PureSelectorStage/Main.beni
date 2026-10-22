@@ -1,0 +1,24 @@
+-- #621: the widget's arm-index initializer evaluates a pure Bool field,
+-- not the markup replaced by the arm index. Keep that stage inline.
+import Html exposing (Html)
+import Tea
+import Widget
+
+
+type Msg
+    = WidgetMsg Widget.Msg
+
+
+update : Msg, Widget.Model → Widget.Model
+update msg model =
+    case msg of
+        WidgetMsg sub →
+            Widget.update sub model
+
+
+view : Widget.Model → Html Msg
+view model = <main>{Html.map (Widget.view model) WidgetMsg}</main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = Widget.init, update = update, view = view }

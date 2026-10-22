@@ -1,0 +1,5 @@
+click [data-role=true]>section>button
+click [data-role=toggle]
+click [data-role=dynamic]>section>button
+click [data-role=toggle]
+click [data-role=toggle]

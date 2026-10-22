@@ -1,0 +1,66 @@
+-- element "root"
+-- load
+console.log: outer: 0
+console.log: nested: 0
+console.log: sibling: 10
+console.log: nested: 10
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"0 0"</p>
+        <p>"0 0"</p>
+      </section>
+      <section>
+        <p>"10 0"</p>
+        <p>"10 0"</p>
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: outer: 1
+console.log: nested: 2
+console.log: sibling: 11
+console.log: nested: 12
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"2 1"</p>
+        ""
+      </section>
+      <section>
+        <p>"12 1"</p>
+        ""
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: outer: 2
+console.log: nested: 4
+console.log: sibling: 12
+console.log: nested: 14
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <p>"4 2"</p>
+        ""
+      </section>
+      <section>
+        <p>"14 2"</p>
+        ""
+      </section>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=coin]
+(the DOM did not change)

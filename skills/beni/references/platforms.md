@@ -285,7 +285,7 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
 The same `Tea.sandbox` and `Tea.element` as `browser-tea`, so one source builds on both. The
 program is compiled, not run: each constructor is recognised where it is called, and the page ships
 only what it reaches. Lists are edited in place here, so the ownership checker's errors apply
-(`lists.md`, *Ownership*).
+(`lists.md`, *Ownership*). For view helpers, see `markup.md`, *Helpers on `browser-inline`*.
 
 ## `html`
 

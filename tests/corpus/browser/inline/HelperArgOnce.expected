@@ -1,0 +1,39 @@
+-- element "root"
+-- load
+console.log: label: 0
+<body>
+  <div id="root">
+    <div>
+      <p>"0 0"</p>
+      <p>"0 0"</p>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: label: 1
+<body>
+  <div id="root">
+    <div>
+      <p>"1 1"</p>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: label: 2
+<body>
+  <div id="root">
+    <div>
+      <p>"2 2"</p>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=coin]
+(the DOM did not change)
