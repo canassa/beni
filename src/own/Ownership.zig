@@ -12167,7 +12167,7 @@ const Walker = struct {
         for (model) |e| {
             const c = w.cells.items[e.cell];
             // The entry namespaces update below 100000, init from 100000,
-            // view from 200000 and subscriptions from 300000 (§20.4).
+            // view from 200000, subscriptions from 300000 and settle from 400000 (§20.4).
             if (c.kind != .result or c.a != inst.int() or c.b == 0 or (c.b >= entry_init_ns and c.b < entry_settle_ns) or try w.isEscaped(e.cell)) continue;
             // A callback's cells may use the lower namespace too. Anything
             // present at init keeps its established condition, never a guess.
@@ -12294,6 +12294,16 @@ const Walker = struct {
             } else false,
             else => false,
         };
+        // A privileged declaration must still have the callback shape its
+        // row models. Otherwise no supplies or state writes may be dropped.
+        const update_arity: u32 = if (hosted) 3 else 2;
+        const settle_ty = w.entryFieldType(arg, "settle");
+        const valid_settle = if (settle_ty) |ty| whole and
+            funcParam(w.store, ty, 1) != null and funcParam(w.store, ty, 2) == null else true;
+        if (funcParam(w.store, update_ty, update_arity) != null or !valid_settle) {
+            try w.sight(app, .{ .pending = "its entry callbacks do not have the update/settle state protocol" }, tok);
+            return w.entryResult(inst);
+        }
         const tuple0: Step = .{ .kind = .tuple, .arg = 0 };
         const tuple1: Step = .{ .kind = .tuple, .arg = 1 };
         var upd = (try w.entryFn(try w.fieldOf(app, "update"))) orelse {

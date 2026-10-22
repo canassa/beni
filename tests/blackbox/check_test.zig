@@ -1389,3 +1389,12 @@ test "ownership entry: the program word changes the verdict" {
 test "ownership entry: Page's word is catalogued" {
     try expectSurface("page", &.{ "dump", "--stage=ownership", "--platform=tests/platforms/page", "tests/platforms/page" });
 }
+
+test "ownership entry: an unsupported settle shape leaves its writer pending" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(&.{ "check", "--diagnostics=json", "--no-cache", "--platform=tests/platforms/entry-shape", "--ownership-everywhere", "tests/corpus/ownership/EntryMalformedSettle.beni" }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 1), r.exit_code);
+    try testing.expect(r.diagnostics.len != 0);
+    for (r.diagnostics) |d| try testing.expectEqual(.list_may_be_shared, d.code);
+}

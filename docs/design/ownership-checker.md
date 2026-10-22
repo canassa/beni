@@ -5128,7 +5128,10 @@ This adds settle to the allowed field names of an entry record. An unknown
 field name, a parameter that is not a record written out, a nested entry word,
 or entry on a result is misplaced_ownership_word. Entry is a protocol on the
 record, not an assertion replacing the constructor's inferred summary with
-unknown defaults. Other ownership words retain §24.2's defaults.
+unknown defaults. Other ownership words retain §24.2's defaults. The row requires update to
+have the protocol's two or three parameters and hosted settle to have two;
+a hosted update returns the whole state. An unsupported shape supplies no entry
+row and leaves its writers pending, rather than dropping a state parameter.
 
 Browser.hosted joins §20.9's trusted surface. Its implementation in
 platforms/browser/Browser.beni (hosted, host) meets the obligations:
