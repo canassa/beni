@@ -16039,18 +16039,36 @@ const Walker = struct {
             const selected = try w.composeRes(.{ .path = eps, .prov = t.a }, raw_selected, try w.grownArgs(ctx), &before, &cut);
             if (cut) try w.foldedPairs(before.items, selected);
             const other = try w.expand(try w.instProv(t.b, ctx));
+            // Repeated paths may name one cell. Conjunction is idempotent:
+            // compare each cell and approximation once, but retain every
+            // result path below. Keep the last approximation in source order.
+            var operands: std.ArrayList(Entry) = .empty;
+            var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+            var last_approx: u32 = 0;
+            for (other) |f| {
+                if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
+                if (f.approx != 0) last_approx = f.approx;
+                const key = (@as(u64, f.cell) << 32) | f.approx;
+                const gop = try seen.getOrPut(w.a, key);
+                if (!gop.found_existing) try operands.append(w.a, f);
+            }
+            // The selected path does not affect its separation condition.
+            var compared: std.AutoHashMapUnmanaged(u64, u32) = .empty;
             for (selected) |e| {
                 if (w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
-                var acc: CondAcc = .{};
-                var approximate = e.approx;
-                for (other) |f| {
-                    if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
-                    if (f.approx != 0) approximate = f.approx;
-                    const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
-                    if (separation == cond_yes) continue;
-                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
-                }
-                const k = try w.condAndAll(&acc);
+                const approximate = if (last_approx != 0) last_approx else e.approx;
+                const key = (@as(u64, e.cell) << 32) | e.approx;
+                const k = compared.get(key) orelse blk: {
+                    var acc: CondAcc = .{};
+                    for (operands.items) |f| {
+                        const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                        if (separation == cond_yes) continue;
+                        try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
+                    }
+                    const condition = try w.condAndAll(&acc);
+                    try compared.put(w.a, key, condition);
+                    break :blk condition;
+                };
                 if (k == cond_yes) continue;
                 for (cells) |root| {
                     if (root.path != eps) continue;
