@@ -1,0 +1,5 @@
+## 2026-10-22 09:28 CEST — a shell for workerd
+
+**What I did.** Added the dev shell `workers` to `flake.nix`: the default shell plus nixpkgs' `wrangler` 4.93.0, and `BENI_MINIFLARE` set to Miniflare's entry file in the store. The `cloudflare` platform's tests (`boundary.md` §9.12 (k)) run a Worker under `workerd`, which nixpkgs carries inside `wrangler` with Miniflare 4.20260518.0 over workerd 1.20260518.1, the versions the section measured against. Entered the shell on x86-64 Linux: `wrangler`, `node` 24, `zig` 0.17.0 and the Zig cache variable are there, and Node imports `Miniflare` from the named file.
+
+**What I learned.** The closure is 2.3 GB (`nix path-info -S`), and CI saves the Nix store at most 2 GiB, so the shell is its own, as `browser` is. `mkShell` joins the `shellHook` of each `inputsFrom` entry with the shell's own, so the `workers` hook adds one line and keeps `default`'s. nixpkgs' `wrangler` lists every system the flake names, so no `optional` guard is needed. A CI job for the `workers/` corpus needs a store cache of its own and is an issue.
