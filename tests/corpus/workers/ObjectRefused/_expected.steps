@@ -1,0 +1,8 @@
+# The Scorer asking the Lobby back while the Lobby waits on it is the
+# refused cycle (#594).
+{"path": "/lobby/back"}
+# A ref of the wrong protocol: the message does not parse at the Scorer.
+{"path": "/lobby/wrong"}
+# A Reply printed for another object is Unprintable: the post is dropped
+# with a warning, and the Worker's ask gets NoReply.
+{"path": "/hello"}

@@ -1,11 +1,7 @@
 -- workers: `ask` and `reply` between objects (boundary.md §9.12 (e.3),
 -- (e.10); #594's `stub.fetch` half). A Lobby asks a Scorer, which replies
 -- from `received`, later from a fiber it spawned, or not at all
--- (`NoReply`); an ask to `self` is `Err Cycle` at once; the Scorer asking
--- the Lobby back while the Lobby waits on it is the refused cycle, 508
--- with `x-beni-cycle`, and neither object hangs; a ref of the wrong
--- protocol is `Unreadable`; and a `Reply` printed for another object is
--- `Unprintable`: the post is dropped with one warning line.
+-- (`NoReply`); and an ask to `self` is `Err Cycle` at once.
 import Duration
 import Schema exposing (Schema)
 import String
@@ -81,19 +77,6 @@ scored ctx _ msg =
                 Object.reply msg.reply "slow done"
             ⊤
 
-        "back" →
-            -- The Lobby waits on this call: asking it back is the cycle.
-            case Worker.objects (Object.env ctx) "LOBBIES" lobbySchema of
-                Just lobbies →
-                    Object.reply msg.reply
-                        (showAsk
-                            (Object.ask (Worker.byName lobbies "l") Schema.string λr → { reply = r }
-                            )
-                        )
-
-                Nothing →
-                    Object.reply msg.reply "no LOBBIES binding"
-
         _ →
             -- "quiet": no reply, and nothing that could still reply.
             ⊤
@@ -102,21 +85,7 @@ scored ctx _ msg =
 -- ---- The Lobby ----------------------------------------------------------------
 
 lobby : Worker.Definition
-lobby =
-    Object.define "Lobby" lobbySchema (λ_ → ⊤)
-        { Object.none | request = lobbyRequest, received = greeted }
-
-
-greeted : Object.Context LobbyMsg, ⊤, LobbyMsg → ⊤
-greeted ctx _ msg =
-    -- A `Reply` printed for another object does not print: the post is
-    -- dropped with one warning line, and the asker gets `NoReply`.
-    case Worker.objects (Object.env ctx) "SCORERS" scorerSchema of
-        Just scorers →
-            Object.post (Worker.byName scorers "s") { op = "keep", text = "", reply = msg.reply }
-
-        Nothing →
-            ⊤
+lobby = Object.define "Lobby" lobbySchema (λ_ → ⊤) { Object.none | request = lobbyRequest }
 
 
 lobbyRequest : Object.Context LobbyMsg, ⊤, Request → ⊤ × Response
@@ -133,19 +102,6 @@ lobbyRequest ctx _ request =
                 (case op of
                     "self" →
                         showAsk (Object.ask (Object.self ctx) Schema.string λr → { reply = r })
-
-                    "wrong" →
-                        -- The Scorer's namespace with the Lobby's protocol:
-                        -- the message does not parse there.
-                        case Worker.objects (Object.env ctx) "SCORERS" lobbySchema of
-                            Just wrong →
-                                showAsk
-                                    (Object.ask (Worker.byName wrong "s") Schema.string λr →
-                                        { reply = r }
-                                    )
-
-                            Nothing →
-                                "no SCORERS binding"
 
                     _ →
                         showAsk
@@ -203,12 +159,6 @@ route ctx request =
 
                 Err _ →
                     Worker.text 503 "the lobby is not available"
-
-        ( Just lobbies, [ "", "hello" ] ) →
-            -- An ask from the Worker itself.
-            Worker.text
-                200
-                (showAsk (Object.ask (Worker.byName lobbies "l") Schema.string λr → { reply = r }))
 
         ( Nothing, _ ) →
             Worker.text 500 "no LOBBIES binding"

@@ -18,19 +18,3 @@
 < content-type: text/plain; charset=utf-8
 <
 < Err Cycle
-> GET /lobby/back
-< 200
-< content-type: text/plain; charset=utf-8
-<
-< Ok Err Cycle
-> GET /lobby/wrong
-< 200
-< content-type: text/plain; charset=utf-8
-<
-< Err Unreadable (1 issue)
-> GET /hello
-< 200
-< content-type: text/plain; charset=utf-8
-<
-< Err NoReply
-| err: beni: a message to the object was dropped: it does not print by the protocol's schema

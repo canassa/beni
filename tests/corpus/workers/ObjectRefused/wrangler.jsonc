@@ -1,0 +1,12 @@
+{
+  "name": "object-refused",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": {
+    "bindings": [
+      { "name": "LOBBIES", "class_name": "Lobby" },
+      { "name": "SCORERS", "class_name": "Scorer" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Lobby", "Scorer"] }],
+}
