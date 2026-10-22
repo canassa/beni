@@ -838,6 +838,32 @@ pub fn addFields(store: *TypeStore, items: []Field) Allocator.Error!Range {
     return .{ .start = start, .len = @intCast(items.len) };
 }
 
+/// Append the row that is `left` and `right` merged by symbol id, each
+/// already in that order: exactly the row `addFields` writes for their
+/// concatenation — a stable sort of `left ++ right` keeps `left`'s field
+/// before `right`'s of an equal id, and so does the merge — in one pass and
+/// with no sort. A record unification's merged row is two such runs
+/// (`Unify.record`), and re-sorting it cost a radix sort of the whole row
+/// per unification (checker-v2.md §4.1, *amended 2026-10-22*).
+pub fn addFieldsMerged(store: *TypeStore, left: []const Field, right: []const Field) Allocator.Error!Range {
+    if (std.debug.runtime_safety) std.debug.assert(sortedById(Field, left) and sortedById(Field, right));
+    const n = left.len + right.len;
+    const start: u32 = @intCast(store.extra.items.len);
+    try store.extra.ensureUnusedCapacity(store.gpa(), n * 2);
+    const words = store.extra.addManyAsSliceAssumeCapacity(n * 2);
+    var i: usize = 0;
+    var j: usize = 0;
+    var k: usize = 0;
+    while (k < n) : (k += 1) {
+        const take_left = j == right.len or (i < left.len and @backingInt(left[i].name) <= @backingInt(right[j].name));
+        const f = if (take_left) left[i] else right[j];
+        if (take_left) i += 1 else j += 1;
+        words[k * 2] = @backingInt(f.name);
+        words[k * 2 + 1] = @backingInt(f.value);
+    }
+    return .{ .start = start, .len = @intCast(n) };
+}
+
 // ---------------------------------------------------------------------------
 // Sorting a row by name. A wide record's row is sorted several times a
 // check, by symbol id for the merge-join and by name text wherever an order
@@ -1183,6 +1209,34 @@ test "record fields are stored sorted and read back as pairs" {
     try testing.expectEqual(y, read[0].value);
     try testing.expectEqual(@as(Symbol, @fromBackingInt(@intCast(9))), read[1].name);
     try testing.expectEqual(x, read[1].value);
+}
+
+test "two sorted runs merged are the row a sort of their concatenation writes" {
+    var store: TypeStore = .init(testing.allocator);
+    defer store.deinit();
+    var prng: std.Random.DefaultPrng = .init(0x5eed);
+    const random = prng.random();
+    for (0..200) |_| {
+        // Runs of ids in order, equal ids within and across them included.
+        var left: [12]Field = undefined;
+        var right: [12]Field = undefined;
+        const nl = random.uintAtMost(usize, left.len);
+        const nr = random.uintAtMost(usize, right.len);
+        for (left[0..nl], 0..) |*f, i| f.* = .{ .name = @fromBackingInt(random.uintAtMost(u32, 20)), .value = @fromBackingInt(@as(u32, @intCast(i))) };
+        for (right[0..nr], 0..) |*f, i| f.* = .{ .name = @fromBackingInt(random.uintAtMost(u32, 20)), .value = @fromBackingInt(@as(u32, @intCast(100 + i))) };
+        std.mem.sort(Field, left[0..nl], {}, byId);
+        std.mem.sort(Field, right[0..nr], {}, byId);
+        var both: [24]Field = undefined;
+        @memcpy(both[0..nl], left[0..nl]);
+        @memcpy(both[nl..][0..nr], right[0..nr]);
+        const sorted = try store.addFields(both[0 .. nl + nr]);
+        const merged = try store.addFieldsMerged(left[0..nl], right[0..nr]);
+        try testing.expectEqualSlices(Field, store.fields(sorted), store.fields(merged));
+    }
+}
+
+fn byId(_: void, a: Field, b: Field) bool {
+    return @backingInt(a.name) < @backingInt(b.name);
 }
 
 test "vars round trip through extra" {

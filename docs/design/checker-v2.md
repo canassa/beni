@@ -240,6 +240,16 @@ pub const Flags = struct {            // flex and rigid payload
   `Shape.record` key. This is already true of `Render` and the writer today, and it keeps interner-id order
   out of messages.
 
+  *Amended 2026-10-22 (#798): the merged row is merged, not sorted.* The flattened record is one
+  side's fields (`a`'s, in symbol order: a stored row, or a chain's runs sorted once by `gather`)
+  and the fields only the other side has (a run of its sorted row, in order). `unifyRecord` wrote
+  their concatenation and `addFields` radix-sorted it again: a pass per byte of the ids over the
+  whole row, every time a record unification added a field — every record update, and every read
+  of a record that was not a field's direct case. `TypeStore.addFieldsMerged` writes the two runs
+  merged in one pass, taking `a`'s field first on an equal id, which is the row a stable sort of
+  the concatenation gives, so every row is the one it was. The rows a merge-join splits off
+  (`freshRecord`) are runs already and are written as they are.
+
 *As built (2026-09-25): the store is the shared type.* The checker's store **is**
 `src/check/TypeStore.zig`'s type; there is no second store type:
 
