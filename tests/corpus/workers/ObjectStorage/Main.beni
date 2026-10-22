@@ -1,0 +1,105 @@
+-- workers: `Worker.Storage`, the key-value store through schemas
+-- (boundary.md §9.12 (h)). A value is JSON text printed and parsed by a
+-- schema; a read with another schema is `Err` with the issues; `delete`
+-- says whether the key was there; `keys` lists a prefix in order; a put
+-- over 2 000 000 bytes as the platform counts them is `TooLarge` before
+-- the host is called; and what one instance wrote the next reads.
+import Schema exposing (Schema)
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+import Worker.Storage as Storage
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ store ] }
+
+
+store : Worker.Definition
+store = Object.define "Store" Schema.string (λ_ → ⊤) { Object.none | request = serve }
+
+
+showGet : Result (List Schema.Issue) (Maybe String) → String
+showGet result =
+    case result of
+        Ok (Just text) →
+            "Just ${text}"
+
+        Ok Nothing →
+            "Nothing"
+
+        Err issues →
+            "Err (${String.fromInt (List.length issues)} issue)"
+
+
+showPut : Result Storage.PutError ⊤ → String
+showPut result =
+    case result of
+        Ok ⊤ →
+            "Ok"
+
+        Err Storage.TooLarge →
+            "Err TooLarge"
+
+        Err Storage.Full →
+            "Err Full"
+
+        Err (Storage.Unprintable _) →
+            "Err Unprintable"
+
+
+serve : Object.Context String, ⊤, Request → ⊤ × Response
+serve ctx _ request =
+    ( ⊤
+    , Worker.text 200
+        (case List.reverse (String.split (Worker.path request) "/") of
+            [ "put-int", …rest ] →
+                showPut (Storage.put ctx Schema.int "n:one" 1)
+
+            [ "put-text", …rest ] →
+                showPut (Storage.put ctx Schema.string "t:two" "two")
+
+            [ "get-int", …rest ] →
+                showGet
+                    (Result.map (Storage.get ctx Schema.int "n:one") (Maybe.map _ String.fromInt))
+
+            [ "get-int-as-text", …rest ] →
+                showGet (Storage.get ctx Schema.string "n:one")
+
+            [ "get-missing", …rest ] →
+                showGet (Storage.get ctx Schema.string "t:none")
+
+            [ "keys", …rest ] →
+                String.join (Storage.keys ctx "") ","
+
+            [ "keys-n", …rest ] →
+                String.join (Storage.keys ctx "n:") ","
+
+            [ "delete-int", …rest ] →
+                if Storage.delete ctx "n:one" then "deleted" else "was not there"
+
+            [ "big", …rest ] →
+                showPut (Storage.put ctx Schema.string "big" (String.repeat "ab" 1000000))
+
+            [ "throw", …rest ] →
+                Debug.todo "the store threw"
+
+            _ →
+                "no such op"
+        )
+    )
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.objects (Worker.env ctx) "STORES" Schema.string of
+        Just stores →
+            case Worker.forward (Worker.byName stores "s") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the store is not available"
+
+        Nothing →
+            Worker.text 500 "no STORES binding"

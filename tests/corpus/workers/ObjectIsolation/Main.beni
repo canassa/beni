@@ -1,0 +1,151 @@
+-- workers: two instances of one class in one isolate (boundary.md §9.12
+-- (e.4), (e.5), (e.9), (f); #595, #550). Each resumes a waiting handler in
+-- its own context; a handler spawns a fiber that posts the result to self
+-- and a `Task.bracket` release that runs when it ends; a later handler
+-- joins a fiber an earlier one spawned; and a defect in one instance runs
+-- the releases of its live fibers before the abort, while the other
+-- instance serves on.
+import Duration
+import Schema exposing (Schema)
+import String
+import Task exposing (Fiber)
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+type Message
+    = Done
+    | Released
+
+
+type alias State =
+    done : Int
+    released : Int
+    pending : Maybe (Fiber Int)
+
+
+message : Schema String Message
+message =
+    Schema.converted Schema.string
+        (Schema.conversion
+            (λtext →
+                case text of
+                    "done" →
+                        Ok Done
+
+                    "released" →
+                        Ok Released
+
+                    _ →
+                        Err [ Schema.issue "not a Room message" ]
+            )
+            λm →
+                case m of
+                    Done →
+                        Ok "done"
+
+                    Released →
+                        Ok "released"
+        )
+
+
+room : Worker.Definition
+room =
+    Object.define "Room" message (λ_ → { done = 0, released = 0, pending = Nothing })
+        { Object.none | request = serve, received = received }
+
+
+who : Object.Context Message → String
+who ctx = Maybe.withDefault (Object.name ctx) "?"
+
+
+serve : Object.Context Message, State, Request → State × Response
+serve ctx state request =
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "slow", …rest ] →
+            -- Parks; resumes in this instance's own context.
+            Task.sleep (Duration.millis 30)
+            ( state, Worker.text 200 "slow answered in ${who ctx}" )
+
+        [ "spawn", …rest ] →
+            -- Work that must not hold the object: spawn, then post the
+            -- result to self; the release runs when the fiber ends.
+            _ = Task.spawn λ⊤ →
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Object.post (Object.self ctx) Released) λ_ →
+                    Task.sleep (Duration.millis 5)
+                    Object.post (Object.self ctx) Done
+            ( state, Worker.text 200 "spawned in ${who ctx}" )
+
+        [ "hold", …rest ] →
+            -- A fiber that never ends on its own: its release runs at the
+            -- defect's teardown, before the abort.
+            _ = Task.spawn λ⊤ →
+                Task.bracket
+                    (λ⊤ → ⊤)
+                    (λ_ _ → Debug.log "release of the held fiber ran in ${who ctx}" ⊤)
+                    λ_ → Task.never ⊤
+            ( state, Worker.text 200 "held in ${who ctx}" )
+
+        [ "start", …rest ] →
+            -- A fiber an earlier handler spawned, joined by a later one.
+            f = Task.spawn λ⊤ →
+                Task.sleep (Duration.millis 5)
+                42
+            ( { state | pending = Just f }, Worker.text 200 "started in ${who ctx}" )
+
+        [ "joined", …rest ] →
+            case state.pending of
+                Just f →
+                    ( { state | pending = Nothing }
+                    , Worker.text 200 "joined ${String.fromInt (Task.join f)} in ${who ctx}"
+                    )
+
+                Nothing →
+                    ( state, Worker.text 200 "nothing started in ${who ctx}" )
+
+        [ "get", …rest ] →
+            ( state
+            , Worker.text
+                200
+                "${who ctx}: done ${String.fromInt state.done} released ${String.fromInt state.released}"
+            )
+
+        [ "throw", …rest ] →
+            Debug.todo "the room ${who ctx} threw"
+
+        _ →
+            ( state, Worker.text 404 "no such room page" )
+
+
+received : Object.Context Message, State, Message → State
+received _ state msg =
+    case msg of
+        Done →
+            { state | done = state.done + 1 }
+
+        Released →
+            { state | released = state.released + 1 }
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "ROOMS" message, String.split (Worker.path request) "/" )
+    of
+        ( Just rooms, [ "", "room", name, …rest ] ) →
+            case Worker.forward (Worker.byName rooms name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the room is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no ROOMS binding"
+
+        _ →
+            Worker.text 404 "no such page"

@@ -1,0 +1,8 @@
+# The Reply held by a message to self, and by a fiber that message's
+# `received` spawned (#623).
+{"path": "/lobby/relay"}
+{"path": "/lobby/relay-fiber"}
+# A Reply kept in the state holds nothing: NoReply at once; a reply through
+# it later is one warning line.
+{"path": "/lobby/keep"}
+{"path": "/lobby/late"}
