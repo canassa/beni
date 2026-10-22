@@ -263,7 +263,7 @@ Each fix was priced by editing the actual N = 16 and N = 64 output into the shap
 | 3 | Call a binding without a block or a hoisted `let`: `xd(jb,_a.w4,_a.w1);` | `inline.zig` `callFunction` | −5.9 | — | not done: #7 replaces it |
 | 4 | An enum cycle is a chain of conditionals, fused into its handler | `Lower.zig` `condChainPossible` refused every `switch` tree | −1.4 | **+0.2** (−0.8 from 16 to 64) | merged, #656 (#652): the shape is right, the bytes did not move |
 | 5 | A view `let` read once is written at its use | evaluation-order rule | −2.3 | — | in #618 |
-| 6 | Short field names in shape-read records (from 29 shape runs on): `["cups",A,0,"z"]` | `SchemaValid.zig`, `Emit.zig` `pinShapeFields`, `assignFields`; the owner's decision of 2026-10-22 supersedes 2026-10-19's | −10.4 | **+3.3** (draft) | draft #659 (#653), blocked by #658. Measured worse: the names come out as two letters (`cups`→`oa`) and each entry grows by `,0,"oa"`. Raw −6 %, brotli up. Not yet explained; source names that are English words may be cheap for brotli's static dictionary |
+| 6 | Short field names in shape-read records (from 29 shape runs on): `["cups",A,0,"z"]` | `SchemaValid.zig`, `Emit.zig` `pinShapeFields`, `assignFields`; the owner's decision of 2026-10-22 supersedes 2026-10-19's | −10.4 | **+3.3** (draft) | draft #659 (#653); #658 fixed by #661, so it can be finished. Measured worse: the names come out as two letters (`cups`→`oa`) and each entry grows by `,0,"oa"`. Raw −6 %, brotli up. Not yet explained; source names that are English words may be cheap for brotli's static dictionary |
 | 7 | The structural rewrite: a closure per widget, writes in place, bindings grouped by field, handlers that schedule a group, one generic loader for pushed state | `inline.zig` program site; reverses `browser-inline.md` §8.4 "handlers live at the program site" and D-c | ≈ −65 as a whole; each step alone 0–3 | — | blocked: #286 → #315 R4–R7, and the owner's decision on §8.4 and D-c |
 
 Measured state of `master` after #1 and #4 (`4adbf7bbc`):
@@ -281,8 +281,11 @@ the mean of three seeds.
 
 | Work | Issue / PR | State |
 |---|---|---|
-| fact 3's fixpoint depends on traversal order (a safe build's shuffled-order check panics) | #658, #657 | an agent is on it; #659 waits for it |
-| the ownership path cut: #456 (approximate projections hide a repeated alias), #447, F2 (cast marker, full type), (a), (d) `lvl`, (e), then the cut removed | #286, #456, #447 | an agent is on it; the owner withdrew the measure-first conditions on 2026-10-22: build |
+| fact 3's fixpoint depends on traversal order (a safe build's shuffled-order check panics) | #658, #657 | **done**: #661 (2026-10-22); the check compared storage, not facts. #659 is unblocked |
+| ownership: approximate projections hide a repeated alias across recursive levels | #456 | **done**: #665 (2026-10-22). One known false refusal, `DictFocus.grow` (a callback line of `readLater` too), from the folded Dict tree; it is red in `tests/pending/` and comes back with #294 (#663) |
+| ownership path cut, the rest: #447 (the `nested` correction), F2 (cast marker, full type), (a), (d) `lvl`, (e), then the cut removed | #286, #447 | #447 next; the owner withdrew the measure-first conditions on 2026-10-22: build |
+| `Dict` and `Set` as an ordered keyed collection (entries plus a `Map` index), edited in place | #294, spec PR #664 | spec in review: the owner asked for `Dict.empty ⊤` (no name-keyed lowering) and the Int/String key constraint as its own slice. It removes the checker's Dict exemption and recovers #663 |
+| release field names coloured by co-occurrence: names unique only among fields that can meet in one record | — | an agent is on it; it changes #659's names |
 | re-measure the shape threshold T with short names | #655 | after #659 |
 | the emit cache must key a caller's output on the callee's parameter patterns (since #654), not only its interface | #631 | to tell #631 |
 
