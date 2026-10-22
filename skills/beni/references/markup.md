@@ -94,7 +94,8 @@ The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `o
 - The API lists `Html.pointer`, but only the events call it. A program cannot call it, because its
   parameter type is private to `Html`.
 - To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
-  `preventDefault` cannot stop them.
+  `preventDefault` cannot stop them. On iOS, a double-tap still zooms an element with
+  `position: absolute` (WebKit bug 218015).
 - To stop a long press that selects text, write `user-select: none` and `-webkit-user-select: none`
   (Safari) in the `style`. For iOS, also write `-webkit-touch-callout: none`: it stops the
   long-press menu.

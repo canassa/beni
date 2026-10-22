@@ -11,11 +11,12 @@
   `-webkit-user-select: none` stop a long press that selects text, and
   `-webkit-touch-callout: none` stops the iOS long-press menu. None of the
   three stops scroll or zoom. The text also says that a program cannot call
-  `Html.pointer`.
+  `Html.pointer`, and that on iOS a double-tap still zooms an element with
+  `position: absolute`.
 
 **What I learned**
 
-- The owner's machine sets `rebase.updateRefs` in `~/.gitconfig`. A branch made as a backup
+- Jayson's machine sets `rebase.updateRefs` in `~/.gitconfig`. A branch made as a backup
   at the head before a rebase moves with the rebase, so it keeps nothing. Keep
   the old head as a tag, or read it from the remote branch.
 - After `git rebase -X ours`, compare the sorted `+`/`-` lines of the
