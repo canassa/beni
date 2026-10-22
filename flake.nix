@@ -64,8 +64,8 @@
       # CI keeps `~/.cache/zig`, the path its cache steps restore
       # (.github/workflows/ci.yml). A Zig that runs in the shell uses this
       # cache, so leave the shell before you build another Zig project.
-      # The shells with Zig run this: `default`, and `browser`, `coverage`
-      # and `compare` through `inputsFrom`; direnv's `use flake` runs
+      # The shells with Zig run this: `default`, and `browser`, `coverage`,
+      # `workers` and `compare` through `inputsFrom`; direnv's `use flake` runs
       # `default`'s. `ownership` puts Zorg, a fork of Zig, on PATH and no
       # Zig. Zorg reads ZORG_GLOBAL_CACHE_DIR, not this variable, and its
       # own default is `~/.cache/zorg`. Its version string carries `+zorg`,
@@ -179,22 +179,30 @@
         # `wrangler`, for the `cloudflare` platform and its tests
         # (docs/design/boundary.md §9.12 (k)). A Worker runs in `workerd`,
         # which nixpkgs carries inside `wrangler` with Miniflare
-        # (`lib/packages/miniflare`); the tests' driver,
-        # `tests/workers/driver.mjs`, imports Miniflare from the file
-        # `BENI_MINIFLARE` names, starts `workerd` on 127.0.0.1 and disposes
-        # it at the end. Nothing is deployed and no account is used. The
-        # closure is 2.3 GB, so the shell is its own, as `browser` is: the
-        # Nix store CI saves is bounded at 2 GiB (.github/workflows/ci.yml),
-        # and the gates run without it. `zig build test-workers` runs the
-        # `workers/` corpus in this shell; `wrangler dev` serves a built
-        # Worker from it. Pinned by nixpkgs: wrangler 4.93.0, Miniflare
-        # 4.20260518.0, workerd 1.20260518.1, the versions §9.12 measured
-        # against.
+        # (`lib/packages/miniflare`). The `cloudflare` platform PR adds the
+        # tests' driver, `tests/workers/driver.mjs`, which imports Miniflare
+        # from the file `BENI_MINIFLARE` names, starts `workerd` on
+        # 127.0.0.1 and disposes it at the end, and the step `zig build
+        # test-workers`, which runs the `workers/` corpus in this shell. No
+        # CI job runs it yet (#697). Nothing is deployed and no account is
+        # used. The closure is 2.2 GiB, of which 1.9 GiB is beside
+        # `default`'s (Node, glibc and icu are shared), so the shell is its
+        # own, as `browser` is: the Nix store CI saves is bounded at 2 GiB
+        # (.github/workflows/ci.yml), and the gates run without it.
+        # `wrangler dev` serves a built Worker from this shell. Two calls
+        # that would leave the machine are off in the hook: Miniflare
+        # fetches `workers.cloudflare.com/cf.json` when a caller leaves `cf`
+        # unset (the driver passes `cf: false`), and every `wrangler`
+        # command sends usage metrics unless told not to. Pinned by nixpkgs:
+        # wrangler 4.93.0, Miniflare 4.20260518.0, workerd 1.20260518.1,
+        # the versions §9.12 measured against.
         workers = pkgs.mkShell {
           inputsFrom = [ default ];
           packages = [ pkgs.wrangler ];
           shellHook = ''
             export BENI_MINIFLARE="${pkgs.wrangler}/lib/packages/miniflare/dist/src/index.js"
+            export CLOUDFLARE_CF_FETCH_ENABLED=false
+            export WRANGLER_SEND_METRICS=false
           '';
         };
 
