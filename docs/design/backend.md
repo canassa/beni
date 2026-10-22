@@ -9972,6 +9972,56 @@ from the names it renamed. Instructions of the ReleaseSafe compiler against mast
 and without `withDefault` 1 390M → 1 422M. Part 1 accounts for nearly all of it. Peak RSS is
 within 2%, and the measurement programs other than TodoMVC are byte for byte the same.
 
+**As built 2026-10-22 — slice 6, part 2b: one rewrite per solve** (issue #676). `rounds` is one
+solve, one rewrite and `prune`. `max_rounds`, the rewrite's `stale` re-walks (and `Spec.frozen`),
+`now_literal`, `deadReads`, and `releaseKeeps` with the solve after it are gone. `spec_analyses` is
+`spec_solves` (one per structural pass), and `spec_rounds_capped` is gone. The rewrite reads only
+the final facts, and every step below reads the program as the patch leaves it:
+- **A statement is patched until its own counts allow nothing more.** This happens only when the
+  patch refused a local read for its count (`refused_local`). A read of a module constant the
+  substitution rule refused is written once the whole patch has folded enough of its reads away
+  (`declined`, `folded_reads`). Dropped arguments, dead bindings and dropped keys count off what
+  they read (`noteGone`).
+- **Liveness of local bindings** (`liveness`). A `const` or `let`, declared once and assigned
+  nowhere, is dead when every read of it stands in a dead binding's initialiser. It must also not
+  be kept by lowering (`releaseKept` releases what does nothing by the facts), not be under a
+  qualified name, and have an initialiser that does nothing (`effectFree`). A dead binding goes
+  from its list. Lowering keeps only bindings it knew might go unread, so a `?` temporary whose
+  reads the patch folded keeps its effect: `run/QuestionOrder` pins that.
+- **Parameters.** A parameter literal by the solve goes by the counts the patch starts from. One
+  that nothing live reads goes when no argument for it does anything, as the patch left the
+  arguments (`argEffects`). Drops iterate inside the rewrite: a function that lost a parameter is
+  numbered anew, and the statements the drops changed are counted again (`applyDrops`,
+  `unreadParams`).
+- **Keys** a fact-3 read reached, but that no read the patch left reaches, go (`dropUnreadKeys`,
+  `liveKeys`), before the parameter decisions and again after `prune`.
+- **Reachability before the solve** (`liveStatements`, from the extraction's per-statement name
+  lists). A declaration that `prune` may drop and that nothing live refers to has its statement's
+  exec cell false: its constraints, its bodies, its reads and its assignments are not in the solve.
+  Every statement has an exec cell of its own.
+- **A field of an object literal that does nothing when made** is read as a chain: `{a: 1}.a` is
+  `1`.
+- **`self_assign` and `iife` run in the pass loop**, as one sweep (`tidy`).
+
+Moves: no `emit/release` golden grows. 24 shrink, including `SchemaSharedValidators` 2 327 → 2 140,
+`SchemaReaderTest` 1 811 → 1 656, `HttpSendUntracked` 12 322 → 12 285, the `Validator*` goldens by
+14 to 33 bytes and `IifeAtTopLevel` 202 → 182. The release builds of the `run/` corpus go
+1 988 548 → 1 985 525 bytes against master with #686: 119 programs shrink and 3 grow. Two are
+cascades that need facts only a later solve has: `CastInSuspendableTwin` +38 (a module `let`
+assigned only in a function the rewrite leaves unreferenced) and `EquatableMarkerIsNotEq` +18 (an
+evidence argument the rewrite substitutes leaves `eq` escaped for the solve). Both are #689,
+reachability inside the solve, which depends on #685. `MarkupNestedRows` +9 is the inliner's
+choice of shape now that `iife` is in the loop (#690). Development output is unchanged.
+Measured on dagon against `2a362f6e7` (before slice 6), cumulative with parts 1 and 2a:
+- **ReleaseFast instructions:** N = 16 355M → 267M, N = 64 1 504M → 1 322M, without `withDefault`
+  1 390M → 1 212M. `spec_solves` is 2, against 5, 4 and 4 analyses.
+- **Minimum `specialise`** 29 / 115 / 94 → 21 / 95 / 75 ms. Wall 0.05 / 0.21 / 0.19 →
+  0.05 / 0.19 / 0.17 s.
+- **ReleaseSafe instructions:** TodoMVC 1 440M → 1 356M, the 100 000 lines 16 126M → 14 976M.
+  The 16 400 arms are 2 958M → 3 357M (+13%), one more structural pass with its solve plus the
+  rewrite's work on one huge statement (#691), still within `abuse_wide_test`'s budget.
+- Peak RSS is within 5%. Every measurement program's output is smaller.
+
 ### Compact statements
 
 ### Compact statements

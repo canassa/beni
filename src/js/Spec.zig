@@ -397,10 +397,9 @@ fn isRoot(in: Input, g: u32) bool {
     return false;
 }
 
-/// How many rounds of facts-then-rewrite the pass takes at most. Each round
-/// is sound on its own; a later one only finds more (a dropped call site
-/// can make a parameter constant).
-const max_rounds = 4;
+/// How many times the rewrite patches one statement at most, each time by
+/// the counts the last left (`rewrite`).
+const max_patch_turns = 7;
 /// How deep a statement nesting the rewriting walk follows by recursion.
 const max_depth = 200;
 /// On a node index in an evaluating walk's stack: its operands are done.
@@ -420,9 +419,10 @@ pub const Stats = struct {
     /// (`backend.md` §9, *Field names are decided after specialisation*).
     copied: []const bool = &.{},
     copied_modules: []const bool = &.{},
-    /// Whole analyses (`analyse`): fact 3 to its fixpoint, then facts 1,
-    /// 2, 4 and 5 to theirs, each from ⊥.
-    analyses: u64 = 0,
+    /// Solves (`analyse`): fact 3 to its fixpoint, then facts 1, 2, 4 and
+    /// 5 to theirs, each from ⊥ — one per structural pass, each read by one
+    /// rewrite (`backend.md` §9, *The combined solver*, slice 6).
+    solves: u64 = 0,
     /// The combined solver (`backend.md` §9, *The combined solver*, slice
     /// 4), over every analysis: the modules it extracted, and those whose
     /// constraints it kept because the module had not changed; the
@@ -450,13 +450,11 @@ pub const Stats = struct {
     passes: u64 = 0,
     /// The caps, each counted where it stopped work that would have gone
     /// on — the counters to read first when an output grew (research 52
-    /// §3.7). `rounds` stopped at `max_rounds` after a round that changed the program;
-    /// the structural loop stopped at `max_passes` after a pass that did;
+    /// §3.7). The structural loop stopped at `max_passes` after a pass that did;
     /// definite initialisation stopped at `max_init_runs` while it still
     /// found keys; and an inlining pass stopped at its own cap
     /// (`copyLimit`, the nodes `inlineOnce` and `fuseCalls` may copy;
     /// `inlineSmall`'s four turns; `foldConstructors`' budget of a list).
-    rounds_capped: u64 = 0,
     passes_capped: u64 = 0,
     init_capped: u64 = 0,
     inline_capped: u64 = 0,
@@ -507,6 +505,11 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
         if (try s.fuseCalls()) changed = true;
         if (try s.constructors()) changed = true;
         if (try s.scalarReplace()) changed = true;
+        // The list modes that change the program and read no fact, in the
+        // loop (`backend.md` §9, *Where it runs*, G9): `x = x` gone, and a
+        // function called where it is made written there (`betaReduce`).
+        s.list_mode = .tidy;
+        if (try s.eachFunctionList()) changed = true;
         if (!changed) break;
         s.stats.passes += 1;
         if (pass + 1 == max_passes) s.stats.passes_capped += 1;
@@ -514,21 +517,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
         try s.grow();
         try s.rounds();
     }
-    s.list_mode = .self_assign;
-    _ = try s.eachFunctionList();
-    // A function a pass above wrote where it was called, whose argument was
-    // a function that is now called where it is made (`betaReduce`).
-    s.list_mode = .iife;
-    _ = try s.eachFunctionList();
     // Last of the sweeps: a short `switch` on a name is its `if`s.
     s.list_mode = .switches;
     _ = try s.eachFunctionList();
-    // A binding no longer kept may have held a parameter's last read
-    // (`deadReads`): the facts once more, so that the parameter goes.
-    if (try s.releaseKeeps()) {
-        try s.grow();
-        try s.rounds();
-    }
     // Last, so that slice 8, which writes a call through a property in
     // only with every argument, has seen them all.
     try s.trimArguments();
@@ -677,6 +668,7 @@ const Op = enum(u7) {
     call,
     /// `pool[a..]`: the part count, then each part's cell.
     template,
+    /// `a`: the object's cell.
     member,
     /// `pool[a..]`: the count of keys, then each key's name and value's
     /// cell; flagged when the literal holds a spread.
@@ -1202,10 +1194,14 @@ const Spec = struct {
     kept_drops: std.ArrayList(KeptDrop) = .empty,
     kept_args: std.ArrayList(NodeRef) = .empty,
     changed: bool = false,
-    /// The rewrite's walks read the solve's facts and write none
-    /// (*The rewrite*): no parameter, field or return is joined. The program
-    /// as patched does what the solved one does, so the facts hold of it.
-    frozen: bool = false,
+    /// The reads of keys are the program's as the rewrite left it
+    /// (`liveKeys`): `Pts.Prop.live_read`, and per property id a read on
+    /// an object fact 3 has no value for.
+    live_keys: bool = false,
+    /// The patch refused a local read its literal for the count it read
+    /// (`substitutes`): a count the patch lowers may allow it.
+    refused_local: bool = false,
+    id_read: []bool = &.{},
     /// Slice 4, facts 4 and 5: the object sites whose literal has a spread,
     /// and the function the walk is in. What is written to a property of a
     /// site, and what a function returns, are fact 3's own cells
@@ -1236,7 +1232,7 @@ const Spec = struct {
     /// holds the guard.
     narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
-    list_mode: enum { scalars, constructors, self_assign, iife, switches } = .scalars,
+    list_mode: enum { scalars, constructors, tidy, switches } = .scalars,
     /// Slice 8: `soleCalls`, for the pass in progress, made when a call
     /// first asks for it; null until then.
     sole: ?[]const bool = null,
@@ -1315,7 +1311,7 @@ const Spec = struct {
     const KeptNodes = struct { epoch: u64, nodes: []const Index };
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
-    const Declined = struct { g: u32, lit: Lit };
+    const Declined = struct { g: u32, lit: Lit, v: Lat, module: u32, top: Index, node: Index, object_position: bool };
     const SiteProp = struct { site: u32, prop: u32 };
     const NodeRef = struct { module: u32, node: u32 };
     const KeptDrop = struct { site: u32, module: u32, top: Index, gone: []const bool, names: []const NameIndex };
@@ -1395,7 +1391,7 @@ const Spec = struct {
     /// of facts 4 and 5 asks of (`propValue` and `tagValue` find the `Prop`
     /// first), so the write has nowhere to go.
     fn joinProp(s: *Spec, site: u32, prop: u32, v: Lat) Allocator.Error!void {
-        if (prop == none or s.frozen) return;
+        if (prop == none) return;
         const pr = s.pts.propMut(site, prop) orelse return;
         var moved = !pr.lat_made;
         if (!pr.lat_made and v.state != .bot) s.changed = true;
@@ -1426,7 +1422,6 @@ const Spec = struct {
     /// cell (`Pts.Site.ret_lat`). A function fact 3 made no site for is
     /// one no call reads the return of (`callValue` reads a site's).
     fn joinRet(s: *Spec, v: Lat) Allocator.Error!void {
-        if (s.frozen) return;
         const f = s.cur_fn orelse return;
         const site = s.pts.siteAt(f.module, @fromBackingInt(@intCast(f.node))) orelse return;
         const st = &s.pts.sites.items[site];
@@ -1498,18 +1493,94 @@ const Spec = struct {
         return s;
     }
 
-    /// Facts-then-rewrite to their fixpoint (at most `max_rounds`).
+    /// One solve, read once by one rewrite (`backend.md` §9, *The combined
+    /// solver*); then what no longer has a reference goes (slice 2).
     fn rounds(s: *Spec) Allocator.Error!void {
-        var round: u32 = 0;
-        while (round < max_rounds) : (round += 1) {
-            if (!try s.analyse()) break;
-            const rewrote = try s.rewrite();
-            // Slice 2: what no longer has a reference goes, and with it the
-            // calls and assignments it made, which the next round's facts no
-            // longer see.
-            const pruned = try s.prune();
-            if (!rewrote and !pruned) break;
-            if (round + 1 == max_rounds) s.stats.rounds_capped += 1;
+        if (!try s.analyse()) return;
+        _ = try s.rewrite();
+        _ = try s.prune();
+        // A key nothing left reads goes from its literal (fact 3), and
+        // what its value named may go with it.
+        if (try s.dropUnreadKeys()) _ = try s.prune();
+    }
+
+    /// Every key of an object literal that no read the rewrite and the
+    /// prune left reaches, whose value does nothing (`dropKeys`), gone. Only
+    /// a key fact 3 saw read can be one: the others the patch dropped
+    /// already.
+    fn dropUnreadKeys(s: *Spec) Allocator.Error!bool {
+        if (!s.pts.ok) return false;
+        // The keys that may have lost every read, by property id, and the
+        // sites holding one.
+        const asked = try s.arena.alloc(bool, s.in.props);
+        @memset(asked, false);
+        var sites: std.ArrayList(u32) = .empty;
+        for (s.pts.sites.items, 0..) |*st, i| {
+            if (st.kind != .object or st.escaped or st.all_read) continue;
+            var any = false;
+            for (st.props.items) |*pr| {
+                pr.live_read = false;
+                if (!pr.read or pr.id >= asked.len or s.pts.hostImplicit(pr.id)) continue;
+                asked[pr.id] = true;
+                any = true;
+            }
+            if (any) try sites.append(s.arena, @intCast(i));
+        }
+        if (sites.items.len == 0) return false;
+        try s.liveKeys(asked);
+        s.live_keys = true;
+        defer s.live_keys = false;
+        var any = false;
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        s.cur_top = none_index;
+        for (sites.items) |site| {
+            const st = &s.pts.sites.items[site];
+            const lost = for (st.props.items) |pr| {
+                if (pr.read and !pr.live_read and pr.id < asked.len and asked[pr.id] and !s.id_read[pr.id]) break true;
+            } else false;
+            if (!lost) continue;
+            const m = &s.mods[st.module];
+            if (st.node.int() >= m.ir.nodes.len or m.ir.tag(st.node) != .object) continue;
+            if (try s.dropKeys(m, st.node)) any = true;
+        }
+        return any;
+    }
+
+    /// Which of the keys `asked` names a read of the program, as it now
+    /// stands, reaches: each member read, by fact 3's value of its object
+    /// (`Pts.Prop.live_read`); a read whose object fact 3 never saw reaches
+    /// its key on every object (`id_read`). An assignment's target is no
+    /// read.
+    fn liveKeys(s: *Spec, asked: []const bool) Allocator.Error!void {
+        s.id_read = try growSlice(s.arena, bool, &.{}, s.in.props, false);
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            const vals = s.pts.vals[mi];
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                const nodes = try s.preorder(m, top);
+                for (nodes) |node| if (ir.tag(node) == .assign_stmt) {
+                    const t: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                    if (ir.tag(t) == .member and t.int() < m.objects.bit_length) m.objects.set(t.int());
+                };
+                for (nodes) |node| {
+                    if (ir.tag(node) != .member) continue;
+                    if (node.int() < m.objects.bit_length and m.objects.isSet(node.int())) {
+                        m.objects.unset(node.int());
+                        continue;
+                    }
+                    const d = ir.data(node);
+                    const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs)));
+                    if (id == none or id >= asked.len or !asked[id]) continue;
+                    if (d.lhs >= vals.len) {
+                        s.id_read[id] = true;
+                        continue;
+                    }
+                    for (vals[d.lhs].sites) |site| if (s.pts.propMut(site, id)) |pr| {
+                        pr.live_read = true;
+                    };
+                }
+            }
         }
     }
 
@@ -1659,7 +1730,7 @@ const Spec = struct {
             }
         }
         // Fact 3 first: a read it proves `undefined` folds like a literal.
-        s.stats.analyses += 1;
+        s.stats.solves += 1;
         if (s.fact3Kept()) {
             s.stats.points_to_reused += 1;
             try s.applyKeptDrops();
@@ -1917,13 +1988,23 @@ const Spec = struct {
         // ---- What the counts say, for the whole program at once: every read
         // of a name counts, one that is not a callee escapes it, an
         // assignment assigns it.
-        for (mods) |*m| for (m.ex.reads) |r| {
-            s.reads[r.g] +|= 1;
-            if (!r.callee) s.escaped[r.g] = true;
-        };
-        for (mods) |*m| for (m.ex.assigns) |g| {
-            s.assigned[g] = true;
-        };
+        // Of the statements that run: a declaration nothing live refers to
+        // goes (`liveStatements`), and what it reads and assigns with it.
+        const live = try s.liveStatements(a);
+        for (mods, stmt_base) |*m, sb| {
+            var reads_from: u32 = 0;
+            var assigns_from: u32 = 0;
+            for (m.ex.stmts, 0..) |st, k| {
+                defer reads_from = st.reads;
+                defer assigns_from = st.assigns;
+                if (!live[sb + k]) continue;
+                for (m.ex.reads[reads_from..st.reads]) |r| {
+                    s.reads[r.g] +|= 1;
+                    if (!r.callee) s.escaped[r.g] = true;
+                }
+                for (m.ex.assigns[assigns_from..st.assigns]) |g| s.assigned[g] = true;
+            }
+        }
         // A call of a function `Spec` tracks with another arity escapes it.
         for (mods) |*m| {
             const x = &m.ex;
@@ -2059,10 +2140,21 @@ const Spec = struct {
         // graph misses calls the program makes (a function called through
         // a fiber's stack of frames has no caller in it), so a body it
         // finds no executable call of may still run.
-        for (mods, exec_base) |*m, eb| for (m.ex.execs, 0..) |e, k| switch (e.kind) {
-            .top, .body => sv.on.set(eb + k),
-            else => {},
-        };
+        // A top-level statement runs, with every body in it, unless it is a
+        // declaration nothing live refers to, which `prune` drops after the
+        // rewrite: what refers to it can only shrink (*Reading off*).
+        for (mods, exec_base, stmt_base) |*m, eb, sb| {
+            sv.on.set(eb);
+            var from: u32 = 1;
+            for (m.ex.stmts, 0..) |st, k| {
+                defer from = st.execs;
+                if (!live[sb + k]) continue;
+                for (m.ex.execs[from..st.execs], from..) |e, i| switch (e.kind) {
+                    .top, .body => sv.on.set(eb + @as(u32, @intCast(i))),
+                    else => {},
+                };
+            }
+        }
         // ---- The solve.
         s.solver = &sv;
         defer s.solver = null;
@@ -2084,6 +2176,64 @@ const Spec = struct {
         @memcpy(s.params.items, sv.lat[param_base..]);
         for (name_src, s.name_solved) |src, *out| if (src != none) {
             out.* = @bitCast(sv.lat[src]);
+        };
+    }
+
+    /// Per top-level statement, in `w_stmts`' order: whether it is live as
+    /// `prune` sees it — not a declaration it may drop, or one a live
+    /// statement or a root refers to.
+    fn liveStatements(s: *Spec, a: Allocator) Allocator.Error![]bool {
+        const referenced = try a.alloc(bool, s.globals);
+        @memset(referenced, false);
+        const live = try a.alloc(bool, s.globals);
+        @memset(live, false);
+        var work: std.ArrayList(u32) = .empty;
+        var ri: usize = 0;
+        while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < referenced.len) {
+            referenced[g] = true;
+            try work.append(a, g);
+        };
+        // Per statement, the names it reads and assigns, as its extraction
+        // recorded them (`Extract.reads`, `Extract.assigns`): the names
+        // `references` finds by walking it.
+        const where_m = try a.alloc(u32, s.globals);
+        @memset(where_m, none);
+        const where_k = try a.alloc(u32, s.globals);
+        for (s.mods, 0..) |*m, mi| for (m.ex.stmts, 0..) |st, k| {
+            if (s.candidate(m, st.node)) |g| {
+                where_m[g] = @intCast(mi);
+                where_k[g] = @intCast(k);
+                continue;
+            }
+            try s.extractedRefs(m, k, referenced, &work, a);
+        };
+        while (work.pop()) |g| {
+            if (g >= where_m.len or live[g]) continue;
+            live[g] = true;
+            if (where_m[g] == none) continue;
+            try s.extractedRefs(&s.mods[where_m[g]], where_k[g], referenced, &work, a);
+        }
+        var out: std.ArrayList(bool) = .empty;
+        for (s.mods) |*m| for (m.ex.stmts) |st| {
+            const g = s.candidate(m, st.node);
+            try out.append(a, if (g) |x| live[x] else true);
+        };
+        std.debug.assert(out.items.len == s.w_stmts.items.len);
+        return out.items;
+    }
+
+    fn extractedRefs(s: *Spec, m: *Mod, k: usize, referenced: []bool, work: *std.ArrayList(u32), a: Allocator) Allocator.Error!void {
+        _ = s;
+        const x = &m.ex;
+        const reads_from: u32 = if (k == 0) 0 else x.stmts[k - 1].reads;
+        const assigns_from: u32 = if (k == 0) 0 else x.stmts[k - 1].assigns;
+        for (x.reads[reads_from..x.stmts[k].reads]) |r| if (r.g < referenced.len and !referenced[r.g]) {
+            referenced[r.g] = true;
+            try work.append(a, r.g);
+        };
+        for (x.assigns[assigns_from..x.stmts[k].assigns]) |g| if (g < referenced.len and !referenced[g]) {
+            referenced[g] = true;
+            try work.append(a, g);
         };
     }
 
@@ -2745,10 +2895,22 @@ const Spec = struct {
     /// lose, on objects that are all the program's own. A read whose every
     /// write is nonnull is nonnull wherever it does not throw.
     fn memberValue(s: *Spec, m: *Mod, node: Index) Allocator.Error!Lat {
+        return s.memberOf(m, node, null);
+    }
+
+    /// `memberValue`, its object `named` when facts 1 and 2 say it is the
+    /// object a whole-program name declares (a `name` literal): fact 3's
+    /// value of that name, which is that one object, in place of the
+    /// object node's, which joins what every call passes, executable or
+    /// not.
+    fn memberOf(s: *Spec, m: *Mod, node: Index, named: ?Pts.Val) Allocator.Error!Lat {
         const ir = m.ir;
         const d = ir.data(node);
         const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs)));
-        const chain = try s.pts.chain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs)));
+        // An object literal that does nothing when made is read like a
+        // chain: `{ a: 1 }.a` is `1`, as a body written in leaves it.
+        const literal: ?Pts.Val = if (ir.tag(@as(Index, @fromBackingInt(@intCast(d.lhs)))) == .object and s.pts.ok and d.lhs < s.pts.vals[m.index].len and inert(ir, @fromBackingInt(@intCast(d.lhs)))) s.pts.vals[m.index][d.lhs] else null;
+        const chain = if (try s.pts.chain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs)))) |c| named orelse c else literal;
         if (chain) |obj| if (s.pts.neverWritten(obj, id)) {
             return .of(try s.intern(.{ .kind = .undefined_lit }));
         };
@@ -2756,7 +2918,7 @@ const Spec = struct {
         const obj = chain orelse s.pts.vals[m.index][d.lhs];
         const v = try s.propValue(obj, id);
         if (v.state == .lit and chain != null and s.pts.known(obj)) return v;
-        if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @fromBackingInt(@intCast(d.lhs)), id)) |t| return t;
+        if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @fromBackingInt(@intCast(d.lhs)), id, named)) |t| return t;
         return s.demote(v);
     }
 
@@ -2766,10 +2928,11 @@ const Spec = struct {
     /// writes one (`boundary.md` §4) — and that no code of the program
     /// writes `$` on, or on anything it cannot see, is the literals' one
     /// value. A literal has no getter; the chain is safe to evaluate.
-    fn tagValue(s: *Spec, m: *Mod, object: Index, id: u32) Allocator.Error!?Lat {
+    fn tagValue(s: *Spec, m: *Mod, object: Index, id: u32, named: ?Pts.Val) Allocator.Error!?Lat {
         const p = &s.pts;
         if (p.unknown_any or std.mem.indexOfScalar(u32, p.unknown_props.items, id) != null) return null;
-        const obj = try p.safeChain(m.index, s.cur_top, object) orelse return null;
+        const safe = try p.safeChain(m.index, s.cur_top, object) orelse return null;
+        const obj = named orelse safe;
         if (obj.top or obj.prim or obj.nullish() or obj.sites.len == 0) return null;
         var out: Lat = .bot;
         for (obj.sites) |site| {
@@ -2875,7 +3038,6 @@ const Spec = struct {
             s.setEscaped(g);
             return;
         }
-        if (s.frozen) return;
         for (args, 0..) |a, i| {
             // A parameter is read by its own declaration alone.
             if (s.joinInto(&s.params.items[decl.params + i], m.memo[a.int()]) and decl.index < s.w_dirty.bit_length)
@@ -3280,30 +3442,18 @@ const Spec = struct {
         s.declined.clearRetainingCapacity();
         if (s.folded_reads.len < s.globals) s.folded_reads = try s.arena.alloc(u32, s.globals);
         @memset(s.folded_reads, 0);
-        // Which parameters go: a constant the substitution rule allows.
+        // Which parameters go: a constant the substitution rule allows,
+        // by the counts before the patch, which writes its reads as the
+        // literal by the same counts.
         const drop = try s.arena.alloc(bool, s.params.items.len);
         @memset(drop, false);
-        const quiet = try s.arena.alloc(bool, s.params.items.len);
-        @memset(quiet, false);
-        // The initialisers of the dead bindings that held a dropped
-        // parameter's only reads (`deadReads`), written `undefined`.
-        var dead_inits: std.ArrayList(DeadInit) = .empty;
-        var candidates: std.ArrayList(DeadInit) = .empty;
-        var dead_counts: std.ArrayList(u32) = .empty;
-        const kept_bits = try s.arena.alloc(?std.DynamicBitSetUnmanaged, s.mods.len);
-        @memset(kept_bits, null);
         for (s.decl, 0..) |maybe, g| {
             const decl = maybe orelse continue;
             if (decl.func == null or s.escaped[g]) continue;
             const m = &s.mods[decl.module];
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
-            // Counted afresh: the parameters' reads and whether one is
-            // assigned.
             s.current += 1;
             try s.countTop(m, decl.stmt);
-            // `deadReads`, walked once per function when some parameter
-            // asks.
-            var dead_walked = false;
             for (m.ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
                 const v = s.params.items[decl.params + i];
                 const at = n.unwrap() orelse continue;
@@ -3312,128 +3462,155 @@ const Spec = struct {
                     (s.litOf(v).kind != .name or try s.nameIn(m, nameId(s.litOf(v))) != null))
                 {
                     drop[decl.params + i] = true;
-                    continue;
-                }
-                // A parameter nothing reads goes whatever it is passed, when
-                // every call is seen and no argument for it does anything —
-                // a read in the initialiser of a binding that is itself
-                // read by nothing, and does nothing, counts as none. It
-                // asks for no round of its own (`quiet`): what it exposes
-                // the next round finds, whichever asks for it.
-                if (v.state != .bot and !s.arg_effect.items[decl.params + i]) {
-                    if (m.uses[at] == 0) {
-                        drop[decl.params + i] = true;
-                        quiet[decl.params + i] = true;
-                        continue;
-                    }
-                    if (!dead_walked) {
-                        dead_walked = true;
-                        if (kept_bits[m.index] == null) {
-                            var bits: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
-                            if (m.tables) |t| for (t.keep.items) |k| if (k.int() < bits.bit_length) bits.set(k.int());
-                            kept_bits[m.index] = bits;
-                        }
-                        try s.deadReads(m, decl, kept_bits[m.index].?, &dead_counts, &candidates);
-                    }
-                    if (dead_counts.items[i] == m.uses[at]) {
-                        for (candidates.items) |c| if (c.param == i) try dead_inits.append(s.arena, c);
-                        drop[decl.params + i] = true;
-                        continue;
-                    }
                 }
             }
         }
+        // What lowering keeps for an effect, past what does nothing after
+        // all (`releaseKeeps`): per module, by node.
+        const kept_bits = try s.arena.alloc(std.DynamicBitSetUnmanaged, s.mods.len);
+        for (s.mods, kept_bits) |*m, *bits| {
+            try s.releaseKept(m);
+            bits.* = try .initEmpty(s.arena, m.ir.nodes.len);
+            if (m.tables) |t| for (t.keep.items) |k| if (k.int() < bits.bit_length) bits.set(k.int());
+        }
 
-        // Each declaration is walked again, with the facts at their
-        // fixpoint, just before it is patched — unless the values its last
-        // sweep left in `memo` are still what a walk would make: it was not
-        // left waiting for a walk (`w_dirty`), and no declaration it reads
-        // the value of has been rewritten since (`nameValue` reads a
-        // module-level constant's initialiser). Then only its names are
-        // counted.
-        var stale = try s.w_dirty.clone(s.arena);
-        var index: u32 = 0;
+        // Each statement patched once, from the solve's facts, which no
+        // patch changes (*The rewrite*): its names counted, then its
+        // nodes written. Then the liveness of its bindings, on what the
+        // patch left (*Reading off*), and the parameters of its function
+        // that nothing live reads.
+        // Per parameter: nothing live reads it, by the counts the patch
+        // left.
+        const unread = try s.arena.alloc(bool, s.params.items.len);
+        @memset(unread, false);
         for (s.mods, 0..) |*m, mi| {
             const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
             for (body) |stmt| {
-                defer index += 1;
-                const fresh = index < s.w_stmts.items.len and !stale.isSet(index) and
-                    s.w_stmts.items[index].module == mi and s.w_stmts.items[index].stmt == stmt;
-                if (fresh) try s.prepareTop(m, @intCast(mi), stmt) else {
-                    s.changed = false;
-                    s.frozen = true;
-                    defer s.frozen = false;
-                    try s.walkTop(m, @intCast(mi), stmt);
-                    // A walk of the program as patched so far moved a fact:
-                    // what read it reads something else now.
-                    if (s.changed) stale.setUnion(s.w_dirty);
-                }
-                // A module-level binding's initialiser, as `nameValue` sees
-                // it, before the patch.
-                const binding: ?struct { g: u32, tag: Node.Tag, data: Node.Data } = switch (m.ir.tag(stmt)) {
-                    .const_decl, .let_decl => blk: {
-                        const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse break :blk null;
-                        const v: Node.OptionalIndex = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
-                        const root = v.unwrap() orelse break :blk null;
-                        break :blk .{ .g = g, .tag = m.ir.tag(root), .data = m.ir.data(root) };
-                    },
-                    else => null,
-                };
-                // Its changes are its own (`Mod.kept`): a walk of another
-                // statement, and the combined solver's constraints of one
-                // (`Extract`), hold across them.
-                within(m, stmt);
-                if (try s.patchStmt(m, stmt)) any = true;
-                // The `if`s whose test is now a literal, while the
-                // declaration's counts are the ones `spliceable` reads.
-                if (try s.foldBelow(m, stmt, 0)) any = true;
-                try s.leave(m);
-                if (binding) |b| {
-                    const v: Node.OptionalIndex = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
-                    const same = if (v.unwrap()) |root| m.ir.tag(root) == b.tag and
-                        m.ir.data(root).lhs == b.data.lhs and m.ir.data(root).rhs == b.data.rhs else false;
-                    if (!same and b.g < s.g_deps.len) {
-                        // Whatever read it reads something else now. A
-                        // reader later in the program is walked again
-                        // before it is patched; one already patched read
-                        // the initialiser as it was, and when that has
-                        // just become a literal, which `nameValue` hands
-                        // its readers, only another round lets them see
-                        // it — else whether they do would depend on
-                        // whether their module comes before this one.
-                        const now_literal = !isLiteralTag(b.tag) and if (v.unwrap()) |root| isLiteralTag(m.ir.tag(root)) else false;
-                        var d = s.g_deps[b.g];
-                        while (d != none) : (d = s.w_deps.items[d].next) {
-                            const reader = s.w_deps.items[d].stmt;
-                            if (reader < stale.bit_length) stale.set(reader);
-                            if (now_literal and reader < index) any = true;
-                        }
+                // Patched until the counts it leaves allow nothing more:
+                // a read refused by the substitution rule for the count
+                // before is written when folds took the others. The facts
+                // stay the solve's throughout.
+                var turn: u32 = 0;
+                while (true) : (turn += 1) {
+                    const before = m.epoch;
+                    s.refused_local = false;
+                    try s.prepareTop(m, @intCast(mi), stmt);
+                    // Its changes are its own (`Mod.kept`): the combined
+                    // solver's constraints of another statement (`Extract`)
+                    // hold across them.
+                    within(m, stmt);
+                    if (try s.patchStmt(m, stmt)) any = true;
+                    // The `if`s whose test is now a literal, while the
+                    // declaration's counts are the ones `spliceable` reads.
+                    if (try s.foldBelow(m, stmt, 0)) any = true;
+                    // Counted again only when the patch changed it.
+                    if (m.epoch != before) try s.prepareTop(m, @intCast(mi), stmt);
+                    if (try s.liveness(m, stmt, kept_bits[mi])) {
+                        any = true;
+                        _ = try s.foldBelow(m, stmt, 0);
                     }
+                    try s.leave(m);
+                    if (m.epoch == before or !s.refused_local or turn == max_patch_turns) break;
+                }
+                _ = try s.unreadParams(m, unread);
+            }
+        }
+        // A parameter nothing live reads goes whatever it is passed, when
+        // every call is seen and no argument for it does anything, as the
+        // patch left the arguments.
+        // The keys nothing the patch left reads go first: an argument that
+        // was an object of them may do nothing now.
+        if (try s.dropUnreadKeys()) any = true;
+        if (std.mem.indexOfScalar(bool, unread, true) != null) {
+            const effect = try s.argEffects();
+            for (unread, effect, drop) |u, e, *d| if (u and !e) {
+                d.* = true;
+            };
+        }
+        const drop_epoch = try s.arena.alloc(u64, s.mods.len);
+        for (s.mods, drop_epoch) |*m, *e| e.* = m.epoch;
+        if (try s.applyDrops(drop, true)) any = true;
+        // A parameter that went took its arguments, and what they read may
+        // be read by nothing now: the liveness again, and the parameters it
+        // leaves unread, until none goes.
+        var turn: u32 = 0;
+        while (turn < max_patch_turns) : (turn += 1) {
+            const more = try s.arena.alloc(bool, s.params.items.len);
+            @memset(more, false);
+            var asks = false;
+            for (s.mods, 0..) |*m, mi| {
+                const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+                for (body) |stmt| {
+                    // Only a statement the drops changed reads less now.
+                    if (m.kept(stmt, drop_epoch[mi])) continue;
+                    try s.prepareTop(m, @intCast(mi), stmt);
+                    within(m, stmt);
+                    if (try s.liveness(m, stmt, kept_bits[mi])) _ = try s.foldBelow(m, stmt, 0);
+                    try s.leave(m);
+                    if (try s.unreadParams(m, more)) asks = true;
                 }
             }
-        }
-        // A read `substitutes` refused for the count the round began with,
-        // when folds have since taken enough of the others for it to be
-        // allowed: the next round writes the literal. Without it, whether
-        // the fold or the refusal came first — which module comes first —
-        // decided whether the name stayed.
-        for (s.declined.items) |d| {
-            if (d.g < s.folded_reads.len and s.folded_reads[d.g] != 0 and
-                substitutes(d.lit, s.reads[d.g] -| s.folded_reads[d.g]))
-            {
-                any = true;
-                break;
+            if (!asks) break;
+            const effect = try s.argEffects();
+            var went = false;
+            for (more, effect) |*u, e| {
+                if (e) u.* = false;
+                if (u.*) went = true;
             }
+            if (!went) break;
+            for (s.mods, drop_epoch) |*m, *e| e.* = m.epoch;
+            if (try s.applyDrops(more, false)) any = true;
         }
-        for (dead_inits.items) |dead| {
-            const m = &s.mods[dead.module];
-            within(m, dead.top);
-            m.setNode(dead.init, .undefined_lit, 0, 0);
+        // A read of a module constant `substitutes` refused for the count
+        // the solve began with, when the patch folded enough of the others
+        // away (`folded_reads`) for it to be allowed: written as its
+        // literal now, by the count the whole patch left, so whether it is
+        // does not depend on which module came first.
+        const declined = s.declined.items.len;
+        for (s.declined.items[0..declined]) |d| {
+            if (d.g >= s.folded_reads.len or s.folded_reads[d.g] == 0) continue;
+            const left = s.reads[d.g] -| s.folded_reads[d.g];
+            if (!substitutes(d.lit, left)) continue;
+            const m = &s.mods[d.module];
+            if (m.ir.tag(d.node) != .ident or m.globalOf(@fromBackingInt(@intCast(m.ir.data(d.node).lhs))) != d.g) continue;
+            const read_by = s.reads[d.g];
+            s.reads[d.g] = left;
+            defer s.reads[d.g] = read_by;
+            within(m, d.top);
+            if (try s.patchLiteral(m, d.node, d.v, d.object_position)) any = true;
             try s.leave(m);
-            m.lit_of[dead.init.int()] = none;
+        }
+        return any;
+    }
+
+    /// Marks in `unread` the parameters of the function the statement just
+    /// counted declares (`top_func`), when `Spec` tracks it, that nothing
+    /// live reads. True when one is.
+    fn unreadParams(s: *Spec, m: *Mod, unread: []bool) Allocator.Error!bool {
+        const d = s.top_func orelse return false;
+        if (s.escaped[s.globalOfDecl(d)]) return false;
+        const f = m.ir.extraData(d.func.?, JsIr.Func);
+        var any = false;
+        for (m.ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
+            if (i >= d.arity) break;
+            const at = n.unwrap() orelse continue;
+            if (m.decls[at] != 1 or m.assigned[at] or m.uses[at] != 0) continue;
+            if (s.params.items[d.params + i].state == .bot) continue;
+            unread[d.params + i] = true;
             any = true;
         }
-        // Parameters and arguments.
+        return any;
+    }
+
+    /// The parameters `drop` marks gone from their functions, and their
+    /// arguments from every call the program makes. A function that lost
+    /// one has its parameters numbered anew at the end of `params`, so that
+    /// another drop in the same rewrite reads them as they now are.
+    /// `keep_fact3`: fact 3's state may take the drop without a solve
+    /// (`keepDrop`, #582); a later drop asks the solve again. True when any
+    /// went.
+    fn applyDrops(s: *Spec, drop: []const bool, keep_fact3: bool) Allocator.Error!bool {
+        var any = false;
         // Per whole-program name: fact 3's state takes the drop of its
         // parameters without a solve (`keepDrop`, #582).
         const kept_drop = try s.arena.alloc(bool, s.globals);
@@ -3444,7 +3621,7 @@ const Spec = struct {
             const flags = drop[decl.params..][0..decl.arity];
             if (std.mem.indexOfScalar(bool, flags, true) == null) continue;
             const m = &s.mods[decl.module];
-            kept_drop[g] = try s.keepDrop(m, decl, flags);
+            if (keep_fact3) kept_drop[g] = try s.keepDrop(m, decl, flags);
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
             var kept: std.ArrayList(u32) = .empty;
             for (m.ir.extraSlice(f.params(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
@@ -3457,33 +3634,43 @@ const Spec = struct {
             if (kept_drop[g]) m.fact3 = fact3;
             m.extra.items[at] = start;
             m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
-            for (flags, quiet[decl.params..][0..decl.arity]) |gone, q| {
-                if (gone and !q) any = true;
-            }
+            any = true;
         }
+        if (!any) return false;
         // Every call of such a function the patched program still makes. Found
         // by walking it again rather than from the analysis's list: a folded
         // conditional may have become a copy of a call, and the copy is the
-        // one that is reached.
-        // None when no parameter went: the walk would change nothing. Nor
-        // in a module that names none of the functions that lost one: a
-        // call of one names it.
-        if (std.mem.indexOfScalar(bool, drop, true) != null) {
-            const lost = try s.arena.alloc(bool, s.globals);
-            @memset(lost, false);
-            for (s.decl, 0..) |maybe, g| {
-                const decl = maybe orelse continue;
-                if (decl.func == null) continue;
-                if (std.mem.indexOfScalar(bool, drop[decl.params..][0..decl.arity], true) != null) lost[g] = true;
-            }
-            for (s.mods) |*m| {
-                const names = for (m.global) |g| {
-                    if (g != none and g < lost.len and lost[g]) break true;
-                } else false;
-                if (names) try s.rewriteCalls(m, drop, kept_drop);
-            }
+        // one that is reached. None in a module that names none of the
+        // functions that lost one: a call of one names it.
+        const lost = try s.arena.alloc(bool, s.globals);
+        @memset(lost, false);
+        for (s.decl, 0..) |maybe, g| {
+            const decl = maybe orelse continue;
+            if (decl.func == null) continue;
+            if (std.mem.indexOfScalar(bool, drop[decl.params..][0..decl.arity], true) != null) lost[g] = true;
         }
-        return any;
+        for (s.mods) |*m| {
+            const names = for (m.global) |g| {
+                if (g != none and g < lost.len and lost[g]) break true;
+            } else false;
+            if (names) try s.rewriteCalls(m, drop, kept_drop);
+        }
+        // The parameters left, numbered anew.
+        for (s.decl, lost) |*maybe, l| {
+            if (!l) continue;
+            const decl = &(maybe.* orelse continue);
+            const flags = drop[decl.params..][0..decl.arity];
+            const first: u32 = @intCast(s.params.items.len);
+            var left: u32 = 0;
+            for (flags, 0..) |gone, i| if (!gone) {
+                try s.params.append(s.arena, s.params.items[decl.params + i]);
+                try s.arg_effect.append(s.arena, s.arg_effect.items[decl.params + i]);
+                left += 1;
+            };
+            decl.params = first;
+            decl.arity = left;
+        }
+        return true;
     }
 
     /// Unused trailing arguments: a call whose callee fact 3 says may be
@@ -3598,55 +3785,35 @@ const Spec = struct {
         return need;
     }
 
-    const DeadInit = struct { module: u32, top: Index, init: Index, param: u32 };
-
-    /// Per parameter of `decl`'s function, into `counts`, how many of its
-    /// reads stand in the initialiser of a dead binding: a `const` or `let`
-    /// that the counts `count` just made say nothing reads or assigns, that
-    /// lowering does not keep for an effect (`kept`, `Tables.keep` after
-    /// `releaseKeeps`), and whose initialiser does nothing (`effectFree`) —
-    /// so `Opt` drops it whole, and the reads in it are reads of nothing.
-    /// Each such initialiser is appended to `out` once per parameter it
-    /// reads.
-    fn deadReads(s: *Spec, m: *Mod, decl: Decl, kept: std.DynamicBitSetUnmanaged, counts: *std.ArrayList(u32), out: *std.ArrayList(DeadInit)) Allocator.Error!void {
-        const ir = m.ir;
-        const params = ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).params(), NameIndex);
-        counts.clearRetainingCapacity();
-        try counts.appendNTimes(s.arena, 0, params.len);
-        out.clearRetainingCapacity();
+    /// Per parameter of a function `Spec` tracks: some call of it, in the
+    /// program as it now stands, passes an argument whose evaluation may do
+    /// something (`effectFree`).
+    fn argEffects(s: *Spec) Allocator.Error![]bool {
+        const effect = try s.arena.alloc(bool, s.params.items.len);
+        @memset(effect, false);
         const saved_top = s.cur_top;
         defer s.cur_top = saved_top;
-        s.cur_top = decl.stmt;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        var reads = try s.takeStack();
-        defer s.giveStack(&reads);
-        try JsIr.pushOperandSlice(s.arena, &stack, ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).body(), Index));
-        while (JsIr.popOperand(&stack)) |node| {
-            const tag = ir.tag(node);
-            if (tag == .const_decl or tag == .let_decl) dead: {
-                const b = @as(NameIndex, @fromBackingInt(@intCast(ir.data(node).lhs))).unwrap() orelse break :dead;
-                if (b >= m.stamp.len or m.stamp[b] != s.current or m.uses[b] != 0 or m.assigned[b]) break :dead;
-                const value = @as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).rhs))).unwrap() orelse break :dead;
-                if (node.int() < kept.bit_length and kept.isSet(node.int())) break :dead;
-                if (value.int() >= s.pts.vals[m.index].len or !try s.effectFree(m, value)) break :dead;
-                const first = out.items.len;
-                reads.clearRetainingCapacity();
-                try reads.append(s.arena, value);
-                while (reads.pop()) |r| {
-                    if (ir.tag(r) == .ident) if (std.mem.indexOfScalar(NameIndex, params, @fromBackingInt(@intCast(ir.data(r).lhs)))) |p| {
-                        counts.items[p] += 1;
-                        const seen = for (out.items[first..]) |o| {
-                            if (o.param == p) break true;
-                        } else false;
-                        if (!seen) try out.append(s.arena, .{ .module = m.index, .top = decl.stmt, .init = value, .param = @intCast(p) });
-                    };
-                    try pushChildren(s.arena, ir, r, &reads);
+        for (s.mods) |*m| {
+            const ir = m.ir;
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                s.cur_top = top;
+                for (try s.preorder(m, top)) |node| {
+                    if (ir.tag(node) != .call) continue;
+                    const callee: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                    if (ir.tag(callee) != .ident) continue;
+                    const g = m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs))) orelse continue;
+                    const decl = s.decl[g] orelse continue;
+                    if (decl.func == null) continue;
+                    const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index);
+                    if (args.len != decl.arity) continue;
+                    for (args, 0..) |a, i| {
+                        const e = &effect[decl.params + i];
+                        if (!e.* and !try s.effectFree(m, a)) e.* = true;
+                    }
                 }
-                continue;
             }
-            try pushChildren(s.arena, ir, node, &stack);
         }
+        return effect;
     }
 
     /// Drop the arguments of the dropped parameters from every call `m`
@@ -3838,6 +4005,7 @@ const Spec = struct {
                             // Asked before `append`, which may move `args`.
                             const keep_args = kept_drop[g] and try s.keepArgs(m, args, flags);
                             var kept: std.ArrayList(u32) = .empty;
+                            for (args, flags) |a, gone| if (gone) try s.noteGone(m, @fromBackingInt(a));
                             for (args, flags) |a, gone| if (!gone) try kept.append(s.arena, a);
                             const start = try m.append(s.gpa, kept.items);
                             const record = try m.append(s.gpa, &.{ start, start + @as(u32, @intCast(kept.items.len)) });
@@ -4076,6 +4244,19 @@ const Spec = struct {
     /// Append to `fold_reads` the whole-program id of every name read in
     /// the expression `root`, short of a function's body (which no fold
     /// reaches: a function is not a literal).
+    /// The whole-program names read below `root`, which a rewrite takes out
+    /// of the program with it: counted off what `substitutes` weighs
+    /// (`folded_reads`).
+    fn noteGone(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
+        if (s.folded_reads.len == 0) return;
+        const at = s.fold_reads.items.len;
+        defer s.fold_reads.shrinkRetainingCapacity(at);
+        try s.globalReads(m, root);
+        for (s.fold_reads.items[at..]) |g| if (g < s.folded_reads.len) {
+            s.folded_reads[g] += 1;
+        };
+    }
+
     fn globalReads(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
@@ -4170,7 +4351,8 @@ const Spec = struct {
             const global = m.globalOf(n);
             const uses: u32 = if (global) |g| s.reads[g] else if (n.unwrap()) |i| (if (i < m.stamp.len and m.stamp[i] == s.current) m.uses[i] else 2) else 2;
             if (!substitutes(lit, uses)) {
-                if (global) |g| try s.declined.append(s.arena, .{ .g = g, .lit = lit });
+                if (global == null) s.refused_local = true;
+                if (global) |g| if (m.scope) |top| try s.declined.append(s.arena, .{ .g = g, .lit = lit, .v = v, .module = m.index, .top = top, .node = node, .object_position = object_position });
                 return false;
             }
         }
@@ -4480,6 +4662,7 @@ const Spec = struct {
                 const d = ir.data(prop);
                 const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.lhs)));
                 if (s.pts.keyUnread(m.index, node, id) and try s.effectFree(m, @fromBackingInt(@intCast(d.rhs)))) {
+                    try s.noteGone(m, @fromBackingInt(@intCast(d.rhs)));
                     dropped = true;
                     continue;
                 }
@@ -4672,15 +4855,14 @@ const Spec = struct {
         return any;
     }
 
-    /// A binding lowering kept for what its initialiser might do, whose
-    /// initialiser the facts folded to something that does nothing (a
-    /// literal, a name): kept no more, so the optimiser drops it when
-    /// nothing reads it. True when one released is a read through a local,
-    /// which may be a parameter's last read (`deadReads`).
-    fn releaseKeeps(s: *Spec) Allocator.Error!bool {
-        var released = false;
-        for (s.mods) |*m| {
-            const t = m.tables orelse continue;
+    /// The bindings of `m` lowering kept for what their initialisers might
+    /// do, whose initialisers do nothing by the facts (a literal, a name, a
+    /// call of a function that only makes its value, a read through the
+    /// program's own objects): kept no more, so that the liveness read-off
+    /// (`liveness`), and the optimiser after it, drop one nothing reads.
+    fn releaseKept(s: *Spec, m: *Mod) Allocator.Error!void {
+        {
+            const t = m.tables orelse return;
             // Slice 8: a read through program objects does nothing either
             // (`Pts.safeChain`, asked in the declaration that holds it):
             // per kept binding, that declaration.
@@ -4723,14 +4905,7 @@ const Spec = struct {
                     if (top_of.len != 0 and m.ir.tag(v) == .member and node.int() < nodes and v.int() < s.pts.vals[m.index].len) {
                         // A binding no walk reached is in no top: kept.
                         const top = top_of[node.int()];
-                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) {
-                            // A read of a local — a parameter, maybe — that
-                            // nothing may need now (`run`).
-                            var base = v;
-                            while (m.ir.tag(base) == .member) base = @fromBackingInt(@intCast(m.ir.data(base).lhs));
-                            if (m.ir.tag(base) == .ident and m.globalOf(@fromBackingInt(@intCast(m.ir.data(base).lhs))) == null) released = true;
-                            continue;
-                        }
+                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) continue;
                     }
                 }
                 t.keep.items[kept] = node;
@@ -4738,7 +4913,100 @@ const Spec = struct {
             }
             t.keep.shrinkRetainingCapacity(kept);
         }
-        return released;
+    }
+
+    /// The liveness of the local bindings of top-level statement `top`, as
+    /// patched (`backend.md` §9, *Reading off*, G8): a `const` or `let`
+    /// declared once and assigned nowhere, that lowering does not keep for
+    /// an effect (`kept`), is dead when every read of it stands in the
+    /// initialiser of a dead binding. `Opt` drops it whole, so its
+    /// initialiser is written `undefined` here, and the names it read are
+    /// read by that much less: `m.uses` is left as the live reads. The
+    /// counts are `prepareTop`'s, just made. True when one was written.
+    fn liveness(s: *Spec, m: *Mod, top: Index, kept: std.DynamicBitSetUnmanaged) Allocator.Error!bool {
+        const ir = m.ir;
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        s.cur_top = top;
+        var binds: std.ArrayList(Index) = .empty;
+        for (try s.preorder(m, top)) |node| switch (ir.tag(node)) {
+            .const_decl, .let_decl => {
+                if (node == top) continue;
+                const n: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
+                if (m.globalOf(n) != null) continue;
+                // A qualified name crosses a file, and `Opt` concludes nothing
+                // about it: nor does this.
+                if (ir.name(n).module != .none) continue;
+                const i = n.unwrap() orelse continue;
+                if (i >= m.stamp.len or m.stamp[i] != s.current or m.decls[i] != 1 or m.assigned[i]) continue;
+                if (node.int() < kept.bit_length and kept.isSet(node.int())) continue;
+                try binds.append(s.arena, node);
+            },
+            else => {},
+        };
+        if (binds.items.len == 0) return false;
+        var any = false;
+        var reads = try s.takeStack();
+        defer s.giveStack(&reads);
+        const dead = try s.arena.alloc(bool, binds.items.len);
+        @memset(dead, false);
+        // The nodes of the initialisers gone (`Mod.objects`, cleared on the
+        // way out): a binding among them went with them, and its reads were
+        // counted off there.
+        var marked: std.ArrayList(u32) = .empty;
+        defer for (marked.items) |i| m.objects.unset(i);
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (binds.items, dead) |node, *gone| {
+                if (gone.*) continue;
+                if (node.int() < m.objects.bit_length and m.objects.isSet(node.int())) {
+                    gone.* = true;
+                    continue;
+                }
+                const i = (@as(NameIndex, @fromBackingInt(@intCast(ir.data(node).lhs)))).unwrap().?;
+                if (m.uses[i] != 0) continue;
+                gone.* = true;
+                const value = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).rhs)))).unwrap() orelse continue;
+                // An initialiser that may do something stays, for `Opt` to
+                // weigh by what lowering kept: lowering keeps only what it
+                // knew might go unread, and a read the patch took was not.
+                if (!try s.effectFree(m, value)) continue;
+                grew = true;
+                // What it read, it reads no more.
+                reads.clearRetainingCapacity();
+                try reads.append(s.arena, value);
+                while (reads.pop()) |r| {
+                    if (r.int() < m.objects.bit_length and !m.objects.isSet(r.int())) {
+                        m.objects.set(r.int());
+                        try marked.append(s.arena, r.int());
+                    }
+                    // An assignment's target is no read (`count`).
+                    if (ir.tag(r) == .assign_stmt) {
+                        const target: Index = @fromBackingInt(@intCast(ir.data(r).lhs));
+                        if (ir.tag(target) != .ident) try reads.append(s.arena, target);
+                        try reads.append(s.arena, @fromBackingInt(@intCast(ir.data(r).rhs)));
+                        continue;
+                    }
+                    if (ir.tag(r) == .ident) {
+                        const rn: NameIndex = @fromBackingInt(@intCast(ir.data(r).lhs));
+                        if (m.globalOf(rn) == null) if (rn.unwrap()) |ri| if (ri < m.stamp.len and m.stamp[ri] == s.current) {
+                            m.uses[ri] -|= 1;
+                        };
+                    }
+                    try pushChildren(s.arena, ir, r, &reads);
+                }
+                try s.noteGone(m, value);
+                // The binding goes, as `Opt` would drop it: a statement of
+                // its literal, which its list's fold takes out
+                // (`literalStmt`).
+                m.setNode(value, .undefined_lit, 0, 0);
+                if (value.int() < m.lit_of.len) m.lit_of[value.int()] = none;
+                m.setNode(node, .expr_stmt, value.int(), 0);
+                any = true;
+            }
+        }
+        return any;
     }
 
     // ---- Slice 7: scalar replacement --------------------------------------
@@ -5067,7 +5335,7 @@ const Spec = struct {
             // `inlineIifesIn` writes one inside a function, the binding the
             // declaration that scopes its names.
             .const_decl, .let_decl => {
-                if (s.list_mode == .iife and try s.inlineIifesIn(m, top, top)) any = true;
+                if (s.list_mode == .tidy and try s.inlineIifesIn(m, top, top)) any = true;
                 if (try s.srBelow(m, top, top, 0)) any = true;
             },
             .func_decl => if (try s.srBelow(m, top, top, 0)) {
@@ -5169,9 +5437,11 @@ const Spec = struct {
                 try out.append(s.arena, raw);
             },
             .constructors => changed = try s.foldConstructors(m, top, items, &out),
-            // `x = x` does nothing: a name read and written back (an
-            // identity written in place, slice 8).
-            .self_assign => for (items) |raw| {
+            // In the pass loop, in one sweep: `x = x` does nothing, a name
+            // read and written back (an identity written in place, slice
+            // 8); and a function called where it is made is written there
+            // (`betaReduce`).
+            .tidy => for (items) |raw| {
                 const st: Index = @fromBackingInt(@intCast(raw));
                 if (m.ir.tag(st) == .assign_stmt) {
                     const target: Index = @fromBackingInt(@intCast(m.ir.data(st).lhs));
@@ -5180,14 +5450,11 @@ const Spec = struct {
                         continue;
                     }
                 }
-                try out.append(s.arena, raw);
-            },
-            .iife => for (items) |raw| {
-                if (try s.betaReduce(m, @fromBackingInt(@intCast(raw)), top, &out)) {
+                if (try s.betaReduce(m, st, top, &out)) {
                     changed = true;
                     continue;
                 }
-                if (try s.inlineIifesIn(m, top, @fromBackingInt(@intCast(raw)))) any = true;
+                if (try s.inlineIifesIn(m, top, st)) any = true;
                 try out.append(s.arena, raw);
             },
             .switches => for (items, 0..) |raw, at| {
@@ -5444,8 +5711,7 @@ const Spec = struct {
                     },
                     else => {},
                 },
-                .self_assign => if (ir.tag(st) == .assign_stmt) return true,
-                .iife => if (iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
+                .tidy => if (ir.tag(st) == .assign_stmt or iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
                 // A `switch`, or an arrow an eta step may take.
                 .switches => if (ir.tag(st) == .switch_stmt or try s.holdsArrow(m, st)) return true,
             }
@@ -9963,7 +10229,8 @@ const Extractor = struct {
         if (!fresh and into.names == names) for (into.stmts, 0..) |st, k| try old.put(scratch, .{ .node = st.node.int() }, @intCast(k));
         var walked: u32 = 0;
         var reused: u32 = 0;
-        // Exec cell 0: the top level, which runs.
+        // Exec cell 0: the module, which no constraint names; then each
+        // statement's own, which runs while the statement is live.
         try x.execs.append(scratch, .{ .kind = .top });
         for (body, 0..) |top, i| {
             x.ordinal = @intCast(i);
@@ -9974,6 +10241,8 @@ const Extractor = struct {
                 continue;
             };
             walked += 1;
+            try x.execs.append(scratch, .{ .kind = .top });
+            x.cur_exec = @intCast(x.execs.items.len - 1);
             try x.prepare(top);
             try x.stmtOf(top);
             try x.stmts.append(scratch, .{
@@ -10074,7 +10343,8 @@ const Extractor = struct {
     fn eachRead(x: *const Extract, j: usize, f: anytype) void {
         const a = x.a[j];
         switch (x.code[j].op) {
-            .constant, .literal, .global, .member, .param => {},
+            .constant, .literal, .global, .param => {},
+            .member => if (a != none) f.see(a),
             .local, .ret => if (a != none) f.see(a),
             .unary, .store => f.see(a),
             .binary => {
@@ -10648,7 +10918,7 @@ const Extractor = struct {
                 x.pool.items[at] = keys;
                 try x.emit(.object, c, at, spread == 1);
             },
-            .member => try x.emit(.member, c, 0, false),
+            .member => try x.emit(.member, c, x.cell[d.lhs], false),
             else => try x.emit(.constant, c, fixed_top, false),
         }
     }
@@ -10953,7 +11223,15 @@ const Solver = struct {
                 break :call try s.callValue(m, node);
             },
             .template => try s.templateValue(m, node, CellValues{ .sv = sv, .mi = mi, .cells = x.pool[a + 1 ..][0..x.pool[a]] }),
-            .member => try s.memberValue(m, node),
+            .member => member: {
+                // An object facts 1 and 2 name (`memberOf`).
+                const o = if (a == none) Lat.top else sv.lat[sv.cellOf(mi, a)];
+                if (o.state == .lit and s.pts.ok) if (s.litOf(o).kind == .name) {
+                    const g = Spec.nameId(s.litOf(o));
+                    if (g < s.pts.globals.len) break :member try s.memberOf(m, node, try s.pts.view(s.pts.globals[g]));
+                };
+                break :member try s.memberValue(m, node);
+            },
             .object => obj: {
                 if (s.pts.siteAt(mi, node)) |site| {
                     const n = x.pool[a];
@@ -12152,6 +12430,9 @@ const Pts = struct {
         lat: Lat = .bot,
         lat_made: bool = false,
         lat_readers: u32 = none,
+        /// A read of it stands in the program as the rewrite left it
+        /// (`Spec.liveKeys`): what `keyUnread` asks after a rewrite.
+        live_read: bool = false,
     };
 
     const Site = struct {
@@ -15549,7 +15830,8 @@ const Pts = struct {
         const site = p.siteAt(mi, node) orelse return false;
         const st = &p.sites.items[site];
         if (st.escaped or st.all_read) return false;
-        if (p.findProp(site, id)) |pr| if (pr.read) return false;
+        if (p.findProp(site, id)) |pr| if (if (p.s.live_keys) pr.live_read else pr.read) return false;
+        if (p.s.live_keys and id < p.s.id_read.len and p.s.id_read[id]) return false;
         return true;
     }
 
@@ -18151,7 +18433,10 @@ test "a read written as its literal leaves fact 3 to be kept" {
     defer ir.deinit(gpa);
     const global = [_]u32{ 0, 1 };
     const modules = [_]Module{.{ .ir = &ir, .global = &global }};
-    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{1} });
+    // `c` is read by a file the pass cannot see: a root, so its statement
+    // runs (since slice 6 a declaration nothing live refers to is in no
+    // solve, `liveStatements`).
     s.pts = .init(&s);
     defer s.pts.deinit();
     // Hands the module its columns back, owned and exactly sized.
