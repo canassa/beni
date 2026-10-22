@@ -745,6 +745,16 @@ which is the point rather than an omission. They are specified in `boundary.md` 
 `boundary.md` §5.3 already names as the browser platform's shape. If any of them turned out to need
 a language feature, that would be a finding against this proposal; none of them does.
 
+*Amended 2026-10-22 (#597; the owner, Cesar, dashboard `node-log-q3`):* on a page, a command's body
+now has the log context of the place where the command was made (`boundary.md` §9.8.16 (b),
+amended the same day). To make a command therefore reads the calling fiber's log-context slot, and
+17 functions that make one are now `impure`, `Cmd.perform`, `Cmd.log` and `Http.send` among them.
+An `update` arm that makes such a command is `impure`, and the command that it returns depends on
+the `Log.annotate`, `span`, `minimum` and `withSink` in force around it. So "`update` stays a pure
+function of message and model" now holds except for the log context. `update` still performs
+nothing, and the command is still an inert value that the runtime interprets, so the property
+that this section protects, and time-travel debugging, stay.
+
 ---
 
 ## 7. Compilation
