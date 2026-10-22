@@ -4692,6 +4692,32 @@ a fiber: the child copies its parent's context (`internal/effect.ts:5463`).
 - **Not covered:** `browser-inline`'s `Cmd.perform`, which runs its body in the same dispatch after
   `update` returns. #751 tracks it.
 
+*Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`): a message's `update` has the
+program's log context, whoever sends the message.* A context stops at the body. This decides the
+bullet "Open: the context of a message that a body sends" of the amendment of 2026-10-22.
+
+- **The rule.** The page runs each message's `update` with the program's log context: no
+  annotation, no span, the program's minimum and the program's sink. A click, a command's body, a
+  subscription's body and after-render work all send a message in the same way, so `update` does
+  not see the `annotate`, `span`, `minimum` or `withSink` around the call of `send`. A command
+  that this `update` makes keeps the context of its own arm, as the amendment of 2026-10-22 says.
+  So in `Log.annotate "request" "r1" λ⊤ → ( n + 1, Cmd.task (λ⊤ → 7) Done )`, the task's body has
+  `request=r1`, and `Done`'s `update` and its commands do not.
+- **Where.** The mount's `send` (`$$root`, `platforms/browser/Rt.beni`) is the one way into a
+  program's `update`, for `Browser.program` and `Browser.hosted` alike. When the calling fiber has
+  a log context of its own (`Task.hasLogContext`), `send` runs `update` inside
+  `Task.withoutLogContext`. That function sets the slot to the default context, and puts the old
+  one back when `update` returns. The other slots stay the caller's. In a hosted program, a
+  message that is sent while an `update` runs is applied in the same call of `send`, after that
+  `update`, so it has the program's context too.
+- **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
+  it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
+  set, each message reads the slot, and a message sent inside a context runs one
+  `inLogContext`: `withoutLogContext` is `inLogContext` with the default context, so it does not
+  write `slotted` either. A development build folds nothing, so each page ships the check and
+  the run.
+- **Not covered:** `browser-inline` (#751).
+
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
 with `credentials: "include"`. A program that tracks progress or sends cookies to another origin no
