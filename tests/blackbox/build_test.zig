@@ -7343,3 +7343,49 @@ test "the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm w
     const plain_hoisted = try w.read("plain-rel/_main.mjs");
     try testing.expect(std.mem.indexOf(u8, plain_hoisted, "the hooks are compiled in") == null);
 }
+
+test "a Worker built without --test-hooks holds no hook text, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §9.12 (k): the Worker's test hooks — `/__beni/mark/<n>`
+    // and `/__beni/schedulers` — are in a `--test-hooks` build only; the
+    // test on `Js.testHooks` is nested, not joined with `&&`, so the hook
+    // code is dropped from a build without the flag (backend.md §4).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Worker exposing (Context, Request, Response)
+        \\
+        \\
+        \\main : Worker.Program
+        \\main = Worker.program { fetch = route, objects = [] }
+        \\
+        \\
+        \\route : Context, Request → Response
+        \\route _ request = Worker.text 200 (Worker.path request)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.run(&.{ "build", "--platform=cloudflare", "--out=plain", "Main.beni" });
+    const hooked = try w.run(&.{ "build", "--platform=cloudflare", "--test-hooks", "--out=hooked", "Main.beni" });
+    const release = try w.run(&.{ "build", "--platform=cloudflare", "--release", "--out=rel", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ plain, hooked, release }) |r| try testing.expectEqual(@as(u8, 0), r.exit_code);
+    const plain_worker = try w.read("plain/_platform/Worker.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_worker, "beni:mark") == null);
+    try testing.expect(std.mem.indexOf(u8, plain_worker, "/__beni/") == null);
+    const plain_task = try w.read("plain/_core/Task.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_task, "schedulersListed") == null);
+    const hooked_worker = try w.read("hooked/_platform/Worker.mjs");
+    try testing.expect(std.mem.indexOf(u8, hooked_worker, "beni:mark") != null);
+    const hoisted = try w.read("rel/_worker.mjs");
+    try testing.expect(std.mem.indexOf(u8, hoisted, "beni:mark") == null);
+    try testing.expect(std.mem.indexOf(u8, hoisted, "/__beni/") == null);
+}

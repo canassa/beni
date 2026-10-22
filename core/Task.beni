@@ -2215,6 +2215,9 @@ onSchedulerIdle sched f =
 --| How many schedulers the kernel lists: every one made that has not
 --| stopped for good. For a platform's test hook, where a fixture checks
 --| that a request's scheduler leaves the list (`boundary.md` §9.12 (k)).
+--| Public, because a platform's hook is beni that imports `Task`, and a
+--| count that changes nothing is safe for any program to read; a build
+--| that does not call it keeps nothing of it.
 pub schedulersListed : ⊤ → Int
 schedulersListed ⊤ = Js.to (Js.get schedulers "length")
 

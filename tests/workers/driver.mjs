@@ -78,7 +78,9 @@ for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
 // Worker's test hook `/__beni/mark/<n>` and waits for its line, so a
 // step's lines never land under the next, however loaded the host.
 let consoleLines = [];
-let markWaiter = null;
+// The mark each stream waits for: the Worker writes it to both, since one
+// stream's mark says nothing about the other's order.
+const markWaiters = { out: null, err: null };
 const capture = (name, stream) => {
   let rest = "";
   stream.on("data", (chunk) => {
@@ -90,7 +92,8 @@ const capture = (name, stream) => {
       if (/^\s+at /.test(line)) continue;
       const mark = /^beni:mark (\d+)$/.exec(line);
       if (mark !== null) {
-        if (markWaiter !== null && markWaiter.n === Number(mark[1])) markWaiter.resolve();
+        const waiter = markWaiters[name];
+        if (waiter !== null && waiter.n === Number(mark[1])) waiter.resolve();
         continue;
       }
       consoleLines.push(`| ${name}: ${line}`);
@@ -105,12 +108,18 @@ let marks = 0;
 const awaitConsole = async () => {
   marks += 1;
   const n = marks;
-  const arrived = new Promise((resolve) => {
-    markWaiter = { n, resolve };
-  });
+  const arrived = Promise.all(
+    ["out", "err"].map(
+      (name) =>
+        new Promise((resolve) => {
+          markWaiters[name] = { n, resolve };
+        }),
+    ),
+  );
   await mf.dispatchFetch(`${base}/__beni/mark/${n}`);
   await Promise.race([arrived, new Promise((resolve) => setTimeout(resolve, stepLimit))]);
-  markWaiter = null;
+  markWaiters.out = null;
+  markWaiters.err = null;
 };
 
 const mf = new Miniflare({

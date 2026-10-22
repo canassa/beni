@@ -2,7 +2,8 @@
 -- isolate (boundary.md §9.12 (d); transparent-effects-proposal.md §17.5,
 -- `schedulerWith`'s `more`): the drain goes on in a timer of the request's
 -- context after 64 resumptions, so a short request sent while a long one
--- spins answers first.
+-- spins answers first, and sees the long one still running.
+import Ref exposing (Ref)
 import String
 import Task
 import Worker exposing (Context, Request, Response)
@@ -10,6 +11,12 @@ import Worker exposing (Context, Request, Response)
 
 main : Worker.Program
 main = Worker.program { fetch = route, objects = [] }
+
+
+-- What the long request is doing, for the short one to report: the two
+-- share an isolate under Miniflare, the test's device.
+long : Ref String
+long = Ref.make "not started"
 
 
 yields : Int → ⊤
@@ -27,11 +34,17 @@ route ctx request =
         [ "", "spin", count ] →
             case String.toInt count of
                 Just n →
+                    Ref.set long "running"
                     yields n
+                    Ref.set long "ended"
                     Worker.text 200 "spun ${count}"
 
                 Nothing →
                     Worker.text 400 "not a number"
+
+        [ "", "short" ] →
+            yields 10
+            Worker.text 200 "the long request is ${Ref.get long}"
 
         _ →
             Worker.text 404 "no such page"

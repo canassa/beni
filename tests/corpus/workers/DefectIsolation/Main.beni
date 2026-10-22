@@ -4,7 +4,7 @@
 -- that outlives it, reaches the host as an unhandled rejection on the
 -- console, never dropped (rule 9); and each request's scheduler leaves
 -- the kernel's list once nothing of it runs: the test hook
--- `/__beni/schedulers` counts one, its own.
+-- `/__beni/schedulers`, which makes no scheduler of its own, counts none.
 import Duration
 import String
 import Task
@@ -32,9 +32,9 @@ route ctx request =
             Debug.todo "the handler threw"
 
         [ "", "late-throw" ] →
-            _ = Task.spawnDetached λ⊤ →
-                Task.sleep (Duration.millis 5)
-                Debug.todo "the late fiber threw"
+            -- Queued behind this handler's answer: it throws after the
+            -- answer, in the same turn, so the line is this step's.
+            _ = Task.spawnDetached λ⊤ → Debug.todo "the late fiber threw"
             Worker.text 200 "answered before the late throw"
 
         _ →

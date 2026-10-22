@@ -6807,7 +6807,10 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   again from the trampoline's chain, where it is an unhandled rejection the host reports: never
   dropped in silence (*P705-2*, rule 9). The scheduler's continuation after 64 resumptions is a
   timer of zero in the request's context (`schedulerWith`'s `more`, §17.5), so a request that
-  keeps yielding starves no other request of the isolate (*P705-5*). **A Worker's `forward` starts a fresh
+  keeps yielding starves no other request of the isolate (*P705-5*). One path keeps a scheduler
+  listed: a request that never answers — one the host cancels as hung — reaches neither the
+  answer, nor a defect, nor an abort, nor the deadline, which starts after the answer; its
+  scheduler stays in the list with the request's objects (*R2-6*, an edge; #707). **A Worker's `forward` starts a fresh
   chain per call** (`crypto.randomUUID()`), since a Worker parks in no object and so begins no
   cycle; an object's `forward` passes its chain on ((e.3), the object slice). **Two requests do not
   wait on each other through memory** (*measured* under workerd): a request parked on a wait that
