@@ -4690,6 +4690,27 @@ path. Folding merges the annotations at that boundary and creates no new
 array provenance. These marks are cleared before a settled summary is
 published, as the existing data-path marks are.
 
+### *Amended 2026-10-22 (#759):* preserve the folded tree's conditional positions
+
+Amends the construction-evidence rule above, under the existing §20.8–§20.9
+Dict obligation. Inside core Dict, structural paths of the same incoming tree
+name its separate positions conditionally. Their construction guard retains
+the selected position's container condition, including caller annotations.
+It does not instantiate their possible contents as two simultaneously stored
+values: after recursive folding, both alternatives can name the same input
+value without the tree storing that value twice. This applies to a parameter,
+capture or callback result of that same arrival, not to distinct arrivals.
+
+Other construction guards retain asymmetric `sep_root` and its projection
+rule. In particular, inserting a value already stored at another key, placing
+one list in both tuple fields, and aliasing a key with its value remain
+refused. Per-written-path fold conditions and #720's negative twins are
+unchanged. Summary blocks made under the earlier interpretation are invalidated.
+
+The singleton tuple reduction of #759 is accepted again, as are
+SubscriptionTapAppend, DictFoldLeft, DictFoldRight and FoldRight. The separate
+#663 DictFocusGrow limit remains deferred to #294.
+
 ### *Amended 2026-10-14 (markup slots):* rendered data is not an event payload
 
 The platform-declared markup type has two internal opaque slots in the sense

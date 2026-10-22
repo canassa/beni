@@ -1,0 +1,21 @@
+-- Dict's folded-position proof keeps caller-side sharing visible after a
+-- tuple projection: two fields holding one list, or a key holding the value.
+import Dict exposing (Dict)
+
+
+pub sharedFields : ⊤ → Dict Int ((List Int) × List Int)
+sharedFields ⊤ =
+    xs = [ 1 ]
+    d = Dict.insert Dict.empty 1 ( xs, xs )
+    Dict.update d 1 λcurrent →
+        ( kept, taps ) = Maybe.withDefault current ( [], [] )
+        Just ( kept, List.append taps [ 2 ] )
+
+
+pub keyAndValue : ⊤ → Dict (List Int) (Int × List Int)
+keyAndValue ⊤ =
+    xs = [ 1 ]
+    d = Dict.insert Dict.empty xs ( 0, xs )
+    Dict.update d [ 1 ] λcurrent →
+        ( first, taps ) = Maybe.withDefault current ( 0, [] )
+        Just ( first, List.append taps [ 2 ] )

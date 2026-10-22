@@ -7549,7 +7549,7 @@ const Walker = struct {
         for (w.conds.items[k].atoms) |t| {
             if (t.kind == .sep_root) {
                 const pair = try w.sepSpines(t.a, t.b, exact);
-                try acc.add(w, if (pair <= cond_fixed_last) pair else try w.atomCond(t));
+                try acc.add(w, if (pair <= cond_fixed_last) pair else try w.rootSeparation(t.a, t.b));
             } else {
                 try acc.add(w, try w.atomCond(t));
             }
@@ -16429,6 +16429,22 @@ const Walker = struct {
         };
     }
 
+    /// A folded Dict tree's arrival names separate positions under the
+    /// existing trusted no-duplication obligation (§20.8–§20.9). Keep the
+    /// selected position's container requirement: expanding two structural
+    /// paths can name the same incoming value as alternatives, which is not
+    /// a value retained twice. Caller construction guards still establish
+    /// that requirement; distinct arrivals still require separation.
+    fn rootSeparation(w: *Walker, x: u32, y: u32) Allocator.Error!u32 {
+        const a = w.cells.items[x];
+        const b = w.cells.items[y];
+        if (w.inCoreDict() and a.kind == b.kind and a.scope == b.scope and a.a == b.a and a.b == b.b) switch (a.kind) {
+            .param, .env, .cbres => if (try w.o.dictTreePath(a.path) and try w.o.dictTreePath(b.path)) return w.atomCond(.{ .kind = .spine, .a = x }),
+            else => {},
+        };
+        return w.atomCond(.{ .kind = .sep_root, .a = x, .b = y });
+    }
+
     /// The array at x's root versus everything y holds. An unresolved
     /// right operand keeps this asymmetric requirement for its caller.
     fn sepRootValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
@@ -16440,7 +16456,7 @@ const Walker = struct {
             for (other) |f| {
                 if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
                 const k = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
-                try acc.add(w, if (k > cond_fixed_last) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else k);
+                try acc.add(w, if (k > cond_fixed_last) try w.rootSeparation(e.cell, f.cell) else k);
             }
         }
         return w.condAndAll(&acc);
@@ -16455,7 +16471,8 @@ const Walker = struct {
         for (w.conds.items[k].atoms) |t| {
             if (t.kind != .sep_root) continue;
             const selected = (try w.projCell(t.a, step, ty)) orelse continue;
-            try atoms.append(w.a, .{ .kind = .sep_root, .a = selected, .b = t.b });
+            const separation = try w.rootSeparation(selected, t.b);
+            try atoms.appendSlice(w.a, w.conds.items[separation].atoms);
         }
         if (atoms.items.len == 0) return null;
         var guard_cell = w.cells.items[c];
@@ -16504,7 +16521,7 @@ const Walker = struct {
                         last_operand = f;
                         const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
                         if (separation == cond_yes) continue;
-                        try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
+                        try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, f.cell) else separation);
                     }
                     break :blk Comparison{ .cell = e.cell, .approx = e.approx, .condition = try w.condAndAll(&acc), .cause = approximate };
                 };
@@ -16561,7 +16578,7 @@ const Walker = struct {
                     if (e.path != f.path and try w.nested(e, f)) continue;
                     const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
                     if (separation == cond_yes) continue;
-                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
+                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, f.cell) else separation);
                 }
             }
             const k = try w.condAndAll(&acc);
