@@ -74,6 +74,76 @@ handle request =
 - Build with `beni build --platform=cloudflare --out=out Main.beni` and point `wrangler.jsonc`'s
   `main` at `out/_worker.mjs`. The entry file exports the Durable Object classes the app's
   `beni.json` lists under `"exports"`.
+- A Durable Object is `Worker.Object.define name schema restore handlers`, listed in `objects`
+  and in `beni.json`'s `"exports"`. `schema` is the object's protocol, the type of the messages
+  it receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler
+  of `Handlers` takes the state and returns the next one; `Object.none` has a handler for each
+  kind that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the
+  Worker), `received` (a message), `alarm`, `tick`/`ticked` (a timer the state names), and the
+  WebSocket handlers.
+- Reach an object with `Worker.objects (Worker.env ctx) "NAME" schema`, then `Worker.byName`,
+  `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
+  ref message` sends a message and waits for nothing. `Object.ask ref schema (λreply → message)`
+  sends a message with a `Reply` and waits for `Object.reply reply value`; a cycle between
+  objects is `Err Cycle`, a message that does not parse is `Err Unreadable`, and a `Reply` that
+  no one can answer is `Err NoReply`. `Object.self ctx` is the object's own ref; inside an
+  object, `Object.env ctx` holds the bindings.
+- `Worker.Storage.get ctx schema key`, `put`, `delete` and `keys ctx prefix` are the object's
+  key-value store, through schemas. A `put` over 2 000 000 bytes is `Err TooLarge`.
+- A defect in a handler stops the object: its fibers are cancelled, their `Task.bracket`
+  releases run, the request in flight fails, and the next event starts a new instance.
+
+```beni platform=cloudflare
+import Schema
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+import Worker.Storage as Storage
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ counter ] }
+
+
+type alias State =
+    count : Int
+
+
+counter : Worker.Definition
+counter = Object.define "Counter" Schema.int restore { Object.none | request = serve }
+
+
+restore : Object.Context Int → State
+restore ctx =
+    case Storage.get ctx Schema.int "count" of
+        Ok (Just count) →
+            { count = count }
+
+        _ →
+            { count = 0 }
+
+
+serve : Object.Context Int, State, Request → State × Response
+serve ctx state request =
+    next = { state | count = state.count + 1 }
+    _ = Storage.put ctx Schema.int "count" next.count
+    ( next, Worker.text 200 (String.fromInt next.count) )
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.objects (Worker.env ctx) "COUNTERS" Schema.int of
+        Just counters →
+            case Worker.forward (Worker.byName counters "main") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the counter is not available"
+
+        Nothing →
+            Worker.text 500 "COUNTERS is not declared"
+```
 
 ```beni platform=cloudflare
 import Worker exposing (Context, Request, Response)

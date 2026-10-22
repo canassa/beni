@@ -1,0 +1,38 @@
+--! The server WebSocket of a Durable Object (`docs/design/boundary.md`
+--! §9.11's shared handle operations, §9.12 (g)), with hibernation. This
+--! slice declares the types an object's handlers take; the operations —
+--! `write`, `close`, `id`, `tags`, the attachment — come with the socket
+--! slice.
+
+import Js
+import List
+
+
+--| An accepted socket: the host's object, the same across one life of the
+--| object.
+pub foreign type Socket
+
+
+--| How a socket closed: the peer's code and reason, or 1006 and `""` for
+--| an end with no close frame (§9.11 (a)).
+pub type alias Close =
+    code : Int
+    reason : String
+
+
+--| Two sockets are the same host object.
+pub eq : Socket, Socket → Bool
+eq a b = Js.same (Js.from a) (Js.from b)
+
+
+-- The host's close event as a `Close` (§9.12 (g)).
+pub closeOf : Js.Value, Js.Value → Close
+closeOf code reason = { code = Js.to code, reason = Js.to reason }
+
+
+-- The host's socket array as a list.
+pub socketsOf : Js.Value → List Socket
+socketsOf array =
+    acc = Js.ref []
+    Js.each array λws → Js.write acc (List.push (Js.read acc) (Js.to ws))
+    Js.read acc
