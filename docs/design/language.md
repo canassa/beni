@@ -1390,6 +1390,8 @@ are:
 
 | Signature | Meaning |
 |---|---|
+| `Dict.empty : ⊤ → Dict k v` | an ordinary function; each `Dict.empty ⊤` builds fresh empty storage |
+| `Set.empty : ⊤ → Set t` | an ordinary function; each `Set.empty ⊤` builds fresh empty storage |
 | `Dict.copy : Dict k v → Dict k v` | fresh storage, same order and values; shallow, as `List.copy` |
 | `Dict.sortBy : Dict k v, (k, v → a) → Dict k v where a.compare : a, a → Order` | stable ascending sort by the callback result; evaluate it once per entry, in current order |
 | `Dict.swap : Dict k v, k, k → Dict k v` | exchange the positions of two keys; if either is absent, or the keys are equal, leave it unchanged |
