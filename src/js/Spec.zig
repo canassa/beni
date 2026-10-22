@@ -508,6 +508,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     var s: Spec = try .init(gpa, arena, in);
     s.pts = .init(&s);
     defer s.pts.deinit();
+    // The structural passes first, with no facts (`backend.md` §9, *Where it
+    // runs*, amended 2026-10-22): what they write in, the one solve sees.
+    try s.structureFirst();
     try s.rounds();
     // Slices 5, 7 and 8, once the facts are spent: what is called from one
     // place, and a small function wherever it is called, is written there;
@@ -1705,9 +1708,74 @@ const Spec = struct {
 
     // ---- The analysis --------------------------------------------------------
 
+    /// `backend.md` §9, *Where it runs*, amended 2026-10-22 (#781): the
+    /// structural passes once before the first solve, on a program no fact
+    /// has read yet — small functions (calls of a name only: no fact 3
+    /// resolves a callee), functions called once, constructor folding,
+    /// scalar replacement and the `tidy` list modes. Every fact they ask
+    /// answers as for a value nothing is known of: `Mod.memo` is ⊤ and fact
+    /// 3 has not solved (`pts.ok` is false). A whole-program name is
+    /// assigned when any `assign_stmt` of the program, live or not, names
+    /// it, which is what the solve would conclude or more. What they write
+    /// in, the first solve sees in its own context, so a program the passes
+    /// after it find nothing more in is solved once.
+    fn structureFirst(s: *Spec) Allocator.Error!void {
+        if (s.in.fresh == .none) return;
+        try s.declTable();
+        for (s.mods) |*m| {
+            const ir = m.ir;
+            for (0..ir.nodes.len) |i| {
+                const node: Index = @fromBackingInt(@intCast(i));
+                if (ir.tag(node) != .assign_stmt) continue;
+                const target: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                if (ir.tag(target) != .ident) continue;
+                if (m.globalOf(@fromBackingInt(@intCast(ir.data(target).lhs)))) |g| s.assigned[g] = true;
+            }
+        }
+        var changed = try s.inlineSmall();
+        if (try s.inlineOnce()) changed = true;
+        if (try s.constructors()) changed = true;
+        if (try s.scalarReplace()) changed = true;
+        s.list_mode = .tidy;
+        if (try s.eachFunctionList()) changed = true;
+        if (changed) {
+            _ = try s.prune();
+            try s.grow();
+        }
+    }
+
     /// Facts 1 and 2 to their fixpoint. False when the fixpoint was not
     /// reached, and the round must rewrite nothing.
     fn analyse(s: *Spec) Allocator.Error!bool {
+        try s.declTable();
+        // Fact 3 first: a read it proves `undefined` folds like a literal.
+        s.stats.solves += 1;
+        if (s.fact3Kept()) {
+            s.stats.points_to_reused += 1;
+            try s.applyKeptDrops();
+            if (std.debug.runtime_safety) {
+                var nodes: usize = 0;
+                for (s.mods) |*m| nodes += m.ir.nodes.len;
+                if (nodes <= Pts.max_checked_nodes) try s.pts.checkKept();
+            }
+        } else {
+            try s.pts.analyse();
+            try s.keepFact3();
+        }
+        // What follows is of this analysis alone, so it lives where the
+        // fixpoint does, emptied by the next solve (`Pts.tmp`).
+        s.spread_sites = try s.pts.run().alloc(bool, s.pts.sites.items.len);
+        @memset(s.spread_sites, false);
+        // Facts 1, 2, 4 and 5 by the combined solver (`backend.md` §9, *The
+        // combined solver*, slice 4), which has no sweep to run out of.
+        try s.solve();
+        return true;
+    }
+
+    /// Every top-level declaration by its whole-program name, every
+    /// top-level statement in order (which the sweeps walk), and the names
+    /// the roots and a second declaration make escaped and assigned.
+    fn declTable(s: *Spec) Allocator.Error!void {
         @memset(s.decl, null);
         @memset(s.escaped, false);
         @memset(s.assigned, false);
@@ -1758,28 +1826,6 @@ const Spec = struct {
                 s.decl[g] = decl;
             }
         }
-        // Fact 3 first: a read it proves `undefined` folds like a literal.
-        s.stats.solves += 1;
-        if (s.fact3Kept()) {
-            s.stats.points_to_reused += 1;
-            try s.applyKeptDrops();
-            if (std.debug.runtime_safety) {
-                var nodes: usize = 0;
-                for (s.mods) |*m| nodes += m.ir.nodes.len;
-                if (nodes <= Pts.max_checked_nodes) try s.pts.checkKept();
-            }
-        } else {
-            try s.pts.analyse();
-            try s.keepFact3();
-        }
-        // What follows is of this analysis alone, so it lives where the
-        // fixpoint does, emptied by the next solve (`Pts.tmp`).
-        s.spread_sites = try s.pts.run().alloc(bool, s.pts.sites.items.len);
-        @memset(s.spread_sites, false);
-        // Facts 1, 2, 4 and 5 by the combined solver (`backend.md` §9, *The
-        // combined solver*, slice 4), which has no sweep to run out of.
-        try s.solve();
-        return true;
     }
 
     /// Whether `pts` is still the solve of the program as it stands (#575):

@@ -5955,8 +5955,10 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     // rounds that asked the facts again of a program fact 3 had not seen
     // change are gone with them, so no solve keeps the state here; the
     // pass loop's solves still may (`fact3Kept`). Every solve solved.
+    // Since the structural passes run before the first solve (#781), the
+    // pass after it finds nothing in this program, and it solves once.
     try testing.expectEqual(@as(?u64, 0), reused);
-    try testing.expect(analyses.? >= 2);
+    try testing.expectEqual(@as(?u64, 1), analyses);
     try testing.expect(runs.? >= analyses.? - reused.?);
 }
 
@@ -6688,11 +6690,12 @@ test "the release specialiser writes every independent function called once in o
     try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
-    // The length setter takes a second pass (slice 6, #676: the `iife`
-    // and `self_assign` sweeps are in the pass loop), with its solve and its
-    // two counts; then the count of the pass that found nothing to do.
-    try testing.expectEqual(@as(u64, 2), c.spec_passes);
-    try testing.expectEqual(@as(u64, 3), c.spec_solves);
+    // Since #781 the 260 are written before the first solve. The length
+    // setter waits for the liveness read-off, so it takes the pass after
+    // that solve, with a solve of its own and its two counts; then the
+    // count of the pass that found nothing to do.
+    try testing.expectEqual(@as(u64, 1), c.spec_passes);
+    try testing.expectEqual(@as(u64, 2), c.spec_solves);
     try testing.expectEqual(@as(u64, 5), c.spec_inline_scans);
 }
 
@@ -6774,7 +6777,9 @@ test "the release specialiser leaves a function whose call a write just copied f
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u64, 1), c.spec_inline_waits);
-    try testing.expectEqual(@as(u64, 2), c.spec_passes);
+    // Since #781 the first pass runs before the first solve, so `h`'s
+    // pass is the one pass after it.
+    try testing.expectEqual(@as(u64, 1), c.spec_passes);
     // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
     // slice 6 (#676) core `List`'s length setter, written into the loop
     // that calls it (647 → 631 bytes).
@@ -6910,10 +6915,11 @@ test "the release specialiser folds a run of bindings before a return in one str
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u64, 1), c.spec_passes);
+    // Since #781 the structural passes run before the first solve, and
+    // take all five there: the pass after the solve finds nothing.
+    try testing.expectEqual(@as(u64, 0), c.spec_passes);
     try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
-    // The one before the loop, and the one after its pass.
-    try testing.expectEqual(@as(u64, 2), c.spec_solves);
+    try testing.expectEqual(@as(u64, 1), c.spec_solves);
 }
 
 test "the release specialiser still folds in a second pass what the first pass's scalar replacement made" {
@@ -6960,9 +6966,11 @@ test "the release specialiser still folds in a second pass what the first pass's
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u64, 2), c.spec_passes);
+    // Since #781 the first pass runs before the first solve: the fold is
+    // the one pass after it.
+    try testing.expectEqual(@as(u64, 1), c.spec_passes);
     try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
-    try testing.expectEqual(@as(u64, 3), c.spec_solves);
+    try testing.expectEqual(@as(u64, 2), c.spec_solves);
     const js = try w.read("out/_main.mjs");
     try testing.expect(std.mem.indexOf(u8, js, "return a*2*b") != null);
 }
