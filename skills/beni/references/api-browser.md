@@ -51,24 +51,24 @@ module Browser.Navigation
     CrossOrigin
     Throttled
   opaque type Key
-  value back : Key, Int, (Error → msg) → Cmd msg
+  value back : Key, Int, (Error → msg) → Cmd msg  -- impure
   value currentUrl : ⊤ → Maybe Url  -- impure
   value eachUrlChange : (Url → ⊤) → ⊤  -- suspends
   value eachUrlRequest : (UrlRequest → ⊤) → ⊤  -- suspends
-  value forward : Key, Int, (Error → msg) → Cmd msg
+  value forward : Key, Int, (Error → msg) → Cmd msg  -- impure
   value goBack : Key, Int → Result Error ⊤  -- impure
   value goForward : Key, Int → Result Error ⊤  -- impure
   value key : ⊤ → Key
-  value load : String, (Error → msg) → Cmd msg
+  value load : String, (Error → msg) → Cmd msg  -- impure
   value loadPage : String → Result Error ⊤  -- impure
   value onUrlChange : (Url → msg) → Sub msg  -- impure
   value onUrlRequest : (UrlRequest → msg) → Sub msg  -- impure
   value push : Key, String → Result Error ⊤  -- impure
-  value pushUrl : Key, String, (Error → msg) → Cmd msg
+  value pushUrl : Key, String, (Error → msg) → Cmd msg  -- impure
   value reload : Cmd msg
   value reloadPage : ⊤ → ⊤  -- impure
   value replace : Key, String → Result Error ⊤  -- impure
-  value replaceUrl : Key, String, (Error → msg) → Cmd msg
+  value replaceUrl : Key, String, (Error → msg) → Cmd msg  -- impure
 module Cmd
   type Cmd a
     Cmd
@@ -90,14 +90,14 @@ module Cmd
   value batch : List (Cmd msg) → Cmd msg
   value cancel : k → Cmd msg where k.compare : k, k → Order
   value cancelAll : Cmd msg
-  value do : (⊤ → ⊤) → Cmd msg
+  value do : (⊤ → ⊤) → Cmd msg  -- impure
   value items : Cmd msg → List (Item msg)
-  value keyed : k, Policy, (Send msg → ⊤) → Cmd msg where k.compare : k, k → Order
-  value log : Level, String → Cmd msg
+  value keyed : k, Policy, (Send msg → ⊤) → Cmd msg where k.compare : k, k → Order  -- impure
+  value log : Level, String → Cmd msg  -- impure
   value map : Cmd a, k, (a → msg) → Cmd msg where k.compare : k, k → Order  -- impure
   value none : Cmd msg
-  value perform : (Send msg → ⊤) → Cmd msg
-  value task : (⊤ → a), (a → msg) → Cmd msg
+  value perform : (Send msg → ⊤) → Cmd msg  -- impure
+  value task : (⊤ → a), (a → msg) → Cmd msg  -- impure
 module Dom
   alias Box
     Box
@@ -133,7 +133,7 @@ module Hosted
   value fibered : ⊤ → Bool  -- impure
   value hear : Relay msg → ⊤  -- impure
   value hook : ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Tap msg  -- impure
-  value job : (Send msg → ⊤) → Job msg
+  value job : (Send msg → ⊤) → Job msg  -- impure
   value key : k → Key where k.compare : k, k → Order
   value later : (Send msg → ⊤) → Later msg  -- impure
   value mapJob : Job a, (a → b) → Job b
@@ -195,8 +195,8 @@ module Http
   value post : { body : Body, expect : Expect x a, url : String } → Result x a  -- suspends
   value request : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe (Progress → ⊤), url : String } → Result x a  -- suspends
   value riskyRequest : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe (Progress → ⊤), url : String } → Result x a  -- suspends
-  value riskySend : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg
-  value send : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg
+  value riskySend : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg  -- impure
+  value send : { body : Body, expect : Expect x a, headers : List Header, method : String, timeout : Maybe Duration, tracker : Maybe String, url : String }, (Result x a → msg) → Cmd msg  -- impure
   value stringBody : String, String → Body
   value stringPart : String, String → Part
   value track : String, (Progress → msg) → Sub msg  -- impure
@@ -210,7 +210,7 @@ module Random
   value andThen : (Generator a), (a → Generator b) → Generator b
   value constant : a → Generator a
   value float : Float, Float → Generator Float
-  value generate : Generator a, (a → msg) → Cmd msg
+  value generate : Generator a, (a → msg) → Cmd msg  -- impure
   value independentSeed : Generator Seed
   value initialSeed : Int → Seed
   value int : Int, Int → Generator Int
@@ -276,7 +276,7 @@ module Storage
   value get : Area, String → Maybe String  -- impure
   value keys : Area → List String  -- impure
   value remove : Area, String → ⊤  -- impure
-  value save : Area, String, String, (Error → msg) → Cmd msg
+  value save : Area, String, String, (Error → msg) → Cmd msg  -- impure
   value set : Area, String, String → Result Error ⊤  -- impure
 module Sub
   type Sub a
@@ -322,11 +322,11 @@ module WebSocket
   value buffered : Socket → Int  -- impure
   value close : Socket, Close → Result CloseError ⊤  -- impure
   value connect : String, List String, (Socket → a) → Result ConnectError a  -- suspends
-  value disconnect : Socket, Close, (CloseError → msg) → Cmd msg
+  value disconnect : Socket, Close, (CloseError → msg) → Cmd msg  -- impure
   value eq : Socket, Socket → Bool
   value listen : String, List String, (Event → msg) → Sub msg  -- impure
   value protocol : Socket → String  -- impure
   value read : Socket → Result Close String  -- suspends
-  value send : Socket, String, (WriteError → msg) → Cmd msg
+  value send : Socket, String, (WriteError → msg) → Cmd msg  -- impure
   value write : Socket, String → Result WriteError ⊤  -- impure
 ```

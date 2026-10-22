@@ -189,7 +189,8 @@ The Elm Architecture over `browser`, in beni.
   `onUrlRequest`).
 
 **Commands.** A `Cmd msg` is data: it names work and does none. The work is a **body**, a function
-given `send : msg → ⊤`. A body can wait; it runs in a fiber of the program's scope.
+given `send : msg → ⊤`. A body can wait; it runs in a fiber of the program's scope. It has the log
+context of the `update` arm that made the command (`Log.annotate`, `span`, `minimum`, `withSink`).
 
 | Command | Does |
 |---|---|
@@ -199,7 +200,7 @@ given `send : msg → ⊤`. A body can wait; it runs in a fiber of the program's
 | `Cmd.keyed key policy λsend → …` | a body under a key; `Cmd.Restart` cancels the running one, `Cmd.Queue` waits for it, `Cmd.Ignore` drops the new one, `Cmd.Concurrent` runs both |
 | `Cmd.cancel key`, `Cmd.cancelAll` | stops keyed work |
 | `Cmd.afterRender λsend → …` | runs after the page is patched: focus, measure, scroll |
-| `Cmd.log level line` | writes `line` with core's `Log` at `level`, with no annotation of `update`'s |
+| `Cmd.log level line` | writes `line` with core's `Log` at `level`, with the log context of the `update` arm |
 | `Cmd.map cmd key Wrap` | a child's commands under a parent's message |
 
 **Subscriptions.** `subscriptions model` returns the set that must be live. After each message
