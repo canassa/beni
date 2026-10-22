@@ -7575,6 +7575,17 @@ functions, functions called once, scalar replacement, then the facts — repeat 
 while one finds something. A name a copied body adds to a module is a property name the session's
 pool already numbered (`Pts.propId` finds it in the module it came from).
 
+*Amended 2026-10-22 (issue #781): the projection.* A read `p.k` in the body, where `p`'s argument
+is an object literal that does nothing when made (`inert`) and holds `k` once among plain keys,
+is written as the value of `k`. Keys are compared by property id (`Pts.propId`), because a key
+JavaScript can see and a beni field may be different names with one id. The literal goes with
+the rest of its values, which do nothing. Nothing can see the object between its making and the
+read, so the read is that value. A key the literal lacks stays a read, since it reads the
+prototype. Before, the facts asked after the pass did this as a chain (`{ k: v }.k` is `v`).
+Since the passes also run before the first solve (*Where it runs*, amended 2026-10-22), a program
+whose later passes find nothing is solved before such a read exists, so the copy does it itself.
+`emit/release/app/ProjectLiteralField` pins it. There, `{ step: z => z + 1 }.step(1)` is `2`.
+
 *Amended 2026-10-03.* Once the passes are done, **`x = x`** — a name read and written back, the
 model the render loop's `update` leaves as `d = d` — goes from every list (the printer wrote it
 as nothing, but it still counted as a use and an assignment, so the binding it named stayed); and
