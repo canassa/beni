@@ -603,6 +603,7 @@ module Task
   value never : ⊤ → a  -- suspends
   value onDefect : (⊤ → ⊤) → ⊤  -- impure
   value onExit : (⊤ → a), (Exit a → ⊤) → a  -- impure
+  value onSchedulerIdle : Scheduler, (⊤ → ⊤) → ⊤  -- impure
   value onShutdown : (⊤ → ⊤) → ⊤  -- impure
   value onTurn : ((⊤ → ⊤) → ⊤) → ⊤  -- impure
   value openRoot : ⊤ → Scope  -- impure
@@ -620,6 +621,7 @@ module Task
   value retry : (Schedule e), (⊤ → Result e a) → Result e a  -- suspends
   value running : Fiber a → Bool  -- impure
   value scheduler : (⊤ → ⊤) → Scheduler  -- impure
+  value schedulerBusy : Scheduler → Bool  -- impure
   value schedulerWith : ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
   value scope : (Scope → a) → a  -- suspends
   value shutdown : Int, (Int → ⊤) → ⊤  -- impure
