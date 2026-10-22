@@ -92,7 +92,8 @@ pub const magic = "BENIOWN\x00";
 /// 22 retains recursive function slots and returned classes, including unknown alternatives.
 /// 23 carries projection-aware container conditions and their sep_root atom (#720).
 /// 24 invalidates rows before declaration-selected hosted entry protocols (#750).
-pub const version: u32 = 24;
+/// 25 preserves conditional container facts for folded Dict tree positions.
+pub const version: u32 = 25;
 
 pub const Error = error{Bad} || Allocator.Error;
 

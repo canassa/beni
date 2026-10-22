@@ -134,5 +134,3 @@ tests/pending/ownership/RecordForItem.beni exit=0 browser-inline.ownership-diffe
 # #419 (CK-264): a split element stored back into its own list is taken
 # as apart from it, for records as for lists. Golden: the verdict with the fix.
 tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
-# CK-266 (#759): one fresh dictionary tuple payload loses exclusivity at focus.
-tests/pending/ownership/DictTupleFocus.beni exit=0 node+everywhere.ownership-differs

@@ -6276,3 +6276,13 @@ fresh key and no retained version or capturing callback. This is outside the
 owner's narrow DictFocus.grow/readLater exception in #663, so #210 stops for
 the reduced safe-program regression. The original accepted golden stays red;
 no copying workaround, weakened condition or representation exception fixes it.
+
+**As built (2026-10-22, #761).** Bisection from the #731 compiler to master
+identifies c65cc73ec (#737), with its parent accepted. Construction guards on
+structural positions of one incoming Dict tree now retain the selected
+container condition under the existing native tree obligation. They no longer
+turn folded alternatives into a reflexive alias requirement. The red fixture
+is promoted to `tests/corpus/ownership/DictTupleFocus.beni`;
+`DictTupleFocusSharing` keeps tuple-field and key/value sharing refused.
+The four browser regressions are recovered, and all earlier ownership verdicts,
+including #720's twins and the #663 deferred refusal, are unchanged.
