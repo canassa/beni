@@ -1514,3 +1514,85 @@ test "full-type casts keep distinct nested nonrecursive constructor places" {
     try testing.expect(std.mem.indexOf(u8, r.stdout, "#Just.0#Just.0") != null);
     try testing.expect(std.mem.indexOf(u8, r.stdout, "accepted param") != null);
 }
+
+test "growing full cast types settle on the composed path" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Js
+        \\
+        \\pub build : Int, a → Js.Value
+        \\build n xs =
+        \\    if n == 0 then
+        \\        Js.from [ xs ]
+        \\    else
+        \\        build (n - 1) [ xs ]
+        \\
+        \\pub record : Int, a → Js.Value
+        \\record n value =
+        \\    if n == 0 then
+        \\        Js.from [ value ]
+        \\    else
+        \\        record (n - 1) { item = value }
+        \\
+        \\pub cps : Int, a, (Js.Value → Int) → Int
+        \\cps n value k =
+        \\    if n == 0 then
+        \\        k (Js.from [ value ])
+        \\    else
+        \\        cps (n - 1) { item = value } k
+        \\
+        \\flatten : a, List (List a) → List a
+        \\flatten _ xs = List.concat xs
+        \\
+        \\pub provenance : Int, a, Js.Value → Js.Value
+        \\provenance n x value =
+        \\    if n == 0 then
+        \\        Js.from (flatten x (Js.to value))
+        \\    else
+        \\        provenance (n - 1) [ x ] value
+        \\
+        \\pub thunk : Int, a → (⊤ → Js.Value)
+        \\thunk n xs =
+        \\    if n == 0 then
+        \\        λ⊤ → Js.from [ xs ]
+        \\    else
+        \\        thunk (n - 1) [ xs ]
+        \\
+        \\pub localBuilder : List Int → List (List Int) × List Int
+        \\localBuilder xs =
+        \\    pack : a → Js.Value
+        \\    pack v = Js.from [ v ]
+        \\    decoded : List (List Int)
+        \\    decoded = Js.to (pack xs)
+        \\    ( List.push decoded [], xs )
+        \\
+        \\pub callbackBuilder : List Int → List (List Int) × List Int
+        \\callbackBuilder xs =
+        \\    pack : a → Js.Value
+        \\    pack v = Js.from [ v ]
+        \\    encoded = List.map [ xs ] pack
+        \\    case encoded of
+        \\        [ value ] →
+        \\            decoded : List (List Int)
+        \\            decoded = Js.to value
+        \\            ( List.push decoded [], xs )
+        \\        _ → ( [], xs )
+        \\
+        \\
+        \\applySlot : { f : a → Js.Value }, a → Js.Value
+        \\applySlot rec value = rec.f value
+        \\
+        \\pub slotBuilder : List Int → List (List Int) × List Int
+        \\slotBuilder xs =
+        \\    pack : a → Js.Value
+        \\    pack v = Js.from [ v ]
+        \\    decoded : List (List Int)
+        \\    decoded = Js.to (applySlot { f = pack } xs)
+        \\    ( List.push decoded [], xs )
+        \\
+    );
+    const checked = try w.run(&.{ "check", "--core", "--ownership-everywhere", "--platform=node", "--no-cache", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}
