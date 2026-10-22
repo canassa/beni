@@ -5750,6 +5750,8 @@ const except_all: u32 = std.math.maxInt(u32);
 
 const Cell = struct {
     kind: CellKind,
+    /// The frame whose function parameter a callback result names.
+    scope: u32 = 0,
     /// site/result: the instruction; param: the parameter pattern
     /// instruction; env: the captured local; shared: the module; closure:
     /// its index; func: the module; cbres: the function parameter's index;
@@ -6133,6 +6135,7 @@ const FnState = struct {
 
 /// A supply to a function parameter, read off once its probe is resolved.
 const SupplyRec = struct {
+    frame: u32 = 0,
     fun: u32,
     k: u32,
     path: u32,
@@ -6235,7 +6238,7 @@ const Walker = struct {
 
     point: u32 = 0,
     cells: std.ArrayList(Cell) = .empty,
-    cell_map: std.HashMapUnmanaged([4]u32, u32, WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
+    cell_map: std.HashMapUnmanaged([5]u32, u32, WordsKey(5), std.hash_map.default_max_load_percentage) = .empty,
     /// §20.4, amended 2026-10-16 (#229): a lambda a callee's result carries
     /// is one closure per place it is made — the call, the callee's summary,
     /// the lambda, the callback depth and the entry's namespace — whatever
@@ -6481,7 +6484,7 @@ const Walker = struct {
         // `nonlist` is in the key: a record object a definition names on
         // purpose (a top-level record's, `Record.copy`'s) is never the cell
         // a summary's result made at the same place, whichever comes first.
-        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9) | (@as(u32, @intFromBool(c.condition_only)) << 10), c.a, c.b, c.path };
+        const key: [5]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9) | (@as(u32, @intFromBool(c.condition_only)) << 10), c.a, c.b, c.path, c.scope };
         const gop = try w.cell_map.getOrPut(w.a, key);
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(w.cells.items.len);
@@ -6524,7 +6527,7 @@ const Walker = struct {
                 // pattern's variable binds the cell at its path with its own.
                 var up = w.o.paths.parent.items[c.path];
                 while (true) {
-                    const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, up };
+                    const key: [5]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, up, c.scope };
                     if (w.cell_map.get(key)) |id| {
                         if (w.cells.items[id].nonlist) return true;
                         if (w.cells.items[id].ty.unwrap()) |t| {
@@ -8620,7 +8623,7 @@ const Walker = struct {
         const x = w.cells.items[c];
         return switch (x.kind) {
             .param => if (x.b == 0) frame == 0 else if (w.lambdaParam(x)) |lp| w.closures.items[lp[0]].frame == frame else false,
-            .cbres => frame == 0,
+            .cbres => frame == w.callbackFrame(x),
             .env => frame != 0,
             .taken => w.atomCellIn(x.a, frame),
             .except => x.b != except_all and w.atomCellIn(x.a, frame),
@@ -8691,7 +8694,7 @@ const Walker = struct {
         const x = w.cells.items[c];
         return switch (x.kind) {
             .param => if (w.paramIndex(x, frame, params)) |i| .{ .kind = .param, .a = i, .path = x.path } else null,
-            .cbres => if (frame == 0) .{ .kind = .cb, .a = x.a, .path = x.path } else null,
+            .cbres => if (frame == w.callbackFrame(x)) .{ .kind = .cb, .a = x.a, .path = x.path } else null,
             .env => if (frame != 0) .{ .kind = .env, .a = x.a, .path = x.path } else null,
             .taken, .except => if (try w.takenBase(c) == c) null else w.atomProv(try w.takenBase(c), frame, params),
             .site, .result, .shared, .top, .closure, .func, .payload => null,
@@ -11068,6 +11071,14 @@ const Walker = struct {
             if (w.frameClosure(w.frame)) |ci| return w.envCall(inst, ci, j, args, callee);
             w.fn_state.items[j].seen = false;
         }
+        // A lambda's own function parameter. Its result stays symbolic in
+        // this body and is followed through the consumer's supplies.
+        if (f.len == 1 and f[0].path == eps) {
+            const c = w.cells.items[f[0].cell];
+            if (c.kind == .param and c.b == 1 and c.path == eps and !w.isSend(c)) if (w.lambdaParam(c)) |lp| {
+                if (w.closures.items[lp[0]].frame == w.frame) return w.lambdaCallbackCall(inst, lp[1], args, callee);
+            };
+        }
         const classes = try w.classesOf(f);
         if (classes.len == 1) {
             switch (classes[0]) {
@@ -12279,6 +12290,29 @@ const Walker = struct {
         return w.single(.{ .kind = .cbres, .a = j, .b = inst.int(), .ty = w.instTypeOpt(inst) });
     }
 
+    /// Keep a lambda parameter's result and borrowed argument supplies.
+    fn lambdaCallbackCall(w: *Walker, inst: Inst.Index, j: u32, args: []const Inst.Index, callee: CalleeRef) Allocator.Error!AV {
+        const avs = try w.evalOperands(args, true);
+        w.popPending(avs.len);
+        w.point += 1;
+        const tok = w.token(inst);
+        for (args) |x| try w.useOperand(x, tok, &.{});
+        try w.useCallee(callee, tok);
+        try w.useTemporaries(args, avs, tok);
+        for (avs) |av| try w.sight(av, .{ .pending = "it is passed to a function parameter, whose class is not known here" }, tok);
+        w.cb_args[inst.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
+        for (avs, 0..) |av, k| {
+            if (av.len == 0) continue;
+            try w.supplies.append(w.a, .{ .frame = w.frame, .fun = j, .owned = false, .approx = true, .k = @intCast(k), .path = eps, .av = av, .probe = none, .cond = try w.deepCond(av), .rcond = try w.rdeepCond(av), .rprobe = none });
+        }
+        if (!try w.isTracked(inst)) return &.{};
+        return w.single(.{ .kind = .cbres, .a = j, .b = inst.int(), .scope = w.frame, .ty = w.instTypeOpt(inst) });
+    }
+
+    fn callbackFrame(_: *const Walker, c: Cell) u32 {
+        return c.scope;
+    }
+
     /// The closure whose body frame `frame` is.
     fn frameClosure(w: *const Walker, frame: u32) ?u32 {
         if (frame == 0) return null;
@@ -13287,7 +13321,14 @@ const Walker = struct {
         // The declaration's own function parameter or slot: what it returns,
         // in a lambda too, where the read-off names it `cb` of the enclosing
         // declaration (§18.9, §30.9).
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
+            // A lambda's own function parameter is called many times and
+            // its calls are not otherwise seen by the declaration.
+            if (ctx.effects) if (ctx.s.funOf(j)) |facts| if (facts.calls == .many and !facts.seen) {
+                try w.passOn(ctx.inst, ctx.s, ctx.avs, j, facts, jj);
+            };
+            return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
+        }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.unknownCb(j, ctx);
         if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
@@ -15399,7 +15440,14 @@ const Walker = struct {
                 },
                 // §30.9: a carried lambda's call of a function the caller
                 // passed, judged by what it returns at this call.
-                .cb => if (r.prov.b != 1 or !try w.carriedCallOwned(r.prov, ictx)) return false,
+                .cb => if (r.prov.b == 1) {
+                    if (!try w.carriedCallOwned(r.prov, ictx)) return false;
+                } else {
+                    const supplied = try w.a.alloc(AV, c.params);
+                    for (supplied, 0..) |*arg, k| arg.* = try w.suppliedParam(@intCast(k), .{ .s = s, .j = j, .ictx = ictx });
+                    const inner: InstCtx = .{ .inst = ictx.inst, .s = c, .avs = supplied, .closure = w.ro_closure, .depth = ictx.depth + 1 };
+                    if (!try w.provOwned(r.prov, c, supplied, inner, none, depth, none)) return false;
+                },
                 else => return false,
             }
             // One provenance at two distinct result paths is not owned.
@@ -15731,7 +15779,7 @@ const Walker = struct {
             .param, .result, .env, .shared, .cbres, .taken, .payload => {},
             .site, .top, .closure, .func, .except => return null,
         }
-        if (o.kind != i.kind or o.a != i.a or o.b != i.b) return null;
+        if (o.kind != i.kind or o.a != i.a or o.b != i.b or o.scope != i.scope) return null;
         // One place named twice (a definition's made cell, and the same value
         // through another's summary) is one cell.
         if (o.path == i.path) return .{ .rest = eps };
@@ -15928,7 +15976,11 @@ const Walker = struct {
                     cause = .captured_edit;
                     detail = try std.fmt.allocPrint(out, "{s} is captured, and how often the closure runs is not known", .{w.localName(c.a)});
                 },
-                .site, .param, .result, .closure, .func, .cbres, .taken, .except => {},
+                .cbres => if (w.callbackFrame(c) != 0) {
+                    cause = .unknown;
+                    detail = "it came from a call of a function the checker cannot identify, which may return a list something else holds";
+                },
+                .site, .param, .result, .closure, .func, .taken, .except => {},
             }
             // A real escape names itself before §18.6's conservative one.
             var esc = if (spec.fields != null) try w.escapeBeforeOf(e.cell, true) else try w.escapeBefore(e.cell);
@@ -16849,7 +16901,7 @@ const Walker = struct {
             // crossed before §31.2), a use of a record's object alone — is
             // `bit_q`, the record demand's R, which no list's fact reads.
             var rec_use = u.record_read;
-            if (u.via != none) if (w.cell_map.get(.{ @backingInt(CellKind.env), u.local, 0, u.path })) |ec| {
+            if (u.via != none) if (w.cell_map.get(.{ @backingInt(CellKind.env), u.local, 0, u.path, 0 })) |ec| {
                 if (w.cells.items[ec].nonlist) rec_use = true;
             };
             const held = w.local_av[u.local] orelse continue;
@@ -17059,7 +17111,7 @@ const Walker = struct {
                     if (rec.fields != null) {
                         for (rec.cells) |e| {
                             const c = w.cells.items[try w.takenBase(e.cell)];
-                            if (c.kind == .cbres and c.a == j) rneed = true;
+                            if (c.kind == .cbres and w.callbackFrame(c) == 0 and c.a == j) rneed = true;
                         }
                         continue;
                     }
@@ -17067,7 +17119,7 @@ const Walker = struct {
                         // A taken element stands for the cell it was taken
                         // from (§18.5), which may be what πⱼ returned.
                         const c = w.cells.items[try w.takenBase(e.cell)];
-                        if (c.kind == .cbres and c.a == j) {
+                        if (c.kind == .cbres and w.callbackFrame(c) == 0 and c.a == j) {
                             need = true;
                             if (!rec.deep) edit = true;
                         }
@@ -17075,77 +17127,78 @@ const Walker = struct {
                 }
                 try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
             }
-            for (w.supplies.items) |sr| {
-                var more_ok = true;
-                var more_approx = true;
-                for (sr.more) |p| if (p != none) {
-                    more_ok = more_ok and w.probe_ok.items[p];
-                    more_approx = more_approx and w.probe_approx.items[p];
-                };
-                const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
-                const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
-                const xc = try w.xsumOf(sr.cond, frame, params, none);
-                const rxc = try w.rxsumOf(sr.rcond, frame, params, none);
-                for (try w.listView(try w.expand(sr.av))) |e| {
-                    // A cell made here keeps the number the result gives it,
-                    // renumbered as the result's entries are (0 when the
-                    // result does not hold it): a callback that keeps it then
-                    // keeps the list the result returns (#281).
-                    var prov = (try w.provOf(e.cell, frame, params, fresh)) orelse continue;
-                    if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
-                    if (sr.taken and prov.kind == .param) prov.taken = true;
-                    const owned = owned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
-                    if (prov.kind == .cb and owned) {
-                        const atom: [2]u32 = .{ prov.a, prov.path };
-                        for (atoms.items) |x| {
-                            if (x[0] == atom[0] and x[1] == atom[1]) break;
-                        } else try atoms.append(w.a, atom);
-                    }
-                    // Shared is the position rule, exact; ⊤, an escape and a
-                    // capture are limits, as is a probe that failed only
-                    // through one.
-                    const approx = !owned and switch (prov.kind) {
-                        .shared => false,
-                        .top, .esc, .env => true,
-                        else => probe_approx or e.approx != 0,
-                    };
-                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = if (prov.condition_only) true else owned, .approx = approx, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), frame, params, none) else xc, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), frame, params, none) else rxc, .grown = e.grown });
-                }
-                // §31.5: the records it supplies, which no list's fact reads:
-                // as `objs` names a result's, by the provenance of the record
-                // each object was written over, owned where the record probe
-                // held.
-                const rowned_probe = sr.owned and more_ok and sr.rprobe != none and w.probe_ok.items[sr.rprobe];
-                for (try w.expand(sr.av)) |e| {
-                    if (w.listFacing(e.cell) != null) continue;
-                    const x = w.cells.items[e.cell];
-                    const base_cell = if (x.kind == .except) x.a else e.cell;
-                    const bx = w.cells.items[base_cell];
-                    switch (bx.kind) {
-                        .closure, .func => continue,
-                        else => {},
-                    }
-                    var prov: Prov = switch (bx.kind) {
-                        .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
-                        else => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
-                    };
-                    if (sr.taken and prov.kind == .param) prov.taken = true;
-                    prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
-                    const owned = rowned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
-                    const approx = !owned and switch (prov.kind) {
-                        .shared => false,
-                        .top, .esc, .env => true,
-                        else => (sr.rprobe != none and w.probe_approx.items[sr.rprobe]) or e.approx != 0,
-                    };
-                    try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .rxc = rxc });
-                }
-            }
         } else {
             // A lambda's own function parameters: its class does not follow
             // them (§16.5).
             for (params, 0..) |p, k| {
                 const v = w.patternType(p) orelse continue;
                 if (isFunc(w.store, v)) try funs.append(keep, .{ .param = @intCast(k), .calls = .many, .seen = false });
+            }
+        }
+        for (w.supplies.items) |sr| {
+            if (sr.frame != frame) continue;
+            var more_ok = true;
+            var more_approx = true;
+            for (sr.more) |p| if (p != none) {
+                more_ok = more_ok and w.probe_ok.items[p];
+                more_approx = more_approx and w.probe_approx.items[p];
+            };
+            const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
+            const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
+            const xc = try w.xsumOf(sr.cond, frame, params, none);
+            const rxc = try w.rxsumOf(sr.rcond, frame, params, none);
+            for (try w.listView(try w.expand(sr.av))) |e| {
+                // A cell made here keeps the number the result gives it,
+                // renumbered as the result's entries are (0 when the
+                // result does not hold it): a callback that keeps it then
+                // keeps the list the result returns (#281).
+                var prov = (try w.provOf(e.cell, frame, params, fresh)) orelse continue;
+                if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
+                if (sr.taken and prov.kind == .param) prov.taken = true;
+                const owned = owned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
+                if (prov.kind == .cb and owned) {
+                    const atom: [2]u32 = .{ prov.a, prov.path };
+                    for (atoms.items) |x| {
+                        if (x[0] == atom[0] and x[1] == atom[1]) break;
+                    } else try atoms.append(w.a, atom);
+                }
+                // Shared is the position rule, exact; ⊤, an escape and a
+                // capture are limits, as is a probe that failed only
+                // through one.
+                const approx = !owned and switch (prov.kind) {
+                    .shared => false,
+                    .top, .esc, .env => true,
+                    else => probe_approx or e.approx != 0,
+                };
+                try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = if (prov.condition_only) true else owned, .approx = approx, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), frame, params, none) else xc, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), frame, params, none) else rxc, .grown = e.grown });
+            }
+            // §31.5: the records it supplies, which no list's fact reads:
+            // as `objs` names a result's, by the provenance of the record
+            // each object was written over, owned where the record probe
+            // held.
+            const rowned_probe = sr.owned and more_ok and sr.rprobe != none and w.probe_ok.items[sr.rprobe];
+            for (try w.expand(sr.av)) |e| {
+                if (w.listFacing(e.cell) != null) continue;
+                const x = w.cells.items[e.cell];
+                const base_cell = if (x.kind == .except) x.a else e.cell;
+                const bx = w.cells.items[base_cell];
+                switch (bx.kind) {
+                    .closure, .func => continue,
+                    else => {},
+                }
+                var prov: Prov = switch (bx.kind) {
+                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
+                    else => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
+                };
+                if (sr.taken and prov.kind == .param) prov.taken = true;
+                prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
+                const owned = rowned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
+                const approx = !owned and switch (prov.kind) {
+                    .shared => false,
+                    .top, .esc, .env => true,
+                    else => (sr.rprobe != none and w.probe_approx.items[sr.rprobe]) or e.approx != 0,
+                };
+                try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .rxc = rxc });
             }
         }
         // §18.4: what the frame relied on.
@@ -17204,9 +17257,11 @@ const Walker = struct {
             // A message, which only the entry computation names (§20.5).
             .payload => return .{ .kind = .top },
             .cbres => {
-                // In a lambda: the declaration's callback result, called inside it (§18.9).
-                if (frame != 0) return .{ .kind = .cb, .a = c.a, .b = 1, .path = c.path };
-                return .{ .kind = .cb, .a = c.a, .path = c.path };
+                const owner = w.callbackFrame(c);
+                if (owner == frame) return .{ .kind = .cb, .a = c.a, .path = c.path };
+                // A declaration callback called inside a lambda (§18.9).
+                if (owner == 0) return .{ .kind = .cb, .a = c.a, .b = 1, .path = c.path };
+                return .{ .kind = .top, .a = top_call };
             },
             // The element it stands for, taken (§18.5).
             .taken => {

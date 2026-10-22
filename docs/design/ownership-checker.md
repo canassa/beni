@@ -5257,6 +5257,19 @@ state. None accepts a write the rules before it rejected for a reason the text s
     through an approximate entry, `⊤`, what another callback returns, or a function the checker cannot
     place; the eight lines §30.2 found printed as exact now print approximate.
 
+*Amended 2026-10-22 (issue #223):* a lambda's call of its own function
+parameter has that parameter's result in its class, as a declaration's
+function parameter does. The call keeps its argument provenances in the
+class's supply rows, conservatively borrowed. At a consumer, the callee's
+supplies identify that function; instantiating the class follows the supplied
+function's result, or keeps the unidentified-call result when it cannot. An
+owned-result obligation follows the same supplies and reaches a declaration's
+function slot when one supplies it. This supplies no ownership permission to
+a local write onto the still-symbolic result: that write retains the
+conservative unknown verdict. A callback result is scoped to the frame whose
+function parameter it names, never to a parameter with the same index in
+another frame.
+
 **Words** (§24.2, §24.4, §24.8, amended). A parameter of type `List` of a function written out takes a
 function's words, which describe each element: the summary's function slot at the parameter's `[*]`
 (`many aliased List (⊤ → a)`). Three new rows in §24.8:
