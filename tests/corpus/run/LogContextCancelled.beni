@@ -19,7 +19,7 @@ record seen entry =
     pairs = String.join (List.map entry.annotations λ( key, value ) → "${key}=${value}") ", "
     spans =
         String.join (List.map entry.spans λ( label, ms ) → "${label}=${String.fromInt ms}ms") ", "
-    Ref.update seen λlines → [ …lines, "${entry.message} [${pairs}] {${spans}}" ]
+    Ref.update seen λlines → [ …List.copy lines, "${entry.message} [${pairs}] {${spans}}" ]
 
 
 main : Program

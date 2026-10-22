@@ -13,7 +13,7 @@ import Task
 
 
 record : Ref (List String), Entry → ⊤
-record seen entry = Ref.update seen λlines → [ …lines, Log.logfmt entry ]
+record seen entry = Ref.update seen λlines → [ …List.copy lines, Log.logfmt entry ]
 
 
 main : Program

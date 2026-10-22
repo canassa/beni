@@ -10,7 +10,7 @@ import Task
 
 
 record : Ref (List String), Entry → ⊤
-record seen entry = Ref.update seen λlines → [ …lines, entry.message ]
+record seen entry = Ref.update seen λlines → [ …List.copy lines, entry.message ]
 
 
 main : Program
