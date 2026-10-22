@@ -74,6 +74,8 @@ console.info: a keyed body after a wait save=5ms {"request":"k1"}
 (the DOM did not change)
 -- click #task
 console.info: a task {"request":"t1"}
+console.info: Done's update: the program's context
+console.info: a command of Done's update: the program's context
 <body>
   <main>
     <button id="perform">"perform"</button>
@@ -451,6 +453,8 @@ console.info: concurrent: a keyed body after a wait {"request":"r17"}
 </body>
 -- advance 5
 console.info: a task after a wait {"request":"r18"}
+console.info: Done's update: the program's context
+console.info: a command of Done's update: the program's context
 <body>
   <main>
     <button id="perform">"perform"</button>
