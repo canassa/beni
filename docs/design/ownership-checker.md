@@ -1712,6 +1712,18 @@ crossing marks participate in settlement. A closed or nongrowing signature stays
 exact. A returned function's erased growing case and write-through aliasing twin
 must pin this route before merge.
 
+*Amended 2026-10-23 (#748, callable root identity):* a mismatching or folded
+host view can retain a function's captures approximately at runtime-content
+`⋆₁`, while its exact callable root remains the same known object. When that
+exact root identifies a callable class, approximate runtime-content entries do
+not identify alternative call targets. Class selection may therefore ignore
+those contents, as it already ignores `◇`. It still processes every root
+provenance normally: an unknown root alternative remains an unknown callee.
+No contents are removed from the value, its captures or any alias/condition
+check. The selected class still instantiates every capture binding and write
+requirement. This preserves callable identity without assuming that unknown
+contents are exclusive or that a folded type cancels exactly.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
