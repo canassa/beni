@@ -9,6 +9,13 @@ one arrow: `List a, (a → b) → List b`. A `where` clause names the methods a 
 needs. Effects are inferred and never written; a value whose result reaches the host or may
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
+module WebSocket
+  alias Close
+    Close
+  type Socket
+  value closeOf : Value, Value → Close
+  value eq : Socket, Socket → Bool
+  value socketsOf : Value → List Socket  -- impure
 module Worker
   type Context
   type Definition
@@ -31,11 +38,14 @@ module Worker
   value byId : Namespace msg, String → Result IdError (Ref msg)  -- impure
   value byName : Namespace msg, String → Ref msg  -- impure
   value callService : Service, Request → Result ServiceError Response  -- suspends
+  value chainNow : ⊤ → Value  -- impure
+  value draining : Ref Value
   value empty : Int → Response  -- impure
   value env : Context → Env  -- impure
   value forward : Ref msg, Request → Result StubError Response  -- suspends
   value header : Request, String → Maybe String  -- impure
   value headers : Request → List (String × String)  -- impure
+  value hostResponse : Response → Value
   value html : Int, String → Response  -- impure
   value method : Request → String  -- impure
   value objects : Env, String, Schema e msg → Maybe (Namespace msg)  -- impure
@@ -45,9 +55,49 @@ module Worker
   value refId : Ref msg → String  -- impure
   value refName : Ref msg → Maybe String  -- impure
   value service : Env, String → Maybe Service  -- impure
+  value settleHost : Value → Result Value Value  -- suspends
   value text : Int, String → Response  -- impure
   value unique : Namespace msg → Ref msg  -- impure
   value url : Request → String  -- impure
   value var : Env, String → Maybe String  -- impure
   value withHeader : Response, String, String → Response  -- impure
+module Worker.Object
+  type AskError
+    Overloaded
+    Reset
+    Transient
+    Cycle
+    NoReply
+    Unprintable
+    Unreadable
+  type Context a
+  alias Handlers a b
+    Handlers
+  alias Ref a
+  type Reply a
+  value alarmAt : Context msg, Int → ⊤  -- impure
+  value alarmIn : Context msg, Duration → ⊤  -- impure
+  value ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a  -- suspends
+  value body : Request → String  -- impure
+  value cancelAlarm : Context msg → ⊤  -- impure
+  value define : String, Schema e msg, (Context msg → state), Handlers state msg → Definition
+  value env : Context msg → Env  -- impure
+  value id : Context msg → String  -- impure
+  value name : Context msg → Maybe String  -- impure
+  value none : Handlers state msg
+  value post : Ref msg, msg → ⊤  -- impure
+  value reply : Reply a, a → ⊤  -- impure
+  value replySchema : Schema e a → Schema String (Reply a)  -- impure
+  value self : Context msg → Ref msg  -- impure
+  value sockets : Context msg → List Socket  -- impure
+  value socketsTagged : Context msg, String → List Socket  -- impure
+module Worker.Storage
+  type PutError
+    TooLarge
+    Full
+    Unprintable
+  value delete : Context msg, String → Bool  -- impure
+  value get : Context msg, Schema e a, String → Result (List Issue) (Maybe a)  -- impure
+  value keys : Context msg, String → List String  -- impure
+  value put : Context msg, Schema e a, String, a → Result PutError ⊤  -- impure
 ```

@@ -50,7 +50,7 @@ pub foreign type Context
 
 
 --| A Durable Object class, made by `Worker.Object.define`; `program`'s
---| `objects` lists them. None can be made in this slice.
+--| `objects` lists them, and the entry file exports each by its name.
 pub foreign type Definition
 
 
@@ -140,6 +140,32 @@ program p =
 --| The request's bindings.
 pub env : Context → Env
 env ctx = Js.to (Js.get (Js.from ctx) "env")
+
+
+--| The host's object a response holds: for `Worker.Object`, which hands
+--| it to the host.
+pub hostResponse : Response → Js.Value
+hostResponse (Response r _ _) = r
+
+
+--| The object whose scheduler is draining, or null: set by `Worker.Object`
+--| around each turn of an object's scheduler, so `forward`, `post` and
+--| `ask` from a handler find the handler's chain id ((e.3)). The Worker's
+--| own requests have none.
+pub draining : Js.Ref Js.Value
+draining = Js.ref Js.null
+
+
+--| The chain id a call between objects carries ((e.3)): the running
+--| handler's, or a fresh one from a Worker, which parks in no object and
+--| so begins no cycle.
+pub chainNow : ⊤ → Js.Value
+chainNow ⊤ =
+    inst = Js.read draining
+    if Js.isNull inst || Js.isNull (Js.get inst "chain") then
+        Js.call (Js.global "crypto") "randomUUID" []
+    else
+        Js.get inst "chain"
 
 
 -- The host's `fetch` handler, through `runtime.js`: answers the host a
@@ -674,9 +700,10 @@ refName ref =
 
 --| Forward the request to the object and wait for its answer: the host's
 --| `Response`, its body stream untouched, so a 101 and a streamed body
---| pass through. The call carries the chain id of §9.12 (e.3): from a
---| Worker a fresh one per call, after any `x-beni-chain` the client sent
---| is stripped, since a Worker parks in no object and so begins no cycle.
+--| pass through. The call carries the chain id of §9.12 (e.3): the
+--| running handler's from an object, or from a Worker a fresh one per
+--| call, after any `x-beni-chain` the client sent is stripped, since a
+--| Worker parks in no object and so begins no cycle.
 --| Every failure the host documents is a `StubError`; a refused
 --| cycle is read off the answer (508 with `x-beni-cycle: 1`); anything
 --| else is a defect.
@@ -685,9 +712,9 @@ forward ref request =
     stub = Js.get (Js.from ref) "stub"
     hs = Js.construct (Js.global "Headers") [ Js.get (Js.from request) "headers" ]
     _ = Js.call hs "delete" [ Js.from "x-beni-chain" ]
-    _ = Js.call hs "set" [ Js.from "x-beni-chain", Js.call (Js.global "crypto") "randomUUID" [] ]
+    _ = Js.call hs "set" [ Js.from "x-beni-chain", chainNow ⊤ ]
     sent = Js.construct (Js.global "Request") [ Js.from request, Js.from { headers = hs } ]
-    case settle (Js.call stub "fetch" [ sent ]) of
+    case settleHost (Js.call stub "fetch" [ sent ]) of
         Ok r →
             if
                 Js.to (Js.get r "status") == 508
@@ -714,7 +741,7 @@ forward ref request =
 --| when the host's error is `retryable`; anything else is a defect.
 pub callService : Service, Request → Result ServiceError Response
 callService svc request =
-    case settle (Js.call (Js.from svc) "fetch" [ Js.from request ]) of
+    case settleHost (Js.call (Js.from svc) "fetch" [ Js.from request ]) of
         Ok r →
             Ok (fromHost r)
 
@@ -722,12 +749,13 @@ callService svc request =
             if Js.to (Js.get reason "retryable") == True then Err Unavailable else Js.throw reason
 
 
--- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's
--- own result, so the caller sorts the reason and throws what it does not
--- name from the fiber, where a throw is a defect (`CLAUDE.md` rule 9).
--- The reaction only resumes; it catches nothing.
-settle : V → Result V V
-settle promise = Task.callback λresume →
+--| Park on a host promise: `Ok` its value, `Err` its reason, as the
+--| fiber's own result, so the caller sorts the reason and throws what it
+--| does not name from the fiber, where a throw is a defect (`CLAUDE.md`
+--| rule 9). The reaction only resumes; it catches nothing. For this
+--| module and `Worker.Object`.
+pub settleHost : Js.Value → Result Js.Value Js.Value
+settleHost promise = Task.callback λresume →
     _ =
         Js.call promise "then"
             [ Js.from λvalue → Task.resume resume (Ok value)
