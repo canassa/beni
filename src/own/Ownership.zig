@@ -498,21 +498,153 @@ pub const Prov = struct {
 /// `spine`, `sep_spine` and `keep_spine` state the corresponding conditions
 /// for the containers at the named paths, without owning their contents
 /// (the dated fold-invariant amendment).
+/// `apart G₁ … Gₙ` (§16.7, amended 2026-10-22, #693): no member of one group
+/// shares a cell with a member of another — the conjunction of `sep a b` for
+/// every two members of distinct groups, its *expansion*; `apart_spine` is
+/// the same of `sep_spine`. Its groups are in `groups`, canonical
+/// (`apartAtoms`), and `a` and `b` are unused.
 pub const XAtom = struct {
-    kind: enum(u8) { excl, sep, keep, spine, keep_spine, sep_spine },
-    a: Prov,
+    kind: enum(u8) { excl, sep, keep, spine, keep_spine, sep_spine, apart, apart_spine },
+    a: Prov = .{ .kind = .top, .a = 0 },
     b: Prov = .{ .kind = .top, .a = 0 },
+    groups: []const []const Prov = &.{},
+
+    pub fn isApart(x: XAtom) bool {
+        return x.kind == .apart or x.kind == .apart_spine;
+    }
 
     fn eql(x: XAtom, y: XAtom) bool {
-        return x.kind == y.kind and x.a.eql(y.a) and x.b.eql(y.b);
+        if (x.kind != y.kind or !x.a.eql(y.a) or !x.b.eql(y.b)) return false;
+        if (x.groups.len != y.groups.len) return false;
+        for (x.groups, y.groups) |g, h| {
+            if (g.len != h.len) return false;
+            for (g, h) |p, q| if (!p.eql(q)) return false;
+        }
+        return true;
     }
 
     fn less(x: XAtom, y: XAtom) bool {
         if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
+        if (x.isApart()) return groupsLess(x.groups, y.groups);
         if (!x.a.eql(y.a)) return x.a.less(y.a);
         return x.b.less(y.b);
     }
+
+    /// The atoms this one stands for, in the condition's own measure: an
+    /// apart's members (the `conditions` limit, §16.7).
+    pub fn weight(x: XAtom) usize {
+        var n: usize = 0;
+        for (x.groups) |g| n += g.len;
+        return if (x.isApart()) n else 1;
+    }
 };
+
+fn provsLess(g: []const Prov, h: []const Prov) bool {
+    for (g[0..@min(g.len, h.len)], h[0..@min(g.len, h.len)]) |p, q| {
+        if (!p.eql(q)) return p.less(q);
+    }
+    return g.len < h.len;
+}
+
+fn groupsLess(x: []const []const Prov, y: []const []const Prov) bool {
+    for (x[0..@min(x.len, y.len)], y[0..@min(x.len, y.len)]) |g, h| {
+        if (provsLess(g, h)) return true;
+        if (provsLess(h, g)) return false;
+    }
+    return x.len < y.len;
+}
+
+/// The number of pairs an apart over groups of these sizes expands to, and
+/// its members.
+fn apartCounts(sizes: anytype) struct { pairs: usize, members: usize } {
+    var members: usize = 0;
+    var pairs: usize = 0;
+    for (sizes) |s| {
+        pairs += members * s;
+        members += s;
+    }
+    return .{ .pairs = pairs, .members = members };
+}
+
+/// §16.7 (#693): the atoms that say `groups` are pairwise apart, as `kind`
+/// (`apart` or `apart_spine`), appended to `out`: each group's members in
+/// order and distinct, empty groups dropped, the groups in order; one apart
+/// when its expansion has more atoms than it has members, else the
+/// expansion itself. `groups` and its slices may be reordered in place.
+pub fn apartAtoms(a: Allocator, kind: @FieldType(XAtom, "kind"), groups_in: [][]Prov, out: *std.ArrayList(XAtom)) Allocator.Error!void {
+    std.debug.assert(kind == .apart or kind == .apart_spine);
+    var groups: std.ArrayList([]const Prov) = .empty;
+    for (groups_in) |g| {
+        std.mem.sort(Prov, g, {}, struct {
+            fn lt(_: void, p: Prov, q: Prov) bool {
+                return p.less(q);
+            }
+        }.lt);
+        var n: usize = 0;
+        for (g) |p| {
+            if (n > 0 and g[n - 1].eql(p)) continue;
+            g[n] = p;
+            n += 1;
+        }
+        if (n > 0) try groups.append(a, g[0..n]);
+    }
+    if (groups.items.len < 2) return;
+    std.mem.sort([]const Prov, groups.items, {}, struct {
+        fn lt(_: void, g: []const Prov, h: []const Prov) bool {
+            return provsLess(g, h);
+        }
+    }.lt);
+    var sizes = try a.alloc(usize, groups.items.len);
+    for (groups.items, 0..) |g, i| sizes[i] = g.len;
+    const c = apartCounts(sizes);
+    if (c.pairs > c.members) {
+        try out.append(a, .{ .kind = kind, .groups = groups.items });
+        return;
+    }
+    const pair_kind: @FieldType(XAtom, "kind") = if (kind == .apart) .sep else .sep_spine;
+    for (groups.items, 0..) |g, i| for (groups.items[i + 1 ..]) |h| for (g) |p| for (h) |q| {
+        var t = sepAtom(p, q);
+        t.kind = pair_kind;
+        try out.append(a, t);
+    };
+}
+
+/// An apart's expansion (§16.7, #693), appended to `out`; any other atom
+/// as it is.
+pub fn expandAtom(a: Allocator, x: XAtom, out: *std.ArrayList(XAtom)) Allocator.Error!void {
+    if (!x.isApart()) return out.append(a, x);
+    const pair_kind: @FieldType(XAtom, "kind") = if (x.kind == .apart) .sep else .sep_spine;
+    for (x.groups, 0..) |g, i| for (x.groups[i + 1 ..]) |h| for (g) |p| for (h) |q| {
+        var t = sepAtom(p, q);
+        t.kind = pair_kind;
+        try out.append(a, t);
+    };
+}
+
+/// `atoms` with every apart expanded, sorted and distinct.
+pub fn expandAtoms(a: Allocator, atoms: []const XAtom) Allocator.Error![]const XAtom {
+    var out: std.ArrayList(XAtom) = .empty;
+    for (atoms) |x| try expandAtom(a, x, &out);
+    return sortAtoms(out.items);
+}
+
+/// Atoms whose slices are `a`'s own, an apart's groups included.
+pub fn dupeAtoms(a: Allocator, atoms: []const XAtom) Allocator.Error![]const XAtom {
+    const out = try a.dupe(XAtom, atoms);
+    for (out) |*x| if (x.isApart()) {
+        const gs = try a.alloc([]const Prov, x.groups.len);
+        for (gs, x.groups) |*d, g| d.* = try a.dupe(Prov, g);
+        x.groups = gs;
+    };
+    return out;
+}
+
+/// The atoms of a condition, in the `conditions` limit's measure.
+fn atomsWeight(atoms: []const XAtom) usize {
+    var n: usize = 0;
+    for (atoms) |x| n += x.weight();
+    return n;
+}
 
 /// §18.2: an exclusivity condition, as a summary states it.
 pub const XSum = struct {
@@ -1957,7 +2089,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     const keep = o.keep.allocator();
     const xsum = struct {
         fn f(a: Allocator, x: XSum) Allocator.Error!XSum {
-            return .{ .no = x.no, .atoms = try a.dupe(XAtom, x.atoms) };
+            return .{ .no = x.no, .atoms = try dupeAtoms(a, x.atoms) };
         }
     }.f;
     const res = try keep.alloc(ResEntry, s.res.len);
@@ -1990,8 +2122,8 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.objs = objs;
     out.rsupply = rsupply;
     out.funs = try keep.dupe(FunFacts, s.funs);
-    out.xreq = try keep.dupe(XAtom, s.xreq);
-    out.rxreq = try keep.dupe(XAtom, s.rxreq);
+    out.xreq = try dupeAtoms(keep, s.xreq);
+    out.rxreq = try dupeAtoms(keep, s.rxreq);
     out.slots = try keep.dupe([2]u32, s.slots);
     out.klasses = klasses;
     return out;
@@ -2204,9 +2336,9 @@ fn overLimit(s: Summary) ?Over {
         most = @max(most, streak);
     }
     if (most > path_entry_cap) return .{ .limit = .path_entries, .at = @intCast(most) };
-    var atoms: usize = s.xreq.len;
-    for (s.res) |r| atoms += r.xc.atoms.len + r.sc.atoms.len;
-    for (s.supply) |e| atoms += e.xc.atoms.len;
+    var atoms: usize = atomsWeight(s.xreq);
+    for (s.res) |r| atoms += atomsWeight(r.xc.atoms) + atomsWeight(r.sc.atoms);
+    for (s.supply) |e| atoms += atomsWeight(e.xc.atoms);
     if (atoms > condition_cap) return .{ .limit = .conditions, .at = @intCast(@min(atoms, std.math.maxInt(u32))) };
     return null;
 }
@@ -2355,8 +2487,8 @@ fn recordTwin(o: *Ownership, x: XSum) Allocator.Error!XSum {
     if (x.no != 0) return x;
     var out: std.ArrayList(XAtom) = .empty;
     for (x.atoms) |t| switch (t.kind) {
-        .excl, .sep, .keep => try out.append(o.keep.allocator(), t),
-        .spine, .sep_spine, .keep_spine => {},
+        .excl, .sep, .keep, .apart => try out.append(o.keep.allocator(), t),
+        .spine, .sep_spine, .keep_spine, .apart_spine => {},
     };
     return .{ .atoms = out.items };
 }
@@ -3642,6 +3774,27 @@ fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
         var atoms: std.ArrayList(XAtom) = .empty;
         var dropped = false;
         for (r.xc.atoms) |x| {
+            // An apart drops the pairs that name a callback's result: its
+            // members that are one (§16.7, #693).
+            if (x.isApart()) {
+                var named = false;
+                for (x.groups) |g| for (g) |p| {
+                    if (p.kind == .cb) named = true;
+                };
+                if (!named) {
+                    try atoms.append(keep, x);
+                    continue;
+                }
+                dropped = true;
+                const gs = try keep.alloc([]Prov, x.groups.len);
+                for (gs, x.groups) |*d, g| {
+                    var kept: std.ArrayList(Prov) = .empty;
+                    for (g) |p| if (p.kind != .cb) try kept.append(keep, p);
+                    d.* = kept.items;
+                }
+                try apartAtoms(keep, x.kind, gs, &atoms);
+                continue;
+            }
             if (x.a.kind == .cb or x.b.kind == .cb) {
                 dropped = true;
                 continue;
@@ -3955,6 +4108,18 @@ fn atomText(o: *Ownership, x: XAtom) Allocator.Error![]const u8 {
         .keep_spine => std.fmt.allocPrint(arena, "keep-spine {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .sep => std.fmt.allocPrint(arena, "sep {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .keep => std.fmt.allocPrint(arena, "keep {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
+        .apart, .apart_spine => blk: {
+            // Members and groups by their text, as a condition's atoms are.
+            const groups = try arena.alloc([]const u8, x.groups.len);
+            for (groups, x.groups) |*t, g| {
+                const members = try arena.alloc([]const u8, g.len);
+                for (members, g) |*m, p| m.* = try o.provText(p);
+                sortText(members);
+                t.* = try std.fmt.allocPrint(arena, "[{s}]", .{try std.mem.join(arena, " ", members)});
+            }
+            sortText(groups);
+            break :blk std.fmt.allocPrint(arena, "{s} {s}", .{ if (x.kind == .apart) "apart" else "apart-spine", try std.mem.join(arena, " ", groups) });
+        },
     };
 }
 
@@ -6145,6 +6310,10 @@ const Walker = struct {
     /// list's fact reads, and each cell's; what frames relied on of them.
     rconds: std.ArrayList(WCond) = .empty,
     cell_rcond: std.ArrayList(u32) = .empty,
+    /// §16.7 (#693): the groups of each `apart` atom, by its `a`, interned
+    /// so that one fact is one atom. Never shrunk: an index stays valid.
+    aparts: std.ArrayList([]const []const u32) = .empty,
+    apart_map: std.StringHashMapUnmanaged(u32) = .empty,
     rreqs: std.ArrayList(Req) = .empty,
     /// Per cell, whether it may hold a record (`mayHoldRecord`): 0 not yet
     /// asked, 1 no, 2 yes. A cell's type does not change.
@@ -6827,6 +6996,8 @@ const Walker = struct {
     fn atomFacing(w: *Walker, t: WAtom) Allocator.Error!?WAtom {
         var out = t;
         switch (t.kind) {
+            // Made of cells already facing (`apartCells`).
+            .apart, .apart_spine => {},
             // `a` is a function parameter's index, not a cell.
             .keep, .keep_spine => out.b = (try w.atomCell(t.b)) orelse return null,
             .excl, .spine => out.a = (try w.atomCell(t.a)) orelse return null,
@@ -7111,8 +7282,9 @@ const Walker = struct {
             // duplicates folded, and past the limit nothing more is kept.
             if (acc.atoms.items.len > 2 * condition_cap) {
                 acc.atoms.items.len = sortWAtoms(acc.atoms.items);
-                if (acc.atoms.items.len > condition_cap) {
-                    try w.o.hitLimit(.conditions, @intCast(acc.atoms.items.len));
+                const weight = w.atomsWeightW(acc.atoms.items);
+                if (weight > condition_cap) {
+                    try w.o.hitLimit(.conditions, @intCast(@min(weight, std.math.maxInt(u32))));
                     acc.limit = true;
                     acc.atoms.clearRetainingCapacity();
                 }
@@ -7152,6 +7324,19 @@ const Walker = struct {
         }
     }
 
+    /// Atoms in the `conditions` limit's measure: an apart counts its
+    /// members (§16.7, #693).
+    fn atomsWeightW(w: *const Walker, atoms: []const WAtom) usize {
+        var n: usize = 0;
+        for (atoms) |t| switch (t.kind) {
+            .apart, .apart_spine => for (w.aparts.items[t.a]) |g| {
+                n += g.len;
+            },
+            else => n += 1,
+        };
+        return n;
+    }
+
     /// Sorts `all` and moves its distinct atoms to the front; their count.
     fn sortWAtoms(all: []WAtom) usize {
         std.mem.sort(WAtom, all, {}, struct {
@@ -7176,8 +7361,9 @@ const Walker = struct {
         if (acc.atoms.items.len == 0) return cond_yes;
         const all = acc.atoms.items;
         const m = sortWAtoms(all);
-        if (m > condition_cap) {
-            try w.o.hitLimit(.conditions, @intCast(m));
+        const weight = w.atomsWeightW(all[0..m]);
+        if (weight > condition_cap) {
+            try w.o.hitLimit(.conditions, @intCast(@min(weight, std.math.maxInt(u32))));
             return cond_limit;
         }
         return w.mkCond(all[0..m]);
@@ -7220,6 +7406,7 @@ const Walker = struct {
         for (atoms) |*a| switch (a.kind) {
             .sep => a.kind = .sep_spine,
             .excl => a.kind = .spine,
+            .apart => a.kind = .apart_spine,
             else => {},
         };
         return w.mkCond(atoms);
@@ -7434,6 +7621,336 @@ const Walker = struct {
         return w.condAndAll(&acc);
     }
 
+    // ---- pairwise apart (§16.7, amended 2026-10-22, #693) -----------------
+
+    /// Which table a pairwise-apart condition is for: a list's (`sepCells`,
+    /// `conds`) or a record's (`rsepCells`, `rconds`).
+    const Fl = enum { list, record };
+
+    /// A conjunction in either table.
+    const FlAcc = struct {
+        fl: Fl,
+        l: CondAcc = .{},
+        r: RAcc = .{},
+
+        fn add(acc: *FlAcc, w: *Walker, k: u32) Allocator.Error!void {
+            switch (acc.fl) {
+                .list => try acc.l.add(w, k),
+                .record => try acc.r.add(w, k),
+            }
+        }
+
+        fn shared(acc: *const FlAcc) bool {
+            return switch (acc.fl) {
+                .list => acc.l.shared,
+                .record => acc.r.shared,
+            };
+        }
+
+        /// Atoms already in the table's vocabulary (facing, for a list's).
+        fn addAtoms(acc: *FlAcc, w: *Walker, atoms: []const WAtom) Allocator.Error!void {
+            if (atoms.len == 0) return;
+            switch (acc.fl) {
+                .list => try acc.l.atoms.appendSlice(w.a, atoms),
+                .record => {
+                    if (!acc.r.many) {
+                        acc.r.many = true;
+                        if (acc.r.one != cond_yes) try acc.r.atoms.appendSlice(w.a, w.rconds.items[acc.r.one].atoms);
+                    }
+                    try acc.r.atoms.appendSlice(w.a, atoms);
+                },
+            }
+        }
+
+        fn done(acc: *FlAcc, w: *Walker) Allocator.Error!u32 {
+            return switch (acc.fl) {
+                .list => w.condAndAll(&acc.l),
+                .record => acc.r.done(w),
+            };
+        }
+    };
+
+    fn lessU32s(_: void, x: []const u32, y: []const u32) bool {
+        return std.mem.order(u32, x, y) == .lt;
+    }
+
+    /// `apartAtoms` over the walk's cells: the atoms that say `groups_in` are
+    /// pairwise apart, appended to `out` — one interned `apart` (or
+    /// `apart_spine`) when its expansion is longer than its members, else
+    /// the expansion. Each group is reordered in place.
+    fn pairwiseApartAtoms(w: *Walker, kind: @FieldType(XAtom, "kind"), groups_in: [][]u32, out: *std.ArrayList(WAtom)) Allocator.Error!void {
+        var groups: std.ArrayList([]const u32) = .empty;
+        for (groups_in) |g| {
+            std.mem.sort(u32, g, {}, std.sort.asc(u32));
+            var n: usize = 0;
+            for (g) |c| {
+                if (n > 0 and g[n - 1] == c) continue;
+                g[n] = c;
+                n += 1;
+            }
+            if (n > 0) try groups.append(w.a, g[0..n]);
+        }
+        if (groups.items.len < 2) return;
+        std.mem.sort([]const u32, groups.items, {}, lessU32s);
+        const sizes = try w.a.alloc(usize, groups.items.len);
+        for (sizes, groups.items) |*s, g| s.* = g.len;
+        const c = apartCounts(sizes);
+        if (c.pairs <= c.members) {
+            const pk: @FieldType(XAtom, "kind") = if (kind == .apart) .sep else .sep_spine;
+            for (groups.items, 0..) |g, i| for (groups.items[i + 1 ..]) |h| for (g) |x| for (h) |y| {
+                try out.append(w.a, .{ .kind = pk, .a = @min(x, y), .b = @max(x, y) });
+            };
+            return;
+        }
+        var key: std.ArrayList(u32) = .empty;
+        for (groups.items) |g| {
+            try key.append(w.a, @intCast(g.len));
+            try key.appendSlice(w.a, g);
+        }
+        const gop = try w.apart_map.getOrPut(w.a, std.mem.sliceAsBytes(key.items));
+        if (!gop.found_existing) {
+            gop.value_ptr.* = @intCast(w.aparts.items.len);
+            try w.aparts.append(w.a, groups.items);
+        }
+        try out.append(w.a, .{ .kind = kind, .a = gop.value_ptr.* });
+    }
+
+    /// A walk atom's expansion, appended to `out` (an apart's pairs; any
+    /// other atom as it is).
+    fn expandWAtom(w: *Walker, t: WAtom, out: *std.ArrayList(WAtom)) Allocator.Error!void {
+        if (t.kind != .apart and t.kind != .apart_spine) return out.append(w.a, t);
+        const pk: @FieldType(XAtom, "kind") = if (t.kind == .apart) .sep else .sep_spine;
+        const gs = w.aparts.items[t.a];
+        for (gs, 0..) |g, i| for (gs[i + 1 ..]) |h| for (g) |x| for (h) |y| {
+            try out.append(w.a, .{ .kind = pk, .a = @min(x, y), .b = @max(x, y) });
+        };
+    }
+
+    /// Whether two conditions of one table say the same: one verdict, or,
+    /// with every apart expanded, the same atoms.
+    fn condSameExpanded(w: *Walker, x: u32, y: u32, fl: Fl) Allocator.Error!bool {
+        if (x <= cond_fixed_last or y <= cond_fixed_last) return x == y;
+        const table = if (fl == .list) w.conds.items else w.rconds.items;
+        var xs: std.ArrayList(WAtom) = .empty;
+        var ys: std.ArrayList(WAtom) = .empty;
+        for (table[x].atoms) |t| try w.expandWAtom(t, &xs);
+        for (table[y].atoms) |t| try w.expandWAtom(t, &ys);
+        const n = sortWAtoms(xs.items);
+        const m = sortWAtoms(ys.items);
+        if (n != m) return false;
+        for (xs.items[0..n], ys.items[0..m]) |t, u| if (!std.meta.eql(t, u)) return false;
+        return true;
+    }
+
+    /// Whether a safety build compares a pairwise-apart condition over
+    /// groups of these sizes with its expansion (§16.7, #693): one whose
+    /// expansion has at most 64 pairs, or every one under
+    /// `-Downership-full-cross-check`.
+    fn checksApart(sizes: anytype) bool {
+        if (!std.debug.runtime_safety) return false;
+        if (@import("ownership_options").full_cross_check) return true;
+        return apartCounts(sizes).pairs <= 64;
+    }
+
+    /// One pair's separation, in the table's terms.
+    fn sepCellsFl(w: *Walker, x: u32, y: u32, exact: bool, fl: Fl) Allocator.Error!u32 {
+        return switch (fl) {
+            .list => w.sepCells(x, y, exact),
+            .record => w.rsepCells(x, y, exact),
+        };
+    }
+
+    /// The definition, pair by pair: `sepOfCells` (or `rsepOfCells`) of
+    /// every two groups.
+    fn pairwiseApartByPairs(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
+        var acc: FlAcc = .{ .fl = fl };
+        for (groups, 0..) |g, i| for (groups[i + 1 ..]) |h| {
+            if (g.len == 0 or h.len == 0) continue;
+            try acc.add(w, switch (fl) {
+                .list => try w.sepOfCells(g, h),
+                .record => try w.rsepOfCells(g, h),
+            });
+            if (acc.shared()) return cond_shared;
+        };
+        return acc.done(w);
+    }
+
+    /// §16.7 (#693): that no cell of one group shares a cell (a record
+    /// object, for a record's) with a cell of another — the conjunction of
+    /// `sepCells` (`rsepCells`) over every such pair — in one pass. Each
+    /// group is a cell list (`sepCellList`, `rsepCellList`). Pairs that
+    /// their kinds settle are not formed; two cells are related only inside
+    /// one family, through a table of its paths; `⊤`, a message, a taken
+    /// element and an `except` cell are compared pair by pair; the arrivals
+    /// left are one apart. Inside core `Dict`, where one arrival at a folded
+    /// path is several places, the whole condition is pair by pair.
+    fn pairwiseApart(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
+        const k = try w.pairwiseApartOnce(groups, fl);
+        const sizes = try w.a.alloc(usize, groups.len);
+        for (sizes, groups) |*s, g| s.* = g.len;
+        if (checksApart(sizes)) {
+            const want = try w.pairwiseApartByPairs(groups, fl);
+            if (!try w.condSameExpanded(k, want, fl)) std.debug.panic("ownership: a pairwise-apart condition differs from its expansion", .{});
+        }
+        return k;
+    }
+
+    fn pairwiseApartOnce(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
+        if (fl == .list and w.inCoreDict()) return w.pairwiseApartByPairs(groups, fl);
+        const Ent = struct { e: Entry, g: u32 };
+        var ents: std.ArrayList(Ent) = .empty;
+        const per = try w.a.alloc(u32, groups.len);
+        @memset(per, 0);
+        for (groups, 0..) |g, gi| for (g) |e_in| {
+            var e = e_in;
+            const raw = w.cells.items[e.cell];
+            if (raw.condition_only or raw.kind == .closure or raw.kind == .func) continue;
+            if (fl == .record) {
+                e.cell = try w.rbase(e.cell);
+                const x = w.cells.items[e.cell];
+                if (x.kind == .closure or x.kind == .func) continue;
+                if (!try w.mayHoldRecord(e.cell)) continue;
+            }
+            try ents.append(w.a, .{ .e = e, .g = @intCast(gi) });
+            per[gi] += 1;
+        };
+        var filled: usize = 0;
+        for (per) |n| {
+            if (n > 0) filled += 1;
+        }
+        if (filled < 2) return cond_yes;
+        var acc: FlAcc = .{ .fl = fl };
+        const items = ents.items;
+        // Related pairs (`covers`, either way, or one cell): only in one
+        // family — a cell kind that `covers` relates by `(kind, a, b)` and
+        // a path prefix, or a site's or `⊤`'s cell, which only it is.
+        var families: std.AutoArrayHashMapUnmanaged([4]u32, std.ArrayList(u32)) = .empty;
+        for (items, 0..) |x, i| {
+            const c = w.cells.items[x.e.cell];
+            const key: [4]u32 = switch (c.kind) {
+                .param, .result, .env, .shared, .cbres, .payload => .{ @backingInt(c.kind), c.a, c.b, 0 },
+                .site, .top => .{ @backingInt(c.kind), x.e.cell, 0, 1 },
+                .taken, .except, .closure, .func => continue,
+            };
+            const gop = try families.getOrPut(w.a, key);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            try gop.value_ptr.append(w.a, @intCast(i));
+        }
+        for (families.keys(), families.values()) |key, fam| {
+            if (fam.items.len < 2) continue;
+            const g0 = items[fam.items[0]].g;
+            for (fam.items) |i| {
+                if (items[i].g != g0) break;
+            } else continue;
+            var star = key[3] == 1;
+            for (fam.items) |i| {
+                if (w.o.paths.any.items[w.cells.items[items[i].e.cell].path]) star = true;
+            }
+            if (star) {
+                // A `⋆` path, where a marker may hold a place, or one cell:
+                // pair by pair.
+                for (fam.items, 0..) |i, n| for (fam.items[n + 1 ..]) |j| {
+                    const x = items[i];
+                    const y = items[j];
+                    if (x.g == y.g) continue;
+                    if (x.e.cell != y.e.cell and (try w.covers(x.e.cell, y.e.cell)) == null and (try w.covers(y.e.cell, x.e.cell)) == null) continue;
+                    try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                    if (acc.shared()) return cond_shared;
+                };
+                continue;
+            }
+            // One path is the other's step-by-step prefix: each cell's
+            // ancestors, looked up.
+            // `(path, entry)`, sorted: the entries at one path are a run.
+            const by_path = try w.a.alloc([2]u32, fam.items.len);
+            for (by_path, fam.items) |*p, i| p.* = .{ w.cells.items[items[i].e.cell].path, i };
+            std.mem.sort([2]u32, by_path, {}, lessPair);
+            for (fam.items) |i| {
+                const x = items[i];
+                const own = w.cells.items[x.e.cell].path;
+                var at = own;
+                while (true) {
+                    const lo = std.sort.lowerBound([2]u32, by_path, at, struct {
+                        fn order(want: u32, p: [2]u32) std.math.Order {
+                            return std.math.order(want, p[0]);
+                        }
+                    }.order);
+                    for (by_path[lo..]) |p| {
+                        if (p[0] != at) break;
+                        const j = p[1];
+                        const y = items[j];
+                        if (y.g == x.g) continue;
+                        // One path: the pair once.
+                        if (at == own and j >= i) continue;
+                        try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                        if (acc.shared()) return cond_shared;
+                    }
+                    if (at == eps or at == none) break;
+                    at = w.o.paths.parent.items[at];
+                }
+            }
+        }
+        // `⊤` and a message against any cell of another group: lost, when
+        // the two are not one (above).
+        for (items) |x| switch (w.cells.items[x.e.cell].kind) {
+            .top, .payload => if (items.len - per[x.g] > 0) {
+                try acc.add(w, cond_lost);
+                break;
+            },
+            else => {},
+        };
+        // A taken element and an `except` cell: pair by pair, as before.
+        for (items, 0..) |x, i| {
+            const kx = w.cells.items[x.e.cell].kind;
+            if (kx != .taken and kx != .except) continue;
+            for (items, 0..) |y, j| {
+                if (y.g == x.g) continue;
+                const ky = w.cells.items[y.e.cell].kind;
+                if ((ky == .taken or ky == .except) and j < i) continue;
+                try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                if (acc.shared()) return cond_shared;
+            }
+        }
+        // A callback's result against what the body made: lost when what
+        // it was handed reaches one of them.
+        var made: std.ArrayList(Entry) = .empty;
+        for (items) |x| {
+            const c = w.cells.items[x.e.cell];
+            if (c.kind != .cbres) continue;
+            const args = w.instCol(?AV, w.cb_args, c.b, null) orelse continue;
+            made.clearRetainingCapacity();
+            for (items) |y| {
+                if (y.g == x.g or !madeHere(w.cells.items[y.e.cell].kind)) continue;
+                try made.append(w.a, .{ .path = eps, .cell = y.e.cell });
+            }
+            if (made.items.len == 0) continue;
+            if ((try w.reaches(args, made.items)) != null) {
+                try acc.add(w, cond_lost);
+                break;
+            }
+        }
+        // The arrivals: one apart.
+        const gs = try w.a.alloc([]u32, groups.len);
+        for (gs) |*g| g.* = &.{};
+        {
+            var lists = try w.a.alloc(std.ArrayList(u32), groups.len);
+            for (lists) |*l| l.* = .empty;
+            for (items) |x| {
+                if (!arrived(w.cells.items[x.e.cell].kind)) continue;
+                const c = switch (fl) {
+                    .list => (try w.atomCell(x.e.cell)) orelse continue,
+                    .record => x.e.cell,
+                };
+                try lists[x.g].append(w.a, c);
+            }
+            for (gs, lists) |*g, l| g.* = l.items;
+        }
+        var atoms: std.ArrayList(WAtom) = .empty;
+        try w.pairwiseApartAtoms(.apart, gs, &atoms);
+        try acc.addAtoms(w, atoms.items);
+        return acc.done(w);
+    }
+
     /// `av`'s distinct cells, each at ε, exact when any entry reaches it exactly.
     fn cellsOf(w: *Walker, av: AV) Allocator.Error!AV {
         if (av.len <= 1) return av;
@@ -7500,12 +8017,30 @@ const Walker = struct {
     /// The condition of stored items, pairwise and against what the list
     /// already holds (§18.2's table).
     fn storedCond(w: *Walker, items: []const AV, elements: AV) Allocator.Error!u32 {
+        // The items and what the list holds are pairwise apart (§16.7,
+        // #693), their cells read in the order the pairs read them: the
+        // first nonempty item meets what the list holds and every later
+        // item before the next item's deep condition.
         var acc: CondAcc = .{};
+        const groups = try w.a.alloc(AV, items.len + 1);
+        @memset(groups, &.{});
+        var met = false;
         for (items, 0..) |v, i| {
             try acc.add(w, try w.deepCond(v));
-            try acc.add(w, try w.sepValues(v, elements));
-            for (items[i + 1 ..]) |u| try acc.add(w, try w.sepValues(v, u));
+            if (met or v.len == 0) continue;
+            if (elements.len > 0) {
+                groups[i] = try w.sepCellList(v);
+                groups[items.len] = try w.sepCellList(elements);
+                met = true;
+            }
+            for (items[i + 1 ..], i + 1..) |u, j| {
+                if (u.len == 0) continue;
+                if (groups[i].len == 0) groups[i] = try w.sepCellList(v);
+                groups[j] = try w.sepCellList(u);
+                met = true;
+            }
         }
+        try acc.add(w, try w.pairwiseApart(groups, .list));
         return w.condAndAll(&acc);
     }
 
@@ -7828,13 +8363,16 @@ const Walker = struct {
         const cells = try w.a.alloc(AV, items.len);
         for (items, cells) |v, *c| c.* = try w.cellsOf(try w.rcellsOf(v));
         const ecells = try w.cellsOf(try w.rcellsOf(elements));
-        for (items, cells, 0..) |v, cv, i| {
+        for (items, cells) |v, cv| {
             if (cv.len == 0) continue;
             try acc.add(w, try w.rdeepCond(v));
-            try w.rsepCellsOf(cv, ecells, &acc);
-            for (cells[i + 1 ..]) |cu| try w.rsepCellsOf(cv, cu, &acc);
             if (acc.shared) return cond_shared;
         }
+        // The items and what the list holds, pairwise apart (§16.7, #693).
+        const groups = try w.a.alloc(AV, items.len + 1);
+        @memcpy(groups[0..items.len], cells);
+        groups[items.len] = ecells;
+        try acc.add(w, try w.pairwiseApart(groups, .record));
         return acc.done(w);
     }
 
@@ -7861,12 +8399,10 @@ const Walker = struct {
     fn rxsumOf(w: *Walker, k: u32, frame: u32, params: []const Inst.Index, self: u32) Allocator.Error!XSum {
         if (k == cond_lost or k == cond_limit) return .{ .no = 1 };
         if (k == cond_shared) return .{ .no = 2 };
-        const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
         for (w.rconds.items[k].atoms) |t| {
             if (self != none and t.kind == .excl and t.a == (try w.rbase(self))) continue;
-            const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
-            try out.append(keep, x);
+            if (!try w.xatomsOf(t, frame, params, false, &out)) return .{ .no = 1 };
         }
         return .{ .atoms = w.o.pruneAtoms(out.items) };
     }
@@ -7955,7 +8491,7 @@ const Walker = struct {
         if (x.no == 1) return cond_lost;
         if (x.no == 2) return cond_shared;
         var acc: RAcc = .{};
-        var memo: ProvMemo = .{ .atoms = x.atoms.len };
+        var memo: ProvMemo = .{ .atoms = atomsWeight(x.atoms) };
         for (x.atoms) |t| {
             const c = switch (t.kind) {
                 .excl => try w.rdeepCond(try memo.get(w, t.a, ctx)),
@@ -7964,8 +8500,75 @@ const Walker = struct {
                 else
                     try memo.rsep(w, t.a, t.b, ctx),
                 .keep => try w.rkeepShape(t.a.a, t.b, ctx),
+                .apart => try w.instPairwiseApart(t, ctx, &memo, .record),
                 // A spine is a list's array.
-                .spine, .sep_spine, .keep_spine => cond_yes,
+                .spine, .sep_spine, .keep_spine, .apart_spine => cond_yes,
+            };
+            if (c == cond_shared) return cond_shared;
+            try acc.add(w, c);
+        }
+        return acc.done(w);
+    }
+
+    /// A summary's `apart` at a call (§16.7, #693): each group's provenances
+    /// instantiated once and joined, their cells read once, and
+    /// `pairwiseApart` over them. A callback's result that two groups name
+    /// is `sep cb_j cb_j`, fresh across calls, which is not the separation
+    /// of its two instantiations: that apart instantiates its expansion.
+    fn instPairwiseApart(w: *Walker, t: XAtom, ctx: InstCtx, memo: *ProvMemo, fl: Fl) Allocator.Error!u32 {
+        if (repeatsCallback(t)) return w.instExpanded(t, ctx, memo, fl);
+        const groups = try w.a.alloc(AV, t.groups.len);
+        for (groups, t.groups) |*g, provs| {
+            var cells: std.ArrayList(Entry) = .empty;
+            for (provs) |p| {
+                const av = try memo.get(w, p, ctx);
+                if (av.len == 0) continue;
+                try cells.appendSlice(w.a, switch (fl) {
+                    .list => try memo.cells(w, p, av),
+                    .record => try memo.rcells(w, p, av),
+                });
+            }
+            g.* = try w.cellsOf(cells.items);
+        }
+        const k = try w.pairwiseApartOnce(groups, fl);
+        const sizes = try w.a.alloc(usize, t.groups.len);
+        for (sizes, t.groups) |*s, g| s.* = g.len;
+        if (checksApart(sizes)) {
+            const want = try w.instExpanded(t, ctx, memo, fl);
+            if (!try w.condSameExpanded(k, want, fl)) std.debug.panic("ownership: an instantiated pairwise-apart condition differs from its expansion's", .{});
+        }
+        return k;
+    }
+
+    /// Whether a callback's result is a member of two groups.
+    fn repeatsCallback(t: XAtom) bool {
+        for (t.groups, 0..) |g, i| for (g) |p| {
+            if (p.kind != .cb) continue;
+            for (t.groups[i + 1 ..]) |h| for (h) |q| {
+                if (p.eql(q)) return true;
+            };
+        };
+        return false;
+    }
+
+    /// An apart's expansion instantiated pair by pair, as `instXSum` and
+    /// `rinstXSum` instantiate a `sep` and a `sep_spine`.
+    fn instExpanded(w: *Walker, t: XAtom, ctx: InstCtx, memo: *ProvMemo, fl: Fl) Allocator.Error!u32 {
+        var pairs: std.ArrayList(XAtom) = .empty;
+        try expandAtom(w.a, t, &pairs);
+        var acc: FlAcc = .{ .fl = fl };
+        for (sortAtoms(pairs.items)) |p| {
+            const c = switch (fl) {
+                .list => switch (p.kind) {
+                    .sep => if (p.a.eql(p.b) and p.a.kind == .cb) try w.freshAcross(p.a.a, ctx) else try memo.sep(w, p.a, p.b, ctx),
+                    .sep_spine => try w.sepSpineValues(try memo.get(w, p.a, ctx), try memo.get(w, p.b, ctx)),
+                    else => unreachable,
+                },
+                .record => switch (p.kind) {
+                    .sep => if (p.a.eql(p.b) and p.a.kind == .cb) try w.rfreshAcross(p.a.a, ctx) else try memo.rsep(w, p.a, p.b, ctx),
+                    .sep_spine => cond_yes,
+                    else => unreachable,
+                },
             };
             if (c == cond_shared) return cond_shared;
             try acc.add(w, c);
@@ -7995,7 +8598,16 @@ const Walker = struct {
             .excl, .spine => w.atomCellIn(t.a, frame),
             .sep, .sep_spine => w.atomCellIn(t.a, frame) and w.atomCellIn(t.b, frame),
             .keep, .keep_spine => frame == 0 and w.atomCellIn(t.b, frame),
+            // Every member is in some pair of its expansion.
+            .apart, .apart_spine => w.apartOwnedBy(t.a, frame),
         };
+    }
+
+    fn apartOwnedBy(w: *Walker, idx: u32, frame: u32) bool {
+        for (w.aparts.items[idx]) |g| for (g) |c| {
+            if (!w.atomCellIn(c, frame)) return false;
+        };
+        return true;
     }
 
     /// Whether `frame` can state an atom about cell `c`: one of its own
@@ -8018,12 +8630,10 @@ const Walker = struct {
     fn xsumOf(w: *Walker, k: u32, frame: u32, params: []const Inst.Index, self: u32) Allocator.Error!XSum {
         if (k == cond_lost or k == cond_limit) return .{ .no = 1 };
         if (k == cond_shared) return .{ .no = 2 };
-        const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
         for (w.conds.items[k].atoms) |t| {
             if ((t.kind == .excl or t.kind == .spine) and t.a == self) continue;
-            const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
-            try out.append(keep, x);
+            if (!try w.xatomsOf(t, frame, params, false, &out)) return .{ .no = 1 };
         }
         return .{ .atoms = w.o.pruneAtoms(out.items) };
     }
@@ -8041,8 +8651,36 @@ const Walker = struct {
                 atom.kind = t.kind;
                 break :blk atom;
             },
-            .keep, .keep_spine => unreachable,
+            .keep, .keep_spine, .apart, .apart_spine => unreachable,
         };
+    }
+
+    /// `t` in a summary's vocabulary, appended to `out`; false when a cell
+    /// it names has no provenance here. An apart (§16.7, #693) maps each
+    /// member; with `drop`, a member with none leaves its group, which
+    /// removes exactly the pairs of its expansion that `xatomOf` would have
+    /// dropped one by one; without, the atom has none, as one of its pairs
+    /// would.
+    fn xatomsOf(w: *Walker, t: WAtom, frame: u32, params: []const Inst.Index, drop: bool, out: *std.ArrayList(XAtom)) Allocator.Error!bool {
+        const keep = w.o.keep.allocator();
+        if (t.kind != .apart and t.kind != .apart_spine) {
+            const x = (try w.xatomOf(t, frame, params)) orelse return false;
+            try out.append(keep, x);
+            return true;
+        }
+        const src = w.aparts.items[t.a];
+        const gs = try keep.alloc([]Prov, src.len);
+        for (gs, src) |*d, g| {
+            var ps: std.ArrayList(Prov) = .empty;
+            for (g) |c| {
+                if (try w.atomProv(c, frame, params)) |p| {
+                    try ps.append(keep, p);
+                } else if (!drop) return false;
+            }
+            d.* = ps.items;
+        }
+        try apartAtoms(keep, t.kind, gs, out);
+        return true;
     }
 
     fn atomProv(w: *Walker, c: u32, frame: u32, params: []const Inst.Index) Allocator.Error!?Prov {
@@ -8063,7 +8701,7 @@ const Walker = struct {
         // The conjunction gathered and sorted once (§16.3's amendment): a
         // fold of `condAnd` re-sorts what it holds at every atom.
         var acc: CondAcc = .{};
-        var memo: ProvMemo = .{ .atoms = x.atoms.len };
+        var memo: ProvMemo = .{ .atoms = atomsWeight(x.atoms) };
         for (x.atoms) |t| {
             const c = switch (t.kind) {
                 .excl => try w.deepCond(try memo.get(w, t.a, ctx)),
@@ -8075,6 +8713,8 @@ const Walker = struct {
                 else
                     try memo.sep(w, t.a, t.b, ctx),
                 .keep => try w.keepShape(t.a.a, t.b, ctx),
+                .apart => try w.instPairwiseApart(t, ctx, &memo, .list),
+                .apart_spine => try w.instExpanded(t, ctx, &memo, .list),
             };
             if (c == cond_shared) return cond_shared;
             try acc.add(w, c);
@@ -11145,7 +11785,8 @@ const Walker = struct {
             var xfail: ?Rely = null;
             {
                 const ci: u32 = if (cls == .closure) cls.closure else none;
-                for (s.xreq) |x| {
+                // Pair by pair: the report takes each pair where it was (§16.7, #693).
+                for (try expandAtoms(w.a, s.xreq)) |x| {
                     const p = xreqParam(x) orelse continue;
                     if (p != u.param) continue;
                     const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
@@ -11194,7 +11835,7 @@ const Walker = struct {
                 var xfail: ?Rely = null;
                 {
                     const ci: u32 = if (cls == .closure) cls.closure else none;
-                    for (s.rxreq) |x| {
+                    for (try expandAtoms(w.a, s.rxreq)) |x| {
                         const p = xreqParam(x) orelse continue;
                         if (p != u.param) continue;
                         const k = try w.rinstXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
@@ -11922,14 +12563,7 @@ const Walker = struct {
         // names, or on a line of its own when there is none.
         const xfail = try w.a.alloc(?Rely, args.len);
         @memset(xfail, null);
-        for (s.xreq) |x| {
-            const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 });
-            const r = try w.rely(k, w.frame);
-            if (r == .ok) continue;
-            const i = xreqParam(x) orelse continue;
-            if (i >= args.len) continue;
-            xfail[i] = Rely.worse(xfail[i], r);
-        }
+        try w.relyReqs(s.xreq, .list, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 }, xfail);
         // 3b. §31.7: a record the callee writes is an `update` demand at the
         // call, on the argument's record objects at the path, with the
         // fields it writes; reported, not enforced (R4). An asserted row
@@ -11944,14 +12578,7 @@ const Walker = struct {
         // argument it names, or on a record line of its own.
         const rxfail = try w.a.alloc(?Rely, args.len);
         @memset(rxfail, null);
-        for (s.rxreq) |x| {
-            const k = try w.rinstXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 });
-            const r = try w.rrely(k, w.frame);
-            if (r == .ok) continue;
-            const i = xreqParam(x) orelse continue;
-            if (i >= args.len) continue;
-            rxfail[i] = Rely.worse(rxfail[i], r);
-        }
+        try w.relyReqs(s.rxreq, .record, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 }, rxfail);
         for (s.uses) |u| {
             if (u.bits & bit_f == 0 or u.param >= args.len) continue;
             if (s.limit != .none and !w.isRecordType(w.instType(args[u.param]))) continue;
@@ -12048,6 +12675,38 @@ const Walker = struct {
             try kept.append(w.a, e);
         }
         return kept.items;
+    }
+
+    /// §18.4 item 3: a callee's requirements (`xreq`, or `rxreq` for a
+    /// record's), discharged at the call; each failure joins `xfail` at the
+    /// argument it names. An apart that fails is discharged pair by pair,
+    /// so that each pair's failure is put where it was before (§16.7,
+    /// #693); one that holds holds for every pair.
+    fn relyReqs(w: *Walker, reqs: []const XAtom, fl: Fl, ctx: InstCtx, xfail: []?Rely) Allocator.Error!void {
+        for (reqs) |x| {
+            const r = try w.relyReq(x, fl, ctx);
+            if (r == .ok) continue;
+            if (!x.isApart()) {
+                const i = xreqParam(x) orelse continue;
+                if (i < xfail.len) xfail[i] = Rely.worse(xfail[i], r);
+                continue;
+            }
+            var pairs: std.ArrayList(XAtom) = .empty;
+            try expandAtom(w.a, x, &pairs);
+            for (sortAtoms(pairs.items)) |p| {
+                const pr = try w.relyReq(p, fl, ctx);
+                if (pr == .ok) continue;
+                const i = xreqParam(p) orelse continue;
+                if (i < xfail.len) xfail[i] = Rely.worse(xfail[i], pr);
+            }
+        }
+    }
+
+    fn relyReq(w: *Walker, x: XAtom, fl: Fl, ctx: InstCtx) Allocator.Error!Rely {
+        return switch (fl) {
+            .list => w.rely(try w.instXSum(.{ .atoms = &.{x} }, ctx), w.frame),
+            .record => w.rrely(try w.rinstXSum(.{ .atoms = &.{x} }, ctx), w.frame),
+        };
     }
 
     /// The argument an `xreq` atom names first: a parameter's or a callback's.
@@ -13968,7 +14627,8 @@ const Walker = struct {
             }
             // What the callback relied on (§18.4 item 2), against what the
             // callee supplies it and what it captured.
-            for (c.xreq) |x| {
+            // Pair by pair: the first failure in atom order is reported (§16.7, #693).
+            for (try expandAtoms(w.a, c.xreq)) |x| {
                 const r = try w.rely(try w.classReq(x, s, j, cls, ictx), w.frame);
                 if (r == .ok) continue;
                 const k = xreqParam(x) orelse 0;
@@ -14151,10 +14811,13 @@ const Walker = struct {
             try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_a });
             try res.append(keep, .{ .path = try w.o.child(eps, .ctor, try w.o.ctorStep(c, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
+        // Its operands pairwise apart (§16.7, #693), as a construction's.
         var separation: std.ArrayList(XAtom) = .empty;
-        for (res.items, 0..) |r, i| for (res.items[i + 1 ..]) |other| {
-            try separation.append(keep, .{ .kind = .sep, .a = r.prov, .b = other.prov });
-        };
+        {
+            const gs = try keep.alloc([]Prov, res.items.len);
+            for (gs, res.items) |*g, r| g.* = try keep.dupe(Prov, &.{r.prov});
+            try apartAtoms(keep, .apart, gs, &separation);
+        }
         if (separation.items.len != 0) try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1, .condition_only = true }, .xc = .{ .atoms = separation.items }, .rxc = .{ .atoms = separation.items } });
         const out = try w.a.create(Summary);
         // A constructor has exactly this primitive row, so unseen callback
@@ -14180,6 +14843,8 @@ const Walker = struct {
             .sep_spine => w.sepSpineValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
             .sep => w.sepValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
             .keep, .keep_spine => cond_lost,
+            // Read through its expansion (the caller).
+            .apart, .apart_spine => unreachable,
         };
     }
 
@@ -14945,32 +15610,36 @@ const Walker = struct {
     /// §16.7: conditions on operands that coexist in this construction.
     /// The annotation follows the containing value, not either allocation.
     fn containingCondition(w: *Walker, inst: Inst.Index, avs: []const AV) Allocator.Error!AV {
-        var acc: CondAcc = .{};
-        var racc: RAcc = .{};
         // Each operand's cells once, not once per pair (#684), and each made
         // when the pairwise reading first needed it, so that every cell is
-        // interned in the order it always was.
+        // interned in the order it always was. The operands are pairwise
+        // apart: one pass, not one per pair (§16.7, #693).
         const cells = try w.a.alloc(?AV, avs.len);
         const rcells = try w.a.alloc(?AV, avs.len);
         @memset(cells, null);
         @memset(rcells, null);
-        for (avs, 0..) |av, i| for (avs[i + 1 ..], i + 1..) |other, j| {
-            // `sepValues(av, other)`, then `rsepValues(av, other)`.
-            if (av.len == 0 or other.len == 0) {
-                try acc.add(w, cond_yes);
-                try racc.add(w, cond_yes);
+        // The pairs' order, in which the first nonempty operand meets every
+        // later one, each in turn, and every operand before it is empty.
+        var first: ?usize = null;
+        for (avs, 0..) |av, j| {
+            if (av.len == 0) continue;
+            const i = first orelse {
+                first = j;
                 continue;
-            }
-            if (cells[i] == null) cells[i] = try w.sepCellList(av);
-            if (cells[j] == null) cells[j] = try w.sepCellList(other);
-            const k = try w.sepOfCells(cells[i].?, cells[j].?);
-            try acc.add(w, k);
-            if (rcells[i] == null) rcells[i] = try w.rsepCellList(av);
-            if (rcells[j] == null) rcells[j] = try w.rsepCellList(other);
-            try racc.add(w, try w.rsepOfCells(rcells[i].?, rcells[j].?));
-        };
-        const k = try w.condAndAll(&acc);
-        const rk = try racc.done(w);
+            };
+            if (cells[i] == null) cells[i] = try w.sepCellList(avs[i]);
+            cells[j] = try w.sepCellList(av);
+            if (rcells[i] == null) rcells[i] = try w.rsepCellList(avs[i]);
+            rcells[j] = try w.rsepCellList(av);
+        }
+        const groups = try w.a.alloc(AV, avs.len);
+        const rgroups = try w.a.alloc(AV, avs.len);
+        for (groups, rgroups, cells, rcells) |*g, *r, c, rc| {
+            g.* = c orelse &.{};
+            r.* = rc orelse &.{};
+        }
+        const k = try w.pairwiseApart(groups, .list);
+        const rk = try w.pairwiseApart(rgroups, .record);
         if (k == cond_yes and rk == cond_yes) return &.{};
         const guard = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst), .condition_only = true });
         try w.initCond(guard[0].cell, k);
@@ -16479,13 +17148,13 @@ const Walker = struct {
         var xreq: std.ArrayList(XAtom) = .empty;
         for (w.reqs.items) |r| {
             if (r.frame != frame) continue;
-            if (try w.xatomOf(r.atom, frame, params)) |x| try xreq.append(keep, x);
+            _ = try w.xatomsOf(r.atom, frame, params, true, &xreq);
         }
         // §31.4 item 6: what it relied on of records.
         var rxreq: std.ArrayList(XAtom) = .empty;
         for (w.rreqs.items) |r| {
             if (r.frame != frame) continue;
-            if (try w.xatomOf(r.atom, frame, params)) |x| try rxreq.append(keep, x);
+            _ = try w.xatomsOf(r.atom, frame, params, true, &rxreq);
         }
         if (atoms.items.len > atom_cap) return w.o.pessimistic(.{ .params = @intCast(params.len), .funs = funs.items }, .owned_atoms, @intCast(atoms.items.len));
         return w.o.normalize(.{
