@@ -1,0 +1,8 @@
+with nothing: 0
+while lent: 1
+with two spawned: 3
+count 2: ⊤
+in a spawned fiber: 2
+count 1: ⊤
+count 0: ⊤
+after every end: 0
