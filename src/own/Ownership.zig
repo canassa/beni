@@ -666,22 +666,24 @@ pub const XSum = struct {
 /// recursive call grew at a structure; bits 1–7 hold 1 + a *pending*
 /// boundary, for a symbolic cell at such a variable: its places below that
 /// many steps are below the variable. A group clears its members' marks
-/// when it settles, including the annotation boundary in the high byte,
+/// when it settles, including the annotation boundary in the upper bits,
 /// so no settled summary carries one and the summary block
 /// does not.
-pub const Grown = u16;
+pub const Grown = u64;
 fn gMarked(g: Grown) bool {
     return g & 1 != 0;
 }
 fn gPending(g: Grown) ?usize {
     const x = (g & 255) >> 1;
-    return if (x == 0) null else x - 1;
+    return if (x == 0) null else @intCast(x - 1);
 }
 fn gMake(marked: bool, pending: ?usize) Grown {
     const x: u8 = if (pending) |b| @intCast(@min(b, 126) + 1) else 0;
     return (x << 1) | @intFromBool(marked);
 }
-/// Two marks on one entry: marked when either is, the nearer boundary.
+/// Two marks at one result path: keep either mark and the nearer pending
+/// boundary. A larger guard distance means an earlier boundary above this
+/// path, so folding there conservatively includes both sources' aliases.
 fn gJoin(a: Grown, b: Grown) Grown {
     const pa = gPending(a);
     const pb = gPending(b);
@@ -692,22 +694,44 @@ fn gJoin(a: Grown, b: Grown) Grown {
 /// nearer, and a cell already below stays below.
 fn gStep(g: Grown) Grown {
     const pend = gPending(g) orelse return g;
-    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0) | (g & 0xff00);
+    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0) | (g & ~@as(Grown, 255));
 }
 
 /// A projected annotation's boundary may lie above its current result path.
-/// The high byte is one plus the number of path steps below that boundary;
-/// like the ordinary growth mark, it is cleared when the group settles.
+/// The upper bits hold one plus the number of path steps below that boundary;
+/// they represent the full u32 path-depth range without truncation.
+/// Like the ordinary growth mark, it is cleared when the group settles.
 fn gGuard(g: Grown) ?u32 {
     const encoded = g >> 8;
-    return if (encoded == 0) null else encoded - 1;
+    return if (encoded == 0) null else @intCast(encoded - 1);
 }
 fn gGuardAt(g: Grown, distance: u32) Grown {
-    return (g & 255) | ((@as(Grown, @intCast(distance)) + 1) << 8);
+    return (g & 255) | ((@as(Grown, distance) + 1) << 8);
 }
 fn gDropGuard(g: Grown, depth: u32) Grown {
     const distance = gGuard(g) orelse return g;
     return if (depth <= distance and distance > 0) gGuardAt(g, distance - 1) else g;
+}
+
+test "annotation growth preserves deep boundaries and joins at the earlier boundary" {
+    const low = gMake(true, 7);
+    for ([_]u32{ 254, 255, 65535, std.math.maxInt(u32) }) |distance| {
+        const marked = gGuardAt(low, distance);
+        try std.testing.expectEqual(@as(?u32, distance), gGuard(marked));
+        try std.testing.expect(gMarked(marked));
+        try std.testing.expectEqual(@as(?usize, 7), gPending(marked));
+        const stepped = gStep(marked);
+        try std.testing.expectEqual(@as(?u32, distance), gGuard(stepped));
+        try std.testing.expectEqual(@as(?usize, 6), gPending(stepped));
+    }
+    const later = gGuardAt(gMake(false, 7), 2);
+    const earlier = gGuardAt(gMake(true, 3), 5);
+    const joined = gJoin(later, earlier);
+    try std.testing.expectEqual(@as(?u32, 5), gGuard(joined));
+    try std.testing.expectEqual(@as(?usize, 3), gPending(joined));
+    try std.testing.expect(gMarked(joined));
+    try std.testing.expectEqual(earlier, gJoin(0, earlier));
+    try std.testing.expectEqual(earlier, gJoin(earlier, 0));
 }
 
 /// `rxc`: the record condition (§31.4 item 6), failing approximately unless
