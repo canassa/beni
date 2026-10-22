@@ -1088,7 +1088,7 @@ positions, rounds of a fixpoint:
 | `conditions` | 1 048 576 | the atoms of its conditions (§18.3) in all |
 | `rounds` | 32 | the rounds of a recursive group (§16.6) or of a block's local functions (§18.7) |
 | `owned-atoms` | 8 | the distinct `returns owned` atoms `(j, q)` its `owned` bits rest on (§16.4 item 5) |
-| `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16 |
+| `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16. *Amended 2026-10-22 (#763):* an annotation (a `condition(…)` entry, a condition on the value and no allocation) is not counted, since every pair it is in holds; #720's per-path guards had put values with 130 cells past the limit |
 | `fixpoint` | 32 | the rounds of a fixpoint inside a walk: the model at entry and its exclusivity invariant (§20.4), a callback's result, a fold's shape and its spine (§16.4 item 6). *Amended 2026-10-16 (#229):* their cells are finite, so they settle in a bounded number of rounds (§28's dated amendment *the entry's fixpoints settle*); before, each ended on a silent backstop: 8 rounds for the model, 4 for a callback's result and a fold's shape, 32 for the invariant and a fold's spine |
 | `callbacks` | 4 | *Added 2026-10-16 (#271):* a chain of callbacks, each instantiated inside the one before or handed the result of the one before (§16.4 items 5 and 6). Before, a fifth callback ended the walk silently: a demand was dropped, or a callback's result became a `⊤` with no alias of what the chain was handed |
 
@@ -1686,7 +1686,15 @@ reached apart from the level it started at, with a step of its own:
   The summaries are compared too, declaration by declaration, by text since the two runs number their paths
   apart: each canonical entry is written out as its member places (and as itself, a marker a projection made
   being one the expanded run writes as it is), and every use bit, result entry and supply the expanded run states
-  must be among them, and a supply owned in the canonical run must be owned in the expanded one. The same build
+  must be among them, and a supply owned in the canonical run must be owned in the expanded one.
+  *Amended 2026-10-22 (#763): fresh numbers are compared by what they name.* Each run numbers its fresh cells
+  in an order of its own, and the canonical run, coarser, may state a cell the expanded one does not (#720's
+  guards), which moves every later number; comparing the numbers as text panicked on core `Schema`. An
+  allocation's number says which paths may hold one new cell, so the cell the expanded run numbers `n` must be
+  one cell of the canonical run, under one number, at every place the expanded run puts it, and a supply of it
+  must be a supply of that number. An annotation's number says only which entries instantiate as one cell,
+  which shares nothing and holds every condition its entries state, so each place the expanded run annotates
+  must be one the canonical run annotates, under any number. The same build
   also checks the matcher against concrete places: for each recursive type with no parameter in a reported module,
   every concrete path to seven steps is folded and every pair compared with the concrete relation (a prefix either
   way overlaps; a prefix holds), and so is every place of `⟨T⟩r` and `⟨T⟩⁺r`, written out (`checkMatch`;
