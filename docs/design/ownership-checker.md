@@ -1686,7 +1686,10 @@ read-only structural view: ownership never instantiates new store variables.
 An unavailable or poisoned type is `⋆`, never one shared exact `error` type.
 Conflicting substitutions likewise merge to `⋆`; retaining the callee variable
 would falsely equate an uncertain actual with the caller's variable at recursion.
-The wildcard cannot cancel a cast or prove separation. Complete checked types
+The wildcard cannot cancel a cast or prove separation. A closed substitution
+such as `a := Int` has a finite alphabet and does not trigger the marker-type
+growth fold; a structural actual must itself contain an open variable. This
+leaves the existing composed value-path rule unchanged. Complete checked types
 remain exact, and known schema types do not take this fallback. Summary block
 version 28 invalidates earlier exact fallback keys while retaining the version
 27 layout and conditional writer sets.
