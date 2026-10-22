@@ -67,7 +67,8 @@ play : Arena, Socket → ⊤
 play arena socket =
     id = Ref.get arena.next
     Ref.set arena.next (id + 1)
-    Ref.update arena.players λplayers → [ …players, { id = id, socket = socket, input = "-" } ]
+    Ref.update arena.players λplayers →
+        [ …List.copy players, { id = id, socket = socket, input = "-" } ]
     Task.onExit (λ⊤ → inputs arena id socket) λ_ →
         Ref.update arena.players λplayers → List.filter players λp → p.id ≠ id
 

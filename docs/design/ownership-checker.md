@@ -5084,9 +5084,9 @@ behaviour changes.
   uncarriable alternatives remain unknown. The returned-validator page is
   promoted from pending, with shared-result, unknown-function and cache
   controls. Genuine fixture/example sharing uses fresh initialization or
-  copies at the write, including the two borrowed Ref-list replacements.
+  copies at the write, including borrowed Ref-list replacements in the fixture, example and websocket bench.
 
-  The final hidden-flag audit checks 1,350 roots/module sets and 980 list
+  The final hidden-flag audit checks 1,356 roots/module sets and 988 list
   demands across the corpus, examples, bench apps, core and all production
   and test platforms: **zero rejected, zero pending**, with every list
   verdict checked against the dump totals and no command error. Core's
