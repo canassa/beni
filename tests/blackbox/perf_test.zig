@@ -1112,6 +1112,37 @@ test "derived == on a deeply nested record is linear per use" {
     try s.finish("derived == on a nested record", verdict);
 }
 
+// A record update unified its required record `{ ρ | f : v }` with the
+// whole base: `ρ` bound to a fresh copy of the rest of the base's row and a
+// merged row of every field written back, so one update of a record of n
+// fields cost O(n), and n updates O(n²) — the shape of an Elm Architecture
+// `update` whose model has a field per widget (issue #800). The written
+// fields now meet the base's directly (checker-v2.md §6.5, amended
+// 2026-10-22). Calibration (ReleaseFast, instructions): the full
+// unification took 248M / 947M / 4 365M at 500 / 1 000 / 2 000 fields, a
+// ratio of 3.8 and 4.6; the direct one 20M / 28M / 45M, 1.4 and 1.6.
+// n = 1 000.
+test "updating every field of a wide record is linear in its width" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("Upd.beni", try wideUpdates(s.arena(), 1_000));
+    try s.w.write("Upd2.beni", try wideUpdates(s.arena(), 2_000));
+    const verdict = try s.ratio("Upd.beni", "Upd2.beni", 1_000);
+    try s.finish("record updates of a wide record", verdict);
+}
+
+/// `type alias Wide` of `count` `Int` fields, and one function updating
+/// each of them: `[ { m | f0 = 0 }, { m | f1 = 1 }, … ]`.
+fn wideUpdates(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias Wide =\n");
+    for (0..count) |i| try out.print(arena, "    f{d} : Int\n", .{i});
+    try out.appendSlice(arena, "\n\nall : Wide → List Wide\nall m =\n    [ { m | f0 = 0 }\n");
+    for (1..count) |i| try out.print(arena, "    , {{ m | f{d} = {d} }}\n", .{ i, i });
+    try out.appendSlice(arena, "    ]\n");
+    return out.toOwnedSlice(arena);
+}
+
 /// `mk` a record literal nested `depth` deep, and `uses` declarations
 /// comparing it with itself.
 fn nestedRecord(arena: std.mem.Allocator, depth: usize, uses: usize) ![]const u8 {

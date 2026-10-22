@@ -1,0 +1,30 @@
+-- A record update of a parameter whose type is a record ALIAS leaves the
+-- alias showing its expansion. `Box`'s `b` meets the record the update
+-- requires, `{ ρ | n : Int }`, and a name that meets an unnamed type shows
+-- the expansion (checker-v2.md §7.1, agree or expand): `f`'s message prints
+-- `{ n : Int, p : Point }`, `g`'s, with no update, prints `Box`. An update
+-- that unifies only its written fields with the base's, without the
+-- temporary record, must still expand the base (checker-v2.md §6.5,
+-- amended 2026-10-22).
+type alias Point =
+    x : Int
+    y : Int
+
+
+type alias Box =
+    p : Point
+    n : Int
+
+
+f : Box → Int
+f b =
+    c = { b | n = 1 }
+    h b
+
+
+g : Box → Int
+g b = h b
+
+
+h : Int → Int
+h n = n

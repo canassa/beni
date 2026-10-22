@@ -701,6 +701,35 @@ were re-blessed.
   `not_equatable` points, as in v1.
 - The row is read into `Walk.Stacks`' scratch list, not a fresh allocation per literal.
 
+*Amended 2026-10-22 (#800): a record update costs its written fields.* An update `{ b | f = e }`
+requires `{ ρ | f : v } = b`, with `ρ` and `v` fresh and `ρ` named nowhere else. As an `equal`
+node it ran `unifyRecord` against the whole base: `ρ` bound to a fresh copy of the rest of the
+base's row, then `v ⊓ b.f`, then a merged row of every field written back over the base. One
+update of a record of *w* fields cost O(*w*) and left two *w*-wide rows for rank adjustment and
+the type-key scan (§36); a function updating each field, O(*w*²) — an Elm Architecture `update`
+whose model has a field per widget (4 364M instructions for 2 000 updates of a 2 000-field
+record). The requirement is now its own node, `update_base` (`Tree.Generator.updateBase`, for an
+update and for markup's spread alike), with `equal`'s meaning and category. When the base's row —
+one segment, through an alias — holds every written field, `Unify.updateBase` does only the steps
+of that unification that any other variable can see:
+
+1. **`ρ`'s bind is skipped**: nothing else names `ρ`. It is taken only when `ρ` is not older than
+   the frame, where the bind would record a capture (§7.1).
+2. **Each `v` meets the base's field**, in name-text order, the same `go` as the merge-join's
+   shared fields (§7.2). A `v` that carries nothing meets anything, so nothing can fail and no
+   message moves; a field written twice keeps the full path and its `missing_field`.
+3. **`required` merges into the base**, which keeps its own row. The full path's row was the same
+   fields with the written ones' variables, which step 2 made the base's own classes — except a
+   field whose type is a generalised alias, which a `v` only copies (`Unify.takeName`): such a
+   field keeps the full path.
+4. **An alias base shows its expansion afterwards** (§7.1, *agree or expand*), as `throughAlias`
+   leaves it: `check/bad/RecordUpdateThroughAliasExpands`.
+
+The rows the full path left behind (`ρ`'s copy, the merged row) were subsets of the base's row
+with its openness, so the type-key record facts lose only rows that add no field conflict
+(`backend.md` §9 *Item 4*) and emitted output is unchanged. Any other base — a variable, a chain, a
+row missing a written field — takes the full unification, with its diagnostics.
+
 ### 6.6 Annotations: one scheme, one checked instance
 
 *Revised 2026-09-24: the rank of P2's rigids had been unspecified, and recursive uses must see

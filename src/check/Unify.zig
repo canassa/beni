@@ -1130,6 +1130,94 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
 
 const Shared = struct { name: Symbol, a: Var, b: Var };
 
+/// A record update's requirement on its base (`Tree.Node.Tag.update_base`),
+/// when the base's row already holds every written field: `required ⊓
+/// base` with only the steps another variable can see, so an update costs
+/// its written fields and not the base's width (checker-v2.md §6.5,
+/// *amended 2026-10-22*). Returns false, having changed nothing, when the
+/// full unification is needed; the caller then runs it.
+///
+/// `required` is `{ ρ | f : v, … }` with `ρ` and every `v` fresh, and `ρ`
+/// named nowhere else (`Tree.Generator.updateBase`). Against a base whose
+/// row `R` (one segment, through an alias) holds every `f`, `record` would:
+///   1. bind `ρ` to a fresh copy of `R` without the written fields — `ρ` is
+///      named nowhere else, so this is invisible, unless `ρ` is older than
+///      the frame, when the bind records a capture (§7.1): then the full path;
+///   2. unify each `v` with `R`'s field, in name-text order (§7.2) — this
+///      same `go`, here; a `v` that carries nothing meets anything, so
+///      nothing fails;
+///   3. merge `required` into the base with a row equal to `R`, its written
+///      fields' variables now `R`'s own classes — so here the merge keeps
+///      `R` itself; a field whose type is a generalised alias, which a `v`
+///      only copies (`takeName`), keeps the full path, whose row names the
+///      copy;
+///   4. and, for an alias base, expand the alias (`throughAlias`).
+pub fn updateBase(u: *Unify, required: Var, base: Var, region: Bir.Inst.Index) Error!bool {
+    const st = u.store;
+    const rq = st.find(required);
+    const rec_r = switch (st.content(rq)) {
+        .structure => |shape| switch (shape) {
+            .record => |r| r,
+            else => return false,
+        },
+        else => return false,
+    };
+    const ext = st.find(rec_r.ext);
+    if (!isPlainFlex(st.content(ext)) or st.rank(ext) < u.frame().rank) return false;
+    const named = st.find(base);
+    const x, const xc = st.resolved(named);
+    if (x == rq) return false;
+    const rec_x = switch (xc) {
+        .structure => |shape| switch (shape) {
+            .record => |r| r,
+            else => return false,
+        },
+        else => return false,
+    };
+    // One segment: a chain would be flattened by the merge (§4.1).
+    switch (st.resolvedContent(rec_x.ext)) {
+        .structure => |shape| if (shape == .record) return false,
+        else => {},
+    }
+    const written = st.fields(rec_r.fields);
+    const meets = try u.scratch.alloc(Shared, written.len);
+    defer u.scratch.free(meets);
+    for (written, meets, 0..) |f, *pair, i| {
+        // A name written twice is the merge-join's `missing_field`.
+        if (i != 0 and written[i - 1].name == f.name) return false;
+        if (!isPlainFlex(st.content(st.find(f.value)))) return false;
+        const value = Walk.fieldIn(st, rec_x.fields, f.name) orelse return false;
+        if (st.rank(st.find(value)) == TypeStore.generalized) return false;
+        pair.* = .{ .name = f.name, .a = f.value, .b = value };
+    }
+    if (meets.len > 1) try TypeStore.sortByText(Shared, u.scratch, u.interner, meets);
+    u.problem = null;
+    u.region = region;
+    u.question_at = null;
+    u.question_call = .none;
+    for (meets) |pair| {
+        u.depth = 0;
+        if (!try u.go(pair.a, pair.b)) {
+            _ = u.invariant(false, "a record update's fresh field variable failed to meet its base's field");
+            u.problem = null;
+        }
+    }
+    u.depth = 0;
+    const root = st.find(x);
+    _ = try u.merge(st.find(rq), root, st.content(root));
+    if (named != x) try u.expand(named);
+    return true;
+}
+
+/// A flex nothing rides on: no kind, marker, requirement or obligation. It
+/// meets anything (§7.1).
+fn isPlainFlex(c: TypeStore.Content) bool {
+    return switch (c) {
+        .flex => |f| f.kind == .any and !f.equatable and f.constraints == .none and f.obls == .none,
+        else => false,
+    };
+}
+
 fn sharedTextLessThan(interner: *const InternPool.Global, a: Shared, b: Shared) bool {
     return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
 }

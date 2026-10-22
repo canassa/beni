@@ -283,7 +283,7 @@ const Walker = struct {
             const base = try g.freshFlex();
             try w.expr(spread, base, .{ .tag = .general });
             const required = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = try g.freshFlex() } } });
-            try w.add(try g.equal(required, base, spread, .{ .tag = .record_update, .index = Category.no_field }));
+            try w.add(try g.updateBase(required, base, spread));
             break :blk base;
         } else try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = try g.fresh(.{ .structure = .empty_record }) } } });
 

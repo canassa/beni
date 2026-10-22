@@ -65,6 +65,13 @@ pub const Node = struct {
         and_,
         /// `a` = expected, `b` = actual.
         equal,
+        /// A record update's requirement on its base (§6.5): `a` = the
+        /// required record `{ ρ | f : v, … }`, `b` = the base. `.equal`'s
+        /// meaning, category `record_update`. The generator makes `ρ` and each
+        /// `v` fresh and names `ρ` nowhere else, so the solver may unify only
+        /// the written fields when the base's row already holds them
+        /// (`Unify.updateBase`, checker-v2.md §6.5, *amended 2026-10-22*).
+        update_base,
         /// `a` = `extra` index of a `Call` (checker.md §8.3's shape).
         call,
         /// `a` = the target; `b` = the variable to copy (`Var` as an
@@ -353,6 +360,13 @@ pub const Generator = struct {
 
     pub fn equal(g: *Generator, expected: Var, actual: Var, region: Bir.Inst.Index, category: Category) Error!Constraint {
         return g.add(.equal, region, @backingInt(expected), @backingInt(actual), category);
+    }
+
+    /// A record update's `required` record, whose extension and field
+    /// variables are fresh and its own, meets the update's `base`
+    /// (`Node.Tag.update_base`).
+    pub fn updateBase(g: *Generator, required: Var, base: Var, region: Bir.Inst.Index) Error!Constraint {
+        return g.add(.update_base, region, @backingInt(required), @backingInt(base), .{ .tag = .record_update, .index = Category.no_field });
     }
 
     pub fn conj(g: *Generator, items: []const Constraint) Error!Constraint {
