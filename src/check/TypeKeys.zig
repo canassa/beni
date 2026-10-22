@@ -261,10 +261,21 @@ fn symbolBefore(_: void, a: InternPool.Symbol, b: InternPool.Symbol) bool {
     return @backingInt(a) < @backingInt(b);
 }
 
-/// A row's labels in text order. Equal labels are one symbol, so the
-/// order is total and an unstable sort writes it.
-fn symbolsByText(interner: *const InternPool.Global, row: []InternPool.Symbol) void {
-    std.mem.sortUnstable(InternPool.Symbol, row, interner, textBefore);
+/// A row's labels in text order, by `byText`. Equal labels are one symbol,
+/// so the order is total and is the one any sort by text writes.
+fn symbolsByText(scratch: std.mem.Allocator, interner: *const InternPool.Global, row: []InternPool.Symbol) Error!void {
+    try byText(Label, scratch, interner, @ptrCast(row));
+}
+
+/// A label as `TypeStore.sortByText` reads one: a `name`.
+const Label = extern struct { name: InternPool.Symbol };
+
+/// Whether a row's labels are in symbol order already: a row of one
+/// segment, as the store keeps every row, is.
+fn sortedBySymbol(row: []const InternPool.Symbol) bool {
+    if (row.len < 2) return true;
+    for (row[0 .. row.len - 1], row[1..]) |a, b| if (@backingInt(a) > @backingInt(b)) return false;
+    return true;
 }
 
 pub fn build(in: Input) Error!Output {
@@ -399,7 +410,7 @@ pub fn build(in: Input) Error!Output {
             const start: u32 = @intCast(labels.items.len);
             for (fields.items) |field| try labels.append(in.scratch, field.name);
             const row = labels.items[start..];
-            std.mem.sortUnstable(InternPool.Symbol, row, {}, symbolBefore);
+            if (!sortedBySymbol(row)) std.mem.sortUnstable(InternPool.Symbol, row, {}, symbolBefore);
             const r: Record = .{ .fields = .{ .start = start, .len = @intCast(row.len) }, .open = !closed };
             const slot = try distinct.getOrPutContext(in.scratch, r, .{ .labels = labels.items });
             if (slot.found_existing) {
@@ -408,7 +419,7 @@ pub fn build(in: Input) Error!Output {
             }
             try records.append(in.scratch, r);
         }
-        for (records.items) |r| symbolsByText(in.interner, labels.items[r.fields.start..][0..r.fields.len]);
+        for (records.items) |r| try symbolsByText(in.scratch, in.interner, labels.items[r.fields.start..][0..r.fields.len]);
         const order: RecordOrder = .{ .labels = labels.items, .interner = in.interner };
         std.mem.sortUnstable(Record, records.items, order, RecordOrder.lessThan);
         var canonical: std.ArrayList(Record) = .empty;
@@ -661,7 +672,7 @@ const Builder = struct {
                     b.dfields.clearRetainingCapacity();
                     if (!try b.closedRow(rec, &b.dfields)) return .wild;
                     // By text, as `pushChildren` visits them (§36).
-                    byText(TypeStore.Field, b.interner, b.dfields.items);
+                    try byText(TypeStore.Field, b.scratch, b.interner, b.dfields.items);
                     b.dwords.clearRetainingCapacity();
                     b.dnames.clearRetainingCapacity();
                     for (b.dfields.items) |f| {
@@ -714,7 +725,7 @@ const Builder = struct {
                     if (!try b.closedRow(rec, &b.fields)) return;
                     // By text, so the nodes a walk makes are numbered by the
                     // input and never by a symbol's id (§36).
-                    byText(TypeStore.Field, b.interner, b.fields.items);
+                    try byText(TypeStore.Field, b.scratch, b.interner, b.fields.items);
                     for (b.fields.items) |f| try b.pushChild(f.value);
                 },
             },
@@ -819,7 +830,7 @@ const Builder = struct {
                         try b.keyed.append(b.scratch, .{ .name = f.name, .key = k });
                     }
                     // By text: a symbol's id is the session's (§36).
-                    byText(Keyed, b.interner, b.keyed.items);
+                    try byText(Keyed, b.scratch, b.interner, b.keyed.items);
                     b.words.clearRetainingCapacity();
                     b.names.clearRetainingCapacity();
                     for (b.keyed.items) |f| {
@@ -1029,7 +1040,7 @@ const Crossing = struct {
                         // them in numbers nodes.
                         c.fields.clearRetainingCapacity();
                         try c.fields.appendSlice(s, store.fields(rec.fields));
-                        if (c.in.keyed) byText(TypeStore.Field, c.in.interner, c.fields.items);
+                        if (c.in.keyed) try byText(TypeStore.Field, s, c.in.interner, c.fields.items);
                         var i = c.fields.items.len;
                         while (i > 0) {
                             i -= 1;
@@ -1199,15 +1210,14 @@ fn declOf(bir: *const Bir, inst: Bir.Inst.Index) ?u32 {
     return null;
 }
 
-/// Stable text order, also for wide rows. Read text ranks when the interner
-/// has them (`TypeStore.sortByText`'s order); do not use an insertion sort
-/// here, since both closed keys and record facts may name thousands of fields.
-fn byText(comptime T: type, interner: *const InternPool.Global, items: []T) void {
-    std.mem.sort(T, items, interner, struct {
-        fn lessThan(pool: *const InternPool.Global, left: T, right: T) bool {
-            return textBefore(pool, left.name, right.name);
-        }
-    }.lessThan);
+/// Stable text order, also for wide rows: `TypeStore.sortByText`, the
+/// checker's one text sort — the names' text ranks when the interner has
+/// them, otherwise a radix sort of their first eight bytes with the whole
+/// text only for names that share them. A comparison sort here compared
+/// texts byte by byte, O(n log n) times per record key and per row in a
+/// small project (checker-v2.md §36, *amended 2026-10-22*).
+fn byText(comptime T: type, scratch: std.mem.Allocator, interner: *const InternPool.Global, items: []T) Error!void {
+    try TypeStore.sortByText(T, scratch, interner, items);
 }
 
 fn textBefore(interner: *const InternPool.Global, a: InternPool.Symbol, b: InternPool.Symbol) bool {
