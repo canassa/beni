@@ -294,8 +294,7 @@ After each step the lines the Worker wrote to its console follow, `| out:
 …` and `| err: …`: the driver asks the Worker's test hook `/__beni/mark/<n>`
 after each step and waits for its line, so a step's lines never land under
 the next; the host's stack lines (`    at …`) are left out, since they hold a
-store path. The two cases run under the budget, one Miniflare start each
-(about 1 900M instructions).
+store path. Each of the two cases starts Miniflare once.
 
 ### `browser/`: a program in a page
 

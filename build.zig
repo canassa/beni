@@ -663,9 +663,8 @@ pub fn build(b: *std.Build) void {
     // Miniflare (docs/design/boundary.md §9.12 (k); tests/blackbox/workers.zig).
     // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
     // `-Dminiflare=`; with neither the step fails and says so. Not a gate
-    // (no CI job runs it yet, #697); each case is held to the budget, since
-    // one Miniflare start is about 1 900M instructions and a case starts it
-    // once (§9.12 (k)). Takes `-Dcorpus`. Its run hashes are recorded by
+    // (no CI job runs it yet, #697); a case starts Miniflare once
+    // (§9.12 (k)). Takes `-Dcorpus`. Its run hashes are recorded by
     // `test-run-hashes` only in the same shell.
     const workers_step = b.step("test-workers", "Run the workers/ corpus under Miniflare (nix develop .#workers)");
     workers_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "workers" }).step);
