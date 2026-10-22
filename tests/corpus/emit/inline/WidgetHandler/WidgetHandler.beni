@@ -1,0 +1,100 @@
+-- The widget's handler is bound once, then passed to its wire function
+-- after 64 local event registrations. The release golden must put the
+-- arrow at that use; the development twin pins the original lowering.
+import Browser
+import Html exposing (Html)
+import Tea
+import Widget
+
+
+type Msg
+    = WidgetMsg Widget.Msg
+    | Increment
+
+
+update : Msg, Int → Int
+update msg model =
+    case msg of
+        WidgetMsg sub →
+            Widget.update sub model
+
+        Increment →
+            model + 1
+
+
+view : Int → Html Msg
+view model =
+    <div>
+        {Html.map (Widget.view model) WidgetMsg}
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+        <button onClick={Increment}>+</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → 0, update = update, view = view })
+        "root"

@@ -1,0 +1,16 @@
+import Html exposing (Html)
+
+
+pub type Msg
+    = Increment
+
+
+pub update : Msg, Int → Int
+update msg model =
+    case msg of
+        Increment →
+            model + 1
+
+
+pub view : Int → Html Msg
+view model = <section><button onClick={Increment}>{model}</button></section>

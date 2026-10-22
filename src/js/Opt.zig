@@ -165,6 +165,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .ir = ir,
         .arena = arena,
         .uses = try arena.alloc(u32, ir.names.len),
+        .use_at = try arena.alloc(Opt.Use, ir.names.len),
         .decls = try arena.alloc(u32, ir.names.len),
         .binds = try arena.alloc(u32, ir.names.len),
         .assigned = try arena.alloc(bool, ir.names.len),
@@ -215,6 +216,12 @@ const Opt = struct {
     /// over-count is safe and an under-count is not**, which is why a
     /// parameter counts as a read and an assignment target counts as one too.
     uses: []u32,
+    /// The last expression read of each name, recorded by the counting walk.
+    /// With exactly one read this is its use, including the list and statement
+    /// that evaluate it; no forward search or distance limit is needed.
+    use_at: []Use,
+    use_list: u32 = std.math.maxInt(u32),
+    use_stmt: u32 = 0,
     /// How many `const_decl`/`let_decl`/`func_decl` introduce each name in
     /// this declaration. A name introduced twice is never inlined: the single
     /// use the scan finds would then be one of two bindings' uses, and the
@@ -252,6 +259,12 @@ const Opt = struct {
     /// `copy`'s use sites, found by `ownUsesInto`.
     found_all: std.ArrayList(Index) = .empty,
 
+    const Use = struct {
+        list: u32 = std.math.maxInt(u32),
+        stmt: u32 = 0,
+        node: Node.OptionalIndex = .none,
+    };
+
     // ---- The counting walk ------------------------------------------------
 
     /// Reset a slot the first time this declaration touches it.
@@ -270,6 +283,7 @@ const Opt = struct {
         if (i >= o.uses.len) return;
         o.touch(i);
         o.uses[i] += 1;
+        o.use_at[i] = .{};
     }
 
     fn declare(o: *Opt, n: NameIndex) void {
@@ -350,7 +364,12 @@ const Opt = struct {
                 o.use(n);
                 if (n.unwrap()) |i| if (i < o.binds.len) o.bind(i);
                 const f = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                // The iterable is in the loop binding's scope when printed
+                // (ownUses), so it is never an indexed substitution site.
+                const old_list = o.use_list;
+                o.use_list = std.math.maxInt(u32);
                 try o.countExpr(f.iterable);
+                o.use_list = old_list;
                 try o.countStmts(f.body());
             },
             .switch_stmt => {
@@ -358,6 +377,9 @@ const Opt = struct {
                 for (o.ir.extraSlice(o.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try o.countStmt(c);
             },
             .switch_case => {
+                const old_list = o.use_list;
+                defer o.use_list = old_list;
+                o.use_list = std.math.maxInt(u32);
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try o.countExpr(t);
                 try o.countStmts(o.ir.subRange(@fromBackingInt(@intCast(d.rhs))));
             },
@@ -373,7 +395,17 @@ const Opt = struct {
     }
 
     fn countStmts(o: *Opt, range: JsIr.SubRange) Allocator.Error!void {
-        for (o.ir.extraSlice(range, Index)) |s| try o.countStmt(s);
+        const old_list = o.use_list;
+        const old_stmt = o.use_stmt;
+        defer {
+            o.use_list = old_list;
+            o.use_stmt = old_stmt;
+        }
+        o.use_list = @backingInt(range.start);
+        for (o.ir.extraSlice(range, Index), 0..) |stmt, i| {
+            o.use_stmt = @intCast(i);
+            try o.countStmt(stmt);
+        }
     }
 
     /// Mark the root of an assignment target. `a.b = c` mutates `a`'s object
@@ -424,7 +456,13 @@ const Opt = struct {
         while (o.stack.items.len > base) {
             const node = JsIr.popOperand(&o.stack).?;
             switch (o.ir.tag(node)) {
-                .ident => o.use(@fromBackingInt(@intCast(o.ir.data(node).lhs))),
+                .ident => {
+                    const n: NameIndex = @fromBackingInt(@intCast(o.ir.data(node).lhs));
+                    o.use(n);
+                    if (n.unwrap()) |i| if (i < o.use_at.len) {
+                        o.use_at[i] = .{ .list = o.use_list, .stmt = o.use_stmt, .node = node.toOptional() };
+                    };
+                },
                 .arrow => try o.countFunc(@fromBackingInt(@intCast(o.ir.data(node).lhs))),
                 else => try o.ir.pushOperands(o.arena, &o.stack, node),
             }
@@ -533,7 +571,7 @@ const Opt = struct {
             // any statement; the use is in a later statement's own
             // expressions, so it is still made once.
             if (o.ir.tag(value) == .arrow) {
-                if (try o.findAnyUse(stmts[i + 1 ..], n)) |at| {
+                if (o.findAnyUse(range, i, n)) |at| {
                     o.drop(stmt);
                     o.inlined[at.int()] = value.toOptional();
                 }
@@ -556,7 +594,7 @@ const Opt = struct {
             if (!listed) {
                 o.reads_field = false;
                 if (o.pureValue(value, 0) != null) {
-                    const found = if (o.reads_field) try o.findUseAcross(stmts[i + 1 ..], n) else try o.findAnyUse(stmts[i + 1 ..], n);
+                    const found = if (o.reads_field) try o.findUseAcross(stmts[i + 1 ..], n) else o.findAnyUse(range, i, n);
                     if (found) |at| {
                         o.drop(stmt);
                         o.inlined[at.int()] = o.compress(value).toOptional();
@@ -743,21 +781,16 @@ const Opt = struct {
         return null;
     }
 
-    /// `findUse` for a value whose making does nothing and reads nothing (a
-    /// function): any statement may stand between, but the use must be in a
-    /// later statement's own expressions.
-    fn findAnyUse(o: *Opt, rest: []const Index, n: NameIndex) Allocator.Error!?Index {
-        for (rest, 0..) |stmt, seen| {
-            if (seen >= scan_limit) return null;
-            o.found = .none;
-            const own = try o.ownUses(stmt, n);
-            if (own == 1) {
-                o.found_in = stmt;
-                return o.found.unwrap();
-            }
-            if (own != 0) return null;
-        }
-        return null;
+    /// A value whose making does nothing and reads nothing can move to
+    /// its one read in a later statement's own expressions. The counting
+    /// walk recorded its list, so a branch, closure, loop or try boundary
+    /// cannot become a substitution site, however far away the read is.
+    fn findAnyUse(o: *Opt, range: JsIr.SubRange, after: usize, n: NameIndex) ?Index {
+        const site = o.use_at[n.unwrap().?];
+        if (site.list != @backingInt(range.start) or site.stmt <= after) return null;
+        const at = site.node.unwrap() orelse return null;
+        o.found_in = o.ir.extraSlice(range, Index)[site.stmt];
+        return at;
     }
 
     /// `findUse` for a value that reads a field (`pureValue`): the owner's
