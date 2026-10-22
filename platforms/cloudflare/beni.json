@@ -1,0 +1,8 @@
+{
+  "platform": true,
+  "name": "cloudflare",
+  "program": "Worker.Program",
+  "runtime": "runtime.js",
+  "entry": "_worker.mjs",
+  "exports": "program"
+}
