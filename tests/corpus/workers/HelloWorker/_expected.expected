@@ -1,0 +1,44 @@
+> GET /
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< hello from beni
+> GET /html
+< 201
+< content-type: text/html; charset=utf-8
+< x-made-by: beni
+<
+< <p>hi</p>
+> GET /empty
+< 204
+> GET /bad
+< 500
+| err: beni: invalid response: a 204 response takes no body
+> GET /platform-header
+< 500
+| err: beni: invalid response: the header name "X-Beni-Cycle" is the platform's: x-beni- names are refused
+> GET /redirect
+< 302
+< location: http://127.0.0.1/html
+> POST /method?x=1
+>
+> ignored
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< POST http://127.0.0.1/method?x=1
+> GET /var
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< hi there
+> GET /missing
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< not declared, and no crash
+> GET /nope
+< 404
+< content-type: text/plain; charset=utf-8
+<
+< no such page: /nope

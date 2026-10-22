@@ -1,0 +1,26 @@
+> GET /slow/40 (detached as long)
+> GET /slow/10
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< slept 10
+> (answer long)
+(long) < 200
+(long) < content-type: text/plain; charset=utf-8
+(long) <
+(long) < slept 40
+> GET /outlive
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< answered first
+> GET /seen
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< the detached fiber ran after the answer
+> GET /wait-then-seen/30
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< the detached fiber ran after the answer

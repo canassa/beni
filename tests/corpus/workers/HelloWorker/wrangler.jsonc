@@ -1,0 +1,9 @@
+// The configuration the author writes (boundary.md §9.12 (i)); the driver
+// maps its keys to Miniflare's options.
+{
+  "name": "hello-worker",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "compatibility_flags": ["enable_request_signal"],
+  "vars": { "GREETING": "hi there" },
+}

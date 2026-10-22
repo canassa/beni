@@ -1,0 +1,11 @@
+# Each request and its answer; the Worker's console after each.
+{"path": "/"}
+{"path": "/html"}
+{"path": "/empty"}
+{"path": "/bad"}
+{"path": "/platform-header"}
+{"path": "/redirect"}
+{"method": "POST", "path": "/method?x=1", "body": "ignored"}
+{"path": "/var"}
+{"path": "/missing"}
+{"path": "/nope"}

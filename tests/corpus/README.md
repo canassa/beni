@@ -26,6 +26,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `run/` | `build --platform=node`, then `node out/_main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `run/`, with `<name>.requests` | `build --platform=node`, then `node tests/serve/driver.mjs out/_main.mjs <name>.requests` | `<name>.expected` | a server program driven by the script: the transcript of its answers, then its streams and exit (*A server program*) |
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
+| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug` with its own `_expected.release-run-hash`); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
 **Warnings on a fixture that compiles.** A `check/good/`, `writes/`,
@@ -253,6 +254,45 @@ text says why the fixture qualifies. Like `.crash`, it is written by hand and
 never blessed. It costs no build of its own, because it reads the output of the
 development build the case already makes. Conduit's pages and the schema
 fixtures that build only compiled schemas carry one.
+
+### A Worker
+
+A `workers/` fixture is a project built for the `cloudflare` platform
+(`boundary.md` §9.12): its modules, a `beni.json` whose `"exports"` lists the
+Durable Object classes, a `wrangler.jsonc` as the author writes it (§9.12 (i);
+the driver maps `compatibility_date`, `compatibility_flags`, `vars` and
+`durable_objects` with `migrations` to Miniflare's options), and an
+`_expected.steps` script. Each of its two cases — the development build, and
+the release build — is run by `node tests/workers/driver.mjs
+--miniflare=<index.js> out _expected.steps` in the project directory, under
+Miniflare (the `workerd` nixpkgs' `wrangler` carries; `nix develop .#workers`
+sets `BENI_MINIFLARE`), with `cf: false`, on 127.0.0.1, disposed at the end.
+Nothing is deployed and no account is used. The transcript is the golden,
+`_expected.expected`; the port never appears in it. The script is one JSON
+object per line, `#` for a comment:
+
+    {"method": "GET", "path": "/items?limit=3", "headers": {"accept": "text/plain"}, "body": "…"}
+                                a request, printed as `> GET /items?limit=3`,
+                                its headers as `> name: value`, a blank `>`
+                                line and the body when there is one; the
+                                answer `< 200`, each header `< name: value`
+                                sorted by name as the host keeps them, a
+                                blank `<` line and the body lines; one
+                                unanswered for 5 s prints `< (no response in
+                                5000 ms)`
+    {…, "detach": "long"}       the same request, not waited for, named
+    {"answer": "long"}          wait for, and print, a detached request's
+                                answer, each line `(long) < …`; one still
+                                pending after the last step is printed then,
+                                under `> (answer long, at the end)`
+    {…, "abort": 20}            sent, then given up on after 20 ms; under
+                                Miniflare the Worker's client is Miniflare's
+                                own entry worker, so `request.signal` never
+                                fires here (§9.12 (k), #600)
+
+After each step the lines the Worker wrote to its console follow, `| out:
+…` and `| err: …`. The two cases run under the budget, one Miniflare start
+each (about 1 900M instructions).
 
 ### `browser/`: a program in a page
 
