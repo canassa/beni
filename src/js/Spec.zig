@@ -11975,6 +11975,11 @@ const Pts = struct {
     /// top-level statement it was found under (`none`: not yet).
     node_var: [][]VarId = &.{},
     node_top: [][]u32 = &.{},
+    /// Per module and name: the identifier a `const` of the name copies,
+    /// when that `const` is the name's one declaration (`aliasSources`), or
+    /// `none`. Such a name's var is its source's (`localVar`).
+    alias_src: [][]u32 = &.{},
+    alias_depth: u32 = 0,
     locals: KeyMap(LocalKey, VarId) = .empty,
     globals: []VarId = &.{},
     /// Each module's per-node value of the sweep in progress.
@@ -14193,15 +14198,87 @@ const Pts = struct {
 
     /// The var of local `n` of the top-level statement the walk is in,
     /// made the first time it is asked for.
+    /// Per name of a module: the identifier node that a `const` of the name
+    /// is bound to, when that `const` is the name's only declaration of any
+    /// kind in the module (a binding, a parameter, a loop's, a catch's), or
+    /// `none` (#796, the copy-only locals of fact 3's input). Every node
+    /// counts, live or not, so a name declared anywhere else is never one.
+    fn aliasSources(a: Allocator, ir: *const JsIr, names: usize) Allocator.Error![]u32 {
+        const src = try a.alloc(u32, names);
+        @memset(src, none);
+        const decls = try a.alloc(u8, names);
+        defer a.free(decls);
+        @memset(decls, 0);
+        const bump = struct {
+            fn f(d: []u8, n: u32) void {
+                if (n < d.len and d[n] < 2) d[n] += 1;
+            }
+        }.f;
+        for (0..ir.nodes.len) |i| {
+            const node: Index = @fromBackingInt(@intCast(i));
+            const d = ir.data(node);
+            switch (ir.tag(node)) {
+                .const_decl => {
+                    bump(decls, d.lhs);
+                    const rhs: Index = @fromBackingInt(@intCast(d.rhs));
+                    if (d.lhs < names and ir.tag(rhs) == .ident and ir.data(rhs).lhs != d.lhs) src[d.lhs] = d.rhs;
+                },
+                .let_decl, .func_decl, .gen_decl, .for_of, .while_true, .block_stmt => bump(decls, d.lhs),
+                .arrow => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func);
+                    for (ir.extraSlice(f.params(), NameIndex)) |n| if (n.unwrap()) |x| bump(decls, x);
+                },
+                .try_stmt => if (ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try).catch_name.unwrap()) |x| bump(decls, x),
+                else => {},
+            }
+            switch (ir.tag(node)) {
+                .func_decl, .gen_decl => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Func);
+                    for (ir.extraSlice(f.params(), NameIndex)) |n| if (n.unwrap()) |x| bump(decls, x);
+                },
+                else => {},
+            }
+        }
+        for (src, decls) |*s, c| if (c != 1) {
+            s.* = none;
+        };
+        return src;
+    }
+
+    /// `localVar`'s alias: the var of the identifier the one `const` of `n`
+    /// copies (`alias_src`), when its read is walked and no guard narrows
+    /// it, and `n`'s filter (`allow`) is wild or the source's own.
+    fn aliasOf(p: *Pts, mi: u32, n: NameIndex, allow: JsIr.RepKey) Allocator.Error!?VarId {
+        if (mi >= p.alias_src.len) return null;
+        const row = p.alias_src[mi];
+        const i = n.unwrap() orelse return null;
+        if (i >= row.len or row[i] == none) return null;
+        const rhs: Index = @fromBackingInt(@intCast(row[i]));
+        if (p.alias_depth > 64 or p.maybeNarrowed(mi, rhs)) return null;
+        p.alias_depth += 1;
+        defer p.alias_depth -= 1;
+        const src = try p.nodeVar(mi, rhs, @fromBackingInt(@intCast(p.s.mods[mi].ir.data(rhs).lhs)));
+        if (allow != .wild and allow != p.links_of.items[src].allow) return null;
+        return src;
+    }
+
     fn localVar(p: *Pts, mi: u32, n: NameIndex) Allocator.Error!VarId {
         if (p.cachedLocal(mi, p.top, n)) |v| return v;
         const gop = try p.locals.getOrPut(p.run(), .{ .module = mi, .top = p.top.int(), .name = n.int() });
         if (!gop.found_existing) {
-            gop.value_ptr.* = try p.newVar();
-            // Filtered by its name's declared type (*Declared-type filtering
-            // of fact 3*); a name the compiler made is wild.
-            p.links_of.items[gop.value_ptr.*].allow = p.closedKey(p.s.mods[mi].ir.nameKey(n));
-            if (p.s.in.trace_largest) p.originAt(gop.value_ptr.*, .{ .kind = .local, .of = .local, .module = mi, .node = p.top.int(), .name = p.s.mods[mi].names.items[n.int()] });
+            const allow = p.closedKey(p.s.mods[mi].ir.nameKey(n));
+            // A `const` copy of a name, declared nowhere else, is its source
+            // when no guard narrows the read and its filter passes what the
+            // source's does: the copy edge would make the two sets one.
+            if (try p.aliasOf(mi, n, allow)) |src| {
+                gop.value_ptr.* = src;
+            } else {
+                gop.value_ptr.* = try p.newVar();
+                // Filtered by its name's declared type (*Declared-type filtering
+                // of fact 3*); a name the compiler made is wild.
+                p.links_of.items[gop.value_ptr.*].allow = allow;
+                if (p.s.in.trace_largest) p.originAt(gop.value_ptr.*, .{ .kind = .local, .of = .local, .module = mi, .node = p.top.int(), .name = p.s.mods[mi].names.items[n.int()] });
+            }
         }
         p.cacheLocal(mi, p.top, n, gop.value_ptr.*);
         return gop.value_ptr.*;
@@ -15114,6 +15191,8 @@ const Pts = struct {
         for (s.mods, 0..) |*m, mi| {
             for (m.ir.extraSlice(m.ir.body, Index)) |top| try p.stmts.append(a, .{ .module = @intCast(mi), .top = top });
         }
+        p.alias_src = try a.alloc([]u32, s.mods.len);
+        for (p.alias_src, s.mods) |*al, *m| al.* = try aliasSources(a, m.ir, m.names.items.len);
         var nodes: usize = 0;
         for (s.mods) |*m| nodes += m.ir.nodes.len;
         p.ones = try a.alloc(u32, nodes);
@@ -18570,6 +18649,44 @@ test "a read written as its literal leaves fact 3 to be kept" {
     try testing.expect(try s.analyse());
     try testing.expectEqual(runs, s.stats.points_to_runs);
     try testing.expectEqual(@as(u64, 1), s.stats.points_to_reused);
+}
+
+// #796: which names are a `const` copy of a name declared nowhere else.
+// `const a = 1; const b = a; const c = b; const c = 1;` and `(d) => { const
+// d = a; }`: `b` copies `a`; `c` is declared twice and `d` is a parameter
+// too, so neither is; `a` is bound to a literal.
+test "a const copy is an alias only when it is its name's one declaration" {
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const name_a = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const name_b = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const name_c = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const name_d = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const one = try b.addString("1");
+    const lit = try b.addParts(.number, Node.no_pos, one[0], one[1]);
+    const decl_a = try b.addParts(.const_decl, Node.no_pos, name_a.int(), lit.int());
+    const read_a = try b.addParts(.ident, Node.no_pos, name_a.int(), 0);
+    const decl_b = try b.addParts(.const_decl, Node.no_pos, name_b.int(), read_a.int());
+    const read_b = try b.addParts(.ident, Node.no_pos, name_b.int(), 0);
+    const decl_c = try b.addParts(.const_decl, Node.no_pos, name_c.int(), read_b.int());
+    const lit2 = try b.addParts(.number, Node.no_pos, one[0], one[1]);
+    const decl_c2 = try b.addParts(.const_decl, Node.no_pos, name_c.int(), lit2.int());
+    const read_a2 = try b.addParts(.ident, Node.no_pos, name_a.int(), 0);
+    const decl_d = try b.addParts(.const_decl, Node.no_pos, name_d.int(), read_a2.int());
+    const params = try b.addNames(&.{name_d});
+    const fbody = try b.addRange(&.{decl_d});
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = fbody.start, .body_end = fbody.end });
+    const arrow = try b.addParts(.arrow, Node.no_pos, @backingInt(func), Node.arrow_plain);
+    const stmt = try b.addParts(.expr_stmt, Node.no_pos, arrow.int(), 0);
+    var ir = try b.toOwned(try b.addRange(&.{ decl_a, decl_b, decl_c, decl_c2, stmt }));
+    defer ir.deinit(gpa);
+    const src = try Pts.aliasSources(gpa, &ir, ir.names.len);
+    defer gpa.free(src);
+    try testing.expectEqual(read_a.int(), src[name_b.int()]);
+    try testing.expectEqual(none, src[name_a.int()]);
+    try testing.expectEqual(none, src[name_c.int()]);
+    try testing.expectEqual(none, src[name_d.int()]);
 }
 
 /// An allocator that never grows or shrinks a block in place, so that every
