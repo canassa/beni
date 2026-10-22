@@ -1,0 +1,96 @@
+-- load
+<body>
+  <main>
+    <section data-role="true">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <section data-role="false">
+      <section></section>
+    </section>
+    <section data-role="dynamic">
+      <section>""</section>
+    </section>
+    <output>"0"</output>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=true]>section>button
+<body>
+  <main>
+    <section data-role="true">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <section data-role="false">
+      <section></section>
+    </section>
+    <section data-role="dynamic">
+      <section>""</section>
+    </section>
+    <output>"11"</output>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=toggle]
+<body>
+  <main>
+    <section data-role="true">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <section data-role="false">
+      <section></section>
+    </section>
+    <section data-role="dynamic">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <output>"11"</output>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=dynamic]>section>button
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <main>
+    <section data-role="true">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <section data-role="false">
+      <section></section>
+    </section>
+    <section data-role="dynamic">
+      <section>""</section>
+    </section>
+    <output>"11"</output>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>
+-- click [data-role=toggle]
+<body>
+  <main>
+    <section data-role="true">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <section data-role="false">
+      <section></section>
+    </section>
+    <section data-role="dynamic">
+      <section>
+        <button>"11"</button>
+      </section>
+    </section>
+    <output>"11"</output>
+    <button data-role="toggle">"Toggle"</button>
+  </main>
+</body>

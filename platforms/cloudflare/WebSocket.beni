@@ -1,0 +1,186 @@
+--! The server WebSocket of a Durable Object (`docs/design/boundary.md`
+--! §9.11's shared handle operations, §9.12 (g)), with hibernation. The
+--! handle operations — `write`, `close`, `protocol`, `eq` and the types
+--! `Close`, `WriteError`, `CloseError` — are §9.11's, with the same names
+--! and meaning as the `node` server's; the reading style is the host's:
+--! one handler per event (`message`, `closed`, `failed` of
+--! `Worker.Object`), and no `read`, so an object can hibernate. The socket's
+--! id, its subprotocol and its tags live in the host's attachment, so they
+--! are the same across hibernation; `attach` and `attachment` keep a value
+--! of the program's beside them, as JSON text through a schema.
+
+import Js
+import List
+import Schema exposing (Schema)
+import String
+
+
+--| An accepted socket: the host's object, the same across one life of the
+--| object. Across hibernation the state is rebuilt from `Object.sockets`,
+--| and `id` is what a program keeps in storage.
+pub foreign type Socket
+
+
+--| How a socket closed: the peer's code and reason, or 1006 and `""` for
+--| an end with no close frame (§9.11 (a)).
+pub type alias Close =
+    code : Int
+    reason : String
+
+
+--| Why `write` sent nothing: the connection is closing or closed.
+pub type WriteError
+    = NotOpen
+
+
+--| Why `close` sent nothing. A server may send 1000 to 1003, 1007 to
+--| 1009, 1011 to 1014 and 3000 to 4999 — 1010 is a client's code — and a
+--| reason of at most 123 bytes of UTF-8.
+pub type CloseError
+    = InvalidCode Int
+    | ReasonTooLong
+
+
+--| Why `attach` stored nothing: the attachment as the host serialises it
+--| over 16 384 bytes (counted as `Worker.Storage` counts), or a value that
+--| does not print by its schema.
+pub type AttachError
+    = TooLarge
+    | Unprintable (List Schema.Issue)
+
+
+--| Two sockets are the same host object.
+pub eq : Socket, Socket → Bool
+eq a b = Js.same (Js.from a) (Js.from b)
+
+
+--| Send `text` as one message: `Err NotOpen` when the connection is not
+--| open, tested before the host is called. From a handler it is a direct
+--| call; the host has no back-pressure signal, so a program bounds its own
+--| rate.
+pub write : Socket, String → Result WriteError ⊤
+write socket text =
+    if open socket then
+        _ = Js.call (Js.from socket) "send" [ Js.from text ]
+        Ok ⊤
+    else
+        Err NotOpen
+
+
+--| Start the closing handshake with that code and reason. Nothing is
+--| written after it; `closed` is delivered afterwards with the peer's
+--| answer. A connection that is not open is left as it is.
+pub close : Socket, Close → Result CloseError ⊤
+close socket why =
+    if not (sendable why.code) then
+        Err (InvalidCode why.code)
+    else if utf8Length why.reason > 123 then
+        Err ReasonTooLong
+    else
+        if open socket then
+            Js.to (Js.call (Js.from socket) "close" [ Js.from why.code, Js.from why.reason ])
+        Ok ⊤
+
+
+--| The subprotocol the object chose at `acceptWith`, or `""`: kept in the
+--| attachment, since the host's own `ws.protocol` is always `""` here.
+pub protocol : Socket → String
+protocol socket = Js.to (Js.get (envelope socket) "protocol")
+
+
+--| The platform's id of the socket, kept in the attachment: the same across
+--| hibernation.
+pub id : Socket → String
+id socket = Js.to (Js.get (envelope socket) "id")
+
+
+--| The tags the socket was accepted with, kept in the attachment.
+pub tags : Socket → List String
+tags socket =
+    acc = Js.ref []
+    Js.each (Js.get (envelope socket) "tags") λtag →
+        Js.write acc (List.push (Js.read acc) (Js.to tag))
+    Js.read acc
+
+
+--| Keep a value of the program's with the socket, printed by the schema:
+--| it survives hibernation, and the host drops it when either side closes.
+--| The limit is 16 384 bytes as the host serialises them, counted here as
+--| two bytes per UTF-16 code unit of every string kept, plus 64: so about
+--| 8 100 characters of ASCII. One byte per unit would be wrong for a
+--| string sliced from a two-byte one, which V8 keeps two-byte (the host
+--| call measured in §9.12 (h); `attach` prints through the schema first,
+--| so the slice may never reach the host), so the count stays two.
+pub attach : Socket, Schema e a, a → Result AttachError ⊤
+attach socket schema value =
+    case Schema.print schema value of
+        Err issues →
+            Err (Unprintable issues)
+
+        Ok text →
+            env = envelope socket
+            -- Counted as `Worker.Storage` counts: two bytes per code unit of
+            -- every string serialised, plus 64 of envelope.
+            fixed =
+                String.length (Js.to (Js.get env "id"))
+                    + String.length (Js.to (Js.get env "protocol"))
+                    + List.foldl (tags socket) 0 λtag n → n + String.length tag
+            if 2 * (fixed + String.length text) + 64 > 16384 then
+                Err TooLarge
+            else
+                _ =
+                    Js.call (Js.from socket) "serializeAttachment"
+                        [ Js.from
+                            { data = Js.from text
+                            , id = Js.get env "id"
+                            , protocol = Js.get env "protocol"
+                            , tags = Js.get env "tags"
+                            }
+                        ]
+                Ok ⊤
+
+
+--| The value `attach` kept, parsed by the schema: `Nothing` when there is
+--| none, `Err` when the text there does not parse.
+pub attachment : Socket, Schema e a → Result (List Schema.Issue) (Maybe a)
+attachment socket schema =
+    data = Js.get (envelope socket) "data"
+    if Js.isNullish data then
+        Ok Nothing
+    else
+        case Schema.parse schema (Js.to data) of
+            Ok value →
+                Ok (Just value)
+
+            Err issues →
+                Err issues
+
+
+-- The host's attachment: `{ id, protocol, tags, data }`, written at
+-- `accept`, so a socket this platform accepted always has one.
+envelope : Socket → Js.Value
+envelope socket = Js.call (Js.from socket) "deserializeAttachment" []
+
+
+-- `readyState` OPEN.
+open : Socket → Bool
+open socket = Js.to (Js.get (Js.from socket) "readyState") == 1
+
+
+-- The codes a server may send (RFC 6455 §7.4, and the IANA registry);
+-- 1010 is a client's code. workerd accepts every one of them.
+sendable : Int → Bool
+sendable code =
+    (code ≥ 1000 && code ≤ 1003)
+        || (code ≥ 1007 && code ≤ 1009)
+        || (code ≥ 1011 && code ≤ 1014)
+        || (code ≥ 3000 && code ≤ 4999)
+
+
+utf8Length : String → Int
+utf8Length text =
+    Js.to
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
+        )

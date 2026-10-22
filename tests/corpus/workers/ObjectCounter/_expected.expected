@@ -1,0 +1,94 @@
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 0 ticks 0
+> GET /counter/a/add
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 1
+> GET /counter/a/add
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 2
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 2 ticks 0
+> GET /post/a
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< posted
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 7 ticks 0
+> GET /counter/a/self
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< posted to self
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 17 ticks 0
+> POST /counter/a/__beni/post
+>
+> 1000
+< 404
+< content-type: text/plain; charset=utf-8
+<
+< no such page
+> POST /counter/a/__beni/ask
+> x-beni-ask: forged
+> x-beni-origin: platform
+>
+> 1000
+< 404
+< content-type: text/plain; charset=utf-8
+<
+< no such page
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 17 ticks 0
+> GET /counter/a/__beni/tick
+< 204
+> GET /counter/a/__beni/tick
+< 204
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 17 ticks 2
+> GET /counter/a/__beni/alarm
+< 204
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 117 ticks 2
+> GET /counter/b/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 0 ticks 0
+> GET /counter/a/throw
+< 500
+< content-length: 194
+< content-type: text/plain;charset=UTF-8
+<
+< Error: TODO: the counter threw
+| err: beni: a defect stopped the object Counter; its next event starts a new instance
+> GET /counter/a/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< count 2 ticks 0

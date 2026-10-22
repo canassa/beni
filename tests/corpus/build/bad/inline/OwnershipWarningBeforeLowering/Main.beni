@@ -1,7 +1,8 @@
 -- A late lowering error must fail even when earlier warnings sort before it.
 -- frontend.md §1: exit 1 for any error; the complete diagnostic list is golden.
 -- Ported from `build/bad/direct/`: the lowering's error is `browser-inline`'s
--- markup held by a helper (docs/design/browser-inline.md §5, class 1).
+-- markup held in a record (docs/design/browser-inline.md §5, class 1).
+-- A helper alone builds since view helpers are written in place (#436).
 import Html exposing (Html)
 import Tea
 
@@ -15,7 +16,7 @@ count n = <b>{n}</b>
 
 
 view : Int → Html ⊤
-view _ = <p>{count (List.length values)}</p>
+view _ = <p>{{ html = count (List.length values) }.html}</p>
 
 
 main : Tea.Program

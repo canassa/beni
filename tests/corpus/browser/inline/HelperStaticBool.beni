@@ -1,0 +1,43 @@
+-- Opposite static calls share source, but never share dead-arm proofs.
+-- The dynamic call must keep both arms and refresh its text and event payload.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    shown : Bool
+    count : Int
+
+
+type Msg
+    = Pick Int
+    | Toggle
+
+
+helper : Bool, Int → Html Msg
+helper tag n = <section>{if tag then <button onClick={Pick n}>{n}</button> else <></>}</section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section data-role="true">{helper True 11}</section>
+        <section data-role="false">{helper False 22}</section>
+        <section data-role="dynamic">{helper model.shown model.count}</section>
+        <output>{model.count}</output>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </main>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick n →
+            { model | count = n }
+
+        Toggle →
+            { model | shown = not model.shown }
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { shown = False, count = 0 }, update = update, view = view }

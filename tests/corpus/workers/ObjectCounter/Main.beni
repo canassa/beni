@@ -1,0 +1,112 @@
+-- workers: a Durable Object (boundary.md §9.12 (e), (f), (h)). A counter
+-- restores its count from storage at each start, answers requests one at
+-- a time, receives posts from the Worker and from itself, ticks on its
+-- timer while the count is above zero (driven by the `/__beni/tick` hook),
+-- runs its alarm (the `/__beni/alarm` hook), and after a defect is aborted:
+-- the next request starts a new instance whose `restore` reads the count
+-- the last `put` left. A client's post or ask through the Worker's
+-- `forward` is refused: the platform's paths and headers are its own.
+import Duration
+import Schema exposing (Schema)
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+import Worker.Storage as Storage
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ counter ] }
+
+
+-- The counter's protocol: what another object or the Worker may send it:
+-- a number to add.
+type alias Message =
+    Int
+
+
+type alias State =
+    count : Int
+    ticks : Int
+
+
+counter : Worker.Definition
+counter =
+    Object.define "Counter" Schema.int restore
+        { Object.none
+            | request = serve
+            , received = received
+            , tick = λstate → if state.count > 0 then Just (Duration.millis 50) else Nothing
+            , ticked = λ_ state → { state | ticks = state.ticks + 1 }
+            , alarm = λ_ state → { state | count = state.count + 100 }
+        }
+
+
+restore : Object.Context Message → State
+restore ctx =
+    case Storage.get ctx Schema.int "count" of
+        Ok (Just count) →
+            { count = count, ticks = 0 }
+
+        _ →
+            { count = 0, ticks = 0 }
+
+
+serve : Object.Context Message, State, Request → State × Response
+serve ctx state request =
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "add", …rest ] →
+            next = { state | count = state.count + 1 }
+            _ = Storage.put ctx Schema.int "count" next.count
+            ( next, Worker.text 200 "count ${String.fromInt next.count}" )
+
+        [ "get", …rest ] →
+            ( state
+            , Worker.text
+                200
+                "count ${String.fromInt state.count} ticks ${String.fromInt state.ticks}"
+            )
+
+        [ "alarm-soon", …rest ] →
+            Object.alarmIn ctx (Duration.millis 10)
+            ( state, Worker.text 200 "alarm set" )
+
+        [ "self", …rest ] →
+            Object.post (Object.self ctx) 10
+            ( state, Worker.text 200 "posted to self" )
+
+        [ "throw", …rest ] →
+            Debug.todo "the counter threw"
+
+        _ →
+            ( state, Worker.text 404 "no such counter page" )
+
+
+received : Object.Context Message, State, Message → State
+received ctx state n = { state | count = state.count + n }
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "COUNTERS" Schema.int
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just counters, [ "", "counter", name, …rest ] ) →
+            case Worker.forward (Worker.byName counters name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the counter is not available"
+
+        ( Just counters, [ "", "post", name ] ) →
+            Object.post (Worker.byName counters name) 5
+            Worker.text 200 "posted"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no COUNTERS binding"
+
+        _ →
+            Worker.text 404 "no such page"

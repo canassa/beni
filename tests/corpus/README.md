@@ -289,12 +289,41 @@ object per line, `#` for a comment:
                                 Miniflare the Worker's client is Miniflare's
                                 own entry worker, so `request.signal` never
                                 fires here (§9.12 (k), #600)
+    {"socket": "a", "path": "/arena/x", "protocols": ["v1"]}
+                                open a WebSocket client named `a` with the
+                                `ws` library Miniflare carries, on the
+                                Worker's port: `> (socket a) GET
+                                /arena/x ["v1"]`, then the 101 and its
+                                headers as `(socket a) < …`, or the refusing
+                                response the same way; what the server sends
+                                is kept, in order, until a `receive` step
+    {"send": "a", "text": "hi"} a text message: `> (socket a) "hi"`
+    {"send": "a", "binary": 3}  a binary frame of 3 bytes
+    {"close": "a", "code": 4000, "reason": "bye"}
+                                a close frame (no code when `code` is left out)
+    {"drop": "a"}               end the connection with no close frame
+    {…, "until": "closed p2"}   any step: wait for a console line of the
+                                Worker that holds the text before the step
+                                ends, since a line an object writes from a
+                                socket event has no order with the mark;
+                                `(no line "…" in 5000 ms)` otherwise
+    {"receive": "a"}            the next thing socket `a` got: `< (socket a)
+                                "text"`, `close 1000 "reason"`, `binary <n>
+                                bytes` or `error …`; `(nothing arrived)`
+                                after 5 s
+    {"receive": "a", "count": 3}
+                                the next 3 text messages, summed up as `3
+                                messages, <bytes> bytes`
 
 After each step the lines the Worker wrote to its console follow, `| out:
 …` and `| err: …`: the driver asks the Worker's test hook `/__beni/mark/<n>`
 after each step and waits for its line, so a step's lines never land under
 the next; the host's stack lines (`    at …`) are left out, since they hold a
-store path. Each of the two cases starts Miniflare once.
+store path. A request forwarded to a Durable Object whose path ends in
+`/__beni/tick` fires the object's timer (a `ticked` event; 204, or 409 when
+no timer is armed), and one ending in `/__beni/alarm` runs its `alarm`
+(204); under `--test-hooks` the object arms no host timer. Each of the two
+cases starts Miniflare once.
 
 ### `browser/`: a program in a page
 

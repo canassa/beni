@@ -1,0 +1,44 @@
+-- Host code retains a node across an arm exit and dispatches directly to it.
+import Html exposing (Html)
+import Js
+
+
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClick" delegated : Event
+
+
+pub event "onClickGuard" name "click" delegated preventDefault stopPropagation : Event
+
+
+pub start : sync (Int → ⊤) → (⊤ → ⊤)
+start send =
+    window = Js.global "window"
+    document = Js.global "document"
+    node = Js.call document "querySelector" [ Js.from "[data-role=retained]" ]
+    parent = Js.get node "parentNode"
+    bubbled = Js.from λ_ →
+        _ = Js.call (Js.global "console") "log" [ Js.from "host-bubbled" ]
+        ⊤
+    _ = Js.call parent "addEventListener" [ Js.from "click", bubbled ]
+    fire = Js.from λ_ →
+        event =
+            Js.construct (Js.global "MouseEvent")
+                [ Js.from "click", Js.from { bubbles = True, cancelable = True } ]
+        _ = Js.call node "dispatchEvent" [ event ]
+        _ =
+            Js.call (Js.global "console") "log"
+                [ Js.from "host-defaultPrevented", Js.get event "defaultPrevented" ]
+        ⊤
+    _ = Js.call window "addEventListener" [ Js.from "probehidden", fire ]
+    λ⊤ →
+        _ = Js.call window "removeEventListener" [ Js.from "probehidden", fire ]
+        _ = Js.call parent "removeEventListener" [ Js.from "click", bubbled ]
+        ⊤

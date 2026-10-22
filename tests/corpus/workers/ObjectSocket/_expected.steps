@@ -1,0 +1,61 @@
+# A plain request is refused; an upgrade is accepted with a tag, and with
+# the offered subprotocol; a subprotocol the object asks for and the client
+# did not offer is refused.
+{"path": "/arena/x/p1"}
+{"socket": "a", "path": "/arena/x/p1"}
+{"receive": "a"}
+{"socket": "b", "path": "/arena/x/p2", "protocols": ["v1", "v2"]}
+{"receive": "b"}
+{"socket": "n", "path": "/arena/x/p4", "protocols": ["v2"]}
+{"path": "/arena/x/count"}
+# A tag over 256 bytes and an autoReply text over 2 048 bytes are refused
+# in beni; the arena serves on.
+{"socket": "k", "path": "/arena/x/cjk"}
+{"path": "/arena/x/auto-long"}
+# A step for a socket that did not open prints one line.
+{"send": "n", "text": "hello"}
+# Each message is an event: the echo names the socket's tags and protocol.
+{"send": "a", "text": "hello"}
+{"receive": "a"}
+{"send": "b", "text": "hello"}
+{"receive": "b"}
+{"send": "a", "text": "broadcast:tick"}
+{"receive": "a"}
+{"receive": "b"}
+# The attachment keeps a value of the program's; one over 16 384 bytes is
+# refused.
+{"send": "a", "text": "attachment"}
+{"receive": "a"}
+{"send": "a", "text": "attach:seat 4"}
+{"receive": "a"}
+{"send": "a", "text": "attachment"}
+{"receive": "a"}
+{"send": "a", "text": "attach-big"}
+{"receive": "a"}
+# The autoReply pair is answered by the host, with no event.
+{"send": "a", "text": "ping?"}
+{"receive": "a"}
+# A close code a server may not send is refused; the object's own close
+# reaches the peer, and the peer's close reaches the object.
+{"send": "a", "text": "close-bad"}
+{"receive": "a"}
+{"send": "a", "text": "close"}
+{"receive": "a"}
+{"close": "b", "code": 4002, "reason": "client says bye", "until": "closed p2"}
+{"path": "/arena/x/count"}
+# A binary frame is closed with 1003; a client that leaves with no close
+# frame is seen as 1006 with no reason.
+{"socket": "c", "path": "/arena/x/p3"}
+{"receive": "c"}
+{"send": "c", "binary": 3, "until": "closed p3"}
+{"receive": "c"}
+{"socket": "d", "path": "/arena/x/p5"}
+{"receive": "d"}
+{"drop": "d", "until": "closed p5"}
+{"path": "/arena/x/count"}
+# A defect closes every socket: the client sees 1006.
+{"socket": "e", "path": "/arena/x/p6"}
+{"receive": "e"}
+{"path": "/arena/x/throw"}
+{"receive": "e"}
+{"path": "/arena/x/count"}

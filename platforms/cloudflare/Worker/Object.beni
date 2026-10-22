@@ -1,0 +1,1248 @@
+--! A Durable Object (`docs/design/boundary.md` §9.12 (e), (f)): a name, a
+--! function that restores its state, and the handlers it answers events
+--! with. Every event — a request, a socket message, a close, an error, an
+--! alarm, a tick, a message from this object or another — goes into one
+--! mailbox, and the handlers run one at a time, each handed the state and
+--! returning the next, on a scheduler and in a scope of the object's own.
+--!
+--!     arena : Worker.Definition
+--!     arena =
+--!         Object.define "Arena" arenaMessage restore
+--!             { Object.none | request = join, received = scored }
+--!
+--! A handler may wait: on `ask`, on `Worker.forward`, on `Task.sleep`, on a
+--! fiber it spawned. Slow work that must not hold the object is spawned,
+--! and sends the object its result with `post` ((e.4)). A defect closes
+--! the object's scope, then aborts the instance ((f)). The sibling
+--! `Object.js` holds the one place the host throws for ordinary input.
+
+import Duration exposing (Duration)
+import Js
+import List
+import Log
+import Schema exposing (Schema)
+import String
+import Task exposing (Scheduler)
+import WebSocket exposing (Close, Socket)
+import Worker exposing (Request, Response)
+
+
+type alias V =
+    Js.Value
+
+
+--| The same type as `Worker.Ref msg`, named here.
+pub type alias Ref msg =
+    Worker.Ref msg
+
+
+--| An object of protocol `msg`: its id, its storage, its sockets, its alarm,
+--| its timer and its mailbox. What every handler is handed first.
+pub foreign type Context msg
+
+
+--| The one-shot reply channel an `ask` carries ((e.10)).
+pub foreign type Reply a
+
+
+--| The handlers an object answers events with. Each takes the context and
+--| the state, and returns the next state; `request` answers a response too.
+--| `tick` reads the state and names the timer; a `tick` that waits parks
+--| the object until it answers.
+pub type alias Handlers state msg =
+    request : Context msg, state, Request → state × Response
+    message : Context msg, state, Socket, String → state
+    closed : Context msg, state, Socket, Close → state
+    failed : Context msg, state, Socket, String → state
+    alarm : Context msg, state → state
+    received : Context msg, state, msg → state
+    tick : state → Maybe Duration
+    ticked : Context msg, state → state
+
+
+--| Every handler leaves the state as it is, `request` answers 404, and
+--| `tick` is `Nothing`.
+pub none : Handlers state msg
+none =
+    { request = λ_ state _ → ( state, Worker.text 404 "no such page" )
+    , message = λ_ state _ _ → state
+    , closed = λ_ state _ _ → state
+    , failed = λ_ state _ _ → state
+    , alarm = λ_ state → state
+    , received = λ_ state _ → state
+    , tick = λ_ → Nothing
+    , ticked = λ_ state → state
+    }
+
+
+--| Why an `ask` failed ((e.10)): the host's four as `Worker.StubError`
+--| sorts them, `NoReply` when nothing can reply any more, and the two
+--| schema failures.
+pub type AskError
+    = Overloaded
+    | Reset
+    | Transient
+    | Cycle
+    | NoReply
+    | Unprintable (List Schema.Issue)
+    | Unreadable (List Schema.Issue)
+
+
+-- ---- The definition -----------------------------------------------------------
+
+--| A Durable Object class: its name — the one the app's `beni.json` lists
+--| under `"exports"` and the Wrangler configuration binds — the schema of
+--| its protocol, the function that restores its state at each start, and
+--| its handlers. A `tick` that waits parks the object until it answers,
+--| its other events waiting in the mailbox.
+pub define : String, Schema e msg, (Context msg → state), Handlers state msg → Worker.Definition
+define className schema restore handlers =
+    -- `tick` is to be checked sync here (§9.12 (e.5)); `Js.maySuspend` of
+    -- a field answers yes in the suspendable twin of this function, which
+    -- a caller whose other handlers may wait reaches, so the check is the
+    -- owner's to place (dashboard `cf-workers-q9`): until then a `tick`
+    -- that waits parks the object until it answers.
+    Js.to
+        (Js.from
+            { handlers = Js.from handlers
+            , name = Js.from className
+            , restore = Js.from restore
+            , schema = Js.from schema
+            , start =
+                Js.from λctx bindings worker →
+                    start className schema restore handlers ctx bindings worker
+            }
+        )
+
+
+-- ---- The instance -----------------------------------------------------------
+
+-- The instance record (`Context msg`): the host's state object (`ctx`), the
+-- bindings, the definition's parts, the state once restored, the mailbox
+-- of events waiting, the consumer's wait, the scheduler, the trampoline,
+-- the running handler's chain id, the asks pending here, the timer, and
+-- the test hooks. Made by the class's constructor, through `runtime.js`.
+start : String, Schema e msg, (Context msg → state), Handlers state msg, V, V, V → V
+start className schema restore handlers ctx bindings worker =
+    d = Js.call (Js.global "Promise") "withResolvers" []
+    t =
+        Js.from
+            { instance = Js.null, reject = Js.get d "reject", tasks = Js.array [], wake = Js.null }
+    holder = Js.ref Js.null
+
+    s =
+        Task.schedulerWith
+            (λdrain → runLater t (Js.from drain))
+            (λdrain → laterTurn t (Js.from drain))
+            λ⊤ → defect (Js.read holder)
+
+    instance =
+        Js.from
+            { asks = Js.construct (Js.global "Map") []
+            , chain = Js.null
+            , ctx = ctx
+            , env = bindings
+            , hold = Js.null
+            , mailbox = Js.array []
+            , name = Js.from className
+            , pending = Js.array []
+            , restored = False
+            , running = Js.null
+            , schedulerOf = Js.from s
+            , schema = Js.from schema
+            , started = False
+            , state = Js.null
+            , timer = Js.null
+            , waiter = Js.null
+            , worker = worker
+            }
+    Js.set t "instance" instance
+    Js.set instance "trampoline" t
+    -- The consumer is begun here, where `restore`'s and the handlers'
+    -- effects are known: a handler that waits is called in its
+    -- suspendable form, which a function read back through `Js.to`
+    -- would not be.
+    Js.set instance "begin" (Js.from λ⊤ → begin instance restore handlers)
+    Js.write holder instance
+    Task.onSchedulerCount s λn → counted instance n
+    arm t
+    Js.from
+        { alarm = Js.from λ⊤ → deliver instance (Js.from { kind = "alarm" })
+        , fetch = Js.from λrequest → arrived instance request
+        , webSocketClose =
+            Js.from λws code reason clean →
+                deliver
+                    instance
+                    (Js.from
+                        { clean = clean, code = code, kind = "closed", reason = reason, ws = ws }
+                    )
+        , webSocketError =
+            Js.from λws error →
+                deliver instance (Js.from { error = error, kind = "failed", ws = ws })
+        , webSocketMessage =
+            Js.from λws message →
+                if Js.typeIs message "string" then
+                    deliver instance (Js.from { kind = "message", message = message, ws = ws })
+                else
+                    -- A binary frame is §9.11 (j)'s rule: closed with 1003, one
+                    -- warning line, and the program sees `closed`.
+                    _ =
+                        Js.call (Js.global "console") "warn"
+                            [ Js.from
+                                "beni: the object ${className} got a binary frame; the socket is closed with 1003"
+                            ]
+                    Js.call ws "close" [ Js.from 1003, Js.from "binary frames are not accepted" ]
+        }
+
+
+-- The trampoline, as the Worker's (`Worker.beni`, `arm`): every drain of
+-- the object's scheduler runs in a reaction of a promise made in the
+-- object's own context, and the running instance is noted around each
+-- task, so `forward`, `post` and `ask` from a handler find its chain.
+arm : V → ⊤
+arm t =
+    p = Js.construct (Js.global "Promise") [ Js.from λresolve _ → Js.set t "wake" resolve ]
+    _ =
+        Js.call (Js.call p "then" [ Js.from λ_ → fire t ]) "then"
+            [ Js.null, Js.from λreason → crashed t reason ]
+    ⊤
+
+
+-- A throw out of the object's drain, after the scheduler's hook ran: the
+-- event that was running and every event waiting fail with it, so a
+-- request in flight sees the object's own error (the stub's caller gets
+-- it with `remote` true, (f)), and nothing waits on a mailbox that will
+-- never run again. Nothing is caught: the reason is handed on as it is.
+crashed : V, V → ⊤
+crashed t reason =
+    instance = Js.get t "instance"
+    running = Js.get instance "running"
+    if Js.isNull running then ⊤ else failEvent running reason
+    Js.set instance "running" Js.null
+    Js.each (Js.call (Js.get instance "mailbox") "splice" [ Js.from 0 ]) λevent →
+        failEvent event reason
+
+
+failEvent : V, V → ⊤
+failEvent event reason =
+    reject = Js.get event "reject"
+    if Js.isNullish reject then
+        -- An event with no caller to fail: its resolve is dropped with it.
+        ⊤
+    else
+        Js.to (Js.apply reject [ reason ])
+
+
+fire : V → ⊤
+fire t =
+    arm t
+    tasks = Js.get t "tasks"
+    Js.set t "tasks" (Js.array [])
+    Js.each tasks λtask →
+        setDraining = Js.get (Js.get (Js.get t "instance") "worker") "setDraining"
+        _ = Js.apply setDraining [ Js.get t "instance" ]
+        _ = Js.finally (λ⊤ → Js.apply task [ Js.null ]) λ⊤ →
+            Js.to (Js.apply setDraining [ Js.null ])
+        ⊤
+
+
+-- The scheduler's continuation after 64 resumptions: a timer of zero in
+-- the object's context, so the isolate's loop turns between the batches
+-- of a handler that keeps yielding (§17.5, `schedulerWith`'s `more`).
+laterTurn : V, V → ⊤
+laterTurn t task =
+    _ = Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → runLater t task, Js.from 0 ]
+    ⊤
+
+
+runLater : V, V → ⊤
+runLater t task =
+    _ = Js.call (Js.get t "tasks") "push" [ task ]
+    Js.to (Js.apply (Js.get t "wake") [ Js.null ])
+
+
+-- ---- Events -----------------------------------------------------------------
+
+-- The class's `fetch`: read the body, then an event in the mailbox — the
+-- test hooks' tick and alarm, the platform's own post and ask, a refused
+-- cycle, or the program's `request` — and a promise of the response.
+arrived : V, V → V
+arrived instance request =
+    d = Js.call (Js.global "Promise") "withResolvers" []
+    -- A throw while the event is made — before any handler runs — is the
+    -- request's failure: handed to its `reject`, nothing caught.
+    _ =
+        Js.call
+            (Js.call (Js.call request "text" []) "then"
+                [ Js.from λtext →
+                    classify instance request text (Js.get d "resolve") (Js.get d "reject")
+                , Js.get d "reject"
+                ]
+            )
+            "then"
+            [ Js.null, Js.get d "reject" ]
+    Js.get d "promise"
+
+
+classify : V, V, V, V, V → ⊤
+classify instance request text resolve reject =
+    path = Js.get (Js.construct (Js.global "URL") [ Js.get request "url" ]) "pathname"
+    chain = Js.call (Js.get request "headers") "get" [ Js.from "x-beni-chain" ]
+    -- Nested, not joined with `&&`, so a build without the flag holds
+    -- nothing of the hooks (backend.md §4).
+    if Js.testHooks ⊤ then
+        if endsWith path "/__beni/tick" then
+            -- The timer's firing, driven: a 409 when no timer is armed.
+            if Js.isNull (Js.get instance "timer") then
+                Js.to
+                    (Js.apply resolve
+                        [ Js.construct (Js.global "Response")
+                            [ Js.from "no timer armed", Js.from { status = 409 } ]
+                        ]
+                    )
+            else
+                deliverThen instance (Js.from { kind = "ticked" }) (noContent resolve)
+        else if endsWith path "/__beni/alarm" then
+            deliverThen instance (Js.from { kind = "alarm" }) (noContent resolve)
+        else if endsWith path "/__beni/hold" then
+            -- Whether the live-fiber timer is held ((e.5)).
+            Js.to
+                (Js.apply resolve
+                    [ Js.construct (Js.global "Response")
+                        [ Js.from (if Js.isNull (Js.get instance "hold") then "free" else "held")
+                        , Js.from { status = 200 }
+                        ]
+                    ]
+                )
+        else
+            classifyEvent instance request text chain resolve reject
+    else
+        classifyEvent instance request text chain resolve reject
+    wake instance
+
+
+classifyEvent : V, V, V, V, V, V → ⊤
+classifyEvent instance request text chain resolve reject =
+    path = Js.get (Js.construct (Js.global "URL") [ Js.get request "url" ]) "pathname"
+    if not (Js.isNull chain) && parked instance chain then
+        -- The chain already holds a handler parked here: a cycle, refused
+        -- at once ((e.3)).
+        Js.to
+            (Js.apply resolve
+                [ Js.construct (Js.global "Response")
+                    [ Js.null
+                    , Js.from
+                        { headers = Js.array [ Js.array [ Js.from "x-beni-cycle", Js.from "1" ] ]
+                        , status = 508
+                        }
+                    ]
+                ]
+            )
+    else if endsWith path "/__beni/post" || endsWith path "/__beni/ask" then
+        -- The stubs' own paths, run only with the mark the platform's own
+        -- `post` and `ask` set, which a Worker's `forward` strips ((e.10)).
+        if
+            Js.same
+                (Js.call (Js.get request "headers") "get" [ Js.from "x-beni-origin" ])
+                (Js.from "platform")
+        then
+            received instance request (Js.to text) chain resolve
+        else
+            Js.to
+                (Js.apply resolve
+                    [ Js.construct (Js.global "Response")
+                        [ Js.from "no such page", Js.from { status = 404 } ]
+                    ]
+                )
+    else
+        Js.set request "$beniBody" text
+        Js.to
+            (Js.call (Js.get instance "mailbox") "push"
+                [ Js.from
+                    { chain = chain
+                    , kind = "request"
+                    , reject = reject
+                    , request = request
+                    , resolve = resolve
+                    }
+                ]
+            )
+
+
+endsWith : V, String → Bool
+endsWith path suffix = String.endsWith (Js.to path) suffix
+
+
+-- The hook's answer once its event has run: a 204.
+noContent : V → V
+noContent resolve = Js.from λ_ →
+    Js.apply resolve [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
+
+
+-- A message from another object, or an ask: parsed by the protocol's
+-- schema, or refused with 422 and `x-beni-message: unparsed` ((e.10)).
+received : V, V, String, V, V → ⊤
+received instance request text chain resolve =
+    schema : Schema e msg
+    schema = Js.to (Js.get instance "schema")
+    Js.write parsingIn instance
+    parsed = Schema.parse schema text
+    Js.write parsingIn Js.null
+    case parsed of
+        Ok message →
+            -- An ask is pending here until `reply`, or until nothing can
+            -- reply any more; a post is answered when its handler has run.
+            askId = Js.call (Js.get request "headers") "get" [ Js.from "x-beni-ask" ]
+            if Js.isNull askId then
+                ⊤
+            else
+                Js.to
+                    (Js.call (Js.get instance "asks") "set"
+                        [ askId, Js.from { resolve = resolve, returned = False } ]
+                    )
+            _ =
+                Js.call (Js.get instance "mailbox") "push"
+                    [ Js.from
+                        { askId = askId
+                        , chain = chain
+                        , kind = "received"
+                        , message = Js.from message
+                        , resolve = resolve
+                        }
+                    ]
+            ⊤
+
+        Err _ →
+            Js.to
+                (Js.apply resolve
+                    [ Js.construct (Js.global "Response")
+                        [ Js.null
+                        , Js.from
+                            { headers =
+                                Js.array
+                                    [ Js.array [ Js.from "x-beni-message", Js.from "unparsed" ] ]
+                            , status = 422
+                            }
+                        ]
+                    ]
+                )
+
+
+-- The instance a message is being parsed in: the `Reply` the protocol's
+-- schema parses belongs to it (`replySchema`).
+parsingIn : Js.Ref V
+parsingIn = Js.ref Js.null
+
+
+-- Whether a handler with that chain is parked in this object.
+parked : V, V → Bool
+parked instance chain =
+    not (Js.isNull (Js.get instance "chain")) && Js.same (Js.get instance "chain") chain
+
+
+deliver : V, V → V
+deliver instance event =
+    d = Js.call (Js.global "Promise") "withResolvers" []
+    deliverThen instance event (Js.get d "resolve")
+    wake instance
+    Js.get d "promise"
+
+
+deliverThen : V, V, V → ⊤
+deliverThen instance event resolve =
+    Js.set event "resolve" resolve
+    Js.to (Js.call (Js.get instance "mailbox") "push" [ event ])
+
+
+-- Start the consumer at the first event, or wake it.
+wake : V → ⊤
+wake instance =
+    if not (Js.to (Js.get instance "started")) then
+        Js.set instance "started" (Js.from True)
+        Js.to (Js.apply (Js.get instance "begin") [])
+    else
+        w = Js.get instance "waiter"
+        if Js.isNull w then
+            ⊤
+        else
+            Js.set instance "waiter" Js.null
+            Task.resume (Js.to w) ⊤
+
+
+-- The count as it stands, after `restore` and after each handler.
+recount : V → ⊤
+recount instance =
+    s : Scheduler
+    s = Js.to (Js.get instance "schedulerOf")
+    counted instance (Task.schedulerFibers s)
+
+
+-- Each time a fiber of the object ends or leaves, and after each handler:
+-- with the consumer alone left, the pending asks are settled ((e.10),
+-- `NoReply` with no next event needed) and the live-fiber timer is
+-- released; with any fiber beside it, the timer is held, so the host does
+-- not hibernate the object under a parked fiber ((e.5)).
+counted : V, Int → ⊤
+counted instance n =
+    hold = Js.get instance "hold"
+    if n ≤ 1 then
+        settlePending instance
+        if Js.isNull hold then
+            ⊤
+        else
+            _ = Js.apply (Js.global "clearTimeout") [ hold ]
+            Js.set instance "hold" Js.null
+    else if Js.isNull hold then
+        Js.set
+            instance
+            "hold"
+            (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → ⊤, Js.from 2147483647 ])
+    else
+        ⊤
+
+
+-- The consumer's start: a detached fiber under the object's scheduler.
+begin : V, (Context msg → state), Handlers state msg → ⊤
+begin instance restore handlers =
+    s : Scheduler
+    s = Js.to (Js.get instance "schedulerOf")
+    Task.withScheduler s λ⊤ →
+        _ = Task.spawnDetached λ⊤ → consume instance restore handlers
+        ⊤
+
+
+-- The mailbox's one consumer: `restore` first, then one event at a time,
+-- each handler returning the next state before the next event starts
+-- ((e.2)). After each, `tick` names the timer ((e.5)).
+consume : V, (Context msg → state), Handlers state msg → ⊤
+consume instance restore handlers =
+    if not (Js.to (Js.get instance "restored")) then
+        Js.set instance "state" (Js.from (restore (Js.to instance)))
+        Js.set instance "restored" (Js.from True)
+        retime instance handlers
+        recount instance
+    mailbox = Js.get instance "mailbox"
+    if Js.to (Js.get mailbox "length") == 0 then
+        settlePending instance
+        Task.callback λresume →
+            Js.set instance "waiter" (Js.from resume)
+            λ⊤ → Js.set instance "waiter" Js.null
+        consume instance restore handlers
+    else
+        event = Js.call mailbox "shift" []
+        Js.set instance "chain" (Js.get event "chain")
+        Js.set instance "running" event
+        handle instance handlers event
+        Js.set instance "running" Js.null
+        Js.set instance "chain" Js.null
+        retime instance handlers
+        -- A fiber the handler started is counted now: the kernel reports
+        -- an end, never a start ((e.5), the live-fiber timer).
+        recount instance
+        consume instance restore handlers
+
+
+-- One event: the handler for its kind, handed the state, its answer kept.
+handle : V, Handlers state msg, V → ⊤
+handle instance h event =
+    kind : String
+    kind = Js.to (Js.get event "kind")
+    ctx : Context msg
+    ctx = Js.to instance
+    state = Js.get instance "state"
+    case kind of
+        "request" →
+            ( next, response ) = h.request ctx (Js.to state) (Js.to (Js.get event "request"))
+            Js.set instance "state" (Js.from next)
+            Js.to
+                (Js.apply (Js.get event "resolve")
+                    [ Js.apply (Js.get (Js.get instance "worker") "hostResponse")
+                        [ Js.from response ]
+                    ]
+                )
+
+        "received" →
+            next = h.received ctx (Js.to state) (Js.to (Js.get event "message"))
+            Js.set instance "state" (Js.from next)
+            answerPost instance event
+
+        "alarm" →
+            Js.set instance "state" (Js.from (h.alarm ctx (Js.to state)))
+            Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
+
+        "ticked" →
+            Js.set instance "state" (Js.from (h.ticked ctx (Js.to state)))
+            Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
+
+        "message" →
+            Js.set
+                instance
+                "state"
+                (Js.from
+                    (h.message
+                        ctx
+                        (Js.to state)
+                        (Js.to (Js.get event "ws"))
+                        (Js.to (Js.get event "message"))
+                    )
+                )
+            Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
+
+        "closed" →
+            Js.set
+                instance
+                "state"
+                (Js.from
+                    (h.closed
+                        ctx
+                        (Js.to state)
+                        (Js.to (Js.get event "ws"))
+                        (closeOf (Js.get event "code") (Js.get event "reason"))
+                    )
+                )
+            Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
+
+        _ →
+            Js.set
+                instance
+                "state"
+                (Js.from
+                    (h.failed
+                        ctx
+                        (Js.to state)
+                        (Js.to (Js.get event "ws"))
+                        (Js.to
+                            (Js.call (Js.global "String") "call" [ Js.null, Js.get event "error" ])
+                        )
+                    )
+                )
+            Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
+
+
+-- A post is answered 204 as soon as its handler has run; an ask stays open
+-- until `reply`, or until nothing can reply any more (`settlePending`).
+answerPost : V, V → ⊤
+answerPost instance event =
+    askId = Js.get event "askId"
+    if Js.isNull askId then
+        Js.to
+            (Js.apply (Js.get event "resolve")
+                [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
+            )
+    else
+        entry = Js.call (Js.get instance "asks") "get" [ askId ]
+        if Js.isUndefined entry then
+            -- Replied before the handler returned: already answered.
+            ⊤
+        else
+            Js.set entry "returned" (Js.from True)
+
+
+-- After an event, and before the consumer parks: an ask whose `received`
+-- has returned, with no fiber of the object still running beside the
+-- consumer and no message to `self` waiting that carries its `Reply`, is
+-- answered `NoReply` ((e.10)).
+settlePending : V → ⊤
+settlePending instance =
+    s : Scheduler
+    s = Js.to (Js.get instance "schedulerOf")
+    if Task.schedulerFibers s > 1 then
+        ⊤
+    else
+        asks = Js.get instance "asks"
+        Js.each (Js.call (Js.global "Array") "from" [ Js.call asks "entries" [] ]) λpair →
+            askKey = Js.at pair 0
+            entry = Js.at pair 1
+            if Js.to (Js.get entry "returned") && not (carried instance askKey) then
+                _ = Js.call asks "delete" [ askKey ]
+                Js.to
+                    (Js.apply (Js.get entry "resolve")
+                        [ Js.construct (Js.global "Response")
+                            [ Js.null
+                            , Js.from
+                                { headers =
+                                    Js.array [ Js.array [ Js.from "x-beni-reply", Js.from "none" ] ]
+                                , status = 204
+                                }
+                            ]
+                        ]
+                    )
+
+
+-- Whether a message to `self` waiting in the mailbox carries the reply.
+carried : V, V → Bool
+carried instance askKey =
+    Js.to
+        (Js.call (Js.get instance "mailbox") "some"
+            [ Js.from λevent →
+                Js.from
+                    (Js.same (Js.get event "kind") (Js.from "received")
+                        && Js.to (Js.call (Js.global "Array") "isArray" [ Js.get event "holds" ])
+                        && Js.to (Js.call (Js.get event "holds") "includes" [ askKey ])
+                    )
+            ]
+        )
+
+
+-- ---- The timer and the alarm ------------------------------------------------
+
+-- After `restore` and after every handler, outside any fiber: `tick` names
+-- the timer ((e.5)). The same duration keeps the armed timer; a different
+-- one re-arms from now; `Nothing` clears it.
+retime : V, Handlers state msg → ⊤
+retime instance h =
+    wanted = h.tick (Js.to (Js.get instance "state"))
+    timer = Js.get instance "timer"
+    case wanted of
+        Nothing →
+            if Js.isNull timer then
+                ⊤
+            else
+                _ = Js.apply (Js.global "clearTimeout") [ Js.get timer "handle" ]
+                Js.set instance "timer" Js.null
+
+        Just d →
+            ms = Duration.toMillis d
+            if not (Js.isNull timer) && Js.to (Js.get timer "ms") == ms then
+                ⊤
+            else
+                if Js.isNull timer then
+                    ⊤
+                else
+                    Js.to (Js.apply (Js.global "clearTimeout") [ Js.get timer "handle" ])
+                Js.set instance "timer" (Js.from { handle = armed instance ms, ms = ms })
+
+
+-- The host timer, or none in a `--test-hooks` build, where the hook
+-- `/__beni/tick` is the timer's firing (§9.12 (k)).
+armed : V, Int → V
+armed instance ms =
+    if Js.testHooks ⊤ then
+        Js.null
+    else
+        Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → fired instance ms, Js.from ms ]
+
+
+-- The timer fired: a `ticked` event, and the timer re-armed from now
+-- unless `tick` changes it after the handler.
+fired : V, Int → ⊤
+fired instance ms =
+    Js.set instance "timer" Js.null
+    _ = deliver instance (Js.from { kind = "ticked" })
+    ⊤
+
+
+-- ---- The socket ((g)) -------------------------------------------------------
+
+--| Why an upgrade was not accepted: no `upgrade: websocket` header or a
+--| method that is not GET, more than 10 tags or one over 256 bytes of UTF-8,
+--| the host's 32 768 sockets per object already open, or a subprotocol the
+--| request did not offer.
+pub type AcceptError
+    = NotAnUpgrade
+    | TooManyTags
+    | TooManySockets
+    | ProtocolNotOffered
+
+
+--| Accept the request's upgrade with those tags: the socket, hibernatable,
+--| and the 101 `Response` the `request` handler returns. The socket's id
+--| and its tags go into the attachment first, so they are the same across
+--| hibernation.
+pub accept : Context msg, Request, List String → Result AcceptError (Socket × Response)
+accept ctx request tags = acceptWith ctx request { protocol = Nothing, tags = tags }
+
+
+--| `accept` with a subprotocol, written on the 101 when the request offered
+--| it: a client that offered subprotocols and is answered none fails its
+--| handshake.
+pub acceptWith :
+      Context msg
+    , Request
+    , { protocol : Maybe String, tags : List String }
+    → Result AcceptError (Socket × Response)
+acceptWith ctx request options =
+    offered =
+        case Worker.header request "sec-websocket-protocol" of
+            Just text →
+                List.map (String.split text ",") String.trim
+
+            Nothing →
+                []
+    if
+        Worker.method request ≠ "GET"
+            || Maybe.map (Worker.header request "upgrade") String.toLower ≠ Just "websocket"
+    then
+        Err NotAnUpgrade
+    else if
+        -- The host counts a tag's bytes of UTF-8, not its characters: 256
+        -- CJK characters are 768 bytes, which it refuses with a throw.
+        List.length options.tags > 10 || List.any options.tags λtag → utf8Bytes tag > 256 then
+        Err TooManyTags
+    else if List.length (sockets ctx) ≥ 32768 then
+        Err TooManySockets
+    else
+        case options.protocol of
+            Just protocol →
+                if List.member offered protocol then
+                    Ok (opened ctx options.tags protocol)
+                else
+                    Err ProtocolNotOffered
+
+            Nothing →
+                Ok (opened ctx options.tags "")
+
+
+opened : Context msg, List String, String → Socket × Response
+opened ctx tags protocol =
+    pair = Js.construct (Js.global "WebSocketPair") []
+    client = Js.at pair 0
+    server = Js.at pair 1
+    _ = Js.call (hostState ctx) "acceptWebSocket" [ server, Js.from tags ]
+    _ =
+        Js.call server "serializeAttachment"
+            [ Js.from
+                { data = Js.null
+                , id = Js.call (Js.global "crypto") "randomUUID" []
+                , protocol = Js.from protocol
+                , tags = Js.from tags
+                }
+            ]
+    headers =
+        if protocol == "" then
+            Js.array []
+        else
+            Js.array [ Js.array [ Js.from "sec-websocket-protocol", Js.from protocol ] ]
+    response =
+        Js.construct (Js.global "Response")
+            [ Js.null, Js.from { headers = headers, status = 101, webSocket = client } ]
+    ( Js.to server
+    , Js.to (Js.apply (Js.get (Js.get (Js.from ctx) "worker") "fromHost") [ response ])
+    )
+
+
+--| Why `autoReply` set nothing: the host takes a request text and a
+--| response text of at most 2 048 bytes of UTF-8 each (measured).
+pub type AutoReplyError
+    = RequestTooLarge
+    | ResponseTooLarge
+
+
+--| `setWebSocketAutoResponse`: a request text the host answers with the
+--| response text on every socket of the object, without waking it. Each
+--| text is at most 2 048 bytes of UTF-8, tested before the host is called.
+pub autoReply : Context msg, String, String → Result AutoReplyError ⊤
+autoReply ctx request response =
+    if utf8Bytes request > 2048 then
+        Err RequestTooLarge
+    else if utf8Bytes response > 2048 then
+        Err ResponseTooLarge
+    else
+        _ =
+            Js.call (hostState ctx) "setWebSocketAutoResponse"
+                [ Js.construct (Js.global "WebSocketRequestResponsePair")
+                    [ Js.from request, Js.from response ]
+                ]
+        Ok ⊤
+
+
+-- The host's count of a text: its bytes of UTF-8.
+utf8Bytes : String → Int
+utf8Bytes text =
+    Js.to
+        (Js.get
+            (Js.call (Js.construct (Js.global "TextEncoder") []) "encode" [ Js.from text ])
+            "length"
+        )
+
+
+--| `setAlarm`: the alarm at that epoch millisecond, replacing the one set.
+pub alarmAt : Context msg, Int → ⊤
+alarmAt ctx at = Js.to (Js.call (storage ctx) "setAlarm" [ Js.from at ])
+
+
+--| The alarm after the duration, from now.
+pub alarmIn : Context msg, Duration → ⊤
+alarmIn ctx d = alarmAt ctx (Js.to (Js.call (Js.global "Date") "now" []) + Duration.toMillis d)
+
+
+--| `deleteAlarm`.
+pub cancelAlarm : Context msg → ⊤
+cancelAlarm ctx = Js.to (Js.call (storage ctx) "deleteAlarm" [])
+
+
+storage : Context msg → V
+storage ctx = Js.get (hostState ctx) "storage"
+
+
+-- The host's `DurableObjectState`.
+hostState : Context msg → V
+hostState ctx = Js.get (Js.from ctx) "ctx"
+
+
+-- ---- The object, from a handler ---------------------------------------------
+
+--| The whole body as UTF-8 text, read by the platform before `request`
+--| runs; `""` when there is none.
+pub body : Request → String
+body request =
+    text = Js.get (Js.from request) "$beniBody"
+    if Js.isNullish text then "" else Js.to text
+
+
+--| The bindings, as the Worker's `env` ((d)): how an object reaches
+--| another object's namespace or a service. *Added by the object slice:*
+--| the owner's `Context msg` listed no bindings, and (e.3)'s B-calls-A-back
+--| needs them.
+pub env : Context msg → Worker.Env
+env ctx = Js.to (Js.get (Js.from ctx) "env")
+
+
+--| `ctx.id.toString()`.
+pub id : Context msg → String
+id ctx = Js.to (Js.call (Js.get (Js.get (Js.from ctx) "ctx") "id") "toString" [])
+
+
+--| `ctx.id.name`, when the object was reached by name; `Nothing` otherwise,
+--| in an alarm's retried instance too, so `restore` never depends on it.
+pub name : Context msg → Maybe String
+name ctx =
+    n = Js.get (Js.get (Js.get (Js.from ctx) "ctx") "id") "name"
+    if Js.isNullish n then Nothing else Just (Js.to n)
+
+
+--| Every accepted socket still open, `ctx.getWebSockets()`.
+pub sockets : Context msg → List Socket
+sockets ctx = socketsOf (Js.call (Js.get (Js.from ctx) "ctx") "getWebSockets" [])
+
+
+--| The accepted sockets with that tag.
+pub socketsTagged : Context msg, String → List Socket
+socketsTagged ctx tag =
+    socketsOf (Js.call (Js.get (Js.from ctx) "ctx") "getWebSockets" [ Js.from tag ])
+
+
+-- The host's close event as a `Close` (§9.12 (g)): an end with no close
+-- frame is 1006 with the host's own text, delivered as 1006 and `""`.
+closeOf : V, V → Close
+closeOf code reason =
+    c : Int
+    c = Js.to code
+    { code = c, reason = if c == 1006 then "" else Js.to reason }
+
+
+-- The host's socket array as a list.
+socketsOf : V → List Socket
+socketsOf array =
+    acc = Js.ref []
+    Js.each array λws → Js.write acc (List.push (Js.read acc) (Js.to ws))
+    Js.read acc
+
+
+-- ---- Messages: self, post, ask, reply ((e.10)) ------------------------------
+
+--| This object's own typed reference.
+pub self : Context msg → Ref msg
+self ctx =
+    Js.to
+        (Js.from
+            { chainNow = Js.get (Js.get (Js.from ctx) "worker") "chainNow"
+            , name = Js.null
+            , schema = Js.get (Js.from ctx) "schema"
+            , self = Js.from ctx
+            , stub = Js.null
+            }
+        )
+
+
+--| Fire and forget. To `self`, the message goes straight into the mailbox,
+--| delivered exactly once, in order with the events before it, while the
+--| instance lives. To another object it is printed by the protocol's schema
+--| and sent; a value that does not print is dropped, and one `Log.warn`
+--| line names it. Delivery across objects is at most once.
+pub post : Ref msg, msg → ⊤
+post ref message =
+    r = Js.from ref
+    own = Js.get r "self"
+    if not (Js.isNullish own) then
+        _ =
+            Js.call (Js.get own "mailbox") "push"
+                [ Js.from
+                    { ask = Js.null
+                    , chain = Js.null
+                    , holds = repliesIn (Js.from message)
+                    , kind = "received"
+                    , message = Js.from message
+                    , resolve = Js.null
+                    }
+                ]
+        wake own
+    else
+        schema : Schema e msg
+        schema = Js.to (Js.get r "schema")
+        Js.write printingTo (Js.get r "stub")
+        printed = Schema.print schema message
+        Js.write printingTo Js.null
+        case printed of
+            Ok text →
+                _ =
+                    Js.call (Js.get r "stub") "fetch"
+                        [ Js.from "https://beni/__beni/post"
+                        , Js.from
+                            { body = Js.from text
+                            , headers =
+                                Js.array
+                                    [ Js.array
+                                        [ Js.from "x-beni-chain"
+                                        , Js.apply (Js.get r "chainNow") []
+                                        ]
+                                    , Js.array [ Js.from "x-beni-origin", Js.from "platform" ]
+                                    ]
+                            , method = "POST"
+                            }
+                        ]
+                ⊤
+
+            Err issues →
+                why = String.join (List.map issues λissue → issue.message) "; "
+                Log.warn
+                    "beni: a message to the object was dropped, it does not print by the protocol's schema: ${why}"
+
+
+--| Post and wait for the reply, like any other host I/O: the message
+--| carries a `Reply a`, the receiver answers through `reply`, once, and
+--| the asking handler parks until the reply comes back, until nothing can
+--| reply any more (`NoReply`), or until its own `Task.timeout`. An ask to
+--| `self` is `Err Cycle` at once, from a handler and from a fiber it
+--| spawned alike: the message would wait in the mailbox behind the asking
+--| handler, and the platform cannot tell the two callers apart; a fiber
+--| that needs its own object's answer posts to `self` ((e.10)).
+pub ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a
+ask ref schema wrap =
+    r = Js.from ref
+    if not (Js.isNullish (Js.get r "self")) then
+        Err Cycle
+    else
+        protocol : Schema pe msg
+        protocol = Js.to (Js.get r "schema")
+        askId = Js.call (Js.global "crypto") "randomUUID" []
+        replyHandle = Js.from { id = askId, instance = Js.null, schema = Js.from schema }
+        Js.write printingTo (Js.get r "stub")
+        printed = Schema.print protocol (wrap (Js.to replyHandle))
+        Js.write printingTo Js.null
+        case printed of
+            Err issues →
+                Err (Unprintable issues)
+
+            Ok text →
+                sent =
+                    Js.call (Js.get r "stub") "fetch"
+                        [ Js.from "https://beni/__beni/ask"
+                        , Js.from
+                            { body = Js.from text
+                            , headers =
+                                Js.array
+                                    [ Js.array
+                                        [ Js.from "x-beni-chain"
+                                        , Js.apply (Js.get r "chainNow") []
+                                        ]
+                                    , Js.array [ Js.from "x-beni-ask", askId ]
+                                    , Js.array [ Js.from "x-beni-origin", Js.from "platform" ]
+                                    ]
+                            , method = "POST"
+                            }
+                        ]
+                case settle sent of
+                    Ok response →
+                        answered response schema
+
+                    Err reason →
+                        if Js.to (Js.get reason "overloaded") == True then
+                            Err Overloaded
+                        else if Js.to (Js.get reason "durableObjectReset") == True then
+                            Err Reset
+                        else if Js.to (Js.get reason "retryable") == True then
+                            Err Transient
+                        else
+                            Js.throw reason
+
+
+-- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's
+-- own result, so the caller sorts the reason and throws what it does not
+-- name from the fiber (rule 9). The reaction only resumes; it catches
+-- nothing.
+settle : V → Result V V
+settle promise = Task.callback λresume →
+    _ =
+        Js.call promise "then"
+            [ Js.from λvalue → Task.resume resume (Ok value)
+            , Js.from λreason → Task.resume resume (Err reason)
+            ]
+    λ⊤ → ⊤
+
+
+-- The receiver's answer to an ask, read by its fields: a refused cycle, a
+-- message that did not parse, `NoReply`, or the reply's text.
+answered : V, Schema e a → Result AskError a
+answered response schema =
+    status : Int
+    status = Js.to (Js.get response "status")
+    headers = Js.get response "headers"
+    if
+        status == 508 && Js.same (Js.call headers "get" [ Js.from "x-beni-cycle" ]) (Js.from "1")
+    then
+        Err Cycle
+    else if
+        status == 422
+            && Js.same (Js.call headers "get" [ Js.from "x-beni-message" ]) (Js.from "unparsed")
+    then
+        Err (Unreadable [ Schema.issue "the message did not parse by the receiver's schema" ])
+    else if
+        status == 204 && Js.same (Js.call headers "get" [ Js.from "x-beni-reply" ]) (Js.from "none")
+    then
+        Err NoReply
+    else
+        case settle (Js.call response "text" []) of
+            Ok text →
+                case Schema.parse schema (Js.to text) of
+                    Ok value →
+                        Ok value
+
+                    Err issues →
+                        Err (Unreadable issues)
+
+            Err reason →
+                Js.throw reason
+
+
+-- The stub a message is being printed for, or null: a `Reply` printed for
+-- any ref but `self` is `Unprintable` ((e.10), R7-1).
+printingTo : Js.Ref V
+printingTo = Js.ref Js.null
+
+
+--| Answer an `ask`, once, from `received` or a fiber it spawned. A second
+--| `reply` on the same `Reply`, or one after `NoReply` was answered — from
+--| a later handler, or through a `Reply` kept in the state — is not
+--| dropped in silence: one `Log.warn` line names the object.
+pub reply : Reply a, a → ⊤
+reply channel value =
+    h = Js.from channel
+    instance = Js.get h "instance"
+    entry =
+        if Js.isNull instance then
+            Js.undefined
+        else
+            Js.call (Js.get instance "asks") "get" [ Js.get h "id" ]
+    schema : Schema e a
+    schema = Js.to (Js.get h "schema")
+    if Js.isUndefined entry then
+        Log.warn
+            "beni: a reply came after its ask was answered: the object ${objectName instance} replied ${shown schema value} to a Reply that no one waits on"
+    else
+        _ = Js.call (Js.get instance "asks") "delete" [ Js.get h "id" ]
+        case Schema.print schema value of
+            Ok text →
+                Js.to
+                    (Js.apply (Js.get entry "resolve")
+                        [ Js.construct (Js.global "Response")
+                            [ Js.from text, Js.from { status = 200 } ]
+                        ]
+                    )
+
+            Err _ →
+                Js.to
+                    (Js.apply (Js.get entry "resolve")
+                        [ Js.construct (Js.global "Response")
+                            [ Js.null
+                            , Js.from
+                                { headers =
+                                    Js.array
+                                        [ Js.array [ Js.from "x-beni-message", Js.from "unparsed" ]
+                                        ]
+                                , status = 422
+                                }
+                            ]
+                        ]
+                    )
+
+
+objectName : V → String
+objectName instance = if Js.isNull instance then "?" else Js.to (Js.get instance "name")
+
+
+-- The value's text for a warning line.
+shown : Schema e a, a → String
+shown schema value =
+    case Schema.print schema value of
+        Ok text →
+            text
+
+        Err _ →
+            "a value that does not print"
+
+
+--| How a `Reply a` crosses the wire ((e.10), R6-2): a correlation id, with
+--| the reply's own schema kept for `reply`. The protocol's schema places
+--| it with `replySchema aSchema`.
+pub replySchema : Schema e a → Schema String (Reply a)
+replySchema inner =
+    Schema.converted Schema.string
+        (Schema.conversion
+            (λtext →
+                Ok
+                    (Js.to
+                        (Js.from
+                            { id = Js.from text
+                            , instance = Js.read parsingIn
+                            , schema = Js.from inner
+                            }
+                        )
+                    )
+            )
+            λr →
+                -- The `Reply` an `ask` is making has no instance yet; one
+                -- parsed in this instance names a request pending here.
+                if Js.isNull (Js.read printingTo) || Js.isNull (Js.get (Js.from r) "instance") then
+                    Ok (Js.to (Js.get (Js.from r) "id"))
+                else
+                    Err
+                        [ Schema.issue
+                            "a Reply names a request pending in this object alone: it cannot be sent to another"
+                        ]
+        )
+
+
+-- The ids of the replies a value holds, by a walk of its records and
+-- lists: for a message posted to `self`, which holds them until its own
+-- `received` returns ((e.10)).
+foreign impure repliesIn : Js.Value → Js.Value
+
+
+-- ---- A defect ((f)) ---------------------------------------------------------
+
+-- A throw in a handler, in `restore`, in `ticked` or in a sibling: the
+-- scheduler has stopped and its hook runs in the stop. The object's scope
+-- is closed — its fibers cancelled, their finalisers run under the
+-- cleanup deadline — and then the instance is aborted with a fixed
+-- reason, after the throw has left, on a timer of zero.
+defect : V → ⊤
+defect instance =
+    if Js.isNull instance then
+        ⊤
+    else
+        s : Scheduler
+        s = Js.to (Js.get instance "schedulerOf")
+        Task.stopScheduler s 1000 λ_ →
+            reason =
+                "beni: a defect stopped the object ${objectName instance}; its next event starts a new instance"
+            _ = Js.call (Js.global "console") "error" [ Js.from reason ]
+            -- On a timer of zero, so the error of the event that was
+            -- running reaches its caller before the instance goes ((f)).
+            _ =
+                Js.apply (Js.global "setTimeout")
+                    [ Js.from λ⊤ →
+                        Js.to (Js.call (Js.get instance "ctx") "abort" [ Js.from reason ])
+                    , Js.from 0
+                    ]
+            ⊤

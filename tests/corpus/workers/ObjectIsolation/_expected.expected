@@ -1,0 +1,80 @@
+> GET /room/x/slow (detached as x)
+> GET /room/y/slow (detached as y)
+> (answer x)
+(x) < 200
+(x) < content-type: text/plain; charset=utf-8
+(x) <
+(x) < slow answered in x
+> (answer y)
+(y) < 200
+(y) < content-type: text/plain; charset=utf-8
+(y) <
+(y) < slow answered in y
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
+> GET /room/x/spawn
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< spawned in x
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
+> GET /room/x/finish
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< finished in x
+> GET /room/x/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< x: done 1 released 1
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
+> GET /room/x/start
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< started in x
+> GET /room/x/joined
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< joined 42 in x
+> GET /room/x/hold
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< held in x
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
+> GET /room/x/throw
+< 500
+< content-length: 193
+< content-type: text/plain;charset=UTF-8
+<
+< Error: TODO: the room x threw
+| out: release of the held fiber ran in x: ⊤
+| err: beni: a defect stopped the object Room; its next event starts a new instance
+> GET /room/y/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< y: done 0 released 0
+> GET /room/x/get
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< x: done 0 released 0

@@ -1,0 +1,6 @@
+click [data-role=add]
+click [data-role=toggle]
+click [data-role=add]
+click [data-role=toggle]
+click [data-role=add]
+click [data-role=toggle]

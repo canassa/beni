@@ -1,0 +1,26 @@
+import Html exposing (Html)
+
+
+pub type alias Model =
+    shown : Bool
+    value : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { shown = False, value = 0 }
+
+
+pub type Msg
+    = Toggle
+
+
+pub update : Msg, Model → Model
+update _ model = { model | shown = not model.shown }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        {if model.shown then <p>shown</p> else <></>}
+        <button onClick={Toggle}>Toggle</button>
+    </section>

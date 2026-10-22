@@ -2361,6 +2361,8 @@ pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutd
 pub schedulerBusy : Scheduler → Bool                           -- whether a fiber of it still runs (the Worker slice, 2026-10-22)
 pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` once, the next time none does; at once when none does now
 pub schedulersListed : ⊤ → Int                                 -- how many the kernel lists, for a platform's test hook
+pub schedulerFibers : Scheduler → Int                          -- how many still run (the object slice, 2026-10-22)
+pub onSchedulerCount : Scheduler, sync (Int → ⊤) → ⊤           -- `f` with the count each time one ends or leaves; one `f` watches
 ```
 
 - **A scheduler is a queue of its own**: the ready work of its fibers, FIFO, drained as the
@@ -2442,7 +2444,12 @@ pub schedulersListed : ⊤ → Int                                 -- how many t
   ends, before `done`. They are what the `cloudflare` platform asks after a request's answer: with no
   fiber running nothing is held, otherwise `waitUntil` holds a promise that `onSchedulerIdle`
   settles when the last fiber ends, or the deadline's timer settles by stopping the scheduler.
-  The `workers/` fixtures cover them in the host (§9.12 (k)).
+  The `workers/` fixtures cover them in the host (§9.12 (k)). *Added with the object slice (2026-10-22;
+  §9.12 (e.10)):* **`schedulerFibers`** is the count `schedulerBusy` tests, and **`onSchedulerCount s
+  f`** calls `f` with the count each time a fiber of `s` ends or leaves it, where `onSchedulerIdle`'s
+  function runs; one `f` watches, the last given. An object's scheduler always holds its consumer
+  fiber, so a count above one says a fiber a handler started still runs, and the count's drop to
+  one is when an unanswered `ask` can be told `NoReply`.
 - **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
   the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
   scheduler's: a wake under a scheduler always goes through its `run`.

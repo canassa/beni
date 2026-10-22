@@ -1,0 +1,167 @@
+-- workers: `ask` and `reply` between objects (boundary.md §9.12 (e.3),
+-- (e.10); #594's `stub.fetch` half). A Lobby asks a Scorer, which replies
+-- from `received`, later from a fiber it spawned, or not at all
+-- (`NoReply`); and an ask to `self` is `Err Cycle` at once.
+import Duration
+import Schema exposing (Schema)
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object exposing (Reply)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ lobby, scorer ] }
+
+
+-- The Scorer's protocol: an operation, its text, and the reply channel.
+type alias ScorerMsg =
+    op : String
+    text : String
+    reply : Reply String
+
+
+toMsg ( ( ( ⊤, op ), text ), reply ) = { op = op, text = text, reply = reply }
+
+
+fromMsg m = ( ( ( ⊤, m.op ), m.text ), m.reply )
+
+
+scorerSchema : Schema { op : String, text : String, reply : String } ScorerMsg
+scorerSchema =
+    Schema.record
+        (Schema.fields
+            ▷ Schema.field "op" Schema.string
+            ▷ Schema.field "text" Schema.string
+            ▷ Schema.field "reply" (Object.replySchema Schema.string)
+        )
+        (Schema.mapping toMsg fromMsg)
+        (Schema.mapping toMsg fromMsg)
+
+
+-- The Lobby's protocol: a greeting with its reply channel.
+type alias LobbyMsg =
+    reply : Reply String
+
+
+toHello ( ⊤, reply ) = { reply = reply }
+
+
+fromHello m = ( ⊤, m.reply )
+
+
+lobbySchema : Schema { reply : String } LobbyMsg
+lobbySchema =
+    Schema.record
+        (Schema.fields ▷ Schema.field "reply" (Object.replySchema Schema.string))
+        (Schema.mapping toHello fromHello)
+        (Schema.mapping toHello fromHello)
+
+
+-- ---- The Scorer ---------------------------------------------------------------
+
+scorer : Worker.Definition
+scorer = Object.define "Scorer" scorerSchema (λ_ → ⊤) { Object.none | received = scored }
+
+
+scored : Object.Context ScorerMsg, ⊤, ScorerMsg → ⊤
+scored ctx _ msg =
+    case msg.op of
+        "score" →
+            Object.reply msg.reply (String.fromInt (String.length msg.text))
+
+        "slow" →
+            -- The reply comes later, from a fiber this call spawned.
+            _ = Task.spawn λ⊤ →
+                Task.sleep (Duration.millis 5)
+                Object.reply msg.reply "slow done"
+            ⊤
+
+        _ →
+            -- "quiet": no reply, and nothing that could still reply.
+            ⊤
+
+
+-- ---- The Lobby ----------------------------------------------------------------
+
+lobby : Worker.Definition
+lobby = Object.define "Lobby" lobbySchema (λ_ → ⊤) { Object.none | request = lobbyRequest }
+
+
+lobbyRequest : Object.Context LobbyMsg, ⊤, Request → ⊤ × Response
+lobbyRequest ctx _ request =
+    case
+        ( Worker.objects (Object.env ctx) "SCORERS" scorerSchema
+        , List.reverse (String.split (Worker.path request) "/")
+        )
+    of
+        ( Just scorers, [ op, …rest ] ) →
+            s = Worker.byName scorers "s"
+            ( ⊤
+            , Worker.text 200
+                (case op of
+                    "self" →
+                        showAsk (Object.ask (Object.self ctx) Schema.string λr → { reply = r })
+
+                    _ →
+                        showAsk
+                            (Object.ask s Schema.string λr →
+                                { op = op, text = "seven!!", reply = r }
+                            )
+                )
+            )
+
+        _ →
+            ( ⊤, Worker.text 404 "no such page" )
+
+
+showAsk : Result Object.AskError String → String
+showAsk result =
+    case result of
+        Ok text →
+            "Ok ${text}"
+
+        Err Object.Overloaded →
+            "Err Overloaded"
+
+        Err Object.Reset →
+            "Err Reset"
+
+        Err Object.Transient →
+            "Err Transient"
+
+        Err Object.Cycle →
+            "Err Cycle"
+
+        Err Object.NoReply →
+            "Err NoReply"
+
+        Err (Object.Unprintable _) →
+            "Err Unprintable"
+
+        Err (Object.Unreadable issues) →
+            "Err Unreadable (${String.fromInt (List.length issues)} issue)"
+
+
+-- ---- The Worker ---------------------------------------------------------------
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "LOBBIES" lobbySchema
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just lobbies, [ "", "lobby", …rest ] ) →
+            case Worker.forward (Worker.byName lobbies "l") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the lobby is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no LOBBIES binding"
+
+        _ →
+            Worker.text 404 "no such page"

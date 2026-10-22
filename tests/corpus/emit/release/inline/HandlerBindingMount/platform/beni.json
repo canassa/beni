@@ -1,0 +1,1 @@
+{"platform":true,"name":"handler-mount-probe","platforms":["browser-inline"],"reexports":["Browser","Html","Tea"],"markup":{"vocabulary":"Probe","type":"Html.Html"}}

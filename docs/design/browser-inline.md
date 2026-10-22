@@ -120,6 +120,14 @@ by its type — hides nothing: it is written exactly, and accepted.
    `<></>` is S1's, an eager `when` (§8.2), and no longer S4's, which keeps a branch of any other
    shape and `Show`; a `view`'s `let` read by one hole is S1's, substituted into the hole, and one
    read by several holes stays S3's.
+   *Amended 2026-10-19 (the owner: both are S1's, for big-component; S4 is lifetime only):*
+   markup **held in data or chosen at run time** — a markup value stored in the model or a
+   record, passed to a function that decides where it goes, returned by a function whose body the
+   compiler cannot see — stays class 1. Two shapes of static structure move into S1: a **view
+   helper** of the program's own module, a function whose body is markup, called from the `view`
+   in a hole (`{part1 model}`), written in place in a context of its own (§8.4); and a **`case`
+   in markup** whose arms are each one element or `<></>`, written as eager `when`s, one per
+   element arm (§8.2).
 2. **Needs the task kernel** (a compiler limit) — a command whose body may suspend: *"A limit of
    the compiler: … needs the task kernel, which `browser-inline` does not have yet"*, with the
    body's position. The kernel returns behind reachability in S6.
@@ -282,13 +290,25 @@ beni over `Js` in `Inline.beni`:
 - **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
   arms — one arm of which is one element written in place and the other `<></>`, and whose markup
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
-  and its holes are bindings like any other, evaluated whichever arm the value takes; `when` hides it
-  while the value takes the other arm. A branch of any other shape is S4's (§5, class 1).
+  and its holes are bindings like any other; `when` hides it while the value takes the other arm.
+  *Corrected 2026-10-19 (the owner, #459):* eager evaluation is valid only for expressions proven pure
+  and total. Every other value, including an effect, a potentially throwing call, a foreign call or an
+  operation whose totality is unknown, executes only in the selected arm, as in an ordinary `if` or
+  `case`. A hidden arm does not log or throw. Entering it computes current values; no value persists
+  as a memo while it is hidden. A branch of any other shape is S4's (§5, class 1).
+  *Amended 2026-10-19 (the owner): a `case` in markup.* A hole whose value is a `case` (or an `if`
+  of `else if`s) of any number of arms, each one element written in place or `<></>`, each element
+  arm eager, is one eager `when` per element arm: every arm's element is in the markup, in
+  document order, and each `when` shows its element while the value takes that arm and hides it
+  otherwise. The value is evaluated once per pass for all of them (`programBranchArm`). An arm that
+  reads a variable its pattern binds, or that is not one element or `<></>`, stays class 1
+  (`browser/inline/CaseInMarkup`, `emit/release/inline/CaseInMarkup`).
 - **Groups.** Bindings are grouped by read set, `programHole`'s `group`: one binding *function* per
   distinct set of groups among the bindings of a unit — a mixed text whose holes read two sets is in
   both — in document order of its first binding. A `when`'s group is its hole's, which is the read set
   of the whole value, arm included: the `when` runs again on a write its arm's text reads, and writes
-  nothing then.
+  nothing then. A guarded arm shares that whole-branch group, including its selector, so a reveal
+  after hidden data updates prepares current values and its visibility together.
 - **A `view` `let`** read by one hole is that hole's value, substituted (D-d); one read by several
   holes is a memo node, S3's, and refused as a limit of the compiler until then.
   *As built 2026-10-18 (S1, #351 and its correction):* the `let` is evaluated in the binding function
@@ -307,6 +327,24 @@ beni over `Js` in `Inline.beni`:
   anything, and the page stays as the last pass left it, as on master and `browser-tea`
   (`browser/inline/ThrowBeforeWrite`); a safe value is still written at its write, where release
   writes it in place (#365's rule, `backend.md` §9 item 1, is the same set of values).
+  *Corrected 2026-10-19 (#459):* guarded arms and functions whose later context may fail prepare
+  their selected values and helper arguments in source order before any DOM write of that function.
+  An argument is evaluated once per call site, before that helper's body; sibling calls keep separate
+  bindings. Only invocation-local temporaries cross the preparation and write phases. Functions whose
+  work is all proven pure and total keep their existing eager code.
+  *Corrected 2026-10-19 (the owner, #466):* a helper argument used by an event handler is part
+  of the handler binding, as in the source: its message is built during view evaluation and lives
+  on the node until the binding reruns. Bound arguments share that lifetime, are refreshed by a
+  relevant selected binding evaluation, and are released on arm exit or teardown. This is ordinary
+  handler binding, not a memo exception. Its complete read set includes argument fields used only
+  by handlers; updating one refreshes the binding even when no text changes. Every helper call
+  occurrence has its own binding. An argument proven pure and total may instead be recomputed at
+  dispatch when observably equivalent; an effectful or possibly throwing argument is retained
+  from binding evaluation and never rerun by dispatch. Successful preparation publishes the new
+  binding with its selected writes; a failed preparation publishes neither. An inactive arm has
+  no active handler, including no `preventDefault` or `stopPropagation` effect from a host's
+  programmatic event on a retained detached node. Hidden updates keep no stale argument binding;
+  reentry evaluates current-model arguments freshly. Ownership guarantees are unchanged.
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as
@@ -429,6 +467,26 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
   which. *Reversed 2026-10-22 (the owner, #668): readers register once at mount; see below.*
+- **A view helper** (*added 2026-10-19, the owner*: the same-module case of a piece). A hole of the
+  program's `view` or of a piece's root, or of markup written in place under them, whose value
+  calls a function of the same module whose body is markup (`Program.Callee`, refusal `none`, under no
+  `Html.map`, with no `let`s) is that function's markup written in place: its elements are the
+  page's, in document order, its holes have the facts of the call's path (`programInlineEnter`),
+  and each binding that reads them enters the call with its arguments evaluated in the enclosing
+  context. A helper's fragment's children are spliced where the hole is. It is lifted as a piece
+  is, in its own module — the program's, or the piece's owner (`browser/inline/ViewHelper`,
+  `emit/release/inline/ViewHelper`; big-component's `part1 model`). A function that calls itself,
+  one under `Html.map`, one with `let`s no hole reads, and markup held in data or chosen at run time
+  stay class 1 (`build/bad/inline/MarkupInModel`, `HelperNamedElsewhere`, `HelperMarkupArg`,
+  `CaseValueArm`). *Amended the same day (#436's review):* each binding function that writes into
+  a helper's markup enters the call, its arguments evaluated again; an argument that may have an
+  effect (`valueSafe`) must therefore be entered by exactly one function, or it is S3's memo node
+  and refused (`HelperArgTwice`), as a `let` read by several functions is. Within one binding
+  function, a helper's effectful arguments are bound once at their first entry and reused when
+  a nested context enters that same call again (`browser/inline/HelperArgOnce`); distinct sibling
+  call sites bind their own arguments. This is local evaluation, not a memo shared between passes. Two calls of one helper
+  share its root, so a `let` of the helper read by both, in two functions, is refused the same
+  way: conservative, never unsound.
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).

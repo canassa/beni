@@ -171,4 +171,19 @@ A render clones a template once and patches only the holes whose values changed,
 record update keeps the identity of every field it does not name, and an unchanged field costs
 nothing. Build the model with updates, and keep an untouched list as the same value.
 
-Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `platforms/html/Html.beni`.
+## Helpers on `browser-inline`
+
+On `browser-inline`, a view can call a function of its own module that returns markup. The
+compiler writes that markup at the call. These are still compiler limitations:
+
+- markup that is held or passed as data;
+- a helper argument that has an effect and that more than one binding function reads.
+
+Keep the program as it is and report the limitation. Do not change its evaluation to make it
+compile. Only arm values that are proved pure and total are evaluated before their arm is shown.
+Other values are evaluated in the selected arm, from the current model. An argument that has an
+effect and that only an event reads is evaluated when its binding is refreshed, and a click does
+not evaluate it again. A `pub` helper in a `--library` build is a markup value: the build gives
+the markup-value diagnostic, and it never drops the export silently.
+
+Sources: `docs/design/language.md` §11; `docs/design/boundary.md` §9.8.20; `docs/design/browser-inline.md` §8.2, §8.4; `platforms/html/Html.beni`.

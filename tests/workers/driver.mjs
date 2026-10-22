@@ -14,6 +14,7 @@
 // clock or on the machine.
 
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import process from "node:process";
 
@@ -78,6 +79,25 @@ for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
 // Worker's test hook `/__beni/mark/<n>` and waits for its line, so a
 // step's lines never land under the next, however loaded the host.
 let consoleLines = [];
+// Steps that wait for a server line the mark cannot order: a line an
+// object writes from a socket event has no order with a request to the
+// Worker, so such a step names the line it waits for (`"until"`).
+const lineWaiters = [];
+const waitForLine = (text) =>
+  consoleLines.some((line) => line.includes(text))
+    ? Promise.resolve(true)
+    : new Promise((resolve) => {
+        const waiter = { text, resolve: null };
+        const timer = setTimeout(() => {
+          lineWaiters.splice(lineWaiters.indexOf(waiter), 1);
+          resolve(false);
+        }, stepLimit);
+        waiter.resolve = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        lineWaiters.push(waiter);
+      });
 // The mark each stream waits for: the Worker writes it to both, since one
 // stream's mark says nothing about the other's order.
 const markWaiters = { out: null, err: null };
@@ -97,6 +117,10 @@ const capture = (name, stream) => {
         continue;
       }
       consoleLines.push(`| ${name}: ${line}`);
+      for (const waiter of lineWaiters.filter((w) => line.includes(w.text))) {
+        lineWaiters.splice(lineWaiters.indexOf(waiter), 1);
+        waiter.resolve();
+      }
     }
   });
 };
@@ -138,7 +162,7 @@ const mf = new Miniflare({
     capture("err", stderr);
   },
 });
-await mf.ready;
+const readyUrl = await mf.ready;
 const base = "http://127.0.0.1";
 
 // ---- The steps --------------------------------------------------------------
@@ -212,6 +236,92 @@ const send = (step, signal) =>
 // Requests the script sent and has not taken the answer of, by name.
 const detached = new Map();
 
+// WebSocket clients the script opened, by name. The client is the `ws`
+// library Miniflare itself carries, connected to the Worker's port, so a
+// step can send a binary frame or drop the connection with no close
+// frame, which Miniflare's own client cannot. What the server sends is
+// kept, in order, until a `receive` step takes it.
+const WebSocketClient = createRequire(import.meta.url)(path.join(path.dirname(miniflarePath), "..", "..", "node_modules", "ws"));
+const sockets = new Map();
+const socketNamed = (name) => {
+  const entry = sockets.get(name);
+  if (entry === undefined) say(`< (no socket ${name})`);
+  return entry;
+};
+const printHeaders = (name, headers) => {
+  for (const [h, value] of Object.entries(headers).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+    if (h.startsWith("mf-") || h === "transfer-encoding" || h === "connection" || h === "date") continue;
+    // The accept key answers the client's random key: shown as present.
+    say(`(socket ${name}) < ${h}: ${h === "sec-websocket-accept" ? "(the key)" : value}`);
+  }
+};
+const openSocket = (step) =>
+  new Promise((resolve) => {
+    const name = step.socket;
+    const protocols = step.protocols ?? [];
+    say(`> (socket ${name}) GET ${step.path}${protocols.length === 0 ? "" : ` ${JSON.stringify(protocols)}`}`);
+    const ws = new WebSocketClient(`ws://${readyUrl.host}${step.path}`, protocols, { headers: step.headers ?? {} });
+    const entry = { ws, inbox: [], waiter: null };
+    const arrived = (line) => {
+      entry.inbox.push(line);
+      if (entry.waiter !== null) entry.waiter();
+    };
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      say(`(socket ${name}) < (no answer in ${stepLimit} ms)`);
+      ws.terminate();
+      done();
+    }, stepLimit);
+    ws.on("upgrade", (res) => {
+      say(`(socket ${name}) < 101`);
+      printHeaders(name, res.headers);
+      sockets.set(name, entry);
+      done();
+    });
+    ws.on("unexpected-response", (_req, res) => {
+      say(`(socket ${name}) < ${res.statusCode}`);
+      printHeaders(name, res.headers);
+      let body = "";
+      res.on("data", (chunk) => {
+        body += chunk;
+      });
+      res.on("end", () => {
+        if (body !== "") {
+          say(`(socket ${name}) <`);
+          for (const line of body.split("\n")) if (!/^\s+at /.test(line)) say(`(socket ${name}) < ${line}`);
+        }
+        done();
+      });
+    });
+    ws.on("message", (data, isBinary) => arrived(isBinary ? `binary ${data.length} bytes` : JSON.stringify(data.toString())));
+    ws.on("close", (code, reason) => arrived(`close ${code} ${JSON.stringify(reason.toString())}`));
+    ws.on("error", (e) => {
+      arrived(`error ${e.message}`);
+      done();
+    });
+  });
+// The next thing the socket got, waiting up to the step limit for it.
+const receiveOne = (entry) =>
+  entry.inbox.length !== 0
+    ? Promise.resolve(entry.inbox.shift())
+    : new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          entry.waiter = null;
+          resolve(null);
+        }, stepLimit);
+        entry.waiter = () => {
+          clearTimeout(timer);
+          entry.waiter = null;
+          resolve(entry.inbox.shift());
+        };
+      });
+
 for (const step of steps) {
   if (step.answer !== undefined) {
     const pending = detached.get(step.answer);
@@ -237,10 +347,57 @@ for (const step of steps) {
     controller.abort();
     const outcome = await pending;
     say(outcome.error ? `< (aborted: ${outcome.error.name})` : outcome.late ? `< (no response in ${stepLimit} ms)` : `< ${outcome.value.status} (answered before the abort)`);
+  } else if (step.socket !== undefined) {
+    await openSocket(step);
+  } else if (step.send !== undefined && step.binary !== undefined) {
+    say(`> (socket ${step.send}) binary ${step.binary} bytes`);
+    socketNamed(step.send)?.ws.send(Buffer.alloc(step.binary, 1));
+  } else if (step.send !== undefined) {
+    say(`> (socket ${step.send}) ${JSON.stringify(step.text)}`);
+    socketNamed(step.send)?.ws.send(step.text);
+  } else if (step.drop !== undefined) {
+    // The connection ends with no close frame: the server sees 1006. The
+    // step waits for the client's own close event, and a moment more, so
+    // the server's close handler has run before the step's mark.
+    say(`> (socket ${step.drop}) (dropped, no close frame)`);
+    const entry = socketNamed(step.drop);
+    if (entry !== undefined) {
+      const closed = new Promise((resolve) => entry.ws.once("close", resolve));
+      entry.ws.terminate();
+      await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, stepLimit))]);
+    }
+  } else if (step.close !== undefined) {
+    say(`> (socket ${step.close}) close${step.code === undefined ? "" : ` ${step.code} ${JSON.stringify(step.reason ?? "")}`}`);
+    const entry = socketNamed(step.close);
+    if (entry === undefined) {
+    } else if (step.code === undefined) entry.ws.close();
+    else entry.ws.close(step.code, step.reason ?? "");
+  } else if (step.receive !== undefined && step.count !== undefined) {
+    const entry = socketNamed(step.receive);
+    let messages = 0;
+    let bytes = 0;
+    while (entry !== undefined && messages < step.count) {
+      const line = await receiveOne(entry);
+      if (line === null || !line.startsWith('"')) {
+        if (line !== null) entry.inbox.unshift(line);
+        break;
+      }
+      messages += 1;
+      bytes += JSON.parse(line).length;
+    }
+    if (entry !== undefined) say(`< (socket ${step.receive}) ${messages} messages, ${bytes} bytes`);
+  } else if (step.receive !== undefined) {
+    const entry = socketNamed(step.receive);
+    if (entry !== undefined) {
+      const line = await receiveOne(entry);
+      say(`< (socket ${step.receive}) ${line === null ? "(nothing arrived)" : line}`);
+    }
   } else {
     printRequest(step);
     await printOutcome(await within(() => send(step)));
   }
+  // A step that names a server line waits for it first (`"until"`).
+  if (step.until !== undefined && !(await waitForLine(step.until))) say(`< (no line ${JSON.stringify(step.until)} in ${stepLimit} ms)`);
   // The Worker's console lines arrive on a stream of their own: the mark
   // says every line of this step has landed.
   await awaitConsole();

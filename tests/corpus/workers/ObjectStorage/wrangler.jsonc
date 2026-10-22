@@ -1,0 +1,7 @@
+{
+  "name": "object-storage",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": { "bindings": [{ "name": "STORES", "class_name": "Store" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Store"] }],
+}

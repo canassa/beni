@@ -9,6 +9,26 @@ one arrow: `List a, (a → b) → List b`. A `where` clause names the methods a 
 needs. Effects are inferred and never written; a value whose result reaches the host or may
 wait says so in a trailing comment, `-- impure` or `-- suspends`.
 ```text
+module WebSocket
+  type AttachError
+    TooLarge
+    Unprintable
+  alias Close
+    Close
+  type CloseError
+    InvalidCode
+    ReasonTooLong
+  type Socket
+  type WriteError
+    NotOpen
+  value attach : Socket, Schema e a, a → Result AttachError ⊤  -- impure
+  value attachment : Socket, Schema e a → Result (List Issue) (Maybe a)  -- impure
+  value close : Socket, Close → Result CloseError ⊤  -- impure
+  value eq : Socket, Socket → Bool
+  value id : Socket → String  -- impure
+  value protocol : Socket → String  -- impure
+  value tags : Socket → List String  -- impure
+  value write : Socket, String → Result WriteError ⊤  -- impure
 module Worker
   type Context
   type Definition
@@ -40,7 +60,7 @@ module Worker
   value method : Request → String  -- impure
   value objects : Env, String, Schema e msg → Maybe (Namespace msg)  -- impure
   value path : Request → String  -- impure
-  value program : { fetch : Context, Request → Response, objects : List Definition } → Program
+  value program : { fetch : Context, Request → Response, objects : List Definition } → Program  -- impure
   value redirect : Request, String, Int → Response  -- impure
   value refId : Ref msg → String  -- impure
   value refName : Ref msg → Maybe String  -- impure
@@ -50,4 +70,54 @@ module Worker
   value url : Request → String  -- impure
   value var : Env, String → Maybe String  -- impure
   value withHeader : Response, String, String → Response  -- impure
+module Worker.Object
+  type AcceptError
+    NotAnUpgrade
+    TooManyTags
+    TooManySockets
+    ProtocolNotOffered
+  type AskError
+    Overloaded
+    Reset
+    Transient
+    Cycle
+    NoReply
+    Unprintable
+    Unreadable
+  type AutoReplyError
+    RequestTooLarge
+    ResponseTooLarge
+  type Context a
+  alias Handlers a b
+    Handlers
+  alias Ref a
+  type Reply a
+  value accept : Context msg, Request, List String → Result AcceptError (Socket × Response)  -- impure
+  value acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)  -- impure
+  value alarmAt : Context msg, Int → ⊤  -- impure
+  value alarmIn : Context msg, Duration → ⊤  -- impure
+  value ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a  -- suspends
+  value autoReply : Context msg, String, String → Result AutoReplyError ⊤  -- impure
+  value body : Request → String  -- impure
+  value cancelAlarm : Context msg → ⊤  -- impure
+  value define : String, Schema e msg, (Context msg → state), Handlers state msg → Definition
+  value env : Context msg → Env  -- impure
+  value id : Context msg → String  -- impure
+  value name : Context msg → Maybe String  -- impure
+  value none : Handlers state msg
+  value post : Ref msg, msg → ⊤  -- impure
+  value reply : Reply a, a → ⊤  -- impure
+  value replySchema : Schema e a → Schema String (Reply a)  -- impure
+  value self : Context msg → Ref msg  -- impure
+  value sockets : Context msg → List Socket  -- impure
+  value socketsTagged : Context msg, String → List Socket  -- impure
+module Worker.Storage
+  type PutError
+    TooLarge
+    Full
+    Unprintable
+  value delete : Context msg, String → Bool  -- impure
+  value get : Context msg, Schema e a, String → Result (List Issue) (Maybe a)  -- impure
+  value keys : Context msg, String → List String  -- impure
+  value put : Context msg, Schema e a, String, a → Result PutError ⊤  -- impure
 ```

@@ -1,0 +1,19 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      ""
+      <button data-role="cup">"Cup"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+(the DOM did not change)
+-- click [data-role=cup]
+(the DOM did not change)
+-- throws click [data-role=toggle]
+console.log: before: 2
+(threw: Error: TODO: selected helper boom)
+(the DOM did not change)

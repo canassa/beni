@@ -1,0 +1,19 @@
+import Html exposing (Html)
+
+
+pub type Msg
+    = Clicked
+
+
+pub view : Int → Html Msg
+view status =
+    <aside>
+        {case status of
+            1 →
+                <button data-role="piece" onClickGuard={Clicked}>Piece</button>
+            2 →
+                <button data-role="piece-next" onClickGuard={Clicked}>Other piece arm</button>
+            _ →
+                <></>
+        }
+    </aside>

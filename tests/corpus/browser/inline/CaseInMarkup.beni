@@ -1,0 +1,73 @@
+-- A `case` in markup whose arms are each one element or `<></>` is one
+-- eager `when` per element arm (docs/design/browser-inline.md §8.2,
+-- amended 2026-10-19): every arm's element is in the markup, and each shows
+-- while the value takes its arm. Clicks walk the status through its four
+-- values; `Idle` shows nothing.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Status
+    = Idle
+    | Loading
+    | Done
+    | Failed
+
+
+type alias Model =
+    status : Status
+
+
+type Msg
+    = Next
+
+
+next : Status → Status
+next s =
+    case s of
+        Idle →
+            Loading
+
+        Loading →
+            Done
+
+        Done →
+            Failed
+
+        Failed →
+            Idle
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Next →
+            { model | status = next model.status }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="status">
+        {case model.status of
+            Idle →
+                <></>
+
+            Loading →
+                <p data-role="loading">Loading</p>
+
+            Done →
+                <p data-role="done">Done</p>
+
+            Failed →
+                <strong data-role="failed">Failed</strong>
+        }
+        <button data-role="next" onClick={Next}>Next</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { status = Idle }, update = update, view = view })
+        "root"

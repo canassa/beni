@@ -1,0 +1,10 @@
+> GET /lobby/relay
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok relayed
+> GET /lobby/relay-fiber
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok relayed by a fiber

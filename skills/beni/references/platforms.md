@@ -69,11 +69,81 @@ handle request =
 - The bindings: `Worker.var (Worker.env ctx) name` is a plain-text variable (`Maybe String`),
   `Worker.service` a service binding, `Worker.objects` a Durable Object namespace. Each answers
   `Nothing` when the configuration does not declare the name.
-- A fiber that must run after the answer is started with `Task.spawnDetached`; it runs under
-  `waitUntil`, and the platform stops it 25 seconds after the answer.
+- A fiber started with `Task.spawnDetached` runs after the answer, for at most 25 seconds.
 - Build with `beni build --platform=cloudflare --out=out Main.beni` and point `wrangler.jsonc`'s
   `main` at `out/_worker.mjs`. The entry file exports the Durable Object classes the app's
   `beni.json` lists under `"exports"`.
+- A Durable Object is `Worker.Object.define name schema restore handlers`, listed in `objects`
+  and in `beni.json`'s `"exports"`. `schema` is the object's protocol, the type of the messages
+  it receives. `restore ctx` builds the state at each start, from `Worker.Storage`. Each handler
+  of `Handlers` takes the state and returns the next one; `Object.none` has a handler for each
+  kind that keeps the state. Events run one at a time: `request` (a `Worker.forward` from the
+  Worker), `received` (a message), `alarm`, `tick`/`ticked` (a timer the state names), and the
+  WebSocket handlers.
+- Reach an object with `Worker.objects (Worker.env ctx) "NAME" schema`, then `Worker.byName`,
+  `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
+  ref message` sends a message and waits for nothing. `Object.ask ref schema (λreply → message)`
+  sends a message with a `Reply` and waits for `Object.reply reply value`; a cycle between
+  objects is `Err Cycle`, a message that does not parse is `Err Unreadable`, and a `Reply` that
+  no one can answer is `Err NoReply`. `Object.self ctx` is the object's own ref; inside an
+  object, `Object.env ctx` holds the bindings.
+- `Worker.Storage.get ctx schema key`, `put`, `delete` and `keys ctx prefix` are the store.
+- A defect in a handler stops the object: its fibers are cancelled, their `Task.bracket`
+  releases run, the request in flight fails, and the next event starts a new instance.
+- A WebSocket is answered by the `request` handler with `Object.accept`; `references/websocket.md`
+  has the object's socket.
+
+```beni platform=cloudflare
+import Schema
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+import Worker.Storage as Storage
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ counter ] }
+
+
+type alias State =
+    count : Int
+
+
+counter : Worker.Definition
+counter = Object.define "Counter" Schema.int restore { Object.none | request = serve }
+
+
+restore : Object.Context Int → State
+restore ctx =
+    case Storage.get ctx Schema.int "count" of
+        Ok (Just count) →
+            { count = count }
+
+        _ →
+            { count = 0 }
+
+
+serve : Object.Context Int, State, Request → State × Response
+serve ctx state request =
+    next = { state | count = state.count + 1 }
+    _ = Storage.put ctx Schema.int "count" next.count
+    ( next, Worker.text 200 (String.fromInt next.count) )
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.objects (Worker.env ctx) "COUNTERS" Schema.int of
+        Just counters →
+            case Worker.forward (Worker.byName counters "main") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the counter is not available"
+
+        Nothing →
+            Worker.text 500 "COUNTERS is not declared"
+```
 
 ```beni platform=cloudflare
 import Worker exposing (Context, Request, Response)
@@ -215,7 +285,7 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
 The same `Tea.sandbox` and `Tea.element` as `browser-tea`, so one source builds on both. The
 program is compiled, not run: each constructor is recognised where it is called, and the page ships
 only what it reaches. Lists are edited in place here, so the ownership checker's errors apply
-(`lists.md`, *Ownership*).
+(`lists.md`, *Ownership*). For view helpers, see `markup.md`, *Helpers on `browser-inline`*.
 
 ## `html`
 

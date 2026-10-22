@@ -1,0 +1,121 @@
+-- element "root"
+-- load
+console.log: first: 3
+console.log: second: 103
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"1"</button>
+      </section>
+      <section data-role="second">
+        <button>"101"</button>
+      </section>
+      <p>"0"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=first]>button
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"1"</button>
+      </section>
+      <section data-role="second">
+        <button>"101"</button>
+      </section>
+      <p>"3"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=second]>button
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"1"</button>
+      </section>
+      <section data-role="second">
+        <button>"101"</button>
+      </section>
+      <p>"103"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+console.log: first: 4
+console.log: second: 104
+(the DOM did not change)
+-- click [data-role=first]>button
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"1"</button>
+      </section>
+      <section data-role="second">
+        <button>"101"</button>
+      </section>
+      <p>"4"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=second]>button
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"1"</button>
+      </section>
+      <section data-role="second">
+        <button>"101"</button>
+      </section>
+      <p>"104"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=label]
+console.log: first: 4
+console.log: second: 104
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"2"</button>
+      </section>
+      <section data-role="second">
+        <button>"102"</button>
+      </section>
+      <p>"104"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=first]>button
+<body>
+  <div id="root">
+    <div>
+      <section data-role="first">
+        <button>"2"</button>
+      </section>
+      <section data-role="second">
+        <button>"102"</button>
+      </section>
+      <p>"4"</p>
+      <button data-role="bump">"Bump"</button>
+      <button data-role="label">"Label"</button>
+    </div>
+  </div>
+</body>

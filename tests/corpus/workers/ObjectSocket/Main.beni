@@ -1,0 +1,209 @@
+-- workers: the server WebSocket of a Durable Object (boundary.md §9.12
+-- (g), §9.11's shared handle operations). An arena accepts an upgrade with
+-- a tag and the offered subprotocol, refuses a plain request, echoes each
+-- message with the socket's id, tags and protocol, keeps a value in the
+-- attachment and reads it back, closes with a code and a reason, refuses
+-- a code a server may not send, sees the peer's close, answers the
+-- `autoReply` pair without an event, refuses a long `autoReply` text and a
+-- tag over 256 bytes in beni, closes a binary frame with 1003, sees a
+-- client that leaves with no close frame as 1006, and after a defect every
+-- socket ends with 1006.
+import Duration
+import Schema exposing (Schema)
+import String
+import WebSocket exposing (Socket)
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ arena ] }
+
+
+type alias State =
+    joined : Int
+
+
+arena : Worker.Definition
+arena =
+    Object.define "Arena" Schema.string restore
+        { Object.none
+            | request = join
+            , message = input
+            , closed = left
+            , failed = failed
+        }
+
+
+restore : Object.Context String → State
+restore ctx =
+    _ = Object.autoReply ctx "ping?" "pong!"
+    { joined = List.length (Object.sockets ctx) }
+
+
+join : Object.Context String, State, Request → State × Response
+join ctx state request =
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "throw", …rest ] →
+            Debug.todo "the arena threw"
+
+        [ "count", …rest ] →
+            ( state
+            , Worker.text 200 "${String.fromInt (List.length (Object.sockets ctx))} sockets open"
+            )
+
+        [ "auto-long", …rest ] →
+            -- A text over the host's 2 048 bytes is refused in beni, not by
+            -- a throw that would stop the arena.
+            ( state
+            , Worker.text 200
+                (case Object.autoReply ctx (String.repeat "r" 3000) "pong!" of
+                    Ok ⊤ →
+                        "set"
+
+                    Err Object.RequestTooLarge →
+                        "Err RequestTooLarge"
+
+                    Err Object.ResponseTooLarge →
+                        "Err ResponseTooLarge"
+                )
+            )
+
+        [ "cjk", …rest ] →
+            -- A tag of 256 CJK characters is 768 bytes: the host would throw.
+            case Object.accept ctx request [ String.repeat "字" 256 ] of
+                Ok ( _, response ) →
+                    ( state, response )
+
+                Err Object.TooManyTags →
+                    ( state, Worker.text 400 "a tag is too long" )
+
+                Err _ →
+                    ( state, Worker.text 503 "no room" )
+
+        [ player, …rest ] →
+            offered = Worker.header request "sec-websocket-protocol"
+            accepted =
+                case offered of
+                    Just _ →
+                        Object.acceptWith ctx request { protocol = Just "v1", tags = [ player ] }
+
+                    Nothing →
+                        Object.accept ctx request [ player ]
+            case accepted of
+                Ok ( socket, response ) →
+                    _ = WebSocket.write socket "welcome ${player}"
+                    ( { state | joined = state.joined + 1 }, response )
+
+                Err Object.NotAnUpgrade →
+                    ( state, Worker.text 426 "upgrade to a WebSocket" )
+
+                Err Object.ProtocolNotOffered →
+                    ( state, Worker.text 400 "offer v1" )
+
+                Err _ →
+                    ( state, Worker.text 503 "no room" )
+
+        _ →
+            ( state, Worker.text 404 "no such page" )
+
+
+input : Object.Context String, State, Socket, String → State
+input ctx state socket text =
+    _ =
+        case String.split text ":" of
+            [ "attach", value ] →
+                case WebSocket.attach socket Schema.string value of
+                    Ok ⊤ →
+                        WebSocket.write socket "attached"
+
+                    Err _ →
+                        WebSocket.write socket "not attached"
+
+            [ "attach-big" ] →
+                case WebSocket.attach socket Schema.string (String.repeat "x" 9000) of
+                    Ok ⊤ →
+                        WebSocket.write socket "attached"
+
+                    Err WebSocket.TooLarge →
+                        WebSocket.write socket "Err TooLarge"
+
+                    Err _ →
+                        WebSocket.write socket "not attached"
+
+            [ "attachment" ] →
+                WebSocket.write socket
+                    (case WebSocket.attachment socket Schema.string of
+                        Ok (Just value) →
+                            "attachment ${value}"
+
+                        Ok Nothing →
+                            "no attachment"
+
+                        Err _ →
+                            "an attachment that does not parse"
+                    )
+
+            [ "close" ] →
+                case WebSocket.close socket { code = 4001, reason = "server says bye" } of
+                    Ok ⊤ →
+                        WebSocket.write socket "closing"
+
+                    Err _ →
+                        WebSocket.write socket "not closing"
+
+            [ "close-bad" ] →
+                case WebSocket.close socket { code = 1005, reason = "" } of
+                    Err (WebSocket.InvalidCode code) →
+                        WebSocket.write socket "refused code ${String.fromInt code}"
+
+                    _ →
+                        WebSocket.write socket "closed?"
+
+            [ "broadcast", line ] →
+                List.foldl (Object.sockets ctx) (Ok ⊤) λs _ → WebSocket.write s "all: ${line}"
+
+            _ →
+                -- The id is the platform's uuid: shown as present, not printed.
+                idText = if String.isEmpty (WebSocket.id socket) then "no id" else "an id"
+                tagsText = String.join (WebSocket.tags socket) ","
+                WebSocket.write
+                    socket
+                    "echo ${text} (${idText}, tags ${tagsText}, protocol ${WebSocket.protocol socket})"
+    state
+
+
+left : Object.Context String, State, Socket, WebSocket.Close → State
+left _ state socket why =
+    tagsText = String.join (WebSocket.tags socket) ","
+    Debug.log "closed ${tagsText} ${String.fromInt why.code} ${why.reason}" ⊤
+    state
+
+
+failed : Object.Context String, State, Socket, String → State
+failed _ state socket why =
+    tagsText = String.join (WebSocket.tags socket) ","
+    Debug.log "failed ${tagsText}: ${why}" ⊤
+    state
+
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "ARENAS" Schema.string
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just arenas, [ "", "arena", name, …rest ] ) →
+            case Worker.forward (Worker.byName arenas name) request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the arena is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no ARENAS binding"
+
+        _ →
+            Worker.text 404 "no such page"

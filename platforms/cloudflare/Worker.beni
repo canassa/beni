@@ -50,7 +50,7 @@ pub foreign type Context
 
 
 --| A Durable Object class, made by `Worker.Object.define`; `program`'s
---| `objects` lists them. None can be made in this slice.
+--| `objects` lists them, and the entry file exports each by its name.
 pub foreign type Definition
 
 
@@ -75,7 +75,8 @@ pub opaque type Response
 
 
 -- A response from the host's object, as `forward` and `callService` get
--- one: not the platform's own, so `withHeader` copies it first.
+-- one, and as `Object.accept` makes the 101 (§9.12 (g), through
+-- `withWorker`): not the platform's own, so `withHeader` copies it first.
 fromHost : V → Response
 fromHost r = Response r (Js.from False) (Js.from False)
 
@@ -132,14 +133,60 @@ program p =
     Js.to
         (Js.from
             { fetch = Js.from λrequest bindings ctx → handle p.fetch request bindings ctx
-            , objects = Js.from p.objects
+            , objects = Js.from (List.map p.objects withWorker)
             }
         )
+
+
+-- What `Worker.Object` needs of this module, handed to each definition as
+-- values rather than exported: the chain id, the host's object of a
+-- `Response`, and the draining object. None is a program's to call
+-- (P723-3).
+withWorker : Definition → Definition
+withWorker definition =
+    _ =
+        Js.set (Js.from definition)
+            "worker"
+            (Js.from
+                { chainNow = Js.from chainNow
+                , fromHost = Js.from fromHost
+                , hostResponse = Js.from hostResponse
+                , setDraining = Js.from λobject → Js.write draining object
+                }
+            )
+    definition
 
 
 --| The request's bindings.
 pub env : Context → Env
 env ctx = Js.to (Js.get (Js.from ctx) "env")
+
+
+-- The host's object a response holds: for `Worker.Object`, which hands it
+-- to the host (through `withWorker`).
+hostResponse : Response → Js.Value
+hostResponse (Response r _ _) = r
+
+
+-- The object whose scheduler is draining, or null: set by `Worker.Object`
+-- around each turn of an object's scheduler, so `forward`, `post` and
+-- `ask` from a handler find the handler's chain id ((e.3)). The Worker's
+-- own requests have none.
+draining : Js.Ref Js.Value
+draining = Js.ref Js.null
+
+
+-- The chain id a call between objects carries ((e.3)): the running
+-- handler's, or a fresh one from a Worker, which parks in no object and
+-- so begins no cycle. Every ref carries it, for `Worker.Object`'s `post`
+-- and `ask`.
+chainNow : ⊤ → Js.Value
+chainNow ⊤ =
+    inst = Js.read draining
+    if Js.isNull inst || Js.isNull (Js.get inst "chain") then
+        Js.call (Js.global "crypto") "randomUUID" []
+    else
+        Js.get inst "chain"
 
 
 -- The host's `fetch` handler, through `runtime.js`: answers the host a
@@ -617,7 +664,14 @@ var bindings name =
 pub byName : Namespace msg, String → Ref msg
 byName ns name =
     stub = Js.call (Js.get (Js.from ns) "ns") "getByName" [ Js.from name ]
-    Js.to (Js.from { name = Js.from name, schema = Js.get (Js.from ns) "schema", stub = stub })
+    Js.to
+        (Js.from
+            { chainNow = Js.from chainNow
+            , name = Js.from name
+            , schema = Js.get (Js.from ns) "schema"
+            , stub = stub
+            }
+        )
 
 
 --| A fresh object: `newUniqueId`, then `get`; its id is `refId`.
@@ -627,7 +681,8 @@ unique ns =
     id = Js.call host "newUniqueId" []
     Js.to
         (Js.from
-            { name = Js.null
+            { chainNow = Js.from chainNow
+            , name = Js.null
             , schema = Js.get (Js.from ns) "schema"
             , stub = Js.call host "get" [ id ]
             }
@@ -644,7 +699,8 @@ byId ns idText =
             Ok
                 (Js.to
                     (Js.from
-                        { name = Js.null
+                        { chainNow = Js.from chainNow
+                        , name = Js.null
                         , schema = Js.get (Js.from ns) "schema"
                         , stub = Js.call host "get" [ id ]
                         }
@@ -674,20 +730,51 @@ refName ref =
 
 --| Forward the request to the object and wait for its answer: the host's
 --| `Response`, its body stream untouched, so a 101 and a streamed body
---| pass through. The call carries the chain id of §9.12 (e.3): from a
---| Worker a fresh one per call, after any `x-beni-chain` the client sent
---| is stripped, since a Worker parks in no object and so begins no cycle.
+--| pass through. The call carries the chain id of §9.12 (e.3): the
+--| running handler's from an object, or from a Worker a fresh one per
+--| call, after any `x-beni-chain` the client sent is stripped, since a
+--| Worker parks in no object and so begins no cycle.
 --| Every failure the host documents is a `StubError`; a refused
 --| cycle is read off the answer (508 with `x-beni-cycle: 1`); anything
 --| else is a defect.
 pub forward : Ref msg, Request → Result StubError Response
 forward ref request =
+    -- A client reaches no path of the platform's: `/__beni/post` and
+    -- `/__beni/ask` are the stubs' own, so a path that holds `/__beni/` is
+    -- answered 404 here and never sent — except the two test hooks of a
+    -- `--test-hooks` build, which a fixture drives through `forward`.
+    if reserved (path request) then
+        Ok (text 404 "no such page")
+    else
+        send ref request
+
+
+reserved : String → Bool
+reserved at =
+    if not (String.contains at "/__beni/") then
+        False
+    else if Js.testHooks ⊤ then
+        not
+            (String.endsWith at "/__beni/tick"
+                || String.endsWith at "/__beni/alarm"
+                || String.endsWith at "/__beni/hold"
+            )
+    else
+        True
+
+
+send : Ref msg, Request → Result StubError Response
+send ref request =
     stub = Js.get (Js.from ref) "stub"
     hs = Js.construct (Js.global "Headers") [ Js.get (Js.from request) "headers" ]
-    _ = Js.call hs "delete" [ Js.from "x-beni-chain" ]
-    _ = Js.call hs "set" [ Js.from "x-beni-chain", Js.call (Js.global "crypto") "randomUUID" [] ]
+    -- Every `x-beni-` header is the platform's: stripped, so a client sets
+    -- no chain, no ask id and no origin mark ((e.3), (e.10)).
+    Js.each (Js.call (Js.global "Array") "from" [ Js.call hs "keys" [] ]) λname →
+        if String.startsWith (Js.to name) "x-beni-" then
+            Js.to (Js.call hs "delete" [ name ])
+    _ = Js.call hs "set" [ Js.from "x-beni-chain", chainNow ⊤ ]
     sent = Js.construct (Js.global "Request") [ Js.from request, Js.from { headers = hs } ]
-    case settle (Js.call stub "fetch" [ sent ]) of
+    case settleHost (Js.call stub "fetch" [ sent ]) of
         Ok r →
             if
                 Js.to (Js.get r "status") == 508
@@ -714,7 +801,7 @@ forward ref request =
 --| when the host's error is `retryable`; anything else is a defect.
 pub callService : Service, Request → Result ServiceError Response
 callService svc request =
-    case settle (Js.call (Js.from svc) "fetch" [ Js.from request ]) of
+    case settleHost (Js.call (Js.from svc) "fetch" [ Js.from request ]) of
         Ok r →
             Ok (fromHost r)
 
@@ -724,10 +811,10 @@ callService svc request =
 
 -- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's
 -- own result, so the caller sorts the reason and throws what it does not
--- name from the fiber, where a throw is a defect (`CLAUDE.md` rule 9).
--- The reaction only resumes; it catches nothing.
-settle : V → Result V V
-settle promise = Task.callback λresume →
+-- name from the fiber, where a throw is a defect (`CLAUDE.md` rule 9). The
+-- reaction only resumes; it catches nothing. `Worker.Object` has its own.
+settleHost : Js.Value → Result Js.Value Js.Value
+settleHost promise = Task.callback λresume →
     _ =
         Js.call promise "then"
             [ Js.from λvalue → Task.resume resume (Ok value)

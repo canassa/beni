@@ -2113,6 +2113,50 @@ as #665's parent did (×6.6), and the construction conditions are not the cause.
 `containingCondition` and `instPairwiseApart` take 43M of the phase's 597M, and the entry protocol
 (`entryFn`) takes 501M (#716).
 
+*As built 2026-10-22 (#716): what a wide model cost.* The 501M under `entryFn` was not the entry's own
+work: `entryFn` asks for the summaries of `update` and `view`, so it is the walk of the program's
+functions. The dashboard routes every message through `step`, a `case` of N arms that each write one
+field, `{ model | wᵢ = Wᵢ.update m model.wᵢ }`, and through `replaced`, the same shape again. Six loops
+multiplied the width by itself there. (1) Each arm split `model` into the other N − 1 fields (§31.3's
+closed split), and projected and read off each field again. (2) Each arm's base use was read off as
+N − 1 uses, and normalizing sorted N² of them. (3) The arms' join sorted the N² entries they held.
+(4) Each demand looked for its holders among every local, the N other arms' pattern bindings
+included, and then scanned every later use of `model`: the other arms' uses and, at the call `step
+msg model`, the call's own N uses for each of the N fields it writes. (5) At the entry, each of the N
+writes asked whether the model's other paths reach it by scanning them, and `entryConditions` asked
+init's whole record for each of the model's cells. (6) A construction's `except` operands, the
+widgets' written models, were paired with every operand of the other groups, and each pair in a list's
+condition was `yes`. Each is now done once or skipped by an index, and the answers are the same
+answers: the split is kept per base cell and field, computed at the first update that needs the field,
+so cells and paths are interned in the order they were; the read-off emits each field's use once; a
+join of many parts merges them; holders are looked for among the locals bound outside the earlier arms
+of the cases the walk is in (`bound_log`), and the uses are skipped past a case's other arms, before
+the demand's point and over a call's own run; the entry's demands read the model through an index by the
+key `covers` needs (`reachesIndexed`, `coveredBy`), which asks the entries a scan asks in the order it
+asks them and leaves out only those that answer null and touch nothing; and an `except` operand that
+no list faces is paired only with the operands it may be related to and those whose pair is not `yes`.
+A record object's number in a read-off is a column; a path's written fields are joined in one sort.
+Small declarations, records and unions keep the direct way, which costs less there;
+`-Downership-full-cross-check` takes the indexed way everywhere and checks it against the direct one.
+Every verdict, dump and output is unchanged.
+
+Ownership-phase instructions (callgrind, ReleaseFast for the reference CPU, `build --release --no-cache
+--jobs=1`) on the research dashboard at N = 16, 64 and 256: 28.3M, 91.4M and 621M on `master` before
+(×6.8 from 64 to 256); 27.1M, 67.8M and 202M now (×3.0). `nowd` went from 93.1M to 66.6M. Every output
+hash is unchanged. On the safe build, the core surface test went from 11 230M to 11 227M, the core clean
+test from 10 954M to 10 952M, and Conduit's report from 4 340M to 4 333M (#754: `master`'s are
+higher than #693's figures above, not yet explained). `ownership/WideModelArms`, a model of 256 records in the shape
+above, has its report in 2 517M instructions on the safe build, where it took 4 438M.
+
+What stays superlinear, and why. (a) The arms' values: §31.3 makes the value of `{ model | wᵢ = … }`
+the other N − 1 fields, so a `case` of N such arms builds N² entries before the join folds them. Making
+it linear needs an entry that stands for a split, a change to the abstract domain. It is now copying
+and merging, not projecting and sorting. (b) A model of N records that each hold a list: `update`'s
+summary has N list entries in its result, each with a spine condition naming the N − 1 others, as
+#693's amendment above says, and instantiating them at the entry is N² atoms. In the dump of a
+256-record model with a list in each record, the ownership work grows ×4.0 from 128 to 256 records.
+A linear form needs a result condition shared by its entries, a change to the summary's format.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:

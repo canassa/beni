@@ -1,0 +1,52 @@
+-- A view helper's argument that may have an effect (`Debug.log`), where
+-- the helper's holes read two fields and so are written by two binding
+-- functions: each would evaluate the call, and the first pass logged twice
+-- where `browser-tea` logs once (#436's review). Refused as S3's memo node
+-- (docs/design/browser-inline.md §8.4, *A view helper*).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+pair : String, Model → Html Msg
+pair label model =
+    <>
+        <p>{label} {model.cups}</p>
+        <p>{label} {model.coins}</p>
+    </>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {pair (Debug.log "label" "n") model}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+        <button data-role="coin" onClick={AddCoin}>Coin</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"
