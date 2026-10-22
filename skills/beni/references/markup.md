@@ -91,9 +91,13 @@ The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `o
 - `Html.pointerEvent p` is the same event as an `Html.Event`, for `Html.preventDefault` and the
   modifier keys.
 - A `Pointer` stays correct after the dispatch, so a message can carry it into `update`.
+- The API lists `Html.pointer`, but only the events call it. A program cannot call it, because its
+  parameter type is private to `Html`.
 - To stop scroll and zoom under a finger, put `touch-action: none` in the element's `style`.
-  `preventDefault` cannot stop them. For iOS, also write `-webkit-user-select: none` and
-  `-webkit-touch-callout: none`.
+  `preventDefault` cannot stop them.
+- To stop a long press that selects text, write `user-select: none` and `-webkit-user-select: none`
+  (Safari) in the `style`. For iOS, also write `-webkit-touch-callout: none`: it stops the
+  long-press menu.
 - End a touch on `onPointerCancel` as on `onPointerUp`: the browser cancels a pointer when it
   takes the gesture.
 
