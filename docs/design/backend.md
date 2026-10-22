@@ -8707,6 +8707,29 @@ Per structural pass of `Spec.run`, in this order:
 pipeline around `Spec.run` (`backend.md` §9's *One scope-hoisted file*, `Opt`, `Fields`) is
 unchanged.
 
+*Amended 2026-10-22 (issue #781): the structural passes first.* Before step 1 of the first pass,
+`Spec.run` runs step 6's passes once on the program as lowering left it (`structureFirst`): small
+functions, functions called once, constructor folding, scalar replacement and the `tidy` list
+modes. No fact exists yet. `Mod.memo` is ⊤, and fact 3 has not solved, so `pts.ok` is false.
+Every question a pass asks of the facts is therefore answered as for a value nothing is known
+of. So a small function is written in only where it is called by its name, because no fact 3
+resolves a callee. A whole-program name counts as assigned when any `assign_stmt` of the program,
+live or not, names it. That is what the solve would conclude, or more. The declarations are
+numbered as `analyse` numbers them (`declTable`). When a pass changed the program, `prune` and
+`grow` follow, and then the loop runs as before.
+
+What is written in is solved once, in the context of its call site. If the passes after that
+solve find nothing more, the program is solved once instead of twice. N = 64, the variant without
+`withDefault` and the 100 000 lines are such programs: their second solve, about 12% of their
+build's instructions, is gone, and their output does not change.
+
+The order costs only where a pass, run without facts, leaves a shape the one solve folds less
+well than the old order did. Before, the solve that followed the structural pass also absorbed
+the first rewrite's cascades: a key, parameter or binding that only became unread when the
+rewrite and `prune` took its last read. When the pass after the solve now finds nothing, no solve
+comes to take those. The As built note below lists the programs this costs bytes, and names an
+issue for each cause.
+
 #### Cells
 
 A **cell** is a `u32`. Every cell holds a value of the product lattice (*Values*); a cell's id

@@ -55,7 +55,7 @@ build_test.test.a markup program builds byte-identical at every --jobs, and runs
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 bdb45053d72c73e435c747cb7c315a1b8a2ece431f710ce4e072bf78c1a68343
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 71497a4fe945b29bc46a6b6ce5101b0e704bd525014153d79a092b4e1f51d6f7
 build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 7115cf0245a0494fd3e4ddced5d653372fc73b5b4a1c710f869f633d1b1ea08a
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 cae649a578e10dee60c3401943a1b7d7ec0954675999c70922872ddd32dc9085
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 7e72c78745b14b0967f5e7cee65ec7a4b851b7d2cb8c08e73e44433969c88152
 build_test.test.a non-zero exit code from the platform reaches the process #0 7839e111324769dcb8ed2c068542fbc64385245f63347934c3db4ec28682263b
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
@@ -86,7 +86,7 @@ build_test.test.core List's loops read and write their arrays in place #0 ac690c
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 66c1155bb161dd759c0a4cf040aa99612b67215103f9184ab071a9a8f1ba1ef4
 build_test.test.modules import each other through ESM, and the program runs #0 dc7592e35332fa28d85de59e679641a16dc231531459584a8ef745771186de59
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 4b6e4be2b17a2073ad109b9ab8dd51297adfbafeeffe7ee82f8b8e0c811af282
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 117ed2e291b6b15fb49110257e989e7880e0b2d70a7d434f9e02d470e0de5f8f
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 f01fc9e73f1cab2c65c6f99d1e116aa799282ae3e86b594f7768a1f406b68ed6
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #0 1d0690888c8a1bc7310a156540ca97923b7ea0b277e57dc4e7e0676d873fef94
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #1 4114f66aa8d1e28678d781e0c88b33dde188923ec0cc3e31bba301720df994b4
 build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds #2 325bdc0108f5c60fe5f440cac6fa669ea7aa6a6a4c8ec8bffb46f4f227065ca3
