@@ -9197,19 +9197,6 @@ const Walker = struct {
         return out[0..n];
     }
 
-    /// The entries of `ex` that `value-cells` counts (§16.7): those whose
-    /// cells the deep condition compares pair by pair. An annotation
-    /// (`condition_only`: a construction's or a summary's condition on the
-    /// value, #720) is no allocation, and every pair it is in holds
-    /// (`sepCells`), so it is not counted (#763).
-    fn pairedCells(w: *const Walker, ex: AV) usize {
-        var n: usize = 0;
-        for (ex) |e| {
-            if (!w.cells.items[e.cell].condition_only) n += 1;
-        }
-        return n;
-    }
-
     /// A value's deep condition (§18.2): every cell it holds, and no cell at
     /// two of its paths neither of which is a prefix of the other.
     fn deepCond(w: *Walker, av: AV) Allocator.Error!u32 {
@@ -18456,7 +18443,7 @@ const Walker = struct {
     /// tuple supplies independent guards at .0 and .1.
     /// `grown_in` is `grownArgs(ctx)` when the caller has it; null, and it
     /// is computed here once, when an atom needs it.
-    fn annotationSpines(w: *Walker, cells: AV, sc: XSum, ctx: InstCtx, mark: Grown, grown_in: ?[]const ?[2]Var) Allocator.Error!AV {
+    fn annotationSpines(w: *Walker, cells: AV, sc: XSum, ctx: InstCtx, mark: Grown, grown_in: ?[]const ?[2]TyRef) Allocator.Error!AV {
         var fixed: std.ArrayList(XAtom) = .empty;
         for (sc.atoms) |t| if (t.kind != .sep_root) try fixed.append(w.a, t);
         const base = try w.instXSum(.{ .no = sc.no, .atoms = fixed.items }, ctx);

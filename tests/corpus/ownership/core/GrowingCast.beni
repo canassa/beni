@@ -225,3 +225,36 @@ slotRetained xs =
             ( List.push ys 1, xs )
         _ →
             ( [], xs )
+
+
+type CallbackBox a
+    = CallbackBox (a → Js.Value)
+
+
+applyBox : CallbackBox a, a → Js.Value
+applyBox box value =
+    case box of
+        CallbackBox f →
+            f value
+
+
+pub boxedBuilder : List Int → List (List Int) × List Int
+boxedBuilder xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    decoded : List (List Int)
+    decoded = Js.to (applyBox (CallbackBox pack) xs)
+    ( List.push decoded [], xs )
+
+
+pub boxedRetained : List Int → List Int × List Int
+boxedRetained xs =
+    pack : a → Js.Value
+    pack v = Js.from [ v ]
+    decoded : List (List Int)
+    decoded = Js.to (applyBox (CallbackBox pack) xs)
+    case decoded of
+        [ ys ] →
+            ( List.push ys 1, xs )
+        _ →
+            ( [], xs )
