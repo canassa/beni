@@ -151,6 +151,12 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
         if (report) try targets.append(gpa, @intCast(i));
     }
     const reports = try onBigStack(&o, targets.items);
+    for (reports) |r| {
+        session.checked.hoists[r.module].deinit(gpa);
+        session.checked.hoists[r.module] = try r.hoist_table.clone(gpa);
+        // Records still report only. Enforcement must establish module
+        // cleanliness before this channel can authorise any stores (§31.10).
+    }
 
     // The blocks the run's entries carry (§28.4).
     if (session.options.cache != null or making_pack) {

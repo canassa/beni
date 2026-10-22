@@ -7,6 +7,7 @@ module EntryCommand
   58:5 update entry EntryCommand.captures model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   68:5 entry EntryCommand.counts model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   68:5 update entry EntryCommand.counts model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  capture model.items: read 34:77; before 34:29
   summary captures: π2 RAW{items}, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items, condition(fresh2){shared}
   summary counts: π2 RAW{items}, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
   summary view: π1.items R; res ⟨render⟩ fresh1{lost}r{lost}

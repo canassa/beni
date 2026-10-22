@@ -50,6 +50,7 @@ const SchemaCtor = @import("../js/SchemaCtor.zig");
 const SchemaGraph = @import("../js/SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Profile = @import("../Profile.zig");
+pub const Hoists = @import("Hoists.zig");
 
 const Inst = Bir.Inst;
 const Symbol = InternPool.Symbol;
@@ -75,13 +76,14 @@ const debug_own = false;
 /// every build of the compiler (self-hosted, LLVM, wasm), the option defaults
 /// to `none`, `gates` refuses it, a value it does not name is a compile error,
 /// and the unit test below fails a `zig build test` given one.
-const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint, call_as_hoist } = blk: {
+const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint, call_as_hoist, wrong_placement } = blk: {
     const m = @import("ownership_options").record_mutation;
     if (std.mem.eql(u8, m, "none")) break :blk .none;
     if (std.mem.eql(u8, m, "hoist-whole")) break :blk .hoist_whole;
     if (std.mem.eql(u8, m, "no-held-operand")) break :blk .no_held_operand;
     if (std.mem.eql(u8, m, "no-disjoint")) break :blk .no_disjoint;
     if (std.mem.eql(u8, m, "call-as-hoist")) break :blk .call_as_hoist;
+    if (std.mem.eql(u8, m, "wrong-placement")) break :blk .wrong_placement;
     @compileError("-Downership-record-mutation: unknown mutation '" ++ m ++ "'");
 };
 
@@ -175,6 +177,8 @@ pub const Input = struct {
     /// cell's record condition fails approximately, which no list's verdict
     /// may notice.
     records_lost: bool = false,
+    /// Render source-position hoist lines for the ownership dump only.
+    format_hoists: bool = false,
     /// §28.3: a checked module is read by another module through its block,
     /// written and read back, as an installed one is — so that the verdicts
     /// are the ones a build that installed it would give, and the block's
@@ -371,6 +375,8 @@ pub const ModuleReport = struct {
     /// §31.6: the captures of a record's field path its lambdas read when
     /// they are made, counted for report mode (§31.12).
     eager_reads: u32 = 0,
+    hoist_table: Hoists.Table = .empty,
+    hoist_lines: []const SummaryLine = &.{},
 };
 
 /// A limit a declaration of the module reached (§16.7): the declaration's
@@ -728,6 +734,7 @@ const Slot = struct {
     lines: ?[]const Demand = null,
     /// With `lines`: the walk's eager reads of captured field paths (§31.6).
     eager_reads: u32 = 0,
+    hoist_table: Hoists.Table = .empty,
     /// Read back through its block once another module asked for it (§28.3).
     sealed: bool = false,
 };
@@ -917,6 +924,7 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         for (bir.decls, 0..) |_, di| _ = try o.ensureSummary(m, @intCast(di));
         var demands: std.ArrayList(Demand) = .empty;
         var eager: u32 = 0;
+        var hoists: Hoists.Builder = .{};
         const slots = try o.slotsOf(m);
         for (bir.decls, 0..) |d, di| {
             if (d.kind != .value) continue;
@@ -924,6 +932,7 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             if (slots[di].lines) |ls| {
                 try demands.appendSlice(arena, ls);
                 eager += slots[di].eager_reads;
+                try hoists.append(arena, slots[di].hoist_table);
                 continue;
             }
             var scratch: std.heap.ArenaAllocator = .init(o.in.gpa);
@@ -936,8 +945,26 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             try w.walkDecl(body);
             try w.resolve(&demands);
             eager += w.eager_reads;
+            try hoists.append(arena, w.hoist_table.table());
         }
         r.eager_reads = eager;
+        r.hoist_table = hoists.table();
+        var hoist_lines: std.ArrayList(SummaryLine) = .empty;
+        if (o.in.format_hoists) for (r.hoist_table.reads) |h| {
+            var text: std.Io.Writer.Allocating = .init(arena);
+            const wr = &text.writer;
+            const decl = bir.decls[h.decl];
+            const name = bir.locals[decl.locals_start + h.holder].name.unwrap().?;
+            wr.print("{s} {s}", .{ if (h.demand == none) "capture" else "hoist", o.in.interner.slice(bir.symbol(@fromBackingInt(name))) }) catch return error.OutOfMemory;
+            for (r.hoist_table.paths[h.path_start..][0..h.prefix_len]) |step| {
+                if (step.kind == 0) wr.print(".{s}", .{r.hoist_table.name(step.arg)}) catch return error.OutOfMemory else wr.print(".{d}", .{step.arg}) catch return error.OutOfMemory;
+            }
+            const rp = o.in.positions.get(o.in.positions.ctx, m, bir.insts.items(.main_token)[h.inst]);
+            const pp = o.in.positions.get(o.in.positions.ctx, m, bir.insts.items(.main_token)[h.placement]);
+            wr.print(": read {d}:{d}; {s} {d}:{d}", .{ rp.line, rp.col, if (h.phase == 1) "after operands" else "before", pp.line, pp.col }) catch return error.OutOfMemory;
+            try hoist_lines.append(arena, .{ .text = try text.toOwnedSlice() });
+        };
+        r.hoist_lines = hoist_lines.items;
         // Source order: by position, which is a function of the text.
         std.mem.sort(Demand, demands.items, {}, struct {
             fn less(_: void, x: Demand, y: Demand) bool {
@@ -1901,6 +1928,7 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
     if (report) {
         o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
         o.slots[m].?[d].eager_reads = w.eager_reads;
+        o.slots[m].?[d].hoist_table = try w.hoist_table.table().clone(o.out.allocator());
     }
     const s = try w.readOff();
     // A limit the walk reached (a fixpoint, `value-cells`) makes the summary
@@ -5680,7 +5708,7 @@ const U32SliceContext = struct {
 /// below the path (§23.2).
 /// `fields`: a record write of the capture, with the fields it writes
 /// (§31.4 item 4); null for a list's.
-const Capture = struct { local: u32, path: u32, deep: bool = false, fields: ?[]const u32 = null };
+const Capture = struct { local: u32, path: u32, read_inst: u32 = none, deep: bool = false, fields: ?[]const u32 = null };
 
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
@@ -5747,6 +5775,10 @@ const Closure = struct {
 };
 
 const Use = struct {
+    read_inst: u32 = none,
+    binding: u32 = none,
+    pattern_field: u32 = none,
+    capture: u32 = none,
     local: u32,
     path: u32,
     /// A record update's base is used at every path but these fields.
@@ -5793,6 +5825,7 @@ const Holder = struct {
 const DemandKind = enum { report, callsite, probe, value, creation };
 
 const DemandRec = struct {
+    inst: u32 = none,
     kind: DemandKind = .report,
     token: u32,
     op: []const u8,
@@ -6153,6 +6186,12 @@ const Walker = struct {
     escaping_list_only: bool = false,
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
+    hoist_table: Hoists.Builder = .{},
+    hoist_uses: std.ArrayList(struct { use: Use, prefix: u32 }) = .empty,
+    hoist_read_index: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
+    current_inst: u32 = none,
+    inst_parent: []u32 = &.{},
+
     eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
 
     // ---- setup -------------------------------------------------------------
@@ -6182,6 +6221,8 @@ const Walker = struct {
         w.send_params = try w.a.alloc(bool, insts);
         @memset(w.send_params, false);
         if (w.mode == .report) {
+            w.inst_parent = try w.a.alloc(u32, insts);
+            @memset(w.inst_parent, none);
             w.inst_span = try w.a.alloc([2]u32, insts);
             @memset(w.inst_span, .{ none, none });
         }
@@ -8142,7 +8183,7 @@ const Walker = struct {
         for (b.extraSlice(Bir.inlineRange(b.instData(pat)), u32)) |l| {
             const name = b.locals[w.decl.locals_start + l].name;
             const sym = if (name.unwrap()) |s| @backingInt(b.symbols[s]) else continue;
-            try w.recordRead(.{ .local = r.local, .path = try w.o.child(r.path, .field, sym) }, tok);
+            try w.recordRead(.{ .local = r.local, .path = try w.o.child(r.path, .field, sym) }, tok, value.int(), l, sym);
         }
     }
 
@@ -8177,10 +8218,10 @@ const Walker = struct {
 
     /// §31.14: a field path read where it is evaluated, for the record
     /// demand's per-field liveness.
-    fn recordRead(w: *Walker, r: Capture, tok: u32) Allocator.Error!void {
+    fn recordRead(w: *Walker, r: Capture, tok: u32, read_inst: u32, binding: u32, pattern_field: u32) Allocator.Error!void {
         if (r.local >= w.local_frame.len) return;
         if (w.local_frame[r.local] != w.frame and (w.local_av[r.local] == null or !w.inFrameOf(w.local_frame[r.local]))) return;
-        try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .record_read = true });
+        try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .record_read = true, .read_inst = read_inst, .binding = binding, .pattern_field = pattern_field });
     }
 
     fn useAt(w: *Walker, l: u32, path: u32, tok: u32, except: []const u32) Allocator.Error!void {
@@ -9026,6 +9067,10 @@ const Walker = struct {
 
     fn eval(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
         if (w.mode != .report) return w.evalRaw(inst);
+        const parent = w.current_inst;
+        w.inst_parent[inst.int() - w.decl.inst_start.int()] = parent;
+        w.current_inst = inst.int();
+        defer w.current_inst = parent;
         // §28.6: the tokens each instruction spans, for the messages.
         const tok = w.token(inst);
         const outer = w.span;
@@ -9061,7 +9106,7 @@ const Walker = struct {
             .local => return w.evalLocal(data.lhs, eps, inst),
             .field_access, .tuple_index => {
                 if (try w.refPath(inst)) |r| {
-                    if (w.mode == .report) try w.recordRead(r, w.token(inst));
+                    if (w.mode == .report) try w.recordRead(r, w.token(inst), inst.int(), none, none);
                     return w.evalLocal(r.local, r.path, inst);
                 }
                 const target = try w.eval(@fromBackingInt(@intCast(data.lhs)));
@@ -9498,7 +9543,7 @@ const Walker = struct {
             if (w.o.firstStep(path)) |first| if (first.kind == .field) {
                 const g = try w.eager_seen.getOrPut(w.a, .{ w.frame, l, path });
                 if (!g.found_existing) w.eager_reads += 1;
-                try w.frames.items[w.frame].eager.append(w.a, .{ .local = l, .path = path });
+                try w.frames.items[w.frame].eager.append(w.a, .{ .local = l, .path = path, .read_inst = inst.int() });
             };
         }
         const ty = w.instType(inst);
@@ -9678,6 +9723,7 @@ const Walker = struct {
             const ref = try w.refPath(base_inst);
             try w.demandOn(.{
                 .kind = .report,
+                .inst = inst.int(),
                 .token = w.token(inst),
                 .op = "update",
                 .base_text = if (w.mode == .report) try w.baseText(base_inst) else "",
@@ -9748,6 +9794,7 @@ const Walker = struct {
     /// A lambda or local function: its body walked as a frame of its own,
     /// and its class read off it (§16.5).
     fn closure(w: *Walker, params: []const Inst.Index, body: Inst.Index, ci_in: ?u32, tok: u32) Allocator.Error!AV {
+        const creation = w.current_inst;
         const saved_frame = w.frame;
         const saved_ctx = w.ctx;
         const id: u32 = @intCast(w.frames.items.len);
@@ -9820,8 +9867,9 @@ const Walker = struct {
             // §31.6: its reads of outer field paths happen here, where it is
             // made: reads of the version the creation sees.
             for (w.frames.items[id].eager.items) |cap| {
+                if (cap.read_inst != none) try w.publishRead(.{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .read_inst = cap.read_inst, .capture = creation }, none, creation, 0, none);
                 if (cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame) {
-                    try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true });
+                    try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true, .read_inst = cap.read_inst, .capture = creation });
                 } else if (w.frame != 0) try w.frames.items[w.frame].eager.append(w.a, cap);
             }
             if (cls.once) try w.onceCreation(ci, w.token(body));
@@ -9894,6 +9942,10 @@ const Walker = struct {
             w.early[g[0]] = 0;
         };
         for (items) |item| {
+            const saved_inst = w.current_inst;
+            if (w.mode == .report) w.inst_parent[item.int() - w.decl.inst_start.int()] = saved_inst;
+            w.current_inst = item.int();
+            defer w.current_inst = saved_inst;
             const idata = b.instData(item);
             switch (b.instTag(item)) {
                 .let_def => {
@@ -12784,6 +12836,7 @@ const Walker = struct {
         const written: []const u32 = if (fields.len != 0) fields else try w.allFields(base);
         try w.demandOn(.{
             .kind = .callsite,
+            .inst = inst.int(),
             .token = w.token(inst),
             .op = "update",
             .base_text = if (!report or q == eps) text else try std.fmt.allocPrint(arena, "{s}{s}", .{ text, try w.o.pathText(q) }),
@@ -14876,6 +14929,7 @@ const Walker = struct {
     }
 
     const DemandSpec = struct {
+        inst: u32 = none,
         kind: DemandKind,
         token: u32,
         op: []const u8,
@@ -14929,6 +14983,7 @@ const Walker = struct {
             try cells.append(w.a, e);
         }
         var rec: DemandRec = .{
+            .inst = spec.inst,
             .kind = spec.kind,
             .token = spec.token,
             .op = spec.op,
@@ -15408,10 +15463,102 @@ const Walker = struct {
             const verdict = try w.resolveOne(rec);
             if (w.mode != .report) continue;
             try out_list.append(out, verdict);
+            if (rec.fields != null and rec.inst != none and verdict.verdict == .accepted) try w.publishDemand(rec);
         }
     }
 
+    fn hoistName(w: *Walker, symbol: u32) Allocator.Error!u32 {
+        const start: u32 = @intCast(w.hoist_table.names.items.len);
+        try w.hoist_table.names.appendSlice(w.a, w.o.in.interner.slice(@fromBackingInt(symbol)));
+        try w.hoist_table.names.append(w.a, 0);
+        return start;
+    }
+
+    fn parentOf(w: *const Walker, inst: u32) u32 {
+        const i = inst -% w.decl.inst_start.int();
+        return if (i < w.inst_parent.len) w.inst_parent[i] else none;
+    }
+
+    /// A read in the same or a nested branch is dominated by the write.
+    /// Otherwise lift it to the statement containing the divergent branch.
+    fn placement(w: *const Walker, rec: DemandRec, u: Use) u32 {
+        var ctx = u.ctx;
+        while (ctx != none) : (ctx = w.ctx_nodes.items[ctx].parent) {
+            if (ctx == rec.ctx) return rec.inst;
+        }
+        const read = if (u.capture != none) u.capture else u.read_inst;
+        var d = rec.inst;
+        while (d != none) : (d = w.parentOf(d)) {
+            const parent = w.parentOf(d);
+            var r = read;
+            while (r != none) : (r = w.parentOf(r)) if (r == parent) return d;
+        }
+        unreachable; // both accesses are in one frame (§31.14)
+    }
+
+    fn publishDemand(w: *Walker, rec: DemandRec) Allocator.Error!void {
+        const fields = try w.a.dupe(u32, rec.fields.?);
+        std.mem.sort(u32, fields, w.o.in.interner, struct {
+            fn less(pool: *const InternPool.Global, x: u32, y: u32) bool {
+                return std.mem.lessThan(u8, pool.slice(@fromBackingInt(x)), pool.slice(@fromBackingInt(y)));
+            }
+        }.less);
+        const start: u32 = @intCast(w.hoist_table.fields.items.len);
+        for (fields) |f| try w.hoist_table.fields.append(w.a, try w.hoistName(f));
+        try w.hoist_table.demands.append(w.a, .{ .decl = w.decl_index, .inst = rec.inst, .fields_start = start, .fields_len = @intCast(fields.len) });
+        for (w.hoist_uses.items) |h| {
+            // These controls invent hoists for whole uses, which have no
+            // source field read to publish. Their verdicts still change.
+            if (comptime record_mutation == .hoist_whole or record_mutation == .call_as_hoist) {
+                if (h.use.read_inst == none) continue;
+            }
+            const at = if (comptime record_mutation == .wrong_placement) h.use.read_inst else w.placement(rec, h.use);
+            const phase: u32 = if (at == rec.inst and w.bir.instTag(@fromBackingInt(rec.inst)) == .record_update) 1 else 0;
+            try w.publishRead(h.use, rec.inst, at, phase, h.prefix);
+        }
+    }
+
+    /// Copy the exact source path, independently of ownership's path domain.
+    fn publishRead(w: *Walker, u: Use, demand: u32, at: u32, phase: u32, prefix: u32) Allocator.Error!void {
+        if (u.read_inst == none) unreachable;
+        var path: std.ArrayList(Hoists.Step) = .empty;
+        if (u.pattern_field != none) try path.append(w.a, .{ .kind = 0, .arg = try w.hoistName(u.pattern_field) });
+        var inst: Inst.Index = @fromBackingInt(u.read_inst);
+        while (true) {
+            const d = w.bir.instData(inst);
+            switch (w.bir.instTag(inst)) {
+                .field_access, .tuple_index => |tag| {
+                    try path.append(w.a, .{ .kind = if (tag == .field_access) 0 else 1, .arg = if (tag == .field_access) try w.hoistName(@backingInt(w.bir.symbols[d.rhs])) else d.rhs });
+                    inst = @fromBackingInt(@intCast(d.lhs));
+                },
+                .local => break,
+                else => unreachable, // recordRead only records a variable path
+            }
+        }
+        std.mem.reverse(Hoists.Step, path.items);
+        const n: u32 = @intCast(path.items.len);
+        const pre = if (prefix == none) n else prefix;
+        std.debug.assert(pre > 0 and pre <= n);
+        // One source read invalidated twice keeps the first write's placement.
+        const entry = try w.hoist_read_index.getOrPut(w.a, .{ u.read_inst, u.binding, u.capture, pre });
+        if (entry.found_existing) {
+            const r = &w.hoist_table.reads.items[entry.value_ptr.*];
+            if (r.demand == none and demand != none) {
+                r.demand = demand;
+                r.placement = at;
+                r.phase = phase;
+                r.prefix_len = pre;
+            }
+            return;
+        }
+        entry.value_ptr.* = @intCast(w.hoist_table.reads.items.len);
+        const start: u32 = @intCast(w.hoist_table.paths.items.len);
+        try w.hoist_table.paths.appendSlice(w.a, path.items);
+        try w.hoist_table.reads.append(w.a, .{ .decl = w.decl_index, .demand = demand, .inst = u.read_inst, .holder = u.local, .binding = u.binding, .path_start = start, .path_len = n, .prefix_len = pre, .placement = at, .phase = phase, .capture = u.capture });
+    }
+
     fn resolveOne(w: *Walker, rec: DemandRec) Allocator.Error!Demand {
+        w.hoist_uses.clearRetainingCapacity();
         var d = try w.resolveRaw(rec);
         // §31.12: a record rejection's fix — a top-level base is made a
         // function, anything else copies.
@@ -15524,6 +15671,9 @@ const Walker = struct {
                     // read, so a read of a written field is a whole use.
                     .hoist => if (rec.kind != .creation) {
                         try hoisted.append(w.a, ui);
+                        var buf: [k_limit + 1]Step = undefined;
+                        const prefix: u32 = @intCast(w.o.steps(h.path, &buf).len + 1);
+                        try w.hoist_uses.append(w.a, .{ .use = u, .prefix = prefix });
                         continue;
                     },
                     .whole => {},

@@ -111,6 +111,7 @@ pub const Module = struct {
 
 const Effects = @import("Effects.zig");
 const TypeKeys = @import("TypeKeys.zig");
+const Hoists = @import("../own/Hoists.zig");
 
 /// Owned. The session-wide type table.
 types: Types,
@@ -133,11 +134,15 @@ dispatch: []Dispatch,
 type_keys: []TypeKeys.Artifact,
 /// Resolved immutable schema plan per module.
 plans: []SchemaPlan,
+/// Owned module-local ownership facts, beside dispatch, including cache hits.
+hoists: []Hoists.Table = &.{},
 counters: Counters,
 
 pub const empty: Check = .{ .types = .empty, .diagnostics = &.{}, .modules = &.{}, .dispatch = &.{}, .type_keys = &.{}, .plans = &.{}, .counters = .{} };
 
 pub fn deinit(check: *Check, gpa: Allocator) void {
+    for (check.hoists) |*t| t.deinit(gpa);
+    gpa.free(check.hoists);
     check.types.deinit(gpa);
     for (check.diagnostics) |d| gpa.free(d.message);
     gpa.free(check.diagnostics);
@@ -348,6 +353,8 @@ pub fn run(
     const dispatch = try gpa.alloc(Dispatch, modules);
     @memset(dispatch, .empty);
     check.dispatch = dispatch;
+    check.hoists = try gpa.alloc(Hoists.Table, modules);
+    @memset(check.hoists, .empty);
     const type_keys = try gpa.alloc(TypeKeys.Artifact, modules);
     @memset(type_keys, .empty);
     check.type_keys = type_keys;

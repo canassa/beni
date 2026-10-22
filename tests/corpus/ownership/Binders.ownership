@@ -14,6 +14,7 @@ module Binders
   90:30 List.push model.items: rejected later-use: model.items is read again at 91:30
   97:24 List.push xs: rejected later-use: xs is read again at 97:42
   103:18 List.push xs: accepted param
+  hoist model.items: read 91:47; after operands 90:12
   summary nested: π1 RW
   summary sink: π1 RW
   summary statement: π1 RW
