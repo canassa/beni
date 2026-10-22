@@ -197,7 +197,7 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
             if (!try Resolve.unifyWellKnown(s, id, root)) return Resolve.reject(s, id, false);
             // An all-nullary type is a bare tag string, so `eq` is `===`
             // (A.18); `compare` is not alphabetic.
-            if (w.method == InternPool.WellKnown.eq.symbol() and allNullary(s, a.type)) {
+            if (w.method == InternPool.WellKnown.eq.symbol() and try allNullary(s, a.type)) {
                 return Resolve.answer(s, id, .{ .primitive = .strict_eq });
             }
             return derivedNominal(s, id, root, a);
@@ -863,7 +863,15 @@ fn refuseDerived(s: *Solve, id: WantedId, root: Var, reason: Diagnostics.Reporte
 
 /// Every constructor of `id` takes no argument: its values are bare tag
 /// strings (`backend.md` §4). A type with none (a `foreign type`) is not one.
-fn allNullary(s: *Solve, id: Types.TypeId) bool {
+/// Read once per type and module (`Resolve.State.nullary`): every `==` on an
+/// enumeration of n constructors read all n, so n comparisons cost O(n²).
+fn allNullary(s: *Solve, id: Types.TypeId) Error!bool {
+    const slot = try s.resolver.nullary.getOrPut(s.cx.gpa, id);
+    if (!slot.found_existing) slot.value_ptr.* = nullaryCtors(s, id);
+    return slot.value_ptr.*;
+}
+
+fn nullaryCtors(s: *Solve, id: Types.TypeId) bool {
     const cx = s.cx;
     const entry = cx.types.entry(id);
     if (entry.module == cx.module) {

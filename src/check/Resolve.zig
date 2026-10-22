@@ -48,6 +48,7 @@ const Bir = @import("../bir/Bir.zig");
 const InternPool = @import("../InternPool.zig");
 const Dispatch = @import("Dispatch.zig");
 const TypeStore = @import("TypeStore.zig");
+const stamped = @import("../stamped.zig");
 const Evidence = @import("Evidence.zig");
 const Instances = @import("Instances.zig");
 const Derivable = @import("Derivable.zig");
@@ -112,6 +113,12 @@ pub const State = struct {
     /// The own well-known methods said once at their declaration, per type
     /// (`Instances.signatureOnce`).
     signatures: std.AutoHashMapUnmanaged(Instances.SignatureKey, TypeStore.Var) = .empty,
+    /// Per nominal type `==` was derived on, whether every constructor is
+    /// nullary (`Instances.allNullary`): read off the declaration once, not
+    /// once per comparison (checker-v2.md §18, *amended 2026-10-22*). A
+    /// column by type id (`fast-compiler.md` §5 rule 5), as long as the
+    /// highest id compared.
+    nullary: stamped.Column(TypeStore.TypeId, bool) = .{},
     /// Steps in the current top-level group.
     steps: u32 = 0,
     /// What promotion kept, per unannotated declaration: a range of
@@ -134,6 +141,7 @@ pub const State = struct {
         r.missing.deinit(gpa);
         r.plain.deinit(gpa);
         r.signatures.deinit(gpa);
+        r.nullary.deinit(gpa);
         r.requirement_rows.deinit(gpa);
         r.requirement_roots.deinit(gpa);
     }
