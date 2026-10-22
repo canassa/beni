@@ -1503,14 +1503,16 @@ openRoot ⊤ =
 pub closeRoot : Scope → ⊤
 closeRoot sc =
     s = Js.from sc
+    -- The scheduler the root belongs to, found before the root leaves its
+    -- list: its deferred finalisers run in a fiber of that scheduler.
+    owner = if Js.read many then ownerOf s else Js.null
     unlist s
     Js.set s "closed" (Js.from True)
     Js.each (copy (Js.get s "children")) λf → halt f
 
     if Js.read deferring then
         Js.to
-            (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ⊤), Js.null ]
-            )
+            (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ⊤), owner ])
 
 
 -- ---- Shutdown (`boundary.md` §9.8.14) --------------------------------------
@@ -2059,7 +2061,6 @@ newScheduler runner hook more =
             , expired = False
             , head = 0
             , hook = hook
-            , idle = Js.null
             , lent = Js.construct (Js.global "Map") []
             , live = 0
             , members = Js.construct (Js.global "Set") []
@@ -2118,10 +2119,11 @@ withScheduler sched work =
     Js.write slotted True
     s = Js.from sched
 
-    -- A scheduler that has stopped for good cancels the fiber that would
-    -- enter it, as `join` of a cancelled fiber does; outside any fiber,
-    -- `work` runs, and every fiber it starts is cancelled before it runs.
-    if hasEnded s && not (Js.isNull (Js.read current)) then
+    -- A scheduler that is stopping, or has stopped for good, cancels the
+    -- fiber that would enter it, as `join` of a cancelled fiber does; so
+    -- this function may suspend. Outside any fiber, `work` runs, and every
+    -- fiber it starts is cancelled before it runs.
+    if hasStopped s && not (Js.isNull (Js.read current)) then
         selfCancel ⊤
     else
         fiber = here ⊤
@@ -2170,28 +2172,6 @@ unlend fiber s old =
         countDown s
     else
         Js.to (Js.call (Js.get s "lent") "set" [ fiber, Js.from (Js.to depth - 1) ])
-
-
---| Whether a fiber of the scheduler is still running: one that belongs to
---| it, or one lent to it by `withScheduler`. `False` once every one has
---| ended, and before any has started. What a platform asks after a
---| request's answer, to know whether work outlives it.
-pub schedulerBusy : Scheduler → Bool
-schedulerBusy sched = Js.to (Js.get (Js.from sched) "live") > 0
-
-
---| Call `f` once, the next time no fiber of the scheduler runs — at once
---| when none does now — from the end of the last fiber, where a `resume`
---| from it is queued as any other. The last `f` given is the one called.
---| What a platform waits with for the work that outlives a request's
---| answer, before it stops the scheduler at its deadline.
-pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤
-onSchedulerIdle sched f =
-    s = Js.from sched
-    if Js.to (Js.get s "live") == 0 then
-        f ⊤
-    else
-        Js.set s "idle" (Js.from f)
 
 
 --| Stop one scheduler, as `shutdown` stops the program: close its root
@@ -2264,13 +2244,6 @@ countDown s =
     n : Int
     n = Js.to (Js.get s "live") - 1
     Js.set s "live" (Js.from n)
-    if n == 0 then
-        f = Js.get s "idle"
-        if Js.isNull f then
-            ⊤
-        else
-            Js.set s "idle" Js.null
-            Js.to (Js.apply f [ Js.null ])
     if n == 0 && Js.to (Js.get s "phase") == 2 then Js.to (Js.apply (Js.get s "ended") [ Js.null ])
 
 
@@ -2280,6 +2253,15 @@ rootsFor : V → V
 rootsFor fiber =
     s = schedulerOf fiber
     if Js.isNull s then roots else Js.get s "roots"
+
+
+-- The scheduler whose roots list holds `root`, or null for the program's.
+ownerOf : V → V
+ownerOf root =
+    found = Js.ref Js.null
+    Js.each schedulers λs →
+        if Js.to (Js.call (Js.get s "roots") "includes" [ root ]) then Js.write found s
+    Js.read found
 
 
 unlistFrom : V, V → ⊤

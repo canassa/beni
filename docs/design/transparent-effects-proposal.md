@@ -2358,8 +2358,6 @@ pub scheduler : sync (⊤ → ⊤) → Scheduler                       -- drains
 pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, and the defect hook
 pub withScheduler : Scheduler, (⊤ → a) → a                     -- the slot's writer, scoped to `work` as every slot change is
 pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutdown` for one scheduler
-pub schedulerBusy : Scheduler → Bool                           -- whether a fiber of it, belonging or lent, still runs
-pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` once, the next time none does; at once when none does now
 ```
 
 - **A scheduler is a queue of its own**: the ready work of its fibers, FIFO, drained as the
@@ -2403,11 +2401,14 @@ pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` 
 - **A scheduler that has stopped for good is a dead end** (*P699-1*). A fiber resumed through it
   afterwards — one that names it in its slot, or one lent to it — is cancelled, and its cleanup
   runs on the program's queue; a fiber started under it is cancelled before it runs, as `fork`
-  does while the program stops. `withScheduler` of such a scheduler cancels the calling fiber at
-  once, as `join` of a cancelled fiber does, and `work` never runs; outside any fiber `work` runs,
-  and every fiber it starts is cancelled before it runs. `soon` work queued under it is dropped.
+  does while the program stops. `withScheduler` of a scheduler that is stopping or has stopped
+  cancels the calling fiber at once, as `join` of a cancelled fiber does, and `work` never runs
+  (*R2-1*: a stop starts nothing new under it, from its first phase on); so **`withScheduler` may
+  suspend**, and a `sync` function cannot call it (*R2-5*). Outside any fiber `work` runs, and
+  every fiber it starts is cancelled before it runs. `soon` work queued under it is dropped.
   Nothing waits on the dead queue, so a program that kept the `Scheduler` value ends as it would
-  have.
+  have. The deferred finalisers of a root scope that belongs to a scheduler run in a fiber of
+  that scheduler whichever way the scope closes, `closeRoot` included (*R2-2*).
 - **`stopScheduler s deadline done`** is `shutdown` for one scheduler: it closes `s`'s root scopes,
   cancels its fibers and the fibers lent to it, drops its queued work and starts nothing new under
   it; a finaliser that waits is given `deadline` milliseconds from the call, and `done` is called
@@ -2420,10 +2421,8 @@ pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` 
   the deadline it was given — and the cleanups cut short under a scheduler count in `shutdown`'s
   `done` (*P699-8*), so nothing outlives the program and nothing cut goes uncounted. A
   scheduler that has stopped for good leaves the kernel's list, so a platform that makes one per
-  request holds none of them; `schedulerBusy` says whether a fiber of a scheduler still runs, and
-  `onSchedulerIdle` calls a function once when the last one ends: what the `cloudflare` platform
-  asks after a request's answer, to hold the request open under `waitUntil` only while work
-  outlives it, and to let go as soon as that work ends rather than at the deadline.
+  request holds none of them. What the `cloudflare` platform asks of a scheduler after a request's
+  answer is the Worker slice's (§9.12 (d)).
 - **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
   the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
   scheduler's: a wake under a scheduler always goes through its `run`.
@@ -2434,9 +2433,9 @@ pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` 
   `withScheduler` write, and a release build that reaches none of them folds the question away, as
   it folds `slotted`, measured on every corpus program (the pull request, as #688 did). **A
   development build pays**: nothing folds there, so every program that reaches the kernel carries
-  the helpers the hot paths call behind that cell, about 2.9 kB raw and 0.5 kB brotli of
-  `_core/Task.mjs`; the teardown itself is reachable only through the record a maker fills, which
-  is what keeps the cost at that. Moving the hot-path helpers behind the same record removes it:
+  the helpers the hot paths call behind that cell, about 3.4 to 3.8 kB raw and 0.6 kB brotli of
+  `_core/Task.mjs` (measured after the review's fixes); the teardown itself is reachable only
+  through the record a maker fills, which is what keeps the cost at that. Moving the hot-path helpers behind the same record removes it:
   issue #700. A fiber that belongs to a scheduler carries one field more — the scheduler it
   belongs to, written at its start — and a drain of a scheduler costs what the program's costs,
   plus the `run` call per batch.
@@ -2454,7 +2453,12 @@ pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` 
   a stopped scheduler cancels the caller); `run/SchedulerNested` (lent once, cancelled whole);
   `run/SchedulerDeferred` (a root scope's deferred finaliser runs under the scheduler's deadline,
   cut and counted); `run/SchedulerYields` (a timer fires while a fiber under a scheduler keeps
-  yielding). The `cloudflare` fixtures of §9.12 (k) take the rest when the platform lands.
+  yielding); `run/SchedulerStopping` (a fiber that enters a scheduler during its teardown is
+  cancelled); `run/SchedulerCloseRoot` (`closeRoot`'s deferred finaliser runs under the
+  scheduler, cut by its deadline); `run/SchedulerShutdownCount` (`shutdown` counts a cut under
+  a scheduler); `check/bad/SchedulerHookWaits` (a hook that waits is refused);
+  `run/SchedulerDrainsAtOnce` (a `run` that drains during the call is the named defect). The
+  `cloudflare` fixtures of §9.12 (k) take the rest when the platform lands.
 
 ### 17.6 Time: `Duration`, `Task.sleep`, `Clock` (P2)
 
