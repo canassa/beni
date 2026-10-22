@@ -11,6 +11,9 @@
 - Asked the owner which context a message's `update` has when a body sends it (`node-log-q4`). My
   first draft decided that in the spec; the coordinator had me take it out.
 - Opened #751 (`browser-inline` parity) and #765 (release-optimiser traces of folded code).
+- Answered `node-log-review`'s round on #769: rebased past 521 run-hash conflicts, opened #774
+  (ownership precision) and #775 (a defect fixture), said in the spec that 17 command makers are
+  now `impure`, and added the review's keyed, task, after-render and subscription paths to the page.
 
 **What I learned**
 
@@ -27,6 +30,8 @@
   `../browser`, because an embedded name wins over a directory.
 - The bench through the page driver has more noise than the effect: two equal release builds
   differed by 6% per command. A Node loop of 1 000 000 calls gave stable numbers.
+- A function that reads a cell is `impure`, and so is each function that calls it: one read in
+  `keepLogContext` made 17 public command makers `impure`. The API pages show it; read their diff.
 - Ownership reports summarise platform code too. Wrapping each job in `keepLogContext` changed the
   summaries of 28 `ownership/` goldens (more `{lost}`), though no verdict. A change to a platform's
   command path must bless `ownership/` and read the diff for verdict lines.
