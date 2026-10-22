@@ -4634,8 +4634,9 @@ see `update`'s `annotate` or `minimum`; that it should is #597.
 *Amended 2026-10-22 (#597; the owner, Cesar, dashboard `node-log-q3`): a command's body has the log
 context of the place where the command was made.* This replaces "the default log context" of the
 amendment of 2026-10-20 for every command made inside an `annotate`, a `span`, a `minimum` or a
-`withSink`. Effect v4 does the same when it forks a fiber: the child copies its parent's context
-(`internal/effect.ts:5463`).
+`withSink`, and the last sentence of the amendment of 2026-10-21 ("A command still does not see
+`update`'s `annotate` or `minimum`; that it should is #597"). Effect v4 does the same when it forks
+a fiber: the child copies its parent's context (`internal/effect.ts:5463`).
 
 - **What a command keeps.** `Cmd.perform`, `Cmd.keyed` and `Cmd.afterRender` read the calling
   fiber's log context (proposal §17.5) when they make the command, and the body runs with it: the
@@ -4665,10 +4666,18 @@ amendment of 2026-10-20 for every command made inside an `annotate`, a `span`, a
   build where nothing sets a slot, the read is the constant of §17.5's amendment of 2026-10-02:
   `keepLogContext` is the identity, and a release build keeps no call of it. (The optimiser still
   keeps a few traces of the code that it removes, #765.) Where a context is set, the body runs
-  inside that context, with `withLogContext`'s body, which `Log.annotate` uses. That function does
-  not write the cell that says a slot was set, so that a build in which nothing sets a slot still
-  folds the slots away. A development build folds nothing, so each page that makes a command ships
-  that code.
+  inside that context, through `inLogContext` (private to `core/Task.beni`), a copy of the body of
+  `withLogContext`, which `Log.annotate` uses. `inLogContext` does not write the cell that says a
+  slot was set, so that a build in which nothing sets a slot still folds the slots away. A
+  development build folds nothing, so each page that makes a command ships that code.
+- **Purity.** To make a command now reads the calling fiber's log-context slot, so 17 functions
+  that make one are `impure` (they were pure): `Cmd.perform`, `keyed`, `task`, `do` and `log`;
+  `Hosted.job`; `Http.send` and `riskySend`; `Random.generate`; `Storage.save`; `WebSocket.send`
+  and `disconnect`; and `Navigation`'s `pushUrl`, `replaceUrl`, `back`, `forward` and `load`.
+  (`Cmd.afterRender` and `Hosted.later` were `impure` already.) So an `update` arm that makes one
+  of these commands is `impure`, and the command that it returns depends on the log context where
+  it is made. The command is still a value that does nothing until the page runs it. Proposal
+  §6.6 has a note.
 - **Not covered:** `browser-inline`'s `Cmd.perform`, which runs its body in the same dispatch after
   `update` returns. #751 tracks it.
 
