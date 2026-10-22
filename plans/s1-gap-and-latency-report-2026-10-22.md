@@ -259,11 +259,11 @@ Each fix was priced by editing the actual N = 16 and N = 64 output into the shap
 | # | Fix | Where | Estimate | Measured | Status |
 |---|---|---|---:|---:|---|
 | 1 | Leave out another module's trailing `⊤` argument, so `W.init ⊤` (`I(null)` against `I=()=>…`) is inlined | `Lower.zig` `unwrittenArgs`; `Spec.zig` `inlineAt` refused a call of another arity | −5.5 | **−3.9** | merged, #654 (#651) |
-| 2 | Write a handler used once in its listener | `Opt.zig` inlines an arrow used once only for a `const`; the handlers are `let` in release | −10.7 | — | **merged, #718** (#708): the cause was `Opt.zig`'s `scan_limit = 64`, a cap: a run of more than 64 declarations put each handler's one use out of reach. It is now a direct lookup of the use. The `let` was only the compact printer's spelling. Not yet measured |
+| 2 | Write a handler used once in its listener | `Opt.zig` inlines an arrow used once only for a `const`; the handlers are `let` in release | −10.7 | — | **merged, #718** (#708): the cause was `Opt.zig`'s `scan_limit = 64`, a cap: a run of more than 64 declarations put each handler's one use out of reach. It is now a direct lookup of the use. The `let` was only the compact printer's spelling. **Measured −7.9** |
 | 3 | Call a binding without a block or a hoisted `let`: `xd(jb,_a.w4,_a.w1);` | `inline.zig` `callFunction` | −5.9 | — | not done: #7 replaces it |
 | 4 | An enum cycle is a chain of conditionals, fused into its handler | `Lower.zig` `condChainPossible` refused every `switch` tree | −1.4 | **+0.2** (−0.8 from 16 to 64) | merged, #656 (#652): the shape is right, the bytes did not move |
 | 5 | A view `let` read once is written at its use | evaluation-order rule | −2.3 | — | in #618 |
-| 6 | Short field names in shape-read records (from 29 shape runs on): `["cups",A,0,"z"]` | `SchemaValid.zig`, `Emit.zig` `pinShapeFields`, `assignFields`; the owner's decision of 2026-10-22 supersedes 2026-10-19's | −10.4 | **+3.3** (draft) | merged, #659 (#653), 2026-10-22, by the owner, ahead of the field-name colouring. The draft measured worse: the names come out as two letters (`cups`→`oa`) and each entry grows by `,0,"oa"`. Raw −6 %, brotli up. Not yet explained; source names that are English words may be cheap for brotli's static dictionary |
+| 6 | Short field names in shape-read records (from 29 shape runs on): `["cups",A,0,"z"]` | `SchemaValid.zig`, `Emit.zig` `pinShapeFields`, `assignFields`; the owner's decision of 2026-10-22 supersedes 2026-10-19's | −10.4 | **+3.3** (draft); **+2.0** as merged | merged, #659 (#653), 2026-10-22, by the owner, ahead of the field-name colouring. The draft measured worse: the names come out as two letters (`cups`→`oa`) and each entry grows by `,0,"oa"`. Raw −6 %, brotli up. Not yet explained; source names that are English words may be cheap for brotli's static dictionary |
 | 7 | The structural rewrite: a closure per widget, writes in place, bindings grouped by field, handlers that schedule a group, one generic loader for pushed state | `inline.zig` program site; reverses `browser-inline.md` §8.4 "handlers live at the program site" and D-c | ≈ −65 as a whole; each step alone 0–3 | — | #668. The owner reversed §8.4 and D-c on 2026-10-22; the spec can be written now. The build is blocked on #286 → #315 R4–R7 |
 
 Measured state of `master` after #1 and #4 (`4adbf7bbc`):
@@ -272,6 +272,9 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 |---|---:|---:|---:|---:|---:|---:|
 | before (`63cfc1a17`) | 256.4 | 2 825 | 1 523 | 68 016 | 1.12 | 1.59 |
 | after #1 and #4 (`4adbf7bbc`) | 252.2 | 2 812 | 1 504 | 66 920 | 1.11 | 1.56 |
+| after #659 (`03e033ec1`) | 254.1 | | 1 504 | 67 384 | 1.11 | 1.57 |
+| after #667 (`ca7e47772`) | 253.4 | | 1 497 | 67 165 | 1.10 | 1.57 |
+| after #718 (`ba7b817f2`) | 245.7 | | 1 486 | 65 166 | 1.09 | 1.52 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
@@ -285,7 +288,7 @@ the mean of three seeds.
 | ownership: approximate projections hide a repeated alias across recursive levels | #456 | **done**: #665 (2026-10-22). One known false refusal, `DictFocus.grow` (a callback line of `readLater` too), from the folded Dict tree; it is red in `tests/pending/` and comes back with #294 (#663) |
 | ownership path cut, the rest: #447 (the `nested` correction), F2 (cast marker, full type), (a), (d) `lvl`, (e), then the cut removed | #286, #447 | #447 next; the owner withdrew the measure-first conditions on 2026-10-22: build |
 | `Dict` and `Set` as an ordered keyed collection (entries plus a `Map` index), edited in place | #294, spec PR #664 | spec in review: the owner asked for `Dict.empty ⊤` (no name-keyed lowering) and the Int/String key constraint as its own slice. It removes the checker's Dict exemption and recovers #663 |
-| release field names coloured by co-occurrence: names unique only among fields that can meet in one record | #662 | **done**: #667 (2026-10-22). Not yet measured together with #659 |
+| release field names coloured by co-occurrence: names unique only among fields that can meet in one record | #662 | **done**: #667 (2026-10-22). **Measured −0.7**; with #659, +1.3 B per widget: short names do not pay under brotli on this app |
 | re-measure the shape threshold T with short names | #655 | after #659 |
 | the emit cache must key a caller's output on the callee's parameter patterns (since #654), not only its interface | #631 | to tell #631 |
 
