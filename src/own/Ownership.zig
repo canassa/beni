@@ -1018,6 +1018,7 @@ level_of: std.ArrayList(Level) = .empty,
 cast_types: std.ArrayList([]const u8) = .empty,
 cast_ids: std.StringHashMapUnmanaged(u32) = .empty,
 cast_parts: std.ArrayList(?[]const CastPart) = .empty,
+cast_shapes: std.ArrayList(?Walker.TyShape) = .empty,
 cast_open: std.ArrayList(bool) = .empty,
 cast_wild: std.ArrayList(bool) = .empty,
 cast_depth: std.ArrayList(u32) = .empty,
@@ -6972,11 +6973,15 @@ const Walker = struct {
     cast_seeded: bool = false,
     // Exact specialization and the alternative composed-type fold for this
     // call. Nested evaluations save and restore the call's alternatives.
-    cast_fold_paths: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    // A nested call has its own sparse set of paths. Share the table across
+    // calls, keyed by both the call scope and the session path identity.
+    cast_fold_paths: std.AutoHashMapUnmanaged(CastFoldPath, u32) = .empty,
+    cast_fold_scope: u32 = 0,
+    cast_fold_next: u32 = 0,
+
     cast_crossings: std.AutoHashMapUnmanaged(CastCross, void) = .empty,
     cast_growing: []const u32 = &.{},
     cast_fold_mode: bool = false,
-    cast_shapes: std.AutoHashMapUnmanaged(u32, TyShape) = .empty,
     cast_defs: std.AutoHashMapUnmanaged([4]usize, u32) = .empty,
     cast_envs: std.HashMapUnmanaged([]const u32, []const TyRef, U32SliceContext, std.hash_map.default_max_load_percentage) = .empty,
 
@@ -10864,14 +10869,16 @@ const Walker = struct {
 
     /// Structural views of interned full types, shared across callback slots.
     fn castShape(w: *Walker, id: u32) Allocator.Error!TyShape {
-        if (w.cast_shapes.get(id)) |shape| return shape;
+        if (id < w.o.cast_shapes.items.len) if (w.o.cast_shapes.items[id]) |shape| return shape;
+        const a = w.o.keep.allocator();
+
         const key = w.o.cast_types.items[id];
         const shape: TyShape = blk: {
             if (w.castVariable(id)) break :blk .variable;
             if (std.mem.startsWith(u8, key, "record(")) {
                 const fields = try w.castFields(key);
-                const names = try w.a.alloc(u32, fields.len);
-                const types = try w.a.alloc(TyRef, fields.len);
+                const names = try a.alloc(u32, fields.len);
+                const types = try a.alloc(TyRef, fields.len);
                 for (fields, names, types) |field, *name, *ty| {
                     name.* = if (w.o.in.interner.find(field.name)) |sym| @backingInt(sym) else none;
                     ty.* = .{ .cast = field.key };
@@ -10880,14 +10887,19 @@ const Walker = struct {
                 break :blk .{ .record = .{ .names = names, .types = types, .ext = .{ .cast = parts[parts.len - 1].key } } };
             }
             const parts = try w.o.castParts(id);
-            const refs = try w.a.alloc(TyRef, parts.len);
+            const refs = try a.alloc(TyRef, parts.len);
             for (parts, refs) |part, *ref| ref.* = .{ .cast = part.key };
             if (std.mem.startsWith(u8, key, "fn(")) break :blk .{ .func = refs };
             if (std.mem.startsWith(u8, key, "tuple(")) break :blk .{ .tuple = refs };
             if (try w.castNominal(id)) |nominal| break :blk .{ .app = .{ .id = nominal, .args = refs } };
             break :blk .other;
         };
-        try w.cast_shapes.put(w.a, id, shape);
+        const old_len = w.o.cast_shapes.items.len;
+        if (id >= old_len) {
+            try w.o.cast_shapes.resize(a, @as(usize, id) + 1);
+            @memset(w.o.cast_shapes.items[old_len..], null);
+        }
+        w.o.cast_shapes.items[id] = shape;
         return shape;
     }
 
@@ -14197,10 +14209,10 @@ const Walker = struct {
         const saved_cast_crossings = w.cast_crossings;
         defer w.cast_crossings = saved_cast_crossings;
         w.cast_crossings = .empty;
-        const saved_cast_fold = w.cast_fold_paths;
-
-        defer w.cast_fold_paths = saved_cast_fold;
-        w.cast_fold_paths = .empty;
+        const saved_cast_fold = w.cast_fold_scope;
+        defer w.cast_fold_scope = saved_cast_fold;
+        w.cast_fold_next += 1;
+        w.cast_fold_scope = w.cast_fold_next;
         callee.sum = try w.castSummary(callee.sum, args, inst, callee.poly.len != 0);
         const s = callee.sum;
         // §16.7 (F3, the owner's choice (a)): what the fold reads of this
@@ -14765,6 +14777,11 @@ const Walker = struct {
     /// dense memo avoids walking a shared type term once per occurrence.
     const CastBindings = std.ArrayList([2]u32);
     const CastCross = struct { path: u32, prov: Prov };
+    const CastFoldPath = struct { scope: u32, path: u32 };
+
+    fn castFoldPath(w: *Walker, path: u32) ?u32 {
+        return w.cast_fold_paths.get(.{ .scope = w.cast_fold_scope, .path = path });
+    }
 
     /// Fold every type coordinate belonging to an already crossed entry,
     /// including its source and condition paths. The result placement is
@@ -14775,7 +14792,7 @@ const Walker = struct {
                 var out = value;
                 inline for (s.field_names, s.field_types) |name, FT| {
                     if (comptime std.mem.eql(u8, name, "path") and FT == u32) {
-                        if (w.cast_fold_paths.get(@field(value, name))) |path| {
+                        if (w.castFoldPath(@field(value, name))) |path| {
                             changed.* = true;
                             if (apply) @field(out, name) = path;
                         }
@@ -15088,7 +15105,7 @@ const Walker = struct {
             for (old_paths, exact) |path, ep| {
                 const fp = try w.substCastPath(path, bindings);
                 if (ep == fp) continue;
-                const gop = try w.cast_fold_paths.getOrPut(w.a, ep);
+                const gop = try w.cast_fold_paths.getOrPut(w.a, .{ .scope = w.cast_fold_scope, .path = ep });
                 if (!gop.found_existing) gop.value_ptr.* = fp else if (gop.value_ptr.* != fp) gop.value_ptr.* = try w.o.child(eps, .any, 1);
             }
             out.* = try w.foldCastRows(Summary, out.*, false);
@@ -15728,7 +15745,7 @@ const Walker = struct {
             const marked = gMarked(e.grown) or gMarked(r.grown);
             x.* = .{ .path = path, .cell = e.cell, .approx = e.approx, .grown = gMake(marked, gPending(e.grown)) | (@max(e.grown >> 8, r.grown >> 8) << 8) };
             try before.append(w.a, x.*);
-            const folded_prefix = w.cast_fold_paths.get(r.path);
+            const folded_prefix = w.castFoldPath(r.path);
             const prefix = if (marked) folded_prefix orelse r.path else r.path;
             if (folded_prefix != null or w.cast_crossings.contains(.{ .path = r.path, .prov = r.prov })) {
                 x.grown |= 1;
@@ -16138,11 +16155,12 @@ const Walker = struct {
                 .func => |all| all,
                 else => &.{},
             } else &.{};
-            const saved_paths = w.cast_fold_paths;
+            const saved_paths = w.cast_fold_scope;
             const saved_crossings = w.cast_crossings;
-            defer w.cast_fold_paths = saved_paths;
+            defer w.cast_fold_scope = saved_paths;
             defer w.cast_crossings = saved_crossings;
-            w.cast_fold_paths = .empty;
+            w.cast_fold_next += 1;
+            w.cast_fold_scope = w.cast_fold_next;
             w.cast_crossings = .empty;
             const c = if (fn_ref) |ty| try w.castFunctionSummary(original, ty, poly.len != 0) else original;
             const sub: InstCtx = .{ .inst = ctx.inst, .s = c, .avs = params, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .conds = ctx.conds, .effects = ctx.effects, .callback_fresh = ctx.callback_fresh, .poly = poly, .arg_refs = if (refs.len == c.params + 1) refs[0..c.params] else &.{}, .result_ref = if (refs.len == c.params + 1) refs[c.params] else null };
@@ -16687,20 +16705,24 @@ const Walker = struct {
         var inner = ctx;
         inner.closure = none;
         const binds = try w.a.alloc(Closure.SynBind, k.binds.len);
+        const grown = try w.grownArgs(inner);
         for (binds, k.binds) |*b, kb| {
-            var parts: std.ArrayList(AV) = .empty;
+            var before: std.ArrayList(Entry) = .empty;
+            var after: std.ArrayList(Entry) = .empty;
+            var cut = false;
             for (kb.provs) |r| {
                 const raw_cells = try w.instProv(r.prov, inner);
-                const cells = if (r.prov.condition_only) try w.annotationSpines(raw_cells, r.sc, inner, r.grown, null) else raw_cells;
+                const cells = if (r.prov.condition_only) try w.annotationSpines(raw_cells, r.sc, inner, r.grown, grown) else raw_cells;
                 if (r.prov.condition_only) for (cells) |e| if (e.path == eps) {
                     try w.initCond(e.cell, try w.instXSum(r.xc, inner));
                     try w.rinitCond(e.cell, try w.rinstXSum(r.rxc, inner));
                 };
-                var av = try w.under(cells, r.path);
+                var av: AV = try w.composeRes(r, cells, grown, &before, &cut);
                 if (r.approx) av = try w.approxAll(av, ctx.inst);
-                try parts.append(w.a, av);
+                try after.appendSlice(w.a, av);
             }
-            b.* = .{ .local = kb.local, .path = kb.path, .av = try w.unionOf(parts.items) };
+            if (cut) try w.foldedPairs(before.items, after.items);
+            b.* = .{ .local = kb.local, .path = kb.path, .av = try w.norm(after.items) };
         }
         const cbs = try w.a.alloc(Closure.SynCall, k.cb_js.len);
         for (cbs, k.cb_js) |*c, j| {
@@ -16731,12 +16753,26 @@ const Walker = struct {
             var grew = false;
             for (binds, cl.binds) |*b, old| {
                 const u = try w.unionOf(&.{ old.av, b.av });
-                if (u.len != old.av.len) grew = true;
+                if (u.len != old.av.len) {
+                    grew = true;
+                } else for (u, old.av) |next, previous| {
+                    if (!std.meta.eql(next, previous)) {
+                        grew = true;
+                        break;
+                    }
+                }
                 b.av = u;
             }
             for (cbs, cl.cb_avs) |*c, old| {
                 const u = try w.unionOf(&.{ old.av, c.av });
-                if (u.len != old.av.len) grew = true;
+                if (u.len != old.av.len) {
+                    grew = true;
+                } else for (u, old.av) |next, previous| {
+                    if (!std.meta.eql(next, previous)) {
+                        grew = true;
+                        break;
+                    }
+                }
                 c.av = u;
             }
             if (grew) {
@@ -18915,7 +18951,7 @@ const Walker = struct {
                 try cells.append(w.a, e);
                 continue;
             }
-            if (e.path != any and w.o.paths.kind.items[e.path] != .any) continue;
+            if (e.path != any and !(w.o.paths.parent.items[e.path] == eps and w.o.paths.kind.items[e.path] == .any)) continue;
             const c = w.cells.items[e.cell];
             // An incompatible host view retains its contents at ⋆₁. Their
             // original static type cannot disprove physical sharing after

@@ -8,7 +8,7 @@ module GrowingCast
   64:15 List.push ys: rejected call: xs may hold it through the call at 61:22, and is read at 64:13 (approx)
   127:20 call GrowingCast.cps xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what GrowingCast.cps supplies it)
   132:26 List.push box.item.item: rejected exclusive: it needs what GrowingCast.cps supplies it not to share, and it may (approx)
-  144:26 List.push ys: rejected call: xs may hold it through the call at 141:22, and is read at 144:44 (approx)
+  144:26 List.push ys: rejected call: xs may hold it through the call at 139:12, and is read at 144:44 (approx)
   156:7 List.push decoded: accepted call
   167:15 List.push ys: rejected alias: xs holds it and is read at 167:13
   181:15 List.push decoded: accepted call
@@ -29,7 +29,7 @@ module GrowingCast
   summary cps: π2 R, π3 R; π3 calls many, supply 1 fresh owned{excl π2}r{excl π2}, supply 1⟨as 1:List::List(22:var(0:GrowingCast:9:0))⟩[*] π2 owned{excl π2}r{excl π2}, supply 1⟨as 1:List::List(25:record(4:item=3:⋆|2:{}))⟩⁺[*] fresh501◦ ownedr{excl π2}, supply 1⟨as 1:List::List(25:record(4:item=3:⋆|2:{}))⟩⁺[*].item fresh501◦ ownedr{excl π2}, supply 1⟨as 1:List::List(25:record(4:item=3:⋆|2:{}))⟩⁺[*].item⋆ fresh501◦ ownedr{excl π2}, supply 1⟨as 1:List::List(25:record(4:item=3:⋆|2:{}))⟩⁺[*].item⋆ π2 owned{excl π2}r{excl π2}, supply 1⟨as 1:List::List(45:record(4:item=22:var(0:GrowingCast:9:0)|2:{}))⟩[*] fresh501◦ ownedr{excl π2}, supply 1⟨as 1:List::List(45:record(4:item=22:var(0:GrowingCast:9:0)|2:{}))⟩[*].item π2 owned{excl π2}r{excl π2}
   summary flatten: π2 R, π2[*] R, π2[*][*] RA; res [*] ~condition(fresh2) ~fresh2{lost}r{lost} ~π2[*][*], fresh1{lost}r{lost}
   summary provenance: π2 R, π3 R, π3⟨as 1:List::List(36:1:List::List(19:1:List::List(3:⋆)))⟩⁺[*][*] RA, π3⟨as 1:List::List(40:1:List::List(23:var(0:GrowingCast:11:0)))⟩[*][*] A, π3⟨as 1:List::List(57:1:List::List(40:1:List::List(23:var(0:GrowingCast:11:0))))⟩[*][*] RA; res fresh1{lost}r{lost} ~fresh3{lost}r{lost}, ⟨as 1:List::List(19:1:List::List(3:⋆))⟩⁺[*] ~condition(fresh4) ~fresh3{lost}r{lost} ~π3⟨as 1:List::List(36:1:List::List(19:1:List::List(3:⋆)))⟩⁺[*][*], ⟨as 1:List::List(23:var(0:GrowingCast:11:0))⟩[*] ~condition(fresh2) ~fresh2{lost}r{lost} ~π3⟨as 1:List::List(40:1:List::List(23:var(0:GrowingCast:11:0)))⟩[*][*], ⟨as 1:List::List(40:1:List::List(23:var(0:GrowingCast:11:0)))⟩[*] ~condition(fresh4) ~fresh3{lost}r{lost} ~π3⟨as 1:List::List(57:1:List::List(40:1:List::List(23:var(0:GrowingCast:11:0))))⟩[*][*]
-  summary thunk: π2 RA; res λr{lost}, ◇ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} π2, ◇[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} ~π2, ◇[*]⋆ ~fresh1{excl π2}r{excl π2} ~π2
+  summary thunk: π2 RA; res λr{lost}, ◇ ~fresh1{lost}r{lost} ~fresh2{lost} π2{lost}r{lost}, ◇[*] ~fresh1{lost}r{lost} ~fresh2{lost} ~π2{lost}r{lost}, ◇[*]⋆ ~fresh1{lost}r{lost} ~π2{lost}r{lost}
   summary writtenViaCps: π1 RW[storage]
   summary writtenThunk: π1 Rw[storage]
   summary localBuilder: π1 RA; res .0 fresh1{excl π1}, .0[*] condition(fresh4) ~condition(fresh2) ~fresh2{excl π1} π1, .1 ~condition(fresh5) π1, condition(fresh3){shared}
