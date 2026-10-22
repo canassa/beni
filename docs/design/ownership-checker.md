@@ -1977,6 +1977,26 @@ when an unused alias-bearing subtree is discarded. The containing conditions,
 ordinary holder checks and representative-prefix comparison are used together.
 No `restMayBeEmpty` tightening is part of this rule.
 
+*As built 2026-10-22 (#684): what the construction conditions cost.* A construction's condition names
+every pair of its operands, so a record built from 64 fields of one parameter carries 2 016 `rsep`
+atoms, and each call instantiates them. Instantiation projected the argument along both of an atom's
+paths afresh, and a projection of a value narrower than `wide_index` scans it: cubic in the record's
+width. Three changes remove the repeated work and change no fact. (1) One condition's instantiation
+projects each parameter provenance once (`ProvMemo`): the projection reads only what the call is handed
+and interns its cells, so the first atom that names it makes every cell in the order it always did. The
+cells `sepValues` and `rsepValues` read are kept with it for a value that holds no closure; a closure's
+expansion reads the captured locals an atom that walks a callback may bind, so it is read again. Any
+other provenance kind may act and is instantiated at every atom. (2) `containingCondition` reads each
+operand's cells once, at the pair that first needs them. (3) `rbase` is kept per cell, and a build
+renders no summary line, which only the ownership dump prints (`format_summaries`; nor does a
+totals-only dump). Ownership-phase instructions (callgrind, ReleaseFast) on the research dashboard at
+N = 16, 64 and 256: 23.2M, 85.9M and 571M before #665; 31.2M, 305M and 1 914M after it; 25.2M, 121M
+and 1 140M now. `ownership/WideFieldConditions` was 5 444M on the budget's reference and is 2 764M.
+What stays is quadratic and is the representation's: the summary states each pair as an atom, so its
+size, its text and each call's instantiation grow with the square of a construction's width. Making it
+linear needs an atom for "these operands pairwise apart", a change to the summary vocabulary, its block
+format and every golden that prints a construction condition; it is not built.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
