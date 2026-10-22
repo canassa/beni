@@ -91,7 +91,7 @@ programs list =
 
 --| A function that sends a message to a running program: what a command's
 --| or a subscription's body is handed. Calling it runs `update` and never
---| waits.
+--| waits. `update` has the program's log context, not the caller's.
 pub type alias Send msg =
     msg → ⊤
 

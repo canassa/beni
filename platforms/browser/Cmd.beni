@@ -91,7 +91,9 @@ items (Cmd list) = list
 --| fiber, where that fiber would have started. Nothing can cancel it but
 --| the program's end. The body has the log context of the place where the
 --| command is made: the annotations, spans, minimum and sink that `Log`
---| set around the `update` arm (`docs/design/boundary.md` §9.8.16 (b)).
+--| set around the `update` arm (`docs/design/boundary.md` §9.8.16 (b)). The
+--| context stops at the body: a message that it sends has the program's
+--| context in its `update`.
 pub perform : (Send msg → ⊤) → Cmd msg
 perform body =
     if Js.maySuspend body then

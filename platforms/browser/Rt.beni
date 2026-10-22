@@ -692,7 +692,17 @@ mount program root =
                                 (Js.apply (Js.global "queueMicrotask")
                                     [ Js.from λ⊤ → microtask ⊤ ]
                                 )
-                Js.write model (Js.call program "update" [ msg, Js.read model ])
+                -- `update` has the program's log context, whoever sends
+                -- the message (`boundary.md` §9.8.16 (b), amended
+                -- 2026-10-23). The call is written twice, so that a build
+                -- in which nothing sets a slot keeps only the second.
+                if Task.hasLogContext ⊤ then
+                    Js.write
+                        model
+                        (Task.withoutLogContext λ⊤ → Js.call program "update" [ msg, Js.read model ]
+                        )
+                else
+                    Js.write model (Js.call program "update" [ msg, Js.read model ])
         )
     childHtml s (Js.call program "view" [ Js.read model ])
     renderEnded root
