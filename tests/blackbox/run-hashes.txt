@@ -10,11 +10,11 @@ abuse_wide_test.test.`==` and `<` on a record one field past the positional evid
 abuse_wide_test.test.a 2 000-element list builds and runs #0 6dab092979b8378bed02162da5b874544ba18c09a3104dccac2d4120b429d6df
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 723094c5c3ec622daaa082ecd324f24d6469e145d6eaeb1233f323ab942818b5
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 27c2c04013d2dd328ba946cce461158f8b75c233530d0ac7f0d4c8f9d344a039
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 3f01f34bf27ece9556974ad25b67be93642b10ee325712927db259ab69d244a9
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 cd2746f4e87ae13522415e97b68b185878e992fd5efb1ca1f72a92df390aa5d8
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 6e1bd695a51abb44c38a5c7b4101a2b46bba16b84eff8e7d3a27b52b1de9a3ba
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
 abuse_wide_test.test.a written + chain runs at the widest the parser admits #0 8012f0788119557f18b3548a68fefaeb1528e51f7a2e46ff88e569e00f1b09d4
-abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 995dc458b7c2a57a4c717e9ff2d4f745c1191d39e3b8c68b0a65d1b0ffa9aec1
+abuse_wide_test.test.a written + chain runs at the widest the parser admits under --release #0 ee5166bebaea330c503edfcbbfcc645d81f8476f0a331d23dea7954562586219
 abuse_wide_test.test.a written ++ chain runs at the widest the parser admits #0 c6ab75ef20e6fc538a61308e12752e6afc186e45a16e5924cd644a4fa4bb8bea
 abuse_wide_test.test.a written ++ chain runs at the widest the parser admits under --release #0 9040ae2b07870ac86fb10eb19f113a60d7762ed30bdf70722f9e6eabcf4a880e
 blackbox_test.test.a `case` the checker could not decide never reaches the default-free decision tree #0 fef6a697cb3793f905588595145fc810e956dc325471c5d66854e23448904b99
@@ -40,7 +40,7 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 b85a28b7579fd27fcd2fcc827ac5bfdcc4d73ce7bc46b548342fbadcb74f9d11
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 d2bbce13fdeb36740b21e3ec385aec22a33cc502fdf83d05979d7b1d5b62aab6
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 d2cf9447d5d71e5fb2fda518ee23d7cb0c8a7992db62876fb8d44ffcbdfa3997
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
 build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 f4a10236f289c709c11e49cb2ea11648c0f664bd70f345617c851ee8dca016c1
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
@@ -52,10 +52,10 @@ build_test.test.a core-private List value the emitter calls is exported when it 
 build_test.test.a core-private List value the emitter calls keeps its result under --release #0 620f455eb3bdb7e8356f33f19d8da214146f0da36c67b10f84b56fb45affd0e1
 build_test.test.a development build copies hand-written JavaScript byte for byte #0 3514abd3d42607a978ece9e63fcbdcf353e6582f851ee0f42b23b26d1c585b4e
 build_test.test.a markup program builds byte-identical at every --jobs, and runs #0 2f95b3c4275e673205374ba208d776f269004fcd6357175a0a01a02b1baf4384
-build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 876e1d8c55664bc80de21a6e8db302e30df6fb2892df0b96390d1aff1569406d
+build_test.test.a markup program builds byte-identical at every --jobs, and runs #1 bdb45053d72c73e435c747cb7c315a1b8a2ece431f710ce4e072bf78c1a68343
 build_test.test.a module in a subdirectory comes out in a subdirectory of out/ #0 71497a4fe945b29bc46a6b6ce5101b0e704bd525014153d79a092b4e1f51d6f7
 build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #0 9b3b724379e0ca7d055142ad254d5f9cb090020666f2663ff47285da0ead733f
-build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 6f7f742a793f8c7731625e1b97f6f46daf92c8fd332d1c5587949f71fc65ea8f
+build_test.test.a node program without Io.run logs Warn and Error to standard error, through the console #1 1ae948755aa53077edef088f7961a498da0849188ddcb088d359b5186954f78c
 build_test.test.a non-zero exit code from the platform reaches the process #0 7839e111324769dcb8ed2c068542fbc64385245f63347934c3db4ec28682263b
 build_test.test.a platform anyone may publish: a package that declares itself one in its manifest #0 3b8de0e2f6df98b7e57204b68d9d6f5e18483b9d4f5c11c4842a9a620d9e64ef
 build_test.test.a platform may declare the entry file's name, and that is what the build writes #0 34c647b955824e973d71cbf5f9c831ff918f1e39f5281c9487f20418059754c8
@@ -70,7 +70,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 2f6b2f02a23133274475ad6bacc645c9394b527014686e73aa24a056382eef5a
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 f284e0ed0f1c84cae175fba59ec478dd0c2d81f98c26a60df0677a166b291f0a
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 c25205d6c11f3cd5547e1b27bb4cdbddb2308769bb565207f344baaad4098da2
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675

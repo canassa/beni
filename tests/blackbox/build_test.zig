@@ -5842,7 +5842,7 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     const Event = struct {
         ph: []const u8,
         args: struct {
-            spec_analyses: ?u64 = null,
+            spec_solves: ?u64 = null,
             spec_points_to_runs: ?u64 = null,
             spec_points_to_reused: ?u64 = null,
         } = .{},
@@ -5854,14 +5854,17 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     var reused: ?u64 = null;
     for (parsed.value.traceEvents) |e| {
         if (!std.mem.eql(u8, e.ph, "C")) continue;
-        if (e.args.spec_analyses) |v| analyses = v;
+        if (e.args.spec_solves) |v| analyses = v;
         if (e.args.spec_points_to_runs) |v| runs = v;
         if (e.args.spec_points_to_reused) |v| reused = v;
     }
-    // Two analyses kept the state, one of them since #582 lets a rewrite
-    // drop a parameter and its arguments without a solve. Every other one
-    // solved, at least once.
-    try testing.expectEqual(@as(?u64, 2), reused);
+    // Since slice 6 (#676) a solve follows only a structural pass, and
+    // `releaseKeeps` and the solve after it are gone: a kept binding the
+    // facts release is the liveness read-off's, in the same rewrite. The
+    // rounds that asked the facts again of a program fact 3 had not seen
+    // change are gone with them, so no solve keeps the state here; the
+    // pass loop's solves still may (`fact3Kept`). Every solve solved.
+    try testing.expectEqual(@as(?u64, 0), reused);
     try testing.expect(analyses.? >= 2);
     try testing.expect(runs.? >= analyses.? - reused.?);
 }
@@ -6521,7 +6524,7 @@ fn specCounters(levels: usize) !SpecCounters {
     const Event = struct {
         ph: []const u8,
         args: struct {
-            spec_analyses: ?u64 = null,
+            spec_solves: ?u64 = null,
             spec_solve_constraints: ?u64 = null,
             spec_solve_budget_hit: ?u64 = null,
         } = .{},
@@ -6532,7 +6535,7 @@ fn specCounters(levels: usize) !SpecCounters {
     var seen: u32 = 0;
     for (parsed.value.traceEvents) |e| {
         if (!std.mem.eql(u8, e.ph, "C")) continue;
-        if (e.args.spec_analyses) |v| {
+        if (e.args.spec_solves) |v| {
             counters.analyses = v;
             seen += 1;
         }
@@ -6588,14 +6591,18 @@ test "the release specialiser writes every independent function called once in o
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u64, n + 1), c.spec_inlined); // and `total`, called once
+    // And `total`, called once, and since slice 6 (#676) core `List`'s
+    // length setter, written into the loop that calls it once the liveness
+    // read-off has left that loop's body small.
+    try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
-    try testing.expectEqual(@as(u64, 1), c.spec_passes);
-    try testing.expectEqual(@as(u64, 2), c.spec_analyses);
-    // The pass's two counts, and the one count of the pass that found
-    // nothing to do.
-    try testing.expectEqual(@as(u64, 3), c.spec_inline_scans);
+    // The length setter takes a second pass (slice 6, #676: the `iife`
+    // and `self_assign` sweeps are in the pass loop), with its solve and its
+    // two counts; then the count of the pass that found nothing to do.
+    try testing.expectEqual(@as(u64, 2), c.spec_passes);
+    try testing.expectEqual(@as(u64, 3), c.spec_solves);
+    try testing.expectEqual(@as(u64, 5), c.spec_inline_scans);
 }
 
 test "the release specialiser leaves a function whose call a write just copied for the next pass" {
@@ -6677,8 +6684,10 @@ test "the release specialiser leaves a function whose call a write just copied f
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u64, 1), c.spec_inline_waits);
     try testing.expectEqual(@as(u64, 2), c.spec_passes);
-    // `g`, `k`, `twice` and, a pass later, `h`: every one of them.
-    try testing.expectEqual(@as(u64, 4), c.spec_inlined);
+    // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
+    // slice 6 (#676) core `List`'s length setter, written into the loop
+    // that calls it (647 → 631 bytes).
+    try testing.expectEqual(@as(u64, 5), c.spec_inlined);
 }
 
 test "the release specialiser does not ask a declined call again while neither module changed" {
@@ -6766,7 +6775,7 @@ test "the release specialiser folds a run of bindings before a return in one str
     // fold takes it in the same walk of the list. Before, the walk went on
     // forward, so each structural pass took one binding, with an analysis
     // after each, and `max_passes` stopped the third with two left
-    // (`spec_passes` 3, `spec_passes_capped` 1, `spec_analyses` 4).
+    // (`spec_passes` 3, `spec_passes_capped` 1, `spec_solves` 4).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6813,7 +6822,7 @@ test "the release specialiser folds a run of bindings before a return in one str
     try testing.expectEqual(@as(u64, 1), c.spec_passes);
     try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
     // The one before the loop, and the one after its pass.
-    try testing.expectEqual(@as(u64, 2), c.spec_analyses);
+    try testing.expectEqual(@as(u64, 2), c.spec_solves);
 }
 
 test "the release specialiser still folds in a second pass what the first pass's scalar replacement made" {
@@ -6862,7 +6871,7 @@ test "the release specialiser still folds in a second pass what the first pass's
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u64, 2), c.spec_passes);
     try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
-    try testing.expectEqual(@as(u64, 3), c.spec_analyses);
+    try testing.expectEqual(@as(u64, 3), c.spec_solves);
     const js = try w.read("out/_main.mjs");
     try testing.expect(std.mem.indexOf(u8, js, "return a*2*b") != null);
 }
@@ -6872,7 +6881,7 @@ test "the release specialiser still folds in a second pass what the first pass's
 const InlineCounters = struct {
     spec_passes: u64 = 0,
     spec_passes_capped: u64 = 0,
-    spec_analyses: u64 = 0,
+    spec_solves: u64 = 0,
     spec_inline_capped: u64 = 0,
     spec_inline_scans: u64 = 0,
     spec_inlined: u64 = 0,
@@ -6888,7 +6897,7 @@ fn inlineCounters(w: *World) !InlineCounters {
         args: struct {
             spec_passes: ?u64 = null,
             spec_passes_capped: ?u64 = null,
-            spec_analyses: ?u64 = null,
+            spec_solves: ?u64 = null,
             spec_inline_capped: ?u64 = null,
             spec_inline_scans: ?u64 = null,
             spec_inlined: ?u64 = null,

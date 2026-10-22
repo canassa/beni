@@ -5263,12 +5263,11 @@ const Emitter = struct {
         });
         const profile = &e.session.profile;
         profile.addCounter(.spec_lists_examined, stats.lists_examined);
-        profile.addCounter(.spec_analyses, stats.analyses);
+        profile.addCounter(.spec_solves, stats.solves);
         profile.addCounter(.spec_points_to_runs, stats.points_to_runs);
         profile.addCounter(.spec_points_to_reused, stats.points_to_reused);
         profile.addCounter(.spec_points_to_sweeps, stats.points_to_sweeps);
         profile.addCounter(.spec_passes, stats.passes);
-        profile.addCounter(.spec_rounds_capped, stats.rounds_capped);
         profile.addCounter(.spec_passes_capped, stats.passes_capped);
         profile.addCounter(.spec_init_capped, stats.init_capped);
         profile.addCounter(.spec_inline_capped, stats.inline_capped);
