@@ -4524,6 +4524,14 @@ unknown results and failed requirements remain rejected. After excluding only
 captures proven empty by these requirements, the usual returns-owned proof
 checks every remaining result position and supply.
 
+*Amended 2026-10-22 (issue #709):* the same conditional proof applies when a
+callee sees its tagger calls and supplies its input borrowed. Seeing the calls
+does not give a retained capture ownership, and losing sight of the calls is
+not required to publish the no-tracked-cell requirement. Every other result
+position and every supplied parameter still passes the usual returns-owned
+proof. This clears generic constant-message subscription wrappers when their
+actual messages hold no list, without accepting a retained list.
+
 Thus the generic helper checks for a scalar message, without accepting a list
 kept by its tagger. This does not confer an owned or once permission on a
 callback. Lambda taggers retaining global lists, and helpers supplied a
