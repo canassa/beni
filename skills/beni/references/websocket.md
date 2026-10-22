@@ -166,9 +166,15 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
 - `WebSocket.write socket text` and `WebSocket.close socket { code, reason }` are the shared
   operations, with the `node` server's close codes. `WebSocket.id`, `WebSocket.tags` and
   `WebSocket.protocol` are kept with the socket across hibernation. `WebSocket.attach socket
-  schema value` keeps a value of the program's with it, and `WebSocket.attachment` reads it back.
+  schema value` keeps a value of the program's with it, and `WebSocket.attachment` reads it back;
+  the attachment is at most 16 384 bytes, counted as two bytes per character (about 8 100
+  characters of ASCII), else `Err TooLarge`.
 - `Object.sockets ctx` lists the open sockets; `Object.autoReply ctx request response` makes the
-  host answer one text with another, without an event.
+  host answer one text with another, without an event; each text is at most 2 048 bytes, else
+  `Err RequestTooLarge` or `Err ResponseTooLarge`. A tag is at most 256 bytes of UTF-8.
+- `Origin` is the program's to check, as on `node`: read `Worker.header request "origin"` in the
+  `request` handler, compare it with the server's own address, and refuse a page of another site
+  before `Object.accept`.
 
 ```beni platform=cloudflare
 import Schema

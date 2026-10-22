@@ -16,11 +16,30 @@
 (socket b) < sec-websocket-protocol: v1
 (socket b) < upgrade: websocket
 < (socket b) "welcome p2"
+> (socket n) GET /arena/x/p4 ["v2"]
+(socket n) < 400
+(socket n) < content-length: 8
+(socket n) < content-type: text/plain; charset=utf-8
+(socket n) <
+(socket n) < offer v1
 > GET /arena/x/count
 < 200
 < content-type: text/plain; charset=utf-8
 <
 < 2 sockets open
+> (socket k) GET /arena/x/cjk
+(socket k) < 400
+(socket k) < content-length: 17
+(socket k) < content-type: text/plain; charset=utf-8
+(socket k) <
+(socket k) < a tag is too long
+> GET /arena/x/auto-long
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err RequestTooLarge
+> (socket n) "hello"
+< (no socket n)
 > (socket a) "hello"
 < (socket a) "echo hello (an id, tags p1, protocol )"
 > (socket b) "hello"
@@ -34,6 +53,8 @@
 < (socket a) "attached"
 > (socket a) "attachment"
 < (socket a) "attachment seat 4"
+> (socket a) "attach-big"
+< (socket a) "Err TooLarge"
 > (socket a) "ping?"
 < (socket a) "pong!"
 > (socket a) "close-bad"
@@ -54,6 +75,29 @@
 (socket c) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
 (socket c) < upgrade: websocket
 < (socket c) "welcome p3"
+> (socket c) binary 3 bytes
+< (socket c) close 1003 "binary frames are not accepted"
+| err: beni: the object Arena got a binary frame; the socket is closed with 1003
+| out: closed p3 1003 binary frames are not accepted: ⊤
+> (socket d) GET /arena/x/p5
+(socket d) < 101
+(socket d) < sec-websocket-accept: (the key)
+(socket d) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket d) < upgrade: websocket
+< (socket d) "welcome p5"
+> (socket d) (dropped, no close frame)
+| out: closed p5 1006 : ⊤
+> GET /arena/x/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 0 sockets open
+> (socket e) GET /arena/x/p6
+(socket e) < 101
+(socket e) < sec-websocket-accept: (the key)
+(socket e) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket e) < upgrade: websocket
+< (socket e) "welcome p6"
 > GET /arena/x/throw
 < 500
 < content-length: 192
@@ -61,7 +105,7 @@
 <
 < Error: TODO: the arena threw
 | err: beni: a defect stopped the object Arena; its next event starts a new instance
-< (socket c) close 1006 ""
+< (socket e) close 1006 ""
 > GET /arena/x/count
 < 200
 < content-type: text/plain; charset=utf-8

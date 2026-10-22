@@ -1,11 +1,19 @@
 # A plain request is refused; an upgrade is accepted with a tag, and with
-# the offered subprotocol.
+# the offered subprotocol; a subprotocol the object asks for and the client
+# did not offer is refused.
 {"path": "/arena/x/p1"}
 {"socket": "a", "path": "/arena/x/p1"}
 {"receive": "a"}
 {"socket": "b", "path": "/arena/x/p2", "protocols": ["v1", "v2"]}
 {"receive": "b"}
+{"socket": "n", "path": "/arena/x/p4", "protocols": ["v2"]}
 {"path": "/arena/x/count"}
+# A tag over 256 bytes and an autoReply text over 2 048 bytes are refused
+# in beni; the arena serves on.
+{"socket": "k", "path": "/arena/x/cjk"}
+{"path": "/arena/x/auto-long"}
+# A step for a socket that did not open prints one line.
+{"send": "n", "text": "hello"}
 # Each message is an event: the echo names the socket's tags and protocol.
 {"send": "a", "text": "hello"}
 {"receive": "a"}
@@ -14,12 +22,15 @@
 {"send": "a", "text": "broadcast:tick"}
 {"receive": "a"}
 {"receive": "b"}
-# The attachment keeps a value of the program's.
+# The attachment keeps a value of the program's; one over 16 384 bytes is
+# refused.
 {"send": "a", "text": "attachment"}
 {"receive": "a"}
 {"send": "a", "text": "attach:seat 4"}
 {"receive": "a"}
 {"send": "a", "text": "attachment"}
+{"receive": "a"}
+{"send": "a", "text": "attach-big"}
 {"receive": "a"}
 # The autoReply pair is answered by the host, with no event.
 {"send": "a", "text": "ping?"}
@@ -32,9 +43,19 @@
 {"receive": "a"}
 {"close": "b", "code": 4002, "reason": "client says bye"}
 {"path": "/arena/x/count"}
-# A defect closes every socket: the client sees 1006.
+# A binary frame is closed with 1003; a client that leaves with no close
+# frame is seen as 1006 with no reason.
 {"socket": "c", "path": "/arena/x/p3"}
 {"receive": "c"}
-{"path": "/arena/x/throw"}
+{"send": "c", "binary": 3}
 {"receive": "c"}
+{"socket": "d", "path": "/arena/x/p5"}
+{"receive": "d"}
+{"drop": "d"}
+{"path": "/arena/x/count"}
+# A defect closes every socket: the client sees 1006.
+{"socket": "e", "path": "/arena/x/p6"}
+{"receive": "e"}
+{"path": "/arena/x/throw"}
+{"receive": "e"}
 {"path": "/arena/x/count"}

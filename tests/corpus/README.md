@@ -290,16 +290,18 @@ object per line, `#` for a comment:
                                 own entry worker, so `request.signal` never
                                 fires here (§9.12 (k), #600)
     {"socket": "a", "path": "/arena/x", "protocols": ["v1"]}
-                                open a WebSocket client named `a` through
-                                Miniflare's client (`dispatchFetch` with
-                                `upgrade: websocket`): `> (socket a) GET
+                                open a WebSocket client named `a` with the
+                                `ws` library Miniflare carries, on the
+                                Worker's port: `> (socket a) GET
                                 /arena/x ["v1"]`, then the 101 and its
                                 headers as `(socket a) < …`, or the refusing
                                 response the same way; what the server sends
                                 is kept, in order, until a `receive` step
     {"send": "a", "text": "hi"} a text message: `> (socket a) "hi"`
+    {"send": "a", "binary": 3}  a binary frame of 3 bytes
     {"close": "a", "code": 4000, "reason": "bye"}
                                 a close frame (no code when `code` is left out)
+    {"drop": "a"}               end the connection with no close frame
     {"receive": "a"}            the next thing socket `a` got: `< (socket a)
                                 "text"`, `close 1000 "reason"`, `binary <n>
                                 bytes` or `error …`; `(nothing arrived)`

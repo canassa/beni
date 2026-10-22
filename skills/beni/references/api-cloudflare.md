@@ -84,6 +84,9 @@ module Worker.Object
     NoReply
     Unprintable
     Unreadable
+  type AutoReplyError
+    RequestTooLarge
+    ResponseTooLarge
   type Context a
   alias Handlers a b
     Handlers
@@ -94,7 +97,7 @@ module Worker.Object
   value alarmAt : Context msg, Int → ⊤  -- impure
   value alarmIn : Context msg, Duration → ⊤  -- impure
   value ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a  -- suspends
-  value autoReply : Context msg, String, String → ⊤  -- impure
+  value autoReply : Context msg, String, String → Result AutoReplyError ⊤  -- impure
   value body : Request → String  -- impure
   value cancelAlarm : Context msg → ⊤  -- impure
   value define : String, Schema e msg, (Context msg → state), Handlers state msg → Definition

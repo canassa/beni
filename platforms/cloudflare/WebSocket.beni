@@ -105,6 +105,11 @@ tags socket =
 
 --| Keep a value of the program's with the socket, printed by the schema:
 --| it survives hibernation, and the host drops it when either side closes.
+--| The limit is 16 384 bytes as the host serialises them, counted here as
+--| two bytes per UTF-16 code unit of every string kept, plus 64: so about
+--| 8 100 characters of ASCII. One byte per unit would be wrong for a
+--| string sliced from a two-byte one, which V8 keeps two-byte (measured,
+--| §9.12 (h)), so the count stays two.
 pub attach : Socket, Schema e a, a → Result AttachError ⊤
 attach socket schema value =
     case Schema.print schema value of
