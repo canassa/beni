@@ -17566,7 +17566,8 @@ const markup_vtable: beni_markup.VTable = struct {
     /// module. A `pub` one is an interface value. One that is not `pub` is
     /// found by the vocabulary row (`Reach.privateExtractor`) and imported
     /// by its name, the way a core-private value is (`checker-v2.md` §25.8,
-    /// amended 2026-10-21). Reachability keeps either alive.
+    /// amended 2026-10-21). In the vocabulary module itself, either is
+    /// written by its local name. Reachability keeps either alive.
     fn extractor(impl: *anyopaque, item_index: u32) E!?M.Expr {
         const l = lowerer(impl);
         const st = l.mk.?;
@@ -17575,19 +17576,25 @@ const markup_vtable: beni_markup.VTable = struct {
         if (!st.built.tree.eventFacts(it.event).has_extractor) return null;
         const extractor_value = st.built.extractors[item_index];
         const module = l.in.graph.markup.vocabulary orelse return null;
-        if (extractor_value != Dispatch.Markup.no_row) {
+        const private = extractor_value == Dispatch.Markup.no_row;
+        if (!private and module != l.in.module) {
             try l.need(module, extractor_value);
             return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
         }
         const vbir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
         // The event has a `via`, and the checker bound it to a `foreign` of
-        // the vocabulary module (§25.8), so finding none is a compiler bug.
-        // The identity a lowering writes for a null hands the handler the
-        // event instead of the extractor's result.
-        const decl = Reach.privateExtractor(&l.in.interfaces[module.int()], vbir, st.built.extractor_rows[item_index]) orelse {
-            if (std.debug.runtime_safety) std.debug.panic("markup: event item {d} has a `via` that names no `foreign` of the vocabulary module", .{item_index});
+        // the vocabulary module (§25.8), so finding no declaration is a
+        // compiler bug. The identity a lowering writes for a null hands the
+        // handler the event instead of the extractor's result.
+        const found: ?u32 = if (private)
+            Reach.privateExtractor(&l.in.interfaces[module.int()], vbir, st.built.extractor_rows[item_index])
+        else if (l.in.provenance[module.int()].valueDecl(extractor_value)) |d| d.int() else null;
+        const decl = found orelse {
+            if (std.debug.runtime_safety) std.debug.panic("markup: event item {d} has a `via` that names no declaration of the vocabulary module", .{item_index});
             return null;
         };
+        // The vocabulary module's own markup: the extractor is a declaration
+        // of this module, and an import would declare its name a second time.
         if (module == l.in.module) return expr(try l.ident(try l.topName(decl), pos(l)));
         const base = vbir.symbol(vbir.decls[decl].name);
         if (std.debug.runtime_safety) if (l.in.live) |r| try l.requireLive(r.decl(module, decl), l.text(base));
