@@ -307,6 +307,8 @@ pub const Input = struct {
     /// `--schema-library`: a schema's directions run its description
     /// through the library and call no worker.
     schema_library: bool = false,
+    /// `--test-hooks`: what `Js.testHooks` is (`JsIntrinsic.droppedArm`).
+    test_hooks: bool = false,
     /// Whether the program's shape runs take their shapes (`SchemaValid`,
     /// `shape_threshold`), decided once for the whole program by `Emit`.
     /// An embedded module's packed edges are made with it false.
@@ -1234,7 +1236,7 @@ pub const Builder = struct {
                 }
             },
             .ext_value => if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(i)), interner)) |which| {
-                if (which == .null or which == .undefined or which == .development) marks[i] = true;
+                if (which == .null or which == .undefined or which == .development or which == .testHooks) marks[i] = true;
             },
             else => {},
         };
@@ -1638,7 +1640,7 @@ pub const Builder = struct {
                 .case => if (g.b.in.interner) |interner| {
                     const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
                     const never: Node = .{ .module = g.m, .kind = .ctor, .index = never_ctor };
-                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release)) |branch| {
+                    if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release, g.b.in.test_hooks)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
                         continue;
                     }

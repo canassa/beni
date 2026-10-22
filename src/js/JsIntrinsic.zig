@@ -76,6 +76,10 @@ pub const Which = enum {
     ref,
     read,
     write,
+    /// `true` under the hidden `--test-hooks`, `false` otherwise; an `if`
+    /// on it drops an arm as one on `Js.development` does (`backend.md` §4,
+    /// *`Js.testHooks` is the build's test hooks*).
+    testHooks,
     /// `true` in a development build, `false` under `--release`; an `if`
     /// on it keeps only the branch the build takes (`backend.md` §4,
     /// *`Js.development` is the build's mode*).
@@ -92,13 +96,15 @@ pub const Which = enum {
     fingerprint,
 };
 
-/// Whether `inst` is a `case` on `Js.development` — what an `if` on it
-/// desugars to — and, when it is, which of its arms the build drops: the
-/// `branch` instruction of the arm whose pattern is the constructor the build
-/// does not take (`True` under `--release`, `False` otherwise). `Reach`
-/// follows no edge out of that arm and `Lower` writes it as `undefined`,
-/// so a declaration only it names is neither kept nor named.
-pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool) ?Inst.Index {
+/// Whether `inst` is a `case` on `Js.development` or on `Js.testHooks` —
+/// what an `if` on either desugars to — and, when it is, which of its arms
+/// the build drops: the `branch` instruction of the arm whose pattern is the
+/// constructor the build does not take (`True` under `--release`, `False`
+/// otherwise, for `Js.development`; `True` without `--test-hooks`, `False`
+/// with it, for `Js.testHooks`). `Reach` follows no edge out of that arm and
+/// `Lower` writes it as `undefined`, so a declaration only it names is
+/// neither kept nor named.
+pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, inst: Inst.Index, interner: anytype, release: bool, test_hooks: bool) ?Inst.Index {
     if (inst.int() >= bir.insts.len or bir.instTag(inst) != .case) return null;
     const d = bir.instData(inst);
     var scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
@@ -107,8 +113,11 @@ pub fn droppedArm(graph: *const Graph, interfaces: []const Interface, bir: *cons
     // (`boundary.md` §4.2, amended 2026-10-02): its callee is the intrinsic.
     if (bir.instTag(scrutinee) == .call) scrutinee = @fromBackingInt(@intCast(bir.instData(scrutinee).lhs));
     if (scrutinee.int() >= bir.insts.len) return null;
-    if ((of(graph, interfaces, bir, scrutinee, interner) orelse return null) != .development) return null;
-    return armOf(graph, interfaces, bir, inst, interner, release);
+    return switch (of(graph, interfaces, bir, scrutinee, interner) orelse return null) {
+        .development => armOf(graph, interfaces, bir, inst, interner, release),
+        .testHooks => armOf(graph, interfaces, bir, inst, interner, !test_hooks),
+        else => null,
+    };
 }
 
 /// The `Js.maySuspend` call `inst`, a `case`, tests — what `if

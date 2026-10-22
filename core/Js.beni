@@ -250,6 +250,15 @@ pub foreign pure pure : once returned sync (⊤ → a) → a
 pub foreign pure development : ⊤ → bool
 
 
+--| `True` under the hidden build flag `--test-hooks` and `False` otherwise,
+--| as `development` is true in a development build: an `if` on it keeps
+--| only the branch the build takes, so a platform's test hooks — what a
+--| corpus fixture drives time with (`boundary.md` §9.12 (k)) — ship in no
+--| build that does not ask for them (`backend.md` §4, *`Js.testHooks` is
+--| the build's test hooks*).
+pub foreign pure testHooks : ⊤ → bool
+
+
 --| Whether `f`, a function, may suspend: the answer the checker infers for
 --| it where this is called, written in place as `true` or `false`. In a
 --| declaration whose argument is the one asked about, that is a question
