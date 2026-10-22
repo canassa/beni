@@ -2386,6 +2386,14 @@ that context, in whatever fiber, or none, the page runs it in (`Task.keepLogCont
 slots are the running fiber's. Which context the `update` of a message that a body sends has is
 open (dashboard `node-log-q4`). `boundary.md` §9.8.16 (b), amended the same day, has the details.
 
+*Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`):* a message's `update` has
+the program's log context, whoever sends the message: a context stops at the body. When the
+caller of the page's `send` has a log context of its own, `send` runs `update` inside
+`Task.withoutLogContext`, which sets the slot to the default and puts the old one back when
+`update` returns. So the `annotate` around a body does not reach the `update` of a message that the
+body sends, or that `update`'s commands. The other slots are the caller's. `boundary.md`
+§9.8.16 (b), amended the same day, has the details.
+
 **Changing a slot** is only ever **scoped to a function**: `Clock.run`, `Log.annotate`, `Log.span`,
 `Log.minimum`, `Log.withSink`, `Trace.span`, `Trace.withExporter` and (P9) `Random.withSeed` set
 the field on the current fiber (or the outside record), run their function, and put the old value
@@ -3226,6 +3234,10 @@ Log.minimum Log.Trace λ⊤ → ( n + 1, Cmd.log Log.Debug "sent" )` writes its 
 `request=r1`. When the context has no minimum of its own, the program's minimum is read when the
 line is written, as above. `boundary.md` §9.8.16 (b), amended the same day, and §17.5 have the
 rules, and the open question of the context of a message that a body sends.
+
+*Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`):* that question is decided.
+A message's `update` has the program's log context, whoever sends the message. So the lines that
+it writes, and the commands that it makes, have only what its own arm sets.
 
 ### 17.12 Choices this section made, for the owner to see
 
