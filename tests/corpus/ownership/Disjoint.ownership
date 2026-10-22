@@ -4,7 +4,7 @@ module Disjoint
   24:33 List.push xs: rejected call: the argument at 24:21, evaluated before it, holds it, and the call it waits for may read it (approx)
   28:40 List.push xs: accepted param
   summary capture: π1 RAW, π1[*] RA; res [*] ~π1[*], π1
-  summary pending: π1 RAW, π1[*] A; res .0 fresh1{excl π1}, .0[*] π1, .1 π1, .1[*] ~π1[*]
+  summary pending: π1 RAW, π1[*] A; res .0 fresh1{excl π1}, .0[*] π1, .1 π1, .1[*] ~π1[*], condition(fresh2){shared}
   summary forCall: π1 RW
   summary forFresh: π1 RW, π1[*] R
   summary orZero: π1 RA; res fresh1 π1

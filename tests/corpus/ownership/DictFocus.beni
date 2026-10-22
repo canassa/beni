@@ -6,7 +6,8 @@
 -- folded path keeps it apart from what is there, so `Dict.insert` says its
 -- value must share no list with the values already in.
 --
--- `grow` edits a value of a unique dictionary of fresh lists: accepted.
+-- The unique dictionary of fresh lists is pinned by pending DictFocusGrow
+-- (#663), still expecting acceptance while #294 recovers it.
 -- `groups` is T44, grouping by a fold from `Dict.empty`: accepted.
 -- `twice` puts one list at two keys and edits one: rejected `exclusive`.
 -- `keyAndValue` puts one list at a key and its value (T32): rejected,
@@ -16,12 +17,6 @@
 -- the same reason). `reads` hands `update` a callback that only reads,
 -- then reads the dictionary (T51): nothing is written, and no line.
 import Dict exposing (Dict)
-
-
-grow : ⊤ → Dict Int (List Int)
-grow ⊤ =
-    d = Dict.insert (Dict.insert Dict.empty 1 [ 1 ]) 2 [ 2 ]
-    Dict.update d 1 λm → Maybe.map m λv → List.push v 9
 
 
 groups : List Int → Dict Int (List Int)

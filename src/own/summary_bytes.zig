@@ -86,7 +86,8 @@ pub const magic = "BENIOWN\x00";
 /// 18 carries records' exclusive contents (§31.4 item 6): a record
 /// condition `rxc` after each `res`, `objs` and supply entry's list ones, and
 /// the summary's `rxreq` after its `xreq`.
-pub const version: u32 = 18;
+/// 19 distinguishes value-scoped construction conditions from allocations.
+pub const version: u32 = 19;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -346,6 +347,7 @@ const ProvKey = struct {
     path: u32,
     taken: bool,
     obj: bool,
+    condition_only: bool,
 
     fn less(x: ProvKey, y: ProvKey) bool {
         if (x.kind != y.kind) return x.kind < y.kind;
@@ -353,6 +355,7 @@ const ProvKey = struct {
         if (x.b != y.b) return x.b < y.b;
         if (x.path != y.path) return x.path < y.path;
         if (x.taken != y.taken) return @intFromBool(x.taken) < @intFromBool(y.taken);
+        if (x.condition_only != y.condition_only) return @intFromBool(x.condition_only) < @intFromBool(y.condition_only);
         return @intFromBool(x.obj) < @intFromBool(y.obj);
     }
 };
@@ -365,6 +368,7 @@ fn provKey(w: *const Writer, p: Prov) ProvKey {
         .path = w.path_index.get(p.path).?,
         .taken = p.taken,
         .obj = p.obj,
+        .condition_only = p.condition_only,
     };
 }
 
@@ -374,8 +378,8 @@ fn writeProv(w: *Writer, p: Prov) Allocator.Error!void {
     try w.int(k.a);
     try w.int(k.b);
     try w.int(k.path);
-    // §31.7: bit 1, the record object alone.
-    try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1);
+    // Bit 1: record object alone; bit 2: containing-value condition.
+    try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1 | @as(u8, @intFromBool(k.condition_only)) << 2);
 }
 
 fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
@@ -685,7 +689,7 @@ fn readProv(r: *Reader) Error!Prov {
     const b = try r.int();
     const path = try r.path();
     const flags = try r.byte();
-    if (flags > 3) return error.Bad;
+    if (flags > 7) return error.Bad;
     const taken = flags & 1 != 0;
     const a = if (kind == .shared) blk: {
         if (a_raw >= r.modules.len) return error.Bad;
@@ -693,7 +697,7 @@ fn readProv(r: *Reader) Error!Prov {
         if (b >= r.o.in.birs[sm].decls.len) return error.Bad;
         break :blk sm;
     } else a_raw;
-    return .{ .kind = kind, .a = a, .b = b, .path = path, .taken = taken, .obj = flags & 2 != 0 };
+    return .{ .kind = kind, .a = a, .b = b, .path = path, .taken = taken, .obj = flags & 2 != 0, .condition_only = flags & 4 != 0 };
 }
 
 fn readAtoms(r: *Reader) Error![]const XAtom {

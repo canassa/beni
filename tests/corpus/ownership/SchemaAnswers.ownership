@@ -17,11 +17,11 @@ module SchemaAnswers
   summary generic: res [*] ~fresh2{lost}r{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}r{lost}
   summary built: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
   summary topLevel: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆
-  summary captured: π1 RAw, π1⋆ RAw; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~π1 ~π1⋆, .0⋆ ~π1 ~π1⋆, .1 π1
+  summary captured: π1 RAw, π1⋆ RAw; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~π1 ~π1⋆, .0⋆ ~π1 ~π1⋆, .1 π1, condition(fresh3){lost}
   summary interpreted: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~⊤schema{lost}r{lost}, fresh1{lost}, ⋆ ~⊤schema{lost}r{lost}
   summary derived: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
   summary decoded: π1 RA; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .1 π1
-  summary encodedKept: π1 RA, π1⋆ RAw; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~π1 ~π1⋆, .0⋆ ~π1 ~π1⋆, .1 π1
+  summary encodedKept: π1 RA, π1⋆ RAw; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~π1 ~π1⋆, .0⋆ ~π1 ~π1⋆, .1 π1, condition(fresh3){lost}r{lost}
   summary encodedAlone: π1 RA, π1⋆ RAw; res [*] ~fresh2{lost}r{lost}, [*]⋆ ~π1 ~π1⋆, fresh1{lost}, ⋆ ~π1 ~π1⋆
   summary values: π1 RA, π1⋆ RAw, π2 RA; res [*] ~fresh2{lost}r{lost} ~π2, [*]⋆ ~π1 ~π1⋆, fresh1{lost}r{lost}, ⋆ ~π1 ~π1⋆
   summary numbers: π1 RA; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .1 π1

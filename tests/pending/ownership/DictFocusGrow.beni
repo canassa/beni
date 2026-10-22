@@ -1,0 +1,10 @@
+-- #663: the owner accepted this false refusal while #294 replaces Dict's
+-- folded tree. Two distinct fresh lists share nothing. Keep expecting the
+-- callback write to be accepted; promote this fixture when #294 recovers it.
+import Dict exposing (Dict)
+
+
+grow : ⊤ → Dict Int (List Int)
+grow ⊤ =
+    d = Dict.insert (Dict.insert Dict.empty 1 [ 1 ]) 2 [ 2 ]
+    Dict.update d 1 λm → Maybe.map m λv → List.push v 9

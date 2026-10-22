@@ -1,26 +1,22 @@
 module DictFocus
-  24:5 call Dict.update d#Dict.0#Node.2: accepted fresh (<lambda> writes what Dict.update supplies it)
-  24:26 call Maybe.map m#Just.0: accepted callback-param (Dict.update supplies it owned)
-  24:43 List.push v: accepted callback-param (Maybe.map supplies it owned)
-  28:13 call List.foldl Dict.empty#Dict.0#Node.2: accepted fresh (<lambda> writes what List.foldl supplies it)
-  29:5 call Dict.update d#Dict.0#Node.2: accepted callback-param (List.foldl supplies it owned)
-  29:45 construction <call Maybe.withDefault>: accepted callback-param (Dict.update supplies it owned)
-  36:5 call Dict.update d#Dict.0#Node.2: accepted fresh (<lambda> writes what Dict.update supplies it)
-  36:26 call Maybe.map m#Just.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
-  36:43 List.push v: accepted callback-param (Maybe.map supplies it owned)
-  43:5 call Dict.update d#Dict.0#Node.2: rejected call: another operand may be it, through the call at 42:9 (<lambda> writes what Dict.update supplies it) (approx)
-  43:30 call Maybe.map m#Just.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
-  43:47 List.push v: accepted callback-param (Maybe.map supplies it owned)
-  49:13 call Dict.update d#Dict.0#Node.2: rejected call: d#Dict.0#Node.2 may hold it through the call at 48:9, and is read at 50:5 (<lambda> writes what Dict.update supplies it) (approx)
-  49:34 call Maybe.map m#Just.0: accepted callback-param (Dict.update supplies it owned)
-  49:51 List.push v: accepted callback-param (Maybe.map supplies it owned)
-  summary grow: res #Dict.0#Node.2 ~fresh1r{lost}
-  summary groups: π1 R; res #Dict.0#Node.2 ~fresh1
-  summary twice: res #Dict.0#Node.2 ~fresh1{lost}r{lost}
-  summary keyAndValue: res #Dict.0#Node.1 ~fresh1{lost}r{lost} ~fresh2, #Dict.0#Node.2 ~fresh1{lost}r{lost}
+  23:13 call List.foldl Dict.empty#Dict.0#Node.2: accepted fresh (<lambda> writes what List.foldl supplies it)
+  24:5 call Dict.update d#Dict.0#Node.2: accepted callback-param (List.foldl supplies it owned)
+  24:45 construction <call Maybe.withDefault>: accepted callback-param (Dict.update supplies it owned)
+  31:5 call Dict.update d#Dict.0#Node.2: accepted fresh (<lambda> writes what Dict.update supplies it)
+  31:26 call Maybe.map m#Just.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  31:43 List.push v: accepted callback-param (Maybe.map supplies it owned)
+  38:5 call Dict.update d#Dict.0#Node.2: rejected call: another operand may be it, through the call at 37:9 (<lambda> writes what Dict.update supplies it) (approx)
+  38:30 call Maybe.map m#Just.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  38:47 List.push v: accepted callback-param (Maybe.map supplies it owned)
+  44:13 call Dict.update d#Dict.0#Node.2: rejected call: d#Dict.0#Node.2 may hold it through the call at 43:9, and is read at 45:5 (<lambda> writes what Dict.update supplies it) (approx)
+  44:34 call Maybe.map m#Just.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  44:51 List.push v: accepted callback-param (Maybe.map supplies it owned)
+  summary groups: π1 R; res #Dict.0 ~condition(fresh1){lost} ~condition(fresh3){lost}r{lost}, #Dict.0#Node.2 ~fresh4{lost}, #Dict.0#Node.3 ~condition(fresh2){lost}r{lost} ~condition(fresh3){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh2){lost}r{lost} ~condition(fresh3){lost}r{lost}
+  summary twice: res #Dict.0 ~condition(fresh3){lost} ~condition(fresh5){lost}, #Dict.0#Node.2 ~fresh1{lost}r{lost}, #Dict.0#Node.3 ~condition(fresh2){lost}r{lost} ~condition(fresh5){lost}, #Dict.0#Node.4 ~condition(fresh2){lost}r{lost} ~condition(fresh4){lost} ~condition(fresh5){lost}
+  summary keyAndValue: res #Dict.0 ~condition(fresh4){lost} ~condition(fresh6){lost}, #Dict.0#Node.1 ~fresh1{lost}r{lost} ~fresh3{lost}, #Dict.0#Node.2 ~fresh1{lost}r{lost}, #Dict.0#Node.3 ~condition(fresh2){lost}r{lost} ~condition(fresh6){lost}, #Dict.0#Node.4 ~condition(fresh2){lost}r{lost} ~condition(fresh5){lost} ~condition(fresh6){lost}
   summary readLater: unused
   summary reads: unused
-  demands 15: accepted 11 (fresh 3, call 0, param 0, callback-param 8, once 0, entry 0; assumed 0), pending 0, rejected 4
-total 15: accepted 11 (fresh 3, call 0, param 0, callback-param 8, once 0, entry 0; assumed 0), pending 0, rejected 4
+  demands 12: accepted 7 (fresh 2, call 0, param 0, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 12: accepted 7 (fresh 2, call 0, param 0, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause call 2
-cause exclusive 2
+cause exclusive 3

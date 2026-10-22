@@ -406,6 +406,14 @@ context (#358) put it 10M over the 4 300M. Jayson Reis decided it on 2026-10-20 
 `node-log-q2`); it goes when the case is back under 4 300M (#514). `world.withOwnBudget` holds both
 grants.
 
+**Owner amendment, 2026-10-22 (#456):** the core surface test now has 5 300M
+(`core_surface_budget_millions`), and *ownership everywhere: core holds no rejected or pending line*
+has 5 300M (`core_clean_budget_millions`). Value-scoped construction conditions raised their counts
+to 4 810M and 4 794M; the owner authorized these grants, with about 10% headroom. Their assertions
+are unchanged. Issue #514 tracks reducing and removing the grants. The same owner authorization
+covers `ownership/Conduit` at 4 760M (4 320M observed plus about 10%); its
+`_expected.budget` names #286 and is removed when the case fits 4 300M again.
+
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)
 on **x86-64 Linux**, and every binary the build makes is built for one
