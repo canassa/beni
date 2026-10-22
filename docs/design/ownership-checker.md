@@ -5148,24 +5148,18 @@ behaviour changes.
   its input is permitted, as clarified for `RecursiveHolds` on 2026-10-22.
 
 
-  *As built 2026-10-22 (#210):* O1 is complete for list demands. The owner
-  decisions in #218 and #219 are implemented. Recursive returned-function
-  classes and function-element supplies retain their result ownership;
-  uncarriable alternatives remain unknown. The returned-validator page is
-  promoted from pending, with shared-result, unknown-function and cache
-  controls. Genuine fixture/example sharing uses fresh initialization or
-  copies at the write, including borrowed Ref-list replacements in the fixture, example and websocket bench.
-
-  The final hidden-flag audit checks 1,356 roots/module sets and 988 list
-  demands across the corpus, examples, bench apps, core and all production
-  and test platforms: **zero rejected, zero pending**, with every list
-  verdict checked against the dump totals and no command error. Core's
-  117 list demands are all accepted. Record-update reports remain on #315
-  as R4 input. The bounded Lean bridge checks 2,139 programs, value-checks
-  1,473 translations and confirms **zero unsafe accepted originals**, at
-  the CI bound and both generators' three recorded seeds. Gates pass on
-  the self-hosted compiler; no safe accepted program became rejected, no
-  check or budget was weakened, and no core/platform copy was added.
+  *Status 2026-10-22 (#210):* the recursive returned-function precision,
+  returned-validator promotion, fixture initialization fixes and tuple-DAG
+  comparison reuse have landed. The final Ref fixture/example/bench copies
+  remain draft. The refreshed positive-corpus audit covers 1,447 roots/module
+  sets and 1,230 list demands: eight rejected, none pending. Seven refusals
+  involve focused dictionary tuple/list payloads and fold accumulators; the
+  singleton case is a reduced safe whole program that the earlier compiler
+  accepted and the current compiler rejects (#759). Work stops under the
+  owner's rule. The remaining new Ref-sharing fixture is LogSetMinimum,
+  whose borrowed list needs a fixture copy under #219 after the stop is
+  resolved. O1 remains open; no dictionary fixture is copied to hide the
+  precision regression. Record-update reports remain R4 input on #315.
 
 - **O2 — the pass on the DAG, and the block in the interface** (§28.11 item 1, §16.9–§16.10).
   - *Accepted when:* the firewall holds for every build, as `cache_test.zig` shows. The 100 000-line
