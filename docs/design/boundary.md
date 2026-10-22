@@ -4181,6 +4181,11 @@ runs, closed or not ((d) step 5).)*
 `deadline` is a constant of the `browser` platform, **1 000 ms** (choice 3 below), as W3's slice
 and budget are the platform's.
 
+*Amended 2026-10-22 (#596):* `Task.stopScheduler` is `shutdown` for one scheduler of
+`transparent-effects-proposal.md` §17.5's amendment of that date — the same three phases, for the
+fibers of that scheduler alone — and `shutdown` itself stops every scheduler made. The `cloudflare`
+platform calls it per request and per object (§9.12 (d), (f)).
+
 **(d) The teardown, step by step.** Every step runs in the teardown's macrotask or in the drains
 after it; each is deterministic, ordered by creation and by the scheduler's FIFO.
 
@@ -7468,8 +7473,8 @@ Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not 
 it.
 
 **(k) The tests.** A Worker runs in `workerd`, which nixpkgs carries inside `wrangler` 4.93.0
-with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GB
-of disk in the store). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
+with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GiB
+of disk in the store, the dev shell `workers` of #698). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
 Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the design:*
 
 - **The driver is Miniflare's API, not a `wrangler` process**: `tests/workers/driver.mjs` imports
