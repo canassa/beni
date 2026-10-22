@@ -16,3 +16,5 @@
 {"path": "/var"}
 {"path": "/missing"}
 {"path": "/nope"}
+{"path": "/headers"}
+{"path": "/headers", "headers": {"X-Case-Z": "z", "X-Case-A": "a"}}

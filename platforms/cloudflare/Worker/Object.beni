@@ -933,10 +933,7 @@ closeOf code reason =
 
 -- The host's socket array as a list.
 socketsOf : V → List Socket
-socketsOf array =
-    acc = Js.ref []
-    Js.each array λws → Js.write acc (List.push (Js.read acc) (Js.to ws))
-    Js.read acc
+socketsOf array = List.initialize (Js.to (Js.get array "length")) λi → Js.to (Js.at array i)
 
 
 -- ---- Messages: self, post, ask, reply ((e.10)) ------------------------------

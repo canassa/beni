@@ -61,6 +61,15 @@ route ctx request =
                 Nothing →
                     Worker.text 200 "no such header, and no crash"
 
+        "/headers" →
+            wanted = List.filter (Worker.headers request) λ( name, _ ) →
+                String.startsWith name "x-case-"
+            Worker.text
+                200
+                ("headers:"
+                    ++ String.join (List.map wanted λ( name, value ) → name ++ "=" ++ value) ","
+                )
+
         "/method" →
             Worker.text 200 "${Worker.method request} ${Worker.url request}"
 

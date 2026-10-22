@@ -481,10 +481,10 @@ headers request = pairsOf (Js.get (Js.from request) "headers")
 
 pairsOf : V → List (String × String)
 pairsOf hostHeaders =
-    acc = Js.ref []
-    Js.each (Js.call (Js.global "Array") "from" [ Js.call hostHeaders "entries" [] ]) λpair →
-        Js.write acc (List.push (Js.read acc) ( Js.to (Js.at pair 0), Js.to (Js.at pair 1) ))
-    Js.read acc
+    pairs = Js.call (Js.global "Array") "from" [ Js.call hostHeaders "entries" [] ]
+    List.initialize (Js.to (Js.get pairs "length")) λi →
+        pair = Js.at pairs i
+        ( Js.to (Js.at pair 0), Js.to (Js.at pair 1) )
 
 
 -- ---- The response -----------------------------------------------------------
