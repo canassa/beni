@@ -331,6 +331,9 @@ pub const Input = struct {
     /// What `Js.development` is: `false` under `--release` (`backend.md`
     /// §4, *`Js.development` is the build's mode*).
     development: bool = true,
+    /// What `Js.testHooks` is: `true` under the hidden `--test-hooks`
+    /// (`backend.md` §4, *`Js.testHooks` is the build's test hooks*).
+    test_hooks: bool = false,
     /// The build's schema plans and what reads them (`schema.md` §6), when
     /// a module declares or uses a schema. Null: the module emits none.
     schemas: ?*const SchemaGraph = null,
@@ -2006,7 +2009,7 @@ pub const Lowerer = struct {
         // followed nothing out of it, with or without a survivor set.
         for (tags, 0..) |tag, i| {
             if (tag != .case) continue;
-            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development) orelse continue;
+            const branch = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, @fromBackingInt(@intCast(@as(u32, @intCast(i)))), l.interner, !l.in.development, l.in.test_hooks) orelse continue;
             const body = l.bir.instData(branch).rhs;
             if (l.dead_arms.bit_length == 0) try l.dead_arms.resize(l.scratch, l.bir.insts.len, false);
             if (body < l.dead_arms.bit_length) l.dead_arms.set(body);
@@ -2095,7 +2098,8 @@ pub const Lowerer = struct {
     /// that body alone, with no test, and the dropped arm not at all.
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         l.askSelf(.development, l.in.development, 0, 0);
-        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse
+        l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
+        const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development, l.in.test_hooks) orelse
             l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
         for (branches) |branch| {
@@ -2785,6 +2789,7 @@ pub const Lowerer = struct {
                 break :blk dead.isSet(fact.index);
             },
             .development => l.in.development,
+            .test_hooks => l.in.test_hooks,
             .consumed => fact.index < l.consumed.len and l.consumed[fact.index],
             .wanted => fact.index < l.wanted.len and l.wanted[fact.index],
             // All three are asked with a constant `true` when the unit needs
@@ -6421,6 +6426,10 @@ pub const Lowerer = struct {
             .development => {
                 l.askSelf(.development, l.in.development, 0, 0);
                 return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            .testHooks => {
+                l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
+                return l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
             // A function passed as a value is the sibling's (`core/Js.js`).
             else => {},
@@ -10324,6 +10333,10 @@ pub const Lowerer = struct {
             W.development => blk: {
                 l.askSelf(.development, l.in.development, 0, 0);
                 break :blk l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
+            W.testHooks => blk: {
+                l.askSelf(.test_hooks, l.in.test_hooks, 0, 0);
+                break :blk l.add(if (l.in.test_hooks) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
             },
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),

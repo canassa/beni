@@ -269,6 +269,8 @@ pub const Fact = struct {
         /// reachability's per-module fork — issue #432). False for a module
         /// whose edges came from the pack.
         schema_shapes = 20,
+        /// What `Js.testHooks` is (`Lower.Input.test_hooks`).
+        test_hooks = 21,
     };
 
     fn lessThan(a: Fact, b: Fact) bool {

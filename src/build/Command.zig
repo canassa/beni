@@ -142,6 +142,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .library = build.library,
         .release = build.release,
         .allow_debug = build.allow_debug,
+        .test_hooks = build.test_hooks,
         .schema_library = build.schema_library,
         .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,

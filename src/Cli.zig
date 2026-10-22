@@ -335,6 +335,13 @@ pub const Build = struct {
     /// a test-only entry point — would move the assertion off the thing
     /// that ships.
     allow_debug: bool = false,
+    /// `--test-hooks` — **hidden**, for `--allow-debug`'s reason: test-only
+    /// surface. `Js.testHooks ()` is `true`, so a platform's test hooks —
+    /// the paths a corpus fixture drives a Durable Object's `tick` and
+    /// `alarm` through (`boundary.md` §9.12 (k)) — are compiled in; without
+    /// it they are dropped as a release build drops `Js.development`'s
+    /// arm (`backend.md` §4), so a user's build never holds them.
+    test_hooks: bool = false,
     /// `--schema-library` — **hidden**, for `--allow-debug`'s reason: every
     /// schema declaration's `parse` and `print` run through the library
     /// interpreter rather than its specialised code, which is the forced
@@ -849,6 +856,7 @@ const BuildSpecific = struct {
     release: bool = false,
     library: bool = false,
     allow_debug: bool = false,
+    test_hooks: bool = false,
     schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
@@ -887,6 +895,12 @@ const BuildSpecific = struct {
             // `--library`, absent from `usage`.
             if (value != null) return noValue(name);
             self.allow_debug = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--test-hooks")) {
+            // A hidden flag (see `Build.test_hooks`), accepted like
+            // `--allow-debug`.
+            if (value != null) return noValue(name);
+            self.test_hooks = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--schema-library")) {
             // The fourth hidden flag (see `Build.schema_library`).
@@ -975,6 +989,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .library = s.specific.library,
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
+        .test_hooks = s.specific.test_hooks,
         .schema_library = s.specific.schema_library,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,

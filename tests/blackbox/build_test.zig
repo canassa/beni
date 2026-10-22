@@ -7279,3 +7279,67 @@ test "a project's exports list that is a string is the manifest's exit-2 failure
     try testing.expectEqualStrings("beni: beni.json's \"exports\" must be a list of names, not a string\n", built.stderr);
     try testing.expect(!w.exists("out"));
 }
+
+test "the hidden --test-hooks flag: an if on Js.testHooks keeps the hooks' arm with the flag and drops it without, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // backend.md §4, *`Js.testHooks` is the build's test hooks*: the flag
+    // the corpus passes to every `workers/` build (boundary.md §9.12 (k)).
+    // A test platform's module reads it; the arm the build does not take is
+    // not written, so its text is absent from the output.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("hooked/beni.json",
+        \\{ "platform": true, "name": "hooked", "platforms": ["node"], "reexports": ["Node"] }
+    );
+    try w.write("hooked/Hooks.beni",
+        \\import Js
+        \\
+        \\
+        \\--| What the build holds of the test hooks.
+        \\pub probe : ⊤ → String
+        \\probe ⊤ = if Js.testHooks ⊤ then "the hooks are compiled in" else "no hooks in this build"
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Hooks
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main = Node.print (Hooks.probe ⊤)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.run(&.{ "build", "--platform=hooked", "--out=plain", "Main.beni" });
+    const hooked = try w.run(&.{ "build", "--platform=hooked", "--test-hooks", "--out=hooked", "Main.beni" });
+    const release = try w.run(&.{ "build", "--platform=hooked", "--test-hooks", "--release", "--out=rel", "Main.beni" });
+    const plain_release = try w.run(&.{ "build", "--platform=hooked", "--release", "--out=plain-rel", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ plain, hooked, release, plain_release }) |r| try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try w.expectProgram("plain/_main.mjs", .{ .stdout = "no hooks in this build\n" });
+    try w.expectProgram("hooked/_main.mjs", .{ .stdout = "the hooks are compiled in\n" });
+    try w.expectProgram("rel/_main.mjs", .{ .stdout = "the hooks are compiled in\n" });
+    try w.expectProgram("plain-rel/_main.mjs", .{ .stdout = "no hooks in this build\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The dropped arm's text is in no file of the build that dropped it.
+    const plain_module = try w.read("plain/_platform/Hooks.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_module, "the hooks are compiled in") == null);
+    try testing.expect(std.mem.indexOf(u8, plain_module, "no hooks in this build") != null);
+    const hooked_module = try w.read("hooked/_platform/Hooks.mjs");
+    try testing.expect(std.mem.indexOf(u8, hooked_module, "no hooks in this build") == null);
+    const hoisted = try w.read("rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, hoisted, "no hooks in this build") == null);
+    const plain_hoisted = try w.read("plain-rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, plain_hoisted, "the hooks are compiled in") == null);
+}

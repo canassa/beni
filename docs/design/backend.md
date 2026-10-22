@@ -2583,6 +2583,20 @@ and a `case` spelled with those patterns in either order — has a **dropped arm
   when the taken arm's pattern binds nothing), and otherwise writes the dropped arm as
   `undefined`, as any arm no value takes — never naming what `Reach` left out.
 
+### `Js.testHooks` is the build's test hooks
+
+*Added 2026-10-22* (`boundary.md` §9.12 (k): the hidden flag the owner chose for the corpus to
+drive a Durable Object's `tick` and `alarm`). `Js.testHooks : ⊤ → bool` (pure) is **`true` under
+the hidden build flag `--test-hooks` and `false` otherwise**, written in place as the literal,
+exactly as `Js.development` is the build's mode: a `case` on it has a dropped arm — `True`'s
+without the flag, `False`'s with it — that `Reach` guards and `Lower` leaves out, through the one
+predicate (`JsIntrinsic.droppedArm`). So a platform's test hooks — the paths a fixture drives time
+through, which a user's program must never reach — are in no build that did not ask for them, and
+the corpus, which passes the flag to every `workers/` build, has them. A `--test-hooks` build reads
+no packed edge or emit row of an embedded module, since the rows are made without the flag, and
+its own emit rows carry the fact (`EmitPack.Fact.Question.test_hooks`). `--test-hooks` is hidden
+as `--allow-debug` is, for the same reason.
+
 So a development build writes `() => devOnly()` and a release one `() => "…"`, with `devOnly`
 absent. It is an `if`'s condition and nothing more: `if Js.development && x` is an ordinary test,
 both of whose branches are kept. Fixtures: `run/JsDevelopment` (a platform module asking in an
