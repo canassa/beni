@@ -79,6 +79,25 @@ for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
 // Worker's test hook `/__beni/mark/<n>` and waits for its line, so a
 // step's lines never land under the next, however loaded the host.
 let consoleLines = [];
+// Steps that wait for a server line the mark cannot order: a line an
+// object writes from a socket event has no order with a request to the
+// Worker, so such a step names the line it waits for (`"until"`).
+const lineWaiters = [];
+const waitForLine = (text) =>
+  consoleLines.some((line) => line.includes(text))
+    ? Promise.resolve(true)
+    : new Promise((resolve) => {
+        const waiter = { text, resolve: null };
+        const timer = setTimeout(() => {
+          lineWaiters.splice(lineWaiters.indexOf(waiter), 1);
+          resolve(false);
+        }, stepLimit);
+        waiter.resolve = () => {
+          clearTimeout(timer);
+          resolve(true);
+        };
+        lineWaiters.push(waiter);
+      });
 // The mark each stream waits for: the Worker writes it to both, since one
 // stream's mark says nothing about the other's order.
 const markWaiters = { out: null, err: null };
@@ -98,6 +117,10 @@ const capture = (name, stream) => {
         continue;
       }
       consoleLines.push(`| ${name}: ${line}`);
+      for (const waiter of lineWaiters.filter((w) => line.includes(w.text))) {
+        lineWaiters.splice(lineWaiters.indexOf(waiter), 1);
+        waiter.resolve();
+      }
     }
   });
 };
@@ -342,7 +365,6 @@ for (const step of steps) {
       const closed = new Promise((resolve) => entry.ws.once("close", resolve));
       entry.ws.terminate();
       await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, stepLimit))]);
-      await new Promise((resolve) => setTimeout(resolve, 20));
     }
   } else if (step.close !== undefined) {
     say(`> (socket ${step.close}) close${step.code === undefined ? "" : ` ${step.code} ${JSON.stringify(step.reason ?? "")}`}`);
@@ -374,6 +396,8 @@ for (const step of steps) {
     printRequest(step);
     await printOutcome(await within(() => send(step)));
   }
+  // A step that names a server line waits for it first (`"until"`).
+  if (step.until !== undefined && !(await waitForLine(step.until))) say(`< (no line ${JSON.stringify(step.until)} in ${stepLimit} ms)`);
   // The Worker's console lines arrive on a stream of their own: the mark
   // says every line of this step has landed.
   await awaitConsole();

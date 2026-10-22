@@ -302,6 +302,11 @@ object per line, `#` for a comment:
     {"close": "a", "code": 4000, "reason": "bye"}
                                 a close frame (no code when `code` is left out)
     {"drop": "a"}               end the connection with no close frame
+    {…, "until": "closed p2"}   any step: wait for a console line of the
+                                Worker that holds the text before the step
+                                ends, since a line an object writes from a
+                                socket event has no order with the mark;
+                                `(no line "…" in 5000 ms)` otherwise
     {"receive": "a"}            the next thing socket `a` got: `< (socket a)
                                 "text"`, `close 1000 "reason"`, `binary <n>
                                 bytes` or `error …`; `(nothing arrived)`
