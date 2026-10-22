@@ -73,13 +73,10 @@ delete ctx key = Js.to (Js.call (kv ctx) "delete" [ Js.from key ])
 --| The keys with that prefix, in order.
 pub keys : Context msg, String → List String
 keys ctx prefix =
-    acc = Js.ref []
-    Js.each
-        (Js.call (Js.global "Array") "from"
+    pairs =
+        Js.call (Js.global "Array") "from"
             [ Js.call (kv ctx) "list" [ Js.from { prefix = prefix } ] ]
-        )
-        λpair → Js.write acc (List.push (Js.read acc) (Js.to (Js.at pair 0)))
-    Js.read acc
+    List.initialize (Js.to (Js.get pairs "length")) λi → Js.to (Js.at (Js.at pairs i) 0)
 
 
 -- `ctx.storage.kv`: there from the constructor on. A namespace that is not

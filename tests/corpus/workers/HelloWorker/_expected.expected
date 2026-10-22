@@ -65,3 +65,15 @@
 < content-type: text/plain; charset=utf-8
 <
 < no such page: /nope
+> GET /headers
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< headers:
+> GET /headers
+> X-Case-Z: z
+> X-Case-A: a
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< headers:x-case-a=a,x-case-z=z

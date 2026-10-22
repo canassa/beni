@@ -97,10 +97,8 @@ id socket = Js.to (Js.get (envelope socket) "id")
 --| The tags the socket was accepted with, kept in the attachment.
 pub tags : Socket → List String
 tags socket =
-    acc = Js.ref []
-    Js.each (Js.get (envelope socket) "tags") λtag →
-        Js.write acc (List.push (Js.read acc) (Js.to tag))
-    Js.read acc
+    values = Js.get (envelope socket) "tags"
+    List.initialize (Js.to (Js.get values "length")) λi → Js.to (Js.at values i)
 
 
 --| Keep a value of the program's with the socket, printed by the schema:
