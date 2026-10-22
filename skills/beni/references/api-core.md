@@ -599,6 +599,7 @@ module Task
   value isWaiting : a → Bool
   value join : Fiber a → a  -- suspends
   value joinAll : List (Fiber a) → List a  -- suspends
+  value keepLogContext : (a → b) → (a → b)  -- impure
   value never : ⊤ → a  -- suspends
   value onDefect : (⊤ → ⊤) → ⊤  -- impure
   value onExit : (⊤ → a), (Exit a → ⊤) → a  -- impure

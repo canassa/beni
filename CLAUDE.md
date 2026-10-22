@@ -292,7 +292,8 @@ and `readFile`; a defect closes every root scope (`boundary.md` §9.8.14). **Cor
 (2026-10-20, #358; proposal §17.11): five levels, `annotate`, `span`, `minimum`, `withSink`,
 `setSink` and `logfmt`, with the context in the fiber's log-context slot; under `Io.run` a `node`
 program writes one `logfmt` line per entry to standard error. `setMinimum` sets the program's
-minimum (Cesar's decision, 2026-10-21, #551). **The bar is Effect v4
+minimum (Cesar's decision, 2026-10-21, #551), and a page command's body keeps the log context of
+the `update` arm that made it (#597). **The bar is Effect v4
 parity** (the owner, 2026-10-02): the ledger is [`research/48`](docs/design/research/48-effect-parity-ledger.md),
 the contract `transparent-effects-proposal.md` §17, the slices `plans/effects-plan.md` §8. One
 hazard survives in a new place: `List.eq`/`List.compare` are `foreign` with a
