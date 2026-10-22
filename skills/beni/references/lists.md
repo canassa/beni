@@ -139,3 +139,13 @@ that keeps the list itself prevents the swap. A later write to a kept element
 requires ownership of that element.
 
 Source: `ownership-checker.md` §16.4 and §32, amendment of 2026-10-22.
+
+## Fold accumulators with shared keys
+
+A fold can update a fresh value list in a table entry that also holds a shared
+key. The checker checks each written path. A shared key at tuple field `.0`
+does not prevent an update to a separate list at `.1`. If the key and value
+are the same list, the update is refused. A later write to a key must also
+pass the ownership check.
+
+Source: `ownership-checker.md` §16.4, fold amendment of 2026-10-22.
