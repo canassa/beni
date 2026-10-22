@@ -6014,6 +6014,16 @@ in the backend (backend §9, amendment of 2026-10-22). The `type_keys` byte
 section is version 2, adding the two columns; version 1 is a cache miss.
 Development and release builds write the same facts.
 
+*As built 2026-10-22 (#783): distinct rows first.* A store holds many copies of one row: every
+instantiation of a record type copies it. The scan therefore makes the rows distinct before it sorts
+anything by text, by their labels in symbol order and the open-row bit, and puts only the distinct
+rows, and each one's labels, in text order. One symbol is one text, so two rows are one row in text
+order exactly when they are one by symbols, and the artifact is the one that sorting every copy and
+then deduplicating gives. The distinct rows' text order is total, so an unstable sort writes it.
+Measured with `perf stat -e instructions:u`, ReleaseFast: `check --no-cache --jobs=1` of the research
+dashboard N=64 221.5M → 206.9M (−6.6%), whose `TypeKeys.build` had been 16.5% of `Module.check`, two
+thirds of it in stable block sorts; the same for `nowd`.
+
 *The owner's decisions of 2026-10-20, D1 and D2 in its safe form (`plans/type-directed-points-to.md`
 §3); the contract is `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type filtering of fact
 3*, and `boundary.md` §4.2's amendment of the same day. Slice 2 of the plan, issue #489.* The

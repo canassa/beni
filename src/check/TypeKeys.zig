@@ -227,11 +227,11 @@ const RecordOrder = struct {
         const aa = o.labels[a.fields.start..][0..a.fields.len];
         const bb = o.labels[b.fields.start..][0..b.fields.len];
         for (0..@min(aa.len, bb.len)) |i| {
-            switch (std.mem.order(u8, o.interner.slice(aa[i]), o.interner.slice(bb[i]))) {
-                .lt => return true,
-                .gt => return false,
-                .eq => {},
-            }
+            // One symbol is one text: equal symbols are equal texts, and
+            // two others are ordered by text, through its rank when the
+            // interner has one.
+            if (aa[i] == bb[i]) continue;
+            return textBefore(o.interner, aa[i], bb[i]);
         }
         if (aa.len != bb.len) return aa.len < bb.len;
         return !a.open and b.open;
@@ -241,6 +241,31 @@ const RecordOrder = struct {
         return a.open == b.open and std.mem.eql(InternPool.Symbol, o.labels[a.fields.start..][0..a.fields.len], o.labels[b.fields.start..][0..b.fields.len]);
     }
 };
+
+/// A row's identity while the store is scanned: its labels in symbol order
+/// and its openness, read from the scan's `labels`.
+const RowContext = struct {
+    labels: []const InternPool.Symbol,
+
+    pub fn hash(c: RowContext, r: Record) u64 {
+        const row = c.labels[r.fields.start..][0..r.fields.len];
+        return std.hash.Wyhash.hash(@intFromBool(r.open), std.mem.sliceAsBytes(row));
+    }
+
+    pub fn eql(c: RowContext, a: Record, b: Record) bool {
+        return a.open == b.open and std.mem.eql(InternPool.Symbol, c.labels[a.fields.start..][0..a.fields.len], c.labels[b.fields.start..][0..b.fields.len]);
+    }
+};
+
+fn symbolBefore(_: void, a: InternPool.Symbol, b: InternPool.Symbol) bool {
+    return @backingInt(a) < @backingInt(b);
+}
+
+/// A row's labels in text order. Equal labels are one symbol, so the
+/// order is total and an unstable sort writes it.
+fn symbolsByText(interner: *const InternPool.Global, row: []InternPool.Symbol) void {
+    std.mem.sortUnstable(InternPool.Symbol, row, interner, textBefore);
+}
 
 pub fn build(in: Input) Error!Output {
     var b: Builder = .{
@@ -345,9 +370,19 @@ pub fn build(in: Input) Error!Output {
         // Scan roots, rather than only keyable expressions: schemas, ctor
         // payloads and records with polymorphic/host fields are in the store
         // too. A closed field set needs no key for its field values.
+        //
+        // A store holds many copies of one row (every instantiation of a
+        // record type copies it), so the rows are made distinct first, by
+        // their labels in symbol order and their openness, and only the
+        // distinct ones are put in text order. A symbol is one text, so two
+        // rows are one row in text order exactly when they are one here: the
+        // artifact is the one a text sort of every copy, then a deduplication,
+        // gives, and the distinct rows' text order is total, so an unstable
+        // sort writes it (checker-v2.md §36, *As built 2026-10-22*).
         var records: std.ArrayList(Record) = .empty;
         var labels: std.ArrayList(InternPool.Symbol) = .empty;
         var fields: std.ArrayList(TypeStore.Field) = .empty;
+        var distinct: std.HashMapUnmanaged(Record, void, RowContext, std.hash_map.default_max_load_percentage) = .empty;
         for (0..in.store.count()) |vi| {
             const v: Var = @fromBackingInt(@intCast(vi));
             if (in.store.find(v) != v) continue;
@@ -360,14 +395,22 @@ pub fn build(in: Input) Error!Output {
             };
             fields.clearRetainingCapacity();
             const closed = try b.closedRow(rec, &fields);
-            byText(TypeStore.Field, in.interner, fields.items);
 
             const start: u32 = @intCast(labels.items.len);
             for (fields.items) |field| try labels.append(in.scratch, field.name);
-            try records.append(in.scratch, .{ .fields = .{ .start = start, .len = @intCast(fields.items.len) }, .open = !closed });
+            const row = labels.items[start..];
+            std.mem.sortUnstable(InternPool.Symbol, row, {}, symbolBefore);
+            const r: Record = .{ .fields = .{ .start = start, .len = @intCast(row.len) }, .open = !closed };
+            const slot = try distinct.getOrPutContext(in.scratch, r, .{ .labels = labels.items });
+            if (slot.found_existing) {
+                labels.shrinkRetainingCapacity(start);
+                continue;
+            }
+            try records.append(in.scratch, r);
         }
+        for (records.items) |r| symbolsByText(in.interner, labels.items[r.fields.start..][0..r.fields.len]);
         const order: RecordOrder = .{ .labels = labels.items, .interner = in.interner };
-        std.mem.sort(Record, records.items, order, RecordOrder.lessThan);
+        std.mem.sortUnstable(Record, records.items, order, RecordOrder.lessThan);
         var canonical: std.ArrayList(Record) = .empty;
         var canonical_labels: std.ArrayList(InternPool.Symbol) = .empty;
         var previous: ?Record = null;
