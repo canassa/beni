@@ -428,12 +428,42 @@ program site by name (option 2 of §7, extended to `update` and `view`).
 - **A cross-module reader** (D-c) — `W2.view` reading `W1.Model` — is a binding piece of `W2`
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
-  which.
+  which. *Reversed 2026-10-22 (the owner, #668): readers register once at mount; see below.*
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).
 - **Handlers live at the program site**: the arm, the pass and the wiring of every key, whatever
   module its markup is in. *Measured against tea-inline's in-widget handlers at N = 256.*
+  *Reversed 2026-10-22 (the owner, #668); see below.*
+
+*Amended 2026-10-22 (the owner, #668): one closure per root, writes in place, readers registered
+once.* The two bullets above, D-c and "Handlers live at the program site", are reversed. About 100
+of S1's 114 B per widget above tea-inline are this output's shape, not beni's guarantees, and no
+smaller change closes it (`plans/s1-gap-and-latency-report-2026-10-22.md`, Part 3). The target is
+tea-inline's output, as for every slice:
+- **A root's code is one closure.** For each markup root a program shows through `Html.map` (a
+  piece's root), one closure holds the root's slice of the model, its elements, its binding groups
+  and its handlers. A handler writes the slice **in place** and schedules the groups its writes
+  reach (`t.cups = 4, n(r[0])`). It is written with its root's markup, not at the program site.
+- **Bindings are grouped by the field they read.** A group is a list of binding entries that one
+  call runs. A handler's write pass, the first render and each pushed-state tail run groups, never
+  lists of single bindings.
+- **A cross-module reader registers once, at mount.** A root that reads another root's field adds
+  its binding to that field's group in the other root's table (`i[1][3].push(r[3])`). A writer's
+  handler then runs only its own groups. Registration is synchronous and happens at mount, so D3
+  holds and no run-time cost is paid per event.
+- **Pushed state is loaded by one generic loader.** A tail that writes a root's whole slice
+  (`replace`) validates the value, copies it into the slice and runs every group of the root. There
+  is no per-binding pass and no per-root route case where the program's `update` permits.
+- **`init` is data**: the model's initial value is written as literals in the model.
+- **Depends on #315 R4–R7.** A closure can hold its slice only while the slice is the same object
+  after every write: the ownership checker must accept the in-place record writes. Until #315
+  lands, §8.3–§8.4 above stand as built. There is no build that writes both forms.
+- **Decided with the build** (#668): which module writes a root's closure under per-module parallel
+  lowering. §7 rejected writing another module's code at the program site. The likely form is a
+  piece of the root's own module that the program site hands the slice and the registration table.
+  Also decided then: what the lowering reads from #315 to know that a slice is stable, and how a
+  reader's root finds the writer's table when the two mount in either order.
 
 ### 8.5 Per-path passes
 
