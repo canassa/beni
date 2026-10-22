@@ -1,0 +1,55 @@
+-- emit: a record's field holds only sites of its own type (`backend.md` §9,
+-- *Declared-type filtering of fact 3*: a site's property var is filtered by
+-- its field's key). `choose` is generic, so its result holds what every
+-- call passes. `Left`'s `x` is read through field `l`, and `Right`'s `x` is
+-- read by nothing. With the field filter, field `r` holds only `Right`
+-- literals, and their `x` goes. Before, `r` held the `Left` literals too, and
+-- the read of `model.l.x` reached `Right`'s `x` through the merged field.
+import Node exposing (Program)
+
+
+type alias Left =
+    x : Int
+    left : Int
+
+
+type alias Right =
+    x : Int
+    right : Int
+
+
+type alias Model =
+    l : Left
+    r : Right
+
+
+choose : Maybe v, v → v
+choose found otherwise =
+    case found of
+        Just v →
+            v
+
+        Nothing →
+            otherwise
+
+
+find : Int, v → Maybe v
+find n v =
+    if n > 2 then
+        Just v
+    else
+        Nothing
+
+
+shown : Model → List String
+shown model = [ String.fromInt model.l.x, String.fromInt model.r.right ]
+
+
+main : Program
+main =
+    Node.printLines
+        (shown
+            { l = choose (find 3 { x = 1, left = 2 }) { x = 5, left = 6 }
+            , r = choose (find 1 { x = 3, right = 4 }) { x = 7, right = 8 }
+            }
+        )

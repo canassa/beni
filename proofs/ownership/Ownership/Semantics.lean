@@ -48,6 +48,25 @@ decreasing_by
     rather than a disagreement (or a step the invariant could not relate). -/
 def observationDepth : Nat := 256
 
+/-! ## Dictionaries (#522)
+
+A dictionary is its entries in insertion order (#294, the owner's second
+decision), each the record of its integer key and its value, `record [int k,
+v]`. The value interpreter holds the entries as a list observation, the
+in-place interpreter in one heap array. `dictPut` replaces the entry at the key
+in place or appends one, `dictDrop` removes it, `dictFind` looks one up. -/
+
+def dictFind (key : α → Option Int) (es : List α) (k : Int) : Option α :=
+  es.find? fun e => key e == some k
+
+def dictPut (key : α → Option Int) (es : List α) (k : Int) (e : α) : List α :=
+  match es.findIdx? (fun e => key e == some k) with
+  | some i => es.set i e
+  | none => es ++ [e]
+
+def dictDrop (key : α → Option Int) (es : List α) (k : Int) : List α :=
+  es.filter fun e => key e != some k
+
 structure Trace where
   reads : List Observation
   finalValue : Observation
@@ -89,6 +108,20 @@ def atom (env : Env Value) : Atom → Except String Value
   | .field a i => do
     let .record xs ← atom env a | throw "value projection"
     xs[i]?.toExcept "value field"
+
+/-- A dictionary entry's key and value. -/
+def entryKey : Value → Option Int
+  | .record [.int k, _] => some k
+  | _ => none
+
+def entryValue : Value → Value
+  | .record [_, v] => v
+  | _ => .int 0
+
+/-- `Maybe v` as `Result Int v`: `ok v`, or `err 0` for an absent key. -/
+def maybe : Option Value → Value
+  | some v => .record [.int 1, .int 0, v]
+  | none => .record [.int 0, .int 0, .int 0]
 
 def prim (op : Prim) (vs : List Value) : M Value := do
   match op, vs with
@@ -134,6 +167,17 @@ def prim (op : Prim) (vs : List Value) : M Value := do
       else out := out ++ [v]
     pure (.list out)
   | .view front, [.list xs] => pure (.list (if front then xs.drop 1 else xs.dropLast))
+  | .dictEmpty _, [] => pure (.list [])
+  | .dictInsert, [.list es, .int k, v] => pure (.list (dictPut entryKey es k (.record [.int k, v])))
+  | .dictRemove, [.list es, .int k] => pure (.list (dictDrop entryKey es k))
+  | .dictGet, [.list es, .int k] => do
+    let found := (dictFind entryKey es k).map entryValue
+    read (found.getD (.int 0))
+    pure (maybe found)
+  | .dictSize, [.list es] => do
+    let n := Observation.int es.length
+    read n
+    pure n
   | _, _ => throw "value primitive shape"
 
 def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
@@ -198,6 +242,15 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           read v
           let w ← eval (depth - 1) ds self ((x, v) :: env) body
           pure (.list (xs.set i.toNat w))
+      | .dictFocus src key found body =>
+        let .list es ← atom env src | throw "value dictionary focus"
+        let .int k ← atom env key | throw "value key"
+        let current := (dictFind entryKey es k).map entryValue
+        if let some v := current then read v
+        match ← eval (depth - 1) ds self ((found, maybe current) :: env) body with
+        | .record [.int 1, _, w] => pure (.list (dictPut entryKey es k (.record [.int k, w])))
+        | .record [.int 0, _, _] => pure (.list (dictDrop entryKey es k))
+        | _ => throw "value dictionary focus answer"
     observeKept
     pure result
 termination_by depth
@@ -258,8 +311,8 @@ structure State where
   kept : Array Value := #[]
   externalReads : Array (List Observation) := #[]
   /-- Program-level in-place writes that changed an array (`set`, `push`,
-      focus write-back); builder `put` is excluded. A campaign statistic only,
-      never compared. -/
+      focus write-back, the dictionary writes); builder `put` is excluded. A
+      campaign statistic only, never compared. -/
   writes : Nat := 0
   /-- When set, every call of a declaration is recorded in `calls` (for the
       falsifier and campaign statistics); never compared, never read by the
@@ -378,6 +431,19 @@ def atom (env : Env Value) : Atom → Except String Value
     let .record xs ← atom env a | throw "in-place projection"
     xs[i]?.toExcept "in-place field"
 
+/-- A dictionary entry's key and value, as the value interpreter's. -/
+def entryKey : Value → Option Int
+  | .record [.int k, _] => some k
+  | _ => none
+
+def entryValue : Value → Value
+  | .record [_, v] => v
+  | _ => .int 0
+
+def maybe : Option Value → Value
+  | some v => .record [.int 1, .int 0, v]
+  | none => .record [.int 0, .int 0, .int 0]
+
 /-- Pending reads at a construction write. The runtime ignores this metadata;
 the opt-in diagnostic interpreter uses it without changing any runtime field. -/
 structure ConstructionReads where
@@ -477,6 +543,18 @@ def prim (op : Prim) (vs : List Value) : M Value := do
       let r ← alloc (viewOf front xs)
       modify fun s => { s with links := s.links ++ [(address, c, front)] }
       pure r
+  | .dictEmpty _, [] => alloc []
+  | .dictInsert, [.ref c, .int k, v] => do
+    writeCounted c (dictPut entryKey (← array c) k (.record [.int k, v]))
+  | .dictRemove, [.ref c, .int k] => do writeCounted c (dictDrop entryKey (← array c) k)
+  | .dictGet, [.ref c, .int k] => do
+    let found := (dictFind entryKey (← array c) k).map entryValue
+    read (found.getD (.int 0))
+    pure (maybe found)
+  | .dictSize, [.ref c] => do
+    let n := Value.int (← array c).length
+    read n
+    pure n
   | _, _ => throw "in-place primitive shape"
 
 def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
@@ -571,6 +649,17 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
           -- capture), and a runtime stores the element into the array as it
           -- is now, not into a copy taken before the body ran.
           writeCounted c ((← array c).set i.toNat w)
+      | .dictFocus src key found body =>
+        let .ref c ← atom env src | throw "in-place dictionary focus"
+        let .int k ← atom env key | throw "in-place key"
+        let current := (dictFind entryKey (← array c) k).map entryValue
+        if let some v := current then read v
+        -- The entries are read again after the body, as a focus re-reads
+        -- its container.
+        match ← eval (depth - 1) ds self ((found, maybe current) :: env) body with
+        | .record [.int 1, _, w] => writeCounted c (dictPut entryKey (← array c) k (.record [.int k, w]))
+        | .record [.int 0, _, _] => writeCounted c (dictDrop entryKey (← array c) k)
+        | _ => throw "in-place dictionary focus answer"
     observeKept
     pure result
 termination_by depth

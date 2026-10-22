@@ -541,7 +541,7 @@ const Perf = struct {
     }
 
     /// What a run's cost is counted in. Retired user-space instructions
-    /// (`world.timing.Counter`, the unit of the gates' test budget) repeat
+    /// (`InstructionCounter`) repeat
     /// run to run within a few parts in a million, whatever else shares the
     /// cores: one run is a point, and a ratio or a difference of two is
     /// exact. Where no counter opens (`perf_event_paranoid` above 2, no PMU,
@@ -555,7 +555,7 @@ const Perf = struct {
     /// beside the child's tens of millions. The wall clock stands in for CPU
     /// time only where the platform reports no rusage.
     fn timed(s: *Perf, args: []const []const u8, kill_ms: i64) !?struct { cost: u64, unit: Unit, ms: i64, result: world.Result } {
-        const counter = world.timing.Counter.open();
+        const counter = InstructionCounter.open();
         defer if (counter) |c| {
             _ = std.os.linux.close(c.fd);
         };
@@ -1415,3 +1415,27 @@ fn callsInOneStatement(arena: std.mem.Allocator, n: usize) ![]const u8 {
     for (1..n + 1) |i| try out.print(arena, "        M{d} →\n            r = h{d} x\n            r.a + r.b + r.c + r.d + r.e + r.f + r.g + r.h\n\n", .{ i, i });
     return out.items;
 }
+
+/// Optional performance instrumentation, used only by test-perf.
+const InstructionCounter = struct {
+    fd: i32,
+
+    pub fn open() ?InstructionCounter {
+        if (@import("builtin").os.tag != .linux) return null;
+        const linux = std.os.linux;
+        var attr: linux.perf_event_attr = .{
+            .type = .HARDWARE,
+            .config = @backingInt(linux.PERF.COUNT.HW.INSTRUCTIONS),
+            .flags = .{ .inherit = true, .exclude_kernel = true, .exclude_hv = true },
+        };
+        const rc = linux.perf_event_open(&attr, 0, -1, -1, linux.PERF.FLAG.FD_CLOEXEC);
+        if (linux.errno(rc) != .SUCCESS) return null;
+        return .{ .fd = @intCast(rc) };
+    }
+
+    pub fn read(c: InstructionCounter) u64 {
+        var value: u64 = 0;
+        _ = std.os.linux.read(c.fd, @ptrCast(&value), @sizeOf(u64));
+        return value;
+    }
+};

@@ -1,0 +1,10 @@
+-- `unknown_exports_mode` (boundary.md §5.2, amended 2026-10-20): a
+-- platform's `"exports"` may hold `"program"` and nothing else. This
+-- platform declares `"names"`, and the build is refused against the
+-- manifest at 1:1 with no excerpt, as `invalid_entry_file` is, before
+-- anything is written.
+import Prog exposing (Program)
+
+
+main : Program
+main = Prog.say "hello"

@@ -25,6 +25,12 @@ if (!Number.isInteger(jobs) || jobs < 1 || jobs > 8) throw Error('--jobs must be
 const compiler = resolve(options.compiler ?? resolve(root, 'zig-out/bin/beni'));
 const out = resolve(options.out ?? resolve(root, 'zig-out/ownership-bridge'));
 await mkdir(out, { recursive: true });
+// The in-place platform. A build enforces when its chain's first `"lists"`
+// says `in-place` (ownership-checker.md §28.2); the translated programs import
+// no platform module, so the platform decides enforcement and nothing else.
+// It was `browser-direct` until #423 retired it (2026-10-19); `browser-inline`
+// is its successor and the one shipped in-place platform. `browser-tea` copies.
+const inPlace = 'browser-inline';
 await rm(resolve(out,'report.json'),{force:true});
 await rm(resolve(out,'failure.json'),{force:true});
 process.on('uncaughtExceptionMonitor',error=>{
@@ -60,12 +66,13 @@ else {
   }
 }
 if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-selftest.mjs'),`--input=${inputs[0]}`,`--compiler=${compiler}`]);
+if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-read-selftest.mjs'),`--input=${inputs[0]}`,`--compiler=${compiler}`]);
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
     ambiguousAgreement:0,ambiguousPrecision:0 },
   skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, precisionPrograms: {}, precisionExamples: {}, cases: [], jobs,
   minimization: options['no-minimize'] ? 'disabled; original checks and paired executions unchanged' : 'historical persistent-runtime relation',
-  environment:{node:process.version,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
+  environment:{node:process.version,platform:inPlace,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
     oracleSha256:createHash('sha256').update(await readFile(resolve(own,'.lake/build/bin/ownership'))).digest('hex')},streams:[] };
 const bump = (obj, k, n = 1) => { obj[k] = (obj[k] ?? 0) + n; };
 const tables = new Map();
@@ -81,7 +88,7 @@ const canonical = x => Array.isArray(x) ? x.map(canonical) : x && typeof x === '
   Object.fromEntries(Object.keys(x).sort().map(k => [k, canonical(x[k])])) : x;
 async function confirmation(p, dir) {
   const result = {};
-  for (const platform of ['browser-tea','browser-direct']) {
+  for (const platform of ['browser-tea',inPlace]) {
     const target = resolve(dir, platform);
     const built = await run(compiler, ['build', '--library', '--no-source-maps', '--no-cache', '--jobs=1', `--platform=${platform}`, `--out=${target}`, p.path]);
     if (built.status) return { status: 'build-failed', platform, ...built };
@@ -99,7 +106,7 @@ async function confirmation(p, dir) {
   }
   return { status: Object.values(result).some(r => r.status !== 0) ? 'execution-error' :
     JSON.stringify(canonical(JSON.parse(result['browser-tea'].stdout).result)) !== JSON.stringify(canonical(p.record[11])) ? 'translation-mismatch' :
-    result['browser-tea'].stdout === result['browser-direct'].stdout ? 'unconfirmed' : 'confirmed', runs: result };
+    result['browser-tea'].stdout === result[inPlace].stdout ? 'unconfirmed' : 'confirmed', runs: result };
 }
 // Check fidelity for the whole translated population, including agreements and
 // precision differences. One library build and one Node process serve a batch.
@@ -158,7 +165,7 @@ async function minimize(original, dir, outcome) {
       const cacheKey=createHash('sha256').update(JSON.stringify([translation.source,record[11]])).digest('hex');
       if(!reductionCache.has(cacheKey)) {
         const probe=(async()=>{
-          const dumped=await run(compiler,['dump','--stage=ownership','--platform=browser-direct','--jobs=1','--diagnostics=json',p.path]);
+          const dumped=await run(compiler,['dump','--stage=ownership',`--platform=${inPlace}`,'--jobs=1','--diagnostics=json',p.path]);
           if(dumped.status===1) {
             const diagnostics=JSON.parse(dumped.stderr);
             if(!diagnostics.some(d=>d.severity==='error')) throw Error('candidate failed without diagnostics');
@@ -200,31 +207,62 @@ async function minimize(original, dir, outcome) {
 }
 function parseDump(text, programs) {
   const byModule = new Map(programs.map(p => [p.module, []])); let current = null;
+  // #391's count lines check the partition: every `update` line skipped below
+  // is one of the module's `records N`, and every demand line kept is one of
+  // its `demands N`. A module without demands prints neither line.
+  const close = () => {
+    if (!current) return;
+    const skipped = current.skippedUpdates ?? 0, records = current.records ?? 0, demands = current.demands ?? 0;
+    if (skipped !== records) throw Error(`skipped ${skipped} update lines in ${current.name}, but it reports records ${records}`);
+    if (current.length !== demands) throw Error(`kept ${current.length} demand lines in ${current.name}, but it reports demands ${demands}`);
+  };
   for (const line of text.split('\n')) {
     if (!line) continue;
     let m = line.match(/^module (\S+)$/);
-    if (m) { current = byModule.get(m[1]); if (!current) throw Error(`unexpected module ${m[1]}`); continue; }
+    if (m) {
+      close();
+      current = byModule.get(m[1]); if (!current) throw Error(`unexpected module ${m[1]}`);
+      current.name = m[1];
+      continue;
+    }
     m = line.match(/^  (\d+):(\d+) (.+?): (accepted|rejected|pending)(?:(?: |: ?)(.*))?$/);
-    if (m && current) { current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue; }
+    if (m && current) {
+      // A record update (`{ r | F = … }`) is a demand line since #391, with
+      // the operation `update` (`List.update` prints as `List.update`, so the
+      // bare word is the record one). The Lean oracle has no record field
+      // assignment (#316), so it has no verdict for the site; and the
+      // compiler reports the demand without enforcing it (`Enforce.zig`,
+      // until §31.9's codes land), so a rejected one has no diagnostic to
+      // match either. Skipped until #316 lands.
+      if (m[3].startsWith('update ')) { current.skippedUpdates = (current.skippedUpdates ?? 0) + 1; continue; }
+      current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue;
+    }
+    m = line.match(/^  (demands|records) (\d+):/);
+    if (m && current) { current[m[1]] = +m[2]; continue; }
     // A §16.7 limit at a declaration (`ownership_limit`): the module is refused
     // there, not at a demand site. Kept beside the module's demands.
     m = line.match(/^  limit (\S+): (\S+) (\d+), over (\d+)$/);
     if (m && current) { (current.limits ??= []).push({ declaration:m[1], kind:m[2], at:+m[3], cap:+m[4] }); continue; }
-    if (/^  (summary |value |demands )|^(total |cause |pending |limits )/.test(line)) continue;
+    // Record-read staging details carry positions, not demand verdicts.
+    // The demand/record count partition above still checks every verdict.
+    if (/^  (?:capture|hoist) \S+: read \d+:\d+; (?:before|after operands) \d+:\d+$/.test(line)) continue;
+    // `records` (#391): the record demands' counts, in total.
+    if (/^  (summary |value )|^(total |cause |pending |limits |records )/.test(line)) continue;
     throw Error(`unparsed ownership dump: ${line}`);
   }
+  close();
   return byModule;
 }
 async function checkBatch(programs, n) {
   const dir = await mkdtemp(resolve(out, `batch-${n}-`));
   for (const p of programs) { p.path = resolve(dir, `${p.module}.beni`); await writeFile(p.path, p.translation.source); }
-  const dumped = await run(compiler, ['dump','--stage=ownership','--platform=browser-direct','--jobs=1','--diagnostics=json',dir]);
+  const dumped = await run(compiler, ['dump','--stage=ownership',`--platform=${inPlace}`,'--jobs=1','--diagnostics=json',dir]);
   if (dumped.status) {
     await writeFile(resolve(dir,'dump-error.json'), JSON.stringify(dumped,null,2));
     throw Error(`translation failed: ${dir}/dump-error.json`);
   }
   const reports = parseDump(dumped.stdout, programs);
-  const enforced = await run(compiler, ['check','--platform=browser-direct','--no-cache','--jobs=1','--diagnostics=json',dir]);
+  const enforced = await run(compiler, ['check',`--platform=${inPlace}`,'--no-cache','--jobs=1','--diagnostics=json',dir]);
   if (![0,1].includes(enforced.status)) throw Error(`unexpected enforcement exit ${enforced.status}: ${enforced.stderr}`);
   const diagnostics = JSON.parse(enforced.stderr || '[]');
   const errors = diagnostics.filter(d => d.severity === 'error');

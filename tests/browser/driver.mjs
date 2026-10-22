@@ -3,7 +3,7 @@
 // the load and after every step. The corpus walker compares that transcript
 // with the fixture's golden (tests/corpus/README.md, `browser/`).
 //
-//   node driver.mjs --dom=<happy-dom.mjs> <entry.mjs> [<steps>]
+//   node driver.mjs --dom=<happy-dom.mjs> [--server=127.0.0.1:<port> [--wait-handshakes]] <entry.mjs> [<steps>]
 //   node driver.mjs --chrome=<ws://…/devtools/browser/…> <entry.mjs> [<steps>]
 //
 // The first runs the page in Node under happy-dom (the gates); the second in
@@ -154,7 +154,10 @@
 //                               standard's network error
 //   socket <n> open ["<protocol>"]
 //                               the `n`-th WebSocket the page made opens,
-//                               with that subprotocol (default none)
+//                               with that subprotocol (default none). The
+//                               protocol must be one the page offered, and
+//                               a page that offered some must get one: a
+//                               host fails any other handshake
 //   socket <n> message "<text>" the server sends a text message
 //   socket <n> binary <bytes>   the server sends a binary message of that
 //                               many bytes
@@ -165,6 +168,13 @@
 //   socket <n> error-only       the connection fails as WebKit fails one:
 //                               `error`, and no `close`
 //   socket <n> buffered <bytes> set the socket's `bufferedAmount`
+//   socket <n> wait <k>|open|closed
+//                               with `--server` only: give the page what
+//                               the host's socket did, one event at a time
+//                               in order, until the socket has received
+//                               `k` messages in all, has opened, or has
+//                               closed; the next event is waited for in
+//                               real time, 5 s at most
 //   socket blocked              the next `new WebSocket` throws a
 //                               `SecurityError`
 //   sockets                     log `(sockets: <n>)`, the sockets the page
@@ -206,6 +216,21 @@
 // [<protocols>])`, and stays connecting until a `socket` step answers it;
 // what the page sends and closes is logged as it happens.
 //
+// With `--server=127.0.0.1:<port>` (happy-dom only), the page is opened
+// from that address, and its sockets are happy-dom's own `WebSocket`
+// (which wraps the `ws` library), connected to the server there. Node's
+// `WebSocket` (undici) cannot serve: it calls `unref` on what `setTimeout`
+// returns, and the page's virtual clock returns a number, as a browser's
+// does. Each socket is still numbered and logged. What the host's socket
+// does is held, and reaches the page only in a `socket <n> wait` step, in
+// the order it happened, so a step's snapshot never depends on when the
+// server answered. The line of each step the driver has run goes to file
+// descriptor 3, for the serve driver that started the page
+// (`tests/serve/driver.mjs`'s `page` steps). `--wait-handshakes` is a test
+// of that hold: after each step, the driver waits until the host has
+// answered every socket's handshake, and lets the page settle again before
+// the snapshot. Without the hold, the snapshot would then show the open.
+//
 // The page never leaves its document. A navigation it starts to another
 // document — `location.assign`, `replace` or `reload`, a write to
 // `location.href` — is stopped as it starts and logs `(the host leaves the
@@ -238,7 +263,7 @@
 // Chrome runs microtasks between two listeners of a user's click).
 
 import { Console } from "node:console";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { fstatSync, mkdirSync, readFileSync, writeFileSync, writeSync } from "node:fs";
 import { enableCompileCache } from "node:module";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
@@ -492,6 +517,7 @@ function prelude() {
       this.bufferedAmount = 0;
       this.binaryType = "blob";
       this.n = sockets.length + 1;
+      this.offered = list;
       sockets.push(this);
       record.log.push(`(socket ${this.n}: ${socketPath(this.url)}${list.length === 0 ? "" : ` ${JSON.stringify(list)}`})`);
     }
@@ -532,7 +558,107 @@ function prelude() {
       this.dispatchEvent(event);
     }
   }
-  globalThis.WebSocket = ScriptedSocket;
+  // With `--server`, the page's sockets are the host's own, connected to
+  // the server the page was opened from (docs/design/boundary.md §9.11
+  // (l), the page and the server together): each is still numbered and
+  // logged. What the host's socket does — `open`, `message`, `error`,
+  // `close` — is held, in the order it happened, and reaches the page only
+  // in a `socket <n> wait` step, so what a step shows depends on the
+  // script and never on when the server answered. The page sees the
+  // socket's state and `protocol` as of the last event it was given. Its
+  // `bufferedAmount` is the host's at the time the page reads it, so a
+  // golden must not show it (#632).
+  if (globalThis.__beniHostSocket !== undefined) {
+    const Host = globalThis.__beniHostSocket;
+    class RealSocket extends EventTarget {
+      static CONNECTING = 0;
+      static OPEN = 1;
+      static CLOSING = 2;
+      static CLOSED = 3;
+      constructor(url, protocols = []) {
+        super();
+        this.host = new Host(url, protocols);
+        this.n = sockets.length + 1;
+        this.readyState = 0;
+        this.held = [];
+        // Whether the host has answered the handshake, for `--wait-handshakes`.
+        this.answered = false;
+        // What the page was given: the open, the messages, the close.
+        this.opened = false;
+        this.received = 0;
+        this.ended = false;
+        this.dropped = 0;
+        this.chosen = "";
+        sockets.push(this);
+        const list = typeof protocols === "string" ? [protocols] : [...protocols];
+        record.log.push(`(socket ${this.n}: ${socketPath(this.url)}${list.length === 0 ? "" : ` ${JSON.stringify(list)}`})`);
+        for (const type of ["open", "message", "error", "close"]) {
+          this.host.addEventListener(type, (event) => {
+            this.answered = true;
+            this.held.push({ type, data: event.data, code: event.code, reason: event.reason, clean: event.wasClean, protocol: this.host.protocol });
+          });
+        }
+      }
+      get url() {
+        return this.host.url;
+      }
+      get protocol() {
+        return this.chosen;
+      }
+      get extensions() {
+        return this.host.extensions;
+      }
+      get binaryType() {
+        return this.host.binaryType;
+      }
+      set binaryType(type) {
+        this.host.binaryType = type;
+      }
+      get bufferedAmount() {
+        return this.host.bufferedAmount + this.dropped;
+      }
+      // Give the page the next event the host's socket had.
+      deliver() {
+        const held = this.held.shift();
+        const event = new Event(held.type);
+        if (held.type === "open") {
+          this.readyState = 1;
+          this.opened = true;
+          this.chosen = held.protocol;
+        } else if (held.type === "message") {
+          this.received += 1;
+          Object.defineProperty(event, "data", { value: held.data });
+        } else if (held.type === "error") {
+          // The standard closes the socket, then fires `error` and `close`.
+          this.readyState = 3;
+        } else if (held.type === "close") {
+          this.readyState = 3;
+          this.ended = true;
+          Object.defineProperties(event, { code: { value: held.code }, reason: { value: held.reason }, wasClean: { value: held.clean } });
+        }
+        this.dispatchEvent(event);
+      }
+      // As the page sees the socket: a message it sends while it is open
+      // is logged as sent, whether or not the host's socket has closed
+      // under it, which the page learns only from a later event. The host
+      // drops what it can no longer send, as the standard does.
+      send(data) {
+        if (this.readyState === 0) throw new DOMException("Still in CONNECTING state.", "InvalidStateError");
+        const text = String(data);
+        if (this.readyState === 1) record.log.push(`(socket ${this.n} sent: ${JSON.stringify(text)})`);
+        if (this.readyState === 1 && this.host.readyState === 1) this.host.send(data);
+        else this.dropped += new TextEncoder().encode(text).length;
+      }
+      close(code = undefined, reason = undefined) {
+        if (code === undefined) this.host.close();
+        else this.host.close(code, reason);
+        if (this.readyState >= 2) return;
+        record.log.push(`(socket ${this.n} close${code === undefined ? "" : `: ${code} ${JSON.stringify(reason ?? "")}`})`);
+        this.readyState = 2;
+      }
+    }
+    globalThis.WebSocket = RealSocket;
+  } else globalThis.WebSocket = ScriptedSocket;
   // The page's entropy is a fixed sequence (an LCG from 1), so a program
   // that seeds `Random` from `crypto.getRandomValues` is deterministic.
   let entropy = 1;
@@ -901,8 +1027,36 @@ function step(s) {
       return null;
     })();
   }
+  if (s.command === "socket" && s.action === "wait") {
+    // A real socket: give the page what the host's socket did, one event
+    // at a time in the order it happened, each in a task of its own as a
+    // browser fires it, until the socket has opened, has received `count`
+    // messages in all, or has closed. The next event is waited for in real
+    // time, 5 s at most. Then the page settles as after any step.
+    const harness = globalThis.__beniHarness;
+    if (globalThis.__beniHostSocket === undefined) return `\`socket ${s.n} wait\` needs \`--server\`: the socket is scripted`;
+    const socket = harness.sockets[s.n - 1];
+    if (socket === undefined) return `the page made no socket ${s.n}`;
+    const ready = () => (s.until === "open" ? socket.opened : s.until === "closed" ? socket.ended : socket.received >= s.count);
+    const what = s.until === undefined ? `receive ${s.count} messages` : s.until === "open" ? "open" : "close";
+    return new Promise((done) => {
+      let turns = 0;
+      const poll = () => {
+        if (!ready() && socket.held.length !== 0) {
+          socket.deliver();
+          return void harness.clock.real(poll, 0);
+        }
+        if (ready()) return void done(null);
+        if (socket.ended) return void done(`socket ${s.n} closed, and did not ${what}`);
+        if (++turns > 1000) return void done(`socket ${s.n} did not ${what} within 5 s`);
+        harness.clock.real(poll, 5);
+      };
+      poll();
+    });
+  }
   if (s.command === "socket") {
     const harness = globalThis.__beniHarness;
+    if (globalThis.__beniHostSocket !== undefined) return `with \`--server\`, the page's sockets are the host's: only \`socket <n> wait\` reaches them`;
     if (s.selector === "blocked") {
       harness.blockSocket = true;
       return null;
@@ -911,6 +1065,13 @@ function step(s) {
     if (socket === undefined) return `the page made no socket ${s.n}`;
     if (s.action === "open") {
       if (socket.readyState !== 0) return `socket ${s.n} is not connecting`;
+      // A host fails the handshake when the server picks a protocol the
+      // page did not offer, or none when the page offered some (RFC 6455
+      // §4.1, the Fetch standard's "establish a WebSocket connection"), so
+      // a script cannot open a socket so.
+      const offered = JSON.stringify(socket.offered);
+      if (s.text !== undefined && !socket.offered.includes(s.text)) return `socket ${s.n} offered ${offered}, not ${JSON.stringify(s.text)}: a host fails that handshake`;
+      if (s.text === undefined && socket.offered.length !== 0) return `socket ${s.n} offered ${offered}: \`open\` names the one the server picked, since a host fails a handshake that picks none`;
       socket.readyState = 1;
       socket.protocol = s.text ?? "";
       socket.dispatchEvent(new Event("open"));
@@ -1081,6 +1242,32 @@ function step(s) {
     case "mouse":
       target.dispatchEvent(new MouseEvent(s.name, { ...init, button: 0 }));
       return null;
+    // A pointer event at a point of a box: `x` and `y` are CSS pixels from
+    // the top-left corner of the `box:` element (by default the element the
+    // event is dispatched on), so its `clientX` is that box's left plus `x`.
+    // happy-dom has no layout and puts every box at 0; Chrome lays the page
+    // out, so only Chrome shows the conversion. `pointerenter` and
+    // `pointerleave` neither bubble nor cancel, and nor does
+    // `pointercancel`, as the Pointer Events standard fires them.
+    case "pointer": {
+      const box = s.box === undefined ? target : document.querySelector(s.box);
+      if (box === null) return `no element matches \`${s.box}\``;
+      const r = box.getBoundingClientRect();
+      const bubbles = s.name !== "pointerenter" && s.name !== "pointerleave";
+      const cancelable = s.name === "pointerdown" || s.name === "pointermove" || s.name === "pointerup" || s.name === "pointerover" || s.name === "pointerout";
+      const event = new PointerEvent(s.name, {
+        bubbles,
+        cancelable,
+        composed: bubbles,
+        clientX: r.left + s.x,
+        clientY: r.top + s.y,
+        pointerId: s.id,
+        pointerType: s.type,
+        isPrimary: s.primary,
+      });
+      if (!target.dispatchEvent(event)) globalThis.__beniHarness.log.push(`(${s.name}'s default prevented)`);
+      return null;
+    }
     // A drag event is a MouseEvent (DragEvent extends it), so both DOMs
     // dispatch the same object; nothing here carries a `dataTransfer`.
     // `dragleave` and `dragend` are not cancelable, as the HTML standard's
@@ -1179,6 +1366,20 @@ async function settle() {
     await turn();
   }
   return true;
+}
+
+// `--wait-handshakes`'s wait: in real time, 5 s at most, until the host has
+// answered the handshake of every socket the page made.
+function handshakes() {
+  const record = globalThis.__beniHarness;
+  return new Promise((done) => {
+    let turns = 0;
+    const poll = () => {
+      if (record.sockets.every((socket) => socket.answered) || ++turns > 1000) return void done(null);
+      record.clock.real(poll, 5);
+    };
+    poll();
+  });
 }
 
 // A `--fiber-page`'s test hook, set before the program loads: a
@@ -1342,7 +1543,7 @@ function serialise(also) {
 
 const usage = (why) => {
   process.stderr.write(
-    `driver: ${why}\nusage: node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) <entry.mjs> [<steps>]\n` +
+    `driver: ${why}\nusage: node driver.mjs (--dom=<happy-dom.mjs> [--server=127.0.0.1:<port> [--wait-handshakes]] | --chrome=<ws url>) <entry.mjs> [<steps>]\n` +
       `       node driver.mjs (--dom=<happy-dom.mjs> | --chrome=<ws url>) [--steps=<steps>] (--page | --fiber-page | --fuzz)=<entry.mjs | spec.json>@<report.json>…\n`,
   );
   process.exit(2);
@@ -1359,10 +1560,11 @@ const options = {};
 const positional = [];
 const pages = [];
 for (const arg of process.argv.slice(2)) {
-  const m = arg.match(/^--(dom|chrome|steps|parser)=(.+)$/);
+  const m = arg.match(/^--(dom|chrome|steps|parser|server)=(.+)$/);
   const p = arg.match(/^--(page|fiber-page|fuzz)=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
   else if (arg === "--no-comments") comments = false;
+  else if (arg === "--wait-handshakes") options.waitHandshakes = true;
   else if (p) pages.push({ entry: p[2], report: p[3], fiber: p[1] === "fiber-page", fuzz: p[1] === "fuzz" });
   else if (arg.startsWith("--")) usage(`unknown option ${arg}`);
   else positional.push(arg);
@@ -1371,6 +1573,23 @@ if (pages.length === 0 && (positional.length < 1 || positional.length > 2)) usag
 if (pages.length !== 0 && positional.length !== 0) usage("--page takes the place of the entry and steps files");
 if ((options.dom === undefined) === (options.chrome === undefined)) usage("give exactly one of --dom and --chrome");
 if (options.parser !== undefined && options.dom === undefined) usage("--parser goes with --dom: Chrome parses as the standard does");
+if (options.server !== undefined && (options.dom === undefined || !/^127\.0\.0\.1:[0-9]+$/.test(options.server))) usage("--server goes with --dom, and is 127.0.0.1:<port>");
+if (options.waitHandshakes && options.server === undefined) usage("--wait-handshakes goes with --server");
+// With `--server`, the line of each step goes to file descriptor 3, which
+// the serve driver's `page` step opens. When the caller did not open it,
+// Node's own event loop may hold that number (an epoll descriptor on
+// Linux), so it must also be something a line can be written to.
+if (options.server !== undefined) {
+  let three = null;
+  try {
+    three = fstatSync(3);
+  } catch (error) {
+    if (error.code !== "EBADF") throw error;
+  }
+  if (three === null || !(three.isFIFO() || three.isSocket() || three.isFile() || three.isCharacterDevice())) {
+    usage("--server writes the line of each step to file descriptor 3, and the caller did not open it: the serve driver's `page` step does");
+  }
+}
 if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: false });
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
@@ -1517,7 +1736,7 @@ if (stepsPath !== undefined) {
       if (selector === "blocked") {
         if (argument !== undefined) usage(`${where}: \`socket blocked\` takes nothing more`);
       } else {
-        const a = (argument ?? "").match(/^(open|message|binary|buffered|close|fail|error-only)(?:\s+(.*))?$/);
+        const a = (argument ?? "").match(/^(open|message|binary|buffered|close|fail|error-only|wait)(?:\s+(.*))?$/);
         if (!/^[1-9][0-9]*$/.test(selector) || a === null) {
           usage(`${where}: \`socket\` takes \`blocked\`, or a socket's number and \`open\`, \`message\`, \`binary\`, \`buffered\`, \`close\`, \`fail\` or \`error-only\``);
         }
@@ -1547,6 +1766,10 @@ if (stepsPath !== undefined) {
           if (c === null) usage(`${where}: \`socket <n> close\` takes a code and the reason as a JSON string`);
           s.code = Number(c[1]);
           s.text = JSON.parse(c[2]);
+        } else if (s.action === "wait") {
+          if (/^[0-9]+$/.test(rest ?? "")) s.count = Number(rest);
+          else if (rest === "open" || rest === "closed") s.until = rest;
+          else usage(`${where}: \`socket <n> wait\` takes a number of messages, \`open\` or \`closed\``);
         } else if (rest !== undefined) usage(`${where}: \`socket <n> ${s.action}\` takes nothing more`);
       }
     } else if (command === "flush") {
@@ -1575,6 +1798,32 @@ if (stepsPath !== undefined) {
     } else if (command === "mouse") {
       if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
       s.name = argument;
+    } else if (command === "pointer") {
+      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]`;
+      // `type:none` is a `pointerType` of "", a device the browser cannot name.
+      const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
+      const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout"];
+      if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\``);
+      s.name = words[0];
+      s.x = 0;
+      s.y = 0;
+      s.id = 1;
+      s.type = "mouse";
+      s.primary = true;
+      let rest = words.slice(1);
+      if (rest.length >= 2 && /^-?[0-9]+(\.[0-9]+)?$/.test(rest[0]) && /^-?[0-9]+(\.[0-9]+)?$/.test(rest[1])) {
+        s.x = Number(rest[0]);
+        s.y = Number(rest[1]);
+        rest = rest.slice(2);
+      }
+      if (rest.length >= 1 && /^-?[0-9]+(\.[0-9]+)?$/.test(rest[0])) usage(`${where}: \`pointer\` takes the point as two numbers, \`<x> <y>\``);
+      for (const w of rest) {
+        if (/^id:-?[0-9]+$/.test(w)) s.id = Number(w.slice("id:".length));
+        else if (/^type:(mouse|pen|touch|none)$/.test(w)) s.type = w === "type:none" ? "" : w.slice("type:".length);
+        else if (w === "secondary") s.primary = false;
+        else if (/^box:\S+$/.test(w)) s.box = w.slice("box:".length);
+        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\` or \`box:<selector>\` after the name, not \`${w}\``);
+      }
     } else if (command === "drag") {
       if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
       s.name = argument;
@@ -1680,6 +1929,7 @@ async function happyDomPage(domPath) {
     globalThis[method] = window[method].bind(window);
   }
   if (options.parser !== undefined) await standardParsing(options.parser);
+  globalThis.__beniHostSocket = options.server === undefined ? undefined : window.WebSocket;
   prelude();
   // What escapes to Node rather than to the page's `error` event — a
   // microtask that threw — is an uncaught exception of the page all the
@@ -1817,7 +2067,7 @@ async function runPage(entry, fiber) {
   // A script that begins with `file` opens the page from a file.
   fromFile = script.length !== 0 && script[0].command === "file";
   if (fromFile) transcript.push(`-- ${script.shift().line}`);
-  pageUrl = fromFile ? "file:///_page.html" : "http://127.0.0.1:8000/_page.html";
+  pageUrl = fromFile ? "file:///_page.html" : `http://${options.server ?? "127.0.0.1:8000"}/_page.html`;
   entryUrl = pathToFileURL(entryFile).href;
   const page = options.dom !== undefined ? await happyDomPage(options.dom) : await chromePage(options.chrome);
   // The test hook goes in before anything of the program runs.
@@ -1839,7 +2089,14 @@ async function runPage(entry, fiber) {
   const phase = async (title, act, throws = false) => {
     transcript.push(`-- ${title}`);
     const fault = await act();
-    const settled = await page.run(settle);
+    let settled = await page.run(settle);
+    // `--wait-handshakes`: the host answers the handshake of every socket
+    // before the snapshot, and the page settles again. The answer is held
+    // all the same, so the page shows it only in a `socket <n> wait` step.
+    if (settled && options.waitHandshakes) {
+      await page.run(handshakes);
+      settled = await page.run(settle);
+    }
     const { log, errors } = await page.run(drain);
     transcript.push(...log);
     // A page that did not settle fails its step, `throws` or not: the cap's
@@ -1865,6 +2122,11 @@ async function runPage(entry, fiber) {
     const dom = await page.run(serialise);
     transcript.push(dom === shown ? "(the DOM did not change)" : dom);
     shown = dom;
+    // With `--server`, the serve driver that started this page learns that
+    // the step has run, from file descriptor 3, so that its next step
+    // reaches the page only after this one (`tests/serve/driver.mjs`'s
+    // `page-wait`).
+    if (options.server !== undefined) writeSync(3, `${title}\n`);
     return true;
   };
 

@@ -2306,6 +2306,10 @@ and the outside-any-fiber record the same four:
 | **log context** | the annotations, the log spans, the minimum level and a sink override (§17.11), and the current trace span | none, none, `Info`, none, none | `Log`, `Trace` |
 | **random seed** | `Maybe` a seed of core's `Random.Pcg` | `Nothing` | `retry`/`repeat`'s jitter (§17.8); `Random.withSeed` and the platforms' `Random.value` (P9) |
 
+*Amended 2026-10-21 (#551):* the log context's default minimum is none, not `Info`. A context with
+no minimum of its own reads the program's minimum when a line is written. `Log.setMinimum` sets
+it, and it is `Info` until a call (§17.11, amended the same day).
+
 **Inheritance.** A fiber started by `spawn`, `spawnIn`, `spawnDetached` or a combinator of §17.7
 copies its starter's four fields **by reference** at the start — Effect's fork copies the parent's
 context the same way. A fiber `Task.start` makes (a platform's root) gets the defaults. Every slot
@@ -2870,6 +2874,7 @@ pub type alias Entry =
     time : Int                               -- epoch milliseconds, from the fiber's clock
 pub withSink : sync (Entry → ⊤), (⊤ → a) → a
 pub setSink : sync (Entry → ⊤) → ⊤     -- impure; for a platform
+pub setMinimum : Level → ⊤             -- impure; program-wide (added 2026-10-21, below)
 pub logfmt : Entry → String
 
 -- core/Trace.beni
@@ -2979,6 +2984,18 @@ three are taken from the Effect source that the section cites. The fourth is ben
 - **A time outside the range of a JavaScript `Date`**, ±8.64 × 10¹⁵ ms, is written as the nearest
   end of that range. `toISOString` throws for such a time, and a virtual clock can read any `Int`
   (§17.1 item 4). A time that is not a number, which `round (0 / 0)` can make, is written `NaN`.
+
+*Amended 2026-10-21 (#551; the owner, Cesar, dashboard `node-log-q3`): the program's minimum.*
+**`Log.setMinimum level`** sets the program's default minimum: the minimum of every log context
+that no `Log.minimum` changed, in every fiber, the ones a platform's runtime starts included. It is
+program-wide and the last call wins, as `setSink` is; it is `impure`. Under `Browser.programs`
+the programs of a page share one cell, as they share `setSink`'s. `Log.minimum level work`
+still sets the minimum for `work` and the fibers it starts, over the program's. Until a call, the
+program's minimum is `Info`, so nothing changes for a program that never calls it. So a log
+context's minimum is its own when `Log.minimum` set one, and else the program's; a call reads the
+slot and, when the context has no minimum of its own, the program's cell, and below the minimum it
+still builds nothing. Effect's counterpart is the `MinimumLogLevel` reference set for a whole
+runtime (`References.ts:349`).
 
 ### 17.12 Choices this section made, for the owner to see
 

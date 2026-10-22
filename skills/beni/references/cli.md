@@ -74,6 +74,9 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 | `skill install --link` | write a symlink to the installed folder instead of a copy |
 | `skill install --force` | replace a beni skill that is already at `<dir>/beni`; anything else is refused |
 
+The ownership dump shows where a field is read before a record write, and where a closure
+reads a field it captures. Each location uses source line and column numbers.
+
 ## Migration flags that a diagnostic names
 
 `beni help` does not list these. A diagnostic about an old spelling names the one that rewrites a
@@ -100,4 +103,4 @@ beni build --release
 beni dump --stage=interface --platform=node src/Main.beni
 ```
 
-Sources: `docs/design/frontend.md` §1, §10, §12; `src/Cli.zig`'s usage text.
+Sources: `docs/design/frontend.md` §1, §10, §12; `docs/design/ownership-checker.md` §31.10; `src/Cli.zig`'s usage text.

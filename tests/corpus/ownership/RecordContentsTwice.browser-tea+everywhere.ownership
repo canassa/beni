@@ -9,7 +9,7 @@ module RecordContentsTwice
   53:5 entry RecordContentsTwice.update model.rows: accepted entry
   53:5 update entry RecordContentsTwice.update model: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (approx) [copy]
   53:5 update entry RecordContentsTwice.update model.rows[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (approx) [copy]
-  summary update: π2 RAW{rows}, π2.rows RAW, π2.rows[*] RW{done}; res .0 π2 π2◦, .0.rows fresh1r{excl π2.rows} π2.rows{lost}r{lost}, .0.rows[*] ~fresh2r{excl π2.rows} ~fresh501◦ ~π2.rows[*] ~π2.rows[*]◦, .1#Cmd.0 shared(Cmd.none)#Cmd.0; rxreq excl π2.rows
+  summary update: π2 RAW{rows}, π2.rows RAW[storage], π2.rows[*] RW{done}; res .0 π2 π2◦, .0.rows fresh1r{excl π2.rows} π2.rows{lost}r{lost}, .0.rows[*] ~condition(fresh2) ~fresh2r{excl π2.rows} ~fresh501◦ ~π2.rows[*] ~π2.rows[*]◦, .1#Cmd.0 shared(Cmd.none)#Cmd.0; rxreq excl π2.rows
   summary view: res ⟨render⟩ fresh1{lost}r{lost}
   demands 3: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
   records 7: accepted 5, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

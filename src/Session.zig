@@ -71,6 +71,7 @@ const CacheDir = @import("cache/Dir.zig");
 const Digest = @import("cache/Digest.zig");
 const entry_bytes = @import("cache/entry_bytes.zig");
 const CacheEntry = @import("cache/Entry.zig");
+const Hoists = @import("own/Hoists.zig");
 const dispatch_bytes = @import("cache/dispatch_bytes.zig");
 const schema_plan_bytes = @import("cache/schema_plan_bytes.zig");
 const type_keys_bytes = @import("cache/type_keys_bytes.zig");
@@ -2222,6 +2223,12 @@ fn checkSerial(session: *Session) RunError!void {
     // checker itself on the worker that took the module, with `constrain`,
     // `solve` and `exhaustive` nested inside each.
     session.checked = try runCheckOnBigStack(session, quiet, cached, &cutoff);
+    // Move installed facts before the cache entries are freed. Fresh modules'
+    // slots are filled by the ownership pass below, without rewriting BIR.
+    for (cached, 0..) |*slot, i| if (slot.*) |*l| {
+        session.checked.hoists[i] = l.hoists;
+        l.hoists = .empty;
+    };
     // The three counters a warm-rebuild claim is made of (`fast-compiler.md`
     // §8). They are summed from the per-module flags the workers set, because
     // the decision is now theirs: there is no serial load pass left to count.
@@ -2414,6 +2421,8 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
     const diagnostics = try entry_bytes.writeDiagnostics(gpa, rows.items);
     defer gpa.free(diagnostics);
 
+    const hoists = try Hoists.write(gpa, session.checked.hoists[m.int()]);
+    defer gpa.free(hoists);
     return entry_bytes.write(gpa, .{
         .key = session.keys.of(m),
         .interface = record,
@@ -2422,6 +2431,7 @@ fn entryBytes(session: *Session, gpa: Allocator, m: Graph.Index) Allocator.Error
         .diagnostics = diagnostics,
         .ownership = if (m.int() < session.ownership_blocks.len) session.ownership_blocks[m.int()] orelse &.{} else &.{},
         .type_keys = keys,
+        .hoists = hoists,
     });
 }
 
@@ -3019,6 +3029,10 @@ pub const LateItem = struct {
     /// not in a beni source file. `file` and `token` are ignored when this
     /// is set. Borrowed for the call, like `message`.
     at: ?At = null,
+    /// An error, unless the code is a `warning` the late phase emits
+    /// (`exports_ignored`, `boundary.md` §5.2): a warning never changes
+    /// the exit code or what is written.
+    severity: diagnostic.Severity = .@"error",
 };
 
 /// A place in a file the `SourceStore` does not hold: a sibling `.js`
@@ -3103,7 +3117,7 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
         late_messages.appendAssumeCapacity(try wrap.reflow(gpa, item.message));
         slot.* = .{
             .code = item.code,
-            .severity = .@"error",
+            .severity = item.severity,
             .span = .{
                 .file = if (item.at) |at| at.path else session.store.path(item.file),
                 .start = start,

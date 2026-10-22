@@ -1,0 +1,14 @@
+import Validators exposing (Validation, Valid, Invalid)
+
+
+pub fresh : ⊤ → List Int
+fresh ⊤ =
+    case (Validators.firstOf [ λ⊤ → Valid, λ⊤ → Invalid [ 1 ] ]) ⊤ of
+        Invalid xs →
+            List.push xs 2
+        Valid →
+            []
+
+
+pub handOn : ⊤ → List Int
+handOn = Validators.unknown ⊤

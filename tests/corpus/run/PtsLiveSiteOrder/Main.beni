@@ -1,0 +1,22 @@
+-- #658: a schema result and record update retain live sites beside top.
+-- The shuffled fact-3 check must compare their mapped set, not numeric order.
+import Node
+import Schema
+
+
+schema Model =
+    cups : Int
+
+
+parse : String → String
+parse text =
+    case Schema.parse (Model.schema ⊤) text of
+        Ok model →
+            changed = { model | cups = model.cups + 1 }
+            String.fromInt changed.cups
+        Err _ →
+            "invalid"
+
+
+main : Node.Program
+main = Node.print (parse "{\"cups\":2}")

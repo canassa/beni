@@ -1,0 +1,29 @@
+module RecordHoistChannel
+  4:9 update p: accepted param [hoisted 1]
+  11:21 update p: accepted param [hoisted 1]
+  17:13 update p: accepted param
+  22:9 update p: accepted param (RecordHoistChannel.shift writes it) [hoisted 1]
+  30:9 update p: accepted param [hoisted 1]
+  38:9 update p: accepted param [hoisted 1]
+  46:9 update p: accepted param [hoisted 1]
+  47:12 update q: accepted param [hoisted 1]
+  55:9 update p: accepted param
+  hoist p.x: read 5:12; after operands 4:9
+  hoist p.x: read 12:12; before 11:5
+  hoist p.x: read 23:12; before 22:9
+  hoist before.x: read 31:13; after operands 30:9
+  hoist p.x: read 39:17; after operands 38:9
+  hoist p.x: read 48:15; after operands 46:9
+  capture p.a.b.c.d.e.f.g.h.i.j: read 54:35; before 54:11
+  summary old: π1 W{x}, π1.x R
+  summary joined: π1 W{x}, π1.x R
+  summary shift: π1 W{x}; res π1◦
+  summary called: π1 RW{x}, π1.x R
+  summary aliased: π1 RW{x}, π1.x R
+  summary captured: π1 W{x}, π1.x R
+  summary twice: π1 W{x}, π1.x R
+  summary deep: π1 W{a}, π1.a.b.c.d.e.f.g.h R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 9: accepted 9, pending 0, rejected 0 (copy 0, restructure 0); hoisted 7, eager reads 2
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 9: accepted 9, pending 0, rejected 0 (copy 0, restructure 0); hoisted 7, eager reads 2

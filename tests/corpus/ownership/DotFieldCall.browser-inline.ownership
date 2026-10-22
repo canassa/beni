@@ -7,10 +7,10 @@ module DotFieldCall
   52:15 List.push <call>: accepted call
   64:21 value <lambda>: rejected need: DotFieldCall.extDotted edits what it returns, which may be a list it does not own
   68:21 value <lambda>: rejected need: DotFieldCall.extParens edits what it returns, which may be a list it does not own
-  summary dottedLater: π1.items RAW, π1.items[*] RA, π1.load R; res .0 π1.items, .0[*] ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1
-  summary parensLater: π1.items RAW, π1.items[*] RA, π1.load R; res .0 π1.items, .0[*] ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1
-  summary dottedCaptured: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
-  summary parensCaptured: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
+  summary dottedLater: π1.items RAW[storage], π1.items[*] RA, π1.load R; res .0 condition(fresh2) π1.items, .0[*] ~condition(fresh3) ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)} ~condition(fresh4), condition(fresh1){sep π1.items cb(π1.load), sep π1.items[*] cb(π1.load)}; π1.load calls ≤1
+  summary parensLater: π1.items RAW[storage], π1.items[*] RA, π1.load R; res .0 condition(fresh2) π1.items, .0[*] ~condition(fresh3) ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)} ~condition(fresh4), condition(fresh1){sep π1.items cb(π1.load), sep π1.items[*] cb(π1.load)}; π1.load calls ≤1
+  summary dottedCaptured: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary parensCaptured: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
   summary extDotted: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}r{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
   summary extParens: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}r{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
   summary extDottedFresh: res [*] ~fresh2, fresh1

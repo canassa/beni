@@ -2107,7 +2107,7 @@ theorem link_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
 
 end Ownership.FlatFragment.Chain
 
-/-! the remaining primitives on flat integer lists under the generic flat
+/-! four more primitives on flat integer lists under the generic flat
 relation. `at` reads an element, or the fallback, and both runtimes record
 the read; `set` is a counted write like a push, unchanged for a negative or
 out-of-range index; `copy` allocates a copy at the real address, like a

@@ -1,0 +1,39 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <button id="raise">"raise"</button>
+    <button id="lower">"lower"</button>
+    <p>"0"</p>
+  </main>
+</body>
+-- click #go
+console.debug: a debug line in update
+console.debug: a debug line from a command
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <button id="raise">"raise"</button>
+    <button id="lower">"lower"</button>
+    <p>"1"</p>
+  </main>
+</body>
+-- click #raise
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <button id="raise">"raise"</button>
+    <button id="lower">"lower"</button>
+    <p>"2"</p>
+  </main>
+</body>
+-- click #lower
+console.debug: a debug line made under Error, run under Debug
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <button id="raise">"raise"</button>
+    <button id="lower">"lower"</button>
+    <p>"3"</p>
+  </main>
+</body>

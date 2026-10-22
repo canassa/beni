@@ -11,11 +11,8 @@
 //!     a tree as deep as the parser allows run here;
 //!   - the WebAssembly one, `zig-out/wasm/bin/beni.wasm`, run by
 //!     `tests/wasm/beni.mjs` on the playground's own WASI host. Its
-//!     self-hosted build spends about 3 billion instructions on a small
-//!     program, so it runs the two smallest scenarios, each a test of its
-//!     own with a budget of its own (`wasm_budget_millions`); `zig build
-//!     test-playground`, in CI on every pull request, runs the shipped
-//!     `.wasm` on the corpus.
+//!     two smallest scenarios run in the gates; `zig build test-playground`,
+//!     in CI on every pull request, runs the shipped `.wasm` on the corpus.
 //!
 //! The threaded compiler runs with `--jobs=8`, and so does the other: a
 //! build with no threads takes it as 1 (§10), and the flag must change
@@ -37,29 +34,6 @@ fn single(w: *World) ![]const u8 {
 /// The WebAssembly compiler; every run of this file has one.
 fn wasmCompiler(w: *World) ![]const u8 {
     return wasm.wasmPath(w.arena.allocator()) orelse error.NoWasmCompiler;
-}
-
-/// The budget of the two tests that run the `.wasm`, in millions of
-/// instructions: a grant of their own (CLAUDE.md, *Every test has a
-/// budget*), decided by Jayson Reis on 2026-10-15 (dashboard question
-/// `wasm-playground-q5`) and granted by Cesar on 2026-10-15 (dashboard
-/// question `wasm-playground-q7`). Most of their cost is fixed: Node, V8's compile of
-/// the self-hosted build's 18 MB code section, and that build's slow start
-/// on the embedded core and platforms. A one-line program costs 92% of
-/// what `run/Adt` costs, so no smaller input reduces it, and under the
-/// gates' 4 300M the margin was 17%. The limit is 1.63 times the largest
-/// count (3 681M, the printing program with its profile, 2026-10-15), so an
-/// unrelated growth of a fifth still fits. The grant covers the whole test
-/// body: the `.wasm` run, and the native run and the comparison beside it.
-/// It can go when the gates' `.wasm` is an LLVM build, about a third of the
-/// count. `zig build test-playground`, in CI on every pull request, compares
-/// the shipped `.wasm` on the whole corpus.
-const wasm_budget_millions = 6_000;
-
-/// Run `body` held to `wasm_budget_millions` instead of the gates' budget
-/// (`world.withOwnBudget`).
-fn withWasmBudget(comptime body: fn () anyerror!void) !void {
-    try world.withOwnBudget("the .wasm tests", wasm_budget_millions, body);
 }
 
 /// A project of four clean modules in `app/`, over three directories, so the
@@ -176,7 +150,7 @@ fn expectBuilds(builds: []const []const []const u8) !void {
 // A project, a printing program, a `browser-inline` page and TodoMVC, in
 // both modes: emit's pool and the writes, and the ownership pass of an
 // in-place platform and under `--ownership-everywhere`. Three tests, each
-// under the budget.
+// to keep each assertion focused.
 
 test "a build with no threads builds a project and a printing program as the threaded build does" {
     try expectBuilds(&.{
@@ -245,7 +219,7 @@ test "a build with no threads walks a tree as deep as the parser allows on its m
 }
 
 test "the WebAssembly compiler builds a printing program as the native compiler does" {
-    try withWasmBudget(buildsPrintingProgram);
+    try buildsPrintingProgram();
 }
 
 fn buildsPrintingProgram() !void {
@@ -282,7 +256,7 @@ fn buildsPrintingProgram() !void {
 }
 
 test "the WebAssembly compiler reports diagnostics as the native compiler does" {
-    try withWasmBudget(reportsDiagnostics);
+    try reportsDiagnostics();
 }
 
 fn reportsDiagnostics() !void {

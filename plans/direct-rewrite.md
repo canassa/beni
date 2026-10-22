@@ -211,6 +211,10 @@ order of the gaps by bytes, with the boundary first because every scenario dispa
   - **An arm that reads its message whole** builds that message in that arm only.
   - **Handlers** live at the program site, measured against tea-inline's in-widget handlers.
   - **The "Depends on" line above is wrong:** the checker does not judge records (#315).
+- *Amended 2026-10-22 (the owner, #668):* the cross-module-reader and handler bullets above are
+  reversed. Each root's code is one closure that writes its slice in place, bindings are grouped by
+  field, and readers register once at mount. This is `browser-inline.md` §8.4's amendment of the
+  same day. It is built after #315 R4–R7. Until then the S1 output stays as built.
 
 ### S2 — keyed rows
 

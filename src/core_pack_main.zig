@@ -387,6 +387,8 @@ const Maker = struct {
         defer overlay.deinit(mk.gpa);
         var lowered = Lower.lower(mk.gpa, mk.scratch, &overlay, .{
             .bir = bir,
+            .birs = mk.birs,
+            .provenance = session.resolution.provenance,
             .token_starts = session.artifacts.spans(file).starts,
             .module = m,
             .graph = &session.graph,

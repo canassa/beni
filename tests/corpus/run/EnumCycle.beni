@@ -1,0 +1,65 @@
+-- Literal cases in value position: every edge and the default, lazy leaves,
+-- and an effectful scrutinee evaluated once even when a later test wins.
+import Debug
+import Node exposing (Program)
+import String
+
+
+cycle : String → String
+cycle season =
+    { next =
+        case Debug.log "scrutinee" season of
+            "Sunny" →
+                Debug.log "leaf" "Cloudy"
+            "Cloudy" →
+                Debug.log "leaf" "Rainy"
+            "Rainy" →
+                Debug.log "leaf" "Windy"
+            _ →
+                Debug.log "leaf" "Sunny"
+    }.next
+
+
+number : Int → Int
+number n =
+    { next =
+        case n of
+            -1 →
+                10
+            0 →
+                20
+            1 →
+                30
+            _ →
+                40
+    }.next
+
+
+letter : Char → String
+letter c =
+    { next =
+        case c of
+            'a' →
+                "first"
+            'z' →
+                "last"
+            _ →
+                "middle"
+    }.next
+
+
+main : Program
+main =
+    Node.printLines
+        [ cycle "Sunny"
+        , cycle "Cloudy"
+        , cycle "Rainy"
+        , cycle "Windy"
+        , String.fromInt (number (-1))
+        , String.fromInt (number 0)
+        , String.fromInt (number 1)
+        , String.fromInt (number 2)
+        , letter 'a'
+        , letter 'z'
+        , letter 'm'
+        ]

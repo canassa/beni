@@ -1,0 +1,1 @@
+{ "name": "invalid-entry-export", "exports": ["Arena", "default", "1up", "Arena", "a-b"] }

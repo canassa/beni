@@ -1,5 +1,12 @@
 # Referee report, round 2: "Edit in Place or Not at All" (revised)
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Reviewed:** the LaTeX sources in `docs/thesis/ownership/` at commit `7e37a0472` on branch
 `research/71-ownership-checker-thesis` (worktree `agent-af6abce79d461e41e`), and the 99-page PDF for
 presentation. The PDF has no unresolved references.

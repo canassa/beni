@@ -1,5 +1,12 @@
 # Checker findings — the bug catalogue for the rewrite
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 Written 2026-09-24 against `master` = `7427828`. This is the input to the ground-up rewrite of the
 type checker ([`docs/design/checker-v2.md`](../docs/design/checker-v2.md) is the architecture,
 [`checker-rewrite.md`](checker-rewrite.md) the slice plan, queue row 78 the tracker).
@@ -6148,6 +6155,10 @@ are under `tests/pending/{emit/release,browser,build/bad}/inline/`, written befo
 slice from tea-inline's output and the brief's hand-written targets (`plans/inline-s1/`);
 each moves into `tests/corpus/` with the commit that passes it.
 
+The enum-cycle golden moved on 2026-10-22 (#652): release lowers flat literal
+value cases to conditional chains, allowing the cross-module update arm piece
+to fuse into its handler. The other pending shapes remain tracked here.
+
 ## CK-254 — a parameter's folded levels are not checked (2026-10-18)
 
 Ownership soundness, issue #286 (`paramHole`, found in the review of #341). A
@@ -6239,3 +6250,18 @@ domain takes a taken element to be apart from its container's elements
 (`sepCells`), and the record domain copies the rule (`rsepCells`), so `mark`'s
 write is accepted. `tests/pending/ownership/RecordSplitPushBack.beni`, red until
 #419's fix, which changes both domains.
+
+
+## CK-265 — approximate projections hide an alias at two recursive levels (2026-10-19)
+
+**Issue:** #456. **Fixed:** #665. **Fixture:** `tests/corpus/ownership/ApproximateAliasLevels.beni`.
+
+Projecting `ee` through `wrap`, then storing that alias beside `ee` at another
+recursive level, made two simultaneous occurrences appear to be approximate
+views of one occurrence. The constructor-alias and helper routes had the same
+hole. Value-scoped construction conditions now retain the separation obligation
+through placement, folding, projection and summaries. Discarding an unused
+alias-bearing subtree restores exclusivity (`ConstructorDiscardedAlias`).
+The rejected `restMayBeEmpty` tightening is not part of the fix; ValuePath and
+EntryInvariantCommand remain accepted. The approximate-copy assumption in #447
+is withdrawn, rather than asserted as an invariant.

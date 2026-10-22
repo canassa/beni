@@ -1,0 +1,4 @@
+pointer #arena pointermove 12 34
+# The dot is the target and the arena has the handler.
+pointer #dot pointermove 55 25 box:#arena
+pointer #arena pointerdown 100 50 id:7 type:touch

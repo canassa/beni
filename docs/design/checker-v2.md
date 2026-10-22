@@ -5979,6 +5979,19 @@ own their `extra` buffer through the session allocator.
 
 ## 36. Amendment of 2026-10-20: the type-key artifact
 
+**Amended 2026-10-22: record field sets for release colouring.** The artifact
+also carries `records` (field range and open-row bit) and `record_labels`.
+Before freeing a keyed module's store, walk every union-find root and flatten
+every record's row, independently of the types of its field values. An open
+row marks all its known fields conservative. Sort row sets by field text
+and the open-row bit, and deduplicate them before persisting; a store variable's
+allocation order is not part of the artifact. These facts include schema
+endpoints, constructor payloads, nested rows and instantiations. Modules
+without an artifact (embedded core and platforms) use conservative BIR facts
+in the backend (backend §9, amendment of 2026-10-22). The `type_keys` byte
+section is version 2, adding the two columns; version 1 is a cache miss.
+Development and release builds write the same facts.
+
 *The owner's decisions of 2026-10-20, D1 and D2 in its safe form (`plans/type-directed-points-to.md`
 §3); the contract is `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type filtering of fact
 3*, and `boundary.md` §4.2's amendment of the same day. Slice 2 of the plan, issue #489.* The
@@ -5991,7 +6004,10 @@ emits, and lowering does not read it yet (slice 3).
 `Check.type_keys`:
 
 ```zig
+pub const Record = struct { fields: Range, open: bool };
 pub const Artifact = struct {
+    records: []const Record,        // all record rows, including open ones
+    record_labels: []const Symbol,  // every row's labels, sorted by text
     nodes: []const KeyNode,         // the module's canonical closed types
     args: []const TypeKey,          // every node's children; never wild
     labels: []const Symbol,         // every record node's field labels
@@ -6070,7 +6086,7 @@ keeps its store (`Context.inst_type`).
 instructions, then the wild set's sources, each in index order, a record's fields visited and
 written in text order (§17): the artifact is a function of the module's source and its imports'
 interfaces, which the entry's key already pins. It is the cache entry's sixth section, `type_keys`
-(`cache/type_keys_bytes.zig`, format 1: nodes of 16 bytes, keys and labels of 4, instruction rows of
+(`cache/type_keys_bytes.zig`, format 1 (amended 2026-10-22: format 2 adds record-row sets): nodes of 16 bytes, keys and labels of 4, instruction rows of
 12, `type_refs` and `strings` as `dispatch_bytes` writes them), empty for an artifact with no key;
 `entry_bytes` goes 11 → 12, so an older entry is a miss. The keys are made on every build, not only
 under `--release`: `--release` is not a term of the entry's key, so keys made only for a release
@@ -6085,3 +6101,45 @@ keys prints `every key wild`. `dump --stage=raw` marks a crossing quantifier `cr
 `check --type-keys` prints the typekeys dump for every source module, which is how
 `tests/blackbox/cache_test.zig` asserts that a module installed from the cache keys as a fresh
 check does. The corpus is `tests/corpus/typekeys/`.
+
+## 37. Ordered dictionary key restriction (specified 2026-10-22)
+
+*Specifies the owner's 2026-10-17 decision (#294). Amends the key constraints
+of core Dict and Set; `language.md` §6.8 owns the language rule, and
+`fast-compiler.md` §3.1 records the change to its closed constraint set.*
+
+A use of core's nominal `Dict k v` or `Set k` constrains `k` to Int or String.
+Identify these types by core package/type identity, never by a user's module
+name. Alias expansion preserves the obligation. It applies at type formation,
+including a type that appears only in an annotation, not just at a call of an
+insertion function. A foreign Dict's opaque body does not hide this obligation.
+
+The obligation follows a variable through unification, substitution,
+annotation checking, local and top-level generalisation, instantiation,
+imported schemes and cached interfaces. Type constructors whose parameters
+flow into a dictionary key carry that restriction on their corresponding
+arguments too; an opaque wrapper or a constructor reference must not erase it.
+A generic signature such as `Dict k v, k → Maybe v` remains generic, with `k`
+restricted. Its user need not write a new clause or supply a comparator.
+
+This is a closed membership check of the resolved scalar head. It is
+independent of `eq`/`compare` dispatch and requires no recursive structural
+membership walk during unification. Intersect it with existing constraints:
+with `number` only Int remains; with `appendable` only String remains. An alias
+of Int or String is accepted, while a nominal wrapper around either is not.
+An unresolved variable keeps the obligation; it must not silently default to
+Int, accept any equatable type or lose the constraint at the module boundary.
+
+An unsupported instantiation reports `invalid_dict_key`, naming the actual
+type and saying **Dict keys and Set members must be Int or String**. This
+includes Char, Int32, Float and function keys. Reject these because of the key
+rule rather than an incidental missing compare. Exported and cached schemes
+must preserve the obligation with their quantifiers; serialization changes
+invalidate older artifacts instead of reading an unrecorded restriction as
+unconstrained. Warm/cold and imported generic uses get the same verdict.
+
+Dict declares equatability and a value `eq` method, with value equality evidence;
+its keys need no evidence. Neither Dict nor Set exports compare. The foreign
+Dict has no structural comparison body to derive; Set's wrapper does not make
+it comparable. Types containing these collections have the same derivation
+boundary unless their own module supplies an order explicitly.

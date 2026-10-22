@@ -7,8 +7,9 @@ module EntryCommand
   58:5 update entry EntryCommand.captures model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   68:5 entry EntryCommand.counts model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   68:5 update entry EntryCommand.counts model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
-  summary captures: π2 RAW{items}, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items
-  summary counts: π2 RAW{items}, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  capture model.items: read 34:77; before 34:29
+  summary captures: π2 RAW{items}, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items, condition(fresh2){shared}
+  summary counts: π2 RAW{items}, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}
   summary view: π1.items R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
   records 4: accepted 2, pending 0, rejected 2 (copy 0, restructure 0); hoisted 0, eager reads 1

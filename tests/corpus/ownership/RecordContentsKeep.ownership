@@ -12,11 +12,11 @@ module RecordContentsKeep
   34:17 List.update rows: accepted param
   34:17 update rows[*]: accepted param (List.update writes it)
   34:41 update r: accepted callback-param (List.update supplies it owned)
-  summary flip: π1 R, π1[*] W{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
-  summary k1: π1 RAW, π1[*] RW{done}; res [*] ~fresh2r{lost} ~π1[*]◦r{lost}, fresh1r{lost} π1r{lost}
-  summary k2: π1 RW, π1[*] W{done}, π2 RW{done}; res [*] ~fresh2r{lost} ~π1[*]◦ ~π2◦, fresh1r{lost}
-  summary k3: π1 RW, π1[*] RW{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
-  summary k4: π1 RW, π1[*] RW{done}; res [*] ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary flip: π1 R, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary k1: π1 RAW[storage], π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1[*]◦r{lost}, fresh1r{lost} π1r{lost}
+  summary k2: π1 RW[storage], π1[*] W{done}, π2 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1[*]◦ ~π2◦, fresh1r{lost}
+  summary k3: π1 RW[storage], π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary k4: π1 RW[storage], π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
   demands 5: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 8: accepted 6, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
 total 5: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

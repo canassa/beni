@@ -7,7 +7,7 @@ module RecordOnce
   46:22 update p: rejected later-use: p is read again at 46:33 [copy]
   summary bump: π1 W{x}, π1.x R; res π1◦
   summary viaMaybe: π2 RW{x}; res #Just.0 π2◦
-  summary viaList: π1 R, π2 RW{x}; res [*] ~fresh2r{lost} ~π2◦, fresh1r{lost}
+  summary viaList: π1 R, π2 RW{x}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π2◦, fresh1r{lost}
   summary readsWritten: π2 RW{x}, π2.x R; res .0#Just.0 π2◦
   summary readsOther: π2 RW{x}, π2.y R; res .0#Just.0 π2◦
   summary apply: π1 R; res cb1r{excl cb1}; π1 calls ≤1

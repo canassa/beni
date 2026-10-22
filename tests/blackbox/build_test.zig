@@ -5842,7 +5842,7 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     const Event = struct {
         ph: []const u8,
         args: struct {
-            spec_analyses: ?u64 = null,
+            spec_solves: ?u64 = null,
             spec_points_to_runs: ?u64 = null,
             spec_points_to_reused: ?u64 = null,
         } = .{},
@@ -5854,39 +5854,43 @@ test "the release specialiser keeps fact 3 for an analysis after a change fact 3
     var reused: ?u64 = null;
     for (parsed.value.traceEvents) |e| {
         if (!std.mem.eql(u8, e.ph, "C")) continue;
-        if (e.args.spec_analyses) |v| analyses = v;
+        if (e.args.spec_solves) |v| analyses = v;
         if (e.args.spec_points_to_runs) |v| runs = v;
         if (e.args.spec_points_to_reused) |v| reused = v;
     }
-    // Two analyses kept the state, one of them since #582 lets a rewrite
-    // drop a parameter and its arguments without a solve. Every other one
-    // solved, at least once.
-    try testing.expectEqual(@as(?u64, 2), reused);
+    // Since slice 6 (#676) a solve follows only a structural pass, and
+    // `releaseKeeps` and the solve after it are gone: a kept binding the
+    // facts release is the liveness read-off's, in the same rewrite. The
+    // rounds that asked the facts again of a program fact 3 had not seen
+    // change are gone with them, so no solve keeps the state here; the
+    // pass loop's solves still may (`fact3Kept`). Every solve solved.
+    try testing.expectEqual(@as(?u64, 0), reused);
     try testing.expect(analyses.? >= 2);
     try testing.expect(runs.? >= analyses.? - reused.?);
 }
 
-test "the release specialiser counts a call chain deeper than its sweeps as a declined analysis" {
+test "the release specialiser solves a call chain deeper than the sweeps' old cap" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // Research 52's E1 (`emit/release/app/SpecDeepChain`): each function
     // passes its parameter to the next, fact 1 runs from caller to callee
-    // and the sweeps walk callees first, so each level costs a sweep. 22
-    // levels converge within the cap of 24 sweeps in every analysis; 24 do
-    // not in the first, which then rewrites nothing. `--self-profile` says
-    // which cap stopped what (`backend.md` §9), so the cliff is a counter,
-    // not a guess.
+    // and the sweeps walked callees first, so each level cost a sweep, and
+    // 24 levels hit the cap of 24 sweeps: the first analysis rewrote
+    // nothing. The combined solver (`backend.md` §9, *The combined
+    // solver*, slice 4) has no sweep to run out of: 22 levels and 24 are
+    // alike, and no solve reaches its work budget.
     const shallow = try specCounters(22);
     const deep = try specCounters(24);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expect(shallow.analyses >= 1);
-    try testing.expectEqual(@as(u64, 0), shallow.analyses_declined);
-    try testing.expect(shallow.sweeps >= 22);
-    try testing.expect(deep.analyses_declined >= 1);
+    for ([_]SpecCounters{ shallow, deep }) |c| {
+        try testing.expect(c.analyses >= 1);
+        try testing.expect(c.constraints > 0);
+        try testing.expectEqual(@as(u64, 0), c.budget_hit);
+    }
 }
 
 test "the release specialiser counts fact 3's sets, edges and load cells, and names its largest set" {
@@ -6062,6 +6066,8 @@ test "a page build makes each module's edge lists once and lowers and prints eac
         .reach_walks = 2,
         .modules_lowered = maps,
         .modules_printed = maps,
+        .emit_units_embedded = counters.emit_units_embedded,
+        .emit_units_lowered = counters.emit_units_lowered,
     }, counters);
 }
 
@@ -6145,8 +6151,33 @@ test "a program builds the same with the edge lists the binary carries as with l
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"});
-    try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" });
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" }, false);
+}
+
+test "a development build's cached units write the same source maps as a core built here" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The join splices a cached unit's text and its marks, and numbers the
+    // row's name identities into this module's one source map. A map that
+    // differs from the one the same module lowers to is the finding: the
+    // names array's order is first-occurrence order, so a dead canonical
+    // unit must not put a name behind a live one. `--core-root=mycore`
+    // changes only how a map spells the core's path; the helper normalizes
+    // that spelling.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/run/Arithmetic.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "maps", &.{"Main.beni"}, true);
 }
 
 test "a program that suspends builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6167,7 +6198,7 @@ test "a program that suspends builds the same with the edge lists the binary car
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"});
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"}, false);
 }
 
 test "a page builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6188,7 +6219,39 @@ test "a page builds the same with the edge lists the binary carries as with list
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"});
+    const counters = try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"}, false);
+    // §9's other side: this page's build lowers 41 units it cannot take — a
+    // platform unit falls back — and the trees above still match.
+    try testing.expect(counters.emit_units_lowered > 0);
+}
+
+test "a program over the schema-shape threshold builds the same with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `schema.md` §6's fork gives a program over `SchemaValid.shape_threshold`
+    // validator runs the shapes side, and `run/SchemaShapeThreshold` has
+    // thirty. The answer is a fact a row must carry (`backend.md` §9, issue
+    // #432): the rows the binary carries were made under the canonical
+    // answer, and a build's own modules are on the other side of the
+    // threshold only as far as their own bytes can see it. The two trees
+    // must agree, at the default answer and at `--schema-shapes=never` —
+    // and the two defaults must differ, or the fixture stopped crossing the
+    // threshold and neither comparison says anything about the fork.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/run/SchemaShapeThreshold.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "shapes", &.{"Main.beni"}, false);
+    _ = try expectSameWithBuiltEdges(&w, "--platform=node", "shapes-never", &.{ "--schema-shapes=never", "Main.beni" }, false);
+    try expectDifferentTrees(&w, "shapes-embedded", "shapes-never-embedded");
 }
 
 test "a page builds the same under --release with the edge lists the binary carries as with lists it builds" {
@@ -6210,7 +6273,7 @@ test "a page builds the same under --release with the edge lists the binary carr
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" });
+    _ = try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" }, false);
 }
 
 test "a browser-inline page builds the same with the edge lists the binary carries as with lists it builds" {
@@ -6231,7 +6294,7 @@ test "a browser-inline page builds the same with the edge lists the binary carri
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"});
+    _ = try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"}, false);
 }
 
 /// One fixture of the corpus, copied into the project at `to`.
@@ -6248,15 +6311,17 @@ fn copyFixture(w: *World, from: []const u8, to: []const u8) !void {
 /// builds every module's lists. The one-thread build holds the rows and the
 /// walk to CLAUDE.md rule 5: workers read rows in whatever order they take
 /// modules, and the tree must not show it.
-fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8) !void {
+fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8, mapped: bool) !EmitCounters {
     const arena = w.arena.allocator();
     const hows = [_][]const u8{ "embedded", "jobs1", "built" };
     var dirs: [hows.len][]const u8 = undefined;
     var stderrs: [hows.len][]const u8 = undefined;
+    var embedded_counters: EmitCounters = .{};
     for (hows, &dirs, &stderrs) |how, *dir, *stderr| {
         dir.* = try std.fmt.allocPrint(arena, "{s}-{s}", .{ out, how });
         var argv: std.ArrayList([]const u8) = .empty;
-        try argv.appendSlice(arena, &.{ "build", platform, "--no-cache", "--no-source-maps", "--self-profile=trace.json" });
+        try argv.appendSlice(arena, &.{ "build", platform, "--no-cache", "--self-profile=trace.json" });
+        if (!mapped) try argv.append(arena, "--no-source-maps");
         try argv.append(arena, try std.fmt.allocPrint(arena, "--out={s}", .{dir.*}));
         if (std.mem.eql(u8, how, "jobs1")) try argv.append(arena, "--jobs=1");
         if (std.mem.eql(u8, how, "built")) try argv.append(arena, "--core-root=mycore");
@@ -6266,10 +6331,24 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
         try testing.expectEqualStrings("", r.stdout);
         stderr.* = r.stderr;
         const counters = try emitCounters(w);
+        if (std.mem.eql(u8, how, "embedded")) embedded_counters = counters;
+        const release = blk: {
+            for (args) |a| if (std.mem.eql(u8, a, "--release")) break :blk true;
+            break :blk false;
+        };
         if (std.mem.eql(u8, how, "built")) {
             try testing.expectEqual(@as(u64, 0), counters.edge_lists_embedded);
+            try testing.expectEqual(@as(u64, 0), counters.emit_units_embedded);
         } else {
             try testing.expect(counters.edge_lists_embedded != 0);
+            // A development build prints the units of the rows it reads; a
+            // release build's bytes come from the release optimiser, so it
+            // reads none (`backend.md` §9, *The join*).
+            if (release) {
+                try testing.expectEqual(@as(u64, 0), counters.emit_units_embedded);
+            } else {
+                try testing.expect(counters.emit_units_embedded != 0);
+            }
         }
     }
     const want = try w.listFiles(dirs[0]);
@@ -6282,12 +6361,92 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
             try testing.expectEqualStrings(a, b);
             const want_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[0], a }));
             const got_bytes = try w.read(try std.fs.path.join(arena, &.{ dir, b }));
-            testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
+            // A source map names the core's path, and the two builds spell
+            // it differently: the embedded core is `beni:///core/…`, a core
+            // read through `--core-root=mycore` is the relative path from
+            // the map to the file. That spelling is the only expected
+            // difference; the rest — every generated position, every mapping
+            // and the whole `names` array — must be byte-identical, cached
+            // units included. The manifest hashes those maps, so its map
+            // lines are masked; the map bytes themselves are compared here.
+            const want_cmp = if (mapped and std.mem.endsWith(u8, a, ".mjs.map"))
+                try comparableMapSources(arena, want_bytes)
+            else if (mapped and std.mem.eql(u8, a, "_manifest.txt"))
+                try comparableManifestHashes(arena, want_bytes)
+            else
+                want_bytes;
+            const got_cmp = if (mapped and std.mem.endsWith(u8, b, ".mjs.map"))
+                try comparableMapSources(arena, got_bytes)
+            else if (mapped and std.mem.eql(u8, b, "_manifest.txt"))
+                try comparableManifestHashes(arena, got_bytes)
+            else
+                got_bytes;
+            testing.expectEqualStrings(want_cmp, got_cmp) catch |err| {
                 std.debug.print("{s} differs between {s} and {s}\n", .{ a, dirs[0], dir });
                 return err;
             };
         }
     }
+    return embedded_counters;
+}
+
+/// A map's `sources` names the core two ways: `beni:///core/…` when the
+/// binary carries it, the relative path from the map's directory to
+/// `mycore/…` when `--core-root` reads it. Both become `core/…`, so the
+/// comparison is about the map's positions rather than where its source
+/// came from. The same two substitutions run on both trees, whose sources
+/// are the same inputs; a source that contained either spelling would be
+/// rewritten on both sides, so the rewrite cannot make two different
+/// sources equal.
+fn comparableMapSources(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
+    const embedded = try std.mem.replaceOwned(u8, arena, bytes, "beni:///core/", "core/");
+    return std.mem.replaceOwned(u8, arena, embedded, "../../mycore/", "core/");
+}
+
+/// A manifest hashes every file, its maps included, and a core map's hash
+/// covers the source spelling `comparableMapSources` normalizes. Zero those
+/// hashes on both sides: the maps themselves are compared, so the manifest
+/// still holds every other file's bytes and every path. A line is the hash
+/// and the path, with no size column that the two spellings could move.
+fn comparableManifestHashes(arena: std.mem.Allocator, bytes: []const u8) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var rest = bytes;
+    var first = true;
+    while (rest.len > 0) {
+        const end = std.mem.indexOfScalar(u8, rest, '\n') orelse rest.len;
+        const line = rest[0..end];
+        if (!first) try out.append(arena, '\n');
+        first = false;
+        if (std.mem.endsWith(u8, line, ".mjs.map")) {
+            if (std.mem.indexOfScalar(u8, line, ' ')) |space| {
+                try out.appendSlice(arena, "0000000000000000");
+                try out.appendSlice(arena, line[space..]);
+            } else try out.appendSlice(arena, line);
+        } else try out.appendSlice(arena, line);
+        rest = if (end < rest.len) rest[end + 1 ..] else rest[rest.len..];
+    }
+    return out.toOwnedSlice(arena);
+}
+
+/// Expect two output trees of the same project under different flags to
+/// differ somewhere. Used to prove a fixture still sits on one side of a
+/// threshold: if the two builds agreed, a comparison across the threshold
+/// would say nothing about it.
+fn expectDifferentTrees(w: *World, a: []const u8, b: []const u8) !void {
+    const arena = w.arena.allocator();
+    const left = try w.listFiles(a);
+    const right = try w.listFiles(b);
+    // A file one build writes and the other does not is already a
+    // difference; the shape-run and worker sides of the threshold reach
+    // different core modules, so their trees may hold different files.
+    if (left.len != right.len) return;
+    for (left, right) |fa, fb| {
+        if (!std.mem.eql(u8, fa, fb)) return;
+        const x = try w.read(try std.fs.path.join(arena, &.{ a, fa }));
+        const y = try w.read(try std.fs.path.join(arena, &.{ b, fb }));
+        if (!std.mem.eql(u8, x, y)) return;
+    }
+    return error.ExpectedDifference;
 }
 
 const EmitCounters = struct {
@@ -6298,6 +6457,8 @@ const EmitCounters = struct {
     reach_walks: u64 = 0,
     modules_lowered: u64 = 0,
     modules_printed: u64 = 0,
+    emit_units_embedded: u64 = 0,
+    emit_units_lowered: u64 = 0,
 };
 
 /// Reachability's and lowering's counters (`backend.md` §9, §15.1) from
@@ -6314,6 +6475,8 @@ fn emitCounters(w: *World) !EmitCounters {
             reach_walks: ?u64 = null,
             modules_lowered: ?u64 = null,
             modules_printed: ?u64 = null,
+            emit_units_embedded: ?u64 = null,
+            emit_units_lowered: ?u64 = null,
         } = .{},
     };
     const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
@@ -6335,8 +6498,8 @@ fn emitCounters(w: *World) !EmitCounters {
 
 const SpecCounters = struct {
     analyses: u64 = 0,
-    sweeps: u64 = 0,
-    analyses_declined: u64 = 0,
+    constraints: u64 = 0,
+    budget_hit: u64 = 0,
 };
 
 /// The specialiser's counters of a `--release` build of research 52's E1
@@ -6361,9 +6524,9 @@ fn specCounters(levels: usize) !SpecCounters {
     const Event = struct {
         ph: []const u8,
         args: struct {
-            spec_analyses: ?u64 = null,
-            spec_sweeps: ?u64 = null,
-            spec_analyses_declined: ?u64 = null,
+            spec_solves: ?u64 = null,
+            spec_solve_constraints: ?u64 = null,
+            spec_solve_budget_hit: ?u64 = null,
         } = .{},
     };
     const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
@@ -6372,16 +6535,16 @@ fn specCounters(levels: usize) !SpecCounters {
     var seen: u32 = 0;
     for (parsed.value.traceEvents) |e| {
         if (!std.mem.eql(u8, e.ph, "C")) continue;
-        if (e.args.spec_analyses) |v| {
+        if (e.args.spec_solves) |v| {
             counters.analyses = v;
             seen += 1;
         }
-        if (e.args.spec_sweeps) |v| {
-            counters.sweeps = v;
+        if (e.args.spec_solve_constraints) |v| {
+            counters.constraints = v;
             seen += 1;
         }
-        if (e.args.spec_analyses_declined) |v| {
-            counters.analyses_declined = v;
+        if (e.args.spec_solve_budget_hit) |v| {
+            counters.budget_hit = v;
             seen += 1;
         }
     }
@@ -6428,14 +6591,18 @@ test "the release specialiser writes every independent function called once in o
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try testing.expectEqual(@as(u64, n + 1), c.spec_inlined); // and `total`, called once
+    // And `total`, called once, and since slice 6 (#676) core `List`'s
+    // length setter, written into the loop that calls it once the liveness
+    // read-off has left that loop's body small.
+    try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
-    try testing.expectEqual(@as(u64, 1), c.spec_passes);
-    try testing.expectEqual(@as(u64, 2), c.spec_analyses);
-    // The pass's two counts, and the one count of the pass that found
-    // nothing to do.
-    try testing.expectEqual(@as(u64, 3), c.spec_inline_scans);
+    // The length setter takes a second pass (slice 6, #676: the `iife`
+    // and `self_assign` sweeps are in the pass loop), with its solve and its
+    // two counts; then the count of the pass that found nothing to do.
+    try testing.expectEqual(@as(u64, 2), c.spec_passes);
+    try testing.expectEqual(@as(u64, 3), c.spec_solves);
+    try testing.expectEqual(@as(u64, 5), c.spec_inline_scans);
 }
 
 test "the release specialiser leaves a function whose call a write just copied for the next pass" {
@@ -6517,8 +6684,10 @@ test "the release specialiser leaves a function whose call a write just copied f
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u64, 1), c.spec_inline_waits);
     try testing.expectEqual(@as(u64, 2), c.spec_passes);
-    // `g`, `k`, `twice` and, a pass later, `h`: every one of them.
-    try testing.expectEqual(@as(u64, 4), c.spec_inlined);
+    // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
+    // slice 6 (#676) core `List`'s length setter, written into the loop
+    // that calls it (647 → 631 bytes).
+    try testing.expectEqual(@as(u64, 5), c.spec_inlined);
 }
 
 test "the release specialiser does not ask a declined call again while neither module changed" {
@@ -6606,7 +6775,7 @@ test "the release specialiser folds a run of bindings before a return in one str
     // fold takes it in the same walk of the list. Before, the walk went on
     // forward, so each structural pass took one binding, with an analysis
     // after each, and `max_passes` stopped the third with two left
-    // (`spec_passes` 3, `spec_passes_capped` 1, `spec_analyses` 4).
+    // (`spec_passes` 3, `spec_passes_capped` 1, `spec_solves` 4).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni",
@@ -6653,7 +6822,7 @@ test "the release specialiser folds a run of bindings before a return in one str
     try testing.expectEqual(@as(u64, 1), c.spec_passes);
     try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
     // The one before the loop, and the one after its pass.
-    try testing.expectEqual(@as(u64, 2), c.spec_analyses);
+    try testing.expectEqual(@as(u64, 2), c.spec_solves);
 }
 
 test "the release specialiser still folds in a second pass what the first pass's scalar replacement made" {
@@ -6702,7 +6871,7 @@ test "the release specialiser still folds in a second pass what the first pass's
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u64, 2), c.spec_passes);
     try testing.expectEqual(@as(u64, 0), c.spec_passes_capped);
-    try testing.expectEqual(@as(u64, 3), c.spec_analyses);
+    try testing.expectEqual(@as(u64, 3), c.spec_solves);
     const js = try w.read("out/_main.mjs");
     try testing.expect(std.mem.indexOf(u8, js, "return a*2*b") != null);
 }
@@ -6712,7 +6881,7 @@ test "the release specialiser still folds in a second pass what the first pass's
 const InlineCounters = struct {
     spec_passes: u64 = 0,
     spec_passes_capped: u64 = 0,
-    spec_analyses: u64 = 0,
+    spec_solves: u64 = 0,
     spec_inline_capped: u64 = 0,
     spec_inline_scans: u64 = 0,
     spec_inlined: u64 = 0,
@@ -6728,7 +6897,7 @@ fn inlineCounters(w: *World) !InlineCounters {
         args: struct {
             spec_passes: ?u64 = null,
             spec_passes_capped: ?u64 = null,
-            spec_analyses: ?u64 = null,
+            spec_solves: ?u64 = null,
             spec_inline_capped: ?u64 = null,
             spec_inline_scans: ?u64 = null,
             spec_inlined: ?u64 = null,
@@ -6751,4 +6920,271 @@ fn inlineCounters(w: *World) !InlineCounters {
     }
     if (seen != @typeInfo(InlineCounters).@"struct".field_names.len) return error.NoCounter;
     return counters;
+}
+
+/// A platform whose manifest declares `"exports": "program"` (boundary.md
+/// §5.2, amended 2026-10-20; §9.12 (c)): its `run` returns what the entry
+/// file exports, and prints each call so the program's output pins the
+/// order.
+fn writeExportingPlatform(w: *World) !void {
+    try w.write("xplat/beni.json",
+        \\{ "platform": true, "name": "exporting", "program": "Prog.Program", "runtime": "run.js", "exports": "program" }
+    );
+    try w.write("xplat/Prog.beni",
+        \\pub foreign type Program
+        \\
+        \\
+        \\pub foreign pure say : String → Program
+        \\
+    );
+    try w.write("xplat/Prog.js",
+        \\export const say = (line) => ({ text: line });
+        \\
+    );
+    try w.write("xplat/run.js",
+        \\import process from "node:process";
+        \\
+        \\export const run = (program) => {
+        \\  process.stdout.write(`run: ${program.text}\n`);
+        \\  return {
+        \\    default: { text: program.text },
+        \\    exports: (name) => {
+        \\      process.stdout.write(`export ${name}\n`);
+        \\      return { name };
+        \\    },
+        \\  };
+        \\};
+        \\
+    );
+}
+
+test "a platform that declares exports gets an entry file that exports what run returns, in both builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §9.12 (c): the entry holds `run(main)`'s result as
+    // `$beniProgram`, exports its `default`, and exports each name the
+    // app's beni.json lists as `export { $beniExport<N> as Name }`, in the
+    // list's order. Both builds export the same names, and a Node import of
+    // either sees `Arena`, `Lobby` and `default`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeExportingPlatform(&w);
+    try w.write("beni.json",
+        \\{ "name": "arena", "exports": ["Arena", "Lobby", "$beniProgram"] }
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+    // `$beniProgram` is the entry's own binding: an export name is a
+    // namespace of its own, so the listed name is legal and loads.
+    try w.write("check.mjs",
+        \\import * as dev from "./out/_main.mjs";
+        \\import * as rel from "./rel/_main.mjs";
+        \\process.stdout.write(`${Object.keys(dev).sort().join(",")} ${dev.default.text} ${dev.Arena.name}\n`);
+        \\process.stdout.write(`${Object.keys(rel).sort().join(",")} ${rel.default.text} ${rel.Lobby.name} ${rel.$beniProgram.name}\n`);
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dev = try w.runWith(&.{ "build", "--platform=xplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(dev);
+    const rel = try w.runWith(&.{ "build", "--platform=xplat", "--release", "--out=rel", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(rel);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(
+        \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
+        \\// the platform's output shape asks for.
+        \\import { run as $run } from "./_platform/run.foreign.mjs";
+        \\import { Main$main as $main } from "./Main.mjs";
+        \\
+        \\const $beniProgram = $run($main);
+        \\export default $beniProgram.default;
+        \\const $beniExport0 = $beniProgram.exports("Arena");
+        \\export { $beniExport0 as Arena };
+        \\const $beniExport1 = $beniProgram.exports("Lobby");
+        \\export { $beniExport1 as Lobby };
+        \\const $beniExport2 = $beniProgram.exports("$beniProgram");
+        \\export { $beniExport2 as $beniProgram };
+        \\
+    , try w.read("out/_main.mjs"));
+    // The hoisted release file ends in the same exports, compact.
+    const hoisted = try w.read("rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, hoisted, "export default $beniProgram.default;") != null);
+    try testing.expect(std.mem.indexOf(u8, hoisted, "export{$beniExport0 as Arena};") != null);
+    try testing.expect(std.mem.indexOf(u8, hoisted, "export{$beniExport1 as Lobby};") != null);
+    try testing.expect(std.mem.indexOf(u8, hoisted, "export{$beniExport2 as $beniProgram};") != null);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "run: hello\nexport Arena\nexport Lobby\nexport $beniProgram\n" });
+    try w.expectProgram("rel/_main.mjs", .{ .stdout = "run: hello\nexport Arena\nexport Lobby\nexport $beniProgram\n" });
+    try w.expectProgram("check.mjs", .{
+        .stdout = "run: hello\nexport Arena\nexport Lobby\nexport $beniProgram\nrun: hello\nexport Arena\nexport Lobby\nexport $beniProgram\n$beniProgram,Arena,Lobby,default hello Arena\n$beniProgram,Arena,Lobby,default hello Lobby $beniProgram\n",
+    });
+}
+
+test "a chain whose runtime is a module may not declare exports: check and a release build refuse it as the development build does" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §9.12 (c): `unknown_exports_mode` is known from the chain
+    // alone (a lowering plus a markup module), so `checkEntryExports` runs
+    // it for `check` and for both builds before anything is written. The
+    // corpus's `build/bad/` kind runs a development build only
+    // (`build/bad/ExportsWithRuntimeModule`), so the other two paths are
+    // pinned here: at `ef6b6bb46` both exited 0, and the release build
+    // wrote `_main.mjs`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("page/beni.json",
+        \\{ "platform": true, "name": "page", "platforms": ["browser"], "reexports": ["Browser", "Html"], "exports": "program" }
+    );
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view count = <p id="count">{String.fromInt count}</p>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main = Browser.program { init = λ⊤ → 0, update = λInc count → count + 1, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const checked = try w.run(&.{ "check", "--platform=page", "Main.beni" });
+    const rel = try w.run(&.{ "build", "--platform=page", "--release", "--out=rel", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for ([_]world.Result{ checked, rel }) |r| {
+        try testing.expectEqual(@as(u8, 1), r.exit_code);
+        try testing.expectEqual(@as(usize, 1), r.diagnostics.len);
+        try testing.expectEqual(diagnostic.Code.unknown_exports_mode, r.diagnostics[0].code);
+        try testing.expectEqualStrings("page/beni.json", r.diagnostics[0].span.file);
+    }
+    try testing.expect(!w.exists("rel"));
+}
+
+test "a platform that declares exports and a project that lists none exports only default" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeExportingPlatform(&w);
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "alone"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=xplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const entry = try w.read("out/_main.mjs");
+    try testing.expect(std.mem.endsWith(u8, entry, "const $beniProgram = $run($main);\nexport default $beniProgram.default;\n"));
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "run: alone\n" });
+}
+
+test "a project that lists exports for a platform without the key gets a warning and a build" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // boundary.md §5.2 (amended 2026-10-20): a list that does nothing is
+    // almost always a mistake, so it is `exports_ignored`, a warning
+    // (CLAUDE.md rule 7). The build goes on and exits 0.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeUserPlatform(&w);
+    try w.write("beni.json",
+        \\{ "name": "arena", "exports": ["Arena"] }
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.run(&.{ "build", "--platform=myplat", "--out=out", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expectEqual(@as(usize, 1), built.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.exports_ignored, built.diagnostics[0].code);
+    try testing.expectEqual(diagnostic.Severity.warning, built.diagnostics[0].severity);
+    try testing.expectEqualStrings("beni.json", built.diagnostics[0].span.file);
+    try w.expectProgram("out/_main.mjs", .{ .stdout = "hello!\n" });
+}
+
+test "a project's exports list that is a string is the manifest's exit-2 failure" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // frontend.md §10.1: a key of the wrong JSON type is an exit-2 line
+    // before any source is read, as every other app-manifest fault is.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try writeExportingPlatform(&w);
+    try w.write("beni.json",
+        \\{ "name": "arena", "exports": "Arena" }
+    );
+    try w.write("Main.beni",
+        \\import Prog exposing (Program)
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Prog.say "hello"
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=xplat", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), built.exit_code);
+    try testing.expectEqualStrings("beni: beni.json's \"exports\" must be a list of names, not a string\n", built.stderr);
+    try testing.expect(!w.exists("out"));
 }

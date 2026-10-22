@@ -122,6 +122,17 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         loaded.platform.html = html;
         loaded.platform.html_root = app_root;
     };
+    // The app's `"exports"` is the entry file's list of named exports
+    // (`boundary.md` §5.2, `frontend.md` §10.1); on an app a string is the
+    // wrong JSON type, which is the manifest's exit-2 failure.
+    if (app) |m| switch (m.exports) {
+        .none => {},
+        .names => |names| {
+            loaded.platform.entry_exports = names;
+            loaded.platform.app_root = app_root;
+        },
+        .mode => return fail(stderr, "beni: {s}'s \"exports\" must be a list of names, not a string", .{Manifest.pathIn(arena, app_root)}),
+    };
 
     const emit_token = session.profile.begin();
     var result = emitOnBigStack(gpa, arena, &session, .{
@@ -164,7 +175,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
             return fail(stderr, "beni: out of memory", .{});
         defer gpa.free(late);
         for (result.diagnostics, late) |item, *slot| {
-            slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at };
+            slot.* = .{ .code = item.code, .file = item.file, .token = item.token, .end_token = item.end_token, .message = item.message, .at = item.at, .severity = item.severity };
         }
         const errors = session.renderLate(late, stderr) catch return 2;
         if (errors > 0) return 1;

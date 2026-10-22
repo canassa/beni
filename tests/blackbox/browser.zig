@@ -22,8 +22,7 @@
 //! time and 8.9 s of CPU under happy-dom, 2.3 s and 11.1 s in Chromium
 //! 153. Chrome is not in the flake's default shell
 //! (Chromium is 454 MiB, and Linux only), a skip without it would leave the
-//! gates unproven on most machines, and a browser shared by every case has
-//! no place in a per-case instruction budget. Against Chrome, on eight
+//! gates unproven on most machines. Against Chrome, on eight
 //! probes — `<!>` in a template, a `<table>` without `<tbody>`,
 //! `<p><div>`, `<template>`'s content, an input's `value` against its
 //! attribute, a checkbox's activation, focus, and an exception in a

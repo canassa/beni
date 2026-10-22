@@ -5,15 +5,15 @@ module DirectCapture
   56:10 List.push xs: accepted call
   62:27 List.push xs: rejected once: it may run more than once: g is captured, and how often the closure runs is not known (approx)
   70:27 List.push xs: rejected once: it may run more than once: g is captured, and how often the closure runs is not known (approx)
-  summary inner: π1 RA; res ◇⟨◇⟩◇ π1
+  summary inner: π1 RA; res λ?r{lost}, ◇⟨◇⟩◇ π1
   summary wrap: π1 RA; res λr{lost}, ◇ π1; π1 calls 0, unseen
   summary reads: π1 R
-  summary writesLive: π1 RW, π1[*] R
-  summary writesAfter: π1 RW, π1[*] R
-  summary writesWrapped: π1 RW, π1[*] R
-  summary stores: π1 RA; res [*]◇⟨◇⟩◇ π1, fresh1{shared}
+  summary writesLive: π1 RW[storage], π1[*] R
+  summary writesAfter: π1 RW[storage], π1[*] R
+  summary writesWrapped: π1 RW[storage], π1[*] R
+  summary stores: π1 RA; res [*] λ?r{lost}, [*]◇⟨◇⟩◇ condition(fresh2) π1, fresh1{shared}
   summary fresh: unused
-  summary writesInside: π1 RW
+  summary writesInside: π1 RW[storage]
   summary writesInsideFresh: unused
   demands 6: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 total 6: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4

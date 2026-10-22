@@ -229,7 +229,8 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let chain := (v, rhsChain ctx.chain callback rhs) :: ctx.chain
       inferExpr f { ctx with chain } ((v, a) :: env) rest after (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
-    | .entry .. | .resultCase .. | .chainCase .. => throw "limit: sum/recursive data in frozen per-call checker"
+    | .entry .. | .resultCase .. | .chainCase .. | .dictFocus .. =>
+      throw "limit: sum/recursive data in frozen per-call checker"
     | .branch c yes no =>
       let _ ← abstractAtom env c
       let a ← inferExpr f ctx env yes after (site ++ [0])
@@ -351,7 +352,7 @@ def typeShape : Ty → Abstract
   | .int => .scalar
   | .result e a => .record [.scalar, typeShape e, typeShape a]
   | .record xs => .record (xs.attach.map (fun x => typeShape x.val))
-  | .chain t | .list t | .builder t => .list [.unknown] (typeShape t) true
+  | .chain t | .list t | .builder t | .dict t => .list [.unknown] (typeShape t) true
   | .fn _ _ => .function [] []
 termination_by a => sizeOf a
 decreasing_by
@@ -364,7 +365,7 @@ decreasing_by
 def containsFunction : Ty → Bool
   | .fn .. => true
   | .record xs => xs.attach.any (fun x => containsFunction x.val)
-  | .chain t | .list t | .builder t => containsFunction t
+  | .chain t | .list t | .builder t | .dict t => containsFunction t
   | .int => false
   | .result e a => containsFunction e || containsFunction a
 termination_by a => sizeOf a

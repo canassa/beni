@@ -306,7 +306,8 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool :
     union (atomUses c) (union ua ub)
   | .traverse _ src init i x acc body =>
     union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures prependRead body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures prependRead body))
+  | .focus src i x body | .dictFocus src i x body =>
+    union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures prependRead body))
 
 def uses (e : Expr) : Live := usesArms true true true e
 

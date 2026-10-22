@@ -86,7 +86,12 @@ pub const magic = "BENIOWN\x00";
 /// 18 carries records' exclusive contents (§31.4 item 6): a record
 /// condition `rxc` after each `res`, `objs` and supply entry's list ones, and
 /// the summary's `rxreq` after its `xreq`.
-pub const version: u32 = 18;
+/// 19 distinguishes value-scoped construction conditions from allocations.
+/// 20 carries each write's storage/deep extent (§32 amendment, #670).
+/// 21 writes a pairwise-apart atom as its groups (§16.7, amended 2026-10-22, #693).
+/// 22 retains recursive function slots and returned classes, including unknown alternatives.
+/// 23 carries projection-aware container conditions and their sep_root atom (#720).
+pub const version: u32 = 23;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -186,10 +191,16 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         }
 
         fn xsum(c: *@This(), x: XSum) Allocator.Error!void {
-            for (x.atoms) |a| {
-                try c.prov(a.a);
-                try c.prov(a.b);
+            for (x.atoms) |a| try c.atom(a);
+        }
+
+        fn atom(c: *@This(), a: XAtom) Allocator.Error!void {
+            if (a.isApart()) {
+                for (a.groups) |g| for (g) |p| try c.prov(p);
+                return;
             }
+            try c.prov(a.a);
+            try c.prov(a.b);
         }
 
         fn res(c: *@This(), r: ResEntry) Allocator.Error!void {
@@ -211,12 +222,10 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
                 try c.path(e.path);
                 try c.prov(e.prov);
                 try c.xsum(e.xc);
+                try c.xsum(e.sc);
                 try c.xsum(e.rxc);
             };
-            for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| {
-                try c.prov(a.a);
-                try c.prov(a.b);
-            };
+            for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| try c.atom(a);
             for (s.slots) |sl| try c.path(sl[1]);
             for (s.klasses) |k| {
                 try c.summary(k.sum);
@@ -346,6 +355,7 @@ const ProvKey = struct {
     path: u32,
     taken: bool,
     obj: bool,
+    condition_only: bool,
 
     fn less(x: ProvKey, y: ProvKey) bool {
         if (x.kind != y.kind) return x.kind < y.kind;
@@ -353,6 +363,7 @@ const ProvKey = struct {
         if (x.b != y.b) return x.b < y.b;
         if (x.path != y.path) return x.path < y.path;
         if (x.taken != y.taken) return @intFromBool(x.taken) < @intFromBool(y.taken);
+        if (x.condition_only != y.condition_only) return @intFromBool(x.condition_only) < @intFromBool(y.condition_only);
         return @intFromBool(x.obj) < @intFromBool(y.obj);
     }
 };
@@ -365,6 +376,7 @@ fn provKey(w: *const Writer, p: Prov) ProvKey {
         .path = w.path_index.get(p.path).?,
         .taken = p.taken,
         .obj = p.obj,
+        .condition_only = p.condition_only,
     };
 }
 
@@ -374,12 +386,48 @@ fn writeProv(w: *Writer, p: Prov) Allocator.Error!void {
     try w.int(k.a);
     try w.int(k.b);
     try w.int(k.path);
-    // §31.7: bit 1, the record object alone.
-    try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1);
+    // Bit 1: record object alone; bit 2: containing-value condition.
+    try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1 | @as(u8, @intFromBool(k.condition_only)) << 2);
+}
+
+fn provLess(w: *const Writer, p: Prov, q: Prov) bool {
+    return provKey(w, p).less(provKey(w, q));
+}
+
+/// Two groups of an apart, in the block's order.
+fn groupLess(w: *const Writer, g: []const Prov, h: []const Prov) bool {
+    for (g[0..@min(g.len, h.len)], h[0..@min(g.len, h.len)]) |p, q| {
+        if (provLess(w, p, q)) return true;
+        if (provLess(w, q, p)) return false;
+    }
+    return g.len < h.len;
+}
+
+/// An apart's groups in the block's order: each group's members, then the
+/// groups, by their provenances' keys (§16.7, #693).
+fn canonicalApart(w: *const Writer, arena: Allocator, x: XAtom) Allocator.Error!XAtom {
+    const gs = try arena.alloc([]const Prov, x.groups.len);
+    for (gs, x.groups) |*d, g| {
+        const m = try arena.dupe(Prov, g);
+        std.mem.sort(Prov, m, w, provLess);
+        d.* = m;
+    }
+    std.mem.sort([]const Prov, gs, w, groupLess);
+    var out = x;
+    out.groups = gs;
+    return out;
 }
 
 fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
     if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
+    if (x.isApart()) {
+        const n = @min(x.groups.len, y.groups.len);
+        for (x.groups[0..n], y.groups[0..n]) |g, h| {
+            if (groupLess(w, g, h)) return true;
+            if (groupLess(w, h, g)) return false;
+        }
+        return x.groups.len < y.groups.len;
+    }
     const xa = provKey(w, x.a);
     const ya = provKey(w, y.a);
     if (xa.less(ya) or ya.less(xa)) return xa.less(ya);
@@ -388,10 +436,22 @@ fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
 
 fn writeAtoms(w: *Writer, arena: Allocator, atoms: []const XAtom) Allocator.Error!void {
     const sorted = try arena.dupe(XAtom, atoms);
+    for (sorted) |*a| if (a.isApart()) {
+        a.* = try canonicalApart(w, arena, a.*);
+    };
     std.mem.sort(XAtom, sorted, w, atomLess);
     try w.int(@intCast(sorted.len));
     for (sorted) |a| {
         try w.byte(@backingInt(a.kind));
+        if (a.isApart()) {
+            // Its groups: their count, then each one's members.
+            try w.int(@intCast(a.groups.len));
+            for (a.groups) |g| {
+                try w.int(@intCast(g.len));
+                for (g) |p| try writeProv(w, p);
+            }
+            continue;
+        }
         try writeProv(w, a.a);
         try writeProv(w, a.b);
     }
@@ -424,6 +484,7 @@ fn writeSupply(w: *Writer, arena: Allocator, items: []const SupplyEntry) Allocat
         try writeProv(w, e.prov);
         try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
         try writeXSum(w, arena, e.xc);
+        try writeXSum(w, arena, e.sc);
         try writeXSum(w, arena, e.rxc);
     }
 }
@@ -475,6 +536,7 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
         // §31.7: two bytes of bits, and a record write's fields, by name.
         try w.byte(@truncate(u.bits));
         try w.byte(@truncate(u.bits >> 8));
+        try w.byte(@backingInt(u.extent));
         try w.int(@intCast(u.fields.len));
         const fields = try arena.alloc(u32, u.fields.len);
         for (u.fields, fields) |f, *x| x.* = w.string_index.get(f).?;
@@ -685,7 +747,7 @@ fn readProv(r: *Reader) Error!Prov {
     const b = try r.int();
     const path = try r.path();
     const flags = try r.byte();
-    if (flags > 3) return error.Bad;
+    if (flags > 7) return error.Bad;
     const taken = flags & 1 != 0;
     const a = if (kind == .shared) blk: {
         if (a_raw >= r.modules.len) return error.Bad;
@@ -693,19 +755,31 @@ fn readProv(r: *Reader) Error!Prov {
         if (b >= r.o.in.birs[sm].decls.len) return error.Bad;
         break :blk sm;
     } else a_raw;
-    return .{ .kind = kind, .a = a, .b = b, .path = path, .taken = taken, .obj = flags & 2 != 0 };
+    return .{ .kind = kind, .a = a, .b = b, .path = path, .taken = taken, .obj = flags & 2 != 0, .condition_only = flags & 4 != 0 };
 }
 
 fn readAtoms(r: *Reader) Error![]const XAtom {
     const n = try r.count(1 + 2 * 14);
-    const atoms = try r.arena.alloc(XAtom, n);
-    for (atoms) |*a| {
+    var atoms: std.ArrayList(XAtom) = .empty;
+    for (0..n) |_| {
         const kind = try r.enumOf(@FieldType(XAtom, "kind"));
+        if (kind == .apart or kind == .apart_spine) {
+            // Its groups, put in this run's canonical form.
+            const groups = try r.arena.alloc([]Prov, try r.count(4 + 14));
+            if (groups.len < 2) return error.Bad;
+            for (groups) |*g| {
+                g.* = try r.arena.alloc(Prov, try r.count(14));
+                if (g.len == 0) return error.Bad;
+                for (g.*) |*p| p.* = try readProv(r);
+            }
+            try Ownership.apartAtoms(r.arena, kind, groups, &atoms);
+            continue;
+        }
         const x = try readProv(r);
         const y = try readProv(r);
-        a.* = if (kind == .sep) Ownership.sepAtom(x, y) else .{ .kind = kind, .a = x, .b = y };
+        try atoms.append(r.arena, if (kind == .sep) Ownership.sepAtom(x, y) else .{ .kind = kind, .a = x, .b = y });
     }
-    return Ownership.sortAtoms(atoms);
+    return Ownership.sortAtoms(atoms.items);
 }
 
 fn readXSum(r: *Reader) Error!XSum {
@@ -723,7 +797,7 @@ fn readSupply(r: *Reader) Error![]const SupplyEntry {
         const prov = try readProv(r);
         const bits = try r.byte();
         if (bits > 3) return error.Bad;
-        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r), .rxc = try readXSum(r) };
+        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r), .sc = try readXSum(r), .rxc = try readXSum(r) };
     }
     return supply;
 }
@@ -751,12 +825,13 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     // Bit 2 was a coarsened summary's, before §16.7 deleted coarsening.
     if (flags > 15 or flags & 2 != 0) return error.Bad;
 
-    const uses = try r.arena.alloc(UseEntry, try r.count(14));
+    const uses = try r.arena.alloc(UseEntry, try r.count(15));
     for (uses) |*u| {
         const param = try r.int();
         const path = try r.path();
         const lo = try r.byte();
         const hi = try r.byte();
+        const extent = try r.enumOf(Ownership.WriteExtent);
         const fields = try r.arena.alloc(u32, try r.count(4));
         for (fields) |*f| {
             const i = try r.int();
@@ -765,7 +840,7 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         }
         // Interned in this session's order, as the summary's own are.
         std.mem.sort(u32, fields, {}, std.sort.asc(u32));
-        u.* = .{ .param = param, .path = path, .bits = @as(u16, lo) | @as(u16, hi) << 8, .fields = fields };
+        u.* = .{ .param = param, .path = path, .bits = @as(u16, lo) | @as(u16, hi) << 8, .extent = extent, .fields = fields };
     }
 
     const res = try readRes(r);

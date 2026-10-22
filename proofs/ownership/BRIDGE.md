@@ -4,8 +4,8 @@ The bridge exports the existing fixtures, bounded enumeration grammar and seeded
 v5 generator into the shipping compiler. It changes neither ownership policy.
 A Lean rejection is a lead, not a proof of a compiler defect. A confirmed
 shipping ownership defect requires divergence between the oracle's own value
-and in-place interpreters, plus a red pending refusal fixture. The emitted
-direct library still uses persistent lists and cannot confirm in-place safety.
+and in-place interpreters, plus a red pending refusal fixture. The library the
+in-place platform emits still uses persistent lists and cannot confirm in-place safety.
 The post-campaign replay is `node scripts/bridge-triage.mjs`;
 [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records its original-program partition.
 
@@ -145,20 +145,25 @@ failures remain fatal even if they finish while input is still being read. CI
 also runs a black-box failure control that forces a real compiler invocation to
 fail during a long tail of explicitly skipped programs.
 
-The dump parser rejects unfamiliar lines. Browser-direct `check` diagnostics
-must match exactly the dump's deduplicated rejected/pending source spans, with
-no unexpected diagnostic code or abnormal exit.
+The dump parser rejects unfamiliar lines. The in-place platform's `check`
+diagnostics must match exactly the dump's deduplicated rejected/pending source
+spans, with no unexpected diagnostic code or abnormal exit. The parser skips the
+record update demands (the `update` lines of #391) until #316 lands: the Lean
+oracle has no record field assignment, so it has no verdict for such a site, and
+the compiler reports a record demand without enforcing it, so a rejected one has
+no diagnostic to match. The parser checks that the skipped lines of a module
+equal its `records` count and the kept demand lines its `demands` count.
 
 ## Runtime boundary and historical minimization
 
 Every translated program is built as part of a browser-tea batch and its
 normalized final value is compared with Lean, including agreements and precision
 differences. `valueChecked` must equal `translated`. Each wholly Zig-accepted
-lead is built as a real library under `browser-tea` and `browser-direct`, then executed under Node. The value build's final result
+lead is built as a real library under `browser-tea` and the in-place platform (`browser-inline` since 2026-10-20, #418; `browser-direct` before #423 retired it), then executed under Node. The value build's final result
 must equal Lean's value result. Final values do not establish heap identity or
 sharing fidelity: those rely on the stated public-operation translation
 contracts and source review. The whole-population value check is specifically
-for browser-tea; direct builds are paired only where enforcement permits them.
+for browser-tea; in-place builds are paired only where enforcement permits them.
 The two runs compare the final result, snapshots
 of explicit `length`/`at` reads, and exported shared roots. These are not all of
 Lean's internal trace events: traversal reads, focus reads and per-expression
@@ -168,7 +173,7 @@ external observations are outside this runtime observation contract.
 real compiler emits it, the driver wraps only its uniquely anchored binding to
 snapshot its argument. It does not replace writers or bypass enforcement.
 **The emitted library's `List.push` still uses the persistent core implementation,
-even under browser-direct.** An agreeing execution is therefore only an
+even under the in-place platform.** An agreeing execution is therefore only an
 unconfirmed lead; it is not evidence that an in-place ownership guarantee holds.
 The harness does not substitute a handwritten mutating runtime to manufacture
 confirmation. Runtime disagreements, should they occur, remain real compiler

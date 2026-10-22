@@ -258,6 +258,18 @@ pub const Module = struct {
 
 /// `Lower.Result`'s `effect_keep`, `pure_discards`, `unobserved` and
 /// `mutable`, as lists slice 5 may append to.
+/// A record's field: its representation key under a property id.
+pub const FieldKey = struct {
+    record: u32,
+    prop: u32,
+    key: JsIr.RepKey,
+
+    pub fn lessThan(_: void, a: FieldKey, b: FieldKey) bool {
+        if (a.record != b.record) return a.record < b.record;
+        return a.prop < b.prop;
+    }
+};
+
 pub const Tables = struct {
     keep: std.ArrayList(Index) = .empty,
     discards: std.ArrayList(Index) = .empty,
@@ -317,6 +329,30 @@ pub const Input = struct {
     /// the keys in the IR's columns are wild (`backend.md` §9,
     /// *Declared-type filtering of fact 3*). Null: every key is.
     rep_keys: ?*const RepKeys = null,
+    /// Per record representation and property: the representation key of
+    /// that field, sorted by record then property. A site's own var of the
+    /// property holds only sites of that key (*Declared-type filtering of
+    /// fact 3*, amended for #722).
+    field_keys: []const FieldKey = &.{},
+    /// The build's workers (`backend.md` §9, *The combined solver — Where
+    /// it runs*): the combined solver extracts the modules that changed on
+    /// them. Null: on the calling thread.
+    parallel: ?Parallel = null,
+};
+
+/// A way to run `call(task, scratch, item)` for every item of `items` on
+/// threads at once: each call writes only what its item owns, and
+/// `scratch` is its thread's, emptied before each item. `work` is how
+/// much there is to do in all (nodes), which says how many threads help.
+pub const Parallel = struct {
+    context: *anyopaque,
+    run: *const fn (
+        context: *anyopaque,
+        items: []const u32,
+        work: usize,
+        task: *const anyopaque,
+        call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
+    ) Allocator.Error!void,
 };
 
 /// A call the entry file makes of a top-level function: the whole-program
@@ -378,14 +414,9 @@ fn isRoot(in: Input, g: u32) bool {
     return false;
 }
 
-/// How many rounds of facts-then-rewrite the pass takes at most. Each round
-/// is sound on its own; a later one only finds more (a dropped call site
-/// can make a parameter constant).
-const max_rounds = 4;
-/// How many sweeps one round's fixpoint may take before the round gives up
-/// and rewrites nothing: stopping short of the fixpoint would be unsound,
-/// declining is not.
-const max_sweeps = 24;
+/// How many times the rewrite patches one statement at most, each time by
+/// the counts the last left (`rewrite`).
+const max_patch_turns = 7;
 /// How deep a statement nesting the rewriting walk follows by recursion.
 const max_depth = 200;
 /// On a node index in an evaluating walk's stack: its operands are done.
@@ -405,11 +436,24 @@ pub const Stats = struct {
     /// (`backend.md` §9, *Field names are decided after specialisation*).
     copied: []const bool = &.{},
     copied_modules: []const bool = &.{},
-    /// Whole analyses (`analyse`): fact 3 to its fixpoint, then facts 1,
-    /// 2, 4 and 5 to theirs, each from ⊥.
-    analyses: u64 = 0,
-    /// Sweeps of facts 1, 2, 4 and 5 (`sweeps`), over every analysis.
-    sweeps: u64 = 0,
+    /// Solves (`analyse`): fact 3 to its fixpoint, then facts 1, 2, 4 and
+    /// 5 to theirs, each from ⊥ — one per structural pass, each read by one
+    /// rewrite (`backend.md` §9, *The combined solver*, slice 6).
+    solves: u64 = 0,
+    /// The combined solver (`backend.md` §9, *The combined solver*, slice
+    /// 4), over every analysis: the modules it extracted, and those whose
+    /// constraints it kept because the module had not changed; the
+    /// constraints it solved and how many evaluations that took; and the
+    /// solves that hit the work budget and set what was still changing to ⊤.
+    solve_extracted: u64 = 0,
+    solve_kept: u64 = 0,
+    solve_constraints: u64 = 0,
+    solve_evaluations: u64 = 0,
+    solve_budget_hit: u64 = 0,
+    /// The top-level statements an extraction walked, and those whose
+    /// constraints it kept from the last one (`Extractor.reuse`).
+    solve_stmts_walked: u64 = 0,
+    solve_stmts_kept: u64 = 0,
     /// Fact 3's fixpoints (`Pts.fixpoint`: one per analysis, and one more
     /// each time definite initialisation finds keys) and their sweeps: the
     /// first walk, then each pass over the constraints waiting
@@ -423,18 +467,11 @@ pub const Stats = struct {
     passes: u64 = 0,
     /// The caps, each counted where it stopped work that would have gone
     /// on — the counters to read first when an output grew (research 52
-    /// §3.7). An analysis whose facts 1, 2, 4 and 5 did not converge in
-    /// `max_sweeps`, which rewrites nothing; a fact 3 that did not
-    /// converge in `max_pts_sweeps`, so that no fact 3 is used; `rounds`
-    /// stopped at `max_rounds` after a round that changed the program;
-    /// the structural loop stopped at `max_passes` after a pass that did;
+    /// §3.7). The structural loop stopped at `max_passes` after a pass that did;
     /// definite initialisation stopped at `max_init_runs` while it still
     /// found keys; and an inlining pass stopped at its own cap
     /// (`copyLimit`, the nodes `inlineOnce` and `fuseCalls` may copy;
     /// `inlineSmall`'s four turns; `foldConstructors`' budget of a list).
-    analyses_declined: u64 = 0,
-    points_to_declined: u64 = 0,
-    rounds_capped: u64 = 0,
     passes_capped: u64 = 0,
     init_capped: u64 = 0,
     inline_capped: u64 = 0,
@@ -485,6 +522,11 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
         if (try s.fuseCalls()) changed = true;
         if (try s.constructors()) changed = true;
         if (try s.scalarReplace()) changed = true;
+        // The list modes that change the program and read no fact, in the
+        // loop (`backend.md` §9, *Where it runs*, G9): `x = x` gone, and a
+        // function called where it is made written there (`betaReduce`).
+        s.list_mode = .tidy;
+        if (try s.eachFunctionList()) changed = true;
         if (!changed) break;
         s.stats.passes += 1;
         if (pass + 1 == max_passes) s.stats.passes_capped += 1;
@@ -492,21 +534,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
         try s.grow();
         try s.rounds();
     }
-    s.list_mode = .self_assign;
-    _ = try s.eachFunctionList();
-    // A function a pass above wrote where it was called, whose argument was
-    // a function that is now called where it is made (`betaReduce`).
-    s.list_mode = .iife;
-    _ = try s.eachFunctionList();
     // Last of the sweeps: a short `switch` on a name is its `if`s.
     s.list_mode = .switches;
     _ = try s.eachFunctionList();
-    // A binding no longer kept may have held a parameter's last read
-    // (`deadReads`): the facts once more, so that the parameter goes.
-    if (try s.releaseKeeps()) {
-        try s.grow();
-        try s.rounds();
-    }
     // Last, so that slice 8, which writes a call through a property in
     // only with every argument, has seen them all.
     try s.trimArguments();
@@ -522,6 +552,10 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
 
 /// How many times the inlining passes and the facts after them repeat.
 const max_passes = 3;
+
+/// How many nodes a program may have for a safety build to check the
+/// combined solver against the sweeps (`Spec.checkedSolve`).
+const max_solve_checked_nodes = Pts.max_checked_nodes;
 
 // ---------------------------------------------------------------------------
 // Values
@@ -613,6 +647,200 @@ const Decl = struct {
     arity: u32 = 0,
 };
 
+// ---------------------------------------------------------------------------
+// The combined solver's constraints (backend.md §9, *The combined solver*)
+// ---------------------------------------------------------------------------
+
+/// A constraint's kind, one `switch` arm of `Solver.eval` (slice 4). There
+/// is one constraint per node a walk of the program evaluates
+/// (`Spec.eval`), in the order the walk evaluates them, its cell the node's
+/// occurrence; and one per statement that writes what no node holds: a
+/// property (`store`), or what a function returns (`ret`).
+const Op = enum(u7) {
+    /// A value fixed by the node's kind: `a` is `fixed_top` or
+    /// `fixed_object` (an arrow, an array, a `new`).
+    constant,
+    /// A literal node (`Spec.literalValue`), interned at the merge.
+    literal,
+    /// A whole-program name `a` (`Spec.globalValue`): fixed for one solve,
+    /// since `decl`, `escaped` and `assigned` are.
+    global,
+    /// A local's read after its one declaration: the value of cell `a`,
+    /// the declaration's initialiser (`none`: ⊤), narrowed past a guard
+    /// when flagged (`Spec.guardNames`).
+    local,
+    /// A read of parameter `a` of the statement's own top-level function,
+    /// narrowed when flagged. The merge finds the parameter's cell.
+    param,
+    /// The operand's cell `a`.
+    unary,
+    /// `pool[a..]`: the left and the right operand's cells.
+    binary,
+    /// `pool[a..]`: the test's, the consequent's and the alternate's cells,
+    /// then fact 5's second case (`Spec.nullTestTaken`): the tested read's
+    /// cell, the taken branch's cell and node, or `none` three times.
+    cond,
+    /// `pool[a..]`: the callee's whole-program name (`none`: not a name),
+    /// the argument count, the arguments' cells.
+    call,
+    /// `pool[a..]`: the part count, then each part's cell.
+    template,
+    /// `a`: the object's cell.
+    member,
+    /// `pool[a..]`: the count of keys, then each key's name and value's
+    /// cell; flagged when the literal holds a spread.
+    object,
+    /// `o.p = v`: its node is the target `o.p`, `a` the value's cell.
+    store,
+    /// A `return` of the function that is its node, `a` the value's cell
+    /// (`none` for what may run off its end: `undefined`).
+    ret,
+};
+
+/// A constraint's kind and its one flag (`Op`).
+const Code = packed struct(u8) {
+    op: Op,
+    flag: bool = false,
+
+    /// Whether the constraint is a node's: its `node` is the node's cell.
+    fn ofNode(c: Code) bool {
+        return c.op != .store and c.op != .ret;
+    }
+};
+
+const fixed_top: u32 = 0;
+const fixed_object: u32 = 1;
+
+/// One module's constraints (`backend.md` §9, *The combined solver —
+/// Extraction*): made from the module's `JsIr` and its names' whole-program
+/// ids alone (`Extractor`), so on a worker, and each statement's kept while
+/// its nodes stand (`Mod.keptNodes`). A cell is the module's own: a node's
+/// index for its first occurrence in the walk, `nodes + k` for its k-th
+/// repeat (`over` names the node), as `Mod.memo` keeps the last; the merge
+/// adds the module's base. In an arena of its own, which only the task
+/// extracting the module touches: 9 bytes a constraint, and the pool.
+const Extract = struct {
+    arena: Arena = .init(std.heap.page_allocator),
+    /// What it was made from: the module's `epoch`, and how many names the
+    /// walks count (`Mod.stamp.len`).
+    epoch: u64 = std.math.maxInt(u64),
+    names: usize = 0,
+    nodes: u32 = 0,
+    code: []Code = &.{},
+    /// A node's constraint's cell; a statement's constraint's node.
+    node: []u32 = &.{},
+    a: []u32 = &.{},
+    pool: []u32 = &.{},
+    over: []u32 = &.{},
+    stmts: []ExStmt = &.{},
+    reads: []GRead = &.{},
+    assigns: []u32 = &.{},
+    /// Of the last extraction: the statements walked, and those whose
+    /// constraints it took from the one before.
+    walked: u32 = 0,
+    reused: u32 = 0,
+    /// The readers index of the module's cells: per cell, the constraints
+    /// that read it, `rd[rd_off[c]..rd_off[c + 1]]`, by counting sort.
+    rd_off: []u32 = &.{},
+    rd: []u32 = &.{},
+    /// Executability (*The combined solver — Executability*): per
+    /// constraint, the exec cell that gates it; the module's exec cells,
+    /// the first its top level; and per exec cell the constraints it gates
+    /// (`ec`) and the arms below it (`ek`), and per node cell the arms its
+    /// value decides (`et`), each `x[x_off[i]..x_off[i + 1]]`.
+    exec: []u32 = &.{},
+    execs: []ExecCell = &.{},
+    ec_off: []u32 = &.{},
+    ec: []u32 = &.{},
+    ek_off: []u32 = &.{},
+    ek: []u32 = &.{},
+    et_off: []u32 = &.{},
+    et: []u32 = &.{},
+
+    /// A safety build's check that what an extraction kept of the last one
+    /// is what a walk of every statement makes (`Extractor.reuse`).
+    fn expectSame(x: *const Extract, y: *const Extract, mi: u32) void {
+        const same = x.nodes == y.nodes and x.code.len == y.code.len and
+            std.mem.eql(u8, @ptrCast(x.code), @ptrCast(y.code)) and std.mem.eql(u32, x.node, y.node) and
+            std.mem.eql(u32, x.a, y.a) and std.mem.eql(u32, x.pool, y.pool) and
+            std.mem.eql(u32, x.over, y.over) and std.mem.eql(u32, x.assigns, y.assigns) and
+            std.mem.eql(u32, x.rd_off, y.rd_off) and std.mem.eql(u32, x.rd, y.rd) and
+            std.mem.eql(u32, x.exec, y.exec) and x.execs.len == y.execs.len and std.mem.eql(u32, x.et, y.et) and
+            x.reads.len == y.reads.len and x.stmts.len == y.stmts.len;
+        if (!same) std.debug.panic("specialisation: module {d}'s constraints kept from its last extraction are not what a walk makes", .{mi});
+        for (x.reads, y.reads) |r, q| if (r.g != q.g or r.callee != q.callee) std.debug.panic("specialisation: module {d}'s kept reads differ", .{mi});
+        for (x.execs, y.execs) |e, f| if (e.kind != f.kind or e.parent != f.parent or e.a != f.a) std.debug.panic("specialisation: module {d}'s kept exec cells differ", .{mi});
+        for (x.stmts, y.stmts) |p, q| if (p.node != q.node or p.cons != q.cons or p.pool != q.pool or p.reads != q.reads or p.assigns != q.assigns or p.execs != q.execs or p.param_reads != q.param_reads)
+            std.debug.panic("specialisation: module {d}'s kept statement {d} differs", .{ mi, p.node.int() });
+    }
+
+    fn cells(x: *const Extract) u32 {
+        return x.nodes + @as(u32, @intCast(x.over.len));
+    }
+
+    /// The node cell `c` is an occurrence of.
+    fn nodeOf(x: *const Extract, c: u32) u32 {
+        return if (c < x.nodes) c else x.over[c - x.nodes];
+    }
+
+    /// The node constraint `j` is of.
+    fn nodeAt(x: *const Extract, j: usize) Index {
+        return @fromBackingInt(@intCast(if (x.code[j].ofNode()) x.nodeOf(x.node[j]) else x.node[j]));
+    }
+
+    /// The place in `stmts` of the statement constraint `j` is in.
+    fn stmtOf(x: *const Extract, j: usize) u32 {
+        var lo: usize = 0;
+        var hi: usize = x.stmts.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            if (x.stmts[mid].cons <= j) lo = mid + 1 else hi = mid;
+        }
+        return @intCast(lo);
+    }
+
+    fn deinit(x: *Extract) void {
+        x.arena.deinit();
+        x.* = .{};
+    }
+};
+
+/// One top-level statement of an `Extract`: its node, where its constraints
+/// and its names' counts end, and whether it reads a parameter of its own
+/// function (a read that `Spec.readsName` registers on the function's name).
+const ExStmt = struct {
+    node: Index,
+    cons: u32,
+    pool: u32,
+    over: u32,
+    reads: u32,
+    assigns: u32,
+    /// Where its exec cells end in `execs`.
+    execs: u32 = 0,
+    /// The module's `epoch` when the statement was extracted: its
+    /// constraints hold while its nodes are what they were then
+    /// (`Mod.keptNodes`).
+    epoch: u64,
+    param_reads: bool,
+};
+
+/// An exec cell of a module: a bit, false until something makes it true.
+/// The top level is true; a function's body (`a` its node) when a call
+/// that runs may call it, or its site escapes; an arm when its parent is
+/// true and the value of cell `a` (the test's, or the left operand's)
+/// allows it.
+const ExecCell = struct {
+    kind: ExecKind,
+    parent: u32 = none,
+    a: u32 = none,
+
+    const ExecKind = enum(u8) { top, body, then_arm, else_arm, and_right, or_right };
+};
+
+/// A read of a whole-program name a count makes (`Spec.read`): every one
+/// counts for `Spec.reads`, and one that is not a call's callee escapes.
+const GRead = struct { g: u32, callee: bool };
+
 /// One module's working state for the round: the IR's growable columns,
 /// and the per-name tables of the top-level declaration being walked.
 const Mod = struct {
@@ -641,8 +869,6 @@ const Mod = struct {
     /// unless `Copy` gives one its source's (`backend.md` §9,
     /// *Declared-type filtering of fact 3*).
     node_keys: std.ArrayList(JsIr.KeyedNode),
-    /// `JsIr.closed_decls`, a statement leaving it when it is rewritten.
-    closed_decls: std.ArrayList(Index),
     name_key: std.ArrayList(JsIr.RepKey),
     tables: ?*Tables,
     self: JsIr.Symbol.Optional,
@@ -678,6 +904,10 @@ const Mod = struct {
     /// away every walk of a module of many statements per function.
     epoch: u64 = 0,
     wide: u64 = 0,
+    /// The last change made in no named statement but the one that only
+    /// replaced the module's list of statements (`bodyChanged`): every
+    /// statement's nodes are what they were since then (`keptNodes`).
+    wide_nodes: u64 = 0,
     /// The statement `Spec.within` names, and its last change while named.
     scope: ?Index = null,
     scope_last: u64 = 0,
@@ -710,6 +940,12 @@ const Mod = struct {
     /// `Spec.fact3Neutral` licenses (#575). Cleared when fact 3 solves the
     /// program again (`Spec.keepFact3`).
     fact3: bool = false,
+    /// The module's constraints for the combined solver, kept while its
+    /// `epoch` stands (`Extract`).
+    ex: Extract = .{},
+    /// Fact 3's constraints and the steps of its first walk, kept while
+    /// its `epoch` stands (`PtsExtract`).
+    pex: PtsExtract = .{},
 
     /// The whole-program id of `n`, or null for a local.
     inline fn globalOf(m: *const Mod, n: NameIndex) ?u32 {
@@ -724,7 +960,23 @@ const Mod = struct {
         m.version +%= 1;
         if (m.version == none) m.version = 0;
         m.epoch += 1;
-        if (m.scope != null) m.scope_last = m.epoch else m.wide = m.epoch;
+        if (m.scope != null) m.scope_last = m.epoch else {
+            m.wide = m.epoch;
+            m.wide_nodes = m.epoch;
+        }
+        m.fact3 = true;
+    }
+
+    /// `changed` for a new list of the module's top-level statements,
+    /// each of which is the node it was: a walk of the module is another
+    /// walk (`kept`), and a walk of one statement is the same one
+    /// (`keptNodes`).
+    fn bodyChanged(m: *Mod) void {
+        std.debug.assert(m.scope == null);
+        m.version +%= 1;
+        if (m.version == none) m.version = 0;
+        m.epoch += 1;
+        m.wide = m.epoch;
         m.fact3 = true;
     }
 
@@ -741,8 +993,15 @@ const Mod = struct {
     /// `epoch`) is what it meets now: no change since was the module's
     /// own or that statement's.
     fn kept(m: *const Mod, top: Index, at: u64) bool {
-        if (at == m.epoch) return true;
         if (at < m.wide) return false;
+        return m.keptNodes(top, at);
+    }
+
+    /// Whether the nodes of top-level statement `top` are what they were at
+    /// `at`: `kept`, but past a new list of statements (`bodyChanged`).
+    fn keptNodes(m: *const Mod, top: Index, at: u64) bool {
+        if (at == m.epoch) return true;
+        if (at < m.wide_nodes) return false;
         if (m.scope) |t| if (t == top and at < m.scope_last) return false;
         if (top.int() < m.top_changed.items.len and at < m.top_changed.items[top.int()]) return false;
         return true;
@@ -757,10 +1016,6 @@ const Mod = struct {
         m.ir.nodes.items(.tag)[node.int()] = tag;
         m.ir.nodes.items(.data)[node.int()] = .{ .lhs = lhs, .rhs = rhs };
         if (JsIr.keyRow(m.node_keys.items, node)) |at| m.node_keys.items[at].key = .wild;
-        if (m.closed_decls.items.len != 0) if (std.sort.binarySearch(Index, m.closed_decls.items, node, orderIndex)) |at| {
-            _ = m.closed_decls.orderedRemove(at);
-            m.ir.closed_decls = m.closed_decls.items;
-        };
     }
 
     /// `node`, appended by a `Copy` that keeps its source's keys, takes
@@ -789,10 +1044,27 @@ const Mod = struct {
 
     /// Make `node` what `from` is: same tag and operands. Every operand is
     /// an index, so the two nodes now share their children; `from` itself
-    /// is no longer reached from anywhere but `node`.
-    fn copyNode(m: *Mod, node: Index, from: Index) void {
+    /// is no longer reached from anywhere but `node`. An allocation's key
+    /// goes with it: `node` is now the allocation `from` was, of the type
+    /// lowering keyed it by (*Declared-type filtering of fact 3*, amended
+    /// for #722).
+    fn copyNode(m: *Mod, gpa: Allocator, node: Index, from: Index) Allocator.Error!void {
         const d = m.ir.data(from);
-        m.setNode(node, m.ir.tag(from), d.lhs, d.rhs);
+        const tag = m.ir.tag(from);
+        const key: JsIr.RepKey = switch (tag) {
+            .object, .array, .arrow => if (JsIr.keyRow(m.node_keys.items, from)) |at| m.node_keys.items[at].key else .wild,
+            else => .wild,
+        };
+        m.setNode(node, tag, d.lhs, d.rhs);
+        if (key == .wild) return;
+        if (JsIr.keyRow(m.node_keys.items, node)) |at| {
+            m.node_keys.items[at].key = key;
+            return;
+        }
+        var at: usize = m.node_keys.items.len;
+        while (at > 0 and m.node_keys.items[at - 1].node.int() > node.int()) at -= 1;
+        try m.node_keys.insert(gpa, at, .{ .node = node, .key = key });
+        m.ir.node_keys = m.node_keys.items;
     }
 
     /// `copyNode` for a fold: `node`, a decided `cond`, `&&` or `||`, is
@@ -800,8 +1072,8 @@ const Mod = struct {
     /// what runs, so a map names where it was written and not the test
     /// that decided it; a call kept this way is also the site a copy into
     /// it takes (`Copy.site`; `backend.md` §11.2, item 6).
-    fn foldTo(m: *Mod, node: Index, from: Index) void {
-        m.copyNode(node, from);
+    fn foldTo(m: *Mod, gpa: Allocator, node: Index, from: Index) Allocator.Error!void {
+        try m.copyNode(gpa, node, from);
         m.ir.nodes.items(.pos)[node.int()] = m.ir.pos(from);
     }
 
@@ -917,6 +1189,10 @@ const Spec = struct {
     /// a function asks for it, and the table's probe, hashing the key a
     /// byte at a time, is generic code Zig's own backend compiles poorly.
     name_lits: []u32 = &.{},
+    /// Per whole-program name: what the last solve found its initialiser
+    /// to be (`Solver`'s name cells), as a `Lat`'s bits, `none` for a name
+    /// whose value is not its initialiser's (`globalValue`).
+    name_solved: []u32 = &.{},
     /// `countExpr`'s stack, shared by the walks it nests: each owns the
     /// entries above the length it found.
     names: std.ArrayList(Index) = .empty,
@@ -946,20 +1222,20 @@ const Spec = struct {
     kept_drops: std.ArrayList(KeptDrop) = .empty,
     kept_args: std.ArrayList(NodeRef) = .empty,
     changed: bool = false,
-    /// Whether this sweep counts the reads of whole-program names: the
-    /// first of a round only, so that `reads` is a count and not a
-    /// multiple of one.
-    counting: bool = false,
-    /// Slice 4, facts 4 and 5: per abstract object and property, the join
-    /// of every value written to it; the object sites whose literal has a
-    /// spread; per function, the join of what it returns, and the function
-    /// the walk is in; and the conditionals fact 5 decides though their
-    /// test is no literal, with the branch each takes. Refilled each round.
-    prop_lat: KeyMap(SiteProp, Lat) = .empty,
+    /// The reads of keys are the program's as the rewrite left it
+    /// (`liveKeys`): `Pts.Prop.live_read`, and per property id a read on
+    /// an object fact 3 has no value for.
+    live_keys: bool = false,
+    /// The patch refused a local read its literal for the count it read
+    /// (`substitutes`): a count the patch lowers may allow it.
+    refused_local: bool = false,
+    id_read: []bool = &.{},
+    /// Slice 4, facts 4 and 5: the object sites whose literal has a spread,
+    /// and the function the walk is in. What is written to a property of a
+    /// site, and what a function returns, are fact 3's own cells
+    /// (`Pts.Prop.lat`, `Pts.Site.ret_lat`).
     spread_sites: []bool = &.{},
-    ret_lat: KeyMap(NodeRef, Lat) = .empty,
     cur_fn: ?NodeRef = null,
-    decided_conds: KeyMap(NodeRef, Index) = .empty,
     /// `nameIn`'s answers, keyed by module and whole-program id; cleared
     /// each rewrite.
     name_in: KeyMap(SiteProp, u32) = .empty,
@@ -984,7 +1260,7 @@ const Spec = struct {
     /// holds the guard.
     narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
-    list_mode: enum { scalars, constructors, self_assign, iife, switches } = .scalars,
+    list_mode: enum { scalars, constructors, tidy, switches } = .scalars,
     /// Slice 8: `soleCalls`, for the pass in progress, made when a call
     /// first asks for it; null until then.
     sole: ?[]const bool = null,
@@ -1018,6 +1294,9 @@ const Spec = struct {
     /// take arrays as long as the whole program's names anew.
     io_refs_keep: []u32 = &.{},
     io_assigned_keep: []u32 = &.{},
+    /// `inlineScan`'s place of each name in the module it counts, plus
+    /// one: zero between modules.
+    io_slot: []u32 = &.{},
     io_sites: []?CallSite = &.{},
     io_flags: []bool = &.{},
     io_fit: []bool = &.{},
@@ -1032,44 +1311,38 @@ const Spec = struct {
     first_stamp: []u32 = &.{},
     first_name: []u32 = &.{},
     first_epoch: u32 = 0,
-    /// `countTop`'s record of each top-level statement's count, and while
-    /// it counts (`logging`), the names `count` touched, the whole-program
-    /// names it read (each read once), and those it marked escaped or
-    /// assigned.
-    count_logs: KeyMap(NodeRef, CountLog) = .empty,
-    log_names: std.ArrayList(u32) = .empty,
-    log_reads: std.ArrayList(u32) = .empty,
-    log_escaped: std.ArrayList(u32) = .empty,
-    log_assigned: std.ArrayList(u32) = .empty,
-    logging: bool = false,
-    log_failed: bool = false,
     /// `scanOf`'s answers, per function, with the `Mod.version` each is of.
     body_scans: KeyMap(NodeRef, KeptScan) = .empty,
     /// `returnsMade` of a function, kept while its module stands (`fuseOne`).
     fuse_made: KeyMap(NodeRef, struct { version: u32, made: bool }) = .empty,
-    /// The worklist of facts 1, 2, 4 and 5 (`walkAll`): every top-level
-    /// statement in order; those a change woke; the one being walked
-    /// (`none` outside a sweep) and that walk's number; and per
-    /// whole-program name and per site, the statements that read it.
+    /// The rewrite's own walks' dependencies (`rewrite`, `stale`), which the
+    /// combined solver leaves (`solve`): every top-level statement in order;
+    /// those a change woke; the one a solve's constraint is of (`none`
+    /// outside one) and its number; and per whole-program name and per
+    /// site, the statements that read it.
     w_stmts: std.ArrayList(WorkStmt) = .empty,
     w_dirty: std.DynamicBitSetUnmanaged = .{},
     w_cur: u32 = none,
     w_walk: u32 = 0,
-    /// How many sweeps the last `sweeps` took.
-    sweep_count: u32 = 0,
     w_deps: std.ArrayList(WorkDep) = .empty,
     g_deps: []u32 = &.{},
     g_seen: []u32 = &.{},
     site_deps: []u32 = &.{},
     site_seen: []u32 = &.{},
+    /// The combined solver while it solves (`solve`): what `fieldGet` and
+    /// `retGet` register their reads with.
+    solver: ?*Solver = null,
+    /// The solve's columns and pools and the rewrite's dependency lists,
+    /// of one solve: emptied with `.keep_all` when the next starts, so a
+    /// solve lands on the pages the last one touched, whether or not fact
+    /// 3 solved in between (`Pts.tmp` is emptied only when it does).
+    solve_tmp: Arena = .init(std.heap.page_allocator),
 
     const KeptScan = struct { epoch: u64, scan: ?*const BodyScan };
-    const CountLog = struct { version: u32, names: []const NameCount, reads: []const u32, escaped: []const u32, assigned: []const u32 };
-    const NameCount = struct { name: u32, decls: u32, uses: u32, assigned: bool };
     const KeptNodes = struct { epoch: u64, nodes: []const Index };
     const WorkStmt = struct { module: u32, stmt: Index };
     const WorkDep = struct { stmt: u32, next: u32 };
-    const Declined = struct { g: u32, lit: Lit };
+    const Declined = struct { g: u32, lit: Lit, v: Lat, module: u32, top: Index, node: Index, object_position: bool };
     const SiteProp = struct { site: u32, prop: u32 };
     const NodeRef = struct { module: u32, node: u32 };
     const KeptDrop = struct { site: u32, module: u32, top: Index, gone: []const bool, names: []const NameIndex };
@@ -1144,33 +1417,51 @@ const Spec = struct {
         return false;
     }
 
+    /// `v` joins property `prop` of site `site` (facts 4 and 5), in fact 3's
+    /// own cell of it. A property fact 3 has no `Prop` for is one no read
+    /// of facts 4 and 5 asks of (`propValue` and `tagValue` find the `Prop`
+    /// first), so the write has nowhere to go.
     fn joinProp(s: *Spec, site: u32, prop: u32, v: Lat) Allocator.Error!void {
         if (prop == none) return;
-        const gop = try s.prop_lat.getOrPut(s.arena, .{ .site = site, .prop = prop });
-        var moved = false;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .bot;
-            if (v.state != .bot) s.changed = true;
-            moved = true;
-        }
-        if (s.joinInto(gop.value_ptr, v)) moved = true;
+        const pr = s.pts.propMut(site, prop) orelse return;
+        var moved = !pr.lat_made;
+        if (!pr.lat_made and v.state != .bot) s.changed = true;
+        pr.lat_made = true;
+        if (s.joinInto(&pr.lat, v)) moved = true;
         if (moved) s.siteChanged(site);
     }
 
+    /// What is known of property `prop` of site `site` (facts 4 and 5):
+    /// null when no write has reached it. Inside the combined solver it is
+    /// the field's cell, and the constraint reading it is woken when it
+    /// changes (`Solver.reads`).
+    inline fn fieldGet(s: *Spec, site: u32, prop: u32) Allocator.Error!?Lat {
+        const pr = s.pts.propMut(site, prop) orelse return null;
+        if (s.solver) |sv| try sv.reads(&pr.lat_readers);
+        return if (pr.lat_made) pr.lat else null;
+    }
+
+    /// What function `ref` may return (fact 5), as `fieldGet`.
+    inline fn retGet(s: *Spec, ref: NodeRef) Allocator.Error!?Lat {
+        const site = s.pts.siteAt(ref.module, @fromBackingInt(@intCast(ref.node))) orelse return null;
+        const st = &s.pts.sites.items[site];
+        if (s.solver) |sv| try sv.reads(&st.ret_readers);
+        return if (st.ret_made) st.ret_lat else null;
+    }
+
+    /// `v` joins what the function the walk is in returns, in its site's
+    /// cell (`Pts.Site.ret_lat`). A function fact 3 made no site for is
+    /// one no call reads the return of (`callValue` reads a site's).
     fn joinRet(s: *Spec, v: Lat) Allocator.Error!void {
         const f = s.cur_fn orelse return;
-        const gop = try s.ret_lat.getOrPut(s.arena, f);
-        var moved = false;
-        if (!gop.found_existing) {
-            gop.value_ptr.* = .bot;
-            if (v.state != .bot) s.changed = true;
-            moved = true;
-        }
-        if (s.joinInto(gop.value_ptr, v)) moved = true;
+        const site = s.pts.siteAt(f.module, @fromBackingInt(@intCast(f.node))) orelse return;
+        const st = &s.pts.sites.items[site];
+        var moved = !st.ret_made;
+        if (!st.ret_made and v.state != .bot) s.changed = true;
+        st.ret_made = true;
+        if (s.joinInto(&st.ret_lat, v)) moved = true;
         if (moved) {
-            if (s.pts.siteAt(f.module, @fromBackingInt(@intCast(f.node)))) |site| {
-                s.siteChanged(site);
-            } else s.w_dirty.setRangeValue(.{ .start = 0, .end = s.w_dirty.bit_length }, true);
+            s.siteChanged(site);
         }
     }
 
@@ -1187,7 +1478,6 @@ const Spec = struct {
                 .string_bytes = .{ .items = @constCast(ir.string_bytes), .capacity = ir.string_bytes.len, .pointer_stability = .{} },
                 .names = .{ .items = @constCast(ir.names), .capacity = ir.names.len, .pointer_stability = .{} },
                 .node_keys = .{ .items = @constCast(ir.node_keys), .capacity = ir.node_keys.len, .pointer_stability = .{} },
-                .closed_decls = .{ .items = @constCast(ir.closed_decls), .capacity = ir.closed_decls.len, .pointer_stability = .{} },
                 .name_key = .{ .items = @constCast(ir.name_key), .capacity = ir.name_key.len, .pointer_stability = .{} },
                 .tables = src.tables,
                 .self = src.self,
@@ -1233,18 +1523,94 @@ const Spec = struct {
         return s;
     }
 
-    /// Facts-then-rewrite to their fixpoint (at most `max_rounds`).
+    /// One solve, read once by one rewrite (`backend.md` §9, *The combined
+    /// solver*); then what no longer has a reference goes (slice 2).
     fn rounds(s: *Spec) Allocator.Error!void {
-        var round: u32 = 0;
-        while (round < max_rounds) : (round += 1) {
-            if (!try s.analyse()) break;
-            const rewrote = try s.rewrite();
-            // Slice 2: what no longer has a reference goes, and with it the
-            // calls and assignments it made, which the next round's facts no
-            // longer see.
-            const pruned = try s.prune();
-            if (!rewrote and !pruned) break;
-            if (round + 1 == max_rounds) s.stats.rounds_capped += 1;
+        if (!try s.analyse()) return;
+        _ = try s.rewrite();
+        _ = try s.prune();
+        // A key nothing left reads goes from its literal (fact 3), and
+        // what its value named may go with it.
+        if (try s.dropUnreadKeys()) _ = try s.prune();
+    }
+
+    /// Every key of an object literal that no read the rewrite and the
+    /// prune left reaches, whose value does nothing (`dropKeys`), gone. Only
+    /// a key fact 3 saw read can be one: the others the patch dropped
+    /// already.
+    fn dropUnreadKeys(s: *Spec) Allocator.Error!bool {
+        if (!s.pts.ok) return false;
+        // The keys that may have lost every read, by property id, and the
+        // sites holding one.
+        const asked = try s.arena.alloc(bool, s.in.props);
+        @memset(asked, false);
+        var sites: std.ArrayList(u32) = .empty;
+        for (s.pts.sites.items, 0..) |*st, i| {
+            if (st.kind != .object or st.escaped or st.all_read) continue;
+            var any = false;
+            for (st.props.items) |*pr| {
+                pr.live_read = false;
+                if (!pr.read or pr.id >= asked.len or s.pts.hostImplicit(pr.id)) continue;
+                asked[pr.id] = true;
+                any = true;
+            }
+            if (any) try sites.append(s.arena, @intCast(i));
+        }
+        if (sites.items.len == 0) return false;
+        try s.liveKeys(asked);
+        s.live_keys = true;
+        defer s.live_keys = false;
+        var any = false;
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        s.cur_top = none_index;
+        for (sites.items) |site| {
+            const st = &s.pts.sites.items[site];
+            const lost = for (st.props.items) |pr| {
+                if (pr.read and !pr.live_read and pr.id < asked.len and asked[pr.id] and !s.id_read[pr.id]) break true;
+            } else false;
+            if (!lost) continue;
+            const m = &s.mods[st.module];
+            if (st.node.int() >= m.ir.nodes.len or m.ir.tag(st.node) != .object) continue;
+            if (try s.dropKeys(m, st.node)) any = true;
+        }
+        return any;
+    }
+
+    /// Which of the keys `asked` names a read of the program, as it now
+    /// stands, reaches: each member read, by fact 3's value of its object
+    /// (`Pts.Prop.live_read`); a read whose object fact 3 never saw reaches
+    /// its key on every object (`id_read`). An assignment's target is no
+    /// read.
+    fn liveKeys(s: *Spec, asked: []const bool) Allocator.Error!void {
+        s.id_read = try growSlice(s.arena, bool, &.{}, s.in.props, false);
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            const vals = s.pts.vals[mi];
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                const nodes = try s.preorder(m, top);
+                for (nodes) |node| if (ir.tag(node) == .assign_stmt) {
+                    const t: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                    if (ir.tag(t) == .member and t.int() < m.objects.bit_length) m.objects.set(t.int());
+                };
+                for (nodes) |node| {
+                    if (ir.tag(node) != .member) continue;
+                    if (node.int() < m.objects.bit_length and m.objects.isSet(node.int())) {
+                        m.objects.unset(node.int());
+                        continue;
+                    }
+                    const d = ir.data(node);
+                    const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs)));
+                    if (id == none or id >= asked.len or !asked[id]) continue;
+                    if (d.lhs >= vals.len) {
+                        s.id_read[id] = true;
+                        continue;
+                    }
+                    for (vals[d.lhs].sites) |site| if (s.pts.propMut(site, id)) |pr| {
+                        pr.live_read = true;
+                    };
+                }
+            }
         }
     }
 
@@ -1278,7 +1644,6 @@ const Spec = struct {
             m.ir.names = try m.names.toOwnedSlice(s.gpa);
             // A development build's columns are empty and own nothing.
             if (m.node_keys.capacity != 0) m.ir.node_keys = try m.node_keys.toOwnedSlice(s.gpa);
-            if (m.closed_decls.capacity != 0) m.ir.closed_decls = try m.closed_decls.toOwnedSlice(s.gpa);
             if (m.name_key.capacity != 0) m.ir.name_key = try m.name_key.toOwnedSlice(s.gpa);
         }
     }
@@ -1349,9 +1714,6 @@ const Spec = struct {
         @memset(s.reads, 0);
         s.params.clearRetainingCapacity();
         s.arg_effect.clearRetainingCapacity();
-        s.prop_lat.clearRetainingCapacity();
-        s.ret_lat.clearRetainingCapacity();
-        s.decided_conds.clearRetainingCapacity();
         var ri: usize = 0;
         while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < s.escaped.len) {
             s.escaped[g] = true;
@@ -1397,7 +1759,7 @@ const Spec = struct {
             }
         }
         // Fact 3 first: a read it proves `undefined` folds like a literal.
-        s.stats.analyses += 1;
+        s.stats.solves += 1;
         if (s.fact3Kept()) {
             s.stats.points_to_reused += 1;
             try s.applyKeptDrops();
@@ -1413,17 +1775,11 @@ const Spec = struct {
         // What follows is of this analysis alone, so it lives where the
         // fixpoint does, emptied by the next solve (`Pts.tmp`).
         s.spread_sites = try s.pts.run().alloc(bool, s.pts.sites.items.len);
-        const converged = converged: {
-            if (std.debug.runtime_safety) {
-                var nodes: usize = 0;
-                for (s.mods) |*m| nodes += m.ir.nodes.len;
-                if (nodes <= Pts.max_checked_nodes) break :converged try s.checkedSweeps();
-            }
-            break :converged try s.sweeps(false);
-        };
-        s.stats.sweeps += s.sweep_count;
-        if (!converged) s.stats.analyses_declined += 1;
-        return converged;
+        @memset(s.spread_sites, false);
+        // Facts 1, 2, 4 and 5 by the combined solver (`backend.md` §9, *The
+        // combined solver*, slice 4), which has no sweep to run out of.
+        try s.solve();
+        return true;
     }
 
     /// Whether `pts` is still the solve of the program as it stands (#575):
@@ -1587,102 +1943,400 @@ const Spec = struct {
         s.kept_args.clearRetainingCapacity();
     }
 
-    /// Facts 1, 2, 4 and 5 swept to their fixpoint, from what `analyse`
-    /// set up. False when the fixpoint was not reached.
-    ///
-    /// The worklist (backend.md §9, *As built — the worklist*): after the
-    /// first sweep, which walks everything and counts, a sweep walks only
-    /// the statements that read a fact that changed since they were last
-    /// walked — any other would read what it read before and change
-    /// nothing — so the sweeps, their count and the facts are those of
-    /// walking the whole program each time, which `reference` does.
-    fn sweeps(s: *Spec, reference: bool) Allocator.Error!bool {
-        @memset(s.spread_sites, false);
-        const a = s.pts.run();
+    // ---- The combined solver (backend.md §9, slice 4) -------------------------
+
+    /// Facts 1, 2, 4 and 5 by the combined solver (`Solver`): extract the
+    /// modules that changed, merge, solve, and leave the facts where the
+    /// rewrite reads them — `memo`, `params`, fact 3's sites' cells of
+    /// fields and returns, the `escaped`, `assigned`, `reads`, `spread_sites`
+    /// and `arg_effect` columns — with the statements' dependency lists
+    /// (`g_deps`, `site_deps`) for the rewrite's own walks.
+    fn solve(s: *Spec) Allocator.Error!void {
+        try s.extractAll();
+        s.solve_tmp.reset(.keep_all);
+        // Fact 3's state may be the last analysis's (`fact3Kept`): its cells
+        // of fields and returns start again from ⊥.
+        for (s.pts.sites.items) |*st| {
+            st.ret_lat = .bot;
+            st.ret_made = false;
+            st.ret_readers = none;
+            for (st.props.items) |*pr| {
+                pr.lat = .bot;
+                pr.lat_made = false;
+                pr.lat_readers = none;
+            }
+        }
+        const a = s.solve_tmp.allocator();
+        const mods = s.mods;
+        // ---- The merge: cells and constraints by prefix sums, in module order.
+        const cell_base = try a.alloc(u32, mods.len);
+        const con_base = try a.alloc(u32, mods.len);
+        const stmt_base = try a.alloc(u32, mods.len);
+        const exec_base = try a.alloc(u32, mods.len);
+        var cells: u32 = 0;
+        var cons: u32 = 0;
+        var stmts: u32 = 0;
+        var execs: u32 = 0;
+        for (mods, cell_base, con_base, stmt_base, exec_base) |*m, *cb, *kb, *sb, *eb| {
+            eb.* = execs;
+            execs += @intCast(m.ex.execs.len);
+            cb.* = cells;
+            kb.* = cons;
+            sb.* = stmts;
+            cells += m.ex.cells();
+            cons += @intCast(m.ex.code.len);
+            stmts += @intCast(m.ex.stmts.len);
+        }
+        std.debug.assert(stmts == s.w_stmts.items.len);
+        const param_base = cells;
+        const params: u32 = @intCast(s.params.items.len);
+        cells += params;
+        var sv: Solver = .{
+            .s = s,
+            .cell_base = cell_base,
+            .con_base = con_base,
+            .stmt_base = stmt_base,
+            .param_base = param_base,
+            .lat = try a.alloc(Lat, cells),
+            .aux = try a.alloc(u32, cons),
+            .prd_off = try a.alloc(u32, params + 1),
+            .prd = &.{},
+            .queued = try .initEmpty(a, cons),
+            .exec_base = exec_base,
+            .on = try .initEmpty(a, execs),
+        };
+        @memset(sv.lat, .bot);
+        @memset(sv.aux, none);
+        // The rewrite's dependency lists, as `sweeps` sets them up.
         s.w_dirty = try .initEmpty(a, s.w_stmts.items.len);
         s.w_deps.clearRetainingCapacity();
         s.g_deps = try growSlice(a, u32, &.{}, s.globals, none);
         s.g_seen = try growSlice(a, u32, &.{}, s.globals, 0);
         s.site_deps = try growSlice(a, u32, &.{}, s.pts.sites.items.len, none);
         s.site_seen = try growSlice(a, u32, &.{}, s.pts.sites.items.len, 0);
-        s.w_walk = 0;
-        var sweep: u32 = 0;
-        while (sweep < max_sweeps) : (sweep += 1) {
-            s.changed = false;
-            s.counting = sweep == 0;
-            s.sweep_count = sweep + 1;
-            try s.walkAll(reference or sweep == 0);
-            if (!s.changed) return true;
+        // ---- What the counts say, for the whole program at once: every read
+        // of a name counts, one that is not a callee escapes it, an
+        // assignment assigns it.
+        // Of the statements that run: a declaration nothing live refers to
+        // goes (`liveStatements`), and what it reads and assigns with it.
+        const live = try s.liveStatements(a);
+        for (mods, stmt_base) |*m, sb| {
+            var reads_from: u32 = 0;
+            var assigns_from: u32 = 0;
+            for (m.ex.stmts, 0..) |st, k| {
+                defer reads_from = st.reads;
+                defer assigns_from = st.assigns;
+                if (!live[sb + k]) continue;
+                for (m.ex.reads[reads_from..st.reads]) |r| {
+                    s.reads[r.g] +|= 1;
+                    if (!r.callee) s.escaped[r.g] = true;
+                }
+                for (m.ex.assigns[assigns_from..st.assigns]) |g| s.assigned[g] = true;
+            }
         }
-        return false;
+        // A call of a function `Spec` tracks with another arity escapes it.
+        for (mods) |*m| {
+            const x = &m.ex;
+            for (x.code, x.a) |code, at| if (code.op == .call) {
+                const g = x.pool[at];
+                if (g == none or g >= s.decl.len) continue;
+                const decl = s.decl[g] orelse continue;
+                if (decl.func != null and x.pool[at + 1] != decl.arity) s.escaped[g] = true;
+            };
+        }
+        // ---- Per constraint, what the merge decides of it, in module order:
+        // the values fixed for the solve (literals, interned in this order,
+        // and names), parameters' cells, calls' parameters and their
+        // arguments' effects, spreads.
+        const gval = try a.alloc(u32, s.globals);
+        @memset(gval, none);
+        // The names' cells: each name whose value is its initialiser's
+        // reads that node's cell (`nameInit`).
+        s.name_solved = try growSlice(s.arena, u32, &.{}, s.globals, none);
+        const name_src = try a.alloc(u32, s.globals);
+        @memset(name_src, none);
+        var name_of: std.ArrayList(Solver.NameSrc) = .empty;
+        for (0..s.globals) |g| if (s.nameInit(@intCast(g))) |ini| {
+            if (ini.node.int() >= mods[ini.module].ex.nodes) continue;
+            name_src[g] = cell_base[ini.module] + ini.node.int();
+            try name_of.append(a, .{ .cell = name_src[g], .g = @intCast(g) });
+        };
+        std.mem.sortUnstable(Solver.NameSrc, name_of.items, {}, struct {
+            fn less(_: void, x: Solver.NameSrc, y: Solver.NameSrc) bool {
+                return x.cell < y.cell;
+            }
+        }.less);
+        sv.name_of = name_of.items;
+        sv.name_src = try .initEmpty(a, cells);
+        for (name_of.items) |n| sv.name_src.set(n.cell);
+        sv.nrd_off = try a.alloc(u32, s.globals + 1);
+        @memset(sv.nrd_off, 0);
+        @memset(sv.prd_off, 0);
+        for (mods, 0..) |*m, mi_usize| {
+            const mi: u32 = @intCast(mi_usize);
+            const x = &m.ex;
+            const ir = m.ir;
+            for (x.stmts, 0..) |st, k| {
+                const w = stmt_base[mi] + @as(u32, @intCast(k));
+                const first: u32 = if (k == 0) 0 else x.stmts[k - 1].cons;
+                // The statement's own function, when it is the one `Spec`
+                // tracks (`prepareTop`): its parameters' cells.
+                const tracked: ?Decl = tracked: {
+                    switch (ir.tag(st.node)) {
+                        .const_decl, .func_decl => {},
+                        else => break :tracked null,
+                    }
+                    const g = m.globalOf(@fromBackingInt(@intCast(ir.data(st.node).lhs))) orelse break :tracked null;
+                    const d = s.decl[g] orelse break :tracked null;
+                    if (d.func == null or d.module != mi or d.stmt != st.node) break :tracked null;
+                    break :tracked d;
+                };
+                // `readsName`: the names the statement reads, and the
+                // function whose parameters it reads.
+                const reads_from: u32 = if (k == 0) 0 else x.stmts[k - 1].reads;
+                for (x.reads[reads_from..st.reads]) |r| try s.depOnName(r.g, w);
+                if (tracked) |d| if (st.param_reads) try s.depOnName(s.globalOfDecl(d), w);
+                s.cur_top = st.node;
+                for (first..st.cons) |j| {
+                    const con = con_base[mi] + @as(u32, @intCast(j));
+                    switch (x.code[j].op) {
+                        .constant => sv.lat[cell_base[mi] + x.node[j]] = if (x.a[j] == fixed_object) .object else .top,
+                        // A literal node's id is looked up once (`Mod.lit_of`).
+                        .literal => sv.lat[cell_base[mi] + x.node[j]] = try s.literalValue(m, x.nodeAt(j)),
+                        .global => {
+                            const g = x.a[j];
+                            // A name whose value is its initialiser's reads
+                            // that cell (`nameInit`), and is woken with it.
+                            if (g < name_src.len and name_src[g] != none) {
+                                sv.aux[con] = name_src[g];
+                                sv.nrd_off[g + 1] += 1;
+                                continue;
+                            }
+                            if (gval[g] == none) gval[g] = @bitCast(s.globalValue(g));
+                            sv.lat[cell_base[mi] + x.node[j]] = @bitCast(gval[g]);
+                        },
+                        .param => if (tracked) |d| {
+                            if (!s.escaped[s.globalOfDecl(d)]) {
+                                const p = d.params + x.a[j];
+                                sv.aux[con] = param_base + p;
+                                sv.prd_off[p + 1] += 1;
+                            }
+                        },
+                        .call => {
+                            const at = x.a[j];
+                            const g = x.pool[at];
+                            if (g == none or g >= s.decl.len) continue;
+                            const decl = s.decl[g] orelse continue;
+                            if (decl.func == null or x.pool[at + 1] != decl.arity) continue;
+                            sv.aux[con] = decl.params;
+                            for (x.pool[at + 2 ..][0..decl.arity], 0..) |c, i| {
+                                const effect = &s.arg_effect.items[decl.params + i];
+                                if (!effect.* and !try s.effectFree(m, @fromBackingInt(@intCast(x.nodeOf(c))))) effect.* = true;
+                            }
+                        },
+                        .object => if (x.code[j].flag) if (s.pts.siteAt(mi, x.nodeAt(j))) |site| {
+                            if (site < s.spread_sites.len) s.spread_sites[site] = true;
+                        },
+                        else => {},
+                    }
+                }
+            }
+        }
+        // ---- The names' readers, by counting sort.
+        for (1..sv.nrd_off.len) |i| sv.nrd_off[i] += sv.nrd_off[i - 1];
+        sv.nrd = try a.alloc(u32, sv.nrd_off[s.globals]);
+        {
+            const nfill = try a.dupe(u32, sv.nrd_off[0..s.globals]);
+            for (mods, con_base) |*m, base| for (m.ex.code, m.ex.a, 0..) |code, g, j| if (code.op == .global) {
+                if (g >= name_src.len or name_src[g] == none) continue;
+                sv.nrd[nfill[g]] = base + @as(u32, @intCast(j));
+                nfill[g] += 1;
+            };
+        }
+        // ---- The parameters' readers, by counting sort.
+        for (1..sv.prd_off.len) |i| sv.prd_off[i] += sv.prd_off[i - 1];
+        sv.prd = try a.alloc(u32, sv.prd_off[params]);
+        const fill = try a.dupe(u32, sv.prd_off[0..params]);
+        for (mods, con_base) |*m, base| for (m.ex.code, 0..) |code, j| if (code.op == .param) {
+            const con = base + @as(u32, @intCast(j));
+            if (sv.aux[con] == none) continue;
+            const p = sv.aux[con] - param_base;
+            sv.prd[fill[p]] = con;
+            fill[p] += 1;
+        };
+        // ---- Executability's roots (*Executability*, amended for #685):
+        // every module's top level and every function body. Fact 3's call
+        // graph misses calls the program makes (a function called through
+        // a fiber's stack of frames has no caller in it), so a body it
+        // finds no executable call of may still run.
+        // A top-level statement runs, with every body in it, unless it is a
+        // declaration nothing live refers to, which `prune` drops after the
+        // rewrite: what refers to it can only shrink (*Reading off*).
+        for (mods, exec_base, stmt_base) |*m, eb, sb| {
+            sv.on.set(eb);
+            var from: u32 = 1;
+            for (m.ex.stmts, 0..) |st, k| {
+                defer from = st.execs;
+                if (!live[sb + k]) continue;
+                for (m.ex.execs[from..st.execs], from..) |e, i| switch (e.kind) {
+                    .top, .body => sv.on.set(eb + @as(u32, @intCast(i))),
+                    else => {},
+                };
+            }
+        }
+        // ---- The solve.
+        s.solver = &sv;
+        defer s.solver = null;
+        try sv.solve();
+        s.w_cur = none;
+        s.stats.solve_constraints += cons;
+        s.stats.solve_evaluations += sv.evaluations;
+        // ---- The facts, where the rewrite reads them. A node's value is its
+        // last occurrence's, as a walk leaves `memo`; a conditional fact 5
+        // decides is read off it (`decidedBranch`). The fields and returns
+        // are fact 3's sites' own cells already.
+        for (mods, 0..) |*m, mi| {
+            const x = &m.ex;
+            for (x.code, x.node) |code, cell| {
+                if (!code.ofNode()) continue;
+                m.memo[x.nodeOf(cell)] = sv.lat[cell_base[mi] + cell];
+            }
+        }
+        @memcpy(s.params.items, sv.lat[param_base..]);
+        for (name_src, s.name_solved) |src, *out| if (src != none) {
+            out.* = @bitCast(sv.lat[src]);
+        };
     }
 
-    /// `sweeps` twice, walking everything every sweep and then by the
-    /// worklist, which must agree on every fact (a safety build's check, on
-    /// a small program).
-    fn checkedSweeps(s: *Spec) Allocator.Error!bool {
-        const a = s.arena;
-        const escaped = try a.dupe(bool, s.escaped);
-        const assigned = try a.dupe(bool, s.assigned);
-        const params = try a.dupe(Lat, s.params.items);
-        const want = try s.sweeps(true);
-        const ref = .{
-            .count = s.sweep_count,
-            .params = try a.dupe(Lat, s.params.items),
-            .escaped = try a.dupe(bool, s.escaped),
-            .assigned = try a.dupe(bool, s.assigned),
-            .reads = try a.dupe(u32, s.reads),
-            .spread = try a.dupe(bool, s.spread_sites),
-            .props = try s.prop_lat.clone(a),
-            .rets = try s.ret_lat.clone(a),
-            .conds = try s.decided_conds.clone(a),
+    /// Per top-level statement, in `w_stmts`' order: whether it is live as
+    /// `prune` sees it — not a declaration it may drop, or one a live
+    /// statement or a root refers to.
+    fn liveStatements(s: *Spec, a: Allocator) Allocator.Error![]bool {
+        const referenced = try a.alloc(bool, s.globals);
+        @memset(referenced, false);
+        const live = try a.alloc(bool, s.globals);
+        @memset(live, false);
+        var work: std.ArrayList(u32) = .empty;
+        var ri: usize = 0;
+        while (eachRoot(s.in, ri)) |g| : (ri += 1) if (g < referenced.len) {
+            referenced[g] = true;
+            try work.append(a, g);
         };
-        const memo = try a.alloc([]Lat, s.mods.len);
-        for (memo, s.mods) |*mm, *m| mm.* = try a.dupe(Lat, m.memo);
-        @memcpy(s.escaped, escaped);
-        @memcpy(s.assigned, assigned);
-        @memcpy(s.params.items, params);
-        @memset(s.reads, 0);
-        s.prop_lat.clearRetainingCapacity();
-        s.ret_lat.clearRetainingCapacity();
-        s.decided_conds.clearRetainingCapacity();
-        const got = try s.sweeps(false);
-        const Fail = struct {
-            fn at(what: []const u8) noreturn {
-                std.debug.panic("specialisation: the worklist's facts differ from a sweep of everything: {s}", .{what});
+        // Per statement, the names it reads and assigns, as its extraction
+        // recorded them (`Extract.reads`, `Extract.assigns`): the names
+        // `references` finds by walking it.
+        const where_m = try a.alloc(u32, s.globals);
+        @memset(where_m, none);
+        const where_k = try a.alloc(u32, s.globals);
+        for (s.mods, 0..) |*m, mi| for (m.ex.stmts, 0..) |st, k| {
+            if (s.candidate(m, st.node)) |g| {
+                where_m[g] = @intCast(mi);
+                where_k[g] = @intCast(k);
+                continue;
+            }
+            try s.extractedRefs(m, k, referenced, &work, a);
+        };
+        while (work.pop()) |g| {
+            if (g >= where_m.len or live[g]) continue;
+            live[g] = true;
+            if (where_m[g] == none) continue;
+            try s.extractedRefs(&s.mods[where_m[g]], where_k[g], referenced, &work, a);
+        }
+        var out: std.ArrayList(bool) = .empty;
+        for (s.mods) |*m| for (m.ex.stmts) |st| {
+            const g = s.candidate(m, st.node);
+            try out.append(a, if (g) |x| live[x] else true);
+        };
+        std.debug.assert(out.items.len == s.w_stmts.items.len);
+        return out.items;
+    }
+
+    fn extractedRefs(s: *Spec, m: *Mod, k: usize, referenced: []bool, work: *std.ArrayList(u32), a: Allocator) Allocator.Error!void {
+        _ = s;
+        const x = &m.ex;
+        const reads_from: u32 = if (k == 0) 0 else x.stmts[k - 1].reads;
+        const assigns_from: u32 = if (k == 0) 0 else x.stmts[k - 1].assigns;
+        for (x.reads[reads_from..x.stmts[k].reads]) |r| if (r.g < referenced.len and !referenced[r.g]) {
+            referenced[r.g] = true;
+            try work.append(a, r.g);
+        };
+        for (x.assigns[assigns_from..x.stmts[k].assigns]) |g| if (g < referenced.len and !referenced[g]) {
+            referenced[g] = true;
+            try work.append(a, g);
+        };
+    }
+
+    /// Statement `w` reads whole-program name `g` (`readsName`).
+    fn depOnName(s: *Spec, g: u32, w: u32) Allocator.Error!void {
+        if (g >= s.g_deps.len or s.g_seen[g] == w + 1) return;
+        s.g_seen[g] = w + 1;
+        const at = s.w_deps.items.len;
+        try s.w_deps.append(s.arena, .{ .stmt = w, .next = s.g_deps[g] });
+        s.g_deps[g] = @intCast(at);
+    }
+
+    /// Every module whose constraints its last extraction no longer holds
+    /// extracted again (`Extractor`), on the workers when there are several.
+    fn extractAll(s: *Spec) Allocator.Error!void {
+        var stale: std.ArrayList(u32) = .empty;
+        for (s.mods, 0..) |*m, mi| {
+            if (m.ex.epoch == m.epoch and m.ex.names == m.stamp.len and m.ex.nodes == m.ir.nodes.len) {
+                s.stats.solve_kept += 1;
+                continue;
+            }
+            try stale.append(s.arena, @intCast(mi));
+        }
+        s.stats.solve_extracted += stale.items.len;
+        if (stale.items.len == 0) return;
+        const Task = struct {
+            s: *Spec,
+            fn run(t: *const @This(), scratch: Allocator, mi: u32) Allocator.Error!void {
+                const m = &t.s.mods[mi];
+                try Extractor.run(scratch, m, false, &m.ex);
             }
         };
-        if (got != want) Fail.at("converged");
-        if (s.sweep_count != ref.count) Fail.at("sweeps");
-        if (!got) return got;
-        for (s.params.items, ref.params) |x, y| if (!x.eql(y)) Fail.at("parameter");
-        if (!std.mem.eql(bool, s.escaped, ref.escaped)) Fail.at("escaped");
-        if (!std.mem.eql(bool, s.assigned, ref.assigned)) Fail.at("assigned");
-        if (!std.mem.eql(u32, s.reads, ref.reads)) Fail.at("reads");
-        if (!std.mem.eql(bool, s.spread_sites, ref.spread)) Fail.at("spread");
-        if (s.prop_lat.count() != ref.props.count()) Fail.at("properties");
-        var pit = ref.props.iterator();
-        while (pit.next()) |kv| if (!(s.prop_lat.get(kv.key_ptr.*) orelse Fail.at("property")).eql(kv.value_ptr.*)) Fail.at("property");
-        if (s.ret_lat.count() != ref.rets.count()) Fail.at("returns");
-        var rit = ref.rets.iterator();
-        while (rit.next()) |kv| if (!(s.ret_lat.get(kv.key_ptr.*) orelse Fail.at("return")).eql(kv.value_ptr.*)) Fail.at("return");
-        if (s.decided_conds.count() != ref.conds.count()) Fail.at("conditionals");
-        var cit = ref.conds.iterator();
-        while (cit.next()) |kv| if ((s.decided_conds.get(kv.key_ptr.*) orelse Fail.at("conditional")) != kv.value_ptr.*) Fail.at("conditional");
-        for (memo, s.mods) |mm, *m| for (mm, m.memo) |x, y| if (!x.eql(y)) Fail.at("value");
-        return got;
+        const task: Task = .{ .s = s };
+        var scratch: Arena = .init(s.gpa);
+        defer scratch.deinit();
+        if (s.in.parallel != null and stale.items.len > 1) {
+            const par = s.in.parallel.?;
+            var work: usize = 0;
+            for (stale.items) |mi| work += s.mods[mi].ir.nodes.len;
+            try par.run(par.context, stale.items, work, &task, struct {
+                fn call(cx: *const anyopaque, into: Allocator, item: u32) Allocator.Error!void {
+                    const t: *const Task = @ptrCast(@alignCast(cx));
+                    return t.run(into, item);
+                }
+            }.call);
+        } else for (stale.items) |mi| {
+            scratch.reset(.retain_capacity);
+            try task.run(scratch.allocator(), mi);
+        }
+        var program_nodes: usize = 0;
+        for (s.mods) |*m| program_nodes += m.ir.nodes.len;
+        for (stale.items) |mi| {
+            const m = &s.mods[mi];
+            s.stats.solve_stmts_walked += m.ex.walked;
+            s.stats.solve_stmts_kept += m.ex.reused;
+            // A safety build checks what a module kept against a walk of
+            // all of it, in a program of at most `max_solve_checked_nodes`.
+            if (std.debug.runtime_safety and m.ex.reused != 0 and program_nodes <= max_solve_checked_nodes) {
+                scratch.reset(.retain_capacity);
+                var fresh: Extract = .{};
+                defer fresh.deinit();
+                try Extractor.run(scratch.allocator(), m, true, &fresh);
+                m.ex.expectSame(&fresh, mi);
+            }
+        }
     }
 
-    /// One sweep: every statement when `full`, else those a change woke.
-    fn walkAll(s: *Spec, full: bool) Allocator.Error!void {
-        defer s.w_cur = none;
-        for (s.w_stmts.items, 0..) |st, i| {
-            if (!full and !s.w_dirty.isSet(i)) continue;
-            s.w_dirty.unset(i);
-            s.w_cur = @intCast(i);
-            s.w_walk += 1;
-            try s.walkTop(&s.mods[st.module], st.module, st.stmt);
+    /// Every module's constraints given back (`run`'s end).
+    fn freeExtracts(s: *Spec) void {
+        for (s.mods) |*m| {
+            m.ex.deinit();
+            m.pex.deinit();
         }
+        s.solve_tmp.deinit();
     }
 
     /// The statement being walked reads whole-program name `g`'s flags,
@@ -1694,7 +2348,7 @@ const Spec = struct {
     }
 
     /// The statement being walked reads what is known of site `site`: its
-    /// properties' values (`prop_lat`), what it returns (`ret_lat`), and
+    /// properties' values (`Pts.Prop.lat`), what it returns, and
     /// whether a spread copies from it.
     inline fn readsSite(s: *Spec, site: u32) Allocator.Error!void {
         if (s.w_cur == none or site >= s.site_deps.len or s.site_seen[site] == s.w_walk) return;
@@ -1738,18 +2392,12 @@ const Spec = struct {
     }
 
     fn setEscaped(s: *Spec, g: u32) void {
-        if (s.logging) s.log_escaped.append(s.arena, g) catch {
-            s.log_failed = true;
-        };
         if (s.escaped[g]) return;
         s.escaped[g] = true;
         s.nameChanged(g);
     }
 
     fn setAssigned(s: *Spec, g: u32) void {
-        if (s.logging) s.log_assigned.append(s.arena, g) catch {
-            s.log_failed = true;
-        };
         if (s.assigned[g]) return;
         s.assigned[g] = true;
         s.nameChanged(g);
@@ -1792,9 +2440,6 @@ const Spec = struct {
 
     fn touch(s: *Spec, m: *Mod, i: u32) void {
         if (m.stamp[i] == s.current) return;
-        if (s.logging) s.log_names.append(s.arena, i) catch {
-            s.log_failed = true;
-        };
         m.stamp[i] = s.current;
         m.decls[i] = 0;
         m.uses[i] = 0;
@@ -1878,49 +2523,11 @@ const Spec = struct {
         }
     }
 
-    /// `count` of top-level statement `stmt`, on a fresh `current`: what a
-    /// count of it did is kept while its module's version stands, and done
-    /// again without the walk — every sweep, and the rewrite, count every
-    /// statement they walk, and the counts cannot differ. While `counting`
-    /// (a round's first sweep), the reads of whole-program names it made
-    /// are counted again from the record, once each (`reads`).
+    /// `count` of top-level statement `stmt`, on a fresh `current`: the
+    /// rewrite's count of a statement it walks or patches. The analysis's
+    /// counts are the extraction's (`Extractor`).
     fn countTop(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!void {
-        const key: NodeRef = .{ .module = m.index, .node = stmt.int() };
-        if (s.count_logs.get(key)) |log| if (log.version == m.version) {
-            for (log.names) |c| {
-                m.stamp[c.name] = s.current;
-                m.decls[c.name] = c.decls;
-                m.uses[c.name] = c.uses;
-                m.assigned[c.name] = c.assigned;
-                m.value[c.name] = .top;
-                m.param[c.name] = none;
-            }
-            if (s.counting) for (log.reads) |g| {
-                s.reads[g] +|= 1;
-            };
-            for (log.escaped) |g| s.setEscaped(g);
-            for (log.assigned) |g| s.setAssigned(g);
-            return;
-        };
-        s.log_names.clearRetainingCapacity();
-        s.log_reads.clearRetainingCapacity();
-        s.log_escaped.clearRetainingCapacity();
-        s.log_assigned.clearRetainingCapacity();
-        s.log_failed = false;
-        s.logging = true;
-        defer s.logging = false;
         try s.count(m, stmt);
-        s.logging = false;
-        if (s.log_failed) return error.OutOfMemory;
-        const names = try s.arena.alloc(NameCount, s.log_names.items.len);
-        for (names, s.log_names.items) |*c, i| c.* = .{ .name = i, .decls = m.decls[i], .uses = m.uses[i], .assigned = m.assigned[i] };
-        try s.count_logs.put(s.arena, key, .{
-            .version = m.version,
-            .names = names,
-            .reads = try s.arena.dupe(u32, s.log_reads.items),
-            .escaped = try s.arena.dupe(u32, s.log_escaped.items),
-            .assigned = try s.arena.dupe(u32, s.log_assigned.items),
-        });
     }
 
     fn countList(s: *Spec, m: *Mod, range: JsIr.SubRange) Allocator.Error!void {
@@ -1967,8 +2574,6 @@ const Spec = struct {
 
     fn read(s: *Spec, m: *Mod, n: NameIndex, callee: bool) Allocator.Error!void {
         if (m.globalOf(n)) |g| {
-            if (s.counting) s.reads[g] +|= 1;
-            if (s.logging) try lists.push(u32, &s.log_reads, s.arena, g);
             if (!callee) s.setEscaped(g);
             return;
         }
@@ -2131,7 +2736,7 @@ const Spec = struct {
 
     /// A function's body, `node` the arrow or the declaration: what its
     /// `return`s give, and `undefined` when it may run off its end, join
-    /// its entry of `ret_lat` (fact 5).
+    /// its site's return cell (fact 5).
     fn evalFunc(s: *Spec, m: *Mod, mi: u32, record: ExtraIndex, node: Index) Allocator.Error!void {
         const saved = s.cur_fn;
         defer s.cur_fn = saved;
@@ -2211,50 +2816,18 @@ const Spec = struct {
             .cond => blk: {
                 const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
                 const t = m.memo[d.lhs];
-                // Fact 5's second case is decided by this evaluation alone:
-                // one an earlier sweep made, from facts that have grown
-                // since, is taken back unless this one makes it again. A
-                // walk evaluates every node of its statement — both arms of
-                // a conditional or an `if`, both operands of `&&` and `||`,
-                // every function body (`eval`, `evalStmt`) — and a
-                // statement's last walk saw the final facts (`sweeps`), so
-                // what stays is decided by them, as `memo` is.
-                const key: NodeRef = .{ .module = m.index, .node = node.int() };
+                // Fact 5's second case, decided by the values as they are;
+                // the rewrite reads the decision off them (`decidedBranch`).
                 if (t.state == .top or t.state == .nonnull) {
-                    if (try s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), c)) |taken| {
-                        try s.decided_conds.put(s.arena, key, taken);
-                        break :blk m.memo[taken.int()];
-                    }
+                    if (try s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), c)) |taken| break :blk m.memo[taken.int()];
                 }
-                s.decided_conds.remove(key);
-                break :blk switch (t.state) {
-                    .bot => .bot,
-                    .top, .nonnull => undecided: {
-                        // A test that is always truthy, or always falsy,
-                        // whatever its value: the branch it takes — never
-                        // as its literal, since the test is still made.
-                        switch (t.truth) {
-                            .yes => break :undecided s.demote(m.memo[c.consequent.int()]),
-                            .no => break :undecided s.demote(m.memo[c.alternate.int()]),
-                            .bot, .unknown => {},
-                        }
-                        const a = m.memo[c.consequent.int()];
-                        const e = m.memo[c.alternate.int()];
-                        if (a.state == .bot and e.state == .bot) break :undecided .bot;
-                        break :undecided s.demote(s.join(a, e));
-                    },
-                    .lit => switch (s.truthy(s.litOf(t))) {
-                        .yes => m.memo[c.consequent.int()],
-                        .no => m.memo[c.alternate.int()],
-                        .unknown => .top,
-                    },
-                };
+                break :blk s.condValue(t, m.memo[c.consequent.int()], m.memo[c.alternate.int()]);
             },
             .call => blk: {
                 try s.callSite(m, node);
                 break :blk try s.callValue(m, node);
             },
-            .template => try s.templateValue(m, node),
+            .template => try s.templateValue(m, node, MemoValues{ .memo = m.memo }),
             .new_call, .object, .array => blk: {
                 if (ir.tag(node) == .object) try s.objectWrites(m, node);
                 break :blk .object;
@@ -2264,15 +2837,48 @@ const Spec = struct {
         };
     }
 
+    /// `t ? a : e` that fact 5's second case does not decide: the branch a
+    /// literal test takes, the branch a test always truthy or always falsy
+    /// takes — never as its literal, since the test is still made — or the
+    /// join of both.
+    fn condValue(s: *Spec, t: Lat, a: Lat, e: Lat) Lat {
+        return switch (t.state) {
+            .bot => .bot,
+            .top, .nonnull => undecided: {
+                switch (t.truth) {
+                    .yes => break :undecided s.demote(a),
+                    .no => break :undecided s.demote(e),
+                    .bot, .unknown => {},
+                }
+                if (a.state == .bot and e.state == .bot) break :undecided .bot;
+                break :undecided s.demote(s.join(a, e));
+            },
+            .lit => switch (s.truthy(s.litOf(t))) {
+                .yes => a,
+                .no => e,
+                .unknown => .top,
+            },
+        };
+    }
+
+    /// A template's parts' values as the walk left them (`templateValue`).
+    const MemoValues = struct {
+        memo: []const Lat,
+        fn get(v: MemoValues, i: usize, part: Index) Lat {
+            _ = i;
+            return v.memo[part.int()];
+        }
+    };
+
     /// A template whose every substitution is a literal is the string it
     /// makes (fact 4's reads end in one: `${m.n}` is `"null"`), when that
     /// string prints no longer than the template did. A number converts
     /// only when its spelling is how JavaScript writes it back.
-    fn templateValue(s: *Spec, m: *Mod, node: Index) Allocator.Error!Lat {
+    fn templateValue(s: *Spec, m: *Mod, node: Index, parts: anytype) Allocator.Error!Lat {
         const ir = m.ir;
         var text: std.ArrayList(u8) = .empty;
         var template_len: usize = 2;
-        for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |part| {
+        for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index), 0..) |part, i| {
             if (ir.tag(part) == .template_chunk) {
                 const chunk = ir.bytes(part);
                 try text.appendSlice(s.arena, chunk);
@@ -2280,7 +2886,7 @@ const Spec = struct {
                 for (chunk) |c| template_len += @intFromBool(c == '`' or c == '\\' or c == '$');
                 continue;
             }
-            const v = m.memo[part.int()];
+            const v = parts.get(i, part);
             if (v.state == .bot) return .bot;
             if (v.state != .lit) return .nonnull;
             const lit = s.litOf(v);
@@ -2318,10 +2924,22 @@ const Spec = struct {
     /// lose, on objects that are all the program's own. A read whose every
     /// write is nonnull is nonnull wherever it does not throw.
     fn memberValue(s: *Spec, m: *Mod, node: Index) Allocator.Error!Lat {
+        return s.memberOf(m, node, null);
+    }
+
+    /// `memberValue`, its object `named` when facts 1 and 2 say it is the
+    /// object a whole-program name declares (a `name` literal): fact 3's
+    /// value of that name, which is that one object, in place of the
+    /// object node's, which joins what every call passes, executable or
+    /// not.
+    fn memberOf(s: *Spec, m: *Mod, node: Index, named: ?Pts.Val) Allocator.Error!Lat {
         const ir = m.ir;
         const d = ir.data(node);
         const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs)));
-        const chain = try s.pts.chain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs)));
+        // An object literal that does nothing when made is read like a
+        // chain: `{ a: 1 }.a` is `1`, as a body written in leaves it.
+        const literal: ?Pts.Val = if (ir.tag(@as(Index, @fromBackingInt(@intCast(d.lhs)))) == .object and s.pts.ok and d.lhs < s.pts.vals[m.index].len and inert(ir, @fromBackingInt(@intCast(d.lhs)))) s.pts.vals[m.index][d.lhs] else null;
+        const chain = if (try s.pts.chain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs)))) |c| named orelse c else literal;
         if (chain) |obj| if (s.pts.neverWritten(obj, id)) {
             return .of(try s.intern(.{ .kind = .undefined_lit }));
         };
@@ -2329,7 +2947,7 @@ const Spec = struct {
         const obj = chain orelse s.pts.vals[m.index][d.lhs];
         const v = try s.propValue(obj, id);
         if (v.state == .lit and chain != null and s.pts.known(obj)) return v;
-        if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @fromBackingInt(@intCast(d.lhs)), id)) |t| return t;
+        if (id != none and id == s.in.tag_prop) if (try s.tagValue(m, @fromBackingInt(@intCast(d.lhs)), id, named)) |t| return t;
         return s.demote(v);
     }
 
@@ -2339,10 +2957,11 @@ const Spec = struct {
     /// writes one (`boundary.md` §4) — and that no code of the program
     /// writes `$` on, or on anything it cannot see, is the literals' one
     /// value. A literal has no getter; the chain is safe to evaluate.
-    fn tagValue(s: *Spec, m: *Mod, object: Index, id: u32) Allocator.Error!?Lat {
+    fn tagValue(s: *Spec, m: *Mod, object: Index, id: u32, named: ?Pts.Val) Allocator.Error!?Lat {
         const p = &s.pts;
         if (p.unknown_any or std.mem.indexOfScalar(u32, p.unknown_props.items, id) != null) return null;
-        const obj = try p.safeChain(m.index, s.cur_top, object) orelse return null;
+        const safe = try p.safeChain(m.index, s.cur_top, object) orelse return null;
+        const obj = named orelse safe;
         if (obj.top or obj.prim or obj.nullish() or obj.sites.len == 0) return null;
         var out: Lat = .bot;
         for (obj.sites) |site| {
@@ -2353,7 +2972,8 @@ const Spec = struct {
             if (site >= s.spread_sites.len or s.spread_sites[site]) return null;
             const pr = p.findProp(site, id) orelse return null;
             if (!pr.init) return null;
-            out = s.join(out, s.prop_lat.get(.{ .site = site, .prop = id }) orelse return null);
+            // No write: its literal never runs (*Executability*).
+            out = s.join(out, try s.fieldGet(site, id) orelse .bot);
         }
         return if (out.state == .lit) out else null;
     }
@@ -2374,7 +2994,7 @@ const Spec = struct {
             if (site >= s.spread_sites.len or s.spread_sites[site]) return .top;
             const pr = s.pts.findProp(site, id) orelse return .top;
             if (!pr.init) return .top;
-            out = s.join(out, s.prop_lat.get(.{ .site = site, .prop = id }) orelse .bot);
+            out = s.join(out, try s.fieldGet(site, id) orelse .bot);
         }
         return out;
     }
@@ -2428,7 +3048,7 @@ const Spec = struct {
                 out = s.join(out, .object);
                 continue;
             }
-            out = s.join(out, s.ret_lat.get(ref) orelse .bot);
+            out = s.join(out, try s.retGet(ref) orelse .bot);
         }
         return s.demote(out);
     }
@@ -2448,9 +3068,6 @@ const Spec = struct {
             return;
         }
         for (args, 0..) |a, i| {
-            // Asked of the first sweep, which walks every call: the answer
-            // is the IR's and fact 3's, which no later sweep moves.
-            if (s.counting and !s.arg_effect.items[decl.params + i] and !try s.effectFree(m, a)) s.arg_effect.items[decl.params + i] = true;
             // A parameter is read by its own declaration alone.
             if (s.joinInto(&s.params.items[decl.params + i], m.memo[a.int()]) and decl.index < s.w_dirty.bit_length)
                 s.w_dirty.set(decl.index);
@@ -2535,6 +3152,13 @@ const Spec = struct {
     /// (or `!==`, either way round) with `x.p` nonnull, the branch the test
     /// takes — when that branch is the read `x.p` itself, which evaluated
     /// first throws, or gives `undefined`, exactly where the test did.
+    fn decidedBranch(s: *Spec, m: *Mod, node: Index) Allocator.Error!?Index {
+        const d = m.ir.data(node);
+        const t = m.memo[d.lhs];
+        if (t.state != .top and t.state != .nonnull) return null;
+        return s.nullTestTaken(m, @fromBackingInt(@intCast(d.lhs)), m.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond));
+    }
+
     fn nullTestTaken(s: *Spec, m: *Mod, test_node: Index, c: JsIr.Cond) Allocator.Error!?Index {
         _ = s;
         const ir = m.ir;
@@ -2554,39 +3178,7 @@ const Spec = struct {
     fn nameValue(s: *Spec, m: *Mod, n: NameIndex) Allocator.Error!Lat {
         if (m.globalOf(n)) |g| {
             try s.readsName(g);
-            // Slice 6: a declaration that makes an object or a function, and
-            // that nothing assigns, is that one object wherever it is read.
-            if (s.decl[g]) |decl| if (!s.assigned[g]) {
-                const dm = &s.mods[decl.module];
-                const fresh = switch (dm.ir.tag(decl.stmt)) {
-                    .func_decl => true,
-                    .const_decl => switch (dm.ir.tag(@fromBackingInt(@intCast(dm.ir.data(decl.stmt).rhs)))) {
-                        .arrow, .object, .array => true,
-                        else => false,
-                    },
-                    else => false,
-                };
-                if (fresh) return s.nameLat(g) catch .nonnull;
-            };
-            if (s.escaped[g] and s.decl[g] != null and s.decl[g].?.func != null) return .top;
-            if (s.assigned[g]) return .top;
-            const decl = s.decl[g] orelse return .top;
-            const dm = &s.mods[decl.module];
-            const d = dm.ir.data(decl.stmt);
-            const value: Index = switch (dm.ir.tag(decl.stmt)) {
-                .const_decl => @fromBackingInt(@intCast(d.rhs)),
-                .let_decl => (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap() orelse return .top),
-                else => return .top,
-            };
-            const v = s.literalValue(dm, value) catch Lat.top;
-            // Fact 5: an object, an array, a function, a template or a
-            // `new` is never `null` (a read before the declaration throws).
-            if (v.state == .top) switch (dm.ir.tag(value)) {
-                .object, .array, .arrow, .new_call => return .object,
-                .template => return .nonnull,
-                else => {},
-            };
-            return v;
+            return s.globalValue(g);
         }
         const i = n.unwrap() orelse return .top;
         if (i >= m.stamp.len or m.stamp[i] != s.current) return .top;
@@ -2600,6 +3192,70 @@ const Spec = struct {
         // Past a guard that proves it (`guardNames`).
         if (v.state == .top and std.mem.indexOfScalar(NameIndex, s.narrow.items, n) != null) return .{ .state = .nonnull, .truth = v.truth };
         return v;
+    }
+
+    /// What reading whole-program name `g` gives: a function of the IR and
+    /// of `decl`, `escaped` and `assigned`, which every walk of one analysis
+    /// sees alike (the combined solver's `global` constraint).
+    fn globalValue(s: *Spec, g: u32) Lat {
+        // Slice 6: a declaration that makes an object or a function, and
+        // that nothing assigns, is that one object wherever it is read.
+        if (s.decl[g]) |decl| if (!s.assigned[g]) {
+            const dm = &s.mods[decl.module];
+            const fresh = switch (dm.ir.tag(decl.stmt)) {
+                .func_decl => true,
+                .const_decl => switch (dm.ir.tag(@fromBackingInt(@intCast(dm.ir.data(decl.stmt).rhs)))) {
+                    .arrow, .object, .array => true,
+                    else => false,
+                },
+                else => false,
+            };
+            if (fresh) return s.nameLat(g) catch .nonnull;
+        };
+        // Its initialiser's cell, as the last solve left it.
+        if (g < s.name_solved.len and s.name_solved[g] != none) return @bitCast(s.name_solved[g]);
+        if (s.escaped[g] and s.decl[g] != null and s.decl[g].?.func != null) return .top;
+        if (s.assigned[g]) return .top;
+        const decl = s.decl[g] orelse return .top;
+        const dm = &s.mods[decl.module];
+        const d = dm.ir.data(decl.stmt);
+        const value: Index = switch (dm.ir.tag(decl.stmt)) {
+            .const_decl => @fromBackingInt(@intCast(d.rhs)),
+            .let_decl => (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap() orelse return .top),
+            else => return .top,
+        };
+        const v = s.literalValue(dm, value) catch Lat.top;
+        // Fact 5: an object, an array, a function, a template or a
+        // `new` is never `null` (a read before the declaration throws).
+        if (v.state == .top) switch (dm.ir.tag(value)) {
+            .object, .array, .arrow, .new_call => return .object,
+            .template => return .nonnull,
+            else => {},
+        };
+        return v;
+    }
+
+    /// The initialiser of whole-program name `g`, when every read of it is
+    /// that value (*Cells*, the name cells): its one declaration, a `const`
+    /// or a `let` nothing assigns, of a value `globalValue` does not answer
+    /// for by itself. A read before the declaration throws, so it has no
+    /// value at all.
+    fn nameInit(s: *Spec, g: u32) ?struct { module: u32, node: Index } {
+        const decl = s.decl[g] orelse return null;
+        if (s.assigned[g]) return null;
+        const dm = &s.mods[decl.module];
+        const d = dm.ir.data(decl.stmt);
+        const value: Index = switch (dm.ir.tag(decl.stmt)) {
+            .const_decl => @fromBackingInt(@intCast(d.rhs)),
+            .let_decl => (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap() orelse return null),
+            else => return null,
+        };
+        switch (dm.ir.tag(value)) {
+            .arrow => return null,
+            .object, .array => if (dm.ir.tag(decl.stmt) == .const_decl) return null,
+            else => {},
+        }
+        return .{ .module = decl.module, .node = value };
     }
 
     fn globalOfDecl(s: *Spec, d: Decl) u32 {
@@ -2808,7 +3464,6 @@ const Spec = struct {
     /// find more.
     fn rewrite(s: *Spec) Allocator.Error!bool {
         var any = false;
-        s.counting = false;
         s.name_in.clearRetainingCapacity();
         s.only_fewer = true;
         s.rewrite_epoch += 1;
@@ -2816,30 +3471,18 @@ const Spec = struct {
         s.declined.clearRetainingCapacity();
         if (s.folded_reads.len < s.globals) s.folded_reads = try s.arena.alloc(u32, s.globals);
         @memset(s.folded_reads, 0);
-        // Which parameters go: a constant the substitution rule allows.
+        // Which parameters go: a constant the substitution rule allows,
+        // by the counts before the patch, which writes its reads as the
+        // literal by the same counts.
         const drop = try s.arena.alloc(bool, s.params.items.len);
         @memset(drop, false);
-        const quiet = try s.arena.alloc(bool, s.params.items.len);
-        @memset(quiet, false);
-        // The initialisers of the dead bindings that held a dropped
-        // parameter's only reads (`deadReads`), written `undefined`.
-        var dead_inits: std.ArrayList(DeadInit) = .empty;
-        var candidates: std.ArrayList(DeadInit) = .empty;
-        var dead_counts: std.ArrayList(u32) = .empty;
-        const kept_bits = try s.arena.alloc(?std.DynamicBitSetUnmanaged, s.mods.len);
-        @memset(kept_bits, null);
         for (s.decl, 0..) |maybe, g| {
             const decl = maybe orelse continue;
             if (decl.func == null or s.escaped[g]) continue;
             const m = &s.mods[decl.module];
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
-            // Counted afresh: the parameters' reads and whether one is
-            // assigned.
             s.current += 1;
             try s.countTop(m, decl.stmt);
-            // `deadReads`, walked once per function when some parameter
-            // asks.
-            var dead_walked = false;
             for (m.ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
                 const v = s.params.items[decl.params + i];
                 const at = n.unwrap() orelse continue;
@@ -2848,119 +3491,155 @@ const Spec = struct {
                     (s.litOf(v).kind != .name or try s.nameIn(m, nameId(s.litOf(v))) != null))
                 {
                     drop[decl.params + i] = true;
-                    continue;
-                }
-                // A parameter nothing reads goes whatever it is passed, when
-                // every call is seen and no argument for it does anything —
-                // a read in the initialiser of a binding that is itself
-                // read by nothing, and does nothing, counts as none. It
-                // asks for no round of its own (`quiet`): what it exposes
-                // the next round finds, whichever asks for it.
-                if (v.state != .bot and !s.arg_effect.items[decl.params + i]) {
-                    if (m.uses[at] == 0) {
-                        drop[decl.params + i] = true;
-                        quiet[decl.params + i] = true;
-                        continue;
-                    }
-                    if (!dead_walked) {
-                        dead_walked = true;
-                        if (kept_bits[m.index] == null) {
-                            var bits: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
-                            if (m.tables) |t| for (t.keep.items) |k| if (k.int() < bits.bit_length) bits.set(k.int());
-                            kept_bits[m.index] = bits;
-                        }
-                        try s.deadReads(m, decl, kept_bits[m.index].?, &dead_counts, &candidates);
-                    }
-                    if (dead_counts.items[i] == m.uses[at]) {
-                        for (candidates.items) |c| if (c.param == i) try dead_inits.append(s.arena, c);
-                        drop[decl.params + i] = true;
-                        continue;
-                    }
                 }
             }
         }
+        // What lowering keeps for an effect, past what does nothing after
+        // all (`releaseKeeps`): per module, by node.
+        const kept_bits = try s.arena.alloc(std.DynamicBitSetUnmanaged, s.mods.len);
+        for (s.mods, kept_bits) |*m, *bits| {
+            try s.releaseKept(m);
+            bits.* = try .initEmpty(s.arena, m.ir.nodes.len);
+            if (m.tables) |t| for (t.keep.items) |k| if (k.int() < bits.bit_length) bits.set(k.int());
+        }
 
-        // Each declaration is walked again, with the facts at their
-        // fixpoint, just before it is patched — unless the values its last
-        // sweep left in `memo` are still what a walk would make: it was not
-        // left waiting for a walk (`w_dirty`), and no declaration it reads
-        // the value of has been rewritten since (`nameValue` reads a
-        // module-level constant's initialiser). Then only its names are
-        // counted.
-        var stale = try s.w_dirty.clone(s.arena);
-        var index: u32 = 0;
+        // Each statement patched once, from the solve's facts, which no
+        // patch changes (*The rewrite*): its names counted, then its
+        // nodes written. Then the liveness of its bindings, on what the
+        // patch left (*Reading off*), and the parameters of its function
+        // that nothing live reads.
+        // Per parameter: nothing live reads it, by the counts the patch
+        // left.
+        const unread = try s.arena.alloc(bool, s.params.items.len);
+        @memset(unread, false);
         for (s.mods, 0..) |*m, mi| {
             const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
             for (body) |stmt| {
-                defer index += 1;
-                const fresh = index < s.w_stmts.items.len and !stale.isSet(index) and
-                    s.w_stmts.items[index].module == mi and s.w_stmts.items[index].stmt == stmt;
-                if (fresh) try s.prepareTop(m, @intCast(mi), stmt) else {
-                    s.changed = false;
-                    try s.walkTop(m, @intCast(mi), stmt);
-                    // A walk of the program as patched so far moved a fact:
-                    // what read it reads something else now.
-                    if (s.changed) stale.setUnion(s.w_dirty);
-                }
-                // A module-level binding's initialiser, as `nameValue` sees
-                // it, before the patch.
-                const binding: ?struct { g: u32, tag: Node.Tag, data: Node.Data } = switch (m.ir.tag(stmt)) {
-                    .const_decl, .let_decl => blk: {
-                        const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse break :blk null;
-                        const v: Node.OptionalIndex = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
-                        const root = v.unwrap() orelse break :blk null;
-                        break :blk .{ .g = g, .tag = m.ir.tag(root), .data = m.ir.data(root) };
-                    },
-                    else => null,
-                };
-                if (try s.patchStmt(m, stmt)) any = true;
-                // The `if`s whose test is now a literal, while the
-                // declaration's counts are the ones `spliceable` reads.
-                if (try s.foldBelow(m, stmt, 0)) any = true;
-                if (binding) |b| {
-                    const v: Node.OptionalIndex = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
-                    const same = if (v.unwrap()) |root| m.ir.tag(root) == b.tag and
-                        m.ir.data(root).lhs == b.data.lhs and m.ir.data(root).rhs == b.data.rhs else false;
-                    if (!same and b.g < s.g_deps.len) {
-                        // Whatever read it reads something else now. A
-                        // reader later in the program is walked again
-                        // before it is patched; one already patched read
-                        // the initialiser as it was, and when that has
-                        // just become a literal, which `nameValue` hands
-                        // its readers, only another round lets them see
-                        // it — else whether they do would depend on
-                        // whether their module comes before this one.
-                        const now_literal = !isLiteralTag(b.tag) and if (v.unwrap()) |root| isLiteralTag(m.ir.tag(root)) else false;
-                        var d = s.g_deps[b.g];
-                        while (d != none) : (d = s.w_deps.items[d].next) {
-                            const reader = s.w_deps.items[d].stmt;
-                            if (reader < stale.bit_length) stale.set(reader);
-                            if (now_literal and reader < index) any = true;
-                        }
+                // Patched until the counts it leaves allow nothing more:
+                // a read refused by the substitution rule for the count
+                // before is written when folds took the others. The facts
+                // stay the solve's throughout.
+                var turn: u32 = 0;
+                while (true) : (turn += 1) {
+                    const before = m.epoch;
+                    s.refused_local = false;
+                    try s.prepareTop(m, @intCast(mi), stmt);
+                    // Its changes are its own (`Mod.kept`): the combined
+                    // solver's constraints of another statement (`Extract`)
+                    // hold across them.
+                    within(m, stmt);
+                    if (try s.patchStmt(m, stmt)) any = true;
+                    // The `if`s whose test is now a literal, while the
+                    // declaration's counts are the ones `spliceable` reads.
+                    if (try s.foldBelow(m, stmt, 0)) any = true;
+                    // Counted again only when the patch changed it.
+                    if (m.epoch != before) try s.prepareTop(m, @intCast(mi), stmt);
+                    if (try s.liveness(m, stmt, kept_bits[mi])) {
+                        any = true;
+                        _ = try s.foldBelow(m, stmt, 0);
                     }
+                    try s.leave(m);
+                    if (m.epoch == before or !s.refused_local or turn == max_patch_turns) break;
+                }
+                _ = try s.unreadParams(m, unread);
+            }
+        }
+        // A parameter nothing live reads goes whatever it is passed, when
+        // every call is seen and no argument for it does anything, as the
+        // patch left the arguments.
+        // The keys nothing the patch left reads go first: an argument that
+        // was an object of them may do nothing now.
+        if (try s.dropUnreadKeys()) any = true;
+        if (std.mem.indexOfScalar(bool, unread, true) != null) {
+            const effect = try s.argEffects();
+            for (unread, effect, drop) |u, e, *d| if (u and !e) {
+                d.* = true;
+            };
+        }
+        const drop_epoch = try s.arena.alloc(u64, s.mods.len);
+        for (s.mods, drop_epoch) |*m, *e| e.* = m.epoch;
+        if (try s.applyDrops(drop, true)) any = true;
+        // A parameter that went took its arguments, and what they read may
+        // be read by nothing now: the liveness again, and the parameters it
+        // leaves unread, until none goes.
+        var turn: u32 = 0;
+        while (turn < max_patch_turns) : (turn += 1) {
+            const more = try s.arena.alloc(bool, s.params.items.len);
+            @memset(more, false);
+            var asks = false;
+            for (s.mods, 0..) |*m, mi| {
+                const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+                for (body) |stmt| {
+                    // Only a statement the drops changed reads less now.
+                    if (m.kept(stmt, drop_epoch[mi])) continue;
+                    try s.prepareTop(m, @intCast(mi), stmt);
+                    within(m, stmt);
+                    if (try s.liveness(m, stmt, kept_bits[mi])) _ = try s.foldBelow(m, stmt, 0);
+                    try s.leave(m);
+                    if (try s.unreadParams(m, more)) asks = true;
                 }
             }
-        }
-        // A read `substitutes` refused for the count the round began with,
-        // when folds have since taken enough of the others for it to be
-        // allowed: the next round writes the literal. Without it, whether
-        // the fold or the refusal came first — which module comes first —
-        // decided whether the name stayed.
-        for (s.declined.items) |d| {
-            if (d.g < s.folded_reads.len and s.folded_reads[d.g] != 0 and
-                substitutes(d.lit, s.reads[d.g] -| s.folded_reads[d.g]))
-            {
-                any = true;
-                break;
+            if (!asks) break;
+            const effect = try s.argEffects();
+            var went = false;
+            for (more, effect) |*u, e| {
+                if (e) u.* = false;
+                if (u.*) went = true;
             }
+            if (!went) break;
+            for (s.mods, drop_epoch) |*m, *e| e.* = m.epoch;
+            if (try s.applyDrops(more, false)) any = true;
         }
-        for (dead_inits.items) |dead| {
-            const m = &s.mods[dead.module];
-            m.setNode(dead.init, .undefined_lit, 0, 0);
-            m.lit_of[dead.init.int()] = none;
+        // A read of a module constant `substitutes` refused for the count
+        // the solve began with, when the patch folded enough of the others
+        // away (`folded_reads`) for it to be allowed: written as its
+        // literal now, by the count the whole patch left, so whether it is
+        // does not depend on which module came first.
+        const declined = s.declined.items.len;
+        for (s.declined.items[0..declined]) |d| {
+            if (d.g >= s.folded_reads.len or s.folded_reads[d.g] == 0) continue;
+            const left = s.reads[d.g] -| s.folded_reads[d.g];
+            if (!substitutes(d.lit, left)) continue;
+            const m = &s.mods[d.module];
+            if (m.ir.tag(d.node) != .ident or m.globalOf(@fromBackingInt(@intCast(m.ir.data(d.node).lhs))) != d.g) continue;
+            const read_by = s.reads[d.g];
+            s.reads[d.g] = left;
+            defer s.reads[d.g] = read_by;
+            within(m, d.top);
+            if (try s.patchLiteral(m, d.node, d.v, d.object_position)) any = true;
+            try s.leave(m);
+        }
+        return any;
+    }
+
+    /// Marks in `unread` the parameters of the function the statement just
+    /// counted declares (`top_func`), when `Spec` tracks it, that nothing
+    /// live reads. True when one is.
+    fn unreadParams(s: *Spec, m: *Mod, unread: []bool) Allocator.Error!bool {
+        const d = s.top_func orelse return false;
+        if (s.escaped[s.globalOfDecl(d)]) return false;
+        const f = m.ir.extraData(d.func.?, JsIr.Func);
+        var any = false;
+        for (m.ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
+            if (i >= d.arity) break;
+            const at = n.unwrap() orelse continue;
+            if (m.decls[at] != 1 or m.assigned[at] or m.uses[at] != 0) continue;
+            if (s.params.items[d.params + i].state == .bot) continue;
+            unread[d.params + i] = true;
             any = true;
         }
-        // Parameters and arguments.
+        return any;
+    }
+
+    /// The parameters `drop` marks gone from their functions, and their
+    /// arguments from every call the program makes. A function that lost
+    /// one has its parameters numbered anew at the end of `params`, so that
+    /// another drop in the same rewrite reads them as they now are.
+    /// `keep_fact3`: fact 3's state may take the drop without a solve
+    /// (`keepDrop`, #582); a later drop asks the solve again. True when any
+    /// went.
+    fn applyDrops(s: *Spec, drop: []const bool, keep_fact3: bool) Allocator.Error!bool {
+        var any = false;
         // Per whole-program name: fact 3's state takes the drop of its
         // parameters without a solve (`keepDrop`, #582).
         const kept_drop = try s.arena.alloc(bool, s.globals);
@@ -2971,44 +3650,56 @@ const Spec = struct {
             const flags = drop[decl.params..][0..decl.arity];
             if (std.mem.indexOfScalar(bool, flags, true) == null) continue;
             const m = &s.mods[decl.module];
-            kept_drop[g] = try s.keepDrop(m, decl, flags);
+            if (keep_fact3) kept_drop[g] = try s.keepDrop(m, decl, flags);
             const f = m.ir.extraData(decl.func.?, JsIr.Func);
             var kept: std.ArrayList(u32) = .empty;
             for (m.ir.extraSlice(f.params(), u32), flags) |n, gone| if (!gone) try kept.append(s.arena, n);
             const start = try m.append(s.gpa, kept.items);
             const at = @backingInt(decl.func.?);
             const fact3 = m.fact3;
+            within(m, decl.stmt);
             m.changed();
+            try s.leave(m);
             if (kept_drop[g]) m.fact3 = fact3;
             m.extra.items[at] = start;
             m.extra.items[at + 1] = start + @as(u32, @intCast(kept.items.len));
-            for (flags, quiet[decl.params..][0..decl.arity]) |gone, q| {
-                if (gone and !q) any = true;
-            }
+            any = true;
         }
+        if (!any) return false;
         // Every call of such a function the patched program still makes. Found
         // by walking it again rather than from the analysis's list: a folded
         // conditional may have become a copy of a call, and the copy is the
-        // one that is reached.
-        // None when no parameter went: the walk would change nothing. Nor
-        // in a module that names none of the functions that lost one: a
-        // call of one names it.
-        if (std.mem.indexOfScalar(bool, drop, true) != null) {
-            const lost = try s.arena.alloc(bool, s.globals);
-            @memset(lost, false);
-            for (s.decl, 0..) |maybe, g| {
-                const decl = maybe orelse continue;
-                if (decl.func == null) continue;
-                if (std.mem.indexOfScalar(bool, drop[decl.params..][0..decl.arity], true) != null) lost[g] = true;
-            }
-            for (s.mods) |*m| {
-                const names = for (m.global) |g| {
-                    if (g != none and g < lost.len and lost[g]) break true;
-                } else false;
-                if (names) try s.rewriteCalls(m, drop, kept_drop);
-            }
+        // one that is reached. None in a module that names none of the
+        // functions that lost one: a call of one names it.
+        const lost = try s.arena.alloc(bool, s.globals);
+        @memset(lost, false);
+        for (s.decl, 0..) |maybe, g| {
+            const decl = maybe orelse continue;
+            if (decl.func == null) continue;
+            if (std.mem.indexOfScalar(bool, drop[decl.params..][0..decl.arity], true) != null) lost[g] = true;
         }
-        return any;
+        for (s.mods) |*m| {
+            const names = for (m.global) |g| {
+                if (g != none and g < lost.len and lost[g]) break true;
+            } else false;
+            if (names) try s.rewriteCalls(m, drop, kept_drop);
+        }
+        // The parameters left, numbered anew.
+        for (s.decl, lost) |*maybe, l| {
+            if (!l) continue;
+            const decl = &(maybe.* orelse continue);
+            const flags = drop[decl.params..][0..decl.arity];
+            const first: u32 = @intCast(s.params.items.len);
+            var left: u32 = 0;
+            for (flags, 0..) |gone, i| if (!gone) {
+                try s.params.append(s.arena, s.params.items[decl.params + i]);
+                try s.arg_effect.append(s.arena, s.arg_effect.items[decl.params + i]);
+                left += 1;
+            };
+            decl.params = first;
+            decl.arity = left;
+        }
+        return true;
     }
 
     /// Unused trailing arguments: a call whose callee fact 3 says may be
@@ -3123,55 +3814,35 @@ const Spec = struct {
         return need;
     }
 
-    const DeadInit = struct { module: u32, init: Index, param: u32 };
-
-    /// Per parameter of `decl`'s function, into `counts`, how many of its
-    /// reads stand in the initialiser of a dead binding: a `const` or `let`
-    /// that the counts `count` just made say nothing reads or assigns, that
-    /// lowering does not keep for an effect (`kept`, `Tables.keep` after
-    /// `releaseKeeps`), and whose initialiser does nothing (`effectFree`) —
-    /// so `Opt` drops it whole, and the reads in it are reads of nothing.
-    /// Each such initialiser is appended to `out` once per parameter it
-    /// reads.
-    fn deadReads(s: *Spec, m: *Mod, decl: Decl, kept: std.DynamicBitSetUnmanaged, counts: *std.ArrayList(u32), out: *std.ArrayList(DeadInit)) Allocator.Error!void {
-        const ir = m.ir;
-        const params = ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).params(), NameIndex);
-        counts.clearRetainingCapacity();
-        try counts.appendNTimes(s.arena, 0, params.len);
-        out.clearRetainingCapacity();
+    /// Per parameter of a function `Spec` tracks: some call of it, in the
+    /// program as it now stands, passes an argument whose evaluation may do
+    /// something (`effectFree`).
+    fn argEffects(s: *Spec) Allocator.Error![]bool {
+        const effect = try s.arena.alloc(bool, s.params.items.len);
+        @memset(effect, false);
         const saved_top = s.cur_top;
         defer s.cur_top = saved_top;
-        s.cur_top = decl.stmt;
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        var reads = try s.takeStack();
-        defer s.giveStack(&reads);
-        try JsIr.pushOperandSlice(s.arena, &stack, ir.extraSlice(ir.extraData(decl.func.?, JsIr.Func).body(), Index));
-        while (JsIr.popOperand(&stack)) |node| {
-            const tag = ir.tag(node);
-            if (tag == .const_decl or tag == .let_decl) dead: {
-                const b = @as(NameIndex, @fromBackingInt(@intCast(ir.data(node).lhs))).unwrap() orelse break :dead;
-                if (b >= m.stamp.len or m.stamp[b] != s.current or m.uses[b] != 0 or m.assigned[b]) break :dead;
-                const value = @as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).rhs))).unwrap() orelse break :dead;
-                if (node.int() < kept.bit_length and kept.isSet(node.int())) break :dead;
-                if (value.int() >= s.pts.vals[m.index].len or !try s.effectFree(m, value)) break :dead;
-                const first = out.items.len;
-                reads.clearRetainingCapacity();
-                try reads.append(s.arena, value);
-                while (reads.pop()) |r| {
-                    if (ir.tag(r) == .ident) if (std.mem.indexOfScalar(NameIndex, params, @fromBackingInt(@intCast(ir.data(r).lhs)))) |p| {
-                        counts.items[p] += 1;
-                        const seen = for (out.items[first..]) |o| {
-                            if (o.param == p) break true;
-                        } else false;
-                        if (!seen) try out.append(s.arena, .{ .module = m.index, .init = value, .param = @intCast(p) });
-                    };
-                    try pushChildren(s.arena, ir, r, &reads);
+        for (s.mods) |*m| {
+            const ir = m.ir;
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                s.cur_top = top;
+                for (try s.preorder(m, top)) |node| {
+                    if (ir.tag(node) != .call) continue;
+                    const callee: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                    if (ir.tag(callee) != .ident) continue;
+                    const g = m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs))) orelse continue;
+                    const decl = s.decl[g] orelse continue;
+                    if (decl.func == null) continue;
+                    const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index);
+                    if (args.len != decl.arity) continue;
+                    for (args, 0..) |a, i| {
+                        const e = &effect[decl.params + i];
+                        if (!e.* and !try s.effectFree(m, a)) e.* = true;
+                    }
                 }
-                continue;
             }
-            try pushChildren(s.arena, ir, node, &stack);
         }
+        return effect;
     }
 
     /// Drop the arguments of the dropped parameters from every call `m`
@@ -3238,7 +3909,9 @@ const Spec = struct {
                         }
                         if (out.items.len != specs.len * JsIr.Specifier.words) {
                             const start = try m.append(s.gpa, out.items);
+                            within(m, stmt);
                             m.changed();
+                            try s.leave(m);
                             m.extra.items[at + 2] = start;
                             m.extra.items[at + 3] = start + @as(u32, @intCast(out.items.len));
                             any = true;
@@ -3253,7 +3926,9 @@ const Spec = struct {
                         }
                         if (out.items.len != names.len) {
                             const start = try m.append(s.gpa, out.items);
+                            within(m, stmt);
                             m.setData(stmt, start, start + @as(u32, @intCast(out.items.len)));
+                            try s.leave(m);
                             any = true;
                         }
                     },
@@ -3263,7 +3938,7 @@ const Spec = struct {
             }
             if (!dropped) continue;
             const start = try m.append(s.gpa, kept.items);
-            m.changed();
+            m.bodyChanged();
             m.ir.body = .{ .start = @fromBackingInt(@intCast(start)), .end = @fromBackingInt(@intCast(start + @as(u32, @intCast(kept.items.len)))) };
             any = true;
         }
@@ -3323,12 +3998,22 @@ const Spec = struct {
         var seen: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
-        for (m.ir.extraSlice(m.ir.body, Index)) |stmt| try JsIr.pushOperand(s.arena, &stack, stmt);
-        while (JsIr.popOperand(&stack)) |node| {
+        // A statement at a time, each change its own (`Mod.kept`).
+        const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+        for (body) |top| {
+            within(m, top);
+            try JsIr.pushOperand(s.arena, &stack, top);
+            try s.callsBelow(m, drop, kept_drop, &seen, &stack);
+            try s.leave(m);
+        }
+    }
+
+    fn callsBelow(s: *Spec, m: *Mod, drop: []const bool, kept_drop: []const bool, seen: *std.DynamicBitSetUnmanaged, stack: *std.ArrayList(Index)) Allocator.Error!void {
+        while (JsIr.popOperand(stack)) |node| {
             const ir = m.ir;
             const tag = ir.tag(node);
             if (tag.isStatement()) {
-                try s.pushStmtExprs(m, node, &stack);
+                try s.pushStmtExprs(m, node, stack);
                 continue;
             }
             if (seen.isSet(node.int())) continue;
@@ -3336,7 +4021,7 @@ const Spec = struct {
             switch (tag) {
                 .arrow => {
                     const f = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Func);
-                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
+                    for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, stack, b);
                     continue;
                 },
                 .call => {
@@ -3349,6 +4034,7 @@ const Spec = struct {
                             // Asked before `append`, which may move `args`.
                             const keep_args = kept_drop[g] and try s.keepArgs(m, args, flags);
                             var kept: std.ArrayList(u32) = .empty;
+                            for (args, flags) |a, gone| if (gone) try s.noteGone(m, @fromBackingInt(a));
                             for (args, flags) |a, gone| if (!gone) try kept.append(s.arena, a);
                             const start = try m.append(s.gpa, kept.items);
                             const record = try m.append(s.gpa, &.{ start, start + @as(u32, @intCast(kept.items.len)) });
@@ -3360,7 +4046,7 @@ const Spec = struct {
                 },
                 else => {},
             }
-            try m.ir.pushOperands(s.arena, &stack, node);
+            try m.ir.pushOperands(s.arena, stack, node);
         }
     }
 
@@ -3441,8 +4127,8 @@ const Spec = struct {
             } else if (tag == .cond) {
                 // Fact 5's second case: the branch the test takes is the
                 // read it tested.
-                if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
-                    m.foldTo(node, b);
+                if (try s.decidedBranch(m, node)) |b| {
+                    try m.foldTo(s.gpa, node, b);
                     m.memo[node.int()] = m.memo[b.int()];
                     try JsIr.pushOperand(s.arena, &stack, node);
                     any = true;
@@ -3459,12 +4145,21 @@ const Spec = struct {
                         .bot, .unknown => null,
                     };
                     if (taken) |b| {
-                        m.foldTo(node, b);
+                        try m.foldTo(s.gpa, node, b);
                         m.memo[node.int()] = m.memo[b.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
                         continue;
                     }
+                }
+                // A test that may do something, always truthy or always
+                // falsy: the arm it never takes is never evaluated
+                // (*Executability*, *Reading off*), and is written as `0`.
+                const decided_truth = s.truthOf(t);
+                if (t.state != .bot and (decided_truth == .yes or decided_truth == .no)) {
+                    const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                    const dead = if (decided_truth == .yes) c.alternate else c.consequent;
+                    if (try s.writeDead(m, dead)) any = true;
                 }
             } else if (tag == .binary) {
                 const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
@@ -3483,7 +4178,7 @@ const Spec = struct {
                     else
                         null;
                     if (kept) |k| {
-                        m.foldTo(node, k);
+                        try m.foldTo(s.gpa, node, k);
                         m.memo[node.int()] = m.memo[k.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
@@ -3494,6 +4189,26 @@ const Spec = struct {
             try ir.pushOperands(s.arena, &stack, node);
         }
         return any;
+    }
+
+    /// An expression no execution evaluates written as `0`, the shortest
+    /// literal, with the whole-program names it read (`folded_reads`). A
+    /// literal already is left as it is.
+    fn writeDead(s: *Spec, m: *Mod, node: Index) Allocator.Error!bool {
+        switch (m.ir.tag(node)) {
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return false,
+            else => {},
+        }
+        const reads_at = s.fold_reads.items.len;
+        defer s.fold_reads.shrinkRetainingCapacity(reads_at);
+        try s.globalReads(m, node);
+        const zero: Lat = .of(try s.intern(.{ .kind = .number, .bytes = "0" }));
+        if (!try s.patchLiteral(m, node, zero, false)) return false;
+        m.memo[node.int()] = zero;
+        for (s.fold_reads.items[reads_at..]) |g| if (g < s.folded_reads.len) {
+            s.folded_reads[g] += 1;
+        };
+        return true;
     }
 
     /// Whether every value `node` may have, by fact 3, is a primitive the
@@ -3558,6 +4273,19 @@ const Spec = struct {
     /// Append to `fold_reads` the whole-program id of every name read in
     /// the expression `root`, short of a function's body (which no fold
     /// reaches: a function is not a literal).
+    /// The whole-program names read below `root`, which a rewrite takes out
+    /// of the program with it: counted off what `substitutes` weighs
+    /// (`folded_reads`).
+    fn noteGone(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
+        if (s.folded_reads.len == 0) return;
+        const at = s.fold_reads.items.len;
+        defer s.fold_reads.shrinkRetainingCapacity(at);
+        try s.globalReads(m, root);
+        for (s.fold_reads.items[at..]) |g| if (g < s.folded_reads.len) {
+            s.folded_reads[g] += 1;
+        };
+    }
+
     fn globalReads(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
@@ -3652,7 +4380,8 @@ const Spec = struct {
             const global = m.globalOf(n);
             const uses: u32 = if (global) |g| s.reads[g] else if (n.unwrap()) |i| (if (i < m.stamp.len and m.stamp[i] == s.current) m.uses[i] else 2) else 2;
             if (!substitutes(lit, uses)) {
-                if (global) |g| try s.declined.append(s.arena, .{ .g = g, .lit = lit });
+                if (global == null) s.refused_local = true;
+                if (global) |g| if (m.scope) |top| try s.declined.append(s.arena, .{ .g = g, .lit = lit, .v = v, .module = m.index, .top = top, .node = node, .object_position = object_position });
                 return false;
             }
         }
@@ -3962,6 +4691,7 @@ const Spec = struct {
                 const d = ir.data(prop);
                 const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.lhs)));
                 if (s.pts.keyUnread(m.index, node, id) and try s.effectFree(m, @fromBackingInt(@intCast(d.rhs)))) {
+                    try s.noteGone(m, @fromBackingInt(@intCast(d.rhs)));
                     dropped = true;
                     continue;
                 }
@@ -4154,15 +4884,14 @@ const Spec = struct {
         return any;
     }
 
-    /// A binding lowering kept for what its initialiser might do, whose
-    /// initialiser the facts folded to something that does nothing (a
-    /// literal, a name): kept no more, so the optimiser drops it when
-    /// nothing reads it. True when one released is a read through a local,
-    /// which may be a parameter's last read (`deadReads`).
-    fn releaseKeeps(s: *Spec) Allocator.Error!bool {
-        var released = false;
-        for (s.mods) |*m| {
-            const t = m.tables orelse continue;
+    /// The bindings of `m` lowering kept for what their initialisers might
+    /// do, whose initialisers do nothing by the facts (a literal, a name, a
+    /// call of a function that only makes its value, a read through the
+    /// program's own objects): kept no more, so that the liveness read-off
+    /// (`liveness`), and the optimiser after it, drop one nothing reads.
+    fn releaseKept(s: *Spec, m: *Mod) Allocator.Error!void {
+        {
+            const t = m.tables orelse return;
             // Slice 8: a read through program objects does nothing either
             // (`Pts.safeChain`, asked in the declaration that holds it):
             // per kept binding, that declaration.
@@ -4205,14 +4934,7 @@ const Spec = struct {
                     if (top_of.len != 0 and m.ir.tag(v) == .member and node.int() < nodes and v.int() < s.pts.vals[m.index].len) {
                         // A binding no walk reached is in no top: kept.
                         const top = top_of[node.int()];
-                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) {
-                            // A read of a local — a parameter, maybe — that
-                            // nothing may need now (`run`).
-                            var base = v;
-                            while (m.ir.tag(base) == .member) base = @fromBackingInt(@intCast(m.ir.data(base).lhs));
-                            if (m.ir.tag(base) == .ident and m.globalOf(@fromBackingInt(@intCast(m.ir.data(base).lhs))) == null) released = true;
-                            continue;
-                        }
+                        if (found.isSet(node.int()) and try s.pts.safeChain(m.index, top, v) != null) continue;
                     }
                 }
                 t.keep.items[kept] = node;
@@ -4220,7 +4942,100 @@ const Spec = struct {
             }
             t.keep.shrinkRetainingCapacity(kept);
         }
-        return released;
+    }
+
+    /// The liveness of the local bindings of top-level statement `top`, as
+    /// patched (`backend.md` §9, *Reading off*, G8): a `const` or `let`
+    /// declared once and assigned nowhere, that lowering does not keep for
+    /// an effect (`kept`), is dead when every read of it stands in the
+    /// initialiser of a dead binding. `Opt` drops it whole, so its
+    /// initialiser is written `undefined` here, and the names it read are
+    /// read by that much less: `m.uses` is left as the live reads. The
+    /// counts are `prepareTop`'s, just made. True when one was written.
+    fn liveness(s: *Spec, m: *Mod, top: Index, kept: std.DynamicBitSetUnmanaged) Allocator.Error!bool {
+        const ir = m.ir;
+        const saved_top = s.cur_top;
+        defer s.cur_top = saved_top;
+        s.cur_top = top;
+        var binds: std.ArrayList(Index) = .empty;
+        for (try s.preorder(m, top)) |node| switch (ir.tag(node)) {
+            .const_decl, .let_decl => {
+                if (node == top) continue;
+                const n: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
+                if (m.globalOf(n) != null) continue;
+                // A qualified name crosses a file, and `Opt` concludes nothing
+                // about it: nor does this.
+                if (ir.name(n).module != .none) continue;
+                const i = n.unwrap() orelse continue;
+                if (i >= m.stamp.len or m.stamp[i] != s.current or m.decls[i] != 1 or m.assigned[i]) continue;
+                if (node.int() < kept.bit_length and kept.isSet(node.int())) continue;
+                try binds.append(s.arena, node);
+            },
+            else => {},
+        };
+        if (binds.items.len == 0) return false;
+        var any = false;
+        var reads = try s.takeStack();
+        defer s.giveStack(&reads);
+        const dead = try s.arena.alloc(bool, binds.items.len);
+        @memset(dead, false);
+        // The nodes of the initialisers gone (`Mod.objects`, cleared on the
+        // way out): a binding among them went with them, and its reads were
+        // counted off there.
+        var marked: std.ArrayList(u32) = .empty;
+        defer for (marked.items) |i| m.objects.unset(i);
+        var grew = true;
+        while (grew) {
+            grew = false;
+            for (binds.items, dead) |node, *gone| {
+                if (gone.*) continue;
+                if (node.int() < m.objects.bit_length and m.objects.isSet(node.int())) {
+                    gone.* = true;
+                    continue;
+                }
+                const i = (@as(NameIndex, @fromBackingInt(@intCast(ir.data(node).lhs)))).unwrap().?;
+                if (m.uses[i] != 0) continue;
+                gone.* = true;
+                const value = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).rhs)))).unwrap() orelse continue;
+                // An initialiser that may do something stays, for `Opt` to
+                // weigh by what lowering kept: lowering keeps only what it
+                // knew might go unread, and a read the patch took was not.
+                if (!try s.effectFree(m, value)) continue;
+                grew = true;
+                // What it read, it reads no more.
+                reads.clearRetainingCapacity();
+                try reads.append(s.arena, value);
+                while (reads.pop()) |r| {
+                    if (r.int() < m.objects.bit_length and !m.objects.isSet(r.int())) {
+                        m.objects.set(r.int());
+                        try marked.append(s.arena, r.int());
+                    }
+                    // An assignment's target is no read (`count`).
+                    if (ir.tag(r) == .assign_stmt) {
+                        const target: Index = @fromBackingInt(@intCast(ir.data(r).lhs));
+                        if (ir.tag(target) != .ident) try reads.append(s.arena, target);
+                        try reads.append(s.arena, @fromBackingInt(@intCast(ir.data(r).rhs)));
+                        continue;
+                    }
+                    if (ir.tag(r) == .ident) {
+                        const rn: NameIndex = @fromBackingInt(@intCast(ir.data(r).lhs));
+                        if (m.globalOf(rn) == null) if (rn.unwrap()) |ri| if (ri < m.stamp.len and m.stamp[ri] == s.current) {
+                            m.uses[ri] -|= 1;
+                        };
+                    }
+                    try pushChildren(s.arena, ir, r, &reads);
+                }
+                try s.noteGone(m, value);
+                // The binding goes, as `Opt` would drop it: a statement of
+                // its literal, which its list's fold takes out
+                // (`literalStmt`).
+                m.setNode(value, .undefined_lit, 0, 0);
+                if (value.int() < m.lit_of.len) m.lit_of[value.int()] = none;
+                m.setNode(node, .expr_stmt, value.int(), 0);
+                any = true;
+            }
+        }
+        return any;
     }
 
     // ---- Slice 7: scalar replacement --------------------------------------
@@ -4318,7 +5133,6 @@ const Spec = struct {
                     if ((try s.usesOf(m, top, x)).?.idents != 1) break :intoReturn;
                     var c: Copy = .{
                         .s = s,
-                        .keys = s.keepsKeys(m, top),
                         .src = m,
                         .dst = m,
                         .cross = false,
@@ -4381,7 +5195,6 @@ const Spec = struct {
                         const x2 = try s.freshLocal(m);
                         var copy: Copy = .{
                             .s = s,
-                            .keys = s.keepsKeys(m, top),
                             .src = m,
                             .dst = m,
                             .cross = false,
@@ -4476,7 +5289,6 @@ const Spec = struct {
         const cross = small.module != m.index;
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -4549,7 +5361,7 @@ const Spec = struct {
             // `inlineIifesIn` writes one inside a function, the binding the
             // declaration that scopes its names.
             .const_decl, .let_decl => {
-                if (s.list_mode == .iife and try s.inlineIifesIn(m, top, top)) any = true;
+                if (s.list_mode == .tidy and try s.inlineIifesIn(m, top, top)) any = true;
                 if (try s.srBelow(m, top, top, 0)) any = true;
             },
             .func_decl => if (try s.srBelow(m, top, top, 0)) {
@@ -4651,9 +5463,11 @@ const Spec = struct {
                 try out.append(s.arena, raw);
             },
             .constructors => changed = try s.foldConstructors(m, top, items, &out),
-            // `x = x` does nothing: a name read and written back (an
-            // identity written in place, slice 8).
-            .self_assign => for (items) |raw| {
+            // In the pass loop, in one sweep: `x = x` does nothing, a name
+            // read and written back (an identity written in place, slice
+            // 8); and a function called where it is made is written there
+            // (`betaReduce`).
+            .tidy => for (items) |raw| {
                 const st: Index = @fromBackingInt(@intCast(raw));
                 if (m.ir.tag(st) == .assign_stmt) {
                     const target: Index = @fromBackingInt(@intCast(m.ir.data(st).lhs));
@@ -4662,14 +5476,11 @@ const Spec = struct {
                         continue;
                     }
                 }
-                try out.append(s.arena, raw);
-            },
-            .iife => for (items) |raw| {
-                if (try s.betaReduce(m, @fromBackingInt(@intCast(raw)), top, &out)) {
+                if (try s.betaReduce(m, st, top, &out)) {
                     changed = true;
                     continue;
                 }
-                if (try s.inlineIifesIn(m, top, @fromBackingInt(@intCast(raw)))) any = true;
+                if (try s.inlineIifesIn(m, top, st)) any = true;
                 try out.append(s.arena, raw);
             },
             .switches => for (items, 0..) |raw, at| {
@@ -4775,7 +5586,7 @@ const Spec = struct {
                 if (mm.ir.tag(node) == .ident) if (mm.globalOf(@fromBackingInt(@intCast(mm.ir.data(node).lhs)))) |x| if (x == g) return;
             }
         };
-        m.copyNode(value, callee);
+        try m.copyNode(s.gpa, value, callee);
     }
     /// `backend.md` §9, *A function that only calls a function is that
     /// function*: in statement `items[at]`'s own expressions, `() => g()`
@@ -4926,8 +5737,7 @@ const Spec = struct {
                     },
                     else => {},
                 },
-                .self_assign => if (ir.tag(st) == .assign_stmt) return true,
-                .iife => if (iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
+                .tidy => if (ir.tag(st) == .assign_stmt or iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
                 // A `switch`, or an arrow an eta step may take.
                 .switches => if (ir.tag(st) == .switch_stmt or try s.holdsArrow(m, st)) return true,
             }
@@ -5175,7 +5985,7 @@ const Spec = struct {
             if (m.ir.tag(node) != .member) continue;
             const id = s.pts.propId(m.index, @fromBackingInt(@intCast(m.ir.data(node).rhs)));
             const k = std.mem.indexOfScalar(u32, ids, id).?;
-            if (atoms[k]) |a| m.copyNode(node, a) else m.setNode(node, .ident, names[k].int(), 0);
+            if (atoms[k]) |a| try m.copyNode(s.gpa, node, a) else m.setNode(node, .ident, names[k].int(), 0);
         }
         if (delta) |r| try s.extend(m, top, r, roots);
         return true;
@@ -5198,25 +6008,6 @@ const Spec = struct {
             },
             else => return false,
         }
-    }
-
-    /// Whether a `Copy` of the body of top-level statement `stmt` of `m`
-    /// keeps its keys (`Copy.keys`): `backend.md` §9 lets it only when the
-    /// declaration's type holds no type variable, which is when the checker
-    /// keyed it (checker-v2.md §36, the declarations) and lowering listed
-    /// its statement in `JsIr.closed_decls`. A statement rewritten since has
-    /// left the list.
-    fn keepsKeys(s: *const Spec, m: *const Mod, stmt: Index) bool {
-        _ = s;
-        return std.sort.binarySearch(Index, m.closed_decls.items, stmt, orderIndex) != null;
-    }
-
-    /// `keepsKeys` for the function a `Small` is: the top-level declaration
-    /// it names, or none.
-    fn keepsKeysOf(s: *const Spec, small: Small) bool {
-        if (small.owner == none or small.owner >= s.decl.len) return false;
-        const d = s.decl[small.owner] orelse return false;
-        return s.keepsKeys(&s.mods[d.module], d.stmt);
     }
 
     /// A local name no name of the module has.
@@ -5470,7 +6261,6 @@ const Spec = struct {
         const cross = small.module != mi;
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -5501,7 +6291,7 @@ const Spec = struct {
             c.subst[pi] = a.toOptional();
         };
         const copied = try c.stmt(small.ret, 0);
-        m.copyNode(stmt, copied);
+        try m.copyNode(s.gpa, stmt, copied);
     }
 
     /// Arrow `value` of module `module` as slice 8 sees it, or null: one
@@ -5869,7 +6659,6 @@ const Spec = struct {
         const cross = small.module != mi;
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeysOf(small),
             .src = fm,
             .dst = m,
             .cross = cross,
@@ -5901,7 +6690,7 @@ const Spec = struct {
         const e = try c.expr(small.ret, 0);
         // As `inlineAt` writes a call as an expression.
         const delta = try s.retractCall(m, top, call, e);
-        m.copyNode(call, e);
+        try m.copyNode(s.gpa, call, e);
         if (delta) |r| try s.extend(m, top, r, &.{call.int()});
         return true;
     }
@@ -6095,7 +6884,7 @@ const Spec = struct {
         s.noteCopy(mi, g);
         const e = try c.expr(value, 0);
         for (scratch.locals.items) |i| scratch.renamed.items[i] = none;
-        m.foldTo(site, e);
+        try m.foldTo(s.gpa, site, e);
         // The table lowering handed the printer names the copy's root; the
         // root is now `site`.
         if (m.tables) |t| if (std.mem.indexOfScalar(Index, t.unobserved.items, e) != null) try t.unobserved.append(s.arena, site);
@@ -6174,18 +6963,16 @@ const Spec = struct {
 
     const CallSite = struct { module: u32, top: Index, call: Index };
 
-    /// One module's part of `inlineBatch`'s count: per whole-program name,
-    /// its mentions, its last call, and whether it is assigned — as of the
-    /// module's `version`.
+    /// One module's part of `inlineBatch`'s count, as of the module's
+    /// `version`: one entry per whole-program name the module mentions or
+    /// assigns, with its mentions, its last call and whether it is
+    /// assigned. Sparse, so that counting a module again costs what it
+    /// names and not what the whole program names (#742).
     const InlineScan = struct {
         version: u32 = none,
-        refs: []u32 = &.{},
-        sites: []?CallSite = &.{},
-        assigned: []bool = &.{},
-        /// The three columns' memory, kept when a name is added (#574).
-        refs_keep: []u32 = &.{},
-        sites_keep: []?CallSite = &.{},
-        assigned_keep: []bool = &.{},
+        entries: std.ArrayList(Mention) = .empty,
+
+        const Mention = struct { g: u32, refs: u32, assigned: bool, site: ?CallSite };
     };
 
     /// The first `n` entries of a scratch column kept across calls in
@@ -6199,7 +6986,7 @@ const Spec = struct {
 
     /// Bring `io_refs` and `io_assigned`, the whole program's counts, up to
     /// date: a module that changed since it was last counted is counted
-    /// again, and only that module.
+    /// again, and only that module, at the cost of the names it holds.
     fn inlineScan(s: *Spec) Allocator.Error!void {
         const n = s.globals;
         if (s.io_scans.len != s.mods.len) {
@@ -6214,36 +7001,41 @@ const Spec = struct {
             @memset(s.io_assigned, 0);
             for (s.io_scans) |*sc| {
                 sc.version = none;
-                sc.refs = &.{};
+                sc.entries.clearRetainingCapacity();
             }
         }
+        // Per name, its entry's place in the module being counted, plus
+        // one; zero between modules.
+        if (s.io_slot.len < n) {
+            s.io_slot = try s.arena.alloc(u32, n + n / 2);
+            @memset(s.io_slot, 0);
+        }
+        const slot = s.io_slot[0..n];
         for (s.mods, s.io_scans, 0..) |*m, *sc, mi| {
             if (sc.version == m.version) continue;
-            if (sc.refs.len == n) {
-                for (sc.refs, sc.assigned, 0..) |r, a, g| {
-                    s.io_refs[g] -= r;
-                    s.io_assigned[g] -= @intFromBool(a);
-                }
-            } else {
-                sc.refs = try s.scratchOf(u32, &sc.refs_keep, n);
-                sc.sites = try s.scratchOf(?CallSite, &sc.sites_keep, n);
-                sc.assigned = try s.scratchOf(bool, &sc.assigned_keep, n);
+            for (sc.entries.items) |e| {
+                s.io_refs[e.g] -= e.refs;
+                s.io_assigned[e.g] -= @intFromBool(e.assigned);
             }
-            @memset(sc.refs, 0);
-            @memset(sc.sites, null);
-            @memset(sc.assigned, false);
+            sc.entries.clearRetainingCapacity();
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
                 for ((try s.nameScan(m, top)).uses.items) |*u| {
                     const g = m.globalOf(@fromBackingInt(@intCast(u.name))) orelse continue;
-                    sc.refs[g] += u.idents;
-                    for (u.calls.items) |call| sc.sites[g] = .{ .module = @intCast(mi), .top = top, .call = call };
-                    if (u.assigns != 0) sc.assigned[g] = true;
+                    if (slot[g] == 0) {
+                        try sc.entries.append(s.arena, .{ .g = g, .refs = 0, .assigned = false, .site = null });
+                        slot[g] = @intCast(sc.entries.items.len);
+                    }
+                    const e = &sc.entries.items[slot[g] - 1];
+                    e.refs += u.idents;
+                    for (u.calls.items) |call| e.site = .{ .module = @intCast(mi), .top = top, .call = call };
+                    if (u.assigns != 0) e.assigned = true;
                 }
             }
-            for (sc.refs, sc.assigned, 0..) |r, a, g| {
-                s.io_refs[g] += r;
-                s.io_assigned[g] += @intFromBool(a);
+            for (sc.entries.items) |e| {
+                slot[e.g] = 0;
+                s.io_refs[e.g] += e.refs;
+                s.io_assigned[e.g] += @intFromBool(e.assigned);
             }
             sc.version = m.version;
         }
@@ -6780,11 +7572,9 @@ const Spec = struct {
         @memset(sites, null);
         const assigned = try s.scratchOf(bool, &s.io_flags, n);
         for (assigned, s.io_assigned[0..n]) |*a, k| a.* = k != 0;
-        for (refs, 0..) |r, g| if (r == 1) {
-            for (s.io_scans) |*sc| if (sc.refs[g] != 0) {
-                sites[g] = sc.sites[g];
-                break;
-            };
+        // A name mentioned once is mentioned by one module only.
+        for (s.io_scans) |*sc| for (sc.entries.items) |e| {
+            if (e.refs != 0 and refs[e.g] == 1) sites[e.g] = e.site;
         };
         // Which are candidates at all.
         const fit = try s.scratchOf(bool, &s.io_fit, n);
@@ -7798,7 +8588,6 @@ const Spec = struct {
 
         var c: Copy = .{
             .s = s,
-            .keys = s.keepsKeys(fm, decl.stmt),
             .src = fm,
             .dst = cm,
             .cross = cross,
@@ -7841,7 +8630,7 @@ const Spec = struct {
                 const ret: Index = @fromBackingInt(@intCast(fm.ir.data(body[0]).lhs));
                 const e = try c.expr(ret, 0);
                 delta = try s.retractCall(cm, site.top, site.call, e);
-                cm.copyNode(site.call, e);
+                try cm.copyNode(s.gpa, site.call, e);
                 new_roots = try s.arena.dupe(u32, &.{site.call.int()});
             },
             .ret => {
@@ -8100,7 +8889,6 @@ const Spec = struct {
             const cont: Cont = .{ .x = fit.x, .rest = fit.rest, .top = fit.site.top, .call = fit.site.call, .inspected = inspected, .args = args, .assigned = assigned };
             var c: Copy = .{
                 .s = s,
-                .keys = s.keepsKeys(fm, decl.stmt),
                 .src = fm,
                 .dst = cm,
                 .cross = decl.module != fit.site.module,
@@ -8319,7 +9107,6 @@ const Spec = struct {
             try s.stableChain(m, cont, p);
         var k: Copy = .{
             .s = s,
-            .keys = s.keepsKeys(m, cont.top),
             .src = m,
             .dst = m,
             .cross = false,
@@ -8554,12 +9341,6 @@ const Spec = struct {
         /// While the rest of a fused site's list is copied for one `return
         /// P`: its binding `x` is known to be `p`, a node of the module.
         known: ?Known = null,
-        /// Every object, array and arrow copied as itself keeps its source's
-        /// key, and every local named afresh its source name's: set only
-        /// for the body of a declaration whose type holds no type variable
-        /// (`backend.md` §9, *Declared-type filtering of fact 3*;
-        /// `Spec.keepsKeys`). Else every copy is wild.
-        keys: bool = false,
 
         fn gpa(c: *Copy) Allocator {
             return c.s.gpa;
@@ -8753,7 +9534,11 @@ const Spec = struct {
             const at = try c.dst.addName(c.gpa(), name);
             if (global) try c.s.addGlobal(c.dst, at);
             c.renamed[n] = at.int();
-            if (c.keys and !global) {
+            // A local named afresh keeps its source name's key: a key is a
+            // closed type, the same at every instantiation of the body it is
+            // in (`backend.md` §9, *Declared-type filtering of fact 3*,
+            // amended for #722).
+            if (!global) {
                 const k = c.src.ir.nameKey(@fromBackingInt(@intCast(n)));
                 if (k != .wild) try c.dst.setNameKey(c.gpa(), at, k);
             }
@@ -8783,7 +9568,7 @@ const Spec = struct {
             const pos: u32 = if (c.cross) c.site else c.src.ir.pos(from);
             const to = try c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
             // An allocation copied as itself is still one of its type.
-            if (c.keys and tag == c.src.ir.tag(from)) switch (tag) {
+            if (tag == c.src.ir.tag(from)) switch (tag) {
                 .object, .array, .arrow => {
                     const k = c.src.ir.nodeKey(from);
                     if (k != .wild) try c.dst.setNodeKey(c.gpa(), to, k);
@@ -8855,6 +9640,7 @@ const Spec = struct {
                     if (d.lhs < c.subst.len) if (c.subst[d.lhs].unwrap()) |a| return c.atom(a);
                     return c.node(from, .ident, (try c.binding(@fromBackingInt(@intCast(d.lhs)))).int(), 0);
                 },
+                .field_name => return c.node(from, tag, (try c.property(@fromBackingInt(@intCast(d.lhs)))).int(), 0),
                 .number, .string, .template_chunk, .regex => return c.node(from, tag, try c.bytesOf(from), d.rhs),
                 .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => return c.node(from, tag, 0, 0),
                 .template, .object, .array => {
@@ -9183,19 +9969,27 @@ fn TagSet(comptime tags: []const Node.Tag) [@typeInfo(Node.Tag).@"enum".field_na
     return set;
 }
 
+/// The markers of an arm on the extraction's expression stack (`Extractor.expr`):
+/// it begins (the node whose arm it is, and whether it is the alternate),
+/// or it ends.
+const mark_exit: u32 = 1 << 28;
+const mark_enter: u32 = 1 << 30;
+const mark_alt: u32 = 1 << 29;
+const mark_node: u32 = mark_exit - 1;
+
 /// The leaves the evaluating walks (`Spec.eval`, `Pts.expr`) take without
 /// their stack.
-const value_leaves = TagSet(&.{ .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
+const value_leaves = TagSet(&.{ .field_name, .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit, .template_chunk });
 
 inline fn isValueLeaf(t: Node.Tag) bool {
     return value_leaves[@backingInt(t)];
 }
 
 /// The leaves `Spec.patchStmt` has nothing to patch in.
-const patch_leaves = TagSet(&.{ .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
+const patch_leaves = TagSet(&.{ .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk, .global_this, .this_lit });
 
 /// The leaves `Spec.countExpr` has nothing to count in: none is a name.
-const count_leaves = TagSet(&.{ .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
+const count_leaves = TagSet(&.{ .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit });
 
 /// Whether a node of `tag` is a literal, as `Spec.literalValue` reads one.
 fn isLiteralTag(tag: Node.Tag) bool {
@@ -9347,6 +10141,1724 @@ const RunArena = struct {
 /// through the site's list of them. The facts are the same least fixpoint
 /// the per-site joins reached: every edge only carries what the join
 /// carried, sooner.
+/// One extraction (`backend.md` §9, *The combined solver — Extraction*):
+/// one walk of a module's `JsIr` that does what a sweep's walk of it does
+/// (`Spec.walkTop`: `count`, then `evalStmt`) and, in place of each
+/// evaluation, emits the constraint it would evaluate. It reads the module's
+/// IR and its `global` column and nothing else, and writes only its own
+/// columns, so modules extract on workers at once. `scratch` holds what one
+/// extraction needs; the result is in the `Extract`'s own arena.
+const Extractor = struct {
+    scratch: Allocator,
+    ir: *const JsIr,
+    global: []const u32,
+    /// How many names a walk counts (`Mod.stamp.len`): a name past it is
+    /// one no walk counts, read as ⊤.
+    names: usize,
+    nodes: u32,
+    /// `Spec.touch`'s columns, per name, valid when `stamp` is `cur`.
+    stamp: []u32,
+    cur: u32 = 0,
+    decls: []u32,
+    uses: []u32,
+    assigned: []bool,
+    /// The parameter position of the statement's own function (`Spec.param`).
+    pos: []u32,
+    /// The cell of the value a local was declared with, as `Spec.value`
+    /// holds the value: `none` while it is ⊤.
+    src: []u32,
+    /// Per node: met already, and the cell of its last occurrence — what
+    /// `Mod.memo` holds of it at that point of the walk.
+    seen: std.DynamicBitSetUnmanaged,
+    cell: []u32,
+    narrow: std.ArrayList(NameIndex) = .empty,
+    /// Per name, how many entries of `narrow` it has: whether a read of it
+    /// is past a guard, without a search.
+    guards: []u32,
+    stack: std.ArrayList(Index) = .empty,
+    work: std.ArrayList(Index) = .empty,
+    disjuncts: std.ArrayList(Index) = .empty,
+    cur_fn: u32 = none,
+    ordinal: u32 = 0,
+    param_reads: bool = false,
+    code: std.ArrayList(Code) = .empty,
+    node: std.ArrayList(u32) = .empty,
+    a: std.ArrayList(u32) = .empty,
+    pool: std.ArrayList(u32) = .empty,
+    over: std.ArrayList(u32) = .empty,
+    stmts: std.ArrayList(ExStmt) = .empty,
+    reads: std.ArrayList(GRead) = .empty,
+    assigns: std.ArrayList(u32) = .empty,
+    /// The exec cell the walk is in, the cells, each constraint's, and the
+    /// cells an arm the expression walk is in was entered from.
+    cur_exec: u32 = 0,
+    execs: std.ArrayList(ExecCell) = .empty,
+    exec: std.ArrayList(u32) = .empty,
+    exec_saved: std.ArrayList(u32) = .empty,
+
+    /// Extract module `m` into `into`, which it replaces. A statement whose
+    /// nodes are what they were when `into` took its constraints
+    /// (`Mod.keptNodes`) keeps them, unless `fresh`; so does no statement
+    /// when the names a walk counts changed.
+    fn run(scratch: Allocator, m: *const Mod, fresh: bool, into: *Extract) Allocator.Error!void {
+        const ir = m.ir;
+        const global = m.global;
+        const names = m.stamp.len;
+        const epoch = m.epoch;
+        const nodes: u32 = @intCast(ir.nodes.len);
+        var x: Extractor = .{
+            .scratch = scratch,
+            .ir = ir,
+            .global = global,
+            .names = names,
+            .nodes = nodes,
+            .stamp = try scratch.alloc(u32, names),
+            .decls = try scratch.alloc(u32, names),
+            .uses = try scratch.alloc(u32, names),
+            .assigned = try scratch.alloc(bool, names),
+            .pos = try scratch.alloc(u32, names),
+            .src = try scratch.alloc(u32, names),
+            .guards = try scratch.alloc(u32, names),
+            .seen = try .initEmpty(scratch, nodes),
+            .cell = try scratch.alloc(u32, nodes),
+        };
+        @memset(x.stamp, 0);
+        @memset(x.guards, 0);
+        const body = ir.extraSlice(ir.body, Index);
+        // The last extraction's statements, by node.
+        var old: KeyMap(struct { node: u32 }, u32) = .empty;
+        if (!fresh and into.names == names) for (into.stmts, 0..) |st, k| try old.put(scratch, .{ .node = st.node.int() }, @intCast(k));
+        var walked: u32 = 0;
+        var reused: u32 = 0;
+        // Exec cell 0: the module, which no constraint names; then each
+        // statement's own, which runs while the statement is live.
+        try x.execs.append(scratch, .{ .kind = .top });
+        for (body, 0..) |top, i| {
+            x.ordinal = @intCast(i);
+            x.cur_exec = 0;
+            const before = old.get(.{ .node = top.int() });
+            if (before) |k| if (m.keptNodes(top, into.stmts[k].epoch)) if (try x.reuse(into, k)) {
+                reused += 1;
+                continue;
+            };
+            walked += 1;
+            try x.execs.append(scratch, .{ .kind = .top });
+            x.cur_exec = @intCast(x.execs.items.len - 1);
+            try x.prepare(top);
+            try x.stmtOf(top);
+            try x.stmts.append(scratch, .{
+                .node = top,
+                .cons = @intCast(x.code.items.len),
+                .pool = @intCast(x.pool.items.len),
+                .over = @intCast(x.over.items.len),
+                .reads = @intCast(x.reads.items.len),
+                .assigns = @intCast(x.assigns.items.len),
+                .execs = @intCast(x.execs.items.len),
+                .epoch = epoch,
+                .param_reads = x.param_reads,
+            });
+        }
+        into.walked = walked;
+        into.reused = reused;
+        // What the last extraction made is no longer read: its arena holds
+        // this one's columns, each written into its field, so that the
+        // arena itself is never copied.
+        into.arena.reset(.retain_capacity);
+        const keep = into.arena.allocator();
+        into.epoch = epoch;
+        into.names = names;
+        into.nodes = nodes;
+        into.code = try keep.dupe(Code, x.code.items);
+        into.node = try keep.dupe(u32, x.node.items);
+        into.a = try keep.dupe(u32, x.a.items);
+        into.pool = try keep.dupe(u32, x.pool.items);
+        into.over = try keep.dupe(u32, x.over.items);
+        into.stmts = try keep.dupe(ExStmt, x.stmts.items);
+        into.reads = try keep.dupe(GRead, x.reads.items);
+        into.assigns = try keep.dupe(u32, x.assigns.items);
+        into.exec = try keep.dupe(u32, x.exec.items);
+        into.execs = try keep.dupe(ExecCell, x.execs.items);
+        // Per exec cell the constraints it gates and the arms below it, and
+        // per node cell the arms its value decides, by counting sort.
+        const n_exec = into.execs.len;
+        into.ec_off, into.ec = try csr(keep, scratch, n_exec, into.exec, null);
+        const parents = try scratch.alloc(u32, n_exec);
+        const tests = try scratch.alloc(u32, n_exec);
+        for (into.execs, parents, tests) |e, *p, *t| {
+            p.* = if (e.kind == .top or e.kind == .body) none else e.parent;
+            t.* = if (e.kind == .top or e.kind == .body) none else e.a;
+        }
+        into.ek_off, into.ek = try csr(keep, scratch, n_exec, parents, null);
+        into.et_off, into.et = try csr(keep, scratch, into.cells(), tests, null);
+        // The readers index, by counting sort over the cells.
+        const cells = into.cells();
+        const off = try keep.alloc(u32, cells + 1);
+        @memset(off, 0);
+        for (0..into.code.len) |j| eachRead(into, j, Count{ .off = off });
+        for (1..off.len) |i| off[i] += off[i - 1];
+        const rd = try keep.alloc(u32, off[cells]);
+        const fill = try scratch.dupe(u32, off[0..cells]);
+        for (0..into.code.len) |j| eachRead(into, j, Fill{ .fill = fill, .rd = rd, .con = @intCast(j) });
+        into.rd_off = off;
+        into.rd = rd;
+    }
+
+    /// The index of `keys` (`none` skipped): per key in `0..n`, the places
+    /// that have it, `x[off[k]..off[k + 1]]`, in order.
+    fn csr(keep: Allocator, scratch: Allocator, n: usize, keys: []const u32, _: ?void) Allocator.Error!struct { []u32, []u32 } {
+        const off = try keep.alloc(u32, n + 1);
+        @memset(off, 0);
+        for (keys) |k| if (k != none) {
+            off[k + 1] += 1;
+        };
+        for (1..off.len) |i| off[i] += off[i - 1];
+        const out = try keep.alloc(u32, off[n]);
+        const fill = try scratch.dupe(u32, off[0..n]);
+        for (keys, 0..) |k, i| if (k != none) {
+            out[fill[k]] = @intCast(i);
+            fill[k] += 1;
+        };
+        return .{ off, out };
+    }
+
+    const Count = struct {
+        off: []u32,
+        fn see(c: Count, cell: u32) void {
+            c.off[cell + 1] += 1;
+        }
+    };
+
+    const Fill = struct {
+        fill: []u32,
+        rd: []u32,
+        con: u32,
+        fn see(f: Fill, cell: u32) void {
+            f.rd[f.fill[cell]] = f.con;
+            f.fill[cell] += 1;
+        }
+    };
+
+    /// Calls `f.see(cell)` for every cell of the module constraint `j`
+    /// reads; a parameter's is the merge's (`Solver.prd`), and a field's
+    /// and a return's are registered as they are read (`Solver.reads`).
+    fn eachRead(x: *const Extract, j: usize, f: anytype) void {
+        const a = x.a[j];
+        switch (x.code[j].op) {
+            .constant, .literal, .global, .param => {},
+            .member => if (a != none) f.see(a),
+            .local, .ret => if (a != none) f.see(a),
+            .unary, .store => f.see(a),
+            .binary => {
+                f.see(x.pool[a]);
+                f.see(x.pool[a + 1]);
+            },
+            .cond => for (x.pool[a..][0..5]) |c| if (c != none) f.see(c),
+            .call => for (x.pool[a + 2 ..][0..x.pool[a + 1]]) |c| f.see(c),
+            .template => for (x.pool[a + 1 ..][0..x.pool[a]]) |c| f.see(c),
+            .object => for (0..x.pool[a]) |k| f.see(x.pool[a + 2 + 2 * k]),
+        }
+    }
+
+    /// Statement `k` of `from`, the last extraction, taken as it was: its
+    /// constraints, renumbered into this one. Not taken when it has a
+    /// repeated node, whose cell is numbered across the module, or one
+    /// that another statement of this extraction met first.
+    fn reuse(x: *Extractor, from: *const Extract, k: u32) Allocator.Error!bool {
+        const st = from.stmts[k];
+        const prev: ExStmt = if (k == 0) .{ .node = st.node, .cons = 0, .pool = 0, .over = 0, .reads = 0, .assigns = 0, .execs = 1, .epoch = 0, .param_reads = false } else from.stmts[k - 1];
+        if (st.over != prev.over) return false;
+        for (from.code[prev.cons..st.cons], from.node[prev.cons..st.cons]) |code, node| {
+            if (code.ofNode() and x.seen.isSet(node)) return false;
+        }
+        for (from.code[prev.cons..st.cons], from.node[prev.cons..st.cons]) |code, node| {
+            if (code.ofNode()) {
+                x.seen.set(node);
+                x.cell[node] = node;
+            }
+        }
+        const s = x.scratch;
+        const pool_delta: u32 = @intCast(x.pool.items.len);
+        // Its exec cells, renumbered as they are copied; the top level's is
+        // every module's first.
+        const exec_from = if (k == 0) 1 else prev.execs;
+        const exec_at: u32 = @intCast(x.execs.items.len);
+        const shift = struct {
+            fn id(e: u32, lo: u32, at: u32) u32 {
+                return if (e == 0 or e == none) e else e - lo + at;
+            }
+        }.id;
+        for (from.execs[exec_from..st.execs]) |e| try x.execs.append(s, .{ .kind = e.kind, .parent = shift(e.parent, exec_from, exec_at), .a = e.a });
+        for (prev.cons..st.cons) |j| try x.exec.append(s, shift(from.exec[j], exec_from, exec_at));
+        for (prev.cons..st.cons) |j| {
+            const code = from.code[j];
+            const a = switch (code.op) {
+                .binary, .cond, .call, .template, .object => from.a[j] - prev.pool + pool_delta,
+                else => from.a[j],
+            };
+            try x.code.append(s, code);
+            try x.node.append(s, from.node[j]);
+            try x.a.append(s, a);
+        }
+        try x.pool.appendSlice(s, from.pool[prev.pool..st.pool]);
+        try x.reads.appendSlice(s, from.reads[prev.reads..st.reads]);
+        try x.assigns.appendSlice(s, from.assigns[prev.assigns..st.assigns]);
+        try x.stmts.append(s, .{
+            .node = st.node,
+            .cons = @intCast(x.code.items.len),
+            .pool = @intCast(x.pool.items.len),
+            .over = @intCast(x.over.items.len),
+            .reads = @intCast(x.reads.items.len),
+            .assigns = @intCast(x.assigns.items.len),
+            .execs = @intCast(x.execs.items.len),
+            .epoch = st.epoch,
+            .param_reads = st.param_reads,
+        });
+        return true;
+    }
+
+    inline fn globalOf(x: *const Extractor, n: NameIndex) ?u32 {
+        const i = n.unwrap() orelse return null;
+        if (i >= x.global.len) return null;
+        const g = x.global[i];
+        return if (g == none) null else g;
+    }
+
+    /// A constraint: `node` a node's cell, or the statement's node for
+    /// `store` and `ret`.
+    fn emit(x: *Extractor, op: Op, node: u32, a: u32, flag: bool) Allocator.Error!void {
+        const s = x.scratch;
+        try x.code.append(s, .{ .op = op, .flag = flag });
+        try x.node.append(s, node);
+        try x.a.append(s, a);
+        try x.exec.append(s, x.cur_exec);
+    }
+
+    /// A new exec cell below the one the walk is in, which the walk then is
+    /// in; the cell it was in is given back.
+    fn enter(x: *Extractor, kind: ExecCell.ExecKind, a: u32) Allocator.Error!u32 {
+        const saved = x.cur_exec;
+        try x.execs.append(x.scratch, .{ .kind = kind, .parent = if (kind == .body) none else saved, .a = a });
+        x.cur_exec = @intCast(x.execs.items.len - 1);
+        return saved;
+    }
+
+    /// The cell of a new occurrence of `node`.
+    fn occur(x: *Extractor, node: Index) Allocator.Error!u32 {
+        const n = node.int();
+        const c: u32 = if (!x.seen.isSet(n)) first: {
+            x.seen.set(n);
+            break :first n;
+        } else again: {
+            const c = x.nodes + @as(u32, @intCast(x.over.items.len));
+            try x.over.append(x.scratch, n);
+            break :again c;
+        };
+        x.cell[n] = c;
+        return c;
+    }
+
+    // ---- `Spec.prepareTop`'s count -------------------------------------------
+
+    fn prepare(x: *Extractor, top: Index) Allocator.Error!void {
+        const ir = x.ir;
+        x.cur += 1;
+        x.param_reads = false;
+        try x.count(top);
+        // The statement's own function, whose parameters `Spec` tracks
+        // when the declaration is the one its name has (the merge says).
+        const record: ?ExtraIndex = switch (ir.tag(top)) {
+            .const_decl => rec: {
+                if (x.globalOf(@fromBackingInt(@intCast(ir.data(top).lhs))) == null) break :rec null;
+                const rhs: Index = @fromBackingInt(@intCast(ir.data(top).rhs));
+                if (ir.tag(rhs) != .arrow or ir.data(rhs).rhs != Node.arrow_plain) break :rec null;
+                break :rec @fromBackingInt(@intCast(ir.data(rhs).lhs));
+            },
+            .func_decl => if (x.globalOf(@fromBackingInt(@intCast(ir.data(top).lhs))) != null) @fromBackingInt(@intCast(ir.data(top).rhs)) else null,
+            else => null,
+        };
+        if (record) |r| {
+            const f = ir.extraData(r, JsIr.Func);
+            for (ir.extraSlice(f.params(), NameIndex), 0..) |n, i| {
+                const at = n.unwrap() orelse continue;
+                if (at < x.names and x.stamp[at] == x.cur and x.decls[at] == 1) x.pos[at] = @intCast(i);
+            }
+        }
+    }
+
+    fn touch(x: *Extractor, i: u32) void {
+        if (x.stamp[i] == x.cur) return;
+        x.stamp[i] = x.cur;
+        x.decls[i] = 0;
+        x.uses[i] = 0;
+        x.assigned[i] = false;
+        x.pos[i] = none;
+        x.src[i] = none;
+    }
+
+    fn declare(x: *Extractor, n: NameIndex) void {
+        const i = n.unwrap() orelse return;
+        if (i >= x.names) return;
+        x.touch(i);
+        x.decls[i] += 1;
+    }
+
+    fn read(x: *Extractor, n: NameIndex, callee: bool) Allocator.Error!void {
+        if (x.globalOf(n)) |g| {
+            try x.reads.append(x.scratch, .{ .g = g, .callee = callee });
+            return;
+        }
+        const i = n.unwrap() orelse return;
+        if (i >= x.names) return;
+        x.touch(i);
+        x.uses[i] += 1;
+    }
+
+    /// `Spec.count`, statement for statement.
+    fn count(x: *Extractor, stmt: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(stmt);
+        switch (ir.tag(stmt)) {
+            .import_stmt, .export_stmt => {},
+            .const_decl => {
+                x.declare(@fromBackingInt(@intCast(d.lhs)));
+                try x.countExpr(@fromBackingInt(@intCast(d.rhs)));
+            },
+            .let_decl => {
+                x.declare(@fromBackingInt(@intCast(d.lhs)));
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try x.countExpr(v);
+            },
+            .func_decl, .gen_decl => {
+                x.declare(@fromBackingInt(@intCast(d.lhs)));
+                try x.countFunc(@fromBackingInt(@intCast(d.rhs)));
+            },
+            .assign_stmt => {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                if (ir.tag(target) == .ident) {
+                    const n: NameIndex = @fromBackingInt(@intCast(ir.data(target).lhs));
+                    if (x.globalOf(n)) |g| {
+                        try x.assigns.append(x.scratch, g);
+                    } else if (n.unwrap()) |i| if (i < x.names) {
+                        x.touch(i);
+                        x.assigned[i] = true;
+                    };
+                } else try x.countExpr(target);
+                try x.countExpr(@fromBackingInt(@intCast(d.rhs)));
+            },
+            .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try x.countExpr(v),
+            .if_stmt => {
+                try x.countExpr(@fromBackingInt(@intCast(d.lhs)));
+                const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                try x.countList(branches.thenBody());
+                try x.countList(branches.elseBody());
+            },
+            .while_true, .block_stmt => {
+                x.declare(@fromBackingInt(@intCast(d.lhs)));
+                try x.countList(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            },
+            .for_of => {
+                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                x.declare(@fromBackingInt(@intCast(d.lhs)));
+                try x.countExpr(f.iterable);
+                try x.countList(f.body());
+            },
+            .break_stmt, .continue_stmt => {},
+            .switch_stmt => {
+                try x.countExpr(@fromBackingInt(@intCast(d.lhs)));
+                for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try x.count(c);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try x.countExpr(t);
+                try x.countList(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            },
+            .expr_stmt, .throw_stmt => try x.countExpr(@fromBackingInt(@intCast(d.lhs))),
+            .try_stmt => {
+                const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                x.declare(t.catch_name);
+                try x.countList(t.body());
+                try x.countList(t.finalBody());
+                try x.countList(t.catchBody());
+            },
+            else => {},
+        }
+    }
+
+    fn countList(x: *Extractor, range: JsIr.SubRange) Allocator.Error!void {
+        for (x.ir.extraSlice(range, Index)) |stmt| try x.count(stmt);
+    }
+
+    fn countFunc(x: *Extractor, record: ExtraIndex) Allocator.Error!void {
+        const f = x.ir.extraData(record, JsIr.Func);
+        for (x.ir.extraSlice(f.params(), NameIndex)) |n| x.declare(n);
+        try x.countList(f.body());
+    }
+
+    fn countExpr(x: *Extractor, root: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const root_tag = ir.tag(root);
+        if (root_tag == .ident) return x.read(@fromBackingInt(@intCast(ir.data(root).lhs)), false);
+        if (count_leaves[@backingInt(root_tag)]) return;
+        const stack = &x.work;
+        const base = stack.items.len;
+        defer stack.items.len = base;
+        try JsIr.pushOperand(x.scratch, stack, root);
+        while (stack.items.len > base) {
+            const node = JsIr.popOperand(stack).?;
+            const t = ir.tag(node);
+            if (t == .ident) {
+                try x.read(@fromBackingInt(@intCast(ir.data(node).lhs)), false);
+            } else if (t == .arrow) {
+                try x.countFunc(@fromBackingInt(@intCast(ir.data(node).lhs)));
+            } else if (t == .call) {
+                const d = ir.data(node);
+                const callee: Index = @fromBackingInt(@intCast(d.lhs));
+                for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |a| try JsIr.pushOperand(x.scratch, stack, a);
+                if (ir.tag(callee) == .ident) {
+                    try x.read(@fromBackingInt(@intCast(ir.data(callee).lhs)), true);
+                } else try JsIr.pushOperand(x.scratch, stack, callee);
+            } else if (!count_leaves[@backingInt(t)]) try ir.pushOperands(x.scratch, stack, node);
+        }
+    }
+
+    // ---- `Spec.evalStmt`'s walk, emitting what it evaluates -------------------
+
+    fn stmtOf(x: *Extractor, stmt: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(stmt);
+        switch (ir.tag(stmt)) {
+            .import_stmt, .export_stmt => {},
+            .const_decl, .let_decl => {
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                const rhs: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
+                const c: u32 = if (rhs.unwrap()) |r| try x.expr(r) else none;
+                if (x.globalOf(n) == null) if (n.unwrap()) |i| if (i < x.names) {
+                    x.touch(i);
+                    if (x.decls[i] == 1 and !x.assigned[i]) x.src[i] = c;
+                };
+            },
+            .func_decl, .gen_decl => {
+                const saved = x.narrow;
+                x.narrow = .empty;
+                for (saved.items) |n| x.guards[n.int()] -= 1;
+                defer {
+                    x.narrow = saved;
+                    for (saved.items) |n| x.guards[n.int()] += 1;
+                }
+                try x.func(@fromBackingInt(@intCast(d.rhs)), stmt);
+            },
+            .assign_stmt => {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                if (ir.tag(target) != .ident) _ = try x.expr(target);
+                const value = try x.expr(@fromBackingInt(@intCast(d.rhs)));
+                if (ir.tag(target) == .member) try x.emit(.store, target.int(), value, false);
+            },
+            .return_stmt => {
+                const v: u32 = if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try x.expr(v) else none;
+                if (x.cur_fn != none) try x.emit(.ret, x.cur_fn, v, false);
+            },
+            .if_stmt => {
+                const t = try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                var saved = try x.enter(.then_arm, t);
+                try x.list(branches.thenBody());
+                x.cur_exec = saved;
+                saved = try x.enter(.else_arm, t);
+                try x.list(branches.elseBody());
+                x.cur_exec = saved;
+            },
+            .while_true, .block_stmt => try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs)))),
+            .for_of => {
+                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                _ = try x.expr(f.iterable);
+                try x.list(f.body());
+            },
+            .switch_stmt => {
+                _ = try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try x.stmtOf(c);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| _ = try x.expr(t);
+                try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            },
+            .expr_stmt, .throw_stmt => _ = try x.expr(@fromBackingInt(@intCast(d.lhs))),
+            .try_stmt => {
+                const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                try x.list(t.body());
+                try x.list(t.finalBody());
+                try x.list(t.catchBody());
+            },
+            else => {},
+        }
+    }
+
+    fn list(x: *Extractor, range: JsIr.SubRange) Allocator.Error!void {
+        const base = x.narrow.items.len;
+        defer {
+            for (x.narrow.items[base..]) |n| x.guards[n.int()] -= 1;
+            x.narrow.shrinkRetainingCapacity(base);
+        }
+        for (x.ir.extraSlice(range, Index)) |stmt| {
+            try x.stmtOf(stmt);
+            if (x.ir.tag(stmt) == .if_stmt) try x.guardNames(stmt);
+        }
+    }
+
+    /// `Spec.guardNames`, into `narrow`.
+    fn guardNames(x: *Extractor, stmt: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const branches = ir.extraData(@fromBackingInt(@intCast(ir.data(stmt).rhs)), JsIr.If);
+        const then = ir.extraSlice(branches.thenBody(), Index);
+        if (then.len == 0) return;
+        switch (ir.tag(then[then.len - 1])) {
+            .throw_stmt, .return_stmt, .break_stmt, .continue_stmt => {},
+            else => return,
+        }
+        const stack = &x.work;
+        const disjuncts = &x.disjuncts;
+        disjuncts.clearRetainingCapacity();
+        try disjuncts.append(x.scratch, @fromBackingInt(@intCast(ir.data(stmt).lhs)));
+        while (disjuncts.pop()) |dj| {
+            if (ir.tag(dj) == .binary and @as(JsIr.BinaryOp, @fromBackingInt(@intCast(ir.data(dj).rhs))) == .logical_or) {
+                const b = ir.extraData(@fromBackingInt(@intCast(ir.data(dj).lhs)), JsIr.Binary);
+                try disjuncts.appendSlice(x.scratch, &.{ b.right, b.left });
+                continue;
+            }
+            if (nullTest(ir, dj)) |t| if (t.loose and t.null_in_then and ir.tag(t.chain) == .ident) {
+                try x.narrowName(@fromBackingInt(@intCast(ir.data(t.chain).lhs)));
+            };
+            stack.clearRetainingCapacity();
+            try JsIr.pushOperand(x.scratch, stack, dj);
+            while (JsIr.popOperand(stack)) |node| {
+                const d = ir.data(node);
+                switch (ir.tag(node)) {
+                    .member, .index_get => {
+                        const object: Index = @fromBackingInt(@intCast(d.lhs));
+                        if (ir.tag(object) == .ident) try x.narrowName(@fromBackingInt(@intCast(ir.data(object).lhs)));
+                    },
+                    .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                        .logical_and, .logical_or => {
+                            try JsIr.pushOperand(x.scratch, stack, ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary).left);
+                            continue;
+                        },
+                        else => {},
+                    },
+                    .cond => {
+                        try JsIr.pushOperand(x.scratch, stack, @fromBackingInt(@intCast(d.lhs)));
+                        continue;
+                    },
+                    else => {},
+                }
+                try ir.pushOperands(x.scratch, stack, node);
+            }
+        }
+    }
+
+    fn narrowName(x: *Extractor, n: NameIndex) Allocator.Error!void {
+        if (x.globalOf(n) != null or n.unwrap() == null) return;
+        if (n.int() >= x.guards.len) return;
+        try x.narrow.append(x.scratch, n);
+        x.guards[n.int()] += 1;
+    }
+
+    /// `Spec.evalFunc`: the body, then `undefined` returned when it may run
+    /// off its end.
+    fn func(x: *Extractor, record: ExtraIndex, node: Index) Allocator.Error!void {
+        const saved = x.cur_fn;
+        defer x.cur_fn = saved;
+        x.cur_fn = node.int();
+        // The body runs when something that runs may call it.
+        const saved_exec = try x.enter(.body, node.int());
+        defer x.cur_exec = saved_exec;
+        const f = x.ir.extraData(record, JsIr.Func);
+        try x.list(f.body());
+        if (fallsThrough(x.ir, f.body())) try x.emit(.ret, node.int(), none, false);
+    }
+
+    /// `Spec.eval`: the expression's nodes in the order it evaluates them,
+    /// each a constraint; the cell of `root`.
+    fn expr(x: *Extractor, root: Index) Allocator.Error!u32 {
+        const ir = x.ir;
+        if (isValueLeaf(ir.tag(root))) {
+            try x.combine(root);
+            return x.cell[root.int()];
+        }
+        const stack = &x.stack;
+        const base = stack.items.len;
+        defer stack.items.len = base;
+        try JsIr.pushOperand(x.scratch, stack, root);
+        while (stack.items.len > base) {
+            const raw = stack.items[stack.items.len - 1].int();
+            stack.items.len -= 1;
+            if (raw & post_bit == 0) {
+                // An arm of `?:`, `&&` or `||` ends, or begins: its exec cell.
+                if (raw & mark_exit != 0) {
+                    x.cur_exec = x.exec_saved.pop().?;
+                    continue;
+                }
+                if (raw & mark_enter != 0) {
+                    const at: Index = @fromBackingInt(@intCast(raw & mark_node));
+                    const kind: ExecCell.ExecKind, const from: Index = switch (ir.tag(at)) {
+                        .cond => .{ if (raw & mark_alt != 0) .else_arm else .then_arm, @fromBackingInt(@intCast(ir.data(at).lhs)) },
+                        else => blk: {
+                            const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(at).rhs));
+                            break :blk .{ if (op == .logical_and) .and_right else .or_right, ir.extraData(@fromBackingInt(@intCast(ir.data(at).lhs)), JsIr.Binary).left };
+                        },
+                    };
+                    try x.exec_saved.append(x.scratch, try x.enter(kind, x.cell[from.int()]));
+                    continue;
+                }
+                const node: Index = @fromBackingInt(@intCast(raw));
+                const t = ir.tag(node);
+                if (t == .arrow) {
+                    const c = try x.occur(node);
+                    try x.emit(.constant, c, fixed_object, false);
+                    try x.func(@fromBackingInt(@intCast(ir.data(node).lhs)), node);
+                    continue;
+                }
+                if (isValueLeaf(t)) {
+                    try x.combine(node);
+                    continue;
+                }
+                std.debug.assert(raw < mark_exit);
+                try JsIr.pushOperand(x.scratch, stack, @fromBackingInt(@intCast(raw | post_bit)));
+                // The order `pushOperands` gives, each arm bracketed.
+                const d = ir.data(node);
+                if (t == .cond) {
+                    const k = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                    try JsIr.pushOperandSlice(x.scratch, stack, &.{
+                        @fromBackingInt(mark_exit),       k.alternate,  @fromBackingInt(@intCast(raw | mark_enter | mark_alt)),
+                        @fromBackingInt(mark_exit),       k.consequent, @fromBackingInt(@intCast(raw | mark_enter)),
+                        @fromBackingInt(@intCast(d.lhs)),
+                    });
+                    continue;
+                }
+                if (t == .binary) switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                    .logical_and, .logical_or => {
+                        const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                        try JsIr.pushOperandSlice(x.scratch, stack, &.{ @fromBackingInt(mark_exit), b.right, @fromBackingInt(@intCast(raw | mark_enter)), b.left });
+                        continue;
+                    },
+                    else => {},
+                };
+                try ir.pushOperands(x.scratch, stack, node);
+                continue;
+            }
+            try x.combine(@fromBackingInt(@intCast(raw & ~post_bit)));
+        }
+        return x.cell[root.int()];
+    }
+
+    /// `Spec.combine`'s constraint for `node`, whose operands' constraints
+    /// came before it.
+    fn combine(x: *Extractor, node: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(node);
+        const c = try x.occur(node);
+        switch (ir.tag(node)) {
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => try x.emit(.literal, c, 0, false),
+            .ident => try x.ident(node, c),
+            .unary => try x.emit(.unary, c, x.cell[d.lhs], false),
+            .binary => {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                const at: u32 = @intCast(x.pool.items.len);
+                try x.pool.appendSlice(x.scratch, &.{ x.cell[b.left.int()], x.cell[b.right.int()] });
+                try x.emit(.binary, c, at, false);
+            },
+            .cond => {
+                const k = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                const test_node: Index = @fromBackingInt(@intCast(d.lhs));
+                const at: u32 = @intCast(x.pool.items.len);
+                try x.pool.appendSlice(x.scratch, &.{ x.cell[test_node.int()], x.cell[k.consequent.int()], x.cell[k.alternate.int()] });
+                // Fact 5's second case, as `Spec.nullTestTaken` finds it.
+                const taken: ?struct { tested: Index, taken: Index } = taken: {
+                    if (ir.tag(test_node) != .binary) break :taken null;
+                    const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(test_node).rhs));
+                    if (op != .strict_eq and op != .strict_ne) break :taken null;
+                    const b = ir.extraData(@fromBackingInt(@intCast(ir.data(test_node).lhs)), JsIr.Binary);
+                    const tested, const other = if (ir.tag(b.right) == .null_lit) .{ b.left, b.right } else .{ b.right, b.left };
+                    if (ir.tag(other) != .null_lit or ir.tag(tested) != .member) break :taken null;
+                    const branch = if (op == .strict_eq) k.alternate else k.consequent;
+                    if (!sameChain(ir, tested, branch)) break :taken null;
+                    break :taken .{ .tested = tested, .taken = branch };
+                };
+                if (taken) |t| {
+                    try x.pool.appendSlice(x.scratch, &.{ x.cell[t.tested.int()], x.cell[t.taken.int()], t.taken.int() });
+                } else try x.pool.appendSlice(x.scratch, &.{ none, none, none });
+                try x.emit(.cond, c, at, false);
+            },
+            .call => {
+                const callee: Index = @fromBackingInt(@intCast(d.lhs));
+                const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index);
+                const g: u32 = if (ir.tag(callee) == .ident) x.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs))) orelse none else none;
+                const at: u32 = @intCast(x.pool.items.len);
+                try x.pool.appendSlice(x.scratch, &.{ g, @intCast(args.len) });
+                for (args) |arg| try x.pool.append(x.scratch, x.cell[arg.int()]);
+                try x.emit(.call, c, at, false);
+            },
+            .template => {
+                const parts = ir.extraSlice(JsIr.inlineRange(d), Index);
+                const at: u32 = @intCast(x.pool.items.len);
+                try x.pool.append(x.scratch, @intCast(parts.len));
+                for (parts) |part| try x.pool.append(x.scratch, x.cell[part.int()]);
+                try x.emit(.template, c, at, false);
+            },
+            .new_call, .array => try x.emit(.constant, c, fixed_object, false),
+            .object => {
+                const children = ir.extraSlice(JsIr.inlineRange(d), Index);
+                const at: u32 = @intCast(x.pool.items.len);
+                try x.pool.append(x.scratch, 0);
+                var keys: u32 = 0;
+                var spread: u32 = 0;
+                for (children) |child| switch (ir.tag(child)) {
+                    .property => {
+                        const cd = ir.data(child);
+                        try x.pool.appendSlice(x.scratch, &.{ cd.lhs, x.cell[cd.rhs] });
+                        keys += 1;
+                    },
+                    else => spread = 1,
+                };
+                x.pool.items[at] = keys;
+                try x.emit(.object, c, at, spread == 1);
+            },
+            .member => try x.emit(.member, c, x.cell[d.lhs], false),
+            else => try x.emit(.constant, c, fixed_top, false),
+        }
+    }
+
+    /// `Spec.nameValue` of identifier `node`, as far as the IR decides it.
+    fn ident(x: *Extractor, node: Index, c: u32) Allocator.Error!void {
+        const n: NameIndex = @fromBackingInt(@intCast(x.ir.data(node).lhs));
+        if (x.globalOf(n)) |g| return x.emit(.global, c, g, false);
+        const i = n.unwrap() orelse return x.emit(.constant, c, fixed_top, false);
+        if (i >= x.names or x.stamp[i] != x.cur) return x.emit(.constant, c, fixed_top, false);
+        if (x.decls[i] != 1 or x.assigned[i]) return x.emit(.constant, c, fixed_top, false);
+        const narrowed: u32 = @intFromBool(x.guards[i] != 0);
+        if (x.pos[i] != none) {
+            x.param_reads = true;
+            return x.emit(.param, c, x.pos[i], narrowed == 1);
+        }
+        return x.emit(.local, c, x.src[i], narrowed == 1);
+    }
+};
+
+/// The combined solver for facts 1, 2, 4, 5 and 6 and truthiness
+/// (`backend.md` §9, *The combined solver*, slice 4), fact 3 read as input
+/// and every exec cell true. A solve's columns live in its own arena
+/// (`Spec.solve_tmp`), emptied by the next solve.
+///
+/// **Cells.** Per module, its node cells (`Extract`), numbered by prefix
+/// sums in module order; then one per tracked parameter (`Spec.params`).
+/// A field (a site and a property) and a return (a function's site) are
+/// fact 3's own cells of them (`Pts.Prop.lat`, `Pts.Site.ret_lat`): a
+/// field exists from its first write, and one fact 3 has no `Prop` for is
+/// one no read asks of.
+///
+/// **The worklist.** The constraints are evaluated once in module order
+/// and walk order; a cell that changes queues the constraints that read it
+/// and that this first pass has passed — its static readers from the
+/// module's readers index (`Extract.rd`) or the parameters' (`prd`), and
+/// for a field or a return those that read it so far, registered as they
+/// read it. The queue is first in, first out. A constraint whose value is
+/// fixed for the solve (a literal, a name, a node's kind) is written at the
+/// merge and never evaluated.
+const Solver = struct {
+    s: *Spec,
+    /// Per module: its first node cell, its first constraint, its first
+    /// top-level statement in `Spec.w_stmts`.
+    cell_base: []u32,
+    con_base: []u32,
+    stmt_base: []u32,
+    /// The first parameter cell; every cell's value.
+    param_base: u32,
+    lat: []Lat,
+    /// Per constraint: a parameter read's cell (`none`: ⊤), a call's first
+    /// parameter (`none`: not a call `Spec` tracks).
+    aux: []u32,
+    /// The parameters' readers: per parameter, `prd[prd_off[p]..prd_off[p + 1]]`.
+    prd_off: []u32,
+    prd: []u32,
+    /// Who read each field and return so far (`reads`): the lists the
+    /// cells' `readers` start.
+    readers: std.ArrayList(Reader) = .empty,
+    /// The constraint being evaluated.
+    cur: u32 = none,
+    /// While the first pass runs, the constraint it is at: one past it is
+    /// still to come, and is not queued.
+    first_pass: bool = true,
+    /// The queue, first in, first out: `queue.items[q_head..]`.
+    queue: std.ArrayList(u32) = .empty,
+    q_head: usize = 0,
+    queued: std.DynamicBitSetUnmanaged,
+    evaluations: u64 = 0,
+    /// Past the work budget: every cell is ⊤ and stays ⊤.
+    pessimised: bool = false,
+    /// Executability (*Executability*): per module its first exec cell,
+    /// and which exec cells are true.
+    exec_base: []u32,
+    on: std.DynamicBitSetUnmanaged,
+    /// The names' cells (`Spec.nameInit`): which name each source cell is
+    /// the initialiser of, and per name the `global` reads of it,
+    /// `nrd[nrd_off[g]..nrd_off[g + 1]]`.
+    name_src: std.DynamicBitSetUnmanaged = .{},
+    name_of: []NameSrc = &.{},
+    nrd_off: []u32 = &.{},
+    nrd: []u32 = &.{},
+
+    const Reader = struct { con: u32, next: u32 };
+    /// A name's initialiser cell and the name, sorted by cell.
+    const NameSrc = struct { cell: u32, g: u32 };
+
+    /// The work budget (*The worklist*, *Termination*): evaluations per
+    /// constraint and cell.
+    const budget_per = 64;
+
+    fn arena(sv: *Solver) Allocator {
+        return sv.s.solve_tmp.allocator();
+    }
+
+    fn moduleOf(sv: *const Solver, con: u32) u32 {
+        // The last module whose first constraint is at most `con`.
+        var lo: usize = 0;
+        var hi: usize = sv.con_base.len - 1;
+        while (lo < hi) {
+            const mid = (lo + hi + 1) / 2;
+            if (sv.con_base[mid] <= con) lo = mid else hi = mid - 1;
+        }
+        return @intCast(lo);
+    }
+
+    inline fn cellOf(sv: *const Solver, mi: u32, local: u32) u32 {
+        return sv.cell_base[mi] + local;
+    }
+
+    inline fn enqueue(sv: *Solver, con: u32) Allocator.Error!void {
+        if (sv.first_pass and (sv.cur == none or con > sv.cur)) return;
+        if (sv.queued.isSet(con)) return;
+        sv.queued.set(con);
+        try sv.queue.append(sv.arena(), con);
+    }
+
+    /// Every constraint on the readers list at `head` queued.
+    fn wakeList(sv: *Solver, head: u32) Allocator.Error!void {
+        var r = head;
+        while (r != none) : (r = sv.readers.items[r].next) try sv.enqueue(sv.readers.items[r].con);
+    }
+
+    /// Node cell `local` of module `mi` is `v` now.
+    fn set(sv: *Solver, mi: u32, local: u32, v: Lat) Allocator.Error!void {
+        const cell = sv.cellOf(mi, local);
+        const old = sv.lat[cell];
+        const new = if (sv.pessimised) sv.s.join(old, v) else v;
+        if (new.eql(old)) return;
+        sv.lat[cell] = new;
+        const x = &sv.s.mods[mi].ex;
+        const base = sv.con_base[mi];
+        for (x.rd[x.rd_off[local]..x.rd_off[local + 1]]) |j| try sv.enqueue(base + j);
+        // The reads of the name it is the initialiser of.
+        if (sv.name_src.bit_length != 0 and sv.name_src.isSet(cell)) {
+            const at = std.sort.binarySearch(NameSrc, sv.name_of, cell, struct {
+                fn order(c: u32, n: NameSrc) std.math.Order {
+                    return std.math.order(c, n.cell);
+                }
+            }.order).?;
+            const g = sv.name_of[at].g;
+            for (sv.nrd[sv.nrd_off[g]..sv.nrd_off[g + 1]]) |con| try sv.enqueue(con);
+        }
+        // The arms it is the test of.
+        for (x.et[x.et_off[local]..x.et_off[local + 1]]) |e| try sv.armCheck(mi, e);
+    }
+
+    /// Whether an arm of `kind` runs when its test is `v`: an arm `then`
+    /// (`&&`'s right) when `v` may be truthy, `else` (`||`'s right) when it
+    /// may be falsy, neither while the test has no value.
+    fn allows(sv: *const Solver, kind: ExecCell.ExecKind, v: Lat) bool {
+        if (v.state == .bot) return false;
+        const t = sv.s.truthOf(v);
+        return switch (kind) {
+            .then_arm, .and_right => t != .no,
+            .else_arm, .or_right => t != .yes,
+            .top, .body => true,
+        };
+    }
+
+    /// Arm `e` of module `mi` is true when its parent is and its test
+    /// allows it.
+    fn armCheck(sv: *Solver, mi: u32, e: u32) Allocator.Error!void {
+        const eb = sv.exec_base[mi];
+        if (sv.on.isSet(eb + e)) return;
+        const c = sv.s.mods[mi].ex.execs[e];
+        if (!sv.on.isSet(eb + c.parent)) return;
+        if (!sv.allows(c.kind, sv.lat[sv.cellOf(mi, c.a)])) return;
+        try sv.turnOn(mi, e);
+    }
+
+    /// Exec cell `e` of module `mi` is true: what it gates is queued, and
+    /// the arms below it are checked.
+    fn turnOn(sv: *Solver, mi: u32, e: u32) Allocator.Error!void {
+        const eb = sv.exec_base[mi];
+        if (sv.on.isSet(eb + e)) return;
+        sv.on.set(eb + e);
+        try sv.opened(mi, e);
+    }
+
+    fn opened(sv: *Solver, mi: u32, e: u32) Allocator.Error!void {
+        const x = &sv.s.mods[mi].ex;
+        const base = sv.con_base[mi];
+        for (x.ec[x.ec_off[e]..x.ec_off[e + 1]]) |j| try sv.enqueue(base + j);
+        for (x.ek[x.ek_off[e]..x.ek_off[e + 1]]) |child| try sv.armCheck(mi, child);
+    }
+
+    inline fn runs(sv: *const Solver, mi: usize, j: usize) bool {
+        return sv.on.isSet(sv.exec_base[mi] + sv.s.mods[mi].ex.exec[j]);
+    }
+
+    /// `v` joins parameter `p`'s cell.
+    fn joinParam(sv: *Solver, p: u32, v: Lat) Allocator.Error!void {
+        const cell = sv.param_base + p;
+        const joined = sv.s.join(sv.lat[cell], v);
+        if (joined.eql(sv.lat[cell])) return;
+        sv.lat[cell] = joined;
+        for (sv.prd[sv.prd_off[p]..sv.prd_off[p + 1]]) |con| try sv.enqueue(con);
+    }
+
+    /// The constraint being evaluated reads a field or a return whose
+    /// readers list starts at `head` (`Spec.fieldGet`, `Spec.retGet`): it is
+    /// woken when that changes. A constraint read again is listed again
+    /// only when another read came between: listed twice, it is woken
+    /// twice, which queues it once.
+    fn reads(sv: *Solver, head: *u32) Allocator.Error!void {
+        if (sv.cur == none) return;
+        if (head.* != none and sv.readers.items[head.*].con == sv.cur) return;
+        try sv.readers.append(sv.arena(), .{ .con = sv.cur, .next = head.* });
+        head.* = @intCast(sv.readers.items.len - 1);
+    }
+
+    /// `v` joins a field or a return, fact 3's cell of it (`Spec.joinProp`,
+    /// `Spec.joinRet`): it exists from the first write, whatever the write's
+    /// value.
+    fn joinCell(sv: *Solver, lat: *Lat, made: *bool, readers: u32, v: Lat) Allocator.Error!void {
+        var moved = !made.*;
+        made.* = true;
+        const joined = sv.s.join(lat.*, v);
+        if (!joined.eql(lat.*)) {
+            lat.* = joined;
+            moved = true;
+        }
+        if (moved) try sv.wakeList(readers);
+    }
+
+    fn joinField(sv: *Solver, site: u32, prop: u32, v: Lat) Allocator.Error!void {
+        const pr = sv.s.pts.propMut(site, prop) orelse return;
+        try sv.joinCell(&pr.lat, &pr.lat_made, pr.lat_readers, v);
+    }
+
+    /// A template's parts' values, read from their cells.
+    const CellValues = struct {
+        sv: *const Solver,
+        mi: u32,
+        cells: []const u32,
+        fn get(v: CellValues, i: usize, part: Index) Lat {
+            _ = part;
+            return v.sv.lat[v.sv.cellOf(v.mi, v.cells[i])];
+        }
+    };
+
+    /// Constraint `j` of module `mi` (`con` in all)'s transfer function, on
+    /// its operands' cells as they are: what `Spec.combine` and
+    /// `Spec.evalStmt` compute of the node, the operands' values being the
+    /// cells'.
+    fn eval(sv: *Solver, con: u32, mi: u32, j: usize, st: u32) Allocator.Error!void {
+        const s = sv.s;
+        const m = &s.mods[mi];
+        const x = &m.ex;
+        const ir = m.ir;
+        sv.cur = con;
+        s.cur_top = x.stmts[st].node;
+        s.w_cur = sv.stmt_base[mi] + st;
+        // `readsSite`'s record of one statement's reads, once per site.
+        s.w_walk = s.w_cur + 1;
+        const code = x.code[j];
+        const node = x.nodeAt(j);
+        const a = x.a[j];
+        const v: Lat = switch (code.op) {
+            // Written at the merge, but a name's read of its cell.
+            .constant, .literal => return,
+            .global => if (sv.aux[con] == none) return else sv.lat[sv.aux[con]],
+            .local, .param => read: {
+                const from: u32 = if (code.op == .local) (if (a == none) none else sv.cellOf(mi, a)) else sv.aux[con];
+                const got = if (from == none) Lat.top else sv.lat[from];
+                // Past a guard that proves it (`guardNames`).
+                if (got.state == .top and code.flag) break :read .{ .state = .nonnull, .truth = got.truth };
+                break :read got;
+            },
+            .unary => un: {
+                const op: JsIr.UnaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
+                const u = try s.unary(op, sv.lat[sv.cellOf(mi, a)]);
+                break :un if (op != .yield and u.state == .top) .{ .state = .nonnull, .truth = u.truth } else u;
+            },
+            .binary => bin: {
+                const op: JsIr.BinaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
+                const l = sv.lat[sv.cellOf(mi, x.pool[a])];
+                const r = sv.lat[sv.cellOf(mi, x.pool[a + 1])];
+                if ((op == .strict_eq or op == .strict_ne) and l.state != .bot and r.state != .bot) {
+                    const b = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Binary);
+                    if (try s.identity(m, b.left, b.right, l, r)) |same| break :bin try s.boolean(if (op == .strict_eq) same else !same);
+                }
+                const w = try s.binary(op, l, r);
+                break :bin if (op != .logical_and and op != .logical_or and w.state == .top) .{ .state = .nonnull, .truth = w.truth } else w;
+            },
+            .cond => cond: {
+                const p = x.pool[a..][0..6];
+                const t = sv.lat[sv.cellOf(mi, p[0])];
+                // Fact 5's second case, decided by this evaluation alone.
+                if ((t.state == .top or t.state == .nonnull) and p[3] != none and sv.lat[sv.cellOf(mi, p[3])].state == .nonnull) {
+                    break :cond sv.lat[sv.cellOf(mi, p[4])];
+                }
+                break :cond s.condValue(t, sv.lat[sv.cellOf(mi, p[1])], sv.lat[sv.cellOf(mi, p[2])]);
+            },
+            .call => call: {
+                // Its arguments join the parameters of the function it names.
+                if (sv.aux[con] != none) {
+                    const n = x.pool[a + 1];
+                    for (x.pool[a + 2 ..][0..n], 0..) |c, i| try sv.joinParam(sv.aux[con] + @as(u32, @intCast(i)), sv.lat[sv.cellOf(mi, c)]);
+                }
+                break :call try s.callValue(m, node);
+            },
+            .template => try s.templateValue(m, node, CellValues{ .sv = sv, .mi = mi, .cells = x.pool[a + 1 ..][0..x.pool[a]] }),
+            .member => member: {
+                // An object facts 1 and 2 name (`memberOf`).
+                const o = if (a == none) Lat.top else sv.lat[sv.cellOf(mi, a)];
+                if (o.state == .lit and s.pts.ok) if (s.litOf(o).kind == .name) {
+                    const g = Spec.nameId(s.litOf(o));
+                    if (g < s.pts.globals.len) break :member try s.memberOf(m, node, try s.pts.view(s.pts.globals[g]));
+                };
+                break :member try s.memberValue(m, node);
+            },
+            .object => obj: {
+                if (s.pts.siteAt(mi, node)) |site| {
+                    const n = x.pool[a];
+                    for (0..n) |k| {
+                        const name: NameIndex = @fromBackingInt(@intCast(x.pool[a + 1 + 2 * k]));
+                        const prop = s.pts.propId(mi, name);
+                        if (prop == none) continue;
+                        try sv.joinField(site, prop, sv.lat[sv.cellOf(mi, x.pool[a + 2 + 2 * k])]);
+                    }
+                }
+                break :obj Lat.object;
+            },
+            .store => {
+                if (s.pts.ok) {
+                    const td = ir.data(node);
+                    const obj = s.pts.vals[mi][td.lhs];
+                    const prop = s.pts.propId(mi, @fromBackingInt(@intCast(td.rhs)));
+                    if (prop != none) for (obj.sites) |site| try sv.joinField(site, prop, sv.lat[sv.cellOf(mi, a)]);
+                }
+                return;
+            },
+            .ret => {
+                const w: Lat = if (a == none) .of(try s.intern(.{ .kind = .undefined_lit })) else sv.lat[sv.cellOf(mi, a)];
+                // Its function's site, which holds the return's cell.
+                const site = s.pts.siteAt(mi, @fromBackingInt(@intCast(x.node[j]))) orelse return;
+                const fs = &s.pts.sites.items[site];
+                try sv.joinCell(&fs.ret_lat, &fs.ret_made, fs.ret_readers, w);
+                return;
+            },
+        };
+        try sv.set(mi, x.node[j], v);
+    }
+
+    /// What is still changing, past the budget, is ⊤ (*The worklist*): a
+    /// fixpoint above any other, so the facts stay sound.
+    fn pessimise(sv: *Solver) Allocator.Error!void {
+        sv.pessimised = true;
+        sv.first_pass = false;
+        sv.s.stats.solve_budget_hit += 1;
+        for (sv.lat[sv.param_base..]) |*v| v.* = .top;
+        sv.on.setRangeValue(.{ .start = 0, .end = sv.on.bit_length }, true);
+        for (sv.s.pts.sites.items) |*st| {
+            st.ret_lat = .top;
+            for (st.props.items) |*pr| pr.lat = .top;
+        }
+        var con: u32 = 0;
+        while (con < sv.queued.bit_length) : (con += 1) try sv.enqueue(con);
+    }
+
+    fn budget(sv: *Solver, con: u32, limit: u64) Allocator.Error!void {
+        sv.evaluations += 1;
+        if (sv.evaluations <= limit or sv.pessimised) return;
+        if (std.debug.runtime_safety) {
+            const mi = sv.moduleOf(con);
+            const n = sv.s.mods[mi].ex.nodeAt(con - sv.con_base[mi]);
+            std.debug.panic("specialisation: the combined solver passed its work budget of {d} evaluations, node {d} ({t}) of module {d} still changing", .{ limit, n.int(), sv.s.mods[mi].ir.tag(n), mi });
+        }
+        try sv.pessimise();
+    }
+
+    /// The first pass, every constraint in order, then the queue to empty.
+    fn solve(sv: *Solver) Allocator.Error!void {
+        const limit: u64 = budget_per * (@as(u64, sv.queued.bit_length) + sv.lat.len);
+        // The arms below the roots, whose tests may be fixed already.
+        for (sv.s.mods, 0..) |*m, mi| for (0..m.ex.execs.len) |e| {
+            if (sv.on.isSet(sv.exec_base[mi] + e)) try sv.opened(@intCast(mi), @intCast(e));
+        };
+        for (sv.s.mods, 0..) |*m, mi| {
+            const base = sv.con_base[mi];
+            var first: u32 = 0;
+            for (m.ex.stmts, 0..) |st, k| {
+                defer first = st.cons;
+                for (first..st.cons) |j| switch (m.ex.code[j].op) {
+                    .constant, .literal => {},
+                    .global => if (sv.aux[base + j] != none and sv.runs(mi, j)) {
+                        const con = base + @as(u32, @intCast(j));
+                        try sv.budget(con, limit);
+                        try sv.eval(con, @intCast(mi), j, @intCast(k));
+                    },
+                    else => if (sv.runs(mi, j)) {
+                        const con = base + @as(u32, @intCast(j));
+                        try sv.budget(con, limit);
+                        try sv.eval(con, @intCast(mi), j, @intCast(k));
+                    },
+                };
+            }
+        }
+        sv.first_pass = false;
+        while (sv.q_head < sv.queue.items.len) {
+            const con = sv.queue.items[sv.q_head];
+            sv.q_head += 1;
+            // Emptied, it starts again at its front.
+            if (sv.q_head == sv.queue.items.len) {
+                sv.q_head = 0;
+                sv.queue.clearRetainingCapacity();
+            }
+            sv.queued.unset(con);
+            const mi = sv.moduleOf(con);
+            const j = con - sv.con_base[mi];
+            // Woken where nothing runs: it is queued again when its exec
+            // cell becomes true.
+            if (!sv.runs(mi, j)) continue;
+            try sv.budget(con, limit);
+            try sv.eval(con, mi, j, sv.s.mods[mi].ex.stmtOf(j));
+        }
+        sv.cur = none;
+    }
+};
+
+/// Fact 3's constraints of one module (`backend.md` §9, *The combined
+/// solver*, slice 5): what `Pts`' first walk by constraints recorded of it
+/// (`Pts.begin`, `Pts.input`, `Pts.narrowed`, `Pts.killRead`), made from the
+/// module's `JsIr` alone, and the script of what else that walk did in
+/// between, in its order — the sites and bodies of functions, the drains,
+/// the context a site is made in — which `Pts.replay` follows. A constraint
+/// is numbered in the walk's order within its module; the replay adds the
+/// module's base. Kept while the module's `epoch` stands.
+const PtsExtract = struct {
+    arena: Arena = .init(std.heap.page_allocator),
+    epoch: u64 = std.math.maxInt(u64),
+    nodes: u32 = 0,
+    /// Per constraint: its node, its top-level statement, where its inputs
+    /// and its candidate guards end in `inputs` and `narrows`.
+    node: []u32 = &.{},
+    top: []u32 = &.{},
+    inputs_end: []u32 = &.{},
+    narrows_end: []u32 = &.{},
+    /// A node whose value a constraint reads, and the constraint (of this
+    /// module) that made the value.
+    inputs: []PtsRead = &.{},
+    /// The guards in view where a read was walked that name its chain and
+    /// no unconditional kill had killed: what each says, and the reads
+    /// between its push and this read (`kills[start..end]`, constraints of
+    /// this module) each of which kills it once its object is `top`. The
+    /// replay keeps them unless the read's object is `top` when it is first
+    /// evaluated, as the walk recorded them only then (`Pts.narrowed`).
+    narrows: []PtsNarrow = &.{},
+    kills: []u32 = &.{},
+    script: []PtsStep = &.{},
+    /// The nodes whose value is their tag's, made by no constraint: every
+    /// leaf but a name, and `constantValue`'s.
+    constants: []u32 = &.{},
+    /// Every `const x = f(…)` or `let x = f(…)` (`Pts.decl_call`).
+    decl_calls: []PtsDeclCall = &.{},
+    /// Per top-level statement: its node, where each of its columns ends,
+    /// and the module's `epoch` when it was extracted. A statement's
+    /// constraints read only constraints of the statement, so one whose
+    /// nodes stand is copied into the next extraction, renumbered
+    /// (`PtsExtractor.reuse`).
+    stmts: []PtsStmt = &.{},
+    /// Of the last extraction: the statements walked and those copied.
+    walked: u32 = 0,
+    reused: u32 = 0,
+
+    /// A safety build's check that what an extraction kept of the last one
+    /// is what a walk of every statement makes.
+    fn expectSame(x: *const PtsExtract, y: *const PtsExtract, mi: u32) void {
+        const same = std.mem.eql(u32, x.node, y.node) and std.mem.eql(u32, x.top, y.top) and
+            std.mem.eql(u32, x.inputs_end, y.inputs_end) and std.mem.eql(u32, x.narrows_end, y.narrows_end) and
+            std.mem.eql(u8, std.mem.sliceAsBytes(x.inputs), std.mem.sliceAsBytes(y.inputs)) and
+            std.mem.eql(u32, x.kills, y.kills) and std.mem.eql(u32, x.constants, y.constants) and
+            x.narrows.len == y.narrows.len and x.script.len == y.script.len and x.decl_calls.len == y.decl_calls.len;
+        if (!same) std.debug.panic("specialisation: module {d}'s fact-3 constraints kept from its last extraction are not what a walk makes", .{mi});
+        for (x.narrows, y.narrows) |a, b| if (a.nul != b.nul or a.undef != b.undef or a.start != b.start or a.end != b.end) std.debug.panic("specialisation: module {d}'s kept guards differ", .{mi});
+        for (x.script, y.script) |a, b| if (a.op != b.op or a.a != b.a) std.debug.panic("specialisation: module {d}'s kept steps differ", .{mi});
+        for (x.decl_calls, y.decl_calls) |a, b| if (a.call != b.call or a.start != b.start or a.end != b.end or a.index != b.index) std.debug.panic("specialisation: module {d}'s kept calls differ", .{mi});
+    }
+
+    fn deinit(x: *PtsExtract) void {
+        x.arena.deinit();
+        x.* = .{};
+    }
+};
+
+const PtsRead = struct { node: u32, cons: u32 };
+const PtsStmt = struct { node: u32, cons: u32, inputs: u32, narrows: u32, kills: u32, script: u32, constants: u32, decl_calls: u32, epoch: u64 };
+const PtsNarrow = struct { nul: bool, undef: bool, start: u32, end: u32 };
+const PtsDeclCall = struct { call: u32, start: u32, end: u32, index: u32 };
+
+/// One step of `Pts.replay`, as the first walk took it.
+const PtsStep = struct {
+    op: Act,
+    a: u32 = 0,
+
+    const Act = enum(u8) {
+        /// A top-level statement `a` begins: no constraint is current, the
+        /// statement's locals are keyed by it, and what is made is made once.
+        stmt_begin,
+        /// The statement ends: what waits joins (`Pts.drain`).
+        stmt_end,
+        /// Constraint `a` evaluated.
+        eval,
+        /// Arrow `a`: its site, then its body begins.
+        arrow,
+        /// Function declaration `a`: its site, held by its name, then its
+        /// body begins.
+        func_decl,
+        /// The body of function `a` ends: `undefined` returned when it may
+        /// run off its end, what waits joins, and the context is the one it
+        /// began in; an arrow's value is its site.
+        body_end,
+        /// A loop's statements begin, which may run many times, and end.
+        loop_begin,
+        loop_end,
+        /// The object literal `a` that a `return` gives, the function's one
+        /// way out (`Site.fresh_fn`).
+        fresh,
+    };
+};
+
+/// `Pts`' first walk by constraints, without evaluating anything: the
+/// constraints it would make and the steps it would take (`PtsExtract`).
+/// Reads the module's `JsIr` and its `global` column alone.
+const PtsExtractor = struct {
+    scratch: Allocator,
+    ir: *const JsIr,
+    nodes: u32,
+    /// Per node, the last constraint that evaluated it (`Pts.last`).
+    last: []u32,
+    guards: std.ArrayList(Guard) = .empty,
+    guard_base: usize = 0,
+    reads: std.ArrayList(u32) = .empty,
+    stack: std.ArrayList(Index) = .empty,
+    stmts: std.ArrayList(PtsStmt) = .empty,
+    node: std.ArrayList(u32) = .empty,
+    top: std.ArrayList(u32) = .empty,
+    inputs_end: std.ArrayList(u32) = .empty,
+    narrows_end: std.ArrayList(u32) = .empty,
+    inputs: std.ArrayList(PtsRead) = .empty,
+    narrows: std.ArrayList(PtsNarrow) = .empty,
+    kills: std.ArrayList(u32) = .empty,
+    script: std.ArrayList(PtsStep) = .empty,
+    constants: std.ArrayList(u32) = .empty,
+    decl_calls: std.ArrayList(PtsDeclCall) = .empty,
+    cur_top: Index = undefined,
+
+    const Guard = struct { chain: Index, nul: bool, undef: bool, dead: bool = false, reads: u32 };
+
+    /// Extract module `m` into `into`, which it replaces: a statement whose
+    /// nodes are what they were when `into` took it (`Mod.keptNodes`) is
+    /// copied, unless `fresh`.
+    fn run(scratch: Allocator, m: *const Mod, fresh: bool, into: *PtsExtract) Allocator.Error!void {
+        const ir = m.ir;
+        const epoch = m.epoch;
+        const nodes: u32 = @intCast(ir.nodes.len);
+        var x: PtsExtractor = .{ .scratch = scratch, .ir = ir, .nodes = nodes, .last = try scratch.alloc(u32, nodes) };
+        @memset(x.last, none);
+        var old: KeyMap(struct { node: u32 }, u32) = .empty;
+        if (!fresh) for (into.stmts, 0..) |st, k| try old.put(scratch, .{ .node = st.node }, @intCast(k));
+        var walked: u32 = 0;
+        var reused: u32 = 0;
+        for (ir.extraSlice(ir.body, Index)) |top| {
+            if (old.get(.{ .node = top.int() })) |k| if (m.keptNodes(top, into.stmts[k].epoch)) if (try x.reuse(into, k)) {
+                reused += 1;
+                continue;
+            };
+            walked += 1;
+            x.cur_top = top;
+            x.reads.clearRetainingCapacity();
+            try x.step(.stmt_begin, top.int());
+            try x.stmt(top);
+            try x.step(.stmt_end, 0);
+            try x.endStmt(top, epoch);
+        }
+        into.walked = walked;
+        into.reused = reused;
+        into.arena.reset(.retain_capacity);
+        const keep = into.arena.allocator();
+        into.epoch = epoch;
+        into.nodes = nodes;
+        into.node = try keep.dupe(u32, x.node.items);
+        into.top = try keep.dupe(u32, x.top.items);
+        into.inputs_end = try keep.dupe(u32, x.inputs_end.items);
+        into.narrows_end = try keep.dupe(u32, x.narrows_end.items);
+        into.inputs = try keep.dupe(PtsRead, x.inputs.items);
+        into.narrows = try keep.dupe(PtsNarrow, x.narrows.items);
+        into.kills = try keep.dupe(u32, x.kills.items);
+        into.script = try keep.dupe(PtsStep, x.script.items);
+        into.constants = try keep.dupe(u32, x.constants.items);
+        into.decl_calls = try keep.dupe(PtsDeclCall, x.decl_calls.items);
+        into.stmts = try keep.dupe(PtsStmt, x.stmts.items);
+    }
+
+    fn endStmt(x: *PtsExtractor, top: Index, epoch: u64) Allocator.Error!void {
+        try x.stmts.append(x.scratch, .{
+            .node = top.int(),
+            .cons = @intCast(x.node.items.len),
+            .inputs = @intCast(x.inputs.items.len),
+            .narrows = @intCast(x.narrows.items.len),
+            .kills = @intCast(x.kills.items.len),
+            .script = @intCast(x.script.items.len),
+            .constants = @intCast(x.constants.items.len),
+            .decl_calls = @intCast(x.decl_calls.items.len),
+            .epoch = epoch,
+        });
+    }
+
+    /// Statement `k` of `from`, the last extraction, taken as it was, its
+    /// constraints renumbered into this one. Not taken when one of its
+    /// nodes was evaluated before it in this extraction, or one of its
+    /// constraints reads a constraint outside it: a node two statements
+    /// share, whose last evaluation is another statement's.
+    fn reuse(x: *PtsExtractor, from: *const PtsExtract, k: u32) Allocator.Error!bool {
+        const st = from.stmts[k];
+        const prev: PtsStmt = if (k == 0) std.mem.zeroes(PtsStmt) else from.stmts[k - 1];
+        for (from.node[prev.cons..st.cons]) |node| if (x.last[node] != none) return false;
+        for (from.inputs[prev.inputs..st.inputs]) |in| if (in.cons < prev.cons or in.cons >= st.cons) return false;
+        for (from.kills[prev.kills..st.kills]) |c| if (c < prev.cons or c >= st.cons) return false;
+        const s = x.scratch;
+        const cons_at: u32 = @intCast(x.node.items.len);
+        const inputs_at: u32 = @intCast(x.inputs.items.len);
+        const narrows_at: u32 = @intCast(x.narrows.items.len);
+        const kills_at: u32 = @intCast(x.kills.items.len);
+        for (from.node[prev.cons..st.cons], from.top[prev.cons..st.cons], from.inputs_end[prev.cons..st.cons], from.narrows_end[prev.cons..st.cons], cons_at..) |node, top, in_end, nar_end, c| {
+            try x.node.append(s, node);
+            try x.top.append(s, top);
+            try x.inputs_end.append(s, in_end - prev.inputs + inputs_at);
+            try x.narrows_end.append(s, nar_end - prev.narrows + narrows_at);
+            // The node's last evaluation, for a statement after it that
+            // reads it.
+            if (!x.ir.tag(@fromBackingInt(@intCast(node))).isStatement()) x.last[node] = @intCast(c);
+        }
+        for (from.inputs[prev.inputs..st.inputs]) |in| try x.inputs.append(s, .{ .node = in.node, .cons = in.cons - prev.cons + cons_at });
+        for (from.narrows[prev.narrows..st.narrows]) |n| try x.narrows.append(s, .{ .nul = n.nul, .undef = n.undef, .start = n.start - prev.kills + kills_at, .end = n.end - prev.kills + kills_at });
+        for (from.kills[prev.kills..st.kills]) |c| try x.kills.append(s, c - prev.cons + cons_at);
+        for (from.script[prev.script..st.script]) |step_| try x.script.append(s, if (step_.op == .eval) .{ .op = .eval, .a = step_.a - prev.cons + cons_at } else step_);
+        try x.constants.appendSlice(s, from.constants[prev.constants..st.constants]);
+        try x.decl_calls.appendSlice(s, from.decl_calls[prev.decl_calls..st.decl_calls]);
+        try x.stmts.append(s, .{
+            .node = st.node,
+            .cons = @intCast(x.node.items.len),
+            .inputs = @intCast(x.inputs.items.len),
+            .narrows = @intCast(x.narrows.items.len),
+            .kills = @intCast(x.kills.items.len),
+            .script = @intCast(x.script.items.len),
+            .constants = @intCast(x.constants.items.len),
+            .decl_calls = @intCast(x.decl_calls.items.len),
+            .epoch = st.epoch,
+        });
+        return true;
+    }
+
+    fn step(x: *PtsExtractor, op: PtsStep.Act, a: u32) Allocator.Error!void {
+        try x.script.append(x.scratch, .{ .op = op, .a = a });
+    }
+
+    /// `Pts.begin`: a new constraint of `node`, reading the last evaluation
+    /// of each node whose value it reads; evaluated where it stands.
+    fn begin(x: *PtsExtractor, node: Index) Allocator.Error!u32 {
+        const ir = x.ir;
+        const c: u32 = @intCast(x.node.items.len);
+        var buf: [3]Index = undefined;
+        for (inputsOf(ir, node, &buf)) |in| try x.input(in, c);
+        switch (ir.tag(node)) {
+            .object => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| {
+                const cd = ir.data(child);
+                try x.input(@fromBackingInt(@intCast(if (ir.tag(child) == .property) cd.rhs else cd.lhs)), c);
+            },
+            .array => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| try x.input(child, c),
+            .call, .new_call => for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index)) |arg| try x.input(arg, c),
+            else => {},
+        }
+        try x.node.append(x.scratch, node.int());
+        try x.top.append(x.scratch, x.cur_top.int());
+        try x.inputs_end.append(x.scratch, @intCast(x.inputs.items.len));
+        try x.narrows_end.append(x.scratch, @intCast(x.narrows.items.len));
+        try x.step(.eval, c);
+        return c;
+    }
+
+    fn input(x: *PtsExtractor, node: Index, c: u32) Allocator.Error!void {
+        _ = c;
+        const from = x.last[node.int()];
+        if (from == none) return;
+        try x.inputs.append(x.scratch, .{ .node = node.int(), .cons = from });
+    }
+
+    /// The guards in view that name `node`'s chain and no kill killed
+    /// (`Pts.narrowed`'s recording), noted for constraint `c`.
+    fn narrowed(x: *PtsExtractor, c: u32, node: Index) Allocator.Error!void {
+        for (x.guards.items[x.guard_base..]) |g| {
+            if (!sameChain(x.ir, g.chain, node) or g.dead) continue;
+            const start: u32 = @intCast(x.kills.items.len);
+            try x.kills.appendSlice(x.scratch, x.reads.items[g.reads..]);
+            try x.narrows.append(x.scratch, .{ .nul = g.nul, .undef = g.undef, .start = start, .end = @intCast(x.kills.items.len) });
+        }
+        x.narrows_end.items[c] = @intCast(x.narrows.items.len);
+    }
+
+    /// `Pts.kill`: every guard in view dies.
+    fn kill(x: *PtsExtractor) void {
+        for (x.guards.items[x.guard_base..]) |*g| g.dead = true;
+    }
+
+    /// `Pts.killRead`: a read through object node `obj`, which kills the
+    /// guards in view once the object is `top`; one no constraint makes has
+    /// its one value, and if that is `top` they die now.
+    fn killRead(x: *PtsExtractor, obj: Index) Allocator.Error!void {
+        if (x.guards.items.len == x.guard_base) return;
+        const from = x.last[obj.int()];
+        if (from != none) return x.reads.append(x.scratch, from);
+        if (constantTop(x.ir, obj)) x.kill();
+    }
+
+    fn end(x: *PtsExtractor, c: u32, node: Index) void {
+        x.last[node.int()] = c;
+    }
+
+    /// `Pts.effectOf`: statement `node`'s own transfer.
+    fn effectOf(x: *PtsExtractor, node: Index) Allocator.Error!void {
+        _ = try x.begin(node);
+    }
+
+    fn stmt(x: *PtsExtractor, node: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+            .const_decl, .let_decl => {
+                const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
+                if (v.unwrap()) |value| try x.expr(value);
+                try x.effectOf(node);
+                x.kill();
+            },
+            .func_decl, .gen_decl => {
+                try x.step(.func_decl, node.int());
+                try x.body(@fromBackingInt(@intCast(d.rhs)), node);
+                x.kill();
+            },
+            .assign_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.rhs)));
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                const td = ir.data(target);
+                switch (ir.tag(target)) {
+                    .ident => {},
+                    .member => try x.expr(@fromBackingInt(@intCast(td.lhs))),
+                    .index_get => {
+                        try x.expr(@fromBackingInt(@intCast(td.rhs)));
+                        try x.expr(@fromBackingInt(@intCast(td.lhs)));
+                    },
+                    else => try x.expr(target),
+                }
+                try x.effectOf(node);
+                x.kill();
+            },
+            .return_stmt => {
+                const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
+                if (value) |v| try x.expr(v);
+                try x.effectOf(node);
+                if (value) |v| if (ir.tag(v) == .object) try x.step(.fresh, v.int());
+            },
+            .if_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                const t = nullTest(ir, @fromBackingInt(@intCast(d.lhs)));
+                try x.branch(branches.thenBody(), if (t) |g| (if (g.null_in_then) null else g) else null);
+                try x.branch(branches.elseBody(), if (t) |g| (if (g.null_in_then) g else null) else null);
+            },
+            .block_stmt => try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs)))),
+            .while_true => {
+                x.kill();
+                try x.step(.loop_begin, 0);
+                try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+                try x.step(.loop_end, 0);
+            },
+            .for_of => {
+                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                try x.expr(f.iterable);
+                try x.effectOf(node);
+                x.kill();
+                try x.step(.loop_begin, 0);
+                try x.list(f.body());
+                try x.step(.loop_end, 0);
+            },
+            .switch_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try x.stmt(c);
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try x.expr(t);
+                try x.list(ir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            },
+            .expr_stmt => try x.expr(@fromBackingInt(@intCast(d.lhs))),
+            .throw_stmt => {
+                try x.expr(@fromBackingInt(@intCast(d.lhs)));
+                try x.effectOf(node);
+            },
+            .try_stmt => {
+                const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                try x.list(t.body());
+                x.kill();
+                try x.list(t.catchBody());
+                x.kill();
+                try x.list(t.finalBody());
+                x.kill();
+            },
+            else => try x.expr(node),
+        }
+    }
+
+    fn list(x: *PtsExtractor, range: JsIr.SubRange) Allocator.Error!void {
+        const ir = x.ir;
+        for (ir.extraSlice(range, Index), 0..) |node, k| {
+            switch (ir.tag(node)) {
+                .const_decl, .let_decl => {
+                    const v: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(node).rhs));
+                    if (v.unwrap()) |value| if (ir.tag(value) == .call) {
+                        try x.decl_calls.append(x.scratch, .{ .call = value.int(), .start = @backingInt(range.start), .end = @backingInt(range.end), .index = @intCast(k) });
+                    };
+                },
+                else => {},
+            }
+            try x.stmt(node);
+        }
+    }
+
+    fn branch(x: *PtsExtractor, range: JsIr.SubRange, guard: ?NullTest) Allocator.Error!void {
+        const base = x.guards.items.len;
+        defer x.guards.shrinkRetainingCapacity(base);
+        if (guard) |g| try x.guards.append(x.scratch, .{ .chain = g.chain, .nul = true, .undef = g.loose, .reads = @intCast(x.reads.items.len) });
+        try x.list(range);
+    }
+
+    /// `Pts.body`: the steps around a function's statements, which see no
+    /// guard outside them and whose reads kill none.
+    fn body(x: *PtsExtractor, record: ExtraIndex, node: Index) Allocator.Error!void {
+        const saved_base = x.guard_base;
+        defer x.guard_base = saved_base;
+        x.guard_base = x.guards.items.len;
+        const saved_reads = x.reads.items.len;
+        defer x.reads.shrinkRetainingCapacity(saved_reads);
+        try x.list(x.ir.extraData(record, JsIr.Func).body());
+        try x.step(.body_end, node.int());
+    }
+
+    /// `Pts.expr`.
+    fn expr(x: *PtsExtractor, root: Index) Allocator.Error!void {
+        const ir = x.ir;
+        if (isValueLeaf(ir.tag(root))) {
+            if (ir.tag(root) == .ident) {
+                const c = try x.begin(root);
+                try x.combine(c, root);
+                x.end(c, root);
+            } else try x.constants.append(x.scratch, root.int());
+            return;
+        }
+        const stack = &x.stack;
+        const base = stack.items.len;
+        defer stack.items.len = base;
+        try JsIr.pushOperand(x.scratch, stack, root);
+        while (stack.items.len > base) {
+            const raw = stack.items[stack.items.len - 1].int();
+            stack.items.len -= 1;
+            if (raw & post_bit == 0) {
+                const node: Index = @fromBackingInt(@intCast(raw));
+                const t = ir.tag(node);
+                if (t == .arrow) {
+                    try x.step(.arrow, raw);
+                    try x.body(@fromBackingInt(@intCast(ir.data(node).lhs)), node);
+                    continue;
+                }
+                if (isValueLeaf(t)) {
+                    if (t != .ident) {
+                        try x.constants.append(x.scratch, raw);
+                    } else {
+                        const c = try x.begin(node);
+                        try x.combine(c, node);
+                        x.end(c, node);
+                    }
+                    continue;
+                }
+                try JsIr.pushOperand(x.scratch, stack, @fromBackingInt(@intCast(raw | post_bit)));
+                try ir.pushOperands(x.scratch, stack, node);
+                continue;
+            }
+            const node: Index = @fromBackingInt(@intCast(raw & ~post_bit));
+            if (!constantValue(ir, node)) {
+                const c = try x.begin(node);
+                try x.combine(c, node);
+                x.end(c, node);
+            } else {
+                try x.constants.append(x.scratch, node.int());
+                // `combineNow` of a `yield`: what the generator is resumed
+                // with, and anything may have run.
+                if (ir.tag(node) == .unary and @as(JsIr.UnaryOp, @fromBackingInt(@intCast(ir.data(node).rhs))) == .yield) x.kill();
+            }
+        }
+    }
+
+    /// What `Pts.combineNow` of constraint `c`'s node does to the guards:
+    /// a name's and a member read's guards noted; a read through an object
+    /// kills them once it is `top`; a call or a `new` kills them.
+    fn combine(x: *PtsExtractor, c: u32, node: Index) Allocator.Error!void {
+        const ir = x.ir;
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .ident => try x.narrowed(c, node),
+            .member => {
+                try x.narrowed(c, node);
+                try x.killRead(@fromBackingInt(@intCast(d.lhs)));
+            },
+            .index_get => try x.killRead(@fromBackingInt(@intCast(d.lhs))),
+            .call, .new_call => x.kill(),
+            else => {},
+        }
+    }
+};
+
+/// The value of a node no constraint of fact 3 makes (`constantValue`, and
+/// every leaf but a name), as `Pts.combineNow` makes it.
+fn constantVal(ir: *const JsIr, node: Index) Pts.Val {
+    const t = ir.tag(node);
+    if (isValueLeaf(t)) return Pts.literal_vals[@backingInt(t)];
+    return if (constantTop(ir, node)) Pts.Val.top_val else Pts.Val.prim_val;
+}
+
+/// Whether a node no constraint of fact 3 makes is `top` for good
+/// (`Pts.literal_vals`, `Pts.combineNow` of a `constantValue` node).
+fn constantTop(ir: *const JsIr, node: Index) bool {
+    return switch (ir.tag(node)) {
+        .global_this, .this_lit => true,
+        .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(ir.data(node).rhs))) == .yield,
+        else => false,
+    };
+}
+
 const Pts = struct {
     s: *Spec,
     vars: std.ArrayList(VSet) = .empty,
@@ -9393,17 +11905,13 @@ const Pts = struct {
     init_capped: bool = false,
     /// `expr`'s stack of nodes, shared by the walks it nests (`post_bit`).
     nodes: std.ArrayList(Index) = .empty,
-    /// The top-level statement the walk is in: locals are keyed by it.
+    /// The top-level statement the constraint evaluated is in: locals are
+    /// keyed by it.
     top: Index = undefined,
-    /// Whether what the walk is in runs at most once: a module's top level,
-    /// outside any function and any loop. A site made there is `once`.
+    /// Whether what the replay is in runs at most once: a module's top
+    /// level, outside any function and any loop. A site made there is
+    /// `once`.
     once_ctx: bool = false,
-    /// The guards of the branches the walk is in (slice 4): each a chain
-    /// the branch's test showed is not `null` (or `undefined`), live until
-    /// something runs that may change what it reads. Those below
-    /// `guard_base` belong to an enclosing function and are not in view.
-    guards: std.ArrayList(Guard) = .empty,
-    guard_base: usize = 0,
     /// Definite initialisation (*Amended 2026-10-03*): per object literal
     /// node, the keys it lacks that every call of the one function
     /// returning it writes before anything can read them. Kept across the
@@ -9486,22 +11994,17 @@ const Pts = struct {
     sweeps: u32 = 0,
     /// Every site number, so that a value of one site is a slice of it.
     ones: []u32 = &.{},
-    /// This sweep walks every statement: a sweep of `byUnits`, or the
-    /// first of `byConstraints`.
-    full: bool = false,
-    /// The order a sweep walks the top-level statements in, by their index
-    /// in `stmts`; empty for program order. Only a safety build's check
-    /// sets one (`fixpoint`).
+    /// The order the first sweep replays the top-level statements in, by
+    /// their place among every module's; empty for program order. Only a
+    /// safety build's check sets one (`fixpoint`).
     order: []const u32 = &.{},
     /// The fixpoint by constraints (backend.md §9, *Amended 2026-10-12 —
-    /// fact 3 by its constraints*). A constraint is one evaluation the
-    /// first walk of a fixpoint made (`recording`) — of an expression node,
-    /// or of a statement's own transfer (`effect`) — numbered in walk
-    /// order; a node lowering shares between two expressions (`a.b` in
-    /// `a.b.c` and `a.b.d`) is two. After the walk a change wakes the
-    /// constraints that read what changed, each evaluated again alone
-    /// (`evaluating`).
-    recording: bool = false,
+    /// fact 3 by its constraints*). A constraint is one evaluation of the
+    /// extraction (`PtsExtract`) — of an expression node, or of a
+    /// statement's own transfer (`effect`) — numbered in its order; a node
+    /// lowering shares between two expressions (`a.b` in `a.b.c` and
+    /// `a.b.d`) is two. A change wakes the constraints that read what
+    /// changed, each evaluated again alone (`evaluating`).
     evaluating: bool = false,
     /// Per constraint: its node and context, its value, the constraints
     /// whose values it reads (`inputs[span]`), the head of those that read
@@ -9517,10 +12020,6 @@ const Pts = struct {
     /// whose value the node keeps once the fixpoint is reached.
     base: []u32 = &.{},
     last: []u32 = &.{},
-    /// The constraints of the reads walked since the function the walk is
-    /// in began, while a guard was in view, each one's object's: each
-    /// kills the guards before it once its object is `top` (`Guard.reads`).
-    reads: std.ArrayList(u32) = .empty,
     /// The constraints waiting to be evaluated again, a bit each in 64-bit
     /// words, and how many. The words are 64 bits on every target, not a
     /// `usize`: `evaluateWaiting` takes them a word at a time, so the word
@@ -9534,22 +12033,6 @@ const Pts = struct {
     const Dep = struct { stmt: u32, next: u32 };
 
     const DeclAt = struct { range: JsIr.SubRange, index: u32 };
-
-    const Guard = struct {
-        module: u32,
-        chain: Index,
-        nul: bool,
-        undef: bool,
-        live: bool = true,
-        /// Killed by something that kills whatever the values are: a call,
-        /// an assignment, a declaration, a loop's next turn (`kill`). A
-        /// guard killed only by a read through a value that was `top` when
-        /// it was walked (`killRead`) is dead for that walk alone.
-        dead: bool = false,
-        /// Where `reads` stood when the guard was pushed: the reads after
-        /// it that kill it once their object is `top`.
-        reads: u32 = 0,
-    };
 
     /// One guard a read may be narrowed by, as the first walk found it
     /// (`narrowed`): what it says, and the reads after its push, before the
@@ -9572,10 +12055,12 @@ const Pts = struct {
         end: u32,
         readers: u32 = none,
         narrow: u32 = none,
-        /// Something it read changed after the first walk evaluated it.
-        woken: bool = false,
         /// A member read's load cell (`load`), in `loads`.
         load: u32 = none,
+        /// Its guards came from the extraction (`replayWalk`) and are not yet
+        /// confirmed: the walk noted them only when the read's object was
+        /// not `top` at its first evaluation (`narrowed`).
+        narrow_open: bool = false,
     };
 
     /// A load cell: the var a member read gives. Every read of one property
@@ -9627,7 +12112,6 @@ const Pts = struct {
     /// value (#442 tracks removing the cap): past it the analysis loses
     /// precision silently, and the release optimiser keeps every field.
     const max_sites = 1000;
-    const max_pts_sweeps = 64;
 
     /// `prim` is a primitive that is neither `null` nor `undefined`; `nul`
     /// and `undef` are those two (slice 4). Reading a property of either
@@ -9941,6 +12425,15 @@ const Pts = struct {
         init: bool = false,
         from: VarId = none,
         outs: u32 = none,
+        /// Facts 4 and 5's cell of the property (`Spec.joinProp`): the join
+        /// of every value written to it, whether a write has, and the
+        /// combined solver's readers of it (`Solver.reads`).
+        lat: Lat = .bot,
+        lat_made: bool = false,
+        lat_readers: u32 = none,
+        /// A read of it stands in the program as the rewrite left it
+        /// (`Spec.liveKeys`): what `keyUnread` asks after a rewrite.
+        live_read: bool = false,
     };
 
     const Site = struct {
@@ -9964,6 +12457,11 @@ const Pts = struct {
         /// A function's return and parameters.
         ret: VarId = none,
         params: []const VarId = &.{},
+        /// Fact 5's cell of what a function returns (`Spec.joinRet`), as
+        /// `Prop.lat`.
+        ret_lat: Lat = .bot,
+        ret_made: bool = false,
+        ret_readers: u32 = none,
         /// An object literal that is the value of a `return` of this
         /// function site: its only way out (definite initialisation).
         fresh_fn: u32 = none,
@@ -9996,6 +12494,9 @@ const Pts = struct {
 
     fn deinit(p: *Pts) void {
         p.tmp.deinit();
+        // The combined solver's constraints, which `Spec` keeps across
+        // its analyses in the build's `gpa`.
+        p.s.freeExtracts();
     }
 
     /// The compilation's arena: only for what outlives one fixpoint.
@@ -10103,7 +12604,7 @@ const Pts = struct {
         while (d != none) {
             const dep = p.deps.items[d];
             // The first walk evaluates it again once it is done.
-            if (p.recording) p.cons.items[dep.stmt].woken = true else p.reevaluate(dep.stmt);
+            p.reevaluate(dep.stmt);
             d = dep.next;
         }
     }
@@ -10444,6 +12945,26 @@ const Pts = struct {
     /// `k` as a filter or a site's key: itself when it is closed, `wild`
     /// when it is wild or in the build's wild set (`RepKeys.isWild`), and
     /// always `wild` without the build's keys.
+    /// The filter of site `site`'s own var of property `id`: the field's
+    /// key when the site's key is a closed record that has the field, wild
+    /// otherwise. A value of a closed record type holds in each field a
+    /// value of that field's type, and a site is keyed only where its type
+    /// is closed and does not cross into JavaScript (`closedKey`).
+    fn fieldFilter(p: *const Pts, site: u32, id: u32) JsIr.RepKey {
+        const k = p.sites.items[site].key;
+        if (k == .wild or id == none) return .wild;
+        const fields = p.s.in.field_keys;
+        var lo: usize = 0;
+        var hi: usize = fields.len;
+        while (lo < hi) {
+            const mid = (lo + hi) / 2;
+            const f = fields[mid];
+            if (f.record < k.int() or (f.record == k.int() and f.prop < id)) lo = mid + 1 else hi = mid;
+        }
+        if (lo == fields.len or fields[lo].record != k.int() or fields[lo].prop != id) return .wild;
+        return p.closedKey(fields[lo].key);
+    }
+
     fn closedKey(p: *const Pts, k: JsIr.RepKey) JsIr.RepKey {
         const keys = p.s.in.rep_keys orelse return .wild;
         return if (keys.isWild(k)) .wild else k;
@@ -11448,13 +13969,8 @@ const Pts = struct {
     /// Whether a guard may narrow what ident node `node` reads (`narrowed`):
     /// a copy of it is not a copy of its var then.
     fn maybeNarrowed(p: *Pts, mi: u32, node: Index) bool {
-        if (p.recording or p.evaluating) {
-            const c = p.lastOf(mi, node);
-            return c == none or p.cons.items[c].narrow != none;
-        }
-        const ir = p.s.mods[mi].ir;
-        for (p.guards.items[p.guard_base..]) |g| if (g.module == mi and sameChain(ir, g.chain, node)) return true;
-        return false;
+        const c = p.lastOf(mi, node);
+        return c == none or p.cons.items[c].narrow != none;
     }
 
     /// The var whose value node `node` is, when a binding, a call argument
@@ -11740,6 +14256,13 @@ const Pts = struct {
         return hint.*;
     }
 
+    fn propMut(p: *Pts, site: u32, id: u32) ?*Prop {
+        if (site >= p.sites.items.len) return null;
+        const props = p.sites.items[site].props.items;
+        const at = std.sort.lowerBound(Prop, props, id, orderProp);
+        return if (at < props.len and props[at].id == id) &props[at] else null;
+    }
+
     fn findProp(p: *const Pts, site: u32, id: u32) ?*const Prop {
         const props = p.sites.items[site].props.items;
         const at = std.sort.lowerBound(Prop, props, id, orderProp);
@@ -11812,6 +14335,7 @@ const Pts = struct {
         const outs = pr.outs;
         const v = try p.newVar();
         p.links_of.items[v].site_var = true;
+        p.links_of.items[v].allow = p.fieldFilter(site, id);
         if (p.s.in.trace_largest) p.originAt(v, .{ .kind = .site_prop, .of = .site_prop, .module = p.sites.items[site].module, .node = p.sites.items[site].node.int(), .prop = id });
         const own = &p.sites.items[site].props.items[at];
         own.vals = v;
@@ -12159,10 +14683,6 @@ const Pts = struct {
             try p.fixpoint();
             stats.points_to_runs += 1;
             stats.points_to_sweeps += p.sweeps;
-            if (!p.ok) {
-                stats.points_to_declined += 1;
-                return;
-            }
             // At the cap, asked once more only to count it: what it finds
             // is no run's, since the next `analyse` starts afresh.
             if (attempt == max_init_runs) {
@@ -12181,12 +14701,12 @@ const Pts = struct {
     const max_checked_nodes = 1500;
 
     /// Fact 3 to its fixpoint. In a safety build a small program's fixpoint
-    /// is computed twice: first walking every unit every sweep, the
-    /// top-level statements in a shuffled order (`byUnits`), then by
-    /// constraints in program order (`byConstraints`). Every transfer
+    /// is computed twice (`backend.md` §9, *The combined solver —
+    /// Determinism*): first with the first sweep's top-level statements
+    /// replayed in a shuffled order, then in program order. Every transfer
     /// function is monotone (`Val.top_val`), so both reach the one least
     /// fixpoint (research 52 §2.3), and the two must agree on every fact,
-    /// up to the numbering of sites, which follows the walk. That checks
+    /// up to the numbering of sites, which follows the replay. That checks
     /// the order does not matter, and that a constraint is evaluated again
     /// whenever anything it read changed.
     fn fixpoint(p: *Pts) Allocator.Error!void {
@@ -12214,7 +14734,7 @@ const Pts = struct {
                 // The reference is a check, not the build's work: what its
                 // sets cost is no counter's (`Stats.pts_*`).
                 const counted = p.s.stats;
-                try p.fixpointWith(true);
+                try p.byConstraints();
                 p.order = &.{};
                 p.s.stats.pts_max_set = counted.pts_max_set;
                 p.s.stats.pts_set_words = counted.pts_set_words;
@@ -12226,12 +14746,12 @@ const Pts = struct {
                 p.s.stats.pts_largest_sites = counted.pts_largest_sites;
                 const ref = p.*;
                 std.mem.swap(RunArena, &p.tmp, &ref_tmp);
-                try p.fixpointWith(false);
+                try p.byConstraints();
                 try p.expectSame(&ref, false);
                 return;
             }
         }
-        try p.fixpointWith(false);
+        try p.byConstraints();
     }
 
     /// A safety build's check of a kept state (`Spec.fact3Kept`, #575): fact
@@ -12265,77 +14785,98 @@ const Pts = struct {
         try p.expectSame(&kept, true);
     }
 
+    const FactCheck = struct {
+        x: *const Pts,
+        y: *const Pts,
+        /// Per site of `x`, the site of `y` its node made.
+        map: []const u32,
+
+        fn fail(what: []const u8, at: usize) noreturn {
+            std.debug.panic("specialisation: fact 3 walked in another order reaches another fixpoint: {s} {d}", .{ what, at });
+        }
+        fn failKept(what: []const u8, at: usize) noreturn {
+            std.debug.panic("specialisation: fact 3 kept a state its solve does not reach: {s} {d}", .{ what, at });
+        }
+        fn sameSites(c: @This(), a: []const u32, b: []const u32) bool {
+            if (a.len != b.len) return false;
+            for (a) |site| if (std.sort.binarySearch(u32, b, c.map[site], orderU32) == null) return false;
+            return true;
+        }
+        /// A value that is `top` is compared on its live sites alone: a
+        /// read's cell keeps the sites it linked through an object that
+        /// later escaped or went `top`, where a walk from scratch never
+        /// sees them, and every such site is escaped — what it holds is
+        /// no fact (*an escaped site is ⊤*). That the extra sites are
+        /// indeed escaped is what the comparison then checks.
+        fn sameVal(c: @This(), a: Val, b: Val) bool {
+            if (a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
+            if (!a.top) return c.sameSites(a.sites, b.sites);
+            // The node-based map need not preserve numeric site order.
+            // Count live sites and compare membership, as `sameSites`
+            // does for a value without `top`.
+            var live_a: usize = 0;
+            var live_b: usize = 0;
+            for (a.sites) |site| {
+                if (c.x.sites.items[site].escaped) continue;
+                live_a += 1;
+                if (std.sort.binarySearch(u32, b.sites, c.map[site], orderU32) == null) return false;
+            }
+            for (b.sites) |site| if (!c.y.sites.items[site].escaped) {
+                live_b += 1;
+            };
+            return live_a == live_b;
+        }
+        fn sameVar(c: @This(), a: VarId, b: VarId) bool {
+            const va = c.x.vars.items[a];
+            const vb = c.y.vars.items[b];
+            if (va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
+            // A `top` var may be uncapped (a load cell, or a local bound
+            // to a member read) and then keeps the sites it linked
+            // through an object that later escaped. Those sites are ⊤.
+            // The live ones are the fact, as for a node's value.
+            if (va.top) return c.sameVal(
+                .{ .top = true, .prim = va.prim, .nul = va.nul, .undef = va.undef, .sites = va.sites },
+                .{ .top = true, .prim = vb.prim, .nul = vb.nul, .undef = vb.undef, .sites = vb.sites },
+            );
+            return c.sameSites(va.sites, vb.sites);
+        }
+        /// A property no var holds yet (`Prop`) holds nothing.
+        fn sameField(c: @This(), a: VarId, b: VarId) bool {
+            if (a != none and b != none) return c.sameVar(a, b);
+            const v = if (a != none) c.x.vars.items[a] else if (b != none) c.y.vars.items[b] else return true;
+            return !v.top and !v.prim and !v.nul and !v.undef and v.sites.len == 0;
+        }
+        /// An absent sparse entry is an empty property. A spread may
+        /// copy an empty key marked before its source escaped in only
+        /// one order; `any_written` already covers its written bit.
+        fn sameProp(c: @This(), a: ?Prop, b: ?Prop, any_written: bool, any_top: bool) bool {
+            const pa = a orelse Prop{ .id = none, .vals = none };
+            const pb = b orelse Prop{ .id = none, .vals = none };
+            if (pa.read != pb.read or pa.init != pb.init or (!any_written and pa.written != pb.written)) return false;
+            if (!any_top) return c.sameField(pa.vals, pb.vals);
+            // Every field read includes `any`. Its top subsumes the
+            // component flags and escaped sites a spread retained in
+            // just one order; live sites must still agree.
+            var va = Val.top_val;
+            var vb = Val.top_val;
+            if (pa.vals != none) va.sites = c.x.vars.items[pa.vals].sites;
+            if (pb.vals != none) vb.sites = c.y.vars.items[pb.vals].sites;
+            return c.sameVal(va, vb);
+        }
+        fn sameSet(a: []const u32, b: []const u32) bool {
+            if (a.len != b.len) return false;
+            for (a) |v| if (std.mem.indexOfScalar(u32, b, v) == null) return false;
+            return true;
+        }
+    };
+
     /// Panic unless the facts in `p` are the facts in `ref`, each site of
     /// `p` taken for the site of `ref` its node made (and, when `numbered`,
-    /// numbered as it). Nothing is compared
-    /// when either did not converge: under `max_pts_sweeps` whether a
-    /// fixpoint is reached may depend on the order, and short of one no
-    /// fact is read.
+    /// numbered as it). Nothing is compared when either did not reach its
+    /// fixpoint: short of one no fact is read.
     fn expectSame(p: *const Pts, ref: *const Pts, numbered: bool) Allocator.Error!void {
         if (!p.ok or !ref.ok) return;
-        const Check = struct {
-            x: *const Pts,
-            y: *const Pts,
-            /// Per site of `x`, the site of `y` its node made.
-            map: []const u32,
-
-            fn fail(what: []const u8, at: usize) noreturn {
-                std.debug.panic("specialisation: fact 3 walked in another order reaches another fixpoint: {s} {d}", .{ what, at });
-            }
-            fn failKept(what: []const u8, at: usize) noreturn {
-                std.debug.panic("specialisation: fact 3 kept a state its solve does not reach: {s} {d}", .{ what, at });
-            }
-            fn sameSites(c: @This(), a: []const u32, b: []const u32) bool {
-                if (a.len != b.len) return false;
-                for (a) |site| if (std.sort.binarySearch(u32, b, c.map[site], orderU32) == null) return false;
-                return true;
-            }
-            /// A value that is `top` is compared on its live sites alone: a
-            /// read's cell keeps the sites it linked through an object that
-            /// later escaped or went `top`, where a walk from scratch never
-            /// sees them, and every such site is escaped — what it holds is
-            /// no fact (*an escaped site is ⊤*). That the extra sites are
-            /// indeed escaped is what the comparison then checks.
-            fn sameVal(c: @This(), a: Val, b: Val) bool {
-                if (a.top != b.top or a.prim != b.prim or a.nul != b.nul or a.undef != b.undef) return false;
-                if (!a.top) return c.sameSites(a.sites, b.sites);
-                var i: usize = 0;
-                var j: usize = 0;
-                while (true) {
-                    while (i < a.sites.len and c.x.sites.items[a.sites[i]].escaped) i += 1;
-                    while (j < b.sites.len and c.y.sites.items[b.sites[j]].escaped) j += 1;
-                    if (i == a.sites.len or j == b.sites.len) return i == a.sites.len and j == b.sites.len;
-                    if (c.map[a.sites[i]] != b.sites[j]) return false;
-                    i += 1;
-                    j += 1;
-                }
-            }
-            fn sameVar(c: @This(), a: VarId, b: VarId) bool {
-                const va = c.x.vars.items[a];
-                const vb = c.y.vars.items[b];
-                if (va.top != vb.top or va.prim != vb.prim or va.nul != vb.nul or va.undef != vb.undef) return false;
-                // A `top` var may be uncapped (a load cell, or a local bound
-                // to a member read) and then keeps the sites it linked
-                // through an object that later escaped. Those sites are ⊤.
-                // The live ones are the fact, as for a node's value.
-                if (va.top) return c.sameVal(
-                    .{ .top = true, .prim = va.prim, .nul = va.nul, .undef = va.undef, .sites = va.sites },
-                    .{ .top = true, .prim = vb.prim, .nul = vb.nul, .undef = vb.undef, .sites = vb.sites },
-                );
-                return c.sameSites(va.sites, vb.sites);
-            }
-            /// A property no var holds yet (`Prop`) holds nothing.
-            fn sameField(c: @This(), a: VarId, b: VarId) bool {
-                if (a != none and b != none) return c.sameVar(a, b);
-                const v = if (a != none) c.x.vars.items[a] else if (b != none) c.y.vars.items[b] else return true;
-                return !v.top and !v.prim and !v.nul and !v.undef and v.sites.len == 0;
-            }
-            fn sameSet(a: []const u32, b: []const u32) bool {
-                if (a.len != b.len) return false;
-                for (a) |v| if (std.mem.indexOfScalar(u32, b, v) == null) return false;
-                return true;
-            }
-        };
+        const Check = FactCheck;
         const fail = if (numbered) &Check.failKept else &Check.fail;
         if (p.sites.items.len != ref.sites.items.len) fail("sites", 0);
         const map = try p.s.arena.alloc(u32, p.sites.items.len);
@@ -12380,30 +14921,22 @@ const Pts = struct {
                 } else fail("site caller", i);
             }
             if (!c.sameVar(a.any, b.any)) fail("site any", i);
-            if (a.props.items.len != b.props.items.len) fail("site props", i);
+            // Compare facts over the union of keys, not sparse storage:
+            // missing and empty entries mean the same thing. No read,
+            // initialisation or value is ignored; `any_written` subsumes
+            // the per-key written bit as in `neverWritten`.
             for (a.props.items) |pa| {
-                const pb = ref.findProp(j, pa.id) orelse fail("site prop", i);
-                // A site written under an unknown key has no per-key
-                // `written` fact: `neverWritten`, the one reader, answers
-                // from `any_written` first. And it is one only an escaped
-                // site's keys can make differ: a spread copies the keys its
-                // sources have, and which keys an escaped source has is no
-                // fact (above) — a read through a field summary marks a site
-                // as it is folded, which may be before it escapes in one
-                // order and after in another.
-                const written_differs = pa.written != pb.written and !a.any_written;
-                if (pa.read != pb.read or written_differs or pa.init != pb.init) fail("site prop flags", i);
-                if (!c.sameField(pa.vals, pb.vals)) fail("site prop value", i);
+                const pb = ref.findProp(j, pa.id);
+                if (!c.sameProp(pa, if (pb) |pr| pr.* else null, a.any_written, p.vars.items[a.any].top)) fail("site prop", i);
+            }
+            for (b.props.items) |pb| {
+                if (p.findProp(@intCast(i), pb.id) != null) continue;
+                if (!c.sameProp(null, pb, a.any_written, p.vars.items[a.any].top)) fail("site prop", i);
             }
         }
         for (p.vals, ref.vals, 0..) |a, b, mi| {
             for (a, b, 0..) |x, y, node| if (!c.sameVal(x, y)) fail("node value", mi * 1_000_000 + node);
         }
-    }
-
-    fn fixpointWith(p: *Pts, reference: bool) Allocator.Error!void {
-        try p.reset();
-        if (reference) try p.byUnits() else try p.byConstraints();
     }
 
     /// Everything a fixpoint computes, back to ⊥. The run arena is emptied
@@ -12453,8 +14986,6 @@ const Pts = struct {
         p.load_nodes = .empty;
         p.walk = 0;
         p.next_walk = 0;
-        p.guards.clearRetainingCapacity();
-        p.guard_base = 0;
         p.globals = try a.alloc(VarId, s.globals);
         for (p.globals, 0..) |*g, i| {
             g.* = try p.newVar();
@@ -12493,49 +15024,23 @@ const Pts = struct {
         for (p.ones, 0..) |*o, i| o.* = @intCast(i);
     }
 
-    /// The fixpoint by sweeps of everything: a safety build's reference
-    /// (`fixpoint`), every unit walked every sweep.
-    fn byUnits(p: *Pts) Allocator.Error!void {
-        const s = p.s;
-        p.full = true;
-        defer p.full = false;
-        var sweep: u32 = 0;
-        while (sweep < max_pts_sweeps) : (sweep += 1) {
-            p.changed = false;
-            p.sweeps = sweep + 1;
-            try p.walkStatements();
-            // What files the pass cannot see read.
-            for (s.in.escaping) |g| if (g < p.globals.len) try p.escape(try p.view(p.globals[g]));
-            try p.drain();
-            if (s.in.entry) |e| try p.entryCall(e);
-            try p.propagate();
-            try p.foldWaiting();
-            if (std.debug.runtime_safety) std.debug.assert(p.pending.items.len == 0);
-            if (!p.changed) {
-                p.ok = true;
-                return;
-            }
-        }
-    }
-
     /// The fixpoint by constraints (backend.md §9, *Amended 2026-10-12 —
-    /// fact 3 by its constraints*). The first sweep walks everything, as
-    /// a sweep of `byUnits` does, and notes each evaluation it makes — of
-    /// an expression node, or of a statement's own transfer (`effect`) — as
-    /// a constraint: its context, the constraints whose values it read, and
-    /// for a read, the guards it may be narrowed by with the reads that
-    /// kill each. Every read of a var, a site or a property registers the
-    /// constraint making it, as it registered the unit. After the walk, a
-    /// change wakes the constraints that read what changed, each evaluated
-    /// again alone, and one whose value changed wakes those that read it —
-    /// so nothing the walk of a unit evaluated again without a change is
-    /// asked. Every transfer function is the walk's own and monotone, so
-    /// the fixpoint is the one least fixpoint `byUnits` reaches. A sweep
-    /// here is the constraints that wait, in the order the walk made them,
-    /// then what files the pass cannot see read, the entry's call,
-    /// `propagate` and the folds that wait (`foldWaiting`); at most
-    /// `max_pts_sweeps`, as before.
+    /// fact 3 by its constraints*, and *The combined solver*, slice 5),
+    /// from ⊥. The first sweep replays the extractions (`replayWalk`): each
+    /// constraint evaluated in turn — of an expression node, or of a
+    /// statement's own transfer (`effect`) — and the steps between done as
+    /// the walk did them. Every read of a var, a site or a property
+    /// registers the constraint making it. After that a change wakes the
+    /// constraints that read what changed, each evaluated again alone, and
+    /// one whose value changed wakes those that read it. Every transfer
+    /// function is monotone, so the fixpoint is the one least fixpoint. A
+    /// sweep after the first is the constraints that wait, in the order the
+    /// extraction made them; each is followed by what files the pass cannot
+    /// see read, the entry's call, `propagate` and the folds that wait
+    /// (`foldWaiting`), until nothing changes. Termination is the lattice's
+    /// (*The worklist*): there is no cap.
     fn byConstraints(p: *Pts) Allocator.Error!void {
+        try p.reset();
         const s = p.s;
         const a = p.tmp.allocator();
         p.base = try a.alloc(u32, s.mods.len);
@@ -12555,10 +15060,8 @@ const Pts = struct {
         try p.links.ensureTotalCapacity(a, count);
         p.narrows = .empty;
         p.kills = .empty;
-        p.reads = .empty;
         p.waiting_count = 0;
         defer {
-            p.recording = false;
             p.evaluating = false;
             // A node's value is its last evaluation's, as a walk leaves it.
             for (s.mods, p.base, p.vals) |*m, b, vals| {
@@ -12567,21 +15070,10 @@ const Pts = struct {
                 }
             }
         }
-        p.recording = true;
-        p.full = true;
         var sweep: u32 = 0;
-        while (sweep < max_pts_sweeps) : (sweep += 1) {
+        while (true) : (sweep += 1) {
             p.sweeps = sweep + 1;
-            if (sweep == 0) {
-                try p.walkStatements();
-                p.recording = false;
-                p.full = false;
-                p.evaluating = true;
-                p.waiting = try a.alloc(u64, std.math.divCeil(usize, p.cons.items.len, 64) catch unreachable);
-                @memset(p.waiting, 0);
-
-                for (p.cons.items, 0..) |c, i| if (c.woken) p.reevaluate(@intCast(i));
-            } else try p.evaluateWaiting();
+            if (sweep == 0) try p.replayWalk() else try p.evaluateWaiting();
             // A change the constraints made woke what reads it, so it is in
             // `waiting_count`; `changed` is what the rest of the sweep does.
             p.changed = false;
@@ -12599,12 +15091,180 @@ const Pts = struct {
         }
     }
 
+    /// The first walk by constraints, from the modules' extractions
+    /// (`PtsExtract`, `backend.md` §9, *The combined solver*, slice 5): every
+    /// constraint and every step in the order the recording walk took them,
+    /// each constraint evaluated as `evaluate` evaluates one — its context,
+    /// its inputs where it reads them, its guards — and the steps between
+    /// done as the walk did them. The walk made the sites and vars in this
+    /// order, so the replay makes the same ones, numbered alike, and reaches
+    /// the state the recording walk did.
+    fn replayWalk(p: *Pts) Allocator.Error!void {
+        const s = p.s;
+        const a = p.tmp.allocator();
+        var scratch: Arena = .init(s.gpa);
+        defer scratch.deinit();
+        var program_nodes: usize = 0;
+        for (s.mods) |*m| program_nodes += m.ir.nodes.len;
+        for (s.mods, 0..) |*m, mi| {
+            if (m.pex.epoch == m.epoch and m.pex.nodes == m.ir.nodes.len) continue;
+            scratch.reset(.retain_capacity);
+            try PtsExtractor.run(scratch.allocator(), m, false, &m.pex);
+            // A safety build checks what a module kept against a walk of all
+            // of it, in a small program.
+            if (std.debug.runtime_safety and m.pex.reused != 0 and program_nodes <= max_checked_nodes) {
+                scratch.reset(.retain_capacity);
+                var walked: PtsExtract = .{};
+                defer walked.deinit();
+                try PtsExtractor.run(scratch.allocator(), m, true, &walked);
+                m.pex.expectSame(&walked, @intCast(mi));
+            }
+        }
+        // The constraints, numbered across modules in module order.
+        const base = try a.alloc(u32, s.mods.len);
+        var count: u32 = 0;
+        for (s.mods, base) |*m, *b| {
+            b.* = count;
+            count += @intCast(m.pex.node.len);
+        }
+        try p.cons.ensureTotalCapacity(a, count);
+        for (s.mods, base, 0..) |*m, b, mi| {
+            const x = &m.pex;
+            var in_from: u32 = 0;
+            var nar_from: u32 = 0;
+            for (x.node, x.top, x.inputs_end, x.narrows_end) |node, top, in_end, nar_end| {
+                const start: u32 = @intCast(p.inputs.items.len);
+                for (x.inputs[in_from..in_end]) |in| try lists.push(Read, &p.inputs, a, .{ .node = @fromBackingInt(@intCast(in.node)), .cons = b + in.cons });
+                var narrow: u32 = none;
+                for (x.narrows[nar_from..nar_end]) |n| {
+                    const k_start: u32 = @intCast(p.kills.items.len);
+                    for (x.kills[n.start..n.end]) |killer| try p.kills.append(a, b + killer);
+                    try p.narrows.append(a, .{ .nul = n.nul, .undef = n.undef, .start = k_start, .end = @intCast(p.kills.items.len), .next = narrow });
+                    narrow = @intCast(p.narrows.items.len - 1);
+                }
+                p.cons.appendAssumeCapacity(.{
+                    .module = @intCast(mi),
+                    .node = @fromBackingInt(@intCast(node)),
+                    .top = @fromBackingInt(@intCast(top)),
+                    .func = none,
+                    .start = start,
+                    .end = @intCast(p.inputs.items.len),
+                    .narrow = narrow,
+                    .narrow_open = narrow != none,
+                });
+                in_from = in_end;
+                nar_from = nar_end;
+            }
+            // A node no constraint makes has its tag's value, read by the
+            // constraints after it.
+            const vals = p.vals[mi];
+            for (x.constants) |c| vals[c] = constantVal(m.ir, @fromBackingInt(@intCast(c)));
+            for (x.decl_calls) |dc| try p.decl_call.put(p.run(), .{ .module = @intCast(mi), .node = dc.call }, .{
+                .range = .{ .start = @fromBackingInt(dc.start), .end = @fromBackingInt(dc.end) },
+                .index = dc.index,
+            });
+        }
+        p.waiting = try a.alloc(u64, std.math.divCeil(usize, p.cons.items.len, 64) catch unreachable);
+        @memset(p.waiting, 0);
+        p.evaluating = true;
+        // The context a function's body is walked in, and a loop's.
+        const Ctx = struct { cur: u32, walk: u32, once: bool, func: u32 };
+        var ctxs: std.ArrayList(Ctx) = .empty;
+        var loops: std.ArrayList(bool) = .empty;
+        var func: u32 = none;
+        defer p.cur = none;
+        // The top-level statements in program order, or for a safety build's
+        // check in `order` (`fixpoint`): each one's steps.
+        const Unit = struct { module: u32, from: u32, to: u32 };
+        var units: std.ArrayList(Unit) = .empty;
+        for (s.mods, 0..) |*m, mi| {
+            var from: u32 = 0;
+            for (m.pex.stmts) |st| {
+                try units.append(a, .{ .module = @intCast(mi), .from = from, .to = st.script });
+                from = st.script;
+            }
+        }
+        for (0..units.items.len) |u| {
+            const unit = units.items[if (p.order.len == units.items.len) p.order[u] else u];
+            const mi = unit.module;
+            const m = &s.mods[mi];
+            const b = base[mi];
+            const ir = m.ir;
+            const vals = p.vals[mi];
+            for (m.pex.script[unit.from..unit.to]) |st| switch (st.op) {
+                .stmt_begin => {
+                    p.cur = none;
+                    p.top = @fromBackingInt(@intCast(st.a));
+                    p.once_ctx = true;
+                    func = none;
+                },
+                .stmt_end => try p.drain(),
+                .eval => {
+                    const c = b + st.a;
+                    const k = &p.cons.items[c];
+                    for (p.inputs.items[k.start..k.end]) |in| try p.link(in.cons, c);
+                    p.top = p.cons.items[c].top;
+                    p.cur = c;
+                    p.next_walk += 1;
+                    p.walk = p.next_walk;
+                    const node = p.cons.items[c].node;
+                    if (ir.tag(node).isStatement()) {
+                        p.cons.items[c].func = func;
+                        try p.effect(mi, node, if (func == none) null else func);
+                    } else {
+                        vals[node.int()] = try p.combine(mi, node);
+                        p.cons.items[c].val = vals[node.int()];
+                        p.last[p.base[mi] + node.int()] = c;
+                    }
+                },
+                .arrow, .func_decl => {
+                    const node: Index = @fromBackingInt(@intCast(st.a));
+                    const d = ir.data(node);
+                    const record: ExtraIndex = @fromBackingInt(@intCast(if (st.op == .arrow) d.lhs else d.rhs));
+                    const site = try p.funcSite(mi, node, record);
+                    if (st.op == .func_decl) {
+                        if (ir.tag(node) == .gen_decl) try p.escapeSite(site);
+                        try p.enqueue(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), .{}, try p.single(site), false);
+                        // Its name holds it before the body, which may call it, is walked.
+                        try p.drain();
+                    }
+                    try ctxs.append(a, .{ .cur = p.cur, .walk = p.walk, .once = p.once_ctx, .func = func });
+                    p.cur = none;
+                    p.once_ctx = false;
+                    func = site;
+                },
+                .body_end => {
+                    const node: Index = @fromBackingInt(@intCast(st.a));
+                    const site = p.siteAt(mi, node).?;
+                    const d = ir.data(node);
+                    const record: ExtraIndex = @fromBackingInt(@intCast(if (ir.tag(node) == .arrow) d.lhs else d.rhs));
+                    if (fallsThrough(ir, ir.extraData(record, JsIr.Func).body())) try p.join(p.sites.items[site].ret, Val.undef_val);
+                    try p.drain();
+                    const ctx = ctxs.pop().?;
+                    p.cur = ctx.cur;
+                    p.walk = ctx.walk;
+                    p.once_ctx = ctx.once;
+                    func = ctx.func;
+                    if (ir.tag(node) == .arrow) vals[node.int()] = .{ .sites = p.ones[site..][0..1] };
+                },
+                .loop_begin => {
+                    try loops.append(a, p.once_ctx);
+                    p.once_ctx = false;
+                },
+                .loop_end => p.once_ctx = loops.pop().?,
+                .fresh => if (func != none) if (p.siteAt(mi, @fromBackingInt(@intCast(st.a)))) |o| {
+                    p.sites.items[o].fresh_fn = func;
+                },
+            };
+        }
+    }
+
     /// Every constraint that waits, a 64-bit word of the set at a time from
     /// the first: one woken in a word already passed waits for the next
     /// sweep. The order changes no fact, every transfer function being
-    /// monotone, but it changes how many sweeps the fixpoint takes, and
-    /// under `max_pts_sweeps` whether it is reached; so the word is 64 bits
-    /// on every target, and wasm32 sweeps as x86-64 does.
+    /// monotone, but it changes how many sweeps the fixpoint takes and
+    /// which vars a sweep makes; so the word is 64 bits on every target,
+    /// and wasm32 sweeps as x86-64 does.
     fn evaluateWaiting(p: *Pts) Allocator.Error!void {
         defer p.cur = none;
         const masks = p.waiting;
@@ -12641,72 +15301,10 @@ const Pts = struct {
         while (l != none) : (l = p.links.items[l].next) p.reevaluate(p.links.items[l].cons);
     }
 
-    /// The first walk is about to evaluate node `node` of module `mi` (a
-    /// statement's transfer, for a statement): a new constraint, the one
-    /// the reads it makes are for, reading the last evaluation of each
-    /// node whose value it reads (`inputsOf`).
-    fn begin(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!u32 {
-        const a = p.tmp.allocator();
-        const c: u32 = @intCast(p.cons.items.len);
-        const start: u32 = @intCast(p.inputs.items.len);
-        var buf: [3]Index = undefined;
-        const ir = p.s.mods[mi].ir;
-        const fixed = inputsOf(ir, node, &buf);
-        for (fixed) |in| try p.input(mi, in, c);
-        // An object reads its properties' values, and a call its
-        // arguments'.
-        switch (ir.tag(node)) {
-            .object => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| {
-                const cd = ir.data(child);
-                try p.input(mi, @fromBackingInt(@intCast(if (ir.tag(child) == .property) cd.rhs else cd.lhs)), c);
-            },
-            .array => for (ir.extraSlice(JsIr.inlineRange(ir.data(node)), Index)) |child| try p.input(mi, child, c),
-            .call, .new_call => for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(node).rhs))), Index)) |arg| try p.input(mi, arg, c),
-            else => {},
-        }
-        try lists.push(Cons, &p.cons, a, .{
-            .module = mi,
-            .node = node,
-            .top = p.top,
-            .func = func orelse none,
-            .start = start,
-            .end = @intCast(p.inputs.items.len),
-        });
-        p.cur = c;
-        p.next_walk += 1;
-        p.walk = p.next_walk;
-        return c;
-    }
-
-    /// Constraint `c` reads the value of node `node`, as its last
-    /// evaluation left it; a node no constraint evaluates (a literal, an
-    /// arrow) has the one value.
-    fn input(p: *Pts, mi: u32, node: Index, c: u32) Allocator.Error!void {
-        const from = p.lastOf(mi, node);
-        if (from == none) return;
-        const a = p.tmp.allocator();
-        try lists.push(Read, &p.inputs, a, .{ .node = node, .cons = from });
-        try p.link(from, c);
-    }
-
     /// Constraint `to` reads constraint `from`'s value.
     fn link(p: *Pts, from: u32, to: u32) Allocator.Error!void {
         try lists.push(Link, &p.links, p.tmp.allocator(), .{ .cons = to, .next = p.cons.items[from].readers });
         p.cons.items[from].readers = @intCast(p.links.items.len - 1);
-    }
-
-    /// The first walk evaluated constraint `c`, of node `node`: its value,
-    /// and the node's last evaluation.
-    fn end(p: *Pts, c: u32, mi: u32, node: Index) void {
-        p.cons.items[c].val = p.vals[mi][node.int()];
-        p.last[p.base[mi] + node.int()] = c;
-    }
-
-    /// Statement `node`'s own transfer, once its operands are walked: what
-    /// it does with their values.
-    fn effectOf(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
-        if (p.recording) _ = try p.begin(mi, node, func);
-        try p.effect(mi, node, func);
     }
 
     /// Statement `node`'s transfer, and what it joined carried on: the end
@@ -12782,23 +15380,6 @@ const Pts = struct {
         }
     }
 
-    /// A walk of every top-level statement, in program order — or, for a
-    /// safety build's check, in `order`. Outside a constraint (`begin`) a
-    /// read registers nothing: a sweep of everything needs no reader.
-    fn walkStatements(p: *Pts) Allocator.Error!void {
-        defer p.cur = none;
-        for (0..p.stmts.items.len) |k| {
-            const t = if (p.order.len == p.stmts.items.len) p.order[k] else k;
-            const st = p.stmts.items[t];
-            p.cur = none;
-            p.top = st.top;
-            p.once_ctx = true;
-            p.reads.clearRetainingCapacity();
-            try p.stmt(st.module, st.top, null);
-            try p.drain();
-        }
-    }
-
     /// What an escaped site holds escapes, and an escaped function is
     /// called with anything and returns to anyone.
     fn propagate(p: *Pts) Allocator.Error!void {
@@ -12823,132 +15404,6 @@ const Pts = struct {
             }
         }
         try p.drain();
-    }
-
-    fn stmt(p: *Pts, mi: u32, node: Index, func: ?u32) Allocator.Error!void {
-        const ir = p.s.mods[mi].ir;
-        const d = ir.data(node);
-        switch (ir.tag(node)) {
-            .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
-            .const_decl, .let_decl => {
-                const v: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
-                if (v.unwrap()) |value| _ = try p.expr(mi, value, func);
-                try p.effectOf(mi, node, func);
-                // A name declared in a guarded branch may shadow the chain.
-                p.kill();
-            },
-            .func_decl, .gen_decl => {
-                const site = try p.funcSite(mi, node, @fromBackingInt(@intCast(d.rhs)));
-                if (ir.tag(node) == .gen_decl) try p.escapeSite(site);
-                try p.enqueue(try p.nodeVar(mi, node, @fromBackingInt(@intCast(d.lhs))), .{}, try p.single(site), false);
-                // Its name holds it before the body, which may call it, is walked.
-                try p.drain();
-                try p.body(mi, @fromBackingInt(@intCast(d.rhs)), site);
-                p.kill();
-            },
-            .assign_stmt => {
-                defer p.kill();
-                _ = try p.expr(mi, @fromBackingInt(@intCast(d.rhs)), func);
-                const target: Index = @fromBackingInt(@intCast(d.lhs));
-                const td = ir.data(target);
-                switch (ir.tag(target)) {
-                    .ident => {},
-                    .member => _ = try p.expr(mi, @fromBackingInt(@intCast(td.lhs)), func),
-                    .index_get => {
-                        _ = try p.expr(mi, @fromBackingInt(@intCast(td.rhs)), func);
-                        _ = try p.expr(mi, @fromBackingInt(@intCast(td.lhs)), func);
-                    },
-                    else => _ = try p.expr(mi, target, func),
-                }
-                try p.effectOf(mi, node, func);
-            },
-            .return_stmt => {
-                const value: ?Index = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap();
-                if (value) |v| _ = try p.expr(mi, v, func);
-                try p.effectOf(mi, node, func);
-                // An object literal returned as it is made leaves its
-                // function by the call alone (definite initialisation).
-                if (func) |site| if (value) |v| if (ir.tag(v) == .object) {
-                    if (p.siteAt(mi, v)) |o| p.sites.items[o].fresh_fn = site;
-                };
-            },
-            .if_stmt => {
-                _ = try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func);
-                const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
-                const test_guard = nullTest(ir, @fromBackingInt(@intCast(d.lhs)));
-                try p.branch(mi, branches.thenBody(), func, if (test_guard) |t| (if (t.null_in_then) null else t.guard(mi)) else null);
-                try p.branch(mi, branches.elseBody(), func, if (test_guard) |t| (if (t.null_in_then) t.guard(mi) else null) else null);
-            },
-            .block_stmt => try p.list(mi, ir.subRange(@fromBackingInt(@intCast(d.rhs))), func),
-            .while_true => {
-                // A later turn runs after whatever this one did.
-                p.kill();
-                const saved = p.once_ctx;
-                defer p.once_ctx = saved;
-                p.once_ctx = false;
-                try p.list(mi, ir.subRange(@fromBackingInt(@intCast(d.rhs))), func);
-            },
-            .for_of => {
-                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
-                _ = try p.expr(mi, f.iterable, func);
-                try p.effectOf(mi, node, func);
-                // Iterating calls the iterator.
-                p.kill();
-                const saved = p.once_ctx;
-                defer p.once_ctx = saved;
-                p.once_ctx = false;
-                try p.list(mi, f.body(), func);
-            },
-            .switch_stmt => {
-                _ = try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func);
-                for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| try p.stmt(mi, c, func);
-            },
-            .switch_case => {
-                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| _ = try p.expr(mi, t, func);
-                try p.list(mi, ir.subRange(@fromBackingInt(@intCast(d.rhs))), func);
-            },
-            .expr_stmt => _ = try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func),
-            .throw_stmt => {
-                _ = try p.expr(mi, @fromBackingInt(@intCast(d.lhs)), func);
-                try p.effectOf(mi, node, func);
-            },
-            // The body, then the cleanup, which may begin after any
-            // statement of the body: a guard dies at the first statement
-            // that kills it and never comes back, so walking the body
-            // whole first leaves in view only the guards no statement of it
-            // could have broken. Anything the body throws is a value that
-            // escapes, as at a `throw`, and no guard the cleanup is under
-            // is one a `throw` could skip. A `catch` block begins after any
-            // statement of the body too, and the cleanup after any of either.
-            .try_stmt => {
-                const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
-                try p.list(mi, t.body(), func);
-                p.kill();
-                try p.list(mi, t.catchBody(), func);
-                p.kill();
-                try p.list(mi, t.finalBody(), func);
-                p.kill();
-            },
-            else => _ = try p.expr(mi, node, func),
-        }
-    }
-
-    fn list(p: *Pts, mi: u32, range: JsIr.SubRange, func: ?u32) Allocator.Error!void {
-        const ir = p.s.mods[mi].ir;
-        for (ir.extraSlice(range, Index), 0..) |node, k| {
-            // A call a `const` or `let` binds: where it stands, for the
-            // writes that follow it (`writesAfter`).
-            switch (ir.tag(node)) {
-                .const_decl, .let_decl => {
-                    const v: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(node).rhs));
-                    if (p.full) if (v.unwrap()) |value| if (ir.tag(value) == .call) {
-                        try p.decl_call.put(p.run(), .{ .module = mi, .node = value.int() }, .{ .range = range, .index = @intCast(k) });
-                    };
-                },
-                else => {},
-            }
-            try p.stmt(mi, node, func);
-        }
     }
 
     /// Definite initialisation: of an object literal that is the value of
@@ -13046,43 +15501,6 @@ const Pts = struct {
         return false;
     }
 
-    /// A branch's statements, under `guard` when its test narrows a chain.
-    fn branch(p: *Pts, mi: u32, range: JsIr.SubRange, func: ?u32, guard: ?Guard) Allocator.Error!void {
-        const base = p.guards.items.len;
-        defer p.guards.shrinkRetainingCapacity(base);
-        if (guard) |g| {
-            var pushed = g;
-            pushed.reads = @intCast(p.reads.items.len);
-            try p.guards.append(p.arena(), pushed);
-        }
-        try p.list(mi, range, func);
-    }
-
-    /// Every guard in view dies: something ran that may change what a
-    /// chain reads, whatever the values are.
-    fn kill(p: *Pts) void {
-        for (p.guards.items[p.guard_base..]) |*g| {
-            g.live = false;
-            g.dead = true;
-        }
-    }
-
-    /// A read through object node `obj`: when its object is a host value it
-    /// may run a getter, and every guard in view dies. The first walk of a
-    /// fixpoint by constraints notes the read wherever a guard is in view,
-    /// `top` or not yet: the guards before it die when it is.
-    fn killRead(p: *Pts, mi: u32, obj: Index) Allocator.Error!void {
-        if (p.guards.items.len == p.guard_base) return;
-        // An object no constraint makes (a literal, an arrow, `this`, an
-        // operator) has its one value: `top` for good, or never.
-        const constant = p.recording and p.lastOf(mi, obj) == none;
-        if (p.recording and !constant) try lists.push(u32, &p.reads, p.tmp.allocator(), p.lastOf(mi, obj));
-        if (p.vals[mi][obj.int()].top) for (p.guards.items[p.guard_base..]) |*g| {
-            g.live = false;
-            if (constant) g.dead = true;
-        };
-    }
-
     /// `v`, what chain `node` read, less what a live guard in view says
     /// it cannot be. A member read through a host value may run a getter,
     /// which a guard cannot vouch for.
@@ -13094,8 +15512,25 @@ const Pts = struct {
     fn narrowed(p: *Pts, mi: u32, node: Index, v: Val) Allocator.Error!Val {
         var out = v;
         const ir = p.s.mods[mi].ir;
-        if (ir.tag(node) == .member and p.vals[mi][ir.data(node).lhs].top) return out;
+        if (ir.tag(node) == .member and p.vals[mi][ir.data(node).lhs].top) {
+            // The first walk returned here before it noted any guard.
+            if (p.evaluating and p.cur != none and p.cons.items[p.cur].narrow_open) {
+                p.cons.items[p.cur].narrow = none;
+                p.cons.items[p.cur].narrow_open = false;
+            }
+            return out;
+        }
         if (p.evaluating) {
+            // Guards the extraction found, noted as the walk noted them: the
+            // reads that kill each wake this one.
+            if (p.cur != none and p.cons.items[p.cur].narrow_open) {
+                const c = p.cur;
+                p.cons.items[c].narrow_open = false;
+                var n = p.cons.items[c].narrow;
+                while (n != none) : (n = p.narrows.items[n].next) {
+                    for (p.kills.items[p.narrows.items[n].start..p.narrows.items[n].end]) |killer| try p.link(killer, c);
+                }
+            }
             var k = p.cons.items[p.cur].narrow;
             each: while (k != none) : (k = p.narrows.items[k].next) {
                 const n = p.narrows.items[k];
@@ -13105,114 +15540,7 @@ const Pts = struct {
             }
             return out;
         }
-        for (p.guards.items[p.guard_base..]) |g| {
-            if (g.module != mi or !sameChain(ir, g.chain, node)) continue;
-            if (p.recording and !g.dead) {
-                // Noted whether a read before this one was `top` yet or
-                // not: one that is stays so, and the guard stays dead.
-                const a = p.tmp.allocator();
-                const c = p.cur;
-                const start: u32 = @intCast(p.kills.items.len);
-                try p.kills.appendSlice(a, p.reads.items[g.reads..]);
-                for (p.reads.items[g.reads..]) |killer| try p.link(killer, c);
-                try p.narrows.append(a, .{ .nul = g.nul, .undef = g.undef, .start = start, .end = @intCast(p.kills.items.len), .next = p.cons.items[c].narrow });
-                p.cons.items[c].narrow = @intCast(p.narrows.items.len - 1);
-            }
-            if (!g.live) continue;
-            if (g.nul) out.nul = false;
-            if (g.undef) out.undef = false;
-        }
         return out;
-    }
-
-    /// A function's body: walked as what may run many times, and when it
-    /// may run off its end, `undefined` is among what it returns. No guard
-    /// outside it is in view: it runs later.
-    fn body(p: *Pts, mi: u32, record: ExtraIndex, site: u32) Allocator.Error!void {
-        const saved_cur = p.cur;
-        const saved_walk = p.walk;
-        defer {
-            p.cur = saved_cur;
-            p.walk = saved_walk;
-        }
-        p.cur = none;
-        const ir = p.s.mods[mi].ir;
-        const saved = p.once_ctx;
-        defer p.once_ctx = saved;
-        p.once_ctx = false;
-        const saved_base = p.guard_base;
-        defer p.guard_base = saved_base;
-        p.guard_base = p.guards.items.len;
-        // The body's reads kill no guard outside it.
-        const saved_reads = p.reads.items.len;
-        defer p.reads.shrinkRetainingCapacity(saved_reads);
-        const f = ir.extraData(record, JsIr.Func);
-        try p.list(mi, f.body(), site);
-        if (fallsThrough(ir, f.body())) try p.join(p.sites.items[site].ret, Val.undef_val);
-        try p.drain();
-    }
-
-    /// What `root` may be, bottom-up over an explicit stack, every node's
-    /// into `vals`. An arrow is its site, its body walked as the statements
-    /// it is.
-    fn expr(p: *Pts, mi: u32, root: Index, func: ?u32) Allocator.Error!Val {
-        // Where a `return` goes is the statements' business; an expression
-        // holds none, and an arrow in it is a function of its own.
-        _ = func;
-        const ir = p.s.mods[mi].ir;
-        const vals = p.vals[mi];
-        // A leaf, the most common expression, without the stack.
-        if (isValueLeaf(ir.tag(root))) {
-            if (p.recording and ir.tag(root) == .ident) {
-                const c = try p.begin(mi, root, null);
-                vals[root.int()] = try p.combine(mi, root);
-                p.end(c, mi, root);
-            } else vals[root.int()] = try p.combine(mi, root);
-            return vals[root.int()];
-        }
-        // A node to evaluate, or, with `post_bit` set, one whose operands
-        // are evaluated; operands are pushed straight onto the stack.
-        const stack = &p.nodes;
-        const base = stack.items.len;
-        defer stack.items.len = base;
-        try JsIr.pushOperand(p.arena(), stack, root);
-        while (stack.items.len > base) {
-            const raw = stack.items[stack.items.len - 1].int();
-            stack.items.len -= 1;
-            if (raw & post_bit == 0) {
-                const node: Index = @fromBackingInt(@intCast(raw));
-                const t = ir.tag(node);
-                if (t == .arrow) {
-                    const record: ExtraIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
-                    const site = try p.funcSite(mi, node, record);
-                    try p.body(mi, record, site);
-                    vals[raw] = .{ .sites = p.ones[site..][0..1] };
-                    continue;
-                }
-                // A leaf has no operands to wait for.
-                if (isValueLeaf(t)) {
-                    // A literal's value is its tag's (`combine`), without the call.
-                    if (t != .ident) {
-                        vals[raw] = literal_vals[@backingInt(t)];
-                    } else if (p.recording) {
-                        const c = try p.begin(mi, node, null);
-                        vals[raw] = try p.combine(mi, node);
-                        p.end(c, mi, node);
-                    } else vals[raw] = try p.combine(mi, node);
-                    continue;
-                }
-                try JsIr.pushOperand(p.arena(), stack, @fromBackingInt(@intCast(raw | post_bit)));
-                try ir.pushOperands(p.arena(), stack, node);
-                continue;
-            }
-            const node: Index = @fromBackingInt(@intCast(raw & ~post_bit));
-            if (p.recording and !constantValue(ir, node)) {
-                const c = try p.begin(mi, node, null);
-                vals[node.int()] = try p.combine(mi, node);
-                p.end(c, mi, node);
-            } else vals[node.int()] = try p.combine(mi, node);
-        }
-        return vals[root.int()];
     }
 
     /// Node `node`'s value, and what making it joined carried on: the end
@@ -13237,16 +15565,12 @@ const Pts = struct {
                 const obj = vals[d.lhs];
                 const id = p.propId(mi, @fromBackingInt(@intCast(d.rhs)));
                 const raw = try p.load(mi, node, @fromBackingInt(@intCast(d.lhs)), obj, id);
-                const v = try p.narrowed(mi, node, raw);
-                // A read through a host value may run a getter.
-                try p.killRead(mi, @fromBackingInt(@intCast(d.lhs)));
-                break :blk v;
+                break :blk try p.narrowed(mi, node, raw);
             },
             // An index past the end is `undefined`.
             .index_get => blk: {
                 var v = try p.readAll(vals[d.lhs]);
                 if (vals[d.lhs].sites.len != 0) v.undef = true;
-                try p.killRead(mi, @fromBackingInt(@intCast(d.lhs)));
                 break :blk v;
             },
             .property => vals[d.rhs],
@@ -13367,16 +15691,9 @@ const Pts = struct {
                     else => Val.prim_val,
                 };
             },
-            .unary => if (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs))) == .yield) blk: {
-                p.kill();
-                break :blk Val.top_val;
-            } else Val.prim_val,
-            .call => blk: {
-                defer p.kill();
-                break :blk p.call(mi, node);
-            },
+            .unary => if (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs))) == .yield) Val.top_val else Val.prim_val,
+            .call => p.call(mi, node),
             .new_call => blk: {
-                p.kill();
                 for (vals[d.lhs].sites) |site| p.sites.items[site].odd_caller = true;
                 for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |a| try p.escape(vals[a.int()]);
                 break :blk Val.top_val;
@@ -13535,7 +15852,8 @@ const Pts = struct {
         const site = p.siteAt(mi, node) orelse return false;
         const st = &p.sites.items[site];
         if (st.escaped or st.all_read) return false;
-        if (p.findProp(site, id)) |pr| if (pr.read) return false;
+        if (p.findProp(site, id)) |pr| if (if (p.s.live_keys) pr.live_read else pr.read) return false;
+        if (p.s.live_keys and id < p.s.id_read.len and p.s.id_read[id]) return false;
         return true;
     }
 
@@ -13706,7 +16024,7 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
         // million times over a page, and one exhaustive `switch` is one
         // jump where an `else` prong first checks the tag in Zig's own
         // backend, and a second call checks it again.
-        .ident, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+        .ident, .field_name, .number, .string, .template_chunk, .regex, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
         .member, .unary, .spread_property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.lhs))),
         .index_get => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
         .property => try JsIr.pushOperand(gpa, stack, @fromBackingInt(@intCast(d.rhs))),
@@ -14054,7 +16372,7 @@ fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
     if (depth > 32) return false;
     const d = ir.data(node);
     return switch (ir.tag(node)) {
-        .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
             .not, .type_of => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
             else => false,
@@ -14104,7 +16422,7 @@ fn inertOf(ir: *const JsIr, root: Index, comptime field_reads: bool) bool {
         budget -= 1;
         const d = ir.data(node);
         switch (ir.tag(node)) {
-            .arrow, .ident, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
+            .arrow, .ident, .field_name, .number, .string, .template_chunk, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .this_lit => {},
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @fromBackingInt(@intCast(d.rhs));
@@ -14612,7 +16930,7 @@ fn decidedTest(ir: *const JsIr, node: Index) ?bool {
 /// nothing, so a decided comparison may drop it.
 fn pureRead(ir: *const JsIr, node: Index) bool {
     return switch (ir.tag(node)) {
-        .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         .member => memberBase(ir, node) != null,
         else => false,
     };
@@ -16137,7 +18455,10 @@ test "a read written as its literal leaves fact 3 to be kept" {
     defer ir.deinit(gpa);
     const global = [_]u32{ 0, 1 };
     const modules = [_]Module{.{ .ir = &ir, .global = &global }};
-    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{} });
+    var s: Spec = try .init(gpa, arena_state.allocator(), .{ .modules = &modules, .globals = 2, .escaping = &.{1} });
+    // `c` is read by a file the pass cannot see: a root, so its statement
+    // runs (since slice 6 a declaration nothing live refers to is in no
+    // solve, `liveStatements`).
     s.pts = .init(&s);
     defer s.pts.deinit();
     // Hands the module its columns back, owned and exactly sized.
@@ -16330,4 +18651,57 @@ test "the edge check finds every edge made and no other" {
         }
     }
     try testing.expect(p.cold.items[0].succs > Pts.short_edges and p.cold.items[4].preds > Pts.short_edges);
+}
+
+// The check is itself a safety property: equal representations must pass,
+// but a live site, value bit or property flag must not disappear unnoticed.
+test "fact-3 comparison maps sets and compares effective sparse properties" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var s = try emptySpec(testing.allocator, arena);
+    var ref = try emptySpec(testing.allocator, arena);
+    s.pts = .init(&s);
+    ref.pts = .init(&ref);
+    defer s.pts.deinit();
+    defer ref.pts.deinit();
+    const p = &s.pts;
+    const r = &ref.pts;
+    for (0..3) |i| {
+        try p.sites.append(p.tmp.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(@intCast(i)), .any = none, .escaped = i == 2 });
+        try r.sites.append(r.tmp.allocator(), .{ .kind = .object, .module = 0, .node = @fromBackingInt(@intCast(i)), .any = none, .escaped = i == 2 });
+    }
+    const c: Pts.FactCheck = .{ .x = p, .y = r, .map = &.{ 1, 0, 2 } };
+    var a = Pts.Val.top_val;
+    var b = Pts.Val.top_val;
+    a.sites = &.{ 0, 1, 2 };
+    b.sites = &.{ 0, 1 };
+    try testing.expect(c.sameVal(a, b));
+    b.sites = &.{0};
+    try testing.expect(!c.sameVal(a, b));
+    b.sites = &.{ 0, 1 };
+    b.nul = false;
+    try testing.expect(!c.sameVal(a, b));
+
+    const empty: Pts.Prop = .{ .id = 0, .vals = none, .written = true };
+    try testing.expect(c.sameProp(empty, null, true, false));
+    try testing.expect(c.sameProp(null, empty, true, false));
+    try testing.expect(!c.sameProp(empty, null, false, false));
+    var marked = empty;
+    marked.read = true;
+    try testing.expect(!c.sameProp(marked, null, true, true));
+    marked = empty;
+    marked.init = true;
+    try testing.expect(!c.sameProp(marked, null, true, true));
+
+    const v = try p.newVar();
+    try holdSites(p, v, &.{2});
+    const escaped: Pts.Prop = .{ .id = 0, .vals = v };
+    try testing.expect(c.sameProp(escaped, null, true, true));
+    try testing.expect(!c.sameProp(escaped, null, true, false));
+    try holdSites(p, v, &.{0});
+    try testing.expect(!c.sameProp(escaped, null, true, true));
+    try holdSites(p, v, &.{});
+    p.vars.items[v].prim = true;
+    try testing.expect(!c.sameProp(escaped, null, true, false));
 }

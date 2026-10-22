@@ -16,8 +16,8 @@ module ElementEdits
   44:18 call ElementEdits.addKid groups[*].kids: accepted fresh (ElementEdits.addKid writes π1[*].kids)
   44:18 update groups[*]: accepted fresh (ElementEdits.addKid writes it)
   51:13 call ElementEdits.tagAll rows[*]: rejected alias: first holds it and is read at 52:25 (ElementEdits.tagAll writes π1[*])
-  summary addKid: π1 RAW, π1[*] RAW{kids}, π1[*].kids AW, π1[*].kids[*] A; res [*] ~π1[*] ~π1[*]◦, [*].kids ~π1[*].kids, [*].kids[*] ~π1[*].kids[*], π1{excl π1[*].kids}r{excl π1[*]}; xreq excl π1; rxreq excl π1
-  summary tagAll: π1 R, π1[*] AW; res [*] ~fresh2{excl π1} ~π1[*], fresh1{excl π1}; xreq excl π1
+  summary addKid: π1 RAW[storage], π1[*] RAW{kids}, π1[*].kids AW[storage], π1[*].kids[*] A; res [*] ~π1[*] ~π1[*]◦, [*].kids ~π1[*].kids, [*].kids[*] ~π1[*].kids[*], π1{excl π1[*].kids}r{excl π1[*]}; xreq spine π1[*].kids; rxreq excl π1
+  summary tagAll: π1 R, π1[*] AW; res [*] ~condition(fresh2) ~fresh2{excl π1} ~π1[*], fresh1{excl π1}; xreq excl π1
   summary distinct: unused
   summary readAfter: π1 R, π1[*] RW; xreq excl π1
   summary repeated: unused

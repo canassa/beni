@@ -1092,9 +1092,9 @@ test "a recursive alias used in an annotation is one RECURSIVE ALIAS, not an exp
 // wanted's. `A{i} a b` holds three `A{i-1}` at different arguments, and
 // `Box` derives `eq` and `compare` over every distinct type the DAG reaches.
 // At 24 levels, on the tests' ReleaseSafe beni, the check spent about 6.5
-// billion instructions with the proof check unbudgeted, half again the test
-// budget, and spends about 2.3 billion with it budgeted. The test budget is
-// the assertion.
+// billion instructions without the proof-check work bound, and about 2.3
+// billion with it. This test keeps the program accepted; performance
+// regressions belong in test-perf.
 test "a wide alias DAG checks on a safety build without re-walking its graph per comparison" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -1244,7 +1244,7 @@ test "a tag of 30 000 distinct attributes is checked for duplicates in linear ti
     // └─────────────────────────────────────────┘
     // Lowering reports an attribute written twice (`duplicate_attribute`)
     // and once compared each attribute with every one before it, n²/2
-    // comparisons: 450 million here, past the test budget on their own. The
+    // comparisons: 450 million here. The
     // names are now a set, so the tag costs what its bytes cost. Nothing
     // types markup without a vocabulary, so the one diagnostic is the
     // checker's stop; there is no duplicate among the names.

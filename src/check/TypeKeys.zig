@@ -101,9 +101,16 @@ pub const InstKey = struct {
     result: TypeKey = .wild,
 };
 
-/// One module's artifact, owned by `gpa`. Empty for a module whose keys are
-/// all wild: core, a platform, a module checked silently or with an error.
+/// All solved record rows, even when a field value has no closed key.
+/// A row with an unknown extension conflicts with every field text.
+pub const Record = struct { fields: Range, open: bool };
+
+/// One module's artifact, owned by `gpa`. Empty for embedded core,
+/// platforms and modules checked silently or with an error.
 pub const Artifact = struct {
+    records: []const Record = &.{},
+    record_labels: []const InternPool.Symbol = &.{},
+
     nodes: []const KeyNode = &.{},
     /// What every `KeyNode.args` ranges over; never `wild`.
     args: []const TypeKey = &.{},
@@ -123,6 +130,8 @@ pub const Artifact = struct {
     pub const empty: Artifact = .{};
 
     pub fn deinit(a: *Artifact, gpa: Allocator) void {
+        gpa.free(a.records);
+        gpa.free(a.record_labels);
         gpa.free(a.nodes);
         gpa.free(a.args);
         gpa.free(a.labels);
@@ -206,6 +215,31 @@ pub const Output = struct {
     /// Per store variable: whether it is a scheme quantifier that crosses,
     /// which P8 publishes as its `crosses` bit; owned by `scratch`.
     crossing: []const bool,
+};
+
+/// Record facts have no store-variable identity. Sort and deduplicate by
+/// text before persisting them, just as closed keys order their labels.
+const RecordOrder = struct {
+    labels: []const InternPool.Symbol,
+    interner: *const InternPool.Global,
+
+    fn lessThan(o: RecordOrder, a: Record, b: Record) bool {
+        const aa = o.labels[a.fields.start..][0..a.fields.len];
+        const bb = o.labels[b.fields.start..][0..b.fields.len];
+        for (0..@min(aa.len, bb.len)) |i| {
+            switch (std.mem.order(u8, o.interner.slice(aa[i]), o.interner.slice(bb[i]))) {
+                .lt => return true,
+                .gt => return false,
+                .eq => {},
+            }
+        }
+        if (aa.len != bb.len) return aa.len < bb.len;
+        return !a.open and b.open;
+    }
+
+    fn same(o: RecordOrder, a: Record, b: Record) bool {
+        return a.open == b.open and std.mem.eql(InternPool.Symbol, o.labels[a.fields.start..][0..a.fields.len], o.labels[b.fields.start..][0..b.fields.len]);
+    }
 };
 
 pub fn build(in: Input) Error!Output {
@@ -308,7 +342,46 @@ pub fn build(in: Input) Error!Output {
             kept += 1;
         }
         artifact.wild = try in.gpa.dupe(TypeKey, c.wild.items[0..kept]);
+        // Scan roots, rather than only keyable expressions: schemas, ctor
+        // payloads and records with polymorphic/host fields are in the store
+        // too. A closed field set needs no key for its field values.
+        var records: std.ArrayList(Record) = .empty;
+        var labels: std.ArrayList(InternPool.Symbol) = .empty;
+        var fields: std.ArrayList(TypeStore.Field) = .empty;
+        for (0..in.store.count()) |vi| {
+            const v: Var = @fromBackingInt(@intCast(vi));
+            if (in.store.find(v) != v) continue;
+            const rec = switch (in.store.content(v)) {
+                .structure => |s| switch (s) {
+                    .record => |r| r,
+                    else => continue,
+                },
+                else => continue,
+            };
+            fields.clearRetainingCapacity();
+            const closed = try b.closedRow(rec, &fields);
+            byText(TypeStore.Field, in.interner, fields.items);
+
+            const start: u32 = @intCast(labels.items.len);
+            for (fields.items) |field| try labels.append(in.scratch, field.name);
+            try records.append(in.scratch, .{ .fields = .{ .start = start, .len = @intCast(fields.items.len) }, .open = !closed });
+        }
+        const order: RecordOrder = .{ .labels = labels.items, .interner = in.interner };
+        std.mem.sort(Record, records.items, order, RecordOrder.lessThan);
+        var canonical: std.ArrayList(Record) = .empty;
+        var canonical_labels: std.ArrayList(InternPool.Symbol) = .empty;
+        var previous: ?Record = null;
+        for (records.items) |r| {
+            if (previous) |p| if (order.same(p, r)) continue;
+            previous = r;
+            const start: u32 = @intCast(canonical_labels.items.len);
+            try canonical_labels.appendSlice(in.scratch, labels.items[r.fields.start..][0..r.fields.len]);
+            try canonical.append(in.scratch, .{ .fields = .{ .start = start, .len = r.fields.len }, .open = r.open });
+        }
+        artifact.records = try in.gpa.dupe(Record, canonical.items);
+        artifact.record_labels = try in.gpa.dupe(InternPool.Symbol, canonical_labels.items);
         artifact.nodes = try in.gpa.dupe(KeyNode, b.nodes.items);
+
         artifact.args = try in.gpa.dupe(TypeKey, b.args.items);
         artifact.labels = try in.gpa.dupe(InternPool.Symbol, b.labels.items);
     }
@@ -1083,17 +1156,15 @@ fn declOf(bir: *const Bir, inst: Bir.Inst.Index) ?u32 {
     return null;
 }
 
-/// Sort `items` (each with a `name`) by the names' text: an insertion sort,
-/// for a record's few fields, with no allocation, reading the interner's
-/// text ranks when it has them (`TypeStore.sortByText`'s order).
+/// Stable text order, also for wide rows. Read text ranks when the interner
+/// has them (`TypeStore.sortByText`'s order); do not use an insertion sort
+/// here, since both closed keys and record facts may name thousands of fields.
 fn byText(comptime T: type, interner: *const InternPool.Global, items: []T) void {
-    var i: usize = 1;
-    while (i < items.len) : (i += 1) {
-        const x = items[i];
-        var j = i;
-        while (j > 0 and textBefore(interner, x.name, items[j - 1].name)) : (j -= 1) items[j] = items[j - 1];
-        items[j] = x;
-    }
+    std.mem.sort(T, items, interner, struct {
+        fn lessThan(pool: *const InternPool.Global, left: T, right: T) bool {
+            return textBefore(pool, left.name, right.name);
+        }
+    }.lessThan);
 }
 
 fn textBefore(interner: *const InternPool.Global, a: InternPool.Symbol, b: InternPool.Symbol) bool {

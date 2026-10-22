@@ -1,0 +1,12 @@
+-- `invalid_entry_export` for `flush` (boundary.md §9.12 (c), amended
+-- 2026-10-21): the hoisted release file re-exports the runtime's `flush`
+-- when the build keeps it (backend.md §15.11), and a module that exports one
+-- name twice does not load, so `flush` is refused always, as `default` is,
+-- the same in both builds. `stop` is listable: only a runtime module
+-- supplies it, and the exports mode refuses a runtime module. One
+-- diagnostic, for `flush`, against the project's manifest; nothing written.
+import Prog exposing (Program)
+
+
+main : Program
+main = Prog.say "hello"

@@ -193,6 +193,21 @@ browser answers one:
     {"drop": "a"}, {"reset": "a"}
                                 end the TCP connection, with a FIN or with a
                                 reset, and no close frame
+    {"page": "<entry.mjs>", "steps": "<file.steps>"}
+                                run a page program under the page driver
+                                (happy-dom), opened from this server with
+                                `--server`, and print its transcript, each
+                                line `| …`; with `"wait": false` it runs
+                                beside the next steps, and with
+                                `"wait-handshakes": true` the page driver
+                                has `--wait-handshakes`
+    {"page-wait": "<step>"}     wait, 5 s at most, until the page has run
+                                that line of its script; the wait uses the
+                                lines up to it, so a second wait for the
+                                same line waits for the next one, and a
+                                page that ended stops the wait at once
+    {"page-end": true}          wait for the page to end, 20 s at most,
+                                then stop it; print its transcript
 
 A `{"fault": "socket:EIO"}` step, first in a script, makes the first socket
 the program upgrades fail, as Node fails one (`error`, then `close`), with
@@ -207,14 +222,17 @@ prints `--- stdout ---`, `--- stderr ---` and `--- exit <code> ---` (or
 running after the last step ---`). Standard error goes through one filter,
 so a crash is deterministic: the project directory's absolute path becomes
 `<project>`, lines that start with `    at ` are dropped, and the
-`Node.js v…` line is dropped. An IPv4 address becomes `<address>`, and the
-port the program bound `<port>`; any other port stays as it is, so a line
-that names the wrong port differs. A `logfmt` line with `timestamp` first,
-the one `Io.run`'s sink writes, has its time as `timestamp=<time>`. The
-driver connects to `127.0.0.1` only and filters IPv4 addresses only, so a
-served fixture listens on `127.0.0.1`: an IPv6 address would stay in the
-transcript. The driver exits 0 whatever the program did; what it did is
-the transcript. A served fixture has no `.crash`: the crash is in the
+`Node.js v…` line is dropped. An IPv4 address before a `:port` becomes
+`<address>`, and so does any quoted value of an indented `address:` line of
+an error's properties; an IPv4 address anywhere else stays as it is. The
+bound port after an IPv4 address, or on an indented `port:` line, becomes
+`<port>`; any other port stays as it is, so a line that names the wrong
+port differs. A `logfmt` line with `timestamp` first, the one `Io.run`'s
+sink writes, has its time as `timestamp=<time>`. The driver connects to
+`127.0.0.1` only, so a served fixture listens on `127.0.0.1`: an IPv6
+address stays in the transcript, except as the value of an `address:` line.
+The driver exits 0 whatever the program did; what it did is the
+transcript. A served fixture has no `.crash`: the crash is in the
 transcript.
 
 The record line (`.run-hash`) of a served build is `<pass> <node version>
@@ -285,6 +303,30 @@ project) against it, one step per line, `#` for a comment:
                                 `dragleave` and `dragend`; one whose
                                 default a handler prevented logs
                                 `(drop's default prevented)` (or its name's)
+    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]
+                                one `PointerEvent` of that name
+                                (`pointerdown`, `pointermove`, `pointerup`,
+                                `pointercancel`, `pointerenter`,
+                                `pointerleave`, `pointerover`,
+                                `pointerout`) at the point `x`, `y`
+                                (default 0 0), CSS pixels from the top-left
+                                corner of the `box:` element's border box
+                                (default the element itself; a selector
+                                with no spaces); `pointerId` `n` (default
+                                1), `pointerType` `t` (`mouse`, the
+                                default, `pen`, `touch`, or `none` for
+                                `""`), primary unless `secondary`. It bubbles and
+                                is cancelable as the standard fires it:
+                                `pointerenter` and `pointerleave` do
+                                neither, `pointercancel` does not cancel.
+                                One whose default a handler prevented logs
+                                `(pointerdown's default prevented)` (or its
+                                name's). happy-dom has no layout, so every
+                                box is at 0 there and only Chrome shows a
+                                handler converting the point to its own
+                                box: name the point in the box of the
+                                element that has the handler, and both DOMs
+                                print the same transcript
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -387,7 +429,10 @@ project) against it, one step per line, `#` for a comment:
                                 standard's network error
     socket <n> open ["<protocol>"]
                                 the `n`-th WebSocket the page made opens,
-                                with that subprotocol (default none)
+                                with that subprotocol (default none); the
+                                protocol must be one the page offered, and a
+                                page that offered some must get one, since a
+                                host fails any other handshake
     socket <n> message "<text>" the server sends a text message
     socket <n> binary <bytes>   the server sends a binary message of that
                                 many bytes
@@ -404,6 +449,13 @@ project) against it, one step per line, `#` for a comment:
                                 insecure socket from an `https:` page
     sockets                     log `(sockets: <n>)`, the sockets the page
                                 made and has not closed
+    socket <n> wait <k>|open|closed
+                                with `--server` only: give the page what
+                                the host's socket did, one event at a time
+                                in order, until the socket has received
+                                `k` messages in all, has opened, or has
+                                closed; wait for the next event in real
+                                time, 5 s at most
     throws <step>               any step above, which must make the page
                                 throw: each uncaught exception is the line
                                 `(threw: <its first line>)`
@@ -502,6 +554,24 @@ dropped, as the host drops it, and logged. A socket still open when the
 script ends is not a failure: a page that keeps one is the normal case. Chrome ends a connection whose
 network dropped with `close` 1006 and no `error`; a script writes that as `socket <n> close 1006
 ""`, which is clean, since the page module does not read `wasClean`.
+
+**A page against a real server.** With `--server=127.0.0.1:<port>`
+(happy-dom only), the page driver opens the page from that address and gives
+it happy-dom's own `WebSocket` (which wraps the `ws` library) in place of the
+scripted one, so a socket the page opens to `/chat` reaches the server there.
+Node's `WebSocket` (undici) cannot serve, because it calls `unref` on what
+`setTimeout` returns, and the page's virtual clock returns a number. Each socket is still
+numbered and logged, and the scripted `socket` steps are refused. What the
+host's socket does is held, in order, and reaches the page only in a `socket
+<n> wait` step, each event in a task of its own, so a snapshot never depends
+on when the server answered. The socket's `bufferedAmount` is the host's at
+the time the page reads it, so no golden shows it (#632).
+`--wait-handshakes` tests that: after each step, the driver waits until the
+host has answered every socket's handshake, and lets the page settle again
+before the snapshot. The line of each step the driver has run goes to file
+descriptor 3. The serve driver's `page` steps start it so, with the program
+under test's port (`tests/blackbox/chat_example_test.zig`, `boundary.md`
+§9.11 (l)).
 
 **The page never leaves its document.** A navigation the page starts to
 another document — `location.assign`, `replace` or `reload`, a write to
@@ -740,94 +810,12 @@ control character, CRLF endings, a 1 MB line) are generated by a small Python
 one-liner so the bytes are exact; the generating script is not kept, the
 bytes are what is tested.
 
-## Budgets
+## Hang guard
 
-Every corpus case is held to the gates' instruction budget (CLAUDE.md, *Every test has a
-budget*), its own and its children's instructions. A case over it is made smaller, split or
-removed. The count is taken only on x86-64 Linux, of binaries built for the reference CPU, so it
-does not follow the features of the host's CPU; on another machine no case is held to it and
-`zig build gates` refuses to run. To see what each case costs, run `zig build
-test-blackbox-corpus -Dcorpus=<path> -Dtest-budget=1`: every case then fails with its count,
-except a case with its own `.budget` file, which keeps that limit. To count a granted case,
-move its `.budget` file aside for that run, and put it back after. The owner may grant a case
-its own budget, case by case: a **large program**, or a case whose cost comes from a **compiler
-defect with an open issue**, until the case fits 4 300M. The grant is a `.budget` file
-(`_expected.budget` in a project) whose first word is the limit in millions of instructions and
-whose rest says why and when it can go. A file without a reason fails the case. The file sets
-the budget of the page case only. A separately granted `[value fuzz]` case uses
-`.fuzz-budget` (`_expected.fuzz-budget` in a project); without that file it keeps the
-gates' budget. A page grant never extends to fuzz implicitly. A `.budget` or `.fuzz-budget` without a
-matching case fails the corpus inventory check, even outside a run filter. Granted so far:
-`browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour` (12 000M, 2026-10-08): the
-RealWorld app, whose release build alone is ~5 800M because of the release optimiser's
-`specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (6 300M) and `HttpJsonBody`
-(6 400M) (2026-10-14, issue #101), for the compiler defect #105: a `browser/direct/` page is four
-builds in one case, and `Http.expectJson` and `Http.jsonBody` reach the `core/Schema` library
-interpreter, which `specialise` processes in both release builds. Their limits are the count with
-Node running the pages plus 10%. On 2026-10-15 the owner also granted the large
-paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
-(measured 9 031M), and Sternhalma's separate value fuzz 12 600M (measured 11 387M).
-The paired Bike Wars page is granted 8 600M (measured 7 784M). TodoMVC's
-and Bike Wars' value fuzz retain the default budget (Bike Wars measured 4 225M). `browser/direct/ApiItems`
-is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page.
-`browser/direct/ApiLogin`
-is granted 4 870M (measured 4 420M; 2026-10-17, delegated, #323), until the specialiser's analysis
-rounds cost less. Outside the
-corpus, the two `.wasm` tests of `tests/blackbox/wasm_test.zig` have a grant of their own,
-6 000M, granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`) (CLAUDE.md, *Every test has a budget*).
-
-*Amended 2026-10-14 (the owner, Conduit paired runs):* the three direct Conduit
-page cases are granted 15 300M for four platform/build comparisons and fresh Node
-runs (3.17–3.23 s in the CPU fallback, plus 10%). Reader and Editor's separate
-value-fuzz cases are granted 4 900M (1.01–1.02 s with the fuzzer running, plus
-10%). Tour value fuzz keeps the global budget. These grants name the large
-unchanged application; remove them when its builds fit the global budget.
-
-*Amended 2026-10-15 (the owner):* those grants were sized from CPU time on a host without an
-instruction counter. Measured on the x86-64 Linux reference, the three pages cost 19 699–19 702M and
-the three value-fuzz cases 6 088–6 089M; they are re-granted 21 700M and 6 700M, Tour's fuzz included.
-
-*Amended 2026-10-16 (delegated grant, #206):* `ownership/Conduit`, the RealWorld app's ownership
-report, is granted 4 750M. `dump --stage=ownership` re-checks all of core from source, so the
-case grew with derived codecs' engine code in `core/Schema`: 4 248M on master, 4 317M after, and
-the grant adds 10%. Remove it when the dump installs the checked core's summaries (#214).
-
-*Amended 2026-10-19 (#423):* an ownership fixture beside a `.platform` file is now a case per
-platform it names, each budgeted on its own. `ownership/EntryValueCommand`'s grant (4 730M, #220,
-for its two platforms in one case) and `ownership/Conduit`'s (4 750M, #206) are withdrawn: each
-platform's case fits the default budget; `ownership/Conduit [browser-direct]` is the closest,
-at 97.5% of it, and goes with `browser-direct` (#423). A `.budget` beside a fixture with several
-tokens is read by every token's case, so its limit holds for each of them.
-
-*Amended 2026-10-19 (#423, delegated, #433):* the `browser/tea/` Conduit pages (Editor, Reader,
-Tour) carry a value-fuzz case in place of their `browser/direct/` copies', granted 11 300M each
-(measured 10 225–10 237M with the fuzzer running): two `--fuzz` builds of the app, development
-and release, the message types dump and the fuzz.
-
-*Amended 2026-10-19 (#423, delegated):* `browser/direct/` pages with no `browser/tea/` twin moved
-there, built for `browser-tea` alone. Re-measured with Node running (stale run hashes) on the
-x86-64 Linux reference: `browser/tea/Sternhalma` 4 723M and its value fuzz 5 072M, granted 5 200M
-and 5 600M (#435); `browser/tea/TodoPage` 4 404M and its value fuzz 4 685M, granted 4 850M and
-5 150M (#361). With their run hashes recorded, all four fit the default.
-
-*Amended 2026-10-19 (#423, the retirement of `browser-direct`):* every grant of a
-`browser/direct/` case went with its page: `HttpJson`, `HttpJsonBody`, `ApiItems`,
-`ApiLogin`, `TodoMVC`, the paired Conduit, Sternhalma, TodoPage and Bike Wars pages and their
-value fuzz, and `ownership/Conduit [browser-direct]`. The grants above that name a
-`browser/tea/` case stand. The active grant files now name only the three tea Conduit
-pages (12 000M each; their value fuzz 11 300M each), tea Sternhalma (5 200M;
-value fuzz 5 600M), and tea TodoPage (4 850M; value fuzz 5 150M), matching
-`CLAUDE.md`'s current list. Earlier paired-page figures above are historical grants.
-
-A project may also take its modules from outside the corpus: `_expected.sources` holds one
-repo-relative directory per line, whose `.beni` files together are the program, so several
-scripts can drive one application (`examples/conduit/src`), and a program whose modules live in
-two directories — one of them shared with another program through each manifest's `"paths"`,
-`examples/todo` — is one fixture (`run/TodoServer`, `browser/tea/TodoPage`). Every
-directory's subdirectories are walked too, each file copied at its relative path, and the build
-is then given `--root=.`, so `Math/Vector2.beni` is the module `Math.Vector2`
-(`examples/bike-wars/src`). The `ownership/` and `writes/` kinds hand the compiler one path, so
-there the file holds one line (issue #359).
+Every corpus case has its own 120-second wall-clock timeout, including each
+value-fuzz or platform case independently. A timeout fails and names the case.
+A corpus kind is a suite and has no shared deadline. Performance claims belong
+in `test-perf` and `bench`.
 
 ## Golden discipline
 
@@ -894,16 +882,3 @@ external application. The enforcing `check` and ownership dump use that same
 source directory and the project's `.platform` entries; the intent `.beni`
 file only lets the walker discover the project. Conduit pins its complete
 report this way, independently of its still-pending document helper lowering.
-
-*Amended 2026-10-14 (budget fallback):* the build graph retains the configured
-instruction limit separately when it selects CPU accounting. Owner-granted
-case budgets scale the CPU fallback by that limit, as they do when a running
-instruction counter becomes unavailable. This corrects lost budget provenance
-on hosts without counters; neither the global nor any granted limit changes.
-
-*Superseded on rebase, 2026-10-15:* the historical CPU-fallback amendment
-above predates master’s reference-build instruction budget. Current `gates`
-requires a suitable x86-64 Linux counter and refuses unsupported hosts; the
-other test steps run without a budget there, as CLAUDE.md now specifies. The
-Conduit grants retain their original owner-approved limits and measured CPU
-provenance; that evidence is not a hardware instruction-budget verification.

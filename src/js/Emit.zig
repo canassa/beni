@@ -94,6 +94,7 @@ const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const EdgePack = @import("EdgePack.zig");
+const EmitPack = @import("EmitPack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaValid = @import("SchemaValid.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
@@ -130,7 +131,29 @@ pub const Item = struct {
     /// `run`, which outlives the render. `file` and `token` are ignored
     /// when this is set.
     at: ?Session.At = null,
+    /// An error, unless the code is a `warning` (`exports_ignored`).
+    severity: diagnostic.Severity = .@"error",
 };
+
+/// A platform manifest's `"exports"` (`boundary.md` §5.2, amended
+/// 2026-10-20; §9.12 (c)): the mode it declares, or a list, which only an
+/// app's manifest may hold (`unknown_exports_mode` either way, unless the
+/// mode is `program`).
+pub const ExportsDecl = union(enum) { none, mode: []const u8, list };
+
+/// The one mode the compiler knows: the entry file's `default` export and
+/// its named exports are what `run(main)` returns.
+pub const exports_program = "program";
+
+/// The entry file's own bindings under that mode (`boundary.md` §9.12 (c)),
+/// longer than any short name `Rename` spells, so no hoisted declaration
+/// can take them (`emitEntryExporting` asserts it). A listed name is
+/// written only as an export name, a namespace of its own that a binding
+/// never meets, and inside `exports("…")`, where `exportNameIsLegal`'s
+/// ASCII identifier needs no escaping; widen the name rule and that call
+/// needs `jsString`.
+const entry_program_binding = "$beniProgram";
+const entry_export_binding = "$beniExport";
 
 /// What the platform chain tells the emitter (boundary.md §5.2, §9.1): each
 /// output key taken from the first package of the chain that declares it.
@@ -188,6 +211,17 @@ pub const Platform = struct {
     /// The URL path the output is served under (`frontend.md` §10.1): a
     /// page shell's `{{base}}`, and what `{{entry}}` begins with.
     base: []const u8 = "/",
+    /// The chain's `"exports"` (`boundary.md` §5.2, amended 2026-10-20), and
+    /// the root of the package that declared it, where a fault in it is
+    /// reported. Checked by `checkEntryExports` before anything is built.
+    exports: ExportsDecl = .none,
+    exports_root: []const u8 = "",
+    /// The app manifest's `"exports"` list (`frontend.md` §10.1): the entry
+    /// file's named exports, in this order, each the answer of the runtime's
+    /// `exports(name)`. Empty when the app lists none; `app_root` is the
+    /// directory of the manifest that listed them.
+    entry_exports: []const []const u8 = &.{},
+    app_root: []const u8 = ".",
 };
 
 /// The page shell's output name (§2, *The page shell*). No `_`: every
@@ -353,6 +387,7 @@ pub fn run(
     // whatever the program does, and `--library` — which writes no entry
     // file at all — must not be the way to find out it is fine.
     try e.checkEntryFileName();
+    try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
@@ -364,7 +399,7 @@ pub fn run(
     // list has the entry declaration in it and §9 roots a library at its
     // export list — `Reach.collectRoots` says why at length.
     const entry = if (options.library) null else try e.findEntry();
-    if (e.diagnostics.items.len != 0 or (entry == null and !options.library)) return e.nothingWritten(gpa);
+    if (e.hasErrors() or (entry == null and !options.library)) return e.nothingWritten(gpa);
 
     // §9's reachability walk, between `findEntry` and `emitModules` and
     // BEFORE lowering: an unreachable declaration is then never lowered at
@@ -391,7 +426,7 @@ pub fn run(
     // runtime of a lowering, and a chain that names none has nothing to
     // bind it to.
     try e.refuseMarkupWithoutLowering();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
 
     // §9's *The release optimiser*: a `--release` build that still reaches
     // `Debug` is refused (the owner's decision, 2026-09-19). Here and not
@@ -399,7 +434,7 @@ pub fn run(
     // and not later, because nothing may be lowered or written.
     if (options.release and !options.allow_debug) {
         try e.refuseDebug();
-        if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+        if (e.hasErrors()) return e.nothingWritten(gpa);
     }
 
     try e.openDebugContext();
@@ -412,7 +447,7 @@ pub fn run(
     try e.emitModules(entry);
     // A module the lowering refused (`not_implemented`) roots none of the
     // runtime the entry would import, so a release build cannot spell it.
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // A scope-hoisted build wrote the hand-written files and the entry into
     // its one file already (§9, *One scope-hoisted file under `--release`*).
     if (!e.hoisted) {
@@ -424,15 +459,15 @@ pub fn run(
     try e.emitDirectPlan();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // A symbolic link where the build would write is somebody else's, and
     // writing its path would write wherever it points.
     try e.refuseLinks();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
     // §2's record, read before the first byte is written: a
     // `_manifest.txt` that is not beni's is somebody's file.
     const previous = try e.readRecord();
-    if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
+    if (e.hasErrors()) return e.nothingWritten(gpa);
 
     const write_token = session.profile.begin();
     try e.flush(previous);
@@ -471,6 +506,7 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
     // A broken platform is broken for `check` too, and this is the check a
     // platform author runs before committing (`frontend.md` §1).
     try e.checkEntryFileName();
+    try e.checkEntryExports();
     try e.checkLowering();
     try e.checkForeignShapes();
     try e.checkSiblings();
@@ -1244,6 +1280,12 @@ const Emitter = struct {
     /// (`src/platform.zig`), and this is the same honesty inside a
     /// diagnostic.
     fn reportInFile(e: *Emitter, code: diagnostic.Code, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
+        return e.reportInFileAs(code, .@"error", at, fmt, args);
+    }
+
+    /// `reportInFile` with the severity given: a `warning` never refuses
+    /// the build (`hasErrors`).
+    fn reportInFileAs(e: *Emitter, code: diagnostic.Code, severity: diagnostic.Severity, at: Session.At, comptime fmt: []const u8, args: anytype) !void {
         const message = try std.fmt.allocPrint(e.gpa, fmt, args);
         errdefer e.gpa.free(message);
         try e.diagnostics.append(e.gpa, .{
@@ -1252,7 +1294,16 @@ const Emitter = struct {
             .token = 0,
             .message = message,
             .at = at,
+            .severity = severity,
         });
+    }
+
+    /// Whether a diagnostic that refuses the build has been reported. A
+    /// `warning` (`exports_ignored`) never refuses one: the build goes on
+    /// and writes what it would have written (CLAUDE.md rule 7).
+    fn hasErrors(e: *const Emitter) bool {
+        for (e.diagnostics.items) |d| if (d.severity == .@"error") return true;
+        return false;
     }
 
     /// `boundary.md` §4's *a diagnostic points at the file whose text is
@@ -3689,7 +3740,6 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .seeds = e.fuzz_seeds,
         });
-        if (e.boundary) |*b| try e.pinShapeFields(b);
     }
 
     /// `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type
@@ -3719,33 +3769,6 @@ const Emitter = struct {
         });
     }
 
-    /// `boundary.md` §4, *Types a shape reads keep their names*: every field
-    /// of every record a live shape reads, through references and variants'
-    /// payloads, keeps its source text, because the one generic reader
-    /// copies a validated object into a record by those names. Walked in
-    /// module and declaration order, keyed by text (CLAUDE.md rule 5).
-    fn pinShapeFields(e: *Emitter, b: *Fields.Boundary) Allocator.Error!void {
-        const sg = &(e.schema_graph orelse return);
-        for (0..e.graph().count()) |mi| {
-            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
-            for (0..e.reach.schemaSlots(m)) |decl| {
-                if (!e.live.schema(m, decl, .shape)) continue;
-                const d = sg.definition(m, @intCast(decl)) orelse continue;
-                const plan = sg.planOf(m);
-                var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
-                try SchemaGraph.subtree(plan, e.scratch, d.root, &nodes);
-                for (nodes.items) |n| {
-                    if (SchemaGraph.tag(plan, n) != .record) continue;
-                    for (SchemaGraph.fields(plan, n)) |f| {
-                        const text = e.session.interner.slice(SchemaGraph.symbol(plan, f.name));
-                        const gop = try b.pinned.getOrPut(e.scratch, text);
-                        if (!gop.found_existing) gop.key_ptr.* = try e.scratch.dupe(u8, text);
-                    }
-                }
-            }
-        }
-    }
-
     /// §4, *`Debug.toString` reads the argument's type*: every module's
     /// `Bir`, for the typed printer's descriptors, when any module has a
     /// debug row (checker-v2.md §32). Read-only, so the lowering workers
@@ -3770,6 +3793,63 @@ const Emitter = struct {
         return false;
     }
 
+    /// Complete record facts, independent of reachability of object literals.
+    /// Checker rows include nested/instantiated records and ctor payloads;
+    /// BIR supplies embedded core/platforms and alias constructors; plans
+    /// supply shape copies and validator workers. Unknown updates extend
+    /// nothing safely colourable: every written field conflicts globally.
+    fn fieldConflicts(e: *Emitter, counts: []const Fields.Count) !Fields.Conflicts {
+        var g = try Fields.Conflicts.init(e.scratch, counts);
+        var names: std.ArrayList([]const u8) = .empty;
+        for (e.session.checked.type_keys) |*a| {
+            for (a.records) |r| {
+                names.clearRetainingCapacity();
+                for (a.record_labels[r.fields.start..][0..r.fields.len]) |name| try names.append(e.scratch, e.session.interner.slice(name));
+                try g.record(names.items, r.open);
+            }
+        }
+        if (e.rep_keys) |*r| for (r.nodes.items) |n| {
+            if (n.kind != .record) continue;
+            names.clearRetainingCapacity();
+            for (r.labels.items[n.value..][0..n.len]) |name| try names.append(e.scratch, e.session.interner.slice(name));
+            try g.record(names.items, false);
+        };
+        for (0..e.graph().count()) |mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
+            const module_bir = e.bir(m);
+            for (module_bir.insts.items(.tag), 0..) |tag, ii| {
+                const inst: Bir.Inst.Index = @fromBackingInt(@intCast(ii));
+                const d = module_bir.instData(inst);
+                const fs = switch (tag) {
+                    .record, .type_record => module_bir.extraSlice(Bir.inlineRange(d), Bir.Field),
+                    .record_update, .type_record_ext => module_bir.extraSlice(module_bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field),
+                    else => continue,
+                };
+                names.clearRetainingCapacity();
+                for (fs) |field| try names.append(e.scratch, e.session.interner.slice(module_bir.symbol(field.name)));
+                var open = tag == .record_update or tag == .type_record_ext;
+                if (tag == .record_update and mi < e.session.checked.type_keys.len) {
+                    const a = &e.session.checked.type_keys[mi];
+                    if (a.instKey(inst)) |ik| if (ik.key != .wild and a.nodes[ik.key.int()].kind == .record) {
+                        names.clearRetainingCapacity();
+                        for (a.labelsOf(ik.key)) |name| try names.append(e.scratch, e.session.interner.slice(name));
+                        open = false;
+                    };
+                }
+                try g.record(names.items, open);
+            }
+        }
+        for (e.session.checked.plans) |*plan| {
+            for (plan.nodes.items(.tag), 0..) |tag, ni| {
+                if (tag != .record) continue;
+                names.clearRetainingCapacity();
+                for (SchemaGraph.fields(plan, @fromBackingInt(@intCast(ni)))) |field| try names.append(e.scratch, e.session.interner.slice(SchemaGraph.symbol(plan, field.name)));
+                try g.record(names.items, false);
+            }
+        }
+        return g;
+    }
+
     /// §9, *Item 4, taken up*: every record field's short spelling, from the
     /// optimised trees of every module, in module order. A field keeps its
     /// text when the boundary pins it or when the build also writes it as a
@@ -3781,6 +3861,8 @@ const Emitter = struct {
     fn assignFields(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) !void {
         e.field_table = null;
         const boundary = &(e.boundary orelse return);
+        const ObjectFields = struct { names: []const []const u8, open: bool };
+        var object_fields: std.ArrayList(ObjectFields) = .empty;
         var uses: std.StringArrayHashMapUnmanaged(u32) = .empty;
         var plain: std.StringHashMapUnmanaged(void) = .empty;
         var stack: std.ArrayList(JsIr.Node.Index) = .empty;
@@ -3798,9 +3880,22 @@ const Emitter = struct {
                 seen.set(node.int());
                 try Spec.pushChildren(e.scratch, ir, node, &stack);
                 const d = ir.data(node);
+                if (ir.tag(node) == .object) {
+                    var spread = false;
+                    var names: std.ArrayList([]const u8) = .empty;
+                    for (ir.extraSlice(JsIr.inlineRange(d), JsIr.Node.Index)) |prop| {
+                        if (ir.tag(prop) == .spread_property) spread = true;
+                        if (ir.tag(prop) != .property) continue;
+                        const name = ir.name(@fromBackingInt(@intCast(ir.data(prop).lhs)));
+                        if (name.module == .none and name.isField()) try names.append(e.scratch, try e.scratch.dupe(u8, slot.overlay.slice(name.base)));
+                    }
+                    const key = ir.nodeKey(node);
+                    const closed = if (e.rep_keys) |*r| key != .wild and key.int() < r.nodes.items.len and r.nodes.items[key.int()].kind == .record else false;
+                    try object_fields.append(e.scratch, .{ .names = names.items, .open = spread and !closed });
+                }
                 const index: JsIr.NameIndex = switch (ir.tag(node)) {
                     .member => @fromBackingInt(@intCast(d.rhs)),
-                    .property => @fromBackingInt(@intCast(d.lhs)),
+                    .property, .field_name => @fromBackingInt(@intCast(d.lhs)),
                     else => continue,
                 };
                 const n = ir.name(index);
@@ -3820,7 +3915,9 @@ const Emitter = struct {
         }
         const counts = try e.scratch.alloc(Fields.Count, uses.count());
         for (counts, uses.keys(), uses.values()) |*c, text, n| c.* = .{ .text = text, .uses = n };
-        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain);
+        var conflicts = try e.fieldConflicts(counts);
+        for (object_fields.items) |obj| try conflicts.record(obj.names, obj.open);
+        e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
     }
 
     /// §9's elimination: every module's edge lists, on the workers, then
@@ -4492,7 +4589,7 @@ const Emitter = struct {
             }
         }
         if (hoist) |*h| {
-            if (e.diagnostics.items.len == 0) try e.linkHoisted(slots, h);
+            if (!e.hasErrors()) try e.linkHoisted(slots, h);
         } else if (uses_runtime) try e.emitDerivedRuntime();
     }
 
@@ -4537,6 +4634,13 @@ const Emitter = struct {
         effect_keep: []const JsIr.Node.Index = &.{},
         pure_discards: []const JsIr.Node.Index = &.{},
         mutable: []const JsIr.NameIndex = &.{},
+        /// Units this module spliced from its emit row, and units it lowered
+        /// while the row was available (`Lower.Result`, `backend.md` §9,
+        /// *What the counters say*). Kept here because a development build
+        /// frees the lowering after printing; tallied in module order by
+        /// `countLowered`.
+        embedded_units: u32 = 0,
+        lowered_units: u32 = 0,
         /// The module's bytes, gpa-owned until `produceOwned` takes them.
         text: ?[]u8 = null,
         rename_failure: ?Rename.Failure = null,
@@ -4628,10 +4732,49 @@ const Emitter = struct {
     /// A module whose first lowering the second took (`ModuleSlot.adopted`)
     /// is not lowered again, and is not counted again (#608).
     fn countLowered(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) void {
+        var embedded: u64 = 0;
+        var lowered: u64 = 0;
         for (todo) |i| {
-            if (!slots[i].adopted) e.session.profile.addCounter(.modules_lowered, 1);
+            if (!slots[i].adopted) {
+                e.session.profile.addCounter(.modules_lowered, 1);
+                embedded += slots[i].embedded_units;
+                lowered += slots[i].lowered_units;
+            }
             if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
         }
+        e.session.profile.addCounter(.emit_units_embedded, embedded);
+        e.session.profile.addCounter(.emit_units_lowered, lowered);
+    }
+
+    /// One unit spliced from an emit row (`backend.md` §9, *The join*): its
+    /// text and marks are the row's; its name identities are numbered into
+    /// the module's one map here, in the order printing the unit would have
+    /// numbered them (the marks' order, then any identity only the row's
+    /// `introduced` list names).
+    fn cachedPiece(context: *Print.Context, lowered: *const Lower.Result, at: u32, scratch: Allocator) Allocator.Error!Join.Piece {
+        const row = lowered.row.?;
+        const unit = row.units[at];
+        // Number the names in the order the unit prints them. A source map
+        // mark names the declaration whose name the printer gave, so the
+        // mark order is the first-occurrence order the uncached module
+        // numbers in; `introduced` is the same list (Context's name delta),
+        // and the second loop catches a name that has no mark this build
+        // prints. Numbering `introduced` first would put a name whose
+        // canonical first unit is dead behind one whose first unit is still
+        // here, and the map's `names` array would not be byte-identical.
+        const marks = try scratch.alloc(SourceMap.Mapping, unit.marks.len);
+        for (marks, unit.marks) |*mark, encoded| {
+            mark.* = .{
+                .generated = encoded.generated,
+                .source = encoded.source,
+                .name = if (encoded.name == EmitPack.no_name)
+                    SourceMap.Mapping.no_name
+                else
+                    try context.numberName(lowered.row_names[encoded.name]),
+            };
+        }
+        for (unit.introduced) |ident| _ = try context.numberName(lowered.row_names[ident]);
+        return .{ .text = row.text[unit.start..][0..unit.len], .mappings = marks };
     }
 
     /// What a worker runs per module.
@@ -4665,9 +4808,11 @@ const Emitter = struct {
                 const first = &slot.lowered.?;
                 return t.printDevelopment(w, i, first, slot.units, slot.head_len, slot.tail_len, slot.unobserved);
             }
-            slot.lowered = try t.lowerModule(scratch, i, &slot.overlay);
+            slot.lowered = try t.lowerModule(scratch, i, &slot.overlay, true);
             const lowered = &slot.lowered.?;
             if (lowered.diagnostics.len != 0) return;
+            slot.embedded_units = lowered.embedded_units;
+            slot.lowered_units = lowered.lowered_units;
             slot.uses_runtime = lowered.uses_runtime;
             slot.uses_markup_runtime = lowered.uses_markup_runtime;
             const exports = try w.kept.allocator().alloc([]const u8, lowered.markup_exports.len);
@@ -4693,6 +4838,9 @@ const Emitter = struct {
                     slot.head_len = lowered.head_len;
                     slot.tail_len = lowered.tail_len;
                     slot.unobserved = try kept.dupe(JsIr.Node.Index, lowered.unobserved);
+                    // The counters were set above, from this lowering; the
+                    // second round counts an adopted slot once (its first
+                    // lowering), not again (`countLowered`).
                     return;
                 }
                 return t.printDevelopment(w, i, lowered, lowered.units, lowered.head_len, lowered.tail_len, lowered.unobserved);
@@ -4718,7 +4866,7 @@ const Emitter = struct {
             const scratch = w.module.allocator();
             var overlay: InternPool.Overlay = .init(&e.session.interner);
             defer overlay.deinit(e.gpa);
-            var again = try t.lowerModule(scratch, i, &overlay);
+            var again = try t.lowerModule(scratch, i, &overlay, false);
             defer again.deinit(e.gpa);
             const kept = &slot.lowered.?;
             const same = again.diagnostics.len == 0 and kept.diagnostics.len == 0 and
@@ -4739,19 +4887,44 @@ const Emitter = struct {
             });
         }
 
-        /// `Bir` → `JsIr` for module `i`, into `overlay`.
-        fn lowerModule(t: Task, scratch: Allocator, i: u32, overlay: *InternPool.Overlay) Allocator.Error!Lower.Result {
+        /// `Bir` → `JsIr` for module `i`, into `overlay`. `read_rows` is
+        /// false for a lowering made only to compare with the one the build
+        /// took (`crossCheck`): it must have the same fresh units.
+        fn lowerModule(t: Task, scratch: Allocator, i: u32, overlay: *InternPool.Overlay, read_rows: bool) Allocator.Error!Lower.Result {
             const e = t.e;
             const slot = &t.slots[i];
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
+            // A development build reads the row the binary carries for this
+            // module, if it has one (`backend.md` §9, *The join*). A
+            // release build reads no row: its bytes come from the release
+            // optimiser, not from development text.
+            var reuse: ?*const EmitPack.Row = null;
+            // Walk 1 is untouched (`lower_only`): its one purpose is what
+            // the module uses of the runtime module, and it prints nothing.
+            // The cross-check (`crossCheck`) lowers a module again only to
+            // compare trees, so it reads no row either: its units are fresh
+            // and must compare with the first lowering's.
+            if (read_rows and !t.lower_only and !e.options.release and e.session.packCovers(file) and e.session.keys.isCacheable(m)) {
+                const key = EmitPack.key(e.session.keys.of(m), .{ .schema_library = e.options.schema_library });
+                if (e.session.pack.find(.emit, key)) |bytes| {
+                    if (try EmitPack.decode(scratch, bytes)) |decoded| {
+                        const row = try scratch.create(EmitPack.Row);
+                        row.* = decoded;
+                        reuse = row;
+                    }
+                }
+            }
             return Lower.lower(e.gpa, scratch, overlay, .{
                 .bir = e.bir(m),
+                .birs = e.reach.birs,
+                .provenance = e.session.resolution.provenance,
                 .token_starts = e.session.artifacts.spans(file).starts,
                 .module = m,
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
                 .dispatch = e.dispatchOf(m),
+                .ownership = e.session.checked.hoists[m.int()],
                 .types = &e.session.checked.types,
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,
@@ -4771,6 +4944,7 @@ const Emitter = struct {
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,
                 .rep_keys = if (e.rep_keys) |*k| k else null,
+                .reuse = reuse,
             }) catch |err| switch (err) {
                 // No recorder is set here, so no ask can overflow one
                 // (`Funnel.Recorder`); the pack maker, the only caller that
@@ -4806,7 +4980,15 @@ const Emitter = struct {
             var pieces: std.ArrayList(Join.Piece) = .empty;
             try pieces.ensureTotalCapacity(scratch, units.len + 2);
             pieces.appendAssumeCapacity(try context.printRange(0, head_len));
-            for (units) |unit| pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
+            for (units) |unit| {
+                // A unit the plan took whole is the row's bytes and marks;
+                // every other one is printed from this lowering.
+                if (unit.row) |at| {
+                    pieces.appendAssumeCapacity(try cachedPiece(&context, lowered, at, scratch));
+                } else {
+                    pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
+                }
+            }
             const body = context.bodyLen();
             pieces.appendAssumeCapacity(try context.printRange(body - tail_len, body));
             const joined = try Join.join(e.gpa, scratch, pieces.items, slot.map_footer);
@@ -5067,7 +5249,24 @@ const Emitter = struct {
         const declared_before = try e.scratch.alloc(bool, ids.count());
         @memset(declared_before, false);
         for (modules.items) |mod| topDeclared(mod.ir, mod.global, declared_before);
+        // Per record representation and property of the program, the key of
+        // that field (`backend.md` §9, *Declared-type filtering of fact 3*,
+        // amended for #722): what a site of the record holds under the key.
+        var field_keys: std.ArrayList(Spec.FieldKey) = .empty;
+        if (e.rep_keys) |*r| for (r.nodes.items, 0..) |n, i| {
+            if (n.kind != .record or i >= r.reps.items.len or r.reps.items[i] != i) continue;
+            for (r.labels.items[n.value..][0..n.len], r.args.items[n.start..][0..n.len]) |label, child| {
+                // A function is keyed by what it returns (`RepKeys`), so a
+                // field of function type filters nothing.
+                if (child >= r.nodes.items.len or r.nodes.items[child].kind == .function) continue;
+                const id = props.get(e.session.interner.slice(label)) orelse continue;
+                try field_keys.append(e.scratch, .{ .record = @intCast(i), .prop = id, .key = @fromBackingInt(child) });
+            }
+        };
+        std.mem.sortUnstable(Spec.FieldKey, field_keys.items, {}, Spec.FieldKey.lessThan);
+        var spec_workers: SpecWorkers = .{ .e = e };
         const stats = try Spec.run(e.gpa, e.scratch, .{
+            .parallel = .{ .context = &spec_workers, .run = SpecWorkers.run },
             .modules = modules.items,
             .globals = ids.count(),
             .props = props.count(),
@@ -5082,6 +5281,7 @@ const Emitter = struct {
             .one_scope = one_scope,
             .trace_largest = e.options.points_to_largest,
             .rep_keys = if (e.rep_keys) |*k| k else null,
+            .field_keys = field_keys.items,
             .fresh = (try e.session.interner.getOrPut(e.gpa, "$i")).toOptional(),
             .insert_before = if (props.get("insertBefore")) |id| .{
                 .insert_before = id,
@@ -5090,15 +5290,11 @@ const Emitter = struct {
         });
         const profile = &e.session.profile;
         profile.addCounter(.spec_lists_examined, stats.lists_examined);
-        profile.addCounter(.spec_analyses, stats.analyses);
-        profile.addCounter(.spec_sweeps, stats.sweeps);
+        profile.addCounter(.spec_solves, stats.solves);
         profile.addCounter(.spec_points_to_runs, stats.points_to_runs);
         profile.addCounter(.spec_points_to_reused, stats.points_to_reused);
         profile.addCounter(.spec_points_to_sweeps, stats.points_to_sweeps);
         profile.addCounter(.spec_passes, stats.passes);
-        profile.addCounter(.spec_analyses_declined, stats.analyses_declined);
-        profile.addCounter(.spec_points_to_declined, stats.points_to_declined);
-        profile.addCounter(.spec_rounds_capped, stats.rounds_capped);
         profile.addCounter(.spec_passes_capped, stats.passes_capped);
         profile.addCounter(.spec_init_capped, stats.init_capped);
         profile.addCounter(.spec_inline_capped, stats.inline_capped);
@@ -5112,6 +5308,13 @@ const Emitter = struct {
         profile.addCounter(.spec_pts_load_cells, stats.pts_load_cells);
         profile.addCounter(.spec_pts_joins, stats.pts_joins);
         profile.addCounter(.spec_pts_joins_empty, stats.pts_joins_empty);
+        profile.addCounter(.spec_solve_extracted, stats.solve_extracted);
+        profile.addCounter(.spec_solve_kept, stats.solve_kept);
+        profile.addCounter(.spec_solve_constraints, stats.solve_constraints);
+        profile.addCounter(.spec_solve_evaluations, stats.solve_evaluations);
+        profile.addCounter(.spec_solve_budget_hit, stats.solve_budget_hit);
+        profile.addCounter(.spec_solve_stmts_walked, stats.solve_stmts_walked);
+        profile.addCounter(.spec_solve_stmts_kept, stats.solve_stmts_kept);
         if (stats.pts_largest) |o| try e.reportLargest(o, stats.pts_largest_sites, slots, spec_slots.items, &ids, &props);
         var k: usize = 0;
         for (todo) |i| {
@@ -5426,7 +5629,6 @@ const Emitter = struct {
             .seeds = e.fuzz_seeds,
         }) orelse return;
         boundary.pinned = refined.pinned;
-        try e.pinShapeFields(boundary);
     }
 
     /// §9 item 2's whole-program namespace, numbered serially and in module
@@ -6160,14 +6362,28 @@ const Emitter = struct {
         const run_name = if (e.suppliedAs("run") != null)
             try e.moduleSpelling(e.runtime_module.?, "run")
         else if (runtime.?.declined) "run" else runtime.?.spelling(runtime.?.read.exportBinding("run").?);
-        try out.print(scratch, "{s}({s});", .{ run_name, main_name });
+        if (e.exportsProgram()) {
+            // `boundary.md` §9.12 (c): the hoisted file exports what `run`
+            // returns. The bindings are longer than any short name `Rename`
+            // spells (8 characters at most), so no hoisted declaration can
+            // take them.
+            const prog = entry_program_binding;
+            const exp = entry_export_binding;
+            try out.print(scratch, "const {s}={s}({s});export default {s}.default;", .{ prog, run_name, main_name, prog });
+            for (e.options.platform.entry_exports, 0..) |name, i| {
+                try out.print(scratch, "const {s}{d}={s}.exports(\"{s}\");export{{{s}{d} as {s}}};", .{ exp, i, prog, name, exp, i, name });
+            }
+        } else try out.print(scratch, "{s}({s});", .{ run_name, main_name });
 
         // The program runtime's `flush` (§15.11) is the page's to call, not
         // the program's: a test harness (`tests/browser/driver.mjs`) or an
         // embedding page flushes a render at once through it. It stays an
         // export of the module the page loads, which is now this one, when
         // the runtime's render loop kept it — or the runtime module's, when
-        // it supplies `flush` and something reached it.
+        // it supplies `flush` and something reached it. A listed name may
+        // therefore not be `flush` (`checkEntryExports`): the two exports
+        // would share the file, and a module that exports one name twice
+        // does not load.
         if (e.suppliedAs("flush") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "flush"))) |ordinal| {
                 var buf: [8]u8 = undefined;
@@ -6181,7 +6397,9 @@ const Emitter = struct {
                 try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
         // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17),
-        // the runtime module's, exported as `flush` is.
+        // the runtime module's, exported as `flush` is. Only a runtime
+        // module supplies `stop`, and the exports mode refuses a runtime
+        // module, so no listed name can meet it: `stop` stays listable.
         if (e.suppliedAs("stop") != null) {
             if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
                 var buf: [8]u8 = undefined;
@@ -6359,6 +6577,34 @@ const Emitter = struct {
         const by_work = std.math.divCeil(usize, work, per) catch unreachable;
         return @max(@as(usize, if (e.session.options.size_by_work) 1 else 2), by_work);
     }
+
+    /// `Spec.Parallel` on the emit workers: the combined solver's
+    /// extraction (`backend.md` §9, *The combined solver — Where it runs*),
+    /// one module per item, in the worker's `module` arena.
+    const SpecWorkers = struct {
+        e: *Emitter,
+
+        fn run(
+            context: *anyopaque,
+            items: []const u32,
+            work: usize,
+            task: *const anyopaque,
+            call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
+        ) Allocator.Error!void {
+            const sw: *SpecWorkers = @ptrCast(@alignCast(context));
+            const Job = struct {
+                task: *const anyopaque,
+                call: *const fn (task: *const anyopaque, scratch: Allocator, item: u32) Allocator.Error!void,
+
+                fn each(j: @This(), w: *Worker, item: u32) Allocator.Error!void {
+                    return j.call(j.task, w.module.allocator(), item);
+                }
+            };
+            // Threads by the nodes to extract, as the other rounds size
+            // theirs: each keeps its scratch for the rest of the phase.
+            try sw.e.pool.run(items, Job{ .task = task, .call = call }, Job.each, sw.e.wanted(work, nodes_per_extractor));
+        }
+    };
 
     /// One emit worker's own memory. Nothing in it is shared: a worker
     /// reads the session and writes the slot of the item it took.
@@ -6670,6 +6916,9 @@ const Emitter = struct {
         // hand-written JavaScript (`boundary.md` §5.2).
         const imported = e.entryName(entry) orelse qualified.items;
         const start = try e.startData();
+        // `checkEntryExports` has refused the one chain this cannot serve,
+        // a runtime module, so `exportsProgram` here means a runtime file.
+        if (e.exportsProgram()) return e.emitEntryExporting(entry, runtime_path, module_path, imported, start);
         if (e.runtime_module) |module| return e.emitEntryWithModule(entry, module, imported, start);
 
         // The header comment is a development affordance: it says which
@@ -6723,6 +6972,75 @@ const Emitter = struct {
         // by `checkEntryFileName`), so the manifest is what a collision
         // would have to name: no beni source asked for this file.
         try e.produce(e.options.platform.entry, text, try e.manifestPath());
+    }
+
+    /// Whether the chain declares `"exports": "program"` (`boundary.md`
+    /// §5.2, amended 2026-10-20): the entry file then exports what
+    /// `run(main)` returns. `checkEntryExports` has refused any other mode.
+    fn exportsProgram(e: *Emitter) bool {
+        return switch (e.options.platform.exports) {
+            .mode => |mode| std.mem.eql(u8, mode, exports_program),
+            else => false,
+        };
+    }
+
+    /// The entry file of a chain that declares `"exports": "program"`
+    /// (`boundary.md` §9.12 (c)): `run(main)`'s result is held, its
+    /// `default` is the default export, and each name the app's manifest
+    /// lists is the answer of its `exports(name)`, called once at load. The
+    /// entry's own bindings begin with `$`, which no listed name may hold,
+    /// and are longer than any short name `Rename` spells; a listed name is
+    /// written only in an `export { … as Name }` clause, where any
+    /// identifier name is legal — so no name collides with `run`, `main`, a
+    /// release build's short name, or a reserved word.
+    fn emitEntryExporting(e: *Emitter, entry: Entry, runtime_path: []const u8, module_path: []const u8, imported: []const u8, start: ?StartData) !void {
+        _ = entry;
+        // The bindings must be longer than any short name `Rename.spell`
+        // writes into its `[8]u8` buffer, since the hoisted release file
+        // puts them in one scope with the short names.
+        comptime std.debug.assert(entry_program_binding.len > 8 and entry_export_binding.len > 8);
+        const release = e.options.release;
+        var text: std.ArrayList(u8) = .empty;
+        if (!release) try text.appendSlice(e.scratch,
+            \\// Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
+            \\// the platform's output shape asks for.
+            \\
+        );
+        if (start) |s| if (std.mem.eql(u8, s.path, runtime_path)) {
+            // The program runtime's own `start`: one import names both.
+            if (release)
+                try text.print(e.scratch, "import{{run as $run,start as $start}}from\"./{s}\";\n", .{runtime_path})
+            else
+                try text.print(e.scratch, "import {{ run as $run, start as $start }} from \"./{s}\";\n", .{runtime_path});
+        } else {
+            if (release)
+                try text.print(e.scratch, "import{{run as $run}}from\"./{s}\";\nimport{{start as $start}}from\"./{s}\";\n", .{ runtime_path, s.path })
+            else
+                try text.print(e.scratch, "import {{ run as $run }} from \"./{s}\";\nimport {{ start as $start }} from \"./{s}\";\n", .{ runtime_path, s.path });
+        } else {
+            if (release)
+                try text.print(e.scratch, "import{{run as $run}}from\"./{s}\";\n", .{runtime_path})
+            else
+                try text.print(e.scratch, "import {{ run as $run }} from \"./{s}\";\n", .{runtime_path});
+        }
+        if (release)
+            try text.print(e.scratch, "import{{{s} as $main}}from\"./{s}\";\n", .{ imported, module_path })
+        else
+            try text.print(e.scratch, "import {{ {s} as $main }} from \"./{s}\";\n\n", .{ imported, module_path });
+        if (start) |s| try text.print(e.scratch, "$start({s});\n", .{s.data});
+        const prog = entry_program_binding;
+        const exp = entry_export_binding;
+        if (release)
+            try text.print(e.scratch, "const {s}=$run($main);\nexport default {s}.default;\n", .{ prog, prog })
+        else
+            try text.print(e.scratch, "const {s} = $run($main);\nexport default {s}.default;\n", .{ prog, prog });
+        for (e.options.platform.entry_exports, 0..) |name, i| {
+            if (release)
+                try text.print(e.scratch, "const {s}{d}={s}.exports(\"{s}\");\nexport{{{s}{d} as {s}}};\n", .{ exp, i, prog, name, exp, i, name })
+            else
+                try text.print(e.scratch, "const {s}{d} = {s}.exports(\"{s}\");\nexport {{ {s}{d} as {s} }};\n", .{ exp, i, prog, name, exp, i, name });
+        }
+        try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }
 
     /// `emitEntry` for a build with a runtime module (`backend.md` §15.1):
@@ -7088,6 +7406,112 @@ const Emitter = struct {
         return out;
     }
 
+    /// `boundary.md` §5.2's `"exports"` key (amended 2026-10-20; §9.12 (c)):
+    /// a platform may declare `"exports": "program"` and nothing else; the
+    /// app's listed names must each be a name the entry file can export; and
+    /// a list on a chain that declares no mode does nothing, which is almost
+    /// always a mistake, so it is a `warning` (CLAUDE.md rule 7). Each fault
+    /// is reported against the manifest that holds it, at 1:1 with no
+    /// excerpt, as `invalid_entry_file` is.
+    fn checkEntryExports(e: *Emitter) !void {
+        const p = e.options.platform;
+        const platform_manifest = try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ p.exports_root, Manifest.file_name });
+        switch (p.exports) {
+            .none => {
+                if (p.entry_exports.len == 0) return;
+                try e.reportInFileAs(
+                    .exports_ignored,
+                    .warning,
+                    .{ .path = try e.appManifestPath() },
+                    \\This project lists {d} export{s} under `"exports"`, but the platform `{s}` declares no
+                    \\`"exports"`, so the list does nothing.
+                    \\
+                    \\The entry file exports a name only for a platform whose manifest declares
+                    \\`"exports": "program"` (`docs/design/boundary.md` §5.2). Remove the list, or
+                    \\build for a platform that declares it.
+                ,
+                    .{ p.entry_exports.len, if (p.entry_exports.len == 1) "" else "s", p.name },
+                );
+                return;
+            },
+            .list => {
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = platform_manifest },
+                    \\This platform declares `"exports"` as a list, which only an app's `beni.json` may
+                    \\hold.
+                    \\
+                    \\A platform declares the mechanism, `"exports": "program"`, and the app lists the
+                    \\names (`docs/design/boundary.md` §5.2).
+                ,
+                    .{},
+                );
+                return;
+            },
+            .mode => |mode| if (!std.mem.eql(u8, mode, exports_program)) {
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = platform_manifest },
+                    \\This platform declares `"exports": "{s}"`, which the compiler does not know.
+                    \\
+                    \\The one mode is `"program"`: the entry file then exports what `run(main)`
+                    \\returns — its `default`, and each name the app's `beni.json` lists under
+                    \\`"exports"` (`docs/design/boundary.md` §5.2).
+                ,
+                    .{mode},
+                );
+                return;
+            } else if (p.lowering != null and p.markup_module != null) {
+                // A chain whose runtime is a module (`boundary.md` §9.2,
+                // amended 2026-10-02) has no `run` result the entry file could
+                // hold: not in this slice. Known from the chain alone, so
+                // `check`, a development build and a release build refuse it
+                // alike, before anything is built.
+                try e.reportInFile(
+                    .unknown_exports_mode,
+                    .{ .path = platform_manifest },
+                    \\This platform declares `"exports": "program"` and a runtime module, and the entry
+                    \\file of a runtime module exports nothing of `run`'s result yet
+                    \\(`docs/design/boundary.md` §9.12 (c)).
+                ,
+                    .{},
+                );
+                return;
+            },
+        }
+        for (p.entry_exports, 0..) |name, i| {
+            const fault: ?[]const u8 = if (!exportNameIsLegal(name))
+                "is not an identifier name of ASCII letters, digits, `_` and `$` that does not begin with a digit"
+            else if (std.mem.eql(u8, name, "default"))
+                "is the name of the entry file's default export"
+            else if (std.mem.eql(u8, name, "flush"))
+                "is the name the entry file keeps for a runtime's `flush`, which a release build can write beside it"
+            else if (listedBefore(p.entry_exports[0..i], name))
+                "is listed twice"
+            else
+                null;
+            if (fault) |why| try e.reportInFile(
+                .invalid_entry_export,
+                .{ .path = try e.appManifestPath() },
+                \\This project lists `{s}` under `"exports"`, which {s}.
+                \\
+                \\Each name is one the entry file exports as `export {{ … as Name }}`: an ASCII
+                \\identifier name, not `default` or `flush`, listed once
+                \\(`docs/design/boundary.md` §9.12 (c)).
+            ,
+                .{ name, why },
+            );
+        }
+    }
+
+    /// `<app root>/beni.json`, the file an app manifest fault is reported
+    /// against.
+    fn appManifestPath(e: *Emitter) ![]const u8 {
+        const root = e.options.platform.app_root;
+        if (root.len == 0 or std.mem.eql(u8, root, ".")) return Manifest.file_name;
+        return std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ root, Manifest.file_name });
+    }
+
     /// **Rule 2** (§2): two files this build would write whose paths are
     /// equal under ASCII case folding. On APFS and NTFS they are ONE file,
     /// the second write wins, and the build exits 0 having shipped
@@ -7333,6 +7757,9 @@ pub const foreign_extension = ".foreign.mjs";
 /// so this is some 1.5 ms of work per thread, against a spawn and a
 /// `Session.check_stack_size` mapping.
 pub const insts_per_emitter = 16 * 1024;
+/// Nodes one thread of the release specialiser's extraction takes before
+/// another helps (`Spec.Parallel`).
+pub const nodes_per_extractor = 64 * 1024;
 
 /// The same for building the reachability edges (`Reach.Builder`), which
 /// gets through about a hundred thousand instructions a millisecond.
@@ -7361,6 +7788,23 @@ fn jsString(scratch: Allocator, out: *std.ArrayList(u8), text: []const u8) Alloc
         else => try out.append(scratch, c),
     };
     try out.append(scratch, '"');
+}
+
+/// An ASCII identifier name — letters, digits, `_` and `$`, not beginning
+/// with a digit — written as an `export { … as Name }` clause's name and
+/// inside `exports("…")` (`boundary.md` §9.12 (c)). The check is ASCII only
+/// because the name is printed without escaping, as `entryNameIsLegal`'s
+/// is; an export name may be any identifier name, a reserved word included.
+fn exportNameIsLegal(name: []const u8) bool {
+    if (name.len == 0) return false;
+    if (std.ascii.isDigit(name[0])) return false;
+    for (name) |c| if (!(std.ascii.isAlphanumeric(c) or c == '_' or c == '$')) return false;
+    return true;
+}
+
+fn listedBefore(earlier: []const []const u8, name: []const u8) bool {
+    for (earlier) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
 }
 
 fn entryNameIsLegal(name: []const u8) bool {
@@ -7395,7 +7839,6 @@ fn sameIr(a: *const JsIr, ao: *const InternPool.Overlay, b: *const JsIr, bo: *co
     if (!std.mem.eql(u32, a.extra, b.extra) or !std.mem.eql(u8, a.string_bytes, b.string_bytes)) return false;
     if (!std.meta.eql(a.body, b.body)) return false;
     if (!std.mem.eql(u8, bytes(a.node_keys), bytes(b.node_keys)) or !std.mem.eql(u8, bytes(a.name_key), bytes(b.name_key))) return false;
-    if (!std.mem.eql(JsIr.Node.Index, a.closed_decls, b.closed_decls)) return false;
     for (a.names, b.names) |x, y| {
         if (x.tag != y.tag or (x.module == .none) != (y.module == .none)) return false;
         if (!std.mem.eql(u8, ao.slice(x.base), bo.slice(y.base))) return false;

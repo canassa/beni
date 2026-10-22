@@ -1,5 +1,12 @@
 # 62 — Conduit's write sets: a realistic application against research 58's criterion
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-08. `plans/compile-away.md` §4 V1: before the per-message write-set work (R4, R5) is
 specified, run research 61's classifier on one realistic application. This is that application:
 **Conduit**, the RealWorld spec's Medium clone, written in beni the way `rtfeldman/elm-spa-example`

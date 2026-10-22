@@ -1,0 +1,34 @@
+-- run: a record goes into JavaScript through `Js.from` at a type variable,
+-- comes back through `Js.to` at another closed type, and is held in a
+-- record's field of that type (`backend.md` §9, *Declared-type filtering of
+-- fact 3*: a site's property var is filtered by its field's key, and a
+-- type that crosses at a `Js.from` is wild). `secret` is read only through
+-- the field, so a filter that kept the `Source` out of it would let the
+-- release build drop `secret` from the literal. Both builds print the same.
+import Cast
+import Node
+
+
+type alias Source =
+    label : String
+    secret : Int
+
+
+type alias Seen =
+    secret : Int
+
+
+type alias Holder =
+    seen : Seen
+    count : Int
+
+
+show : Holder → List String
+show holder = [ String.fromInt holder.seen.secret, String.fromInt holder.count ]
+
+
+main : Node.Program
+main =
+    source : Source
+    source = { label = "source", secret = 42 }
+    Node.printLines [ source.label, …show { seen = Cast.launder source, count = 3 } ]

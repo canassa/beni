@@ -76,7 +76,7 @@ add store body =
         Ok draft →
             todo = Ref.modify store λs →
                 made = { id = s.nextId, title = draft.title, done = draft.done }
-                ( made, { todos = [ …s.todos, made ], nextId = s.nextId + 1 } )
+                ( made, { todos = [ …List.copy s.todos, made ], nextId = s.nextId + 1 } )
             json 201 (Todo.print todo)
 
 

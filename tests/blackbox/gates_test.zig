@@ -1,33 +1,5 @@
-//! What `zig build gates` refuses before it runs anything (`build.zig`,
-//! `gatesRefusal`). A green gate says that every test ran and met the
-//! budget as CLAUDE.md states it (*Every test has a budget*): one count, of
-//! binaries built for the reference CPU in the gates' own mode, so a gate
-//! held to another budget, built for another CPU or in another mode is not
-//! the gate.
-//!
-//! Each test runs one child build in the repository root, which costs about
-//! a billion instructions when nothing has to be compiled for it. Two things
-//! are compiled for a `zig build`, and the child must find both:
-//!
-//! - The configure script, `build.zig` itself, lives in the local cache.
-//!   The child gets this build's (the runner's `cache_dir`), where this build
-//!   compiled it.
-//! - The build runner Zig calls the maker lives in the global cache, keyed
-//!   by Zig's version string and the files of its library. Every Zig of the
-//!   same version on the machine shares that key, so a second build of Zig
-//!   0.17.0 (another Nix derivation, another project's) evicts this one's
-//!   maker, and a `zig build` started after that compiles it again: a
-//!   ReleaseSafe LLVM build, about a minute on a quiet machine and several under
-//!   load, far past the child's timeout. So on Linux the child does not ask
-//!   `zig build` for a maker at all: it runs the one running this build, the
-//!   parent process, through `/proc/<ppid>/exe` (which works even after the
-//!   file is gone from the cache), with the four arguments Zig gave it. Off
-//!   Linux, where the gates do not run, the child is `zig build`
-//!   (`BENI_ZIG_EXE` comes from `build.zig`).
-//!
-//! The child also gets `BENI_GATES_REFUSAL_TEST`, so a gate that is not
-//! refused fails before it builds anything, instead of running a whole gate
-//! (and this test again) inside the test.
+//! Gates refuse filters and deliberate checker mutations.
+//! Child builds reuse the parent maker on Linux and its local cache.
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -86,22 +58,36 @@ fn expectRefused(option: []const u8, named: []const u8) !void {
     if (r.exit_code == 0 or std.mem.indexOf(u8, r.stderr, named) == null)
         std.debug.print("--- stdout ---\n{s}\n--- stderr ---\n{s}\n", .{ r.stdout, r.stderr });
     try testing.expect(r.exit_code != 0);
-    try testing.expect(std.mem.indexOf(u8, r.stderr, "`gates` holds every test to the budget on the reference build") != null);
     try testing.expect(std.mem.indexOf(u8, r.stderr, named) != null);
-}
-
-test "gates refuses a run held to another budget" {
-    try expectRefused("-Dtest-budget=9000", "drop -Dtest-budget");
-}
-
-test "gates refuses binaries built for another CPU" {
-    try expectRefused("-Dcpu=baseline", "drop -Dcpu");
-}
-
-test "gates refuses binaries built in another mode" {
-    try expectRefused("--release=fast", "drop -Doptimize and --release");
 }
 
 test "gates refuses an ownership checker broken on purpose" {
     try expectRefused("-Downership-record-mutation=hoist-whole", "drop -Downership-record-mutation");
+}
+
+test "gates refuses a corpus filter" {
+    try expectRefused("-Dcorpus=Adt", "drop -Dtest-filter and -Dcorpus");
+}
+
+test "gates accepts a CPU without the former reference features" {
+    // The sentinel stops this child before it builds or runs another suite.
+    try expectRefused("-Dcpu=baseline", "`gates` was not refused");
+}
+
+test "a hung test times out and names itself" {
+    try expectProbe("timeout", 1, "FAIL: test timed out: hang guard probe");
+}
+
+test "a finished test cancels its hang guard" {
+    try expectProbe("cancel", 0, "");
+}
+
+fn expectProbe(mode: []const u8, exit_code: u8, stderr: []const u8) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const option = try std.fmt.allocPrint(arena, "--hang-guard-probe={s}", .{mode});
+    const r = try world.spawnAndCapture(arena, testing.allocator, testing.io, &.{ runner.executable, option }, .inherit, world.default_timeout_ms);
+    try testing.expectEqual(exit_code, r.exit_code);
+    if (exit_code == 0) try testing.expectEqualStrings(stderr, r.stderr) else try testing.expect(std.mem.indexOf(u8, r.stderr, stderr) != null);
 }

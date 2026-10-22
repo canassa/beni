@@ -3,10 +3,12 @@ module SlotInLambda
   60:22 value <lambda>: rejected need: SlotInLambda.handOn edits what it returns, which may be a list it does not own
   66:15 List.push xs: accepted param
   75:5 entry SlotInLambda.update msg#Got.0: accepted entry
-  summary send: π1.load RA, π2 RA; res #Cmd.0 fresh1{excl π1.load, excl π2}, #Cmd.0[*]#Perform.0◇ ~π2, #Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π1.load; π2 calls many, need owned, unseen, supply 1 cb(π1.load) owned{excl cb(π1.load)}r{excl cb(π1.load)}; π1.load calls many, unseen
-  summary run: π1 RA, π2 RA; res #Cmd.0 fresh1{excl π1, excl π2}, #Cmd.0[*]#Perform.0◇ ~π1 ~π2; π1 calls many, unseen; π2 calls many, need owned, unseen, supply 1 cb1 owned{excl cb1}r{excl cb1}
-  summary handOn: π1.load RA; res #Cmd.0 fresh1{excl π1.load}, #Cmd.0[*]#Perform.0◇ ~π1.load; π1.load calls many, need owned, unseen
-  summary update: π1 R, π1#Got.0 RAW, π1#Got.0[*] A, π2 RA; res .0 π1#Got.0 π2, .0[*] ~π1#Got.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  capture r.load: read 39:31; before 39:24
+  capture r.load: read 47:23; before 47:13
+  summary send: π1.load RA, π2 RA; res #Cmd.0 fresh1{excl π1.load, excl π2}, #Cmd.0[*]#Now.0 λ?r{lost}, #Cmd.0[*]#Perform.0 λ?r{lost}, #Cmd.0[*]#Perform.0◇ ~π2, #Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π1.load; π2 calls many, need owned, unseen, supply 1 cb(π1.load) owned{excl cb(π1.load)}r{excl cb(π1.load)}; π1.load calls many, unseen
+  summary run: π1 RA, π2 RA; res #Cmd.0 fresh1{excl π1, excl π2}, #Cmd.0[*]#Now.0 λ?r{lost}, #Cmd.0[*]#Perform.0 λ?r{lost}, #Cmd.0[*]#Perform.0◇ ~π1 ~π2; π1 calls many, unseen; π2 calls many, need owned, unseen, supply 1 cb1 owned{excl cb1}r{excl cb1}
+  summary handOn: π1.load RA; res #Cmd.0 fresh1{excl π1.load}, #Cmd.0[*]#Now.0 λ?r{lost}, #Cmd.0[*]#Perform.0 λ?r{lost}, #Cmd.0[*]#Perform.0◇ ~π1.load; π1.load calls many, need owned, unseen
+  summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A, π2 RA; res .0 π1#Got.0 π2, .0[*] ~π1#Got.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
   records 0: accepted 0, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2

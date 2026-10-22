@@ -205,9 +205,9 @@ do work = perform λ_ → work ⊤
 --| The command form of `Log.log`: the line, written at `level` when the
 --| command runs. The line is a value, formatted when the command is made,
 --| never a function that reads the model later (`docs/design/boundary.md`
---| §9.8.16). The command runs after `update` has returned, so its line has
---| the default log context: no annotation or span of `update`'s, and the
---| minimum `Info`, so a `Trace` or `Debug` line is not written.
+--| §9.8.16). It runs after `update` has returned, so its line has the
+--| default log context: no annotation or span of `update`'s, and the
+--| program's minimum when it runs, `Info` until a `Log.setMinimum`.
 --|
 --|     Saved ms →
 --|         ( model, Cmd.log Log.Info "saving took ${String.fromInt ms} ms" )

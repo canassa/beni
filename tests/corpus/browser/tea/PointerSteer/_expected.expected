@@ -1,0 +1,90 @@
+-- load
+<body>
+  <main>
+    <div id="arena" style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none">
+      <div id="dot" style="position: absolute; left: 140px; top: 90px; width: 20px; height: 20px; border-radius: 10px; background: #c33"></div>
+      <p id="at" style="margin: 12px; color: #557">"Move the mouse, or touch and drag. The dot is at 150, 100."</p>
+    </div>
+  </main>
+</body>
+-- frames
+(frames: 0)
+(the DOM did not change)
+-- pointer #arena pointermove 190 100
+(the DOM did not change)
+-- frames
+(frames: 1)
+(the DOM did not change)
+-- frame 2
+(frame at 16 ms: 1 callback)
+(frame at 32 ms: 1 callback)
+<body>
+  <main>
+    <div id="arena" style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none">
+      <div id="dot" style="position: absolute; left: 148px; top: 90px; width: 20px; height: 20px; border-radius: 10px; background: #c33"></div>
+      <p id="at" style="margin: 12px; color: #557">"Move the mouse, or touch and drag. The dot is at 158, 100."</p>
+    </div>
+  </main>
+</body>
+-- pointer #arena pointerleave 300 100
+(the DOM did not change)
+-- frame 9
+(frame at 48 ms: 1 callback)
+(frame at 64 ms: 1 callback)
+(frame at 80 ms: 1 callback)
+(frame at 96 ms: 1 callback)
+(frame at 112 ms: 1 callback)
+(frame at 128 ms: 1 callback)
+(frame at 144 ms: 1 callback)
+(frame at 160 ms: 1 callback)
+(frame at 176 ms: 0 callbacks)
+<body>
+  <main>
+    <div id="arena" style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none">
+      <div id="dot" style="position: absolute; left: 180px; top: 90px; width: 20px; height: 20px; border-radius: 10px; background: #c33"></div>
+      <p id="at" style="margin: 12px; color: #557">"Move the mouse, or touch and drag. The dot is at 190, 100."</p>
+    </div>
+  </main>
+</body>
+-- frames
+(frames: 0)
+(the DOM did not change)
+-- pointer #arena pointerdown 190 160 id:4 type:touch
+(the DOM did not change)
+-- frame 3
+(frame at 192 ms: 1 callback)
+(frame at 208 ms: 1 callback)
+(frame at 224 ms: 1 callback)
+<body>
+  <main>
+    <div id="arena" style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none">
+      <div id="dot" style="position: absolute; left: 180px; top: 102px; width: 20px; height: 20px; border-radius: 10px; background: #c33"></div>
+      <p id="at" style="margin: 12px; color: #557">"Move the mouse, or touch and drag. The dot is at 190, 112."</p>
+    </div>
+  </main>
+</body>
+-- pointer #arena pointermove 100 160 id:4 type:touch
+(the DOM did not change)
+-- frame 5
+(frame at 240 ms: 1 callback)
+(frame at 256 ms: 1 callback)
+(frame at 272 ms: 1 callback)
+(frame at 288 ms: 1 callback)
+(frame at 304 ms: 1 callback)
+<body>
+  <main>
+    <div id="arena" style="position: fixed; inset: 0; background: #eef; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none">
+      <div id="dot" style="position: absolute; left: 162px; top: 111px; width: 20px; height: 20px; border-radius: 10px; background: #c33"></div>
+      <p id="at" style="margin: 12px; color: #557">"Move the mouse, or touch and drag. The dot is at 172, 121."</p>
+    </div>
+  </main>
+</body>
+-- pointer #arena pointerup 100 160 id:4 type:touch
+(the DOM did not change)
+-- frames
+(frames: 0)
+(the DOM did not change)
+-- frame 2
+(frame at 320 ms: 0 callbacks)
+(frame at 336 ms: 0 callbacks)
+(the DOM did not change)

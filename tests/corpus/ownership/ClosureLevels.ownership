@@ -2,10 +2,10 @@ module ClosureLevels
   16:10 List.push xs: rejected captured: h, a closure holding it, is used at 17:6
   25:10 List.push xs: rejected captured: s, a closure holding it, is used at 26:6
   37:10 List.push xs: rejected captured: f, a closure holding it, is used at 38:5
-  summary inRecord: π1 RW, π1[*] R
-  summary nested: π1 RW, π1[*] R
+  summary inRecord: π1 RW[storage], π1[*] R
+  summary nested: π1 RW[storage], π1[*] R
   summary apply: π1 R; π1 calls ≤1
-  summary through: π1 RW, π1[*] R
+  summary through: π1 RW[storage], π1[*] R
   demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause captured 3

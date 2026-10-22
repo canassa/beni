@@ -1,0 +1,66 @@
+-- `Log.setMinimum` on a page (boundary.md §9.8.16 (b), amended
+-- 2026-10-21): `init` sets the program's minimum to `Debug`, so a
+-- `Cmd.log Log.Debug` is written when the command runs, as `console.debug`,
+-- and so is a `Log.debug` in `update`. A `Trace` line is still below the
+-- minimum. `Log.minimum Log.Warn` overrides the program's minimum for its
+-- function only. A command reads the program's minimum when it runs, not
+-- when `update` makes it: `raise` makes a `Debug` line and then sets
+-- `Error`, so the line is not written; `lower` does the opposite.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Raise
+    | Lower
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.debug "a debug line in update"
+            Log.minimum Log.Warn λ⊤ → Log.info "not written: under Log.minimum Log.Warn"
+            ( n + 1
+            , Cmd.batch
+                [ Cmd.log Log.Debug "a debug line from a command"
+                , Cmd.log Log.Trace "not written: trace under the program's Debug"
+                ]
+            )
+
+        Raise →
+            line = Cmd.log Log.Debug "not written: made under Debug, run under Error"
+            Log.setMinimum Log.Error
+            ( n + 1, line )
+
+        Lower →
+            line = Cmd.log Log.Debug "a debug line made under Error, run under Debug"
+            Log.setMinimum Log.Debug
+            ( n + 1, line )
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="go" onClick={Go}>go</button>
+        <button id="raise" onClick={Raise}>raise</button>
+        <button id="lower" onClick={Lower}>lower</button>
+        <p>{String.fromInt n}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                Log.setMinimum Log.Debug
+                ( 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

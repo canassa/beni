@@ -1,0 +1,57 @@
+-- CK-223: a fold calls validators supplied from its list's elements.
+-- Each validator makes its errors. Preserve that fact through work's call.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Validation
+    = Valid
+    | Invalid (List Int)
+
+
+collect : List (⊤ → Validation) → Validation
+collect works = List.foldl works Valid λwork acc →
+    case ( acc, work ⊤ ) of
+        ( Invalid left, Invalid right ) →
+            Invalid (left ++ right)
+
+        ( Invalid left, Valid ) →
+            Invalid left
+
+        ( Valid, result ) →
+            result
+
+
+fresh : ⊤ → Validation
+fresh ⊤ = Invalid [ 1 ]
+
+
+pub run : ⊤ → List Int
+run ⊤ =
+    case collect [ fresh ] of
+        Invalid xs →
+            List.push xs 2
+
+        Valid →
+            []
+
+
+type Msg
+    = Stay
+
+
+view : Int → Html Msg
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → List.length (run ⊤)
+            , update = λ_ n → n
+            , view = view
+            }
+        )
+        "root"

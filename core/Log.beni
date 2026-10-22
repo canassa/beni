@@ -12,8 +12,10 @@
 --! `Debug.toString`'s text is not a promise.
 --!
 --! **Levels.** `Trace < Debug < Info < Warn < Error`. A line below the
---! minimum, `Info` unless `minimum` changes it, is not written: the call
---! builds nothing, and costs a read of the fiber's slot and one comparison.
+--! minimum is not written: the call builds nothing, and costs a read of
+--! the fiber's slot, a read of the program's minimum when no `minimum` is
+--! in force, and one comparison. The minimum is the program's — `Info`
+--! until `setMinimum` changes it — unless `minimum` sets one.
 --!
 --! **The sink.** A call makes an `Entry` — the level, the line, the
 --! annotations and log spans of the calling fiber, and the time on its
@@ -97,8 +99,9 @@ error message = log Error message
 pub log : Level, String → ⊤
 log level message =
     here = context ⊤
+    least = if Js.isUndefined here.minimum then Js.read programMinimum else Js.to here.minimum
 
-    if rank level ≥ rank here.minimum then
+    if rank level ≥ rank least then
         now = Clock.now ⊤
         emit here.sink
             { level = level
@@ -143,6 +146,23 @@ pub setSink : sync (Entry → ⊤) → ⊤
 setSink f = Js.write sink (Js.from f)
 
 
+-- The program's minimum, which `setMinimum` sets.
+programMinimum : Js.Ref Level
+programMinimum = Js.ref Info
+
+
+--| Make `level` the program's minimum from now on: a line below it is not
+--| written in any fiber, unless `minimum` sets another for a function.
+--| The last call wins, as `setSink`'s does, and the programs of one page
+--| (`Browser.programs`) share it. Until a call, the minimum is `Info`.
+--|
+--|     init ⊤ =
+--|         Log.setMinimum Log.Debug
+--|         ( model, Cmd.log Log.Debug "written" )
+pub setMinimum : Level → ⊤
+setMinimum level = Js.write programMinimum level
+
+
 -- Hand `entry` to the sink: `withSink`'s, else `setSink`'s, else the
 -- console.
 emit : Js.Value, Entry → ⊤
@@ -158,20 +178,21 @@ emit scoped entry =
 -- ---- The log context (§17.5) ----------------------------------------------
 
 -- A fiber's log context: the annotations, outermost first; each log span
--- with the time it began, innermost first; the minimum level; and the sink
--- `withSink` gave it, undefined for none. It lives in the fiber's slot as a
--- `Js.Value`, and a change makes a new one.
+-- with the time it began, innermost first; the minimum level that
+-- `minimum` set, undefined for the program's; and the sink `withSink` gave
+-- it, undefined for none. It lives in the fiber's slot as a `Js.Value`,
+-- and a change makes a new one.
 type alias Context =
     annotations : List (String × String)
     spans : List (String × Int)
-    minimum : Level
+    minimum : Js.Value
     sink : Js.Value
 
 
 -- The context of a fiber that no `annotate`, `span`, `minimum` or
 -- `withSink` changed.
 initial : Context
-initial = { annotations = [], spans = [], minimum = Info, sink = Js.undefined }
+initial = { annotations = [], spans = [], minimum = Js.undefined, sink = Js.undefined }
 
 
 -- The calling fiber's log context.
@@ -221,15 +242,15 @@ span label work =
 
 
 --| Run `work` with `level` as the minimum: a line below it, from `work` or
---| from a fiber it starts, is not written. The minimum is `Info` until a
---| call changes it.
+--| from a fiber it starts, is not written. It overrides the program's
+--| minimum, `setMinimum`'s, for `work` only.
 --|
 --|     Log.minimum Log.Debug λ⊤ →
 --|         Log.debug "written"
 pub minimum : Level, (⊤ → a) → a
 minimum level work =
     here = context ⊤
-    within { here | minimum = level } work
+    within { here | minimum = Js.from level } work
 
 
 --| Run `work` with `f` as the sink of every line it writes, and of every

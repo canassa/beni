@@ -1,5 +1,12 @@
 # 94 — Conduit's document helpers compile; the built dispatch misses its prediction
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-14. Native ReleaseSafe compiler built with zorg 0.17.1+zorg.1,
 Node 24.19.0, Apple M2 Pro, Chrome 155.0.8059.80. The raw count artifact
 records the compiler binary's SHA-256 and base commit; timing records both

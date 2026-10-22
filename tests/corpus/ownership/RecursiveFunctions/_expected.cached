@@ -1,0 +1,1 @@
+Recursive returned classes and function slots survive a written/read ownership block.

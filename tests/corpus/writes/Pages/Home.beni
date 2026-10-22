@@ -14,8 +14,8 @@ pub type Msg
     | GotFeedMsg Feed.Msg
 
 
-pub init : Model
-init = { tab = "all", feed = Feed.init }
+pub init : ⊤ → Model
+init ⊤ = { tab = "all", feed = Feed.init ⊤ }
 
 
 pub update : Msg, Model → Model

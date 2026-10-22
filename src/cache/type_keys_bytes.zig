@@ -15,6 +15,9 @@
 //! bytes: the instruction, its key, a lambda's result key), `type_refs` (12
 //! bytes: package, declaring module's name, type's name) and `strings`.
 //!
+//! Version 2 adds `records` (12 bytes: label start, count, open-row bit)
+//! and `record_labels` (string offsets), independent of closed type keys.
+//!
 //! **Nothing session-assigned reaches the bytes**, `dispatch_bytes.zig`'s
 //! rule: a `TypeId` becomes its `(package, module, name)` row and a field's
 //! `Symbol` its text. Loading is two steps for the same reason as there:
@@ -37,7 +40,7 @@ const Symbol = InternPool.Symbol;
 const TypeKey = TypeKeys.TypeKey;
 
 pub const magic = "BENITKY\x00";
-pub const format_version: u32 = 1;
+pub const format_version: u32 = 2;
 
 const Column = enum(u32) {
     nodes,
@@ -48,6 +51,8 @@ const Column = enum(u32) {
     insts,
     wild,
     type_refs,
+    records,
+    record_labels,
     strings,
 
     const count: u32 = @typeInfo(Column).@"enum".field_names.len;
@@ -55,8 +60,8 @@ const Column = enum(u32) {
     fn width(c: Column) u32 {
         return switch (c) {
             .nodes => 16,
-            .args, .labels, .locals, .decls, .wild => 4,
-            .insts, .type_refs => 12,
+            .args, .labels, .locals, .decls, .wild, .record_labels => 4,
+            .insts, .type_refs, .records => 12,
             .strings => 1,
         };
     }
@@ -170,7 +175,19 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         std.mem.writeInt(u32, row[8..12], r[2], .little);
     }
 
-    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, strings.items };
+    const record_labels = try gpa.alloc(u8, a.record_labels.len * 4);
+    defer gpa.free(record_labels);
+    for (a.record_labels, 0..) |l, i| std.mem.writeInt(u32, record_labels[i * 4 ..][0..4], try S.string(gpa, &strings, &seen, interner.slice(l)), .little);
+    const records = try gpa.alloc(u8, a.records.len * 12);
+    defer gpa.free(records);
+    for (a.records, 0..) |r, i| {
+        const row = records[i * 12 ..][0..12];
+        std.mem.writeInt(u32, row[0..4], r.fields.start, .little);
+        std.mem.writeInt(u32, row[4..8], r.fields.len, .little);
+        std.mem.writeInt(u32, row[8..12], @intFromBool(r.open), .little);
+    }
+    const columns = [Column.count][]const u8{ nodes, args, labels, locals, decls, insts, wild, type_refs, records, record_labels, strings.items };
+
     const lengths = [Column.count]u32{
         @intCast(a.nodes.len),
         @intCast(a.args.len),
@@ -180,6 +197,8 @@ pub fn write(gpa: Allocator, a: *const TypeKeys.Artifact, types: *const Types, i
         @intCast(a.insts.len),
         @intCast(a.wild.len),
         @intCast(refs.items.len),
+        @intCast(a.records.len),
+        @intCast(a.record_labels.len),
         @intCast(strings.items.len),
     };
     var offsets: [Column.count]u32 = undefined;
@@ -326,7 +345,23 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
             };
         }
     }
+    {
+        const label_bytes = col(bytes, offsets, .record_labels);
+        const labels = try gpa.alloc(Symbol, lengths[@backingInt(Column.record_labels)]);
+        out.artifact.record_labels = labels;
+        for (labels, 0..) |*l, i| l.* = try symbolAt(blob, std.mem.readInt(u32, label_bytes[i * 4 ..][0..4], .little), in) orelse return error.BadSection;
+        const record_bytes = col(bytes, offsets, .records);
+        const records = try gpa.alloc(TypeKeys.Record, lengths[@backingInt(Column.records)]);
+        out.artifact.records = records;
+        for (records, 0..) |*r, i| {
+            const row = record_bytes[i * 12 ..][0..12];
+            const open = std.mem.readInt(u32, row[8..12], .little);
+            if (open > 1) return error.BadSection;
+            r.* = .{ .fields = .{ .start = std.mem.readInt(u32, row[0..4], .little), .len = std.mem.readInt(u32, row[4..8], .little) }, .open = open == 1 };
+        }
+    }
     if (!verify(&out.artifact)) return error.BadSection;
+
     return out;
 }
 
@@ -347,6 +382,7 @@ fn symbolAt(blob: []const u8, at: u32, in: *Interning) ReadError!?Symbol {
 /// record's labels fit `labels`, `⊤` has no child, every key named is a node or `wild`,
 /// and the instruction rows and the wild set ascend.
 pub fn verify(a: *const TypeKeys.Artifact) bool {
+    for (a.records) |r| if (@as(u64, r.fields.start) + r.fields.len > a.record_labels.len) return false;
     for (a.nodes, 0..) |n, i| {
         if (@as(u64, n.args.start) + n.args.len > a.args.len) return false;
         for (a.args[n.args.start..][0..n.args.len]) |child| {
@@ -408,6 +444,18 @@ test "an empty artifact round-trips, and a child that is not earlier is a miss" 
     var loaded = try read(testing.allocator, bytes, &pool);
     defer loaded.deinit(testing.allocator);
     try testing.expectEqual(@as(usize, 0), loaded.artifact.nodes.len);
+
+    const labels = [_]Symbol{try pool.getOrPut(testing.allocator, "cups")};
+    const records = [_]TypeKeys.Record{.{ .fields = .{ .len = 1 }, .open = true }};
+    const rows: TypeKeys.Artifact = .{ .records = &records, .record_labels = &labels };
+    const row_bytes = try write(testing.allocator, &rows, &types, &pool);
+    defer testing.allocator.free(row_bytes);
+    var row_loaded = try read(testing.allocator, row_bytes, &pool);
+    defer row_loaded.deinit(testing.allocator);
+    try testing.expectEqualDeep(@as([]const TypeKeys.Record, &records), row_loaded.artifact.records);
+    try testing.expectEqualSlices(Symbol, &labels, row_loaded.artifact.record_labels);
+    const bad_rows = [_]TypeKeys.Record{.{ .fields = .{ .len = 2 }, .open = false }};
+    try testing.expect(!verify(&.{ .records = &bad_rows, .record_labels = &labels }));
 
     const nodes = [_]TypeKeys.KeyNode{ .{ .kind = .unit }, .{ .kind = .tuple, .args = .{ .start = 0, .len = 2 } } };
     const args = [_]TypeKey{ @fromBackingInt(0), @fromBackingInt(1) };

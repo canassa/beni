@@ -1,0 +1,135 @@
+--! A chat server in beni, on the `node` platform (`boundary.md` §9.11): the
+--! page's built files from `Files`, and one WebSocket per page at
+--! `/chat`. Every page that joins is a guest with a number; what a page
+--! says, and who joins and leaves, goes to every other page in the room.
+--! The room lives in memory.
+--!
+--! The server refuses a socket that a page of another site opens: a
+--! browser sends `origin`, and RFC 6455 §10.2 leaves the check to the
+--! server. `POST /api/shutdown` closes the server gracefully, as the todo
+--! example's does: every page's socket is closed with 1001.
+
+import Chat
+import Config
+import Deferred exposing (Deferred)
+import Files
+import Http.Server as Server exposing (Request, Response, Server, Upgrade)
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Route
+import Task
+import WebSocket exposing (Socket)
+
+
+type alias Room =
+    members : Ref (List (String × Socket))
+    next : Ref Int
+
+
+main : Program
+main = Io.run λ⊤ →
+    self = Deferred.make ⊤
+    room = { members = Ref.make [], next = Ref.make 1 }
+    case
+        Server.listenWith { host = Config.host, port = Config.port }
+            { request = handle self _, upgrade = join room _ }
+    of
+        Err _ →
+            Node.exitWith "the chat server cannot listen on ${Config.host}" 1
+
+        Ok server →
+            _ = Deferred.complete self server
+            Server.wait server
+            Node.print "chat server stopped"
+
+
+handle : Deferred Server, Request → Response
+handle self request =
+    case Route.segments request.path of
+        [ "api", "shutdown" ] →
+            if request.method == "POST" then
+                Server.close (Deferred.wait self)
+                Server.text 200 "stopping"
+            else
+                Server.text 405 "method not allowed"
+
+        rest →
+            Files.serve request.method rest
+
+
+-- A page opens `/chat`; a page of another site is refused.
+join : Room, Request → Upgrade
+join room request =
+    if request.path ≠ "/chat" then
+        Server.refuse (Server.text 404 "no such socket")
+    else if not (sameSite request) then
+        Server.refuse (Server.text 403 "not from this site")
+    else
+        Server.accept (member room _)
+
+
+-- No `origin` (not a browser), or the server's own. This compares the
+-- `origin` with the request's own `host`, which is enough on 127.0.0.1. A
+-- page that a rebound DNS name loads sends that name in both headers, so a
+-- deployed server compares the `origin` with its own configured address.
+sameSite : Request → Bool
+sameSite request =
+    case ( Server.header request "origin", Server.header request "host" ) of
+        ( Nothing, _ ) →
+            True
+
+        ( Just origin, Just host ) →
+            origin == "http://${host}" || origin == "https://${host}"
+
+        ( Just _, Nothing ) →
+            False
+
+
+-- A page in the room: announced when it joins and when it leaves,
+-- however its session ends.
+member : Room, Socket → ⊤
+member room socket =
+    n = Ref.get room.next
+    Ref.set room.next (n + 1)
+    name = "guest${String.fromInt n}"
+    tellOthers room socket (Chat.Joined name)
+    Ref.update room.members λmembers → [ …members, ( name, socket ) ]
+
+    Task.onExit (λ⊤ → listen room name socket) λ_ →
+        Ref.update room.members λmembers → List.filter members λ( _, s ) → s ≠ socket
+        tellOthers room socket (Chat.Left name)
+
+
+listen : Room, String, Socket → ⊤
+listen room name socket =
+    case WebSocket.read socket of
+        Ok line →
+            case Chat.said line of
+                Just text →
+                    tellOthers room socket (Chat.Said name text)
+
+                Nothing →
+                    ⊤
+            listen room name socket
+
+        Err _ →
+            ⊤
+
+
+-- An event to every page in the room but `self`'s. A page whose socket
+-- is closing misses it, which is what it would see anyway.
+tellOthers : Room, Socket, Chat.Event → ⊤
+tellOthers room self event =
+    tellEach (List.filter (Ref.get room.members) λ( _, s ) → s ≠ self) event
+
+
+tellEach : List (String × Socket), Chat.Event → ⊤
+tellEach members event =
+    case members of
+        [] →
+            ⊤
+
+        [ ( _, socket ), …rest ] →
+            _ = Chat.tell socket event
+            tellEach rest event

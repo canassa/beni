@@ -3603,6 +3603,20 @@ goes.
 > more, so the two paragraphs above describe what was. `run/DictStructuralEquality` now prints
 > `True` on its third line, and `run/DictSetEquality` covers every spelling.
 
+*Amended 2026-10-22 (#294), specifying the owner's 2026-10-17 decisions:*
+Dict and Set keep insertion order, and their `eq` compares that order as part
+of the value, after an identity shortcut. Both lose `compare`; neither derives
+one through its representation. Only Int/String keys and members are accepted,
+without key-comparison evidence. This supersedes §5.3–§5.4's comparable-key
+and compare-method promises and the closure note above. The complete API is
+`language.md` §6.8, *Ordered dictionaries and sets*; key-constraint propagation
+is `checker-v2.md` §37, and storage and equality are `backend.md` §4,
+*Ordered dictionaries*. *The owner's review of #664, 2026-10-22:* empty is an
+ordinary unit function in each module, `Dict.empty ⊤` and `Set.empty ⊤`, with
+fresh storage per call and no compiler special case. This supersedes A.8 and
+A.70's constant-empty decision, as `Schema.defaultOptions` became a function
+of `⊤` on 2026-10-19.
+
 ### Stretch, only after the measurement
 
 1. **Partition same-name constraints by origin class** — Roc's shipped principality fix, and not

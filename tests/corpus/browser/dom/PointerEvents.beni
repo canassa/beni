@@ -1,0 +1,94 @@
+-- Pointer events in a page built by the `dom` lowering (boundary.md
+-- §9.8.20). They are not delegated: each element with a pointer handler
+-- listens itself, so the extractor reads the box of that element, and a
+-- point is in the handler's box whichever element is the target. Each row
+-- of the list listens for its own `pointerdown`, and a row added later
+-- listens as well. The surface's move handler reads the model's `track`,
+-- and the render writes the new handler in place: after `#track` the
+-- moves are logged again.
+import Browser
+import Html exposing (Html)
+
+
+type Msg
+    = Pressed Int Float Float
+    | Moved Float Float
+    | Lifted Int
+    | Cancelled Int
+    | Track
+    | Add
+    | Ignored
+
+
+type alias Model =
+    rows : List Int
+    track : Bool
+    log : List String
+
+
+point : Float, Float → String
+point x y = "${String.fromFloat x}, ${String.fromFloat y}"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pressed row x y →
+            { model | log = model.log ++ [ "row ${String.fromInt row} at ${point x y}" ] }
+
+        Moved x y →
+            { model | log = model.log ++ [ "move ${point x y}" ] }
+
+        Lifted id →
+            { model | log = model.log ++ [ "up #${String.fromInt id}" ] }
+
+        Cancelled id →
+            { model | log = model.log ++ [ "cancel #${String.fromInt id}" ] }
+
+        Track →
+            { model | track = not model.track }
+
+        Add →
+            { model | rows = model.rows ++ [ List.length model.rows + 1 ] }
+
+        Ignored →
+            model
+
+
+moved : Model, Html.Pointer → Msg
+moved model p = if model.track then Moved (Html.localX p) (Html.localY p) else Ignored
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <div
+            id="surface"
+            style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none"
+            onPointerMove={λp → moved model p}
+            onPointerUp={λp → Lifted (Html.pointerId p)}
+            onPointerCancel={λp → Cancelled (Html.pointerId p)}
+        >
+            <ul>
+                <For each={model.rows}>
+                    {λrow →
+                        <li
+                            id={"r${String.fromInt row}"}
+                            onPointerDown={λp → Pressed row (Html.localX p) (Html.localY p)}
+                        >
+                            {row}
+                        </li>
+                    }
+                </For>
+            </ul>
+        </div>
+        <button id="track" onClick={Track}>track</button>
+        <button id="add" onClick={Add}>add</button>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → { rows = [ 1, 2 ], track = False, log = [] }, update = update, view = view }

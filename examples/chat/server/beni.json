@@ -1,0 +1,4 @@
+{
+  "name": "chat-server",
+  "build": { "platform": "node", "paths": ["src", "config", "../shared"], "out": "out" }
+}

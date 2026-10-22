@@ -2,10 +2,10 @@ module PolyRecCps
   29:13 call PolyRecCps.cps xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what PolyRecCps.cps supplies it)
   29:13 call PolyRecCps.cps xs[*]: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what PolyRecCps.cps supplies it)
   32:26 List.push ys: rejected exclusive: it needs what PolyRecCps.cps supplies it not to share, and it may (approx)
-  summary h: π2 R, π3 R; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{lost}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{lost}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{lost}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{lost}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{lost}r{excl π2}
-  summary cps: π2 R, π3 R; res cb3{excl cb3}r{excl cb3}; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{lost}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{lost}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{lost}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{lost}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{lost}r{lost}
-  summary useCps: π1 RW, π1[*] W
-  summary g2: π2 RA; res ◇ π2, ◇⟨◇⟩◇ fresh1{excl π2}r{excl π2} ~fresh2{excl π2}, ◇⟨◇⟩◇[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} π2, ◇⟨◇⟩◇[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} ~π2
+  summary h: π2 R, π3 R; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{shared}r{lost}
+  summary cps: π2 R, π3 R; res cb3{excl cb3}r{excl cb3}; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{shared}r{lost}
+  summary useCps: π1 RW[storage], π1[*] W[storage]
+  summary g2: π2 RA; res λ?r{lost} λr{lost}, ◇ π2, ◇⟨◇⟩◇ fresh1{excl π2}r{excl π2} ~fresh2{excl π2}, ◇⟨◇⟩◇[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} π2, ◇⟨◇⟩◇[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2} ~π2
   summary local: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 ~fresh1{excl π2} ~fresh2{excl π2} ~fresh3{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2} ~fresh2{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2} ~π2
   summary local2: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 ~fresh1{excl π2} ~fresh2{excl π2} ~fresh3{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2} ~fresh2{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2} ~π2
   demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3

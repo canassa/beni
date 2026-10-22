@@ -253,24 +253,19 @@ pub const Counter = enum {
     /// count does not grow with code the sweeps leave as it was.
     spec_lists_examined,
     /// The same pass's work and its caps (`Spec.Stats`, research 52 §0.2's
-    /// E3, kept): whole analyses, the sweeps of facts 1, 2, 4 and 5, fact
-    /// 3's fixpoints and their sweeps, and the structural passes that
-    /// changed the program.
-    spec_analyses,
-    spec_sweeps,
+    /// E3, kept): solves, one per structural pass (`backend.md` §9, *The
+    /// combined solver*, slice 6), fact 3's fixpoints and their sweeps, and
+    /// the structural passes that changed the program.
+    spec_solves,
     spec_points_to_runs,
     /// Analyses that kept fact 3's last solve, nothing it reads having
-    /// changed since (`Spec.fact3Kept`, #575): `spec_analyses` is
-    /// `spec_points_to_reused` plus the analyses that solved.
+    /// changed since (`Spec.fact3Kept`, #575): `spec_solves` is
+    /// `spec_points_to_reused` plus the solves that solved fact 3.
     spec_points_to_reused,
     spec_points_to_sweeps,
     spec_passes,
     /// Each cap where it stopped work that would have gone on: a size
-    /// regression is traced to one of these first. An analysis that did
-    /// not converge rewrites nothing; a fact 3 that did not is not used.
-    spec_analyses_declined,
-    spec_points_to_declined,
-    spec_rounds_capped,
+    /// regression is traced to one of these first.
     spec_passes_capped,
     spec_init_capped,
     spec_inline_capped,
@@ -295,6 +290,19 @@ pub const Counter = enum {
     /// (`Pts.joinNow`): how much of the worklist is no-op.
     spec_pts_joins,
     spec_pts_joins_empty,
+    /// The combined solver (`backend.md` §9, *The combined solver*, slice 4),
+    /// over every analysis: the modules it extracted and those whose
+    /// constraints it kept, the constraints it solved, the evaluations that
+    /// took, and the solves that hit the work budget.
+    spec_solve_extracted,
+    spec_solve_kept,
+    spec_solve_constraints,
+    spec_solve_evaluations,
+    spec_solve_budget_hit,
+    /// The top-level statements the solver's extractions walked, and those
+    /// whose constraints they kept from the last one.
+    spec_solve_stmts_walked,
+    spec_solve_stmts_kept,
     /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
     /// edge lists were built, the walks over them, the lowerings of a module
     /// and the modules printed. A build builds each module's edge lists
@@ -309,6 +317,14 @@ pub const Counter = enum {
     reach_walks,
     modules_lowered,
     modules_printed,
+    /// Emit rows (`backend.md` §9, *The join*): the units a development
+    /// build spliced from a row, and the units it lowered while a row was
+    /// available. `emit_units_lowered` counts a unit no declaration took
+    /// (a nullary constant, a synthesised value, a declaration whose facts
+    /// differed), so a row read and wholly refused shows up as zero
+    /// embedded and every unit lowered.
+    emit_units_embedded,
+    emit_units_lowered,
 
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };

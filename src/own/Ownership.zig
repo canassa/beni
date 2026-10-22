@@ -50,6 +50,7 @@ const SchemaCtor = @import("../js/SchemaCtor.zig");
 const SchemaGraph = @import("../js/SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Profile = @import("../Profile.zig");
+pub const Hoists = @import("Hoists.zig");
 
 const Inst = Bir.Inst;
 const Symbol = InternPool.Symbol;
@@ -75,13 +76,14 @@ const debug_own = false;
 /// every build of the compiler (self-hosted, LLVM, wasm), the option defaults
 /// to `none`, `gates` refuses it, a value it does not name is a compile error,
 /// and the unit test below fails a `zig build test` given one.
-const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint, call_as_hoist } = blk: {
+const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint, call_as_hoist, wrong_placement } = blk: {
     const m = @import("ownership_options").record_mutation;
     if (std.mem.eql(u8, m, "none")) break :blk .none;
     if (std.mem.eql(u8, m, "hoist-whole")) break :blk .hoist_whole;
     if (std.mem.eql(u8, m, "no-held-operand")) break :blk .no_held_operand;
     if (std.mem.eql(u8, m, "no-disjoint")) break :blk .no_disjoint;
     if (std.mem.eql(u8, m, "call-as-hoist")) break :blk .call_as_hoist;
+    if (std.mem.eql(u8, m, "wrong-placement")) break :blk .wrong_placement;
     @compileError("-Downership-record-mutation: unknown mutation '" ++ m ++ "'");
 };
 
@@ -175,6 +177,11 @@ pub const Input = struct {
     /// cell's record condition fails approximately, which no list's verdict
     /// may notice.
     records_lost: bool = false,
+    /// Render source-position hoist lines for the ownership dump only.
+    format_hoists: bool = false,
+    /// Render each declaration's summary line, which only the ownership
+    /// dump prints (#684): a build would render them for no reader.
+    format_summaries: bool = false,
     /// §28.3: a checked module is read by another module through its block,
     /// written and read back, as an installed one is — so that the verdicts
     /// are the ones a build that installed it would give, and the block's
@@ -371,6 +378,8 @@ pub const ModuleReport = struct {
     /// §31.6: the captures of a record's field path its lambdas read when
     /// they are made, counted for report mode (§31.12).
     eager_reads: u32 = 0,
+    hoist_table: Hoists.Table = .empty,
+    hoist_lines: []const SummaryLine = &.{},
 };
 
 /// A limit a declaration of the module reached (§16.7): the declaration's
@@ -414,10 +423,14 @@ fn entryBits(bits: u16) u8 {
 /// The bits a list's facts read.
 const list_bits: u16 = bit_r | bit_a | bit_e | bit_w | bit_x | bit_j | bit_d;
 
+/// §32's dated write-extent amendment. Unclassified writes remain deep.
+pub const WriteExtent = enum(u8) { storage, deep };
+
 pub const UseEntry = struct {
     param: u32,
     path: u32,
     bits: u16,
+    extent: WriteExtent = .deep,
     /// With `bit_f`: the fields a record update writes at the path, sorted
     /// (§31.7). Empty is every field (`unionFields`): a write a block could
     /// not name, an open type's, a callback's loan.
@@ -425,7 +438,7 @@ pub const UseEntry = struct {
 };
 
 fn useEql(a: UseEntry, b: UseEntry) bool {
-    return a.param == b.param and a.path == b.path and a.bits == b.bits and std.mem.eql(u32, a.fields, b.fields);
+    return a.param == b.param and a.path == b.path and a.bits == b.bits and a.extent == b.extent and std.mem.eql(u32, a.fields, b.fields);
 }
 
 pub const ProvKind = enum(u8) { param, fresh, esc, shared, top, cb, env, klass };
@@ -458,9 +471,11 @@ pub const Prov = struct {
     /// literal's, an update's, a record of numbers; printed with `◦`. No
     /// list's fact reads it.
     obj: bool = false,
+    /// §16.7: a condition on this containing value, never an allocation.
+    condition_only: bool = false,
 
     fn eql(x: Prov, y: Prov) bool {
-        return x.kind == y.kind and x.a == y.a and x.b == y.b and x.path == y.path and x.taken == y.taken and x.obj == y.obj;
+        return x.kind == y.kind and x.a == y.a and x.b == y.b and x.path == y.path and x.taken == y.taken and x.obj == y.obj and x.condition_only == y.condition_only;
     }
 
     fn less(x: Prov, y: Prov) bool {
@@ -469,6 +484,7 @@ pub const Prov = struct {
         if (x.b != y.b) return x.b < y.b;
         if (x.path != y.path) return x.path < y.path;
         if (x.taken != y.taken) return @intFromBool(x.taken) < @intFromBool(y.taken);
+        if (x.condition_only != y.condition_only) return @intFromBool(x.condition_only) < @intFromBool(y.condition_only);
         return @intFromBool(x.obj) < @intFromBool(y.obj);
     }
 };
@@ -479,24 +495,158 @@ pub const Prov = struct {
 /// `keep a b` (`focus`'s row only): the callback `a`, handed an element of
 /// `b` destructively, returns what keeps `b` exclusive (the thesis's "keeps
 /// shape").
+/// `sep_root` separates one selected array from everything the other value
+/// holds; on an annotation, only its selected side follows projection.
 /// `spine`, `sep_spine` and `keep_spine` state the corresponding conditions
 /// for the containers at the named paths, without owning their contents
 /// (the dated fold-invariant amendment).
+/// `apart G₁ … Gₙ` (§16.7, amended 2026-10-22, #693): no member of one group
+/// shares a cell with a member of another — the conjunction of `sep a b` for
+/// every two members of distinct groups, its *expansion*; `apart_spine` is
+/// the same of `sep_spine`. Its groups are in `groups`, canonical
+/// (`apartAtoms`), and `a` and `b` are unused.
 pub const XAtom = struct {
-    kind: enum(u8) { excl, sep, keep, spine, keep_spine, sep_spine },
-    a: Prov,
+    kind: enum(u8) { excl, sep, keep, spine, keep_spine, sep_spine, apart, apart_spine, sep_root },
+    a: Prov = .{ .kind = .top, .a = 0 },
     b: Prov = .{ .kind = .top, .a = 0 },
+    groups: []const []const Prov = &.{},
+
+    pub fn isApart(x: XAtom) bool {
+        return x.kind == .apart or x.kind == .apart_spine;
+    }
 
     fn eql(x: XAtom, y: XAtom) bool {
-        return x.kind == y.kind and x.a.eql(y.a) and x.b.eql(y.b);
+        if (x.kind != y.kind or !x.a.eql(y.a) or !x.b.eql(y.b)) return false;
+        if (x.groups.len != y.groups.len) return false;
+        for (x.groups, y.groups) |g, h| {
+            if (g.len != h.len) return false;
+            for (g, h) |p, q| if (!p.eql(q)) return false;
+        }
+        return true;
     }
 
     fn less(x: XAtom, y: XAtom) bool {
         if (x.kind != y.kind) return @backingInt(x.kind) < @backingInt(y.kind);
+        if (x.isApart()) return groupsLess(x.groups, y.groups);
         if (!x.a.eql(y.a)) return x.a.less(y.a);
         return x.b.less(y.b);
     }
+
+    /// The atoms this one stands for, in the condition's own measure: an
+    /// apart's members (the `conditions` limit, §16.7).
+    pub fn weight(x: XAtom) usize {
+        var n: usize = 0;
+        for (x.groups) |g| n += g.len;
+        return if (x.isApart()) n else 1;
+    }
 };
+
+fn provsLess(g: []const Prov, h: []const Prov) bool {
+    for (g[0..@min(g.len, h.len)], h[0..@min(g.len, h.len)]) |p, q| {
+        if (!p.eql(q)) return p.less(q);
+    }
+    return g.len < h.len;
+}
+
+fn groupsLess(x: []const []const Prov, y: []const []const Prov) bool {
+    for (x[0..@min(x.len, y.len)], y[0..@min(x.len, y.len)]) |g, h| {
+        if (provsLess(g, h)) return true;
+        if (provsLess(h, g)) return false;
+    }
+    return x.len < y.len;
+}
+
+/// The number of pairs an apart over groups of these sizes expands to, and
+/// its members.
+fn apartCounts(sizes: anytype) struct { pairs: usize, members: usize } {
+    var members: usize = 0;
+    var pairs: usize = 0;
+    for (sizes) |s| {
+        pairs += members * s;
+        members += s;
+    }
+    return .{ .pairs = pairs, .members = members };
+}
+
+/// §16.7 (#693): the atoms that say `groups` are pairwise apart, as `kind`
+/// (`apart` or `apart_spine`), appended to `out`: each group's members in
+/// order and distinct, empty groups dropped, the groups in order; one apart
+/// when its expansion has more atoms than it has members, else the
+/// expansion itself. `groups` and its slices may be reordered in place.
+pub fn apartAtoms(a: Allocator, kind: @FieldType(XAtom, "kind"), groups_in: [][]Prov, out: *std.ArrayList(XAtom)) Allocator.Error!void {
+    std.debug.assert(kind == .apart or kind == .apart_spine);
+    var groups: std.ArrayList([]const Prov) = .empty;
+    for (groups_in) |g| {
+        std.mem.sort(Prov, g, {}, struct {
+            fn lt(_: void, p: Prov, q: Prov) bool {
+                return p.less(q);
+            }
+        }.lt);
+        var n: usize = 0;
+        for (g) |p| {
+            if (n > 0 and g[n - 1].eql(p)) continue;
+            g[n] = p;
+            n += 1;
+        }
+        if (n > 0) try groups.append(a, g[0..n]);
+    }
+    if (groups.items.len < 2) return;
+    std.mem.sort([]const Prov, groups.items, {}, struct {
+        fn lt(_: void, g: []const Prov, h: []const Prov) bool {
+            return provsLess(g, h);
+        }
+    }.lt);
+    var sizes = try a.alloc(usize, groups.items.len);
+    for (groups.items, 0..) |g, i| sizes[i] = g.len;
+    const c = apartCounts(sizes);
+    if (c.pairs > c.members) {
+        try out.append(a, .{ .kind = kind, .groups = groups.items });
+        return;
+    }
+    const pair_kind: @FieldType(XAtom, "kind") = if (kind == .apart) .sep else .sep_spine;
+    for (groups.items, 0..) |g, i| for (groups.items[i + 1 ..]) |h| for (g) |p| for (h) |q| {
+        var t = sepAtom(p, q);
+        t.kind = pair_kind;
+        try out.append(a, t);
+    };
+}
+
+/// An apart's expansion (§16.7, #693), appended to `out`; any other atom
+/// as it is.
+pub fn expandAtom(a: Allocator, x: XAtom, out: *std.ArrayList(XAtom)) Allocator.Error!void {
+    if (!x.isApart()) return out.append(a, x);
+    const pair_kind: @FieldType(XAtom, "kind") = if (x.kind == .apart) .sep else .sep_spine;
+    for (x.groups, 0..) |g, i| for (x.groups[i + 1 ..]) |h| for (g) |p| for (h) |q| {
+        var t = sepAtom(p, q);
+        t.kind = pair_kind;
+        try out.append(a, t);
+    };
+}
+
+/// `atoms` with every apart expanded, sorted and distinct.
+pub fn expandAtoms(a: Allocator, atoms: []const XAtom) Allocator.Error![]const XAtom {
+    var out: std.ArrayList(XAtom) = .empty;
+    for (atoms) |x| try expandAtom(a, x, &out);
+    return sortAtoms(out.items);
+}
+
+/// Atoms whose slices are `a`'s own, an apart's groups included.
+pub fn dupeAtoms(a: Allocator, atoms: []const XAtom) Allocator.Error![]const XAtom {
+    const out = try a.dupe(XAtom, atoms);
+    for (out) |*x| if (x.isApart()) {
+        const gs = try a.alloc([]const Prov, x.groups.len);
+        for (gs, x.groups) |*d, g| d.* = try a.dupe(Prov, g);
+        x.groups = gs;
+    };
+    return out;
+}
+
+/// The atoms of a condition, in the `conditions` limit's measure.
+fn atomsWeight(atoms: []const XAtom) usize {
+    var n: usize = 0;
+    for (atoms) |x| n += x.weight();
+    return n;
+}
 
 /// §18.2: an exclusivity condition, as a summary states it.
 pub const XSum = struct {
@@ -512,41 +662,87 @@ pub const XSum = struct {
 };
 
 /// §16.7's mark (F3, the owner's choice (a)), in memory while a group is
-/// solved: bit 0, the entry's path went below a variable that a call inside
-/// a recursive group grew at a structure; above it, 1 + a *pending*
+/// solved: in the low byte, bit 0 marks a path below a variable that a
+/// recursive call grew at a structure; bits 1–7 hold 1 + a *pending*
 /// boundary, for a symbolic cell at such a variable: its places below that
 /// many steps are below the variable. A group clears its members' marks
-/// when it settles, so no settled summary carries one and the summary block
+/// when it settles, including the annotation boundary in the upper bits,
+/// so no settled summary carries one and the summary block
 /// does not.
-pub const Grown = u8;
+pub const Grown = u64;
 fn gMarked(g: Grown) bool {
     return g & 1 != 0;
 }
 fn gPending(g: Grown) ?usize {
-    const x = g >> 1;
-    return if (x == 0) null else x - 1;
+    const x = (g & 255) >> 1;
+    return if (x == 0) null else @intCast(x - 1);
 }
 fn gMake(marked: bool, pending: ?usize) Grown {
     const x: u8 = if (pending) |b| @intCast(@min(b, 126) + 1) else 0;
     return (x << 1) | @intFromBool(marked);
 }
-/// Two marks on one entry: marked when either is, the nearer boundary.
+/// Two marks at one result path: keep either mark and the nearer pending
+/// boundary. A larger guard distance means an earlier boundary above this
+/// path, so folding there conservatively includes both sources' aliases.
 fn gJoin(a: Grown, b: Grown) Grown {
     const pa = gPending(a);
     const pb = gPending(b);
     const pend: ?usize = if (pa) |x| (if (pb) |y| @min(x, y) else x) else pb;
-    return gMake(gMarked(a) or gMarked(b), pend);
+    return gMake(gMarked(a) or gMarked(b), pend) | (@max(a >> 8, b >> 8) << 8);
 }
 /// A symbolic cell's mark one step further down: the boundary is a step
 /// nearer, and a cell already below stays below.
 fn gStep(g: Grown) Grown {
     const pend = gPending(g) orelse return g;
-    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0);
+    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0) | (g & ~@as(Grown, 255));
+}
+
+/// A projected annotation's boundary may lie above its current result path.
+/// The upper bits hold one plus the number of path steps below that boundary;
+/// they represent the full u32 path-depth range without truncation.
+/// Like the ordinary growth mark, it is cleared when the group settles.
+fn gGuard(g: Grown) ?u32 {
+    const encoded = g >> 8;
+    return if (encoded == 0) null else @intCast(encoded - 1);
+}
+fn gGuardAt(g: Grown, distance: u32) Grown {
+    return (g & 255) | ((@as(Grown, distance) + 1) << 8);
+}
+fn gDropGuard(g: Grown, depth: u32) Grown {
+    const distance = gGuard(g) orelse return g;
+    return if (depth <= distance and distance > 0) gGuardAt(g, distance - 1) else g;
+}
+
+test "annotation growth preserves deep boundaries and joins at the earlier boundary" {
+    const low = gMake(true, 7);
+    for ([_]u32{ 254, 255, 65535, std.math.maxInt(u32) }) |distance| {
+        const marked = gGuardAt(low, distance);
+        try std.testing.expectEqual(@as(?u32, distance), gGuard(marked));
+        try std.testing.expect(gMarked(marked));
+        try std.testing.expectEqual(@as(?usize, 7), gPending(marked));
+        const stepped = gStep(marked);
+        try std.testing.expectEqual(@as(?u32, distance), gGuard(stepped));
+        try std.testing.expectEqual(@as(?usize, 6), gPending(stepped));
+    }
+    const later = gGuardAt(gMake(false, 7), 2);
+    const earlier = gGuardAt(gMake(true, 3), 5);
+    const joined = gJoin(later, earlier);
+    try std.testing.expectEqual(@as(?u32, 5), gGuard(joined));
+    try std.testing.expectEqual(@as(?usize, 3), gPending(joined));
+    try std.testing.expect(gMarked(joined));
+    try std.testing.expectEqual(earlier, gJoin(0, earlier));
+    try std.testing.expectEqual(earlier, gJoin(earlier, 0));
 }
 
 /// `rxc`: the record condition (§31.4 item 6), failing approximately unless
 /// a read-off or a row says otherwise.
 pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: Grown = 0, rxc: XSum = .{ .no = 1 } };
+
+/// A path's container condition, without a deep or record condition.
+/// Such an annotation describes its value, not an alternative allocation.
+fn spineAnnotation(r: ResEntry) bool {
+    return r.prov.condition_only and r.xc.no == 0 and r.xc.atoms.len == 0 and r.rxc.no == 0 and r.rxc.atoms.len == 0;
+}
 
 pub const SupplyEntry = struct {
     fun: u32,
@@ -559,6 +755,8 @@ pub const SupplyEntry = struct {
     approx: bool = false,
     /// The condition of what is supplied (§18.3).
     xc: XSum = .{},
+    /// Its container condition, including value-scoped path guards (#720).
+    sc: XSum = .{},
     /// Its record condition (§31.4 item 6).
     rxc: XSum = .{ .no = 1 },
     /// §16.7's mark, as on `ResEntry`.
@@ -725,6 +923,7 @@ const Slot = struct {
     lines: ?[]const Demand = null,
     /// With `lines`: the walk's eager reads of captured field paths (§31.6).
     eager_reads: u32 = 0,
+    hoist_table: Hoists.Table = .empty,
     /// Read back through its block once another module asked for it (§28.3).
     sealed: bool = false,
 };
@@ -914,6 +1113,7 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         for (bir.decls, 0..) |_, di| _ = try o.ensureSummary(m, @intCast(di));
         var demands: std.ArrayList(Demand) = .empty;
         var eager: u32 = 0;
+        var hoists: Hoists.Builder = .{};
         const slots = try o.slotsOf(m);
         for (bir.decls, 0..) |d, di| {
             if (d.kind != .value) continue;
@@ -921,6 +1121,7 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             if (slots[di].lines) |ls| {
                 try demands.appendSlice(arena, ls);
                 eager += slots[di].eager_reads;
+                try hoists.append(arena, slots[di].hoist_table);
                 continue;
             }
             var scratch: std.heap.ArenaAllocator = .init(o.in.gpa);
@@ -933,8 +1134,26 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             try w.walkDecl(body);
             try w.resolve(&demands);
             eager += w.eager_reads;
+            try hoists.append(arena, w.hoist_table.table());
         }
         r.eager_reads = eager;
+        r.hoist_table = hoists.table();
+        var hoist_lines: std.ArrayList(SummaryLine) = .empty;
+        if (o.in.format_hoists) for (r.hoist_table.reads) |h| {
+            var text: std.Io.Writer.Allocating = .init(arena);
+            const wr = &text.writer;
+            const decl = bir.decls[h.decl];
+            const name = bir.locals[decl.locals_start + h.holder].name.unwrap().?;
+            wr.print("{s} {s}", .{ if (h.demand == none) "capture" else "hoist", o.in.interner.slice(bir.symbol(@fromBackingInt(name))) }) catch return error.OutOfMemory;
+            for (r.hoist_table.paths[h.path_start..][0..h.prefix_len]) |step| {
+                if (step.kind == 0) wr.print(".{s}", .{r.hoist_table.name(step.arg)}) catch return error.OutOfMemory else wr.print(".{d}", .{step.arg}) catch return error.OutOfMemory;
+            }
+            const rp = o.in.positions.get(o.in.positions.ctx, m, bir.insts.items(.main_token)[h.inst]);
+            const pp = o.in.positions.get(o.in.positions.ctx, m, bir.insts.items(.main_token)[h.placement]);
+            wr.print(": read {d}:{d}; {s} {d}:{d}", .{ rp.line, rp.col, if (h.phase == 1) "after operands" else "before", pp.line, pp.col }) catch return error.OutOfMemory;
+            try hoist_lines.append(arena, .{ .text = try text.toOwnedSlice() });
+        };
+        r.hoist_lines = hoist_lines.items;
         // Source order: by position, which is a function of the text.
         std.mem.sort(Demand, demands.items, {}, struct {
             fn less(_: void, x: Demand, y: Demand) bool {
@@ -953,6 +1172,7 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             };
             if (d.params == 0) continue;
             if (d.kind != .value and d.kind != .foreign_value) continue;
+            if (!o.in.format_summaries) continue;
             const s = (try o.ensureSummary(m, @intCast(di))) orelse continue;
             try lines.append(arena, .{ .text = try o.summaryText(m, @intCast(di), s) });
         }
@@ -1661,12 +1881,12 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
     for (x.supply, y.supply) |a, b| {
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
-            a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
+            a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
     }
     if (x.rsupply.len != y.rsupply.len) return false;
     for (x.rsupply, y.rsupply) |a, b| {
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
-            a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc)) return false;
+            a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc)) return false;
     }
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
@@ -1829,21 +2049,40 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
 /// Only a group's own fixpoint composes its summaries with themselves, so
 /// the marks end with it, and a summary made here equals one read back
 /// from the summary block, which does not carry them.
+fn summaryHasMarks(s: Summary) bool {
+    for (s.res) |r| if (r.grown != 0) return true;
+    for (s.supply) |e| if (e.grown != 0) return true;
+    for (s.klasses) |k| {
+        if (summaryHasMarks(k.sum.*)) return true;
+        for (k.binds) |b| for (b.provs) |r| if (r.grown != 0) return true;
+    }
+    return false;
+}
+
 fn clearMarks(o: *Ownership, s: Summary) Allocator.Error!Summary {
-    const any = for (s.res) |r| {
-        if (r.grown != 0) break true;
-    } else for (s.supply) |e| {
-        if (e.grown != 0) break true;
-    } else false;
-    if (!any) return s;
+    if (!summaryHasMarks(s)) return s;
     const keep = o.keep.allocator();
+    var t = s;
     const res = try keep.dupe(ResEntry, s.res);
     for (res) |*r| r.grown = 0;
     const supply = try keep.dupe(SupplyEntry, s.supply);
     for (supply) |*e| e.grown = 0;
-    var t = s;
     t.res = res;
     t.supply = supply;
+    const klasses = try keep.dupe(Carried, s.klasses);
+    for (klasses) |*k| {
+        const sum = try keep.create(Summary);
+        sum.* = try o.clearMarks(k.sum.*);
+        k.sum = sum;
+        const binds = try keep.dupe(Carried.Bind, k.binds);
+        for (binds) |*b| {
+            const provs = try keep.dupe(ResEntry, b.provs);
+            for (provs) |*r| r.grown = 0;
+            b.provs = provs;
+        }
+        k.binds = binds;
+    }
+    t.klasses = klasses;
     return o.normalize(t);
 }
 
@@ -1898,6 +2137,7 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
     if (report) {
         o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
         o.slots[m].?[d].eager_reads = w.eager_reads;
+        o.slots[m].?[d].hoist_table = try w.hoist_table.table().clone(o.out.allocator());
     }
     const s = try w.readOff();
     // A limit the walk reached (a fixpoint, `value-cells`) makes the summary
@@ -1918,7 +2158,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     const keep = o.keep.allocator();
     const xsum = struct {
         fn f(a: Allocator, x: XSum) Allocator.Error!XSum {
-            return .{ .no = x.no, .atoms = try a.dupe(XAtom, x.atoms) };
+            return .{ .no = x.no, .atoms = try dupeAtoms(a, x.atoms) };
         }
     }.f;
     const res = try keep.alloc(ResEntry, s.res.len);
@@ -1927,6 +2167,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     for (supply, s.supply) |*d, e| {
         d.* = e;
         d.xc = try xsum(keep, e.xc);
+        d.sc = try xsum(keep, e.sc);
         d.rxc = try xsum(keep, e.rxc);
     }
     const objs = try keep.alloc(ResEntry, s.objs.len);
@@ -1935,6 +2176,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     for (rsupply, s.rsupply) |*d, e| {
         d.* = e;
         d.xc = try xsum(keep, e.xc);
+        d.sc = try xsum(keep, e.sc);
         d.rxc = try xsum(keep, e.rxc);
     }
     const klasses = try keep.alloc(Carried, s.klasses.len);
@@ -1951,8 +2193,8 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
     out.objs = objs;
     out.rsupply = rsupply;
     out.funs = try keep.dupe(FunFacts, s.funs);
-    out.xreq = try keep.dupe(XAtom, s.xreq);
-    out.rxreq = try keep.dupe(XAtom, s.rxreq);
+    out.xreq = try dupeAtoms(keep, s.xreq);
+    out.rxreq = try dupeAtoms(keep, s.rxreq);
     out.slots = try keep.dupe([2]u32, s.slots);
     out.klasses = klasses;
     return out;
@@ -1965,14 +2207,24 @@ fn summaryEql(x: Summary, y: Summary) bool {
     for (x.res, y.res) |a, b| if (!resEql(a, b)) return false;
     if (x.objs.len != y.objs.len) return false;
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
-    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
+    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc) or a.grown != b.grown) return false;
     if (x.rsupply.len != y.rsupply.len) return false;
-    for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.rxc.eql(b.rxc)) return false;
+    for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or !a.sc.eql(b.sc) or !a.rxc.eql(b.rxc)) return false;
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
     if (x.xreq.len != y.xreq.len) return false;
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     if (x.rxreq.len != y.rxreq.len) return false;
     for (x.rxreq, y.rxreq) |a, b| if (!a.eql(b)) return false;
+    if (x.slots.len != y.slots.len or x.klasses.len != y.klasses.len) return false;
+    for (x.slots, y.slots) |a, b| if (a[0] != b[0] or a[1] != b[1]) return false;
+    for (x.klasses, y.klasses) |a, b| {
+        if (!summaryEql(a.sum.*, b.sum.*) or a.binds.len != b.binds.len or a.cb_js.len != b.cb_js.len) return false;
+        for (a.binds, b.binds) |p, q| {
+            if (p.local != q.local or p.path != q.path or p.provs.len != q.provs.len) return false;
+            for (p.provs, q.provs) |u, v| if (!resEql(u, v)) return false;
+        }
+        if (!std.mem.eql(u32, a.cb_js, b.cb_js)) return false;
+    }
     return true;
 }
 
@@ -2086,16 +2338,106 @@ pub fn sortAtoms(all: []XAtom) []const XAtom {
     return all[0..n];
 }
 
+/// Classes with different callback protocols remain alternatives.
+fn carriedProtocol(a: Allocator, s: *const Summary) Allocator.Error![]const u32 {
+    var key: std.ArrayList(u32) = .empty;
+    try key.appendSlice(a, &.{ s.params, @intCast(s.slots.len) });
+    for (s.slots) |slot| try key.appendSlice(a, &slot);
+    for (s.funs) |f| if (f.send != none or f.rneed) {
+        try key.appendSlice(a, &.{ f.param, f.send, @intFromBool(f.rneed) });
+    };
+    return key.items;
+}
+
+fn joinCarried(o: *Ownership, x: Carried, y: Carried) Allocator.Error!Carried {
+    const keep = o.keep.allocator();
+    const sum = try keep.create(Summary);
+    sum.* = try o.join(x.sum.*, y.sum.*);
+    var binds: std.ArrayList(Carried.Bind) = .empty;
+    try binds.appendSlice(keep, x.binds);
+    try binds.appendSlice(keep, y.binds);
+    std.mem.sort(Carried.Bind, binds.items, {}, struct {
+        fn less(_: void, a: Carried.Bind, b: Carried.Bind) bool {
+            return if (a.local != b.local) a.local < b.local else a.path < b.path;
+        }
+    }.less);
+    var n: usize = 0;
+    for (binds.items) |b| {
+        if (n > 0 and binds.items[n - 1].local == b.local and binds.items[n - 1].path == b.path) {
+            const before = binds.items[n - 1].provs;
+            const both = try keep.alloc(ResEntry, before.len + b.provs.len);
+            @memcpy(both[0..before.len], before);
+            @memcpy(both[before.len..], b.provs);
+            binds.items[n - 1].provs = try sortedRes(keep, both);
+        } else {
+            binds.items[n] = b;
+            n += 1;
+        }
+    }
+    var callbacks: std.ArrayList(u32) = .empty;
+    try callbacks.appendSlice(keep, x.cb_js);
+    for (y.cb_js) |j| if (std.mem.indexOfScalar(u32, callbacks.items, j) == null) try callbacks.append(keep, j);
+    std.mem.sort(u32, callbacks.items, {}, std.sort.asc(u32));
+    return .{ .sum = sum, .binds = binds.items[0..n], .cb_js = callbacks.items };
+}
+
+const JoinedCarried = struct { classes: []const Carried, x: []const u32, y: []const u32 };
+
+/// Union the read-only function classes a recursive result may carry.
+fn joinCarriers(o: *Ownership, x: []const Carried, y: []const Carried) Allocator.Error!JoinedCarried {
+    const keep = o.keep.allocator();
+    var classes: std.ArrayList(Carried) = .empty;
+    var keys: std.HashMapUnmanaged([]const u32, u32, U32SliceContext, std.hash_map.default_max_load_percentage) = .empty;
+    const maps = [2][]u32{ try keep.alloc(u32, x.len), try keep.alloc(u32, y.len) };
+    for ([_][]const Carried{ x, y }, maps) |input, map| for (input, map) |c, *index| {
+        const g = try keys.getOrPut(keep, try carriedProtocol(keep, c.sum));
+        if (!g.found_existing) {
+            g.value_ptr.* = @intCast(classes.items.len);
+            try classes.append(keep, c);
+        }
+        index.* = g.value_ptr.*;
+    };
+    const initialized = try keep.alloc(bool, classes.items.len);
+    @memset(initialized, false);
+    for ([_][]const Carried{ x, y }, maps) |input, map| for (input, map) |c, index| {
+        if (initialized[index]) {
+            classes.items[index] = try o.joinCarried(classes.items[index], c);
+        } else {
+            classes.items[index] = c;
+            initialized[index] = true;
+        }
+    };
+    return .{ .classes = classes.items, .x = maps[0], .y = maps[1] };
+}
+
+fn joinedClass(p: Prov, map: []const u32) Prov {
+    var out = p;
+    // 'none' is an unknown function alternative, not a class index.
+    if (out.kind == .klass and out.a < map.len) out.a = map[out.a];
+    return out;
+}
+
 fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     if (x.limit != .none) return x;
     if (y.limit != .none) return o.pessimistic(x, y.limit, y.limit_at);
     const keep = o.keep.allocator();
+    const carried = try o.joinCarriers(x.klasses, y.klasses);
+    std.debug.assert(x.slots.len <= y.slots.len);
+    for (x.slots, y.slots[0..x.slots.len]) |a, b| std.debug.assert(a[0] == b[0] and a[1] == b[1]);
     var uses: std.ArrayList(UseEntry) = .empty;
     try uses.appendSlice(keep, x.uses);
     try uses.appendSlice(keep, y.uses);
     var res: std.ArrayList(ResEntry) = .empty;
-    try res.appendSlice(keep, x.res);
-    try res.appendSlice(keep, y.res);
+    for (x.res) |r| {
+        var next = r;
+        next.prov = joinedClass(r.prov, carried.x);
+        try res.append(keep, next);
+    }
+    for (y.res) |r| {
+        var next = r;
+        next.prov = joinedClass(r.prov, carried.y);
+        try res.append(keep, next);
+    }
     var supply: std.ArrayList(SupplyEntry) = .empty;
     try supply.appendSlice(keep, x.supply);
     try supply.appendSlice(keep, y.supply);
@@ -2127,6 +2469,8 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
         .xreq = xreq.items,
         .rxreq = rxreq.items,
         .once = x.once or y.once,
+        .slots = y.slots,
+        .klasses = carried.classes,
     });
 }
 
@@ -2165,9 +2509,9 @@ fn overLimit(s: Summary) ?Over {
         most = @max(most, streak);
     }
     if (most > path_entry_cap) return .{ .limit = .path_entries, .at = @intCast(most) };
-    var atoms: usize = s.xreq.len;
-    for (s.res) |r| atoms += r.xc.atoms.len + r.sc.atoms.len;
-    for (s.supply) |e| atoms += e.xc.atoms.len;
+    var atoms: usize = atomsWeight(s.xreq);
+    for (s.res) |r| atoms += atomsWeight(r.xc.atoms) + atomsWeight(r.sc.atoms);
+    for (s.supply) |e| atoms += atomsWeight(e.xc.atoms) + atomsWeight(e.sc.atoms);
     if (atoms > condition_cap) return .{ .limit = .conditions, .at = @intCast(@min(atoms, std.math.maxInt(u32))) };
     return null;
 }
@@ -2291,6 +2635,7 @@ fn sortedSupply(keep: Allocator, entries: []const SupplyEntry) Allocator.Error![
                 p.owned = p.owned and e.owned;
                 p.approx = !p.owned and !exact;
                 p.xc = try xsumAnd(keep, p.xc, e.xc);
+                p.sc = try xsumAnd(keep, p.sc, e.sc);
                 p.rxc = try xsumAnd(keep, p.rxc, e.rxc);
                 p.grown = gJoin(p.grown, e.grown);
                 continue;
@@ -2316,8 +2661,8 @@ fn recordTwin(o: *Ownership, x: XSum) Allocator.Error!XSum {
     if (x.no != 0) return x;
     var out: std.ArrayList(XAtom) = .empty;
     for (x.atoms) |t| switch (t.kind) {
-        .excl, .sep, .keep => try out.append(o.keep.allocator(), t),
-        .spine, .sep_spine, .keep_spine => {},
+        .excl, .sep, .keep, .apart => try out.append(o.keep.allocator(), t),
+        .spine, .sep_spine, .keep_spine, .apart_spine, .sep_root => {},
     };
     return .{ .atoms = out.items };
 }
@@ -2370,10 +2715,14 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
             if (was and is) {
                 uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
             } else if (is) uses[nu - 1].fields = u.fields;
+            if (u.bits & bit_w != 0) {
+                if (uses[nu - 1].bits & bit_w == 0 or u.extent == .deep) uses[nu - 1].extent = u.extent;
+            }
             uses[nu - 1].bits |= u.bits;
             continue;
         }
         uses[nu] = u;
+        if (u.bits & bit_w == 0) uses[nu].extent = .deep;
         nu += 1;
     }
     const res = try sortedRes(keep, s.res);
@@ -2444,10 +2793,10 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
             e.path = p;
         }
         fn same(x: UseEntry, y: UseEntry) bool {
-            return x.bits == y.bits;
+            return x.bits == y.bits and x.extent == y.extent;
         }
         fn subsumes(y: UseEntry, x: UseEntry) bool {
-            return x.bits | y.bits == y.bits;
+            return x.bits | y.bits == y.bits and (x.bits & bit_w == 0 or y.extent == .deep or x.extent == .storage);
         }
     });
     const res = try o.canonicalList(ResEntry, s.res, struct {
@@ -2500,7 +2849,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
             e.path = p;
         }
         fn same(x: SupplyEntry, y: SupplyEntry) bool {
-            return x.prov.eql(y.prov) and x.owned == y.owned and x.approx == y.approx and x.xc.eql(y.xc) and x.grown == y.grown;
+            return x.prov.eql(y.prov) and x.owned == y.owned and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc) and x.grown == y.grown;
         }
         fn subsumes(y: SupplyEntry, x: SupplyEntry) bool {
             return same(y, x);
@@ -2831,16 +3180,16 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     if (eqlAny(name, &.{ "set", "insertAt", "put" })) {
         // A writer whose base is π₁ and which stores π₃ (§18.3: the base
         // stays exclusive when π₃ is and shares nothing with its elements).
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 2, .path = eps, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 2, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 2, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(2, eps) } });
     } else if (std.mem.eql(u8, name, "push")) {
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, 1, elem) }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, eps) } });
     } else if (eqlAny(name, &.{ "pop", "removeAt", "swap", "done" })) {
         // A writer that stores nothing new: it drops an element, or permutes
         // two (`swap`, §22.5), so the list stays exclusive when it was
         // (thesis §3.11's row: `excl if π₁ excl`).
-        uses = &.{.{ .param = 0, .path = eps, .bits = R | A | W }};
+        uses = &.{.{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }};
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
     } else if (std.mem.eql(u8, name, "cons")) {
         // §3.1 as amended for slice 3f: a prepend copies, so it reads its
@@ -2856,7 +3205,7 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = .{ .atoms = sortAtoms(made) } }, .{ .path = eps, .prov = p(1, eps) }, .{ .path = elem, .prov = p(1, elem) }, .{ .path = elem, .prov = p(0, eps) } });
     } else if (std.mem.eql(u8, name, "append")) {
         // Copying in the elements of a list that lives on (thesis §3.8).
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R }, .{ .param = 1, .path = elem, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R }, .{ .param = 1, .path = elem, .bits = A } };
         res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = lost }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, elem) } });
     } else if (eqlAny(name, &.{ "copy", "sliceOf" })) {
         uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A } };
@@ -2874,10 +3223,10 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         // §18.5, the focus primitive: the element taken out, handed to the
         // callback owned when the list is exclusive, and its result put
         // back; the list stays exclusive when the callback keeps shape.
-        uses = &.{ .{ .param = 0, .path = eps, .bits = R | A | W }, .{ .param = 0, .path = elem, .bits = A } };
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 0, .path = elem, .bits = A } };
         const kept_shape = try keep.dupe(XAtom, &.{.{ .kind = .keep, .a = .{ .kind = .cb, .a = 2 }, .b = p(0, eps) }});
         res = try keep.dupe(ResEntry, &.{
-            .{ .path = eps, .prov = p(0, eps), .xc = .{ .atoms = kept_shape } },
+            .{ .path = eps, .prov = p(0, eps), .xc = .{ .atoms = kept_shape }, .sc = .{ .atoms = try keep.dupe(XAtom, &.{.{ .kind = .spine, .a = p(0, eps) }}) } },
             .{ .path = elem, .prov = p(0, elem) },
             .{ .path = elem, .prov = .{ .kind = .cb, .a = 2 } },
         });
@@ -3581,7 +3930,11 @@ fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
     if (s.limit != .none) return s;
     const keep = o.keep.allocator();
     const whole = try keep.dupe(XAtom, &.{.{ .kind = .excl, .a = .{ .kind = .param, .a = 0, .path = eps } }});
-    const supply = try keep.dupe(SupplyEntry, s.supply);
+    // The asserted tree protocol replaces implementation-only construction
+    // annotations; the real input's annotations still arrive through projection.
+    var actual_supply: std.ArrayList(SupplyEntry) = .empty;
+    for (s.supply) |e| if (!e.prov.condition_only) try actual_supply.append(keep, e);
+    const supply = actual_supply.items;
     for (supply) |*e| {
         if (e.fun != 2 or e.prov.kind != .param or e.prov.a != 0) continue;
         e.owned = true;
@@ -3594,11 +3947,34 @@ fn assertDictFocus(o: *Ownership, s: Summary) Allocator.Error!Summary {
     // excl and g keeps shape"), which states the body's `sep` of the value
     // put back from the rest in the focus's own terms.
     const keep_atom: XAtom = .{ .kind = .keep, .a = .{ .kind = .cb, .a = 2 }, .b = .{ .kind = .param, .a = 0, .path = eps } };
-    const res = try keep.dupe(ResEntry, s.res);
+    var actual_res: std.ArrayList(ResEntry) = .empty;
+    for (s.res) |r| if (!r.prov.condition_only) try actual_res.append(keep, r);
+    const res = actual_res.items;
     for (res) |*r| {
         var atoms: std.ArrayList(XAtom) = .empty;
         var dropped = false;
         for (r.xc.atoms) |x| {
+            // An apart drops the pairs that name a callback's result: its
+            // members that are one (§16.7, #693).
+            if (x.isApart()) {
+                var named = false;
+                for (x.groups) |g| for (g) |p| {
+                    if (p.kind == .cb) named = true;
+                };
+                if (!named) {
+                    try atoms.append(keep, x);
+                    continue;
+                }
+                dropped = true;
+                const gs = try keep.alloc([]Prov, x.groups.len);
+                for (gs, x.groups) |*d, g| {
+                    var kept: std.ArrayList(Prov) = .empty;
+                    for (g) |p| if (p.kind != .cb) try kept.append(keep, p);
+                    d.* = kept.items;
+                }
+                try apartAtoms(keep, x.kind, gs, &atoms);
+                continue;
+            }
             if (x.a.kind == .cb or x.b.kind == .cb) {
                 dropped = true;
                 continue;
@@ -3795,6 +4171,7 @@ fn summaryText(o: *Ownership, m: u32, d: u32, s: *const Summary) Allocator.Error
         if (u.bits & bit_w != 0) wr.writeAll(if (u.bits & bit_d != 0)
             (if (u.bits & bit_x != 0) "S" else "s")
         else if (u.bits & bit_x != 0) "W" else "w") catch return error.OutOfMemory;
+        if (u.bits & bit_w != 0 and u.extent == .storage) wr.writeAll("[storage]") catch return error.OutOfMemory;
         // §31.7: a record's write, with the fields it writes; `W{}` when a
         // block read back could not say which.
         if (u.bits & bit_f != 0) {
@@ -3908,9 +4285,22 @@ fn atomText(o: *Ownership, x: XAtom) Allocator.Error![]const u8 {
         .excl => std.fmt.allocPrint(arena, "excl {s}", .{try o.provText(x.a)}),
         .spine => std.fmt.allocPrint(arena, "spine {s}", .{try o.provText(x.a)}),
         .sep_spine => std.fmt.allocPrint(arena, "sep-spine {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
+        .sep_root => std.fmt.allocPrint(arena, "sep-root {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .keep_spine => std.fmt.allocPrint(arena, "keep-spine {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .sep => std.fmt.allocPrint(arena, "sep {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
         .keep => std.fmt.allocPrint(arena, "keep {s} {s}", .{ try o.provText(x.a), try o.provText(x.b) }),
+        .apart, .apart_spine => blk: {
+            // Members and groups by their text, as a condition's atoms are.
+            const groups = try arena.alloc([]const u8, x.groups.len);
+            for (groups, x.groups) |*t, g| {
+                const members = try arena.alloc([]const u8, g.len);
+                for (members, g) |*m, p| m.* = try o.provText(p);
+                sortText(members);
+                t.* = try std.fmt.allocPrint(arena, "[{s}]", .{try std.mem.join(arena, " ", members)});
+            }
+            sortText(groups);
+            break :blk std.fmt.allocPrint(arena, "{s} {s}", .{ if (x.kind == .apart) "apart" else "apart-spine", try std.mem.join(arena, " ", groups) });
+        },
     };
 }
 
@@ -3930,6 +4320,11 @@ fn pathText(o: *Ownership, p: u32) Allocator.Error![]const u8 {
 
 fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
     const arena = o.out.allocator();
+    if (p.condition_only) {
+        var q = p;
+        q.condition_only = false;
+        return std.fmt.allocPrint(arena, "condition({s})", .{try o.provText(q)});
+    }
     if (p.obj) {
         var q = p;
         q.obj = false;
@@ -3956,7 +4351,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
             const slot = s.slots[p.a - s.params];
             break :blk std.fmt.allocPrint(arena, "cb(π{d}{s}){s}", .{ slot[0] + 1, try o.pathText(slot[1]), pt });
         } else std.fmt.allocPrint(arena, "cb{d}{s}", .{ p.a + 1, pt })) else std.fmt.allocPrint(arena, "cb{d}{s}", .{ p.a + 1, pt }),
-        .klass => "λ",
+        .klass => if (p.a == none) "λ?" else "λ",
         .env => std.fmt.allocPrint(arena, "◇{d}{s}", .{ p.a, pt }),
     };
 }
@@ -4467,6 +4862,15 @@ fn overlap(o: *const Ownership, p: u32, q: u32) bool {
     return o.overlapSteps(p, q);
 }
 
+/// A storage write does not write a strict descendant value (§32 amendment).
+/// Match the loan as ancestor of the written place, including marker expansions.
+fn writeOverlap(o: *const Ownership, written: u32, loan: u32, extent: WriteExtent) bool {
+    if (extent == .deep) return o.overlap(written, loan);
+    var wb: [k_limit + 1]u32 = undefined;
+    var lb: [k_limit + 1]u32 = undefined;
+    return o.match(o.pathNodes(loan, &lb), o.pathNodes(written, &wb), .loan);
+}
+
 /// `overlap`, step by step.
 fn overlapSteps(o: *const Ownership, p: u32, q: u32) bool {
     var bp: [k_limit + 1]u32 = undefined;
@@ -4499,7 +4903,7 @@ fn overlapNodes(o: *const Ownership, a: []const u32, b: []const u32) bool {
 /// What `match` asks of two sets of places: that one place of each is a
 /// prefix of the other (`overlap`), or that one of `a`'s is a prefix of one
 /// of `b`'s (`holds`).
-const MatchMode = enum { overlap, holds };
+const MatchMode = enum { overlap, holds, loan };
 
 /// §16.7: two paths' remaining nodes, read as the sets of concrete places
 /// they stand for, `⋆` any steps and a marker any steps of its expansion.
@@ -4507,7 +4911,15 @@ const MatchMode = enum { overlap, holds };
 /// asks, one step at a time.
 fn match(o: *const Ownership, a: []const u32, b: []const u32, mode: MatchMode) bool {
     if (a.len == 0) return true;
-    if (b.len == 0) return mode == .overlap;
+    if (b.len == 0) {
+        if (mode != .loan) return mode == .overlap;
+        // A loan of an unknown suffix or a nullable level may be the
+        // written storage itself. Keep the older holds relation unchanged.
+        const k = o.paths.kind.items[a[0]];
+        if (k == .any) return true;
+        if (k == .level) return o.expand(o.markerKind(o.paths.arg.items[a[0]]), a[0], a[1..], b, mode, true);
+        return false;
+    }
     const x = a[0];
     const y = b[0];
     const kx = o.paths.kind.items[x];
@@ -5519,6 +5931,8 @@ const except_all: u32 = std.math.maxInt(u32);
 
 const Cell = struct {
     kind: CellKind,
+    /// The frame whose function parameter a callback result names.
+    scope: u32 = 0,
     /// site/result: the instruction; param: the parameter pattern
     /// instruction; env: the captured local; shared: the module; closure:
     /// its index; func: the module; cbres: the function parameter's index;
@@ -5545,6 +5959,8 @@ const Cell = struct {
     /// the cell's key: it is set when the cell is first made, and a cell
     /// projected from one inherits it.
     nonlist: bool = false,
+    /// §16.7: value-scoped condition transported by the level marker.
+    condition_only: bool = false,
 };
 
 /// §18.2: an atom of a condition in the walk's vocabulary — cells that
@@ -5670,7 +6086,7 @@ const U32SliceContext = struct {
 /// below the path (§23.2).
 /// `fields`: a record write of the capture, with the fields it writes
 /// (§31.4 item 4); null for a list's.
-const Capture = struct { local: u32, path: u32, deep: bool = false, fields: ?[]const u32 = null };
+const Capture = struct { local: u32, path: u32, read_inst: u32 = none, deep: bool = false, extent: WriteExtent = .deep, fields: ?[]const u32 = null };
 
 /// How a lambda was consumed: what decides its demands on its own
 /// parameters (§16.5).
@@ -5737,6 +6153,10 @@ const Closure = struct {
 };
 
 const Use = struct {
+    read_inst: u32 = none,
+    binding: u32 = none,
+    pattern_field: u32 = none,
+    capture: u32 = none,
     local: u32,
     path: u32,
     /// A record update's base is used at every path but these fields.
@@ -5783,6 +6203,7 @@ const Holder = struct {
 const DemandKind = enum { report, callsite, probe, value, creation };
 
 const DemandRec = struct {
+    inst: u32 = none,
     kind: DemandKind = .report,
     token: u32,
     op: []const u8,
@@ -5821,6 +6242,7 @@ const DemandRec = struct {
     entry: ?EntryRow = null,
     /// §23.2: a send's demand, on every cell of its base; read off as `S`.
     deep: bool = false,
+    extent: WriteExtent = .deep,
     /// §28.6: the edit's and the base's tokens, the top-level value a
     /// `top-level` rejection names, the call or operand a `call` or
     /// `held-operand` one does, and the function a `need` one names.
@@ -5894,6 +6316,7 @@ const FnState = struct {
 
 /// A supply to a function parameter, read off once its probe is resolved.
 const SupplyRec = struct {
+    frame: u32 = 0,
     fun: u32,
     k: u32,
     path: u32,
@@ -5996,7 +6419,7 @@ const Walker = struct {
 
     point: u32 = 0,
     cells: std.ArrayList(Cell) = .empty,
-    cell_map: std.HashMapUnmanaged([4]u32, u32, WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
+    cell_map: std.HashMapUnmanaged([5]u32, u32, WordsKey(5), std.hash_map.default_max_load_percentage) = .empty,
     /// §20.4, amended 2026-10-16 (#229): a lambda a callee's result carries
     /// is one closure per place it is made — the call, the callee's summary,
     /// the lambda, the callback depth and the entry's namespace — whatever
@@ -6071,10 +6494,17 @@ const Walker = struct {
     /// list's fact reads, and each cell's; what frames relied on of them.
     rconds: std.ArrayList(WCond) = .empty,
     cell_rcond: std.ArrayList(u32) = .empty,
+    /// §16.7 (#693): the groups of each `apart` atom, by its `a`, interned
+    /// so that one fact is one atom. Never shrunk: an index stays valid.
+    aparts: std.ArrayList([]const []const u32) = .empty,
+    apart_map: std.StringHashMapUnmanaged(u32) = .empty,
     rreqs: std.ArrayList(Req) = .empty,
     /// Per cell, whether it may hold a record (`mayHoldRecord`): 0 not yet
     /// asked, 1 no, 2 yes. A cell's type does not change.
     cell_rec: std.ArrayList(u8) = .empty,
+    /// Per cell, its `rbase` once asked (#684), or `none`: the cell it
+    /// names depends only on cells, which never change once made.
+    cell_rbase: std.ArrayList(u32) = .empty,
     cell_spine: std.ArrayList(u32) = .empty,
     /// §31.2: the exception sets of `except` cells, each sorted, by index.
     exsets: std.ArrayList([]const u32) = .empty,
@@ -6143,6 +6573,12 @@ const Walker = struct {
     escaping_list_only: bool = false,
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
+    hoist_table: Hoists.Builder = .{},
+    hoist_uses: std.ArrayList(struct { use: Use, prefix: u32 }) = .empty,
+    hoist_read_index: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
+    current_inst: u32 = none,
+    inst_parent: []u32 = &.{},
+
     eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
 
     // ---- setup -------------------------------------------------------------
@@ -6172,6 +6608,8 @@ const Walker = struct {
         w.send_params = try w.a.alloc(bool, insts);
         @memset(w.send_params, false);
         if (w.mode == .report) {
+            w.inst_parent = try w.a.alloc(u32, insts);
+            @memset(w.inst_parent, none);
             w.inst_span = try w.a.alloc([2]u32, insts);
             @memset(w.inst_span, .{ none, none });
         }
@@ -6184,6 +6622,11 @@ const Walker = struct {
         for (w.params, 0..) |p, i| {
             if (w.patternType(p)) |v| w.fn_state.items[i].is_fn = isFunc(w.store, v);
             try w.bindParam(p, 0);
+        }
+        if (w.recursive) {
+            const previous = w.o.slots[w.m].?[w.decl_index].sum.slots;
+            try w.slot_keys.appendSlice(w.a, previous);
+            try w.fn_state.appendNTimes(w.a, .{ .is_fn = true }, previous.len);
         }
         const result = try w.withEarly(0, try w.eval(body));
         try w.consume(&.{body}, w.bir.insts.items(.main_token)[body.int()]);
@@ -6227,17 +6670,18 @@ const Walker = struct {
         // `nonlist` is in the key: a record object a definition names on
         // purpose (a top-level record's, `Record.copy`'s) is never the cell
         // a summary's result made at the same place, whichever comes first.
-        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9), c.a, c.b, c.path };
+        const key: [5]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9) | (@as(u32, @intFromBool(c.condition_only)) << 10), c.a, c.b, c.path, c.scope };
         const gop = try w.cell_map.getOrPut(w.a, key);
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(w.cells.items.len);
         gop.value_ptr.* = id;
         var made = c;
-        made.nonlist = c.nonlist or c.kind == .except or w.isRecordCell(c) or try w.holdsOnlyRecords(c);
+        made.nonlist = !c.condition_only and (c.nonlist or c.kind == .except or w.isRecordCell(c) or try w.holdsOnlyRecords(c));
         try w.cells.append(w.a, made);
         try w.cell_cond.append(w.a, none);
         try w.cell_rcond.append(w.a, none);
         try w.cell_rec.append(w.a, 0);
+        try w.cell_rbase.append(w.a, none);
         try w.cell_spine.append(w.a, none);
         return id;
     }
@@ -6269,7 +6713,7 @@ const Walker = struct {
                 // pattern's variable binds the cell at its path with its own.
                 var up = w.o.paths.parent.items[c.path];
                 while (true) {
-                    const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, up };
+                    const key: [5]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, up, c.scope };
                     if (w.cell_map.get(key)) |id| {
                         if (w.cells.items[id].nonlist) return true;
                         if (w.cells.items[id].ty.unwrap()) |t| {
@@ -6400,6 +6844,7 @@ const Walker = struct {
                 // What the value's deep condition says of the pair before the
                 // fold, which no deep condition can say after it.
                 if (try w.nested(before[i], before[j])) continue;
+                if (w.cells.items[e.cell].condition_only or w.cells.items[f.cell].condition_only) continue;
                 const ke = w.cells.items[e.cell].kind;
                 const kf = w.cells.items[f.cell].kind;
                 if (ke == .closure or ke == .func or kf == .closure or kf == .func) continue;
@@ -6444,6 +6889,7 @@ const Walker = struct {
     /// A symbolic cell one step further down (§4.3).
     fn projCell(w: *Walker, c: u32, s: Step, ty: ?Var) Allocator.Error!?u32 {
         const x = w.cells.items[c];
+        if (x.condition_only) return w.projectSpineGuard(c, s, ty);
         // §30.10: a schema's slot. A callee with a summary named every cell
         // it put there; a call with none may have put anything.
         if (s.kind == .schema_decoded or s.kind == .schema_encoded) if (x.kind == .result) {
@@ -6495,7 +6941,7 @@ const Walker = struct {
                 continue;
             }
             if (first.kind == s.kind and first.arg == s.arg) {
-                try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown });
+                try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = gDropGuard(e.grown, w.o.paths.depth.items[e.path]) });
             }
             if (unmarked) |t| if (first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t) {
                 try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
@@ -6697,7 +7143,7 @@ const Walker = struct {
                 }
                 const g = try idx.by.getOrPut(w.a, .{ @backingInt(first.kind), first.arg });
                 if (!g.found_existing) g.value_ptr.* = .empty;
-                try g.value_ptr.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown });
+                try g.value_ptr.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = gDropGuard(e.grown, w.o.paths.depth.items[e.path]) });
             }
             gop.value_ptr.* = idx;
         }
@@ -6739,9 +7185,15 @@ const Walker = struct {
     fn atomFacing(w: *Walker, t: WAtom) Allocator.Error!?WAtom {
         var out = t;
         switch (t.kind) {
+            // Made of cells already facing (`apartCells`).
+            .apart, .apart_spine => {},
             // `a` is a function parameter's index, not a cell.
             .keep, .keep_spine => out.b = (try w.atomCell(t.b)) orelse return null,
             .excl, .spine => out.a = (try w.atomCell(t.a)) orelse return null,
+            .sep_root => {
+                out.a = (try w.atomCell(t.a)) orelse return null;
+                out.b = (try w.atomCell(t.b)) orelse return null;
+            },
             .sep, .sep_spine => {
                 const a = (try w.atomCell(t.a)) orelse return null;
                 const b = (try w.atomCell(t.b)) orelse return null;
@@ -6841,6 +7293,7 @@ const Walker = struct {
     /// A list may hold shared read-only values without sharing its own array.
     fn cellSpine(w: *Walker, c: u32) Allocator.Error!u32 {
         if (w.cell_spine.items[c] != none) return w.cell_spine.items[c];
+        if (w.cells.items[c].condition_only) return cond_yes;
         const x = w.cells.items[c];
         const k: u32 = switch (x.kind) {
             .site, .closure, .func => cond_yes,
@@ -6871,9 +7324,36 @@ const Walker = struct {
 
     fn spineCond(w: *Walker, av: AV) Allocator.Error!u32 {
         var acc: CondAcc = .{};
-        for (av) |e| if (e.path == eps) {
-            try acc.add(w, try w.cellSpine(e.cell));
+        const any = try w.o.child(eps, .any, 0);
+        for (av) |e| if (e.path == eps or e.path == any) {
+            var k = try w.cellSpine(e.cell);
+            const c = w.cells.items[e.cell];
+            // An annotation on an opaque top-level value has no exact
+            // allocation witness, just as that value's own spine does not.
+            // Keep a known failure on a concrete allocation exact, however.
+            if (c.condition_only and (c.kind == .shared or c.kind == .top or c.kind == .payload) and k == cond_shared) k = cond_lost;
+            try acc.add(w, try w.rootSpineFact(k, e.approx == 0));
         };
+        return w.condAndAll(&acc);
+    }
+
+    /// At the selected array, an impossible separation is already false,
+    /// not an unsatisfiable requirement to pass on to a caller. Keep the
+    /// original annotation projectable for a different selected path.
+    fn rootSpineFact(w: *Walker, k: u32, exact: bool) Allocator.Error!u32 {
+        if (k <= cond_fixed_last) return k;
+        for (w.conds.items[k].atoms) |t| {
+            if (t.kind == .sep_root) break;
+        } else return k;
+        var acc: CondAcc = .{};
+        for (w.conds.items[k].atoms) |t| {
+            if (t.kind == .sep_root) {
+                const pair = try w.sepSpines(t.a, t.b, exact);
+                try acc.add(w, if (pair <= cond_fixed_last) pair else try w.atomCond(t));
+            } else {
+                try acc.add(w, try w.atomCond(t));
+            }
+        }
         return w.condAndAll(&acc);
     }
 
@@ -6881,6 +7361,7 @@ const Walker = struct {
     /// the definition, pair by pair, which `spineAt` computes through an
     /// index. Kept to check it under runtime safety.
     fn spineAtPairwise(w: *Walker, av: AV, target: Entry) Allocator.Error!u32 {
+        if (w.cells.items[target.cell].condition_only) return w.cellSpine(target.cell);
         var k = try w.cellSpine(target.cell);
         for (av) |other| {
             if (other.path == target.path) continue;
@@ -6930,6 +7411,7 @@ const Walker = struct {
         idx.multi = multi.items;
         for (av) |e| {
             const c = w.cells.items[e.cell];
+            if (c.condition_only) continue;
             switch (c.kind) {
                 // Compared with every cell, as `spineAt` does (§31.2).
                 .taken, .top, .payload, .except => try idx.odd.append(w.a, e),
@@ -6964,6 +7446,7 @@ const Walker = struct {
     /// result; an arrived cell with every arrived cell, and a callback's
     /// result with the cells made here too.
     fn spineAt(w: *Walker, idx: *const SpineIndex, target: Entry) Allocator.Error!u32 {
+        if (w.cells.items[target.cell].condition_only) return w.cellSpine(target.cell);
         if (std.sort.binarySearch(u32, idx.multi, target.cell, orderU32) != null) return cond_lost;
         var acc: CondAcc = .{};
         try acc.add(w, try w.cellSpine(target.cell));
@@ -7019,8 +7502,9 @@ const Walker = struct {
             // duplicates folded, and past the limit nothing more is kept.
             if (acc.atoms.items.len > 2 * condition_cap) {
                 acc.atoms.items.len = sortWAtoms(acc.atoms.items);
-                if (acc.atoms.items.len > condition_cap) {
-                    try w.o.hitLimit(.conditions, @intCast(acc.atoms.items.len));
+                const weight = w.atomsWeightW(acc.atoms.items);
+                if (weight > condition_cap) {
+                    try w.o.hitLimit(.conditions, @intCast(@min(weight, std.math.maxInt(u32))));
                     acc.limit = true;
                     acc.atoms.clearRetainingCapacity();
                 }
@@ -7032,6 +7516,7 @@ const Walker = struct {
         const tc = w.cells.items[target.cell];
         const t_arrived = tc.kind == .param or tc.kind == .env or tc.kind == .cbres;
         for (others) |other| {
+            if (w.cells.items[other.cell].condition_only) continue;
             if (acc.shared) return;
             if (other.path == target.path) continue;
             if (try w.nested(other, target)) continue;
@@ -7059,6 +7544,19 @@ const Walker = struct {
         }
     }
 
+    /// Atoms in the `conditions` limit's measure: an apart counts its
+    /// members (§16.7, #693).
+    fn atomsWeightW(w: *const Walker, atoms: []const WAtom) usize {
+        var n: usize = 0;
+        for (atoms) |t| switch (t.kind) {
+            .apart, .apart_spine => for (w.aparts.items[t.a]) |g| {
+                n += g.len;
+            },
+            else => n += 1,
+        };
+        return n;
+    }
+
     /// Sorts `all` and moves its distinct atoms to the front; their count.
     fn sortWAtoms(all: []WAtom) usize {
         std.mem.sort(WAtom, all, {}, struct {
@@ -7083,8 +7581,9 @@ const Walker = struct {
         if (acc.atoms.items.len == 0) return cond_yes;
         const all = acc.atoms.items;
         const m = sortWAtoms(all);
-        if (m > condition_cap) {
-            try w.o.hitLimit(.conditions, @intCast(m));
+        const weight = w.atomsWeightW(all[0..m]);
+        if (weight > condition_cap) {
+            try w.o.hitLimit(.conditions, @intCast(@min(weight, std.math.maxInt(u32))));
             return cond_limit;
         }
         return w.mkCond(all[0..m]);
@@ -7110,6 +7609,7 @@ const Walker = struct {
     }
 
     fn sepSpines(w: *Walker, x: u32, y: u32, exact: bool) Allocator.Error!u32 {
+        if (w.cells.items[x].condition_only or w.cells.items[y].condition_only) return cond_yes;
         const cx = w.cells.items[x];
         if (x == y and w.inCoreDict()) switch (cx.kind) {
             .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellSpine(x),
@@ -7126,6 +7626,7 @@ const Walker = struct {
         for (atoms) |*a| switch (a.kind) {
             .sep => a.kind = .sep_spine,
             .excl => a.kind = .spine,
+            .apart => a.kind = .apart_spine,
             else => {},
         };
         return w.mkCond(atoms);
@@ -7193,6 +7694,7 @@ const Walker = struct {
     /// The record object a record demand reads for `c` (§31.3): an `except`
     /// cell is the object it was written over.
     fn recordObject(w: *const Walker, c: u32) ?u32 {
+        if (w.cells.items[c].condition_only) return null;
         const x = w.cells.items[c];
         return if (x.kind == .except) x.a else c;
     }
@@ -7205,6 +7707,7 @@ const Walker = struct {
     }
 
     fn atomCell(w: *Walker, c_in: u32) Allocator.Error!?u32 {
+        if (w.cells.items[c_in].condition_only) return null;
         const c = w.listFacing(c_in) orelse return null;
         if (w.cells.items[c].ty.unwrap()) |v| if (!try w.listTrackedVar(v)) return null;
         return c;
@@ -7274,6 +7777,7 @@ const Walker = struct {
 
     /// Whether two cells share no cell (§18.2).
     fn sepCells(w: *Walker, x: u32, y: u32, exact: bool) Allocator.Error!u32 {
+        if (w.cells.items[x].condition_only or w.cells.items[y].condition_only) return cond_yes;
         const cx = w.cells.items[x];
         const cy = w.cells.items[y];
         if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
@@ -7317,16 +7821,358 @@ const Walker = struct {
     /// Whether two values share no cell.
     fn sepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
         if (x.len == 0 or y.len == 0) return cond_yes;
+        return w.sepOfCells(try w.sepCellList(x), try w.sepCellList(y));
+    }
+
+    /// The cells `sepValues` compares for `x`. Only the cells matter, and
+    /// whether each is reached exactly: a value holding one cell at many
+    /// paths is compared once (§20.4).
+    fn sepCellList(w: *Walker, x: AV) Allocator.Error!AV {
+        return w.cellsOf(try w.expand(x));
+    }
+
+    /// `sepValues` over two values' `sepCellList`.
+    fn sepOfCells(w: *Walker, ex: AV, ey: AV) Allocator.Error!u32 {
         var acc: CondAcc = .{};
-        // Only the cells matter, and whether each is reached exactly: a
-        // value holding one cell at many paths is compared once (§20.4).
-        const ex = try w.cellsOf(try w.expand(x));
-        const ey = try w.cellsOf(try w.expand(y));
         for (ex) |a| for (ey) |b| {
             try acc.add(w, try w.sepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (acc.shared) return cond_shared;
         };
         return w.condAndAll(&acc);
+    }
+
+    // ---- pairwise apart (§16.7, amended 2026-10-22, #693) -----------------
+
+    /// Which table a pairwise-apart condition is for: a list's (`sepCells`,
+    /// `conds`) or a record's (`rsepCells`, `rconds`).
+    const Fl = enum { list, record };
+
+    /// A conjunction in either table.
+    const FlAcc = struct {
+        fl: Fl,
+        l: CondAcc = .{},
+        r: RAcc = .{},
+
+        fn add(acc: *FlAcc, w: *Walker, k: u32) Allocator.Error!void {
+            switch (acc.fl) {
+                .list => try acc.l.add(w, k),
+                .record => try acc.r.add(w, k),
+            }
+        }
+
+        fn shared(acc: *const FlAcc) bool {
+            return switch (acc.fl) {
+                .list => acc.l.shared,
+                .record => acc.r.shared,
+            };
+        }
+
+        /// Atoms already in the table's vocabulary (facing, for a list's).
+        fn addAtoms(acc: *FlAcc, w: *Walker, atoms: []const WAtom) Allocator.Error!void {
+            if (atoms.len == 0) return;
+            switch (acc.fl) {
+                .list => try acc.l.atoms.appendSlice(w.a, atoms),
+                .record => {
+                    if (!acc.r.many) {
+                        acc.r.many = true;
+                        if (acc.r.one != cond_yes) try acc.r.atoms.appendSlice(w.a, w.rconds.items[acc.r.one].atoms);
+                    }
+                    try acc.r.atoms.appendSlice(w.a, atoms);
+                },
+            }
+        }
+
+        fn done(acc: *FlAcc, w: *Walker) Allocator.Error!u32 {
+            return switch (acc.fl) {
+                .list => w.condAndAll(&acc.l),
+                .record => acc.r.done(w),
+            };
+        }
+    };
+
+    fn lessU32s(_: void, x: []const u32, y: []const u32) bool {
+        return std.mem.order(u32, x, y) == .lt;
+    }
+
+    /// `apartAtoms` over the walk's cells: the atoms that say `groups_in` are
+    /// pairwise apart, appended to `out` — one interned `apart` (or
+    /// `apart_spine`) when its expansion is longer than its members, else
+    /// the expansion. Each group is reordered in place.
+    fn pairwiseApartAtoms(w: *Walker, kind: @FieldType(XAtom, "kind"), groups_in: [][]u32, out: *std.ArrayList(WAtom)) Allocator.Error!void {
+        var groups: std.ArrayList([]const u32) = .empty;
+        for (groups_in) |g| {
+            std.mem.sort(u32, g, {}, std.sort.asc(u32));
+            var n: usize = 0;
+            for (g) |c| {
+                if (n > 0 and g[n - 1] == c) continue;
+                g[n] = c;
+                n += 1;
+            }
+            if (n > 0) try groups.append(w.a, g[0..n]);
+        }
+        if (groups.items.len < 2) return;
+        std.mem.sort([]const u32, groups.items, {}, lessU32s);
+        const sizes = try w.a.alloc(usize, groups.items.len);
+        for (sizes, groups.items) |*s, g| s.* = g.len;
+        const c = apartCounts(sizes);
+        if (c.pairs <= c.members) {
+            const pk: @FieldType(XAtom, "kind") = if (kind == .apart) .sep else .sep_spine;
+            for (groups.items, 0..) |g, i| for (groups.items[i + 1 ..]) |h| for (g) |x| for (h) |y| {
+                try out.append(w.a, .{ .kind = pk, .a = @min(x, y), .b = @max(x, y) });
+            };
+            return;
+        }
+        var key: std.ArrayList(u32) = .empty;
+        for (groups.items) |g| {
+            try key.append(w.a, @intCast(g.len));
+            try key.appendSlice(w.a, g);
+        }
+        const gop = try w.apart_map.getOrPut(w.a, std.mem.sliceAsBytes(key.items));
+        if (!gop.found_existing) {
+            gop.value_ptr.* = @intCast(w.aparts.items.len);
+            try w.aparts.append(w.a, groups.items);
+        }
+        try out.append(w.a, .{ .kind = kind, .a = gop.value_ptr.* });
+    }
+
+    /// A walk atom's expansion, appended to `out` (an apart's pairs; any
+    /// other atom as it is).
+    fn expandWAtom(w: *Walker, t: WAtom, out: *std.ArrayList(WAtom)) Allocator.Error!void {
+        if (t.kind != .apart and t.kind != .apart_spine) return out.append(w.a, t);
+        const pk: @FieldType(XAtom, "kind") = if (t.kind == .apart) .sep else .sep_spine;
+        const gs = w.aparts.items[t.a];
+        for (gs, 0..) |g, i| for (gs[i + 1 ..]) |h| for (g) |x| for (h) |y| {
+            try out.append(w.a, .{ .kind = pk, .a = @min(x, y), .b = @max(x, y) });
+        };
+    }
+
+    /// Whether two conditions of one table say the same: one verdict, or,
+    /// with every apart expanded, the same atoms.
+    fn condSameExpanded(w: *Walker, x: u32, y: u32, fl: Fl) Allocator.Error!bool {
+        if (x <= cond_fixed_last or y <= cond_fixed_last) return x == y;
+        const table = if (fl == .list) w.conds.items else w.rconds.items;
+        var xs: std.ArrayList(WAtom) = .empty;
+        var ys: std.ArrayList(WAtom) = .empty;
+        for (table[x].atoms) |t| try w.expandWAtom(t, &xs);
+        for (table[y].atoms) |t| try w.expandWAtom(t, &ys);
+        const n = sortWAtoms(xs.items);
+        const m = sortWAtoms(ys.items);
+        if (n != m) return false;
+        for (xs.items[0..n], ys.items[0..m]) |t, u| if (!std.meta.eql(t, u)) return false;
+        return true;
+    }
+
+    /// Whether a safety build compares a pairwise-apart condition over
+    /// groups of these sizes with its expansion (§16.7, #693): one whose
+    /// expansion has at most 64 pairs, or every one under
+    /// `-Downership-full-cross-check`.
+    fn checksApart(sizes: anytype) bool {
+        if (!std.debug.runtime_safety) return false;
+        if (@import("ownership_options").full_cross_check) return true;
+        return apartCounts(sizes).pairs <= 64;
+    }
+
+    /// One pair's separation, in the table's terms.
+    fn sepCellsFl(w: *Walker, x: u32, y: u32, exact: bool, fl: Fl) Allocator.Error!u32 {
+        return switch (fl) {
+            .list => w.sepCells(x, y, exact),
+            .record => w.rsepCells(x, y, exact),
+        };
+    }
+
+    /// The definition, pair by pair: `sepOfCells` (or `rsepOfCells`) of
+    /// every two groups.
+    fn pairwiseApartByPairs(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
+        var acc: FlAcc = .{ .fl = fl };
+        for (groups, 0..) |g, i| for (groups[i + 1 ..]) |h| {
+            if (g.len == 0 or h.len == 0) continue;
+            try acc.add(w, switch (fl) {
+                .list => try w.sepOfCells(g, h),
+                .record => try w.rsepOfCells(g, h),
+            });
+            if (acc.shared()) return cond_shared;
+        };
+        return acc.done(w);
+    }
+
+    /// §16.7 (#693): that no cell of one group shares a cell (a record
+    /// object, for a record's) with a cell of another — the conjunction of
+    /// `sepCells` (`rsepCells`) over every such pair — in one pass. Each
+    /// group is a cell list (`sepCellList`, `rsepCellList`). Pairs that
+    /// their kinds settle are not formed; two cells are related only inside
+    /// one family, through a table of its paths; `⊤`, a message, a taken
+    /// element and an `except` cell are compared pair by pair; the arrivals
+    /// left are one apart. Inside core `Dict`, where one arrival at a folded
+    /// path is several places, the whole condition is pair by pair.
+    fn pairwiseApart(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
+        const sizes = try w.a.alloc(usize, groups.len);
+        for (sizes, groups) |*s, g| s.* = g.len;
+        // No longer than its members: the condition is its expansion
+        // (`pairwiseApartAtoms`), and the pairs are the cheaper way to it.
+        const c = apartCounts(sizes);
+        if (c.pairs <= c.members) return w.pairwiseApartByPairs(groups, fl);
+        const k = try w.pairwiseApartOnce(groups, fl);
+        if (checksApart(sizes)) {
+            const want = try w.pairwiseApartByPairs(groups, fl);
+            if (!try w.condSameExpanded(k, want, fl)) std.debug.panic("ownership: a pairwise-apart condition differs from its expansion", .{});
+        }
+        return k;
+    }
+
+    fn pairwiseApartOnce(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
+        if (fl == .list and w.inCoreDict()) return w.pairwiseApartByPairs(groups, fl);
+        const Ent = struct { e: Entry, g: u32 };
+        var ents: std.ArrayList(Ent) = .empty;
+        const per = try w.a.alloc(u32, groups.len);
+        @memset(per, 0);
+        for (groups, 0..) |g, gi| for (g) |e_in| {
+            var e = e_in;
+            const raw = w.cells.items[e.cell];
+            if (raw.condition_only or raw.kind == .closure or raw.kind == .func) continue;
+            if (fl == .record) {
+                e.cell = try w.rbase(e.cell);
+                const x = w.cells.items[e.cell];
+                if (x.kind == .closure or x.kind == .func) continue;
+                if (!try w.mayHoldRecord(e.cell)) continue;
+            }
+            try ents.append(w.a, .{ .e = e, .g = @intCast(gi) });
+            per[gi] += 1;
+        };
+        var filled: usize = 0;
+        for (per) |n| {
+            if (n > 0) filled += 1;
+        }
+        if (filled < 2) return cond_yes;
+        var acc: FlAcc = .{ .fl = fl };
+        const items = ents.items;
+        // Related pairs (`covers`, either way, or one cell): only in one
+        // family — a cell kind that `covers` relates by `(kind, a, b)` and
+        // a path prefix, or a site's or `⊤`'s cell, which only it is.
+        var families: std.AutoArrayHashMapUnmanaged([4]u32, std.ArrayList(u32)) = .empty;
+        for (items, 0..) |x, i| {
+            const c = w.cells.items[x.e.cell];
+            const key: [4]u32 = switch (c.kind) {
+                .param, .result, .env, .shared, .cbres, .payload => .{ @backingInt(c.kind), c.a, c.b, 0 },
+                .site, .top => .{ @backingInt(c.kind), x.e.cell, 0, 1 },
+                .taken, .except, .closure, .func => continue,
+            };
+            const gop = try families.getOrPut(w.a, key);
+            if (!gop.found_existing) gop.value_ptr.* = .empty;
+            try gop.value_ptr.append(w.a, @intCast(i));
+        }
+        for (families.keys(), families.values()) |key, fam| {
+            if (fam.items.len < 2) continue;
+            const g0 = items[fam.items[0]].g;
+            for (fam.items) |i| {
+                if (items[i].g != g0) break;
+            } else continue;
+            var star = key[3] == 1;
+            for (fam.items) |i| {
+                if (w.o.paths.any.items[w.cells.items[items[i].e.cell].path]) star = true;
+            }
+            if (star) {
+                // A `⋆` path, where a marker may hold a place, or one cell:
+                // pair by pair.
+                for (fam.items, 0..) |i, n| for (fam.items[n + 1 ..]) |j| {
+                    const x = items[i];
+                    const y = items[j];
+                    if (x.g == y.g) continue;
+                    if (x.e.cell != y.e.cell and (try w.covers(x.e.cell, y.e.cell)) == null and (try w.covers(y.e.cell, x.e.cell)) == null) continue;
+                    try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                    if (acc.shared()) return cond_shared;
+                };
+                continue;
+            }
+            // One path is the other's step-by-step prefix: each cell's
+            // ancestors, looked up.
+            // `(path, entry)`, sorted: the entries at one path are a run.
+            const by_path = try w.a.alloc([2]u32, fam.items.len);
+            for (by_path, fam.items) |*p, i| p.* = .{ w.cells.items[items[i].e.cell].path, i };
+            std.mem.sort([2]u32, by_path, {}, lessPair);
+            for (fam.items) |i| {
+                const x = items[i];
+                const own = w.cells.items[x.e.cell].path;
+                var at = own;
+                while (true) {
+                    const lo = std.sort.lowerBound([2]u32, by_path, at, struct {
+                        fn order(want: u32, p: [2]u32) std.math.Order {
+                            return std.math.order(want, p[0]);
+                        }
+                    }.order);
+                    for (by_path[lo..]) |p| {
+                        if (p[0] != at) break;
+                        const j = p[1];
+                        const y = items[j];
+                        if (y.g == x.g) continue;
+                        // One path: the pair once.
+                        if (at == own and j >= i) continue;
+                        try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                        if (acc.shared()) return cond_shared;
+                    }
+                    if (at == eps or at == none) break;
+                    at = w.o.paths.parent.items[at];
+                }
+            }
+        }
+        // `⊤` and a message against any cell of another group: lost, when
+        // the two are not one (above).
+        for (items) |x| switch (w.cells.items[x.e.cell].kind) {
+            .top, .payload => if (items.len - per[x.g] > 0) {
+                try acc.add(w, cond_lost);
+                break;
+            },
+            else => {},
+        };
+        // A taken element and an `except` cell: pair by pair, as before.
+        for (items, 0..) |x, i| {
+            const kx = w.cells.items[x.e.cell].kind;
+            if (kx != .taken and kx != .except) continue;
+            for (items, 0..) |y, j| {
+                if (y.g == x.g) continue;
+                const ky = w.cells.items[y.e.cell].kind;
+                if ((ky == .taken or ky == .except) and j < i) continue;
+                try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                if (acc.shared()) return cond_shared;
+            }
+        }
+        // A callback's result against what the body made: lost when what
+        // it was handed reaches one of them.
+        var made: std.ArrayList(Entry) = .empty;
+        for (items) |x| {
+            const c = w.cells.items[x.e.cell];
+            if (c.kind != .cbres) continue;
+            const args = w.instCol(?AV, w.cb_args, c.b, null) orelse continue;
+            made.clearRetainingCapacity();
+            for (items) |y| {
+                if (y.g == x.g or !madeHere(w.cells.items[y.e.cell].kind)) continue;
+                try made.append(w.a, .{ .path = eps, .cell = y.e.cell });
+            }
+            if (made.items.len == 0) continue;
+            if ((try w.reaches(args, made.items)) != null) {
+                try acc.add(w, cond_lost);
+                break;
+            }
+        }
+        // The arrivals: one apart.
+        const gs = try w.a.alloc([]u32, groups.len);
+        for (gs) |*g| g.* = &.{};
+        {
+            var lists = try w.a.alloc(std.ArrayList(u32), groups.len);
+            for (lists) |*l| l.* = .empty;
+            for (items) |x| {
+                if (!arrived(w.cells.items[x.e.cell].kind)) continue;
+                const c = switch (fl) {
+                    .list => (try w.atomCell(x.e.cell)) orelse continue,
+                    .record => x.e.cell,
+                };
+                try lists[x.g].append(w.a, c);
+            }
+            for (gs, lists) |*g, l| g.* = l.items;
+        }
+        var atoms: std.ArrayList(WAtom) = .empty;
+        try w.pairwiseApartAtoms(.apart, gs, &atoms);
+        try acc.addAtoms(w, atoms.items);
+        return acc.done(w);
     }
 
     /// `av`'s distinct cells, each at ε, exact when any entry reaches it exactly.
@@ -7372,21 +8218,22 @@ const Walker = struct {
         return w.condAndAll(&acc);
     }
 
-    /// Whether two entries of one value are a container and what it holds,
-    /// which a deep condition does not separate (§18.2): one path a prefix of
-    /// the other step by step. A prefix only through `⋆` or a marker (§16.7)
-    /// is a place that stands for several, which may be the other one or
-    /// beside it, so the two are separated unless their cells are two that
-    /// hold one another. One cell at both is two places that share it, unless
-    /// one entry is only a copy of the other at a place it may stand for (an
-    /// approximate entry: a projection keeps a marked entry whole and at the
-    /// rest of its path).
+    /// Whether a deep condition may omit separation of two entries (§16.7).
+    /// Different cells under a step-by-step prefix are a container and its
+    /// contents. One cell at both is acyclic only if the shorter path names
+    /// one place. Approximate views are not compared here; value-scoped
+    /// construction conditions still separate coexisting stored operands.
     fn nested(w: *Walker, e: Entry, f: Entry) Allocator.Error!bool {
-        if (w.o.startsWith(e.path, f.path) or w.o.startsWith(f.path, e.path)) return true;
+        const x = if (w.o.startsWith(e.path, f.path)) f.path else if (w.o.startsWith(f.path, e.path)) e.path else null;
+        if (x) |prefix| {
+            if (e.cell != f.cell) return true;
+            if (!try w.o.representative(prefix) and !w.o.paths.any.items[prefix]) return true;
+            return e.approx != 0 or f.approx != 0;
+        }
         if (!w.o.overlap(e.path, f.path)) return false;
-        // Both exact: the value holds the cell at two places, which is
-        // sharing (`EnvPrefix`). One approximate: a copy of the other entry
-        // at a place it may stand for, one place.
+        // Both exact: one cell at two overlapping places is sharing
+        // (`EnvPrefix`). Approximate views are not separated here; the
+        // containing value still carries its construction conditions.
         if (e.cell == f.cell) return e.approx != 0 or f.approx != 0;
         return (try w.covers(e.cell, f.cell)) != null or (try w.covers(f.cell, e.cell)) != null;
     }
@@ -7394,12 +8241,30 @@ const Walker = struct {
     /// The condition of stored items, pairwise and against what the list
     /// already holds (§18.2's table).
     fn storedCond(w: *Walker, items: []const AV, elements: AV) Allocator.Error!u32 {
+        // The items and what the list holds are pairwise apart (§16.7,
+        // #693), their cells read in the order the pairs read them: the
+        // first nonempty item meets what the list holds and every later
+        // item before the next item's deep condition.
         var acc: CondAcc = .{};
+        const groups = try w.a.alloc(AV, items.len + 1);
+        @memset(groups, &.{});
+        var met = false;
         for (items, 0..) |v, i| {
             try acc.add(w, try w.deepCond(v));
-            try acc.add(w, try w.sepValues(v, elements));
-            for (items[i + 1 ..]) |u| try acc.add(w, try w.sepValues(v, u));
+            if (met or v.len == 0) continue;
+            if (elements.len > 0) {
+                groups[i] = try w.sepCellList(v);
+                groups[items.len] = try w.sepCellList(elements);
+                met = true;
+            }
+            for (items[i + 1 ..], i + 1..) |u, j| {
+                if (u.len == 0) continue;
+                if (groups[i].len == 0) groups[i] = try w.sepCellList(v);
+                groups[j] = try w.sepCellList(u);
+                met = true;
+            }
         }
+        try acc.add(w, try w.pairwiseApart(groups, .list));
         return w.condAndAll(&acc);
     }
 
@@ -7487,6 +8352,13 @@ const Walker = struct {
     /// (`cell` interns: a record whose cell is always `nonlist` names
     /// itself).
     fn rbase(w: *Walker, c_in: u32) Allocator.Error!u32 {
+        if (w.cell_rbase.items[c_in] != none) return w.cell_rbase.items[c_in];
+        const b = try w.rbaseOnce(c_in);
+        w.cell_rbase.items[c_in] = b;
+        return b;
+    }
+
+    fn rbaseOnce(w: *Walker, c_in: u32) Allocator.Error!u32 {
         var c = c_in;
         while (w.cells.items[c].kind == .except) c = w.cells.items[c].a;
         const x = w.cells.items[c];
@@ -7548,6 +8420,7 @@ const Walker = struct {
 
     /// Whether two cells share no record object.
     fn rsepCells(w: *Walker, x_in: u32, y_in: u32, exact: bool) Allocator.Error!u32 {
+        if (w.cells.items[x_in].condition_only or w.cells.items[y_in].condition_only) return cond_yes;
         const x = try w.rbase(x_in);
         const y = try w.rbase(y_in);
         const cx = w.cells.items[x];
@@ -7606,9 +8479,17 @@ const Walker = struct {
     /// Whether two values share no record object.
     fn rsepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
         if (x.len == 0 or y.len == 0) return cond_yes;
+        return w.rsepOfCells(try w.rsepCellList(x), try w.rsepCellList(y));
+    }
+
+    /// The record cells `rsepValues` compares for `x`.
+    fn rsepCellList(w: *Walker, x: AV) Allocator.Error!AV {
+        return w.cellsOf(try w.rcellsOf(x));
+    }
+
+    /// `rsepValues` over two values' `rsepCellList`.
+    fn rsepOfCells(w: *Walker, ex: AV, ey: AV) Allocator.Error!u32 {
         var acc: RAcc = .{};
-        const ex = try w.cellsOf(try w.rcellsOf(x));
-        const ey = try w.cellsOf(try w.rcellsOf(y));
         for (ex) |a| for (ey) |b| {
             try acc.add(w, try w.rsepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (acc.shared) return cond_shared;
@@ -7706,13 +8587,16 @@ const Walker = struct {
         const cells = try w.a.alloc(AV, items.len);
         for (items, cells) |v, *c| c.* = try w.cellsOf(try w.rcellsOf(v));
         const ecells = try w.cellsOf(try w.rcellsOf(elements));
-        for (items, cells, 0..) |v, cv, i| {
+        for (items, cells) |v, cv| {
             if (cv.len == 0) continue;
             try acc.add(w, try w.rdeepCond(v));
-            try w.rsepCellsOf(cv, ecells, &acc);
-            for (cells[i + 1 ..]) |cu| try w.rsepCellsOf(cv, cu, &acc);
             if (acc.shared) return cond_shared;
         }
+        // The items and what the list holds, pairwise apart (§16.7, #693).
+        const groups = try w.a.alloc(AV, items.len + 1);
+        @memcpy(groups[0..items.len], cells);
+        groups[items.len] = ecells;
+        try acc.add(w, try w.pairwiseApart(groups, .record));
         return acc.done(w);
     }
 
@@ -7739,31 +8623,176 @@ const Walker = struct {
     fn rxsumOf(w: *Walker, k: u32, frame: u32, params: []const Inst.Index, self: u32) Allocator.Error!XSum {
         if (k == cond_lost or k == cond_limit) return .{ .no = 1 };
         if (k == cond_shared) return .{ .no = 2 };
-        const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
         for (w.rconds.items[k].atoms) |t| {
             if (self != none and t.kind == .excl and t.a == (try w.rbase(self))) continue;
-            const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
-            try out.append(keep, x);
+            if (!try w.xatomsOf(t, frame, params, false, &out)) return .{ .no = 1 };
         }
         return .{ .atoms = w.o.pruneAtoms(out.items) };
     }
+
+    /// One condition's provenances at a call, each instantiated once
+    /// (#684). A construction's condition (§16.7, *as amended 2026-10-22*)
+    /// names every pair of its operands, so one parameter's projection is
+    /// named by as many atoms as the construction has operands, and was
+    /// projected again at each. A parameter's provenance is a projection of
+    /// what the call is handed: it reads nothing an atom's instantiation
+    /// changes, and the cells it reaches are interned, so the first atom
+    /// that names it makes every cell, in the order it always did, and a
+    /// later one would only find them. Its cells as `sepValues` and
+    /// `rsepValues` read them are kept too, for a value that holds no
+    /// closure, where they are its own entries; a closure's expansion reads
+    /// the locals it captured, which an atom that walks a callback may
+    /// bind. Every other provenance kind may act (escape, carry, iterate a
+    /// callback) and is instantiated at every atom, as before.
+    const ProvMemo = struct {
+        const Known = struct { av: AV, has_closure: bool, cells: ?AV = null, rcells: ?AV = null };
+        map: std.HashMapUnmanaged([4]u32, Known, WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
+        /// The condition's atom count: room for both provenances of each.
+        atoms: usize,
+
+        /// A parameter's provenance as a key: its kind is implied.
+        fn key(p: Prov) [4]u32 {
+            const flags = @as(u32, @intFromBool(p.taken)) | (@as(u32, @intFromBool(p.obj)) << 1) | (@as(u32, @intFromBool(p.condition_only)) << 2);
+            return .{ flags, p.a, p.b, p.path };
+        }
+
+        fn get(m: *ProvMemo, w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
+            if (p.kind != .param) return w.instProv(p, ctx);
+            if (m.map.capacity() == 0) try m.map.ensureTotalCapacity(w.a, @intCast(2 * m.atoms));
+            const g = try m.map.getOrPut(w.a, key(p));
+            // `instProv` never reads or grows this map.
+            if (!g.found_existing) {
+                const av = try w.instProv(p, ctx);
+                const has_closure = for (av) |e| {
+                    if (w.cells.items[e.cell].kind == .closure) break true;
+                } else false;
+                g.value_ptr.* = .{ .av = av, .has_closure = has_closure };
+            }
+            return g.value_ptr.av;
+        }
+
+        /// The entry for `p` whose cells may be kept, or null.
+        fn keeps(m: *ProvMemo, p: Prov) ?*Known {
+            if (p.kind != .param) return null;
+            const known = m.map.getPtr(key(p)).?;
+            return if (known.has_closure) null else known;
+        }
+
+        fn cells(m: *ProvMemo, w: *Walker, p: Prov, av: AV) Allocator.Error!AV {
+            const known = m.keeps(p) orelse return w.sepCellList(av);
+            if (known.cells == null) known.cells = try w.sepCellList(av);
+            return known.cells.?;
+        }
+
+        fn rcells(m: *ProvMemo, w: *Walker, p: Prov, av: AV) Allocator.Error!AV {
+            const known = m.keeps(p) orelse return w.rsepCellList(av);
+            if (known.rcells == null) known.rcells = try w.rsepCellList(av);
+            return known.rcells.?;
+        }
+
+        /// `sepValues(instProv(a), instProv(b))`.
+        fn sep(m: *ProvMemo, w: *Walker, a: Prov, b: Prov, ctx: InstCtx) Allocator.Error!u32 {
+            const x = try m.get(w, a, ctx);
+            const y = try m.get(w, b, ctx);
+            if (x.len == 0 or y.len == 0) return cond_yes;
+            const ex = try m.cells(w, a, x);
+            return w.sepOfCells(ex, try m.cells(w, b, y));
+        }
+
+        /// `rsepValues(instProv(a), instProv(b))`.
+        fn rsep(m: *ProvMemo, w: *Walker, a: Prov, b: Prov, ctx: InstCtx) Allocator.Error!u32 {
+            const x = try m.get(w, a, ctx);
+            const y = try m.get(w, b, ctx);
+            if (x.len == 0 or y.len == 0) return cond_yes;
+            const ex = try m.rcells(w, a, x);
+            return w.rsepOfCells(ex, try m.rcells(w, b, y));
+        }
+    };
 
     /// A summary's record condition, instantiated at a call.
     fn rinstXSum(w: *Walker, x: XSum, ctx: InstCtx) Allocator.Error!u32 {
         if (x.no == 1) return cond_lost;
         if (x.no == 2) return cond_shared;
         var acc: RAcc = .{};
+        var memo: ProvMemo = .{ .atoms = atomsWeight(x.atoms) };
         for (x.atoms) |t| {
             const c = switch (t.kind) {
-                .excl => try w.rdeepCond(try w.instProv(t.a, ctx)),
+                .excl => try w.rdeepCond(try memo.get(w, t.a, ctx)),
                 .sep => if (t.a.eql(t.b) and t.a.kind == .cb)
                     try w.rfreshAcross(t.a.a, ctx)
                 else
-                    try w.rsepValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                    try memo.rsep(w, t.a, t.b, ctx),
                 .keep => try w.rkeepShape(t.a.a, t.b, ctx),
+                .apart => try w.instPairwiseApart(t, ctx, &memo, .record),
                 // A spine is a list's array.
-                .spine, .sep_spine, .keep_spine => cond_yes,
+                .spine, .sep_spine, .keep_spine, .apart_spine, .sep_root => cond_yes,
+            };
+            if (c == cond_shared) return cond_shared;
+            try acc.add(w, c);
+        }
+        return acc.done(w);
+    }
+
+    /// A summary's `apart` at a call (§16.7, #693): each group's provenances
+    /// instantiated once and joined, their cells read once, and
+    /// `pairwiseApart` over them. A callback's result that two groups name
+    /// is `sep cb_j cb_j`, fresh across calls, which is not the separation
+    /// of its two instantiations: that apart instantiates its expansion.
+    fn instPairwiseApart(w: *Walker, t: XAtom, ctx: InstCtx, memo: *ProvMemo, fl: Fl) Allocator.Error!u32 {
+        if (repeatsCallback(t)) return w.instExpanded(t, ctx, memo, fl);
+        const groups = try w.a.alloc(AV, t.groups.len);
+        for (groups, t.groups) |*g, provs| {
+            var cells: std.ArrayList(Entry) = .empty;
+            for (provs) |p| {
+                const av = try memo.get(w, p, ctx);
+                if (av.len == 0) continue;
+                try cells.appendSlice(w.a, switch (fl) {
+                    .list => try memo.cells(w, p, av),
+                    .record => try memo.rcells(w, p, av),
+                });
+            }
+            g.* = try w.cellsOf(cells.items);
+        }
+        const k = try w.pairwiseApartOnce(groups, fl);
+        const sizes = try w.a.alloc(usize, t.groups.len);
+        for (sizes, t.groups) |*s, g| s.* = g.len;
+        if (checksApart(sizes)) {
+            const want = try w.instExpanded(t, ctx, memo, fl);
+            if (!try w.condSameExpanded(k, want, fl)) std.debug.panic("ownership: an instantiated pairwise-apart condition differs from its expansion's", .{});
+        }
+        return k;
+    }
+
+    /// Whether a callback's result is a member of two groups.
+    fn repeatsCallback(t: XAtom) bool {
+        for (t.groups, 0..) |g, i| for (g) |p| {
+            if (p.kind != .cb) continue;
+            for (t.groups[i + 1 ..]) |h| for (h) |q| {
+                if (p.eql(q)) return true;
+            };
+        };
+        return false;
+    }
+
+    /// An apart's expansion instantiated pair by pair, as `instXSum` and
+    /// `rinstXSum` instantiate a `sep` and a `sep_spine`.
+    fn instExpanded(w: *Walker, t: XAtom, ctx: InstCtx, memo: *ProvMemo, fl: Fl) Allocator.Error!u32 {
+        var pairs: std.ArrayList(XAtom) = .empty;
+        try expandAtom(w.a, t, &pairs);
+        var acc: FlAcc = .{ .fl = fl };
+        for (sortAtoms(pairs.items)) |p| {
+            const c = switch (fl) {
+                .list => switch (p.kind) {
+                    .sep => if (p.a.eql(p.b) and p.a.kind == .cb) try w.freshAcross(p.a.a, ctx) else try memo.sep(w, p.a, p.b, ctx),
+                    .sep_spine => try w.sepSpineValues(try memo.get(w, p.a, ctx), try memo.get(w, p.b, ctx)),
+                    else => unreachable,
+                },
+                .record => switch (p.kind) {
+                    .sep => if (p.a.eql(p.b) and p.a.kind == .cb) try w.rfreshAcross(p.a.a, ctx) else try memo.rsep(w, p.a, p.b, ctx),
+                    .sep_spine => cond_yes,
+                    else => unreachable,
+                },
             };
             if (c == cond_shared) return cond_shared;
             try acc.add(w, c);
@@ -7791,9 +8820,18 @@ const Walker = struct {
     fn ownedBy(w: *Walker, t: WAtom, frame: u32) bool {
         return switch (t.kind) {
             .excl, .spine => w.atomCellIn(t.a, frame),
-            .sep, .sep_spine => w.atomCellIn(t.a, frame) and w.atomCellIn(t.b, frame),
+            .sep, .sep_spine, .sep_root => w.atomCellIn(t.a, frame) and w.atomCellIn(t.b, frame),
             .keep, .keep_spine => frame == 0 and w.atomCellIn(t.b, frame),
+            // Every member is in some pair of its expansion.
+            .apart, .apart_spine => w.apartOwnedBy(t.a, frame),
         };
+    }
+
+    fn apartOwnedBy(w: *Walker, idx: u32, frame: u32) bool {
+        for (w.aparts.items[idx]) |g| for (g) |c| {
+            if (!w.atomCellIn(c, frame)) return false;
+        };
+        return true;
     }
 
     /// Whether `frame` can state an atom about cell `c`: one of its own
@@ -7802,7 +8840,7 @@ const Walker = struct {
         const x = w.cells.items[c];
         return switch (x.kind) {
             .param => if (x.b == 0) frame == 0 else if (w.lambdaParam(x)) |lp| w.closures.items[lp[0]].frame == frame else false,
-            .cbres => frame == 0,
+            .cbres => frame == w.callbackFrame(x),
             .env => frame != 0,
             .taken => w.atomCellIn(x.a, frame),
             .except => x.b != except_all and w.atomCellIn(x.a, frame),
@@ -7816,12 +8854,10 @@ const Walker = struct {
     fn xsumOf(w: *Walker, k: u32, frame: u32, params: []const Inst.Index, self: u32) Allocator.Error!XSum {
         if (k == cond_lost or k == cond_limit) return .{ .no = 1 };
         if (k == cond_shared) return .{ .no = 2 };
-        const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
         for (w.conds.items[k].atoms) |t| {
             if ((t.kind == .excl or t.kind == .spine) and t.a == self) continue;
-            const x = (try w.xatomOf(t, frame, params)) orelse return .{ .no = 1 };
-            try out.append(keep, x);
+            if (!try w.xatomsOf(t, frame, params, false, &out)) return .{ .no = 1 };
         }
         return .{ .atoms = w.o.pruneAtoms(out.items) };
     }
@@ -7834,20 +8870,49 @@ const Walker = struct {
         const a = (try w.atomProv(t.a, frame, params)) orelse return null;
         return switch (t.kind) {
             .excl, .spine => .{ .kind = t.kind, .a = a },
+            .sep_root => .{ .kind = .sep_root, .a = a, .b = (try w.atomProv(t.b, frame, params)) orelse return null },
             .sep, .sep_spine => blk: {
                 var atom = sepAtom(a, (try w.atomProv(t.b, frame, params)) orelse return null);
                 atom.kind = t.kind;
                 break :blk atom;
             },
-            .keep, .keep_spine => unreachable,
+            .keep, .keep_spine, .apart, .apart_spine => unreachable,
         };
+    }
+
+    /// `t` in a summary's vocabulary, appended to `out`; false when a cell
+    /// it names has no provenance here. An apart (§16.7, #693) maps each
+    /// member; with `drop`, a member with none leaves its group, which
+    /// removes exactly the pairs of its expansion that `xatomOf` would have
+    /// dropped one by one; without, the atom has none, as one of its pairs
+    /// would.
+    fn xatomsOf(w: *Walker, t: WAtom, frame: u32, params: []const Inst.Index, drop: bool, out: *std.ArrayList(XAtom)) Allocator.Error!bool {
+        const keep = w.o.keep.allocator();
+        if (t.kind != .apart and t.kind != .apart_spine) {
+            const x = (try w.xatomOf(t, frame, params)) orelse return false;
+            try out.append(keep, x);
+            return true;
+        }
+        const src = w.aparts.items[t.a];
+        const gs = try keep.alloc([]Prov, src.len);
+        for (gs, src) |*d, g| {
+            var ps: std.ArrayList(Prov) = .empty;
+            for (g) |c| {
+                if (try w.atomProv(c, frame, params)) |p| {
+                    try ps.append(keep, p);
+                } else if (!drop) return false;
+            }
+            d.* = ps.items;
+        }
+        try apartAtoms(keep, t.kind, gs, out);
+        return true;
     }
 
     fn atomProv(w: *Walker, c: u32, frame: u32, params: []const Inst.Index) Allocator.Error!?Prov {
         const x = w.cells.items[c];
         return switch (x.kind) {
             .param => if (w.paramIndex(x, frame, params)) |i| .{ .kind = .param, .a = i, .path = x.path } else null,
-            .cbres => if (frame == 0) .{ .kind = .cb, .a = x.a, .path = x.path } else null,
+            .cbres => if (frame == w.callbackFrame(x)) .{ .kind = .cb, .a = x.a, .path = x.path } else null,
             .env => if (frame != 0) .{ .kind = .env, .a = x.a, .path = x.path } else null,
             .taken, .except => if (try w.takenBase(c) == c) null else w.atomProv(try w.takenBase(c), frame, params),
             .site, .result, .shared, .top, .closure, .func, .payload => null,
@@ -7861,17 +8926,21 @@ const Walker = struct {
         // The conjunction gathered and sorted once (§16.3's amendment): a
         // fold of `condAnd` re-sorts what it holds at every atom.
         var acc: CondAcc = .{};
+        var memo: ProvMemo = .{ .atoms = atomsWeight(x.atoms) };
         for (x.atoms) |t| {
             const c = switch (t.kind) {
-                .excl => try w.deepCond(try w.instProv(t.a, ctx)),
-                .spine => try w.spineCond(try w.instProv(t.a, ctx)),
-                .sep_spine => try w.sepSpineValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                .excl => try w.deepCond(try memo.get(w, t.a, ctx)),
+                .spine => try w.spineCond(try memo.get(w, t.a, ctx)),
+                .sep_spine => try w.sepSpineValues(try memo.get(w, t.a, ctx), try memo.get(w, t.b, ctx)),
+                .sep_root => try w.sepRootValues(try memo.get(w, t.a, ctx), try memo.get(w, t.b, ctx)),
                 .keep_spine => try w.keepSpine(t.a.a, t.a.path, t.b, ctx),
                 .sep => if (t.a.eql(t.b) and t.a.kind == .cb)
                     try w.freshAcross(t.a.a, ctx)
                 else
-                    try w.sepValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                    try memo.sep(w, t.a, t.b, ctx),
                 .keep => try w.keepShape(t.a.a, t.b, ctx),
+                .apart => try w.instPairwiseApart(t, ctx, &memo, .list),
+                .apart_spine => try w.instExpanded(t, ctx, &memo, .list),
             };
             if (c == cond_shared) return cond_shared;
             try acc.add(w, c);
@@ -7940,7 +9009,7 @@ const Walker = struct {
         var acc: RAcc = .{};
         var any = false;
         for ([_][]const SupplyEntry{ ctx.s.supply, ctx.s.rsupply }) |sup| for (sup) |e| {
-            if (e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
+            if (e.prov.condition_only or e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
             if (!e.prov.taken) return cond_lost;
             any = true;
             try acc.add(w, try w.rinstXSum(e.rxc, ctx));
@@ -7990,7 +9059,7 @@ const Walker = struct {
         var acc: CondAcc = .{};
         var any = false;
         for (ctx.s.supply) |e| {
-            if (e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
+            if (e.prov.condition_only or e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
             if (!e.prov.taken) return cond_lost;
             any = true;
             try acc.add(w, try w.instXSum(e.xc, ctx));
@@ -8119,7 +9188,7 @@ const Walker = struct {
         for (b.extraSlice(Bir.inlineRange(b.instData(pat)), u32)) |l| {
             const name = b.locals[w.decl.locals_start + l].name;
             const sym = if (name.unwrap()) |s| @backingInt(b.symbols[s]) else continue;
-            try w.recordRead(.{ .local = r.local, .path = try w.o.child(r.path, .field, sym) }, tok);
+            try w.recordRead(.{ .local = r.local, .path = try w.o.child(r.path, .field, sym) }, tok, value.int(), l, sym);
         }
     }
 
@@ -8154,10 +9223,10 @@ const Walker = struct {
 
     /// §31.14: a field path read where it is evaluated, for the record
     /// demand's per-field liveness.
-    fn recordRead(w: *Walker, r: Capture, tok: u32) Allocator.Error!void {
+    fn recordRead(w: *Walker, r: Capture, tok: u32, read_inst: u32, binding: u32, pattern_field: u32) Allocator.Error!void {
         if (r.local >= w.local_frame.len) return;
         if (w.local_frame[r.local] != w.frame and (w.local_av[r.local] == null or !w.inFrameOf(w.local_frame[r.local]))) return;
-        try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .record_read = true });
+        try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .record_read = true, .read_inst = read_inst, .binding = binding, .pattern_field = pattern_field });
     }
 
     fn useAt(w: *Walker, l: u32, path: u32, tok: u32, except: []const u32) Allocator.Error!void {
@@ -8258,6 +9327,7 @@ const Walker = struct {
     /// Join `c` to Esc at `at` (§4.3), in the list and in the index by cell
     /// that `escapedBefore` reads.
     fn noteEscape(w: *Walker, c: u32, at: u32, why: u32) Allocator.Error!void {
+        if (w.cells.items[c].condition_only) return;
         // §31.2: an `except` cell with fields escapes the record cell it was
         // written over, which is what a list's facts look it up by.
         const x = w.cells.items[c];
@@ -8282,6 +9352,7 @@ const Walker = struct {
     /// The earliest escapes of `c` — of it, or of a cell that stands for it
     /// (§4.3: a symbolic cell stands for everything under it).
     fn escapeOf(w: *Walker, c: u32) Allocator.Error!EscAt {
+        if (w.cells.items[c].condition_only) return .{};
         var out: EscAt = .{};
         for ([_]u32{ c, try w.takenBase(c) }) |cc| {
             const x = w.cells.items[cc];
@@ -8430,7 +9501,7 @@ const Walker = struct {
                         const out = try w.a.alloc(Entry, el.len);
                         for (el, out) |e, *x| {
                             x.* = e;
-                            if (e.path != eps) continue;
+                            if (e.path != eps or w.cells.items[e.cell].condition_only) continue;
                             switch (w.cells.items[e.cell].kind) {
                                 .param, .result, .env, .cbres => x.cell = try w.cell(.{ .kind = .taken, .a = e.cell, .b = item.int() }),
                                 // An update's object with fields is taken as the record it
@@ -9001,6 +10072,10 @@ const Walker = struct {
 
     fn eval(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
         if (w.mode != .report) return w.evalRaw(inst);
+        const parent = w.current_inst;
+        w.inst_parent[inst.int() - w.decl.inst_start.int()] = parent;
+        w.current_inst = inst.int();
+        defer w.current_inst = parent;
         // §28.6: the tokens each instruction spans, for the messages.
         const tok = w.token(inst);
         const outer = w.span;
@@ -9036,7 +10111,7 @@ const Walker = struct {
             .local => return w.evalLocal(data.lhs, eps, inst),
             .field_access, .tuple_index => {
                 if (try w.refPath(inst)) |r| {
-                    if (w.mode == .report) try w.recordRead(r, w.token(inst));
+                    if (w.mode == .report) try w.recordRead(r, w.token(inst), inst.int(), none, none);
                     return w.evalLocal(r.local, r.path, inst);
                 }
                 const target = try w.eval(@fromBackingInt(@intCast(data.lhs)));
@@ -9079,9 +10154,10 @@ const Walker = struct {
                 const avs = try w.evalOperands(items, false);
                 w.popPending(avs.len);
                 try w.consume(items, w.token(inst));
-                var parts = try w.a.alloc(AV, avs.len);
+                var parts = try w.a.alloc(AV, avs.len + 1);
+                parts[avs.len] = try w.containingCondition(inst, avs);
                 for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .tuple, .arg = @intCast(i) });
-                const out = try w.unionOf(parts);
+                const out = try w.spineValue(inst, parts);
                 try w.sight(out, .{ .pending = "it is stored in a tuple" }, w.token(inst));
                 return out;
             },
@@ -9097,7 +10173,7 @@ const Walker = struct {
                 // §31.4 item 6: and no record object at two of its positions.
                 try w.rinitCond(parts[0][0].cell, try w.rstoredCond(avs, &.{}));
                 for (avs, 0..) |av, i| parts[i + 1] = try w.shift(av, .{ .kind = .elem, .arg = 0 });
-                const out = try w.unionOf(parts);
+                const out = try w.spineValue(inst, parts);
                 try w.sight(out, .{ .pending = "it is stored in a list" }, w.token(inst));
                 return out;
             },
@@ -9112,7 +10188,7 @@ const Walker = struct {
                 // Its fields being a stored construction's (§18.2), each
                 // exclusive and pairwise apart, is the record demand's condition
                 // (§31.4 item 6); a list's reads the fields themselves.
-                var parts = try w.a.alloc(AV, avs.len + 1);
+                var parts = try w.a.alloc(AV, avs.len + 2);
                 parts[0] = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst) });
                 // A field of a crossing type holds no cell (§4.4), whatever
                 // its value's abstract value says — a `Js.to` answers `⊤` at
@@ -9121,7 +10197,8 @@ const Walker = struct {
                     const crossing = if (w.instType(f.value)) |v| !try w.trackedVar(v) else false;
                     parts[i + 1] = if (crossing) &.{} else try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
                 }
-                const out = try w.unionOf(parts);
+                parts[avs.len + 1] = try w.containingCondition(inst, parts[1 .. avs.len + 1]);
+                const out = try w.spineValue(inst, parts);
                 if (inst.int() != w.entry_arg) try w.sight(out, .{ .pending = "it is stored in a record" }, w.token(inst));
                 return out;
             },
@@ -9471,7 +10548,7 @@ const Walker = struct {
             if (w.o.firstStep(path)) |first| if (first.kind == .field) {
                 const g = try w.eager_seen.getOrPut(w.a, .{ w.frame, l, path });
                 if (!g.found_existing) w.eager_reads += 1;
-                try w.frames.items[w.frame].eager.append(w.a, .{ .local = l, .path = path });
+                try w.frames.items[w.frame].eager.append(w.a, .{ .local = l, .path = path, .read_inst = inst.int() });
             };
         }
         const ty = w.instType(inst);
@@ -9651,6 +10728,7 @@ const Walker = struct {
             const ref = try w.refPath(base_inst);
             try w.demandOn(.{
                 .kind = .report,
+                .inst = inst.int(),
                 .token = w.token(inst),
                 .op = "update",
                 .base_text = if (w.mode == .report) try w.baseText(base_inst) else "",
@@ -9692,12 +10770,14 @@ const Walker = struct {
             }
             try out.append(w.a, e);
         }
+        var parts: std.ArrayList(AV) = .empty;
+        try parts.append(w.a, try w.norm(out.items));
         for (fields, avs) |f, av| {
             const shifted = try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
             try w.sight(shifted, .{ .pending = "it is stored in a record" }, w.token(inst));
-            try out.appendSlice(w.a, shifted);
+            try parts.append(w.a, shifted);
         }
-        return w.norm(out.items);
+        return w.spineValue(inst, parts.items);
     }
 
     /// The fields of a closed record type, or null.
@@ -9721,6 +10801,7 @@ const Walker = struct {
     /// A lambda or local function: its body walked as a frame of its own,
     /// and its class read off it (§16.5).
     fn closure(w: *Walker, params: []const Inst.Index, body: Inst.Index, ci_in: ?u32, tok: u32) Allocator.Error!AV {
+        const creation = w.current_inst;
         const saved_frame = w.frame;
         const saved_ctx = w.ctx;
         const id: u32 = @intCast(w.frames.items.len);
@@ -9773,7 +10854,7 @@ const Walker = struct {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 if (c.kind != .env) continue;
                 if (c.a < w.local_frame.len and w.local_av[c.a] != null and w.local_frame[c.a] == id) continue;
-                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep, .fields = if (rec.fields) |fs| try w.a.dupe(u32, fs) else null });
+                try env_writes.append(w.a, .{ .local = c.a, .path = c.path, .deep = rec.deep, .extent = rec.extent, .fields = if (rec.fields) |fs| try w.a.dupe(u32, fs) else null });
             }
         }
         w.closures.items[ci].env_writes = try env_writes.toOwnedSlice(w.a);
@@ -9793,8 +10874,9 @@ const Walker = struct {
             // §31.6: its reads of outer field paths happen here, where it is
             // made: reads of the version the creation sees.
             for (w.frames.items[id].eager.items) |cap| {
+                if (cap.read_inst != none) try w.publishRead(.{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .read_inst = cap.read_inst, .capture = creation }, none, creation, 0, none);
                 if (cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame) {
-                    try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true });
+                    try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true, .read_inst = cap.read_inst, .capture = creation });
                 } else if (w.frame != 0) try w.frames.items[w.frame].eager.append(w.a, cap);
             }
             if (cls.once) try w.onceCreation(ci, w.token(body));
@@ -9812,7 +10894,7 @@ const Walker = struct {
             else
                 try w.single(.{ .kind = .env, .a = cap.local, .path = cap.path });
             // §31.4 item 4: a record's write of the capture, at its fields.
-            const p = try w.onceDemandFields(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep, cap.fields);
+            const p = try w.onceDemandFields(.creation, tok, if (cap.deep) try w.flat(av) else av, .{ .local = cap.local, .path = cap.path }, ci, cap.deep, cap.extent, cap.fields);
             try w.closures.items[ci].once_probes.append(w.a, p);
         }
     }
@@ -9867,6 +10949,10 @@ const Walker = struct {
             w.early[g[0]] = 0;
         };
         for (items) |item| {
+            const saved_inst = w.current_inst;
+            if (w.mode == .report) w.inst_parent[item.int() - w.decl.inst_start.int()] = saved_inst;
+            w.current_inst = item.int();
+            defer w.current_inst = saved_inst;
             const idata = b.instData(item);
             switch (b.instTag(item)) {
                 .let_def => {
@@ -10150,10 +11236,11 @@ const Walker = struct {
                 const avs = try w.evalOperands(args, false);
                 w.popPending(avs.len);
                 try w.consume(args, w.token(inst));
-                var parts = try w.a.alloc(AV, avs.len);
+                var parts = try w.a.alloc(AV, avs.len + 1);
+                parts[avs.len] = try w.containingCondition(inst, avs);
                 for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .ctor, .arg = try w.o.ctorStep(c, @intCast(i)) });
                 try w.storedBeside(parts);
-                const out = try w.unionOf(parts);
+                const out = try w.spineValue(inst, parts);
                 try w.sight(out, .{ .pending = "it is stored in a constructor" }, w.token(inst));
                 return out;
             },
@@ -10205,6 +11292,14 @@ const Walker = struct {
             if (w.frameClosure(w.frame)) |ci| return w.envCall(inst, ci, j, args, callee);
             w.fn_state.items[j].seen = false;
         }
+        // A lambda's own function parameter. Its result stays symbolic in
+        // this body and is followed through the consumer's supplies.
+        if (f.len == 1 and f[0].path == eps) {
+            const c = w.cells.items[f[0].cell];
+            if (c.kind == .param and c.b == 1 and c.path == eps and !w.isSend(c)) if (w.lambdaParam(c)) |lp| {
+                if (w.closures.items[lp[0]].frame == w.frame) return w.lambdaCallbackCall(inst, lp[1], args, callee);
+            };
+        }
         const classes = try w.classesOf(f);
         if (classes.len == 1) {
             switch (classes[0]) {
@@ -10243,11 +11338,11 @@ const Walker = struct {
         const source = w.bir.decls[t.d];
         if (source.is_pub or source.params != 0 or source.kind != .value) return false;
         for (s.res) |r| switch (r.prov.kind) {
-            .fresh, .esc, .shared => {},
+            .fresh, .esc, .shared, .klass => {},
             else => return false,
         };
         for (s.objs) |r| switch (r.prov.kind) {
-            .fresh, .esc, .shared => {},
+            .fresh, .esc, .shared, .klass => {},
             else => return false,
         };
         if (w.o.private_reads[w.m] == null) {
@@ -10272,6 +11367,10 @@ const Walker = struct {
             // carried binding cannot say. Dropped otherwise: a call of the
             // value then finds no class and is §6.1's, as it was before.
             if (r.prov.kind == .klass) {
+                if (r.prov.a == none) {
+                    try out.appendSlice(w.a, try w.under(try w.carry(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 }), r.path));
+                    continue;
+                }
                 // A capture that holds no cell (a number) is no capture.
                 const holds_nothing = r.prov.a < s.klasses.len and for (s.klasses[r.prov.a].binds) |b| {
                     if (b.provs.len != 0) break false;
@@ -10282,12 +11381,22 @@ const Walker = struct {
                 }
                 continue;
             }
-            const c: Cell = switch (r.prov.kind) {
+            var c: Cell = switch (r.prov.kind) {
                 .fresh, .esc => .{ .kind = .shared, .a = t.m, .b = t.d, .path = r.path, .made = true, .ty = if (r.path == eps) w.instTypeOpt(inst) else .none },
                 .shared => .{ .kind = .shared, .a = r.prov.a, .b = r.prov.b, .path = r.prov.path },
                 else => .{ .kind = .top, .a = if (s.limit != .none or r.prov.a == 1) 1 else if (r.prov.kind == .top) r.prov.a else 0 },
             };
-            try out.append(w.a, .{ .path = r.path, .cell = try w.cell(c), .approx = if (r.approx) inst.int() + 1 else 0 });
+            c.condition_only = r.prov.condition_only;
+            const cell_id = try w.cell(c);
+            if (r.prov.condition_only) {
+                const ctx: InstCtx = .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 };
+                try w.initCond(cell_id, try w.instXSum(r.xc, ctx));
+                try w.rinitCond(cell_id, try w.rinstXSum(r.rxc, ctx));
+                const annotated = try w.annotationSpines(&.{.{ .path = eps, .cell = cell_id }}, r.sc, ctx, r.grown);
+                for (try w.under(annotated, r.path)) |e| try out.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = if (r.approx) inst.int() + 1 else e.approx });
+            } else {
+                try out.append(w.a, .{ .path = r.path, .cell = cell_id, .approx = if (r.approx) inst.int() + 1 else 0 });
+            }
         }
         // §31.7: the records it holds, as cells no list's fact reads: what
         // the definition made is shared, what another top-level value holds
@@ -10909,7 +12018,7 @@ const Walker = struct {
         // One demand per path written, its derivation and exclusivity the
         // worst any of update's classes gives (an exact write beats an
         // approximate one, a failed `xreq` beats a held one).
-        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely, deep: bool };
+        const Written = struct { param: u32, path: u32, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent };
         var written: std.ArrayList(Written) = .empty;
         for (upd.classes, upd.sums) |cls, s| for (s.uses) |u| {
             if (u.bits & bit_w == 0 or u.param > 1) continue;
@@ -10919,7 +12028,8 @@ const Walker = struct {
             var xfail: ?Rely = null;
             {
                 const ci: u32 = if (cls == .closure) cls.closure else none;
-                for (s.xreq) |x| {
+                // Pair by pair: the report takes each pair where it was (§16.7, #693).
+                for (try expandAtoms(w.a, s.xreq)) |x| {
                     const p = xreqParam(x) orelse continue;
                     if (p != u.param) continue;
                     const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
@@ -10934,17 +12044,18 @@ const Walker = struct {
                 if (x.param != u.param or x.path != u.path) continue;
                 found = true;
                 x.deep = x.deep or deep;
+                if (u.extent == .deep) x.extent = .deep;
                 if (origin == .exact or (origin == .approx and x.origin == .limit)) x.origin = origin;
                 if (xfail) |r| x.xfail = Rely.worse(x.xfail, r);
             }
-            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail, .deep = deep });
+            if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail, .deep = deep, .extent = u.extent });
         };
         for (written.items) |x| {
             if (x.param == 0) {
                 // §20.5, §23.6: update writes its message in place — what a
                 // send gave up, or what a view event built from the model.
                 const at = try w.projPath(msg, x.path, null);
-                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep);
+                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep, x.extent);
                 continue;
             }
             var rest: std.ArrayList(Entry) = .empty;
@@ -10952,7 +12063,7 @@ const Walker = struct {
             const at = try w.projPath(model, x.path, null);
             // Not Disjoint against this message: what a send put in the
             // model was another send's, given up there (§23.6).
-            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep);
+            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep, x.extent);
         }
         // §31.8: each record update writes is an `update` demand at the entry,
         // with the fields written; reported, not enforced (R4).
@@ -10967,7 +12078,7 @@ const Walker = struct {
                 var xfail: ?Rely = null;
                 {
                     const ci: u32 = if (cls == .closure) cls.closure else none;
-                    for (s.rxreq) |x| {
+                    for (try expandAtoms(w.a, s.rxreq)) |x| {
                         const p = xreqParam(x) orelse continue;
                         if (p != u.param) continue;
                         const k = try w.rinstXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
@@ -11146,7 +12257,7 @@ const Walker = struct {
 
     /// A demand at the entry (§20.6): a call-site demand on the entry model
     /// at one path, or on the message.
-    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool) Allocator.Error!void {
+    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent) Allocator.Error!void {
         try w.demandOn(.{
             .kind = .callsite,
             .token = tok,
@@ -11161,6 +12272,7 @@ const Walker = struct {
             .entry = row,
             .payload_from = payload_from,
             .deep = deep,
+            .extent = extent,
         });
     }
 
@@ -11235,15 +12347,29 @@ const Walker = struct {
         }
     }
 
+    /// Condition annotations describe the value, not another alternative
+    /// allocation or function class that value might be.
+    fn onlyValue(w: *const Walker, av: AV) ?Entry {
+        var found: ?Entry = null;
+        for (av) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
+            if (found != null) return null;
+            found = e;
+        }
+        return found;
+    }
+
     /// The function parameter of the declaration an abstract value is,
     /// when it is exactly one.
     fn fnParamOf(w: *Walker, av: AV) ?u32 {
-        if (av.len != 1 or av[0].path != eps) return null;
-        var c = w.cells.items[av[0].cell];
+        const value = w.onlyValue(av) orelse return null;
+        if (value.path != eps) return null;
+        var c = w.cells.items[value.cell];
         if (c.kind == .env) {
             const held = w.local_av[c.a] orelse return null;
-            if (held.len != 1 or held[0].path != eps or c.path != eps) return null;
-            c = w.cells.items[held[0].cell];
+            const value_held = w.onlyValue(held) orelse return null;
+            if (value_held.path != eps or c.path != eps) return null;
+            c = w.cells.items[value_held.cell];
         }
         if (c.kind != .param or c.b != 0 or c.path != eps) return null;
         for (w.params, 0..) |p, i| if (p.int() == c.a and w.fn_state.items[i].is_fn) return @intCast(i);
@@ -11266,6 +12392,7 @@ const Walker = struct {
     fn classesOf(w: *Walker, av: AV) Allocator.Error![]const Class {
         var out: std.ArrayList(Class) = .empty;
         for (av) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
             // What a closure a callee's result carried holds sits beside
             // it, under `◇` (§24.9): its captures, not another function.
             if (w.o.firstStep(e.path)) |s| if (s.kind == .env) continue;
@@ -11282,6 +12409,7 @@ const Walker = struct {
                     const held = w.local_av[c.a] orelse return &.{};
                     if (c.path != eps) return &.{};
                     for (held) |h| {
+                        if (w.cells.items[h.cell].condition_only) continue;
                         if (h.path != eps) return &.{};
                         const hc = w.cells.items[h.cell];
                         if (w.isSend(hc)) {
@@ -11404,6 +12532,29 @@ const Walker = struct {
         }
         if (!try w.isTracked(inst)) return &.{};
         return w.single(.{ .kind = .cbres, .a = j, .b = inst.int(), .ty = w.instTypeOpt(inst) });
+    }
+
+    /// Keep a lambda parameter's result and borrowed argument supplies.
+    fn lambdaCallbackCall(w: *Walker, inst: Inst.Index, j: u32, args: []const Inst.Index, callee: CalleeRef) Allocator.Error!AV {
+        const avs = try w.evalOperands(args, true);
+        w.popPending(avs.len);
+        w.point += 1;
+        const tok = w.token(inst);
+        for (args) |x| try w.useOperand(x, tok, &.{});
+        try w.useCallee(callee, tok);
+        try w.useTemporaries(args, avs, tok);
+        for (avs) |av| try w.sight(av, .{ .pending = "it is passed to a function parameter, whose class is not known here" }, tok);
+        w.cb_args[inst.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
+        for (avs, 0..) |av, k| {
+            if (av.len == 0) continue;
+            try w.supplies.append(w.a, .{ .frame = w.frame, .fun = j, .owned = false, .approx = true, .k = @intCast(k), .path = eps, .av = av, .probe = none, .cond = try w.deepCond(av), .rcond = try w.rdeepCond(av), .rprobe = none });
+        }
+        if (!try w.isTracked(inst)) return &.{};
+        return w.single(.{ .kind = .cbres, .a = j, .b = inst.int(), .scope = w.frame, .ty = w.instTypeOpt(inst) });
+    }
+
+    fn callbackFrame(_: *const Walker, c: Cell) u32 {
+        return c.scope;
     }
 
     /// The closure whose body frame `frame` is.
@@ -11694,14 +12845,7 @@ const Walker = struct {
         // names, or on a line of its own when there is none.
         const xfail = try w.a.alloc(?Rely, args.len);
         @memset(xfail, null);
-        for (s.xreq) |x| {
-            const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 });
-            const r = try w.rely(k, w.frame);
-            if (r == .ok) continue;
-            const i = xreqParam(x) orelse continue;
-            if (i >= args.len) continue;
-            xfail[i] = Rely.worse(xfail[i], r);
-        }
+        try w.relyReqs(s.xreq, .list, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 }, xfail);
         // 3b. §31.7: a record the callee writes is an `update` demand at the
         // call, on the argument's record objects at the path, with the
         // fields it writes; reported, not enforced (R4). An asserted row
@@ -11716,14 +12860,7 @@ const Walker = struct {
         // argument it names, or on a record line of its own.
         const rxfail = try w.a.alloc(?Rely, args.len);
         @memset(rxfail, null);
-        for (s.rxreq) |x| {
-            const k = try w.rinstXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 });
-            const r = try w.rrely(k, w.frame);
-            if (r == .ok) continue;
-            const i = xreqParam(x) orelse continue;
-            if (i >= args.len) continue;
-            rxfail[i] = Rely.worse(rxfail[i], r);
-        }
+        try w.relyReqs(s.rxreq, .record, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 }, rxfail);
         for (s.uses) |u| {
             if (u.bits & bit_f == 0 or u.param >= args.len) continue;
             if (s.limit != .none and !w.isRecordType(w.instType(args[u.param]))) continue;
@@ -11760,7 +12897,7 @@ const Walker = struct {
             // A named writer's line keeps its slice-1 form; any other call
             // names the summary that wrote.
             const note = if (w.mode != .report or s.asserted or std.mem.startsWith(u8, callee.op, "List.")) "" else try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes π{d}{s}", .{ callee.name, u.param + 1, try w.o.pathText(u.path) });
-            try w.callSiteDemandDeep(inst, callee.op, args, avs, callee_av, u.param, u.path, note, if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, xfail[u.param], u.bits & bit_d != 0);
+            try w.callSiteDemandDeep(inst, callee.op, args, avs, callee_av, u.param, u.path, note, if (s.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, xfail[u.param], u.bits & bit_d != 0, u.extent);
             xfail[u.param] = null;
         }
         for (xfail, 0..) |f, i| {
@@ -11808,6 +12945,20 @@ const Walker = struct {
         const arg_types = try w.a.alloc(?Var, args.len);
         for (args, arg_types) |arg, *t| t.* = w.instType(arg);
         const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .poly = callee.poly });
+        if (res.len == 0 and callee.merge_fresh) if (ty) |v| switch (w.store.resolvedContent(v)) {
+            .structure => |st| if (st == .func) {
+                const site: CarrySite = .{ .inst = inst.int(), .sum = @intFromPtr(s), .klass = none, .depth = 0, .ns = 0, .merge = true };
+                const g = try w.carry_sites.getOrPut(w.a, site);
+                if (!g.found_existing) {
+                    const bottom = try w.a.create(Summary);
+                    bottom.* = .{ .params = @intCast(w.store.vars(st.func.params).len) };
+                    g.value_ptr.* = @intCast(w.closures.items.len);
+                    try w.closures.append(w.a, .{ .captures = &.{}, .class = bottom, .token = w.token(inst) });
+                }
+                return w.single(.{ .kind = .closure, .a = g.value_ptr.* });
+            },
+            else => {},
+        };
         // An approximate entry may name an argument the result's type
         // cannot be (§6.1's type filter, thesis §3.8): a `Js` coercion's
         // result is never its argument at another type.
@@ -11820,6 +12971,38 @@ const Walker = struct {
             try kept.append(w.a, e);
         }
         return kept.items;
+    }
+
+    /// §18.4 item 3: a callee's requirements (`xreq`, or `rxreq` for a
+    /// record's), discharged at the call; each failure joins `xfail` at the
+    /// argument it names. An apart that fails is discharged pair by pair,
+    /// so that each pair's failure is put where it was before (§16.7,
+    /// #693); one that holds holds for every pair.
+    fn relyReqs(w: *Walker, reqs: []const XAtom, fl: Fl, ctx: InstCtx, xfail: []?Rely) Allocator.Error!void {
+        for (reqs) |x| {
+            const r = try w.relyReq(x, fl, ctx);
+            if (r == .ok) continue;
+            if (!x.isApart()) {
+                const i = xreqParam(x) orelse continue;
+                if (i < xfail.len) xfail[i] = Rely.worse(xfail[i], r);
+                continue;
+            }
+            var pairs: std.ArrayList(XAtom) = .empty;
+            try expandAtom(w.a, x, &pairs);
+            for (sortAtoms(pairs.items)) |p| {
+                const pr = try w.relyReq(p, fl, ctx);
+                if (pr == .ok) continue;
+                const i = xreqParam(p) orelse continue;
+                if (i < xfail.len) xfail[i] = Rely.worse(xfail[i], pr);
+            }
+        }
+    }
+
+    fn relyReq(w: *Walker, x: XAtom, fl: Fl, ctx: InstCtx) Allocator.Error!Rely {
+        return switch (fl) {
+            .list => w.rely(try w.instXSum(.{ .atoms = &.{x} }, ctx), w.frame),
+            .record => w.rrely(try w.rinstXSum(.{ .atoms = &.{x} }, ctx), w.frame),
+        };
     }
 
     /// The argument an `xreq` atom names first: a parameter's or a callback's.
@@ -11849,14 +13032,14 @@ const Walker = struct {
                 // list's `E` at its path) is kept whole, written before or
                 // after; a field kept keeps the field's, not the record's.
                 if (u.bits & (bit_k | bit_e | bit_j) != 0) for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
-                    if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
+                    if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
                     const at = if (try w.o.suffix(e.path, u.path)) |rest| try w.projPath(cells, rest, null) else cells;
                     try w.escapeObjects(at, w.point - 1);
                 };
                 if (u.bits & (bit_e | bit_j) == 0) continue;
                 for (s.supply) |e| {
-                    if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
+                    if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
                     // A callback that keeps a part below what it is handed: a
                     // list's facts take the whole value as kept, as they always
@@ -11886,7 +13069,7 @@ const Walker = struct {
         for (s.supply, 0..) |e, ei| {
             if (e.fun != j or e.owned or e.prov.kind != .param) continue;
             const written = for (s.uses) |u| {
-                if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.overlap(u.path, e.prov.path)) break true;
+                if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.writeOverlap(u.path, e.prov.path, u.extent)) break true;
             } else try w.writtenByCallback(s, avs, e, ei);
             if (!written) continue;
             const actual = (try w.actualOf(s, avs, j)) orelse continue;
@@ -11951,7 +13134,14 @@ const Walker = struct {
             if (classes.len == 0) return true;
             for (classes) |cls| {
                 const c = (try w.classSummary(cls)) orelse return true;
-                for (c.uses) |u| if (u.param == x.k and u.bits & bit_w != 0 and w.o.overlap(u.path, x.path)) return true;
+                for (c.uses) |u| {
+                    if (u.param != x.k or u.bits & bit_w == 0 or !w.o.writeOverlap(u.path, x.path, u.extent)) continue;
+                    // Translate the other callback's write to the callee's
+                    // parameter before comparing it with the kept loan.
+                    var written = x.prov.path;
+                    if (try w.o.suffix(x.path, u.path)) |rest| written = try w.o.concat(written, rest);
+                    if (w.o.writeOverlap(written, e.prov.path, u.extent)) return true;
+                }
             }
         }
         return false;
@@ -12046,6 +13236,7 @@ const Walker = struct {
     /// one, else its copy with `nonlist`, which the cell key tells apart
     /// and which escapes with it (`escKey` does not read the flag).
     fn nonlistOf(w: *Walker, c: u32) Allocator.Error!u32 {
+        std.debug.assert(!w.cells.items[c].condition_only);
         const x = w.cells.items[c];
         // An updated record's cell faces its base's lists (`listFacing`):
         // its object alone.
@@ -12054,6 +13245,15 @@ const Walker = struct {
         var y = x;
         y.nonlist = true;
         return w.cell(y);
+    }
+
+    fn objectView(w: *Walker, cells: AV) Allocator.Error!AV {
+        var own: std.ArrayList(Entry) = .empty;
+        for (cells) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
+            try own.append(w.a, .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown });
+        }
+        return own.items;
     }
 
     fn instRes(w: *Walker, s: *const Summary, ctx: InstCtx) Allocator.Error!AV {
@@ -12067,16 +13267,37 @@ const Walker = struct {
         const grown = try w.grownArgs(ctx);
         var before: std.ArrayList(Entry) = .empty;
         var cut = false;
+        // Asserted storage rows retain the old elements and store new
+        // operands beside them. Keep their per-path separation before
+        // equal element entries are merged, as a literal construction does.
+        const stores_operands = s.asserted and for (s.uses) |u| {
+            if (u.param == 0 and u.path == eps and u.bits & bit_w != 0 and u.extent == .storage) break true;
+        } else false;
+        const callback_result = for (s.res) |r| {
+            if (r.prov.kind == .cb) break true;
+        } else false;
+        var stored_parts: std.ArrayList(AV) = .empty;
+        var res_path: u32 = none;
+        var res_choices: usize = 0;
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
-            const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
+            if (res_path != r.path) {
+                res_path = r.path;
+                res_choices = 0;
+                for (s.res[i..]) |choice| {
+                    if (choice.path != r.path) break;
+                    if (!spineAnnotation(choice)) res_choices += 1;
+                }
+            }
+            const several = !spineAnnotation(r) and res_choices > 1;
             // An approximate entry may name an argument the result's type
             // cannot be (§16.4 item 6): such an argument is never the
             // result, whatever its cells are.
             if ((several or r.approx) and r.path == eps and r.prov.kind == .param and r.prov.path == eps and r.prov.a < ctx.arg_types.len) {
                 if (ctx.result_ty) |rt| if (ctx.arg_types[r.prov.a]) |at| if (!try w.o.mayShare(w.store, rt, at, 0)) continue;
             }
-            const cells = try w.instProv(r.prov, ctx);
+            const raw_cells = try w.instProv(r.prov, ctx);
+            const cells = if (r.prov.condition_only) try w.annotationSpines(raw_cells, r.sc, ctx, r.grown) else raw_cells;
             // §18.3: a fresh cell starts at the summary's condition, and a
             // parameter's is lowered by it.
             if (ctx.conds) switch (r.prov.kind) {
@@ -12084,7 +13305,7 @@ const Walker = struct {
                     const k = try w.instXSum(r.xc, ctx);
                     for (cells) |e| if (e.path == eps) {
                         try w.initCond(e.cell, k);
-                        try w.initSpine(e.cell, try w.instXSum(r.sc, ctx));
+                        if (!r.prov.condition_only) try w.initSpine(e.cell, try w.instXSum(r.sc, ctx));
                     };
                 },
                 .param => if (r.xc.no != 0 or r.xc.atoms.len != 0) {
@@ -12093,13 +13314,30 @@ const Walker = struct {
                 },
                 else => {},
             };
-            if (ctx.conds and r.prov.kind == .param) for (cells) |e| if (e.path == eps) {
+            if (ctx.conds and r.prov.kind == .param and !r.prov.condition_only) for (cells) |e| if (e.path == eps) {
                 try w.lowerSpine(e.cell, try w.instXSum(r.sc, ctx));
             };
             // §31.4 item 6: and its record condition, as a list's.
             if (ctx.conds) try w.instRecordCond(r, cells, ctx, &rmemo);
             const from = before.items.len;
-            var av: AV = try w.composeRes(r, cells, grown, &before, &cut);
+            var row_placement = r;
+            var folded_guard = false;
+            if (r.prov.condition_only) if (gGuard(r.grown)) |distance| {
+                const expands = for (cells) |e| {
+                    if (gGuard(e.grown)) |next| if (next > distance) break true;
+                } else false;
+                if (expands) {
+                    const depth = w.o.paths.depth.items[r.path];
+                    std.debug.assert(distance <= depth);
+                    row_placement.path = try w.cutAt(r.path, depth - distance);
+                    folded_guard = true;
+                }
+            };
+            const composed = try w.composeRes(row_placement, cells, grown, &before, &cut);
+            if (folded_guard) for (composed) |*e| {
+                e.grown = gGuardAt(e.grown, 1);
+            };
+            var av: AV = composed;
             if (several or r.approx) {
                 av = try w.approxAll(av, ctx.inst);
                 for (before.items[from..]) |*b| if (b.approx == 0) {
@@ -12107,15 +13345,20 @@ const Walker = struct {
                 };
             }
             try out.appendSlice(w.a, av);
+            if (stores_operands and !callback_result) try stored_parts.append(w.a, av);
         }
         // §16.7: places the fold put at one path are judged as two.
         if (cut) try w.foldedPairs(before.items, out.items);
+        if (stores_operands and !callback_result) {
+            const stored = try w.spineValue(ctx.inst, stored_parts.items);
+            out.clearRetainingCapacity();
+            try out.appendSlice(w.a, stored);
+        }
         // §31.7: the records the result holds, whose cells no list's fact
         // reads (an object alone, a record of numbers).
         for (s.objs) |r| {
             const cells = try w.instProv(r.prov, ctx);
-            const own = try w.a.alloc(Entry, cells.len);
-            for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown };
+            const own = try w.objectView(cells);
             if (ctx.conds) try w.instRecordCond(r, own, ctx, &rmemo);
             // No list's fact may read what `objs` names.
             if (std.debug.runtime_safety) for (own) |x| std.debug.assert(w.listFacing(x.cell) == null);
@@ -12178,7 +13421,7 @@ const Walker = struct {
         for (cells, out) |e, *x| {
             const path = try w.o.concat(r.path, e.path);
             const marked = gMarked(e.grown) or gMarked(r.grown);
-            x.* = .{ .path = path, .cell = e.cell, .approx = e.approx, .grown = gMake(marked, gPending(e.grown)) };
+            x.* = .{ .path = path, .cell = e.cell, .approx = e.approx, .grown = gMake(marked, gPending(e.grown)) | (@max(e.grown >> 8, r.grown >> 8) << 8) };
             try before.append(w.a, x.*);
             const rel: usize = blk: {
                 if (grown_arg) |ga| {
@@ -12196,6 +13439,7 @@ const Walker = struct {
             }
             if (marked) {
                 x.path = try w.o.concat(r.path, try w.cutAt(e.path, rel));
+                if (w.cells.items[e.cell].condition_only and gGuard(x.grown) != null) x.grown = gGuardAt(x.grown, 1);
                 if (x.approx == 0) x.approx = approx_place;
                 cut.* = true;
             }
@@ -12216,7 +13460,18 @@ const Walker = struct {
     /// A supply's cells as a callback's parameter holds them: `sp.path`
     /// composed with what the provenance names (§16.4), folded as a
     /// result's are (§16.7, F3 as amended).
-    fn composeSupply(w: *Walker, sp: SupplyEntry, cells: AV, ctx: InstCtx) Allocator.Error!AV {
+    fn composeSupply(w: *Walker, sp: SupplyEntry, raw_cells: AV, ctx: InstCtx) Allocator.Error!AV {
+        const cells = if (sp.prov.condition_only) try w.annotationSpines(raw_cells, sp.sc, ctx, sp.grown) else raw_cells;
+        // A supplied annotation is a condition on the value, never a loan
+        // of an allocation. Install it only on its annotation cells.
+        if (ctx.conds and sp.prov.condition_only) {
+            const k = try w.instXSum(sp.xc, ctx);
+            const rk = try w.rinstXSum(sp.rxc, ctx);
+            for (cells) |e| if (e.path == eps) {
+                try w.initCond(e.cell, k);
+                try w.rinitCond(e.cell, rk);
+            };
+        }
         var before: std.ArrayList(Entry) = .empty;
         var cut = false;
         const out = try w.composeRes(.{ .path = sp.path, .prov = sp.prov, .grown = sp.grown }, cells, try w.grownArgs(ctx), &before, &cut);
@@ -12247,6 +13502,22 @@ const Walker = struct {
     }
 
     fn instProv(w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
+        if (p.condition_only) {
+            var q = p;
+            q.condition_only = false;
+            var unannotated = ctx;
+            unannotated.callback_fresh = null;
+            const values = try w.instProv(q, unannotated);
+            const out = try w.a.alloc(Entry, values.len);
+            for (values, out) |e, *x| {
+                var c = w.cells.items[e.cell];
+                c.condition_only = true;
+                c.nonlist = false;
+                x.* = e;
+                x.cell = try w.cell(c);
+            }
+            return out;
+        }
         // §31.7: a record's object alone — what the provenance names, its
         // cells at ε made objects, which project nothing below.
         if (p.obj) {
@@ -12254,7 +13525,7 @@ const Walker = struct {
             q.obj = false;
             var out: std.ArrayList(Entry) = .empty;
             for (try w.instProv(q, ctx)) |e| {
-                if (e.path != eps) continue;
+                if (e.path != eps or w.cells.items[e.cell].condition_only) continue;
                 try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, &.{}, true), .approx = e.approx, .grown = e.grown });
             }
             return w.norm(out.items);
@@ -12269,7 +13540,7 @@ const Walker = struct {
                 const out = try w.a.alloc(Entry, av.len);
                 for (av, out) |e, *x| {
                     x.* = e;
-                    if (e.path != eps) continue;
+                    if (e.path != eps or w.cells.items[e.cell].condition_only) continue;
                     switch (w.cells.items[e.cell].kind) {
                         .param, .result, .env, .cbres => x.cell = try w.cell(.{ .kind = .taken, .a = e.cell, .b = ctx.inst.int() }),
                         .except => if (try w.takeable(e.cell)) |t| {
@@ -12354,7 +13625,14 @@ const Walker = struct {
         // The declaration's own function parameter or slot: what it returns,
         // in a lambda too, where the read-off names it `cb` of the enclosing
         // declaration (§18.9, §30.9).
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
+            // A lambda's own function parameter is called many times and
+            // its calls are not otherwise seen by the declaration.
+            if (ctx.effects) if (ctx.s.funOf(j)) |facts| if (facts.calls == .many and !facts.seen) {
+                try w.passOn(ctx.inst, ctx.s, ctx.avs, j, facts, jj);
+            };
+            return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
+        }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.unknownCb(j, ctx);
         if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
@@ -12557,12 +13835,12 @@ const Walker = struct {
     /// A call-site demand (§16.4 item 3): argument `i`'s cells at `q`,
     /// Disjoint against every other argument and every other path of `i`.
     fn callSiteDemand(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely) Allocator.Error!void {
-        return w.callSiteDemandDeep(inst, op, args, avs, &.{}, i, q, note, origin, xfail, false);
+        return w.callSiteDemandDeep(inst, op, args, avs, &.{}, i, q, note, origin, xfail, false, .deep);
     }
 
     /// `deep`: a send's demand (§23.2), on every cell at or below `q`; one
     /// on no cell gives nothing up and is no line.
-    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail_in: ?Rely, deep: bool) Allocator.Error!void {
+    fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail_in: ?Rely, deep: bool, extent: WriteExtent) Allocator.Error!void {
         const at = try w.projPath(avs[i], q, null);
         // §16.7: a written place under a marker is the lists of every level
         // it stands for, written one by one; they are distinct lists only
@@ -12644,6 +13922,7 @@ const Walker = struct {
             .origin = origin,
             .xfail = xfail,
             .deep = deep,
+            .extent = extent,
             .base_inst = if (q == eps) args[i] else null,
         });
     }
@@ -12714,6 +13993,7 @@ const Walker = struct {
         const written: []const u32 = if (fields.len != 0) fields else try w.allFields(base);
         try w.demandOn(.{
             .kind = .callsite,
+            .inst = inst.int(),
             .token = w.token(inst),
             .op = "update",
             .base_text = if (!report or q == eps) text else try std.fmt.allocPrint(arena, "{s}{s}", .{ text, try w.o.pathText(q) }),
@@ -12752,11 +14032,11 @@ const Walker = struct {
     }
 
     fn onceDemandDeep(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool) Allocator.Error!u32 {
-        return w.onceDemandFields(kind, tok, base, base_ref, ci, deep, null);
+        return w.onceDemandFields(kind, tok, base, base_ref, ci, deep, .deep, null);
     }
 
     /// `onceDemandDeep` with a record write's fields: a record demand.
-    fn onceDemandFields(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool, fields: ?[]const u32) Allocator.Error!u32 {
+    fn onceDemandFields(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool, extent: WriteExtent, fields: ?[]const u32) Allocator.Error!u32 {
         // `deep` is a send's, which gives up a list's cells (§23.2); no record
         // demand is one, so a capture written with fields is never deep.
         std.debug.assert(!(deep and fields != null));
@@ -12778,6 +14058,7 @@ const Walker = struct {
             .closures = true,
             .creation_ci = if (kind == .creation) ci else none,
             .deep = deep,
+            .extent = extent,
             .fields = fields,
         });
         return idx;
@@ -13017,12 +14298,12 @@ const Walker = struct {
     /// the path: the slot is the declaration's, called or handed on wherever
     /// the lambda runs.
     fn slotOf(w: *Walker, av: AV) Allocator.Error!?u32 {
-        if (w.recursive) return null;
         var found: ?Cell = null;
         for (av) |e| {
+            if (w.cells.items[e.cell].condition_only) continue;
             if (w.o.firstStep(e.path)) |s| if (s.kind == .env) continue;
             if (e.path != eps or found != null) return null;
-            found = w.cells.items[e.cell];
+            found = w.cells.items[try w.takenBase(e.cell)];
         }
         var c = found orelse return null;
         if (w.frame != 0) {
@@ -13030,8 +14311,9 @@ const Walker = struct {
             // exactly one of its parameters.
             if (c.kind != .env or c.a >= w.local_frame.len or w.local_frame[c.a] != 0) return null;
             const held = w.local_av[c.a] orelse return null;
-            if (held.len != 1 or held[0].path != eps) return null;
-            const hc = w.cells.items[held[0].cell];
+            const value_held = w.onlyValue(held) orelse return null;
+            if (value_held.path != eps) return null;
+            const hc = w.cells.items[try w.takenBase(value_held.cell)];
             if (hc.kind != .param or hc.b != 0) return null;
             const path = try w.o.concat(hc.path, c.path);
             c = hc;
@@ -13051,6 +14333,15 @@ const Walker = struct {
     /// the callee's parameters go to leave sight here — the checker does not
     /// see what the lambda hands them.
     fn carry(w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
+        if (p.a == none) {
+            const site: CarrySite = .{ .inst = ctx.inst.int(), .sum = @intFromPtr(ctx.s), .klass = none, .depth = ctx.depth, .ns = ctx.fresh_ns, .merge = false };
+            const g = try w.carry_sites.getOrPut(w.a, site);
+            if (!g.found_existing) {
+                g.value_ptr.* = @intCast(w.closures.items.len);
+                try w.closures.append(w.a, .{ .captures = &.{}, .token = w.token(ctx.inst) });
+            }
+            return w.single(.{ .kind = .closure, .a = g.value_ptr.* });
+        }
         if (p.a >= ctx.s.klasses.len) return w.single(.{ .kind = .top, .a = 0 });
         const k = ctx.s.klasses[p.a];
         var inner = ctx;
@@ -13059,7 +14350,13 @@ const Walker = struct {
         for (binds, k.binds) |*b, kb| {
             var parts: std.ArrayList(AV) = .empty;
             for (kb.provs) |r| {
-                var av = try w.under(try w.instProv(r.prov, inner), r.path);
+                const raw_cells = try w.instProv(r.prov, inner);
+                const cells = if (r.prov.condition_only) try w.annotationSpines(raw_cells, r.sc, inner, r.grown) else raw_cells;
+                if (r.prov.condition_only) for (cells) |e| if (e.path == eps) {
+                    try w.initCond(e.cell, try w.instXSum(r.xc, inner));
+                    try w.rinitCond(e.cell, try w.rinstXSum(r.rxc, inner));
+                };
+                var av = try w.under(cells, r.path);
                 if (r.approx) av = try w.approxAll(av, ctx.inst);
                 try parts.append(w.a, av);
             }
@@ -13140,7 +14437,7 @@ const Walker = struct {
                     if (kind == .closure or kind == .func) return null;
                     var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
                     prov.taken = false;
-                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown });
+                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), 0, params, none) else .{}, .sc = if (prov.condition_only) try w.xsumOf(try w.cellSpine(e.cell), 0, params, none) else .{}, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), 0, params, none) else .{} });
                 }
                 try cbinds.append(ckeep, .{ .local = b.local, .path = b.path, .provs = provs.items });
             }
@@ -13165,7 +14462,7 @@ const Walker = struct {
                 if (kind == .closure or kind == .func) return null;
                 var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
                 prov.taken = false;
-                try provs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown });
+                try provs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), 0, params, none) else .{}, .sc = if (prov.condition_only) try w.xsumOf(try w.cellSpine(e.cell), 0, params, none) else .{}, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), 0, params, none) else .{} });
             }
             try binds.append(keep, .{ .local = cap.local, .path = cap.path, .provs = provs.items });
         }
@@ -13252,7 +14549,7 @@ const Walker = struct {
                 continue;
             };
             if (try w.returnsOwned(c, s, avs, ictx, j, 0, none)) {
-                try w.returnedParamDemands(inst, slot_callee, args, avs, c, j, eps, true, 0);
+                try w.returnedParamDemands(inst, slot_callee, args, avs, c, j, eps, true, .deep, 0);
                 continue;
             }
             const name: []const u8 = switch (cls) {
@@ -13329,8 +14626,7 @@ const Walker = struct {
             for (s.rsupply) |e| {
                 if (e.fun != j) continue;
                 const raw = try w.instProv(e.prov, ictx);
-                const cells = try w.a.alloc(Entry, raw.len);
-                for (raw, cells) |x, *y| y.* = .{ .path = x.path, .cell = try w.nonlistOf(x.cell), .approx = x.approx, .grown = x.grown };
+                const cells = try w.objectView(raw);
                 const from: u32 = if (e.prov.kind == .param) e.prov.a else none;
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
@@ -13350,6 +14646,11 @@ const Walker = struct {
                 var rcells: std.ArrayList(Entry) = .empty;
                 var rcaptured = false;
                 for (try w.instProv(e.prov, ictx)) |x_in| {
+                    if (w.cells.items[x_in.cell].condition_only) {
+                        const annotation = try w.a.dupe(Entry, &.{x_in});
+                        try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = annotation, .probe = none, .owned = true, .approx = e.approx, .cond = try w.cellCond(x_in.cell), .rcond = try w.rcellCond(x_in.cell) });
+                        continue;
+                    }
                     const facing = w.listFacing(x_in.cell) orelse {
                         const rc = w.cells.items[x_in.cell];
                         if (w.frame != 0 and rc.kind == .env and rc.a < w.local_frame.len and w.local_frame[rc.a] == 0 and w.local_av[rc.a] != null) rcaptured = true;
@@ -13445,7 +14746,7 @@ const Walker = struct {
                     .fixed = .{ .verdict = .{ .rejected = .need }, .detail = why },
                     .prelim = .{ .cause = .need, .detail = why, .approx = approx },
                 });
-            } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+            } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
             return;
         } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name, ff.sends);
         // §31.5: a callee that writes a record πⱼ returns needs one it may
@@ -13500,7 +14801,7 @@ const Walker = struct {
                     if (!try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
                         try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0, cls)
                     else
-                        try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+                        try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
                 }
                 // §31.5: a closure that writes only a record is decided by its
                 // consumers too; a function value's line is a list's.
@@ -13559,7 +14860,7 @@ const Walker = struct {
                 // demand an owned one before it raised stays, which refuses
                 // more, never less.
                 supplies: for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
-                    if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
+                    if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     found = true;
                     // The answer's object the callback writes: at the path
                     // below the supply it writes; none of it when the write
@@ -13611,13 +14912,13 @@ const Walker = struct {
             for (c.uses) |u| {
                 if (u.bits & bit_w == 0 or u.param >= c.params) continue;
                 for (s.supply) |e| {
-                    if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
+                    if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.writeOverlap(u.path, e.path, u.extent)) continue;
                     // The path the callback writes, within what the supply holds.
                     const written = (try w.o.suffix(e.path, u.path)) orelse eps;
                     // A returned destructive loan must also be dead in the
                     // caller for the lifetime of the feedback result (§29).
                     if (e.owned and e.prov.kind == .cb) {
-                        try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, u.bits & bit_d != 0, 0);
+                        try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, u.bits & bit_d != 0, u.extent, 0);
                     }
                     const owned = e.owned and try w.provOwned(e.prov, s, avs, ictx, none, 0, written);
                     if (!owned) {
@@ -13652,9 +14953,9 @@ const Walker = struct {
                     // exclusive, so that no other position sees the write
                     // (§18.5).
                     var supply_cond = try w.instXSum(e.xc, ictx);
-                    // A dictionary focus may require only the written array's
+                    // A focus may require only the written array's
                     // own exclusivity. This does not authorise a deep write.
-                    if (s.limit == .none and c.limit == .none and e.prov.taken and u.bits & bit_d == 0 and e.prov.kind == .param and try w.o.dictTreePath(e.prov.path)) {
+                    if (s.limit == .none and c.limit == .none and e.prov.taken and u.bits & bit_d == 0 and e.prov.kind == .param and ((u.extent == .storage and w.o.isPrefix(e.path, u.path)) or try w.o.dictTreePath(e.prov.path))) {
                         const tail = (try w.o.suffix(e.path, u.path)) orelse eps;
                         var p = e.prov;
                         p.path = try w.o.concat(p.path, tail);
@@ -13680,13 +14981,14 @@ const Walker = struct {
                         var path = e.prov.path;
                         if (try w.o.suffix(e.path, u.path)) |rest| path = try w.o.concat(path, rest);
                         const note = if (w.mode != .report) "" else try std.fmt.allocPrint(arena, "{s} writes what {s} supplies it", .{ name, callee.name });
-                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, path, note, if (s.limit != .none or c.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, null, u.bits & bit_d != 0);
+                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, path, note, if (s.limit != .none or c.limit != .none) .limit else if (u.bits & bit_x == 0) .approx else .exact, null, u.bits & bit_d != 0, u.extent);
                     }
                 }
             }
             // What the callback relied on (§18.4 item 2), against what the
             // callee supplies it and what it captured.
-            for (c.xreq) |x| {
+            // Pair by pair: the first failure in atom order is reported (§16.7, #693).
+            for (try expandAtoms(w.a, c.xreq)) |x| {
                 const r = try w.rely(try w.classReq(x, s, j, cls, ictx), w.frame);
                 if (r == .ok) continue;
                 const k = xreqParam(x) orelse 0;
@@ -13698,10 +15000,10 @@ const Walker = struct {
             // The callee edits what the callback returns (§16.2's need).
             var need_bad = false;
             if (ff.need) {
-                if (!try w.returnsOwned(c, s, avs, ictx, j, 0, none))
+                if (!(if (ff.sends) try w.taggerReturnsOwned(c, s, avs, j, cls, ictx) else try w.returnsOwned(c, s, avs, ictx, j, 0, none)))
                     need_bad = true
                 else
-                    try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+                    try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
             }
             switch (cls) {
                 .send => if (bad[0]) |why| try w.demands.append(w.a, .{
@@ -13869,6 +15171,14 @@ const Walker = struct {
             try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_a });
             try res.append(keep, .{ .path = try w.o.child(eps, .ctor, try w.o.ctorStep(c, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
+        // Its operands pairwise apart (§16.7, #693), as a construction's.
+        var separation: std.ArrayList(XAtom) = .empty;
+        {
+            const gs = try keep.alloc([]Prov, res.items.len);
+            for (gs, res.items) |*g, r| g.* = try keep.dupe(Prov, &.{r.prov});
+            try apartAtoms(keep, .apart, gs, &separation);
+        }
+        if (separation.items.len != 0) try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1, .condition_only = true }, .xc = .{ .atoms = separation.items }, .rxc = .{ .atoms = separation.items } });
         const out = try w.a.create(Summary);
         // A constructor has exactly this primitive row, so unseen callback
         // calls cannot bypass its need check (including a variable-held one).
@@ -13891,8 +15201,11 @@ const Walker = struct {
             .excl => w.deepCond(try w.classSide(x.a, s, j, cls, ctx)),
             .spine => w.spineCond(try w.classSide(x.a, s, j, cls, ctx)),
             .sep_spine => w.sepSpineValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
+            .sep_root => w.sepRootValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
             .sep => w.sepValues(try w.classSide(x.a, s, j, cls, ctx), try w.classSide(x.b, s, j, cls, ctx)),
             .keep, .keep_spine => cond_lost,
+            // Read through its expansion (the caller).
+            .apart, .apart_spine => unreachable,
         };
     }
 
@@ -13904,7 +15217,7 @@ const Walker = struct {
                 var parts: std.ArrayList(AV) = .empty;
                 for (s.supply) |e| {
                     if (e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
-                    const at = try w.under(try w.instProv(e.prov, ctx), e.path);
+                    const at = try w.composeSupply(e, try w.instProv(e.prov, ctx), ctx);
                     try parts.append(w.a, try w.projPath(at, p.path, null));
                 }
                 return w.unionOf(parts.items);
@@ -13927,19 +15240,19 @@ const Walker = struct {
     /// the caller's argument is what is written, so it gets a call-site
     /// demand. A supply of another callback's result asks the same of that
     /// callback's actual. §29's taken-item loans are the case it began with.
-    fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
+    fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, extent: WriteExtent, depth: u32) Allocator.Error!void {
         // Past the limit a demand would be dropped: an error instead (§16.7).
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const actual = (try w.actualOf(callee.sum, avs, j)) orelse return;
         for (try w.classesOf(actual)) |cls| {
             const c = (try w.classSummary(cls)) orelse continue;
-            try w.returnedParamDemands(inst, callee, args, avs, c, j, written, deep, depth);
+            try w.returnedParamDemands(inst, callee, args, avs, c, j, written, deep, extent, depth);
         }
     }
 
     /// `callbackLoanDemands` for one class `c` of the actual for `j` — also a
     /// constructor's row (§23.5) or an unseen tagger's.
-    fn returnedParamDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
+    fn returnedParamDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, written: u32, deep: bool, extent: WriteExtent, depth: u32) Allocator.Error!void {
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const s = callee.sum;
         for (c.res) |r| {
@@ -13960,11 +15273,11 @@ const Walker = struct {
                 var path = p.path;
                 if (try w.o.suffix(supply.path, at)) |rest| path = try w.o.concat(path, rest);
                 switch (p.kind) {
-                    .cb => if (p.a != j) try w.callbackLoanDemands(inst, callee, args, avs, p.a, path, deep, depth + 1),
+                    .cb => if (p.a != j) try w.callbackLoanDemands(inst, callee, args, avs, p.a, path, deep, extent, depth + 1),
                     .param => if (p.a < args.len) {
                         const origin: Origin = if (s.limit != .none or c.limit != .none) .limit else if (supply.approx or r.approx) .approx else .exact;
                         const note = if (w.mode != .report) "" else if (p.taken) "a returned item is transferred to a later written callback result" else try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes what its callback returns, and the callback returns this argument", .{callee.name});
-                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, p.a, path, note, origin, null, deep);
+                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, p.a, path, note, origin, null, deep, extent);
                     },
                     else => {},
                 }
@@ -14123,7 +15436,7 @@ const Walker = struct {
         var parts: std.ArrayList(AV) = .empty;
         for (ctx.s.supply) |e| {
             if (e.fun != ctx.j or e.k != k) continue;
-            try parts.append(w.a, try w.under(try w.instProv(e.prov, ctx.ictx), e.path));
+            try parts.append(w.a, try w.composeSupply(e, try w.instProv(e.prov, ctx.ictx), ctx.ictx));
         }
         return w.unionOf(parts.items);
     }
@@ -14246,7 +15559,7 @@ const Walker = struct {
         // lists (an open row, a type parameter), named whole in `res` at ε,
         // its object with it.
         var at_root: std.ArrayList(ResEntry) = .empty;
-        for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
+        for (c.res) |r| if (r.path == eps and !r.prov.condition_only) try at_root.append(w.a, r);
         for ([_][]const ResEntry{ c.objs, at_root.items }) |entries| for (entries) |r| {
             // The objects the caller writes: the answer's own, at ε, and the
             // one at the path written. A record below the one written is
@@ -14408,6 +15721,8 @@ const Walker = struct {
             for (c.res) |r| std.debug.print("   {s} {s}\n", .{ try w.o.pathText(r.path), try w.o.provText(r.prov) });
         }
         for (c.res) |r| {
+            // A condition annotation is not an allocation whose spine is returned.
+            if (r.prov.condition_only or r.prov.kind == .klass) continue;
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
             if (within != eps and !w.o.overlap(r.path, within)) continue;
             // A list from JavaScript is a limit of the analysis, not sharing
@@ -14441,7 +15756,14 @@ const Walker = struct {
                 },
                 // §30.9: a carried lambda's call of a function the caller
                 // passed, judged by what it returns at this call.
-                .cb => if (r.prov.b != 1 or !try w.carriedCallOwned(r.prov, ictx)) return false,
+                .cb => if (r.prov.b == 1) {
+                    if (!try w.carriedCallOwned(r.prov, ictx)) return false;
+                } else {
+                    const supplied = try w.a.alloc(AV, c.params);
+                    for (supplied, 0..) |*arg, k| arg.* = try w.suppliedParam(@intCast(k), .{ .s = s, .j = j, .ictx = ictx });
+                    const inner: InstCtx = .{ .inst = ictx.inst, .s = c, .avs = supplied, .closure = w.ro_closure, .depth = ictx.depth + 1 };
+                    if (!try w.provOwned(r.prov, c, supplied, inner, none, depth, none)) return false;
+                },
                 else => return false,
             }
             // One provenance at two distinct result paths is not owned.
@@ -14571,7 +15893,7 @@ const Walker = struct {
                 try parts.append(w.a, try w.shift(av, .{ .kind = .elem, .arg = 0 }));
             }
         }
-        return w.unionOf(parts.items);
+        return w.spineValue(top, parts.items);
     }
 
     /// A prepend, `[ x, …xs ]` (§3.2 as amended for slice 3f): a new array
@@ -14599,7 +15921,7 @@ const Walker = struct {
         if (!try w.madeAfter(insts[bi - 1], avs[bi - 1], avs[bi])) try parts.append(w.a, try w.approxAll(avs[bi], top));
         try parts.append(w.a, try w.shift(try w.proj(avs[bi], .{ .kind = .elem, .arg = 0 }, w.listElement(top)), .{ .kind = .elem, .arg = 0 }));
         for (stored.items) |av| try parts.append(w.a, try w.shift(av, .{ .kind = .elem, .arg = 0 }));
-        return w.unionOf(parts.items);
+        return w.spineValue(top, parts.items);
     }
 
     /// §26.3: whether `item`, put in front of a prepend's base, is a list
@@ -14653,10 +15975,187 @@ const Walker = struct {
         }
     }
 
-    /// §20.8: cells two arguments of a constructor place at one folded path —
-    /// a node's value and its subtree's values — are kept apart: what is
-    /// stored at a representative shares no cell with what is there. One cell
-    /// met twice is one arrival's positions, which its own condition covers.
+    /// A symbolic value can reveal new array paths when it is projected.
+    fn symbolicSpine(w: *const Walker, c: u32) bool {
+        return switch (w.cells.items[c].kind) {
+            .param, .env, .cbres, .taken, .except, .top, .payload => true,
+            .site, .result, .shared, .closure, .func => false,
+        };
+    }
+
+    /// The array at x's root versus everything y holds. An unresolved
+    /// right operand keeps this asymmetric requirement for its caller.
+    fn sepRootValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
+        var acc: CondAcc = .{};
+        const other = try w.expand(y);
+        const any = try w.o.child(eps, .any, 0);
+        for (x) |e| {
+            if ((e.path != eps and e.path != any) or w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
+            for (other) |f| {
+                if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
+                const k = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                try acc.add(w, if (k > cond_fixed_last) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else k);
+            }
+        }
+        return w.condAndAll(&acc);
+    }
+
+    /// A guard at a symbolic result path is a projection rule, not a
+    /// whole-element condition. Only its selected side follows the read.
+    fn projectSpineGuard(w: *Walker, c: u32, step: Step, ty: ?Var) Allocator.Error!?u32 {
+        const k = try w.cellSpine(c);
+        if (k <= cond_fixed_last) return null;
+        var atoms: std.ArrayList(WAtom) = .empty;
+        for (w.conds.items[k].atoms) |t| {
+            if (t.kind != .sep_root) continue;
+            const selected = (try w.projCell(t.a, step, ty)) orelse continue;
+            try atoms.append(w.a, .{ .kind = .sep_root, .a = selected, .b = t.b });
+        }
+        if (atoms.items.len == 0) return null;
+        var guard_cell = w.cells.items[c];
+        guard_cell.path = try w.o.child(guard_cell.path, step.kind, step.arg);
+        const guard = try w.cell(guard_cell);
+        try w.initCond(guard, cond_yes);
+        try w.rinitCond(guard, cond_yes);
+        try w.initSpine(guard, try w.mkCond(atoms.items));
+        return guard;
+    }
+
+    /// Distribute an annotation over actual target paths before the
+    /// result is normalised. A parameter remains projectable; a concrete
+    /// tuple supplies independent guards at .0 and .1.
+    fn annotationSpines(w: *Walker, cells: AV, sc: XSum, ctx: InstCtx, mark: Grown) Allocator.Error!AV {
+        var fixed: std.ArrayList(XAtom) = .empty;
+        for (sc.atoms) |t| if (t.kind != .sep_root) try fixed.append(w.a, t);
+        const base = try w.instXSum(.{ .no = sc.no, .atoms = fixed.items }, ctx);
+        for (cells) |e| if (e.path == eps) try w.initSpine(e.cell, base);
+        var out: std.ArrayList(Entry) = .empty;
+        try out.appendSlice(w.a, cells);
+        for (sc.atoms) |t| {
+            if (t.kind != .sep_root) continue;
+            const raw_selected = try w.instProv(t.a, ctx);
+            var before: std.ArrayList(Entry) = .empty;
+            var cut = false;
+            const selected = try w.composeRes(.{ .path = eps, .prov = t.a }, raw_selected, try w.grownArgs(ctx), &before, &cut);
+            if (cut) try w.foldedPairs(before.items, selected);
+            const other = try w.expand(try w.instProv(t.b, ctx));
+            for (selected) |e| {
+                if (w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
+                var acc: CondAcc = .{};
+                var approximate = e.approx;
+                for (other) |f| {
+                    if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
+                    if (f.approx != 0) approximate = f.approx;
+                    const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                    if (separation == cond_yes) continue;
+                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
+                }
+                const k = try w.condAndAll(&acc);
+                if (k == cond_yes) continue;
+                for (cells) |root| {
+                    if (root.path != eps) continue;
+                    var guard_cell = w.cells.items[root.cell];
+                    guard_cell.path = try w.o.concat(guard_cell.path, e.path);
+                    const guard = try w.cell(guard_cell);
+                    try w.initCond(guard, cond_yes);
+                    try w.rinitCond(guard, cond_yes);
+                    try w.initSpine(guard, k);
+                    var growth = gJoin(e.grown, root.grown);
+                    if (gGuard(mark)) |distance| {
+                        growth = gGuardAt(growth, distance + w.o.paths.depth.items[e.path]);
+                    } else if (gMarked(e.grown)) {
+                        const ga = try w.grownArgs(ctx);
+                        if (t.a.kind == .param and t.a.a < ga.len) if (ga[t.a.a]) |types| {
+                            const full = try w.o.concat(t.a.path, e.path);
+                            if (try w.polyBound(full, .{ .store = types[0] }, .{ .store = types[1] })) |boundary| {
+                                const pd = w.o.paths.depth.items[t.a.path];
+                                const relative = if (boundary > pd) boundary - pd else 0;
+                                const depth = w.o.paths.depth.items[e.path];
+                                if (depth > relative) growth = gGuardAt(growth, @intCast(depth - relative));
+                            }
+                        };
+                    }
+                    try out.append(w.a, .{ .path = e.path, .cell = guard, .approx = approximate, .grown = growth });
+                }
+            }
+        }
+        return w.norm(out.items);
+    }
+
+    /// A construction's container conditions, one guard per result path.
+    /// The guard belongs to the containing value, never to an allocation:
+    /// sharing keys at one path must not poison fresh values at another.
+    /// Compare before `norm` merges repeated entries at `[*]`.
+    fn spineValue(w: *Walker, inst: Inst.Index, parts: []const AV) Allocator.Error!AV {
+        var out: std.ArrayList(Entry) = .empty;
+        for (parts) |part| try out.appendSlice(w.a, part);
+        for (parts, 0..) |part, i| for (part) |e| {
+            if (w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
+            var acc: CondAcc = .{};
+            var approximate = e.approx;
+            for (parts, 0..) |other, j| {
+                if (i == j) continue;
+                for (other) |f| {
+                    if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
+                    if (f.approx != 0) approximate = f.approx;
+                    if (e.path != f.path and try w.nested(e, f)) continue;
+                    const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                    if (separation == cond_yes) continue;
+                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.atomCond(.{ .kind = .sep_root, .a = e.cell, .b = f.cell }) else separation);
+                }
+            }
+            const k = try w.condAndAll(&acc);
+            if (k == cond_yes) continue;
+            const guard = try w.cell(.{ .kind = .site, .a = inst.int(), .b = 1, .path = e.path, .condition_only = true });
+            try w.initCond(guard, cond_yes);
+            try w.initSpine(guard, k);
+            try out.append(w.a, .{ .path = e.path, .cell = guard, .approx = approximate, .grown = e.grown });
+        };
+        return w.norm(out.items);
+    }
+
+    /// §16.7: conditions on operands that coexist in this construction.
+    /// The annotation follows the containing value, not either allocation.
+    fn containingCondition(w: *Walker, inst: Inst.Index, avs: []const AV) Allocator.Error!AV {
+        // Each operand's cells once, not once per pair (#684), and each made
+        // when the pairwise reading first needed it, so that every cell is
+        // interned in the order it always was. The operands are pairwise
+        // apart: one pass, not one per pair (§16.7, #693).
+        const cells = try w.a.alloc(?AV, avs.len);
+        const rcells = try w.a.alloc(?AV, avs.len);
+        @memset(cells, null);
+        @memset(rcells, null);
+        // The pairs' order, in which the first nonempty operand meets every
+        // later one, each in turn, and every operand before it is empty.
+        var first: ?usize = null;
+        for (avs, 0..) |av, j| {
+            if (av.len == 0) continue;
+            const i = first orelse {
+                first = j;
+                continue;
+            };
+            if (cells[i] == null) cells[i] = try w.sepCellList(avs[i]);
+            cells[j] = try w.sepCellList(av);
+            if (rcells[i] == null) rcells[i] = try w.rsepCellList(avs[i]);
+            rcells[j] = try w.rsepCellList(av);
+        }
+        const groups = try w.a.alloc(AV, avs.len);
+        const rgroups = try w.a.alloc(AV, avs.len);
+        for (groups, rgroups, cells, rcells) |*g, *r, c, rc| {
+            g.* = c orelse &.{};
+            r.* = rc orelse &.{};
+        }
+        const k = try w.pairwiseApart(groups, .list);
+        const rk = try w.pairwiseApart(rgroups, .record);
+        if (k == cond_yes and rk == cond_yes) return &.{};
+        const guard = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst), .condition_only = true });
+        try w.initCond(guard[0].cell, k);
+        try w.rinitCond(guard[0].cell, rk);
+        return guard;
+    }
+
+    /// §20.8: cells two constructor operands place at one folded path
+    /// retain the separation condition that the fold would otherwise hide.
     fn storedBeside(w: *Walker, parts: []const AV) Allocator.Error!void {
         var filled: usize = 0;
         for (parts) |p| if (p.len > 0) {
@@ -14716,6 +16215,7 @@ const Walker = struct {
     /// `covers`, saying whether the hold is approximate: one of the places
     /// a region's marker stands for (§16.7).
     fn coversAt(w: *Walker, outer: u32, inner: u32) Allocator.Error!?Cover {
+        if (w.cells.items[outer].condition_only or w.cells.items[inner].condition_only) return null;
         if (outer == inner) return .{ .rest = eps };
         const o = w.cells.items[outer];
         const i = w.cells.items[inner];
@@ -14734,7 +16234,7 @@ const Walker = struct {
             .param, .result, .env, .shared, .cbres, .taken, .payload => {},
             .site, .top, .closure, .func, .except => return null,
         }
-        if (o.kind != i.kind or o.a != i.a or o.b != i.b) return null;
+        if (o.kind != i.kind or o.a != i.a or o.b != i.b or o.scope != i.scope) return null;
         // One place named twice (a definition's made cell, and the same value
         // through another's summary) is one cell.
         if (o.path == i.path) return .{ .rest = eps };
@@ -14773,6 +16273,7 @@ const Walker = struct {
     }
 
     const DemandSpec = struct {
+        inst: u32 = none,
         kind: DemandKind,
         token: u32,
         op: []const u8,
@@ -14797,6 +16298,7 @@ const Walker = struct {
         payload_from: AV = &.{},
         /// §23.2: a send's demand, its base already flattened.
         deep: bool = false,
+        extent: WriteExtent = .deep,
         /// §28.6: the base's instruction, when the source writes it.
         base_inst: ?Inst.Index = null,
         /// §31.3: a record update's demand on its base's object, and the
@@ -14810,6 +16312,7 @@ const Walker = struct {
         var cells: std.ArrayList(Entry) = .empty;
         const any = try w.o.child(eps, .any, 0);
         for (spec.base) |e_in| {
+            if (w.cells.items[e_in.cell].condition_only) continue;
             // §31.2: a record's object is no list's; the record demand of
             // §31.3 is the one that reads it.
             const e = Entry{ .path = e_in.path, .cell = (if (spec.fields != null) w.recordObject(e_in.cell) else w.listFacing(e_in.cell)) orelse continue, .approx = e_in.approx, .grown = e_in.grown };
@@ -14825,6 +16328,7 @@ const Walker = struct {
             try cells.append(w.a, e);
         }
         var rec: DemandRec = .{
+            .inst = spec.inst,
             .kind = spec.kind,
             .token = spec.token,
             .op = spec.op,
@@ -14844,6 +16348,7 @@ const Walker = struct {
             .origin = spec.origin,
             .entry = spec.entry,
             .deep = spec.deep,
+            .extent = spec.extent,
             .fields = spec.fields,
         };
         if (w.mode == .report) {
@@ -14865,7 +16370,7 @@ const Walker = struct {
             const c = w.cells.items[base];
             // A record demand relies on its container without stating it: what a
             // summary requires of its callers for records is §31.7's (R2c).
-            if (base != e.cell and spec.kind != .probe) switch (try w.relyAs(try w.cellCond(e.cell), w.frame, spec.fields == null)) {
+            if (base != e.cell and spec.kind != .probe) switch (try w.relyAs(if (spec.fields == null and spec.extent == .storage and w.instCol(?AV, w.split_scrut, w.cells.items[e.cell].b, null) == null) try w.spineCond(spec.base) else try w.cellCond(e.cell), w.frame, spec.fields == null)) {
                 .ok => {},
                 else => |r| rec.xfail = Rely.worse(rec.xfail, r),
             };
@@ -14926,7 +16431,11 @@ const Walker = struct {
                     cause = .captured_edit;
                     detail = try std.fmt.allocPrint(out, "{s} is captured, and how often the closure runs is not known", .{w.localName(c.a)});
                 },
-                .site, .param, .result, .closure, .func, .cbres, .taken, .except => {},
+                .cbres => if (w.callbackFrame(c) != 0) {
+                    cause = .unknown;
+                    detail = "it came from a call of a function the checker cannot identify, which may return a list something else holds";
+                },
+                .site, .param, .result, .closure, .func, .taken, .except => {},
             }
             // A real escape names itself before §18.6's conservative one.
             var esc = if (spec.fields != null) try w.escapeBeforeOf(e.cell, true) else try w.escapeBefore(e.cell);
@@ -15304,10 +16813,102 @@ const Walker = struct {
             const verdict = try w.resolveOne(rec);
             if (w.mode != .report) continue;
             try out_list.append(out, verdict);
+            if (rec.fields != null and rec.inst != none and verdict.verdict == .accepted) try w.publishDemand(rec);
         }
     }
 
+    fn hoistName(w: *Walker, symbol: u32) Allocator.Error!u32 {
+        const start: u32 = @intCast(w.hoist_table.names.items.len);
+        try w.hoist_table.names.appendSlice(w.a, w.o.in.interner.slice(@fromBackingInt(symbol)));
+        try w.hoist_table.names.append(w.a, 0);
+        return start;
+    }
+
+    fn parentOf(w: *const Walker, inst: u32) u32 {
+        const i = inst -% w.decl.inst_start.int();
+        return if (i < w.inst_parent.len) w.inst_parent[i] else none;
+    }
+
+    /// A read in the same or a nested branch is dominated by the write.
+    /// Otherwise lift it to the statement containing the divergent branch.
+    fn placement(w: *const Walker, rec: DemandRec, u: Use) u32 {
+        var ctx = u.ctx;
+        while (ctx != none) : (ctx = w.ctx_nodes.items[ctx].parent) {
+            if (ctx == rec.ctx) return rec.inst;
+        }
+        const read = if (u.capture != none) u.capture else u.read_inst;
+        var d = rec.inst;
+        while (d != none) : (d = w.parentOf(d)) {
+            const parent = w.parentOf(d);
+            var r = read;
+            while (r != none) : (r = w.parentOf(r)) if (r == parent) return d;
+        }
+        unreachable; // both accesses are in one frame (§31.14)
+    }
+
+    fn publishDemand(w: *Walker, rec: DemandRec) Allocator.Error!void {
+        const fields = try w.a.dupe(u32, rec.fields.?);
+        std.mem.sort(u32, fields, w.o.in.interner, struct {
+            fn less(pool: *const InternPool.Global, x: u32, y: u32) bool {
+                return std.mem.lessThan(u8, pool.slice(@fromBackingInt(x)), pool.slice(@fromBackingInt(y)));
+            }
+        }.less);
+        const start: u32 = @intCast(w.hoist_table.fields.items.len);
+        for (fields) |f| try w.hoist_table.fields.append(w.a, try w.hoistName(f));
+        try w.hoist_table.demands.append(w.a, .{ .decl = w.decl_index, .inst = rec.inst, .fields_start = start, .fields_len = @intCast(fields.len) });
+        for (w.hoist_uses.items) |h| {
+            // These controls invent hoists for whole uses, which have no
+            // source field read to publish. Their verdicts still change.
+            if (comptime record_mutation == .hoist_whole or record_mutation == .call_as_hoist) {
+                if (h.use.read_inst == none) continue;
+            }
+            const at = if (comptime record_mutation == .wrong_placement) h.use.read_inst else w.placement(rec, h.use);
+            const phase: u32 = if (at == rec.inst and w.bir.instTag(@fromBackingInt(rec.inst)) == .record_update) 1 else 0;
+            try w.publishRead(h.use, rec.inst, at, phase, h.prefix);
+        }
+    }
+
+    /// Copy the exact source path, independently of ownership's path domain.
+    fn publishRead(w: *Walker, u: Use, demand: u32, at: u32, phase: u32, prefix: u32) Allocator.Error!void {
+        if (u.read_inst == none) unreachable;
+        var path: std.ArrayList(Hoists.Step) = .empty;
+        if (u.pattern_field != none) try path.append(w.a, .{ .kind = 0, .arg = try w.hoistName(u.pattern_field) });
+        var inst: Inst.Index = @fromBackingInt(u.read_inst);
+        while (true) {
+            const d = w.bir.instData(inst);
+            switch (w.bir.instTag(inst)) {
+                .field_access, .tuple_index => |tag| {
+                    try path.append(w.a, .{ .kind = if (tag == .field_access) 0 else 1, .arg = if (tag == .field_access) try w.hoistName(@backingInt(w.bir.symbols[d.rhs])) else d.rhs });
+                    inst = @fromBackingInt(@intCast(d.lhs));
+                },
+                .local => break,
+                else => unreachable, // recordRead only records a variable path
+            }
+        }
+        std.mem.reverse(Hoists.Step, path.items);
+        const n: u32 = @intCast(path.items.len);
+        const pre = if (prefix == none) n else prefix;
+        std.debug.assert(pre > 0 and pre <= n);
+        // One source read invalidated twice keeps the first write's placement.
+        const entry = try w.hoist_read_index.getOrPut(w.a, .{ u.read_inst, u.binding, u.capture, pre });
+        if (entry.found_existing) {
+            const r = &w.hoist_table.reads.items[entry.value_ptr.*];
+            if (r.demand == none and demand != none) {
+                r.demand = demand;
+                r.placement = at;
+                r.phase = phase;
+                r.prefix_len = pre;
+            }
+            return;
+        }
+        entry.value_ptr.* = @intCast(w.hoist_table.reads.items.len);
+        const start: u32 = @intCast(w.hoist_table.paths.items.len);
+        try w.hoist_table.paths.appendSlice(w.a, path.items);
+        try w.hoist_table.reads.append(w.a, .{ .decl = w.decl_index, .demand = demand, .inst = u.read_inst, .holder = u.local, .binding = u.binding, .path_start = start, .path_len = n, .prefix_len = pre, .placement = at, .phase = phase, .capture = u.capture });
+    }
+
     fn resolveOne(w: *Walker, rec: DemandRec) Allocator.Error!Demand {
+        w.hoist_uses.clearRetainingCapacity();
         var d = try w.resolveRaw(rec);
         // §31.12: a record rejection's fix — a top-level base is made a
         // function, anything else copies.
@@ -15420,6 +17021,9 @@ const Walker = struct {
                     // read, so a read of a written field is a whole use.
                     .hoist => if (rec.kind != .creation) {
                         try hoisted.append(w.a, ui);
+                        var buf: [k_limit + 1]Step = undefined;
+                        const prefix: u32 = @intCast(w.o.steps(h.path, &buf).len + 1);
+                        try w.hoist_uses.append(w.a, .{ .use = u, .prefix = prefix });
                         continue;
                     },
                     .whole => {},
@@ -15752,7 +17356,7 @@ const Walker = struct {
             // crossed before §31.2), a use of a record's object alone — is
             // `bit_q`, the record demand's R, which no list's fact reads.
             var rec_use = u.record_read;
-            if (u.via != none) if (w.cell_map.get(.{ @backingInt(CellKind.env), u.local, 0, u.path })) |ec| {
+            if (u.via != none) if (w.cell_map.get(.{ @backingInt(CellKind.env), u.local, 0, u.path, 0 })) |ec| {
                 if (w.cells.items[ec].nonlist) rec_use = true;
             };
             const held = w.local_av[u.local] orelse continue;
@@ -15793,7 +17397,7 @@ const Walker = struct {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 const deep: u16 = if (rec.deep) bit_d else 0;
                 if (rec.frame == frame) {
-                    if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields });
+                    if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields, .extent = rec.extent });
                 }
                 if (c.kind == .env and rec.frame != frame) {
                     const held = w.local_av[c.a] orelse continue;
@@ -15801,7 +17405,7 @@ const Walker = struct {
                     for (try w.projPath(held, c.path, null)) |h| {
                         if (h.path != eps) continue;
                         const hc = w.cells.items[h.cell];
-                        if (w.paramIndex(hc, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = hc.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and h.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields });
+                        if (w.paramIndex(hc, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = hc.path, .bits = wbit | deep | (if (rec.fields == null and e.approx == 0 and h.approx == 0 and rec.origin == .exact) bit_x else 0), .fields = fields, .extent = rec.extent });
                     }
                 }
             }
@@ -15886,11 +17490,18 @@ const Walker = struct {
         for (expanded) |e| {
             // §24.9: a lambda the result holds keeps its class, when it is
             // one a caller can call with nothing but its result and reads.
-            if (frame == 0 and !w.recursive and w.cells.items[e.cell].kind == .closure and !w.o.hasStep(e.path, .env)) {
+            if (frame == 0 and w.cells.items[e.cell].kind == .closure and !w.o.hasStep(e.path, .env)) {
                 if (try w.carried(w.cells.items[e.cell].a, params, fresh)) |k| {
                     try klasses.append(keep, k);
                     try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = @intCast(klasses.items.len - 1) }, .approx = e.approx != 0, .grown = e.grown });
+                } else {
+                    // An unavailable class is unknown, never recursive bottom.
+                    try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = none }, .approx = e.approx != 0, .grown = e.grown });
                 }
+                continue;
+            }
+            if (!w.o.hasStep(e.path, .env) and (w.cells.items[e.cell].kind == .closure or w.cells.items[e.cell].kind == .func)) {
+                try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = none }, .approx = e.approx != 0, .grown = e.grown });
                 continue;
             }
             const c = w.cells.items[try w.takenBase(e.cell)];
@@ -15962,7 +17573,7 @@ const Walker = struct {
                     if (rec.fields != null) {
                         for (rec.cells) |e| {
                             const c = w.cells.items[try w.takenBase(e.cell)];
-                            if (c.kind == .cbres and c.a == j) rneed = true;
+                            if (c.kind == .cbres and w.callbackFrame(c) == 0 and c.a == j) rneed = true;
                         }
                         continue;
                     }
@@ -15970,78 +17581,13 @@ const Walker = struct {
                         // A taken element stands for the cell it was taken
                         // from (§18.5), which may be what πⱼ returned.
                         const c = w.cells.items[try w.takenBase(e.cell)];
-                        if (c.kind == .cbres and c.a == j) {
+                        if (c.kind == .cbres and w.callbackFrame(c) == 0 and c.a == j) {
                             need = true;
                             if (!rec.deep) edit = true;
                         }
                     }
                 }
                 try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .rneed = rneed, .seen = st.seen, .send = st.send, .sends = need and !edit });
-            }
-            for (w.supplies.items) |sr| {
-                var more_ok = true;
-                var more_approx = true;
-                for (sr.more) |p| if (p != none) {
-                    more_ok = more_ok and w.probe_ok.items[p];
-                    more_approx = more_approx and w.probe_approx.items[p];
-                };
-                const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
-                const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
-                const xc = try w.xsumOf(sr.cond, frame, params, none);
-                const rxc = try w.rxsumOf(sr.rcond, frame, params, none);
-                for (try w.listView(try w.expand(sr.av))) |e| {
-                    // A cell made here keeps the number the result gives it,
-                    // renumbered as the result's entries are (0 when the
-                    // result does not hold it): a callback that keeps it then
-                    // keeps the list the result returns (#281).
-                    var prov = (try w.provOf(e.cell, frame, params, fresh)) orelse continue;
-                    if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
-                    if (sr.taken and prov.kind == .param) prov.taken = true;
-                    const owned = owned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
-                    if (prov.kind == .cb and owned) {
-                        const atom: [2]u32 = .{ prov.a, prov.path };
-                        for (atoms.items) |x| {
-                            if (x[0] == atom[0] and x[1] == atom[1]) break;
-                        } else try atoms.append(w.a, atom);
-                    }
-                    // Shared is the position rule, exact; ⊤, an escape and a
-                    // capture are limits, as is a probe that failed only
-                    // through one.
-                    const approx = !owned and switch (prov.kind) {
-                        .shared => false,
-                        .top, .esc, .env => true,
-                        else => probe_approx or e.approx != 0,
-                    };
-                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .xc = xc, .rxc = rxc, .grown = e.grown });
-                }
-                // §31.5: the records it supplies, which no list's fact reads:
-                // as `objs` names a result's, by the provenance of the record
-                // each object was written over, owned where the record probe
-                // held.
-                const rowned_probe = sr.owned and more_ok and sr.rprobe != none and w.probe_ok.items[sr.rprobe];
-                for (try w.expand(sr.av)) |e| {
-                    if (w.listFacing(e.cell) != null) continue;
-                    const x = w.cells.items[e.cell];
-                    const base_cell = if (x.kind == .except) x.a else e.cell;
-                    const bx = w.cells.items[base_cell];
-                    switch (bx.kind) {
-                        .closure, .func => continue,
-                        else => {},
-                    }
-                    var prov: Prov = switch (bx.kind) {
-                        .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
-                        else => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
-                    };
-                    if (sr.taken and prov.kind == .param) prov.taken = true;
-                    prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
-                    const owned = rowned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
-                    const approx = !owned and switch (prov.kind) {
-                        .shared => false,
-                        .top, .esc, .env => true,
-                        else => (sr.rprobe != none and w.probe_approx.items[sr.rprobe]) or e.approx != 0,
-                    };
-                    try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .rxc = rxc });
-                }
             }
         } else {
             // A lambda's own function parameters: its class does not follow
@@ -16051,17 +17597,83 @@ const Walker = struct {
                 if (isFunc(w.store, v)) try funs.append(keep, .{ .param = @intCast(k), .calls = .many, .seen = false });
             }
         }
+        for (w.supplies.items) |sr| {
+            if (sr.frame != frame) continue;
+            var more_ok = true;
+            var more_approx = true;
+            for (sr.more) |p| if (p != none) {
+                more_ok = more_ok and w.probe_ok.items[p];
+                more_approx = more_approx and w.probe_approx.items[p];
+            };
+            const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
+            const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
+            const xc = try w.xsumOf(sr.cond, frame, params, none);
+            const rxc = try w.rxsumOf(sr.rcond, frame, params, none);
+            for (try w.listView(try w.expand(sr.av))) |e| {
+                // A cell made here keeps the number the result gives it,
+                // renumbered as the result's entries are (0 when the
+                // result does not hold it): a callback that keeps it then
+                // keeps the list the result returns (#281).
+                var prov = (try w.provOf(e.cell, frame, params, fresh)) orelse continue;
+                if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
+                if (sr.taken and prov.kind == .param) prov.taken = true;
+                const owned = owned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
+                if (prov.kind == .cb and owned) {
+                    const atom: [2]u32 = .{ prov.a, prov.path };
+                    for (atoms.items) |x| {
+                        if (x[0] == atom[0] and x[1] == atom[1]) break;
+                    } else try atoms.append(w.a, atom);
+                }
+                // Shared is the position rule, exact; ⊤, an escape and a
+                // capture are limits, as is a probe that failed only
+                // through one.
+                const approx = !owned and switch (prov.kind) {
+                    .shared => false,
+                    .top, .esc, .env => true,
+                    else => probe_approx or e.approx != 0,
+                };
+                try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = if (prov.condition_only) true else owned, .approx = approx, .xc = if (prov.condition_only) try w.xsumOf(try w.cellCond(e.cell), frame, params, none) else xc, .sc = if (prov.condition_only) try w.xsumOf(try w.cellSpine(e.cell), frame, params, none) else .{}, .rxc = if (prov.condition_only) try w.rxsumOf(try w.rcellCond(e.cell), frame, params, none) else rxc, .grown = e.grown });
+            }
+            // §31.5: the records it supplies, which no list's fact reads:
+            // as `objs` names a result's, by the provenance of the record
+            // each object was written over, owned where the record probe
+            // held.
+            const rowned_probe = sr.owned and more_ok and sr.rprobe != none and w.probe_ok.items[sr.rprobe];
+            for (try w.expand(sr.av)) |e| {
+                if (w.listFacing(e.cell) != null) continue;
+                const x = w.cells.items[e.cell];
+                const base_cell = if (x.kind == .except) x.a else e.cell;
+                const bx = w.cells.items[base_cell];
+                switch (bx.kind) {
+                    .closure, .func => continue,
+                    else => {},
+                }
+                var prov: Prov = switch (bx.kind) {
+                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
+                    else => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
+                };
+                if (sr.taken and prov.kind == .param) prov.taken = true;
+                prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
+                const owned = rowned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
+                const approx = !owned and switch (prov.kind) {
+                    .shared => false,
+                    .top, .esc, .env => true,
+                    else => (sr.rprobe != none and w.probe_approx.items[sr.rprobe]) or e.approx != 0,
+                };
+                try rsupply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .rxc = rxc });
+            }
+        }
         // §18.4: what the frame relied on.
         var xreq: std.ArrayList(XAtom) = .empty;
         for (w.reqs.items) |r| {
             if (r.frame != frame) continue;
-            if (try w.xatomOf(r.atom, frame, params)) |x| try xreq.append(keep, x);
+            _ = try w.xatomsOf(r.atom, frame, params, true, &xreq);
         }
         // §31.4 item 6: what it relied on of records.
         var rxreq: std.ArrayList(XAtom) = .empty;
         for (w.rreqs.items) |r| {
             if (r.frame != frame) continue;
-            if (try w.xatomOf(r.atom, frame, params)) |x| try rxreq.append(keep, x);
+            _ = try w.xatomsOf(r.atom, frame, params, true, &rxreq);
         }
         if (atoms.items.len > atom_cap) return w.o.pessimistic(.{ .params = @intCast(params.len), .funs = funs.items }, .owned_atoms, @intCast(atoms.items.len));
         return w.o.normalize(.{
@@ -16081,6 +17693,12 @@ const Walker = struct {
 
     /// The provenance a cell is read off as (thesis §4.4).
     fn provOf(w: *Walker, cell_id: u32, frame: u32, params: []const Inst.Index, fresh: Fresh) Allocator.Error!?Prov {
+        var p = (try w.provOfRaw(cell_id, frame, params, fresh)) orelse return null;
+        p.condition_only = w.cells.items[cell_id].condition_only;
+        return p;
+    }
+
+    fn provOfRaw(w: *Walker, cell_id: u32, frame: u32, params: []const Inst.Index, fresh: Fresh) Allocator.Error!?Prov {
         const c = w.cells.items[cell_id];
         switch (c.kind) {
             .param => {
@@ -16101,9 +17719,11 @@ const Walker = struct {
             // A message, which only the entry computation names (§20.5).
             .payload => return .{ .kind = .top },
             .cbres => {
-                // In a lambda: the declaration's callback result, called inside it (§18.9).
-                if (frame != 0) return .{ .kind = .cb, .a = c.a, .b = 1, .path = c.path };
-                return .{ .kind = .cb, .a = c.a, .path = c.path };
+                const owner = w.callbackFrame(c);
+                if (owner == frame) return .{ .kind = .cb, .a = c.a, .path = c.path };
+                // A declaration callback called inside a lambda (§18.9).
+                if (owner == 0) return .{ .kind = .cb, .a = c.a, .b = 1, .path = c.path };
+                return .{ .kind = .top, .a = top_call };
             },
             // The element it stands for, taken (§18.5).
             .taken => {
@@ -16118,3 +17738,38 @@ const Walker = struct {
         }
     }
 };
+
+test "write extents preserve unknown loans and join deep over storage" {
+    const gpa = std.testing.allocator;
+    var o: Ownership = .init(.{
+        .gpa = gpa,
+        .graph = undefined,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = undefined,
+        .canonical = false,
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    const elem = try o.child(eps, .elem, 0);
+    const any = try o.child(eps, .any, 0);
+    try std.testing.expect(!o.writeOverlap(eps, elem, .storage));
+    try std.testing.expect(o.writeOverlap(eps, elem, .deep));
+    try std.testing.expect(o.writeOverlap(eps, any, .storage));
+    try std.testing.expect(o.writeOverlap(elem, eps, .storage));
+    try std.testing.expect(o.writeOverlap(elem, elem, .storage));
+    const storage: UseEntry = .{ .param = 0, .path = eps, .bits = bit_w | bit_x, .extent = .storage };
+    const deep: UseEntry = .{ .param = 0, .path = eps, .bits = bit_w | bit_x };
+    const read: UseEntry = .{ .param = 0, .path = eps, .bits = bit_r };
+    const joined = try o.normalize(.{ .params = 1, .uses = &.{ storage, read, deep } });
+    try std.testing.expectEqualDeep(&[_]UseEntry{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_r, .extent = .deep }}, joined.uses);
+    const read_storage = try o.normalize(.{ .params = 1, .uses = &.{ read, storage } });
+    try std.testing.expectEqualDeep(&[_]UseEntry{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_r, .extent = .storage }}, read_storage.uses);
+}

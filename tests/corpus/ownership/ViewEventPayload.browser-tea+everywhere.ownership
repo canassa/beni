@@ -19,7 +19,7 @@ module ViewEventPayload
   96:9 entry ViewEventPayload.update model.seeded: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   96:9 entry ViewEventPayload.update msg#KeepGrown.0: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   96:9 update entry ViewEventPayload.update model: accepted entry
-  summary update: π1 R, π1#Keep.0 RA, π1#KeepGrown.0 RAW, π1#KeepGrown.0[*] A, π1#Seed.0 RA, π2 W{kept, seeded}, π2.kept RAW, π2.kept[*] A, π2.rows RA, π2.seeded RAW, π2.seeded[*] A; res .kept π1#Keep.0 π1#KeepGrown.0 π2.kept, .kept[*] ~π1#KeepGrown.0[*] ~π2.kept[*], .rows π2.rows, .seeded π1#Seed.0 π2.seeded, .seeded[*] ~π2.seeded[*], π2◦
+  summary update: π1 R, π1#Keep.0 RA, π1#KeepGrown.0 RAW[storage], π1#KeepGrown.0[*] A, π1#Seed.0 RA, π2 W{kept, seeded}, π2.kept RAW[storage], π2.kept[*] A, π2.rows RA, π2.seeded RAW[storage], π2.seeded[*] A; res .kept condition(fresh3) ~condition(fresh7) π1#Keep.0 π1#KeepGrown.0 π2.kept, .kept[*] ~condition(fresh6) ~π1#KeepGrown.0[*] ~π2.kept[*], .rows condition(fresh1) ~condition(fresh4) π2.rows, .seeded condition(fresh2) ~condition(fresh5) π1#Seed.0 π2.seeded, .seeded[*] ~condition(fresh8) ~π2.seeded[*], π2◦
   summary grows: π1.seeded R; res ⟨render⟩ fresh1{lost}r{lost}
   summary keeping: π1.rows RA; res ⟨events⟩⋆ ~π1.rows, ⟨render⟩ fresh1{lost}r{lost}, ⟨render⟩⋆ ~π1.rows
   summary seeding: π1.seeded R; res ⟨events⟩⋆ ~fresh1, ⟨render⟩ fresh2{lost}r{lost}, ⟨render⟩⋆ ~fresh1

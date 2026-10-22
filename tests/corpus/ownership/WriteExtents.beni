@@ -1,0 +1,60 @@
+-- #670: a borrowed value kept by a callback survives a permutation of its
+-- containing storage. The twins keep that storage, or write the value itself.
+borrowThenPermute :
+      List (List Int)
+    , (List Int → List Int)
+    → List (List Int) × Maybe (List Int)
+borrowThenPermute xs f =
+    score = Maybe.map (List.get xs 0) f
+    ( List.swap xs 0 1, score )
+
+
+pub borrowedPermutation : List (List Int) → List (List Int) × Maybe (List Int)
+borrowedPermutation xs = borrowThenPermute xs λv → v
+
+
+keepStorage : List Int, (List Int → List Int) → List Int × List Int
+keepStorage xs f =
+    kept = f xs
+    ( List.swap xs 0 1, kept )
+
+
+pub keptStorage : List Int → List Int × List Int
+keptStorage xs = keepStorage xs λv → v
+
+
+keepThenWrite : List Int, (List Int → List Int) → List Int × List Int
+keepThenWrite xs f =
+    kept = f xs
+    ( List.push xs 9, kept )
+
+
+pub keptValueWritten : List Int → List Int × List Int
+keptValueWritten xs = keepThenWrite xs λv → v
+
+
+keepThenCallback :
+      List Int
+    , (List Int → List Int)
+    , (List Int → List Int)
+    → List Int × List Int
+keepThenCallback xs f g =
+    kept = f xs
+    ( g xs, kept )
+
+
+pub keptValueWrittenByCallback : List Int → List Int × List Int
+keptValueWrittenByCallback xs = keepThenCallback xs (λv → v) λv → List.push v 9
+
+
+borrowThenEdit :
+      List (List Int)
+    , (List Int → List Int)
+    → List (List Int) × Maybe (List Int)
+borrowThenEdit xs f =
+    kept = Maybe.map (List.get xs 0) f
+    ( List.update xs 0 λv → List.push v 9, kept )
+
+
+pub keptElementWritten : List (List Int) → List (List Int) × Maybe (List Int)
+keptElementWritten xs = borrowThenEdit xs λv → v

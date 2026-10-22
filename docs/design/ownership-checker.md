@@ -1,5 +1,12 @@
 # The ownership checker — the in-compiler contract
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *Normative from 2026-10-12. Slice 1 (report mode, intra-procedural) is specified here and built;
 slices 2–5 are specified as a plan (§13) and are not built. Sections are never renumbered
 (CLAUDE.md rule 2): a later amendment appends text to the section it changes, dated, or a new
@@ -594,8 +601,8 @@ diagnostic: no exit code depends on a rejection, and nothing reads the dump but 
   (paths, cells, points) are assigned in that walk; everything printed is sorted by position or text.
   A test runs the dump at `--jobs=1` and `--jobs=8`, twice each, and compares the bytes.
 - **Cost.** Linear in instructions times the width of abstract values (thesis §4.9), except the holder
-  search, which is locals × entries per demand. Every corpus fixture must stay within the per-test
-  instruction budget.
+  search, which is locals × entries per demand. Each corpus case has a
+  120-second hang guard. Performance claims belong in `test-perf` and `bench`.
 
 ---
 
@@ -864,7 +871,7 @@ pairwise definition's — under runtime safety the two are compared for every re
 no verdict moved: the dashboard's reports at 16 to 256 widgets are byte for byte the pairwise ones.
 *Amended 2026-10-17 (issue #272):* the build option `-Downership-full-cross-check` compares the two for every
 result, whatever its width, in a safety build; it is slow, so the gates refuse it and the budget does not hold it
-(`-Dtest-budget=0`). The whole black-box suite passed it on 2026-10-17 with no difference.
+(without changing assertions). The whole black-box suite passed it on 2026-10-17 with no difference.
 
 ### 16.4 Applying a summary at a call
 
@@ -1800,7 +1807,7 @@ reached apart from the level it started at, with a step of its own:
 path cut `k` (c) is sound only if every path the checker builds is bounded without it. The paragraph above
 names four sources of unbounded paths. This one argues there is no fifth, and gives each source its fold. It is a
 design text recording the owner's composed-path decision and the remaining proof obligations. `k` stays:
-casts through records and tuples still have no fold (F2), and #447's soundness correction is open.
+casts through records and tuples still have no fold (F2). #447's prefix correction is recorded below.
 
 *Where a path grows.* A path is built only by `child`, one step at a time, and a step is added in three ways:
 a projection or a construction mirrors one step of the value (a field, a tuple slot, a constructor field, a
@@ -1856,8 +1863,8 @@ infinite. That gives the four sources, and only four:
    fold of 1–3 sees a repeated region. `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns
    `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. *Decided
    (2026-10-19):* the owner chose the fold on the composed path (the amendment above, *the owner's choice
-   (a)*). #429 implements it on every route of growth. The soundness correction to `nested` in #447 remains
-   open; neither that correction nor removal of `k` is claimed here.
+   (a)*). #429 implements it on every route of growth. The soundness correction to `nested` in #447 is
+   recorded in the dated amendment below; removal of `k` is not claimed here.
    - *The rejected fold at the call* (the earlier F3 amendment, *a fold at a polymorphic-recursive call*):
      an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
      first step and go to `⋆` below it). Finite and sound (`⋆` only merges), but it loses a verdict master
@@ -1874,7 +1881,7 @@ infinite. That gives the four sources, and only four:
      longer an unmeasured alternative awaiting the owner. A concrete place cannot hold a cell and hold
      that same cell strictly below itself, by acyclicity. A prefix containing a representative step names
      several places, so that argument alone does not justify treating its entries as one place: #447
-     tracks the required soundness correction.
+     supplies that comparison, with #456's construction conditions (the dated amendments below).
 
 *Why no fifth.* Every step is one of: a typed step (bounded by 1 on a finite type graph); a root-only slot; `◇`
 (2); a step after a cast (3, unbounded for records and tuples until F2); or a `⋆`, which ends growth. The type
@@ -1888,11 +1895,223 @@ type checker gives no other way to make one.
 
 *What else `k` holds up.* Besides the cut in `childRaw`, `k_limit` sizes the path buffers (`[k_limit + 1]Step`,
 about twenty) and guards `markupEvents`'s walk of a type term. That walk is bounded by the term's size, a finite
-type, so the guard goes with `k`. The order of (c): F1 has landed; 4 has #429 and awaits #447's soundness
-correction; 3 waits for F2 and its measurement to the owner. Then `k` goes: the cut, the buffers (as stack room
+type, so the guard goes with `k`. The order of (c): F1 has landed; 4 has #429, #447's prefix correction
+and #456's construction conditions; 3 waits for F2. The owner withdrew the measurement prerequisite below. Then `k` goes: the cut, the buffers (as stack room
 that spills, not a limit), and the summary block's one-byte path length and `n_steps > k_limit` check. A larger
 program can have a larger finite type and path; neither storage nor serialization may impose the old
 constant-length bound.
+
+*Amended 2026-10-22 (issue #456, the owner's implementation decision): construction conditions belong to the containing value.*
+**Implementation and accepted precision debt (the owner, 2026-10-22):** the two core ownership
+tests have budgets of 5 300M. The one known false refusal is `DictFocus.grow`, whose folded
+dictionary construction annotations have lost deep conditions; `tests/pending/ownership/DictFocusGrow`
+still expects acceptance. The additional rejected callback inside `DictFocus.readLater` has the
+same cause; that complete program was already rejected for reading the dictionary after updating it.
+Both are accepted debt until #294 replaces the folded tree, tracked by #663. This is a temporary
+precision defect, not real sharing or a language restriction. Any other whole program moving from
+accepted to rejected stops landing.
+An approximate entry is not evidence that two occurrences are one. Projecting `ee` through `wrap`, then
+storing that alias beside `ee` at another recursive level, makes two simultaneous occurrences even when
+one or both entries are approximate. The approximate-copy exception of `nested` cannot supply the missing
+proof. Neither can a stricter path-overlap test: the missing fact is that two operands coexist in one
+construction. Permanently lowering either operand's cell condition is wrong too: selecting one operand
+and discarding the other must recover its original exclusivity (`ConstructorDiscardedAlias`).
+
+The level marker of issue #379 remains the single spatial abstraction for recursive values. A use of
+that marker carries the conditions of the constructions it represents. The interned marker `(type, kind)`
+cannot itself carry a condition: it is shared by unrelated values, whereas a condition belongs to one
+containing value. Transport the condition at that construction's result-relative path through the same
+placement, fold and projection as its entries. No second matcher, unfolding identity, or depth/count cap
+is introduced.
+
+- A tuple, record or constructor records, at its root, the conjunction of separation of its stored
+  operands, before folding their positions. List and record separation use their independent domains.
+  Lists already record these obligations on their real container. A trivial conjunction needs no entry.
+- A condition-only entry represents this annotation, not an allocation. It has an explicit discriminator
+  in local cells and summary provenance. It cannot be a mutation target, a holder, an escape, a fresh
+  allocation, a returned spine, or evidence that an allocation is owned. Deep list and record queries
+  read its respective conditions; allocation separation ignores it.
+- Placement prefixes its containing path once. A fold carries it under the existing level marker.
+  Projection selecting one operand discards an annotation at the discarded construction root. An
+  annotation inside the selected value survives, rebased by the ordinary projection; a marked path
+  retains the possible containing constructions exactly as the marker's existing expansion specifies.
+  Multiple approximate views do not become multiple allocations.
+- A branch union carries only annotations made within each arm. It creates no separation between
+  operands returned by mutually exclusive arms (`chooseNode`).
+- Direct constructors, constructor-function summaries and ordinary helpers publish the same condition.
+  Calls instantiate it on a result-owned annotation, never on either actual operand's allocation.
+  Captures, callback supplies, top-level values and imported/cache summaries retain both the discriminator
+  and the condition. The summary block is version 19; provenance flag bit 2 denotes an annotation.
+- A call-site demand under a marker queries the deep condition at the existing marker anchor before
+  projecting the target. That query sees the surviving construction conditions. A later query after
+  a subtree was discarded does not inherit a condition on the discarded container. Ordinary live-holder
+  and escape checks still reject aliases outside the selected value.
+
+The invariant is conditional deep exclusivity: for every concrete value represented by an abstract value,
+its allocation/container conditions and surviving construction annotations together imply that mutable
+allocations in different stored operands are separate. The operands of one annotation belong to the
+same concrete construction when its marker expands; they are not independently chosen recursive levels.
+Projection preserves that implication for retained subvalues and may discard a condition only with its
+containing construction. Substitution preserves annotation scope and allocation identity; branch union
+preserves the implication separately for each alternative. This is the obligation for the ownership
+oracle as well as for the compiler, not a claim that the current Lean model proves it.
+
+The owner withdrew the pre-implementation cost-report conditions on 2026-10-22. The two core ownership tests retain all their assertions. Both projected-alias twins and constructor/helper routes must be refused;
+`ConstructorDiscardedAlias`, `EntryInvariantCommand` and the retained `ValuePath` program must stay
+accepted. The owner accepts the pending `DictFocusGrow` false refusal and the extra callback
+refusal inside the already-rejected `DictFocus.readLater` (#663, until #294); any other whole program
+changing from accepted to rejected stops landing. The incorrect `restMayBeEmpty` tightening is excluded.
+
+*Amended 2026-10-22 (review of #447, after #456): representative prefixes.*
+`nested` exempts a step-by-step prefix pair from separation in three cases:
+the entries have different cells (a container and its contents); the same cell
+occurs at a prefix naming one place (acyclicity rules out holding itself); or
+at least one entry is approximate. For the second case the shorter path must
+contain neither a representative (`[*]`, a level marker or the Dict tree) nor
+`⋆`. Two exact entries of one cell under such a prefix may be distinct stored
+occurrences and are compared. This includes `⋆`, which can also name the root.
+For overlapping paths without a step-by-step prefix, the existing cell-holding
+and approximate-view rules are unchanged.
+
+The approximate case is an exemption from this pair comparison, **not a proof
+that approximate entries denote only one occurrence**. #456 disproved that
+assumption. Its surviving, value-scoped construction conditions separately
+require simultaneous stored operands to be separate, including exact/approximate
+and approximate/approximate aliases. `ApproximateAliasLevels` pins the projected,
+constructor-alias and helper routes; `ConstructorDiscardedAlias` pins recovery
+when an unused alias-bearing subtree is discarded. The containing conditions,
+ordinary holder checks and representative-prefix comparison are used together.
+No `restMayBeEmpty` tightening is part of this rule.
+
+*As built 2026-10-22 (#684): what the construction conditions cost.* A construction's condition names
+every pair of its operands, so a record built from 64 fields of one parameter carries 2 016 `rsep`
+atoms, and each call instantiates them. Instantiation projected the argument along both of an atom's
+paths afresh, and a projection of a value narrower than `wide_index` scans it: cubic in the record's
+width. Three changes remove the repeated work and change no fact. (1) One condition's instantiation
+projects each parameter provenance once (`ProvMemo`): the projection reads only what the call is handed
+and interns its cells, so the first atom that names it makes every cell in the order it always did. The
+cells `sepValues` and `rsepValues` read are kept with it for a value that holds no closure; a closure's
+expansion reads the captured locals an atom that walks a callback may bind, so it is read again. Any
+other provenance kind may act and is instantiated at every atom. (2) `containingCondition` reads each
+operand's cells once, at the pair that first needs them. (3) `rbase` is kept per cell, and a build
+renders no summary line, which only the ownership dump prints (`format_summaries`; nor does a
+totals-only dump). Ownership-phase instructions (callgrind, ReleaseFast) on the research dashboard at
+N = 16, 64 and 256: 23.2M, 85.9M and 571M before #665; 31.2M, 305M and 1 914M after it; 25.2M, 121M
+and 1 140M now. `ownership/WideFieldConditions` was 5 444M on the budget's reference and is 2 764M.
+What stays is quadratic and is the representation's: the summary states each pair as an atom, so its
+size, its text and each call's instantiation grow with the square of a construction's width. Making it
+linear needs an atom for "these operands pairwise apart", a change to the summary vocabulary, its block
+format and every golden that prints a construction condition; it is not built.
+
+*Amended 2026-10-22 (issue #693, the manager's decision under the owner's delegation): pairwise apart is one
+atom.* The construction's condition keeps its meaning and changes its representation. No verdict changes.
+The Lean model of atoms gets the same atom under #704.
+
+**The atom.** `apart G₁ … Gₙ` (n ≥ 2) is one atom of a condition. Each group Gᵢ is a nonempty set of cells in
+the walk, or of provenances in a summary. It states that no member of one group shares a cell with a member
+of another group. Its meaning is its **expansion**, the conjunction of `sep a b` for every a in Gᵢ and b in Gⱼ
+with i < j. This includes `sep a a` when a member is in two groups, and for a callback's result that means
+*fresh across calls*, as in §18.2. In a record condition (§31.4 item 6), the expansion is `rsep`. A spine
+condition's form is `apart-spine`, whose expansion is `sep-spine` (§20.4). `spineOfSep` maps `apart` to
+`apart-spine` as it maps `sep` to `sep-spine`.
+
+**Where it is made.** It is made in two places, and in both the pairwise text was a clique, every operand
+against every other:
+
+- a construction's containing condition (above). This covers a tuple, a record, a constructor's operands and
+  a constructor function's summary, in its list and its record form;
+- a list literal's stored items, against each other and against what the list already holds (§18.2's table,
+  `storedCond` and `rstoredCond`). A literal of n items is `apart [v₁] … [vₙ] [elements]`, beside each
+  item's deep condition.
+
+**Its form.** A condition holds an `apart` only when its expansion has more atoms than the apart has members,
+that is Σᵢ<ⱼ |Gᵢ|·|Gⱼ| > Σ |Gᵢ|. Otherwise the condition holds the expansion. So `( a, b )` stays `sep π1 π2`,
+three single operands stay three `sep`s, and a condition is never longer than linear in its members. The
+groups are canonical: members distinct and in order, no group empty, groups in order. An apart is not merged
+with a plain `sep` that one of its pairs repeats, because a conjunction that states one atom twice says the
+same thing.
+
+**Computing it, in one pass.** The pass gives the conjunction of §18.2's `sepCells` over every pair of members
+of distinct groups, the same verdict and the same atoms. A condition whose operands' cells have no more pairs
+than members is its expansion (above), and it is computed pair by pair, which is its definition. The pass
+forms only the pairs whose kinds do not settle them alone, as §16.3's amendment does for a result's spine
+conditions:
+
+- a closure, a function value and a condition-only cell are `yes` against every cell. A top-level value's
+  cell and a cell the body made are `yes` against every cell of another family, except that a made cell
+  against a callback's result is not settled by kind. These pairs are not formed. For a record condition, a
+  cell that cannot hold a record is also `yes`;
+- two cells are related (`covers`, either way) only within one family (kind, owner), and only when one path is
+  the other's step-by-step prefix. Each cell's ancestors are looked up in a table of its family's paths. A
+  family with a `⋆` path, where a marker may hold a place, is compared pair by pair. A related pair is
+  `sepCells`'s own answer (`shared` exact, else `lost`);
+- a callback's result against the cells made in the other groups: one `reaches` for each callback result;
+- `⊤`, a message (`payload`), a taken element and an `except` cell against every member of the other
+  groups: pair by pair, as before. Inside core `Dict` (§20.8, where one arrival at a folded path is several
+  places) the whole condition is pair by pair;
+- the arrivals that are left (parameters, captures, callbacks' results) are the apart's groups, as
+  `atomFacing` maps them for a list condition and as `rbase` names them for a record condition. A member with
+  no list-facing cell leaves its group, and this removes exactly the pairs that named it.
+
+**Instantiating it at a call.** Each group's provenances are instantiated once (`ProvMemo`) and joined. Their
+cells are read once, and the pass above runs over them. A callback's result that two groups name (`sep cb_j
+cb_j`, *fresh across calls*, which is not `sepValues` of the two instantiations) and every `apart-spine`
+instantiate their expansion, pair by pair. These two shapes stay quadratic. A callback's `xreq` (`classReq`)
+also instantiates its expansion.
+
+**Relying on it.** A frame owns an apart when it owns every member. Every member is in some pair of the
+expansion, so this agrees with the pairs. A requirement goes to `xreq` as the apart. When a call's `xreq`
+apart fails, the call instantiates its expansion pair by pair. This reports each failure on the argument it
+names, as before (§18.4 item 3). The entry protocol (§20.5) and a callback's `xreq` read an update's or a
+class's requirements through their expansion, because their reports take the first failure in atom order. A
+requirement that the read-off cannot name drops only that member. A condition with a member that the
+read-off cannot name fails approximately, as any of its pairs would.
+
+**Limits, the block and the text.** The `conditions` limit counts an apart as its members. The summary block
+advances to version 21 (§28.4). An atom's kind byte comes first. An `apart` or `apart-spine` then writes its
+group count (u32), and for each group its member count (u32) and its members as provenances. Members and groups
+are in the block's canonical order. A summary line prints `apart [π1.f1 π1.f1.a] [π1.f2 π1.f2.a] …`, with
+members and groups sorted by their text. So the only goldens that change are the ones that print a construction
+condition or a list literal's condition of four or more operands, or a requirement made from one of them.
+
+**Checked against its expansion.** Until #704 lands, a safety build compares each apart with its expansion.
+At a construction, the condition the pass builds is compared with the one that `sepOfCells` and
+`rsepOfCells` build pair by pair. At a call, the instantiation is compared with the instantiation of the
+expanded atoms. Two conditions are the same when they have one verdict and, with every apart expanded, the
+same atoms. The check runs in every safety build for an apart whose expansion has at most 64 pairs, and for
+every apart with `-Downership-full-cross-check` (#272). A difference is a panic.
+
+**What stays quadratic, and why.** §20.4's spine conditions of a result (`sc`, `sep-spine`) are per entry. Each
+of a result's N list entries has its own condition, which separates it from every other entry. This is N
+conditions of N − 1 atoms each, a star around each entry and not a clique inside one condition. One apart per
+entry would still hold N(N − 1) members in all. A linear form needs one condition shared by the entries,
+which is a change to the `res` entry's format, and this amendment does not make it. These conditions stay
+pairwise, and #665's parent was already quadratic through them.
+
+*As built 2026-10-22 (#693).* As specified. `pairwiseApart` is the one pass, `pairwiseApartByPairs` the
+definition it is checked against, and `instPairwiseApart` the instantiation. The summary atom is
+`XAtom.groups`, and in the walk an `apart` atom's `a` indexes an interned table of groups. A call's `xreq`
+apart that fails is discharged again pair by pair (`relyReqs`). The entry protocol and a callback's `xreq`
+read the expansion. The construction keeps #684's order of reading the operands' cells. Every verdict and
+diagnostic is unchanged. Six ownership goldens print new condition text and no other change:
+`FoldAccumulators` (browser-tea+everywhere), `LevelRecursiveUpdates`, `ListOfParams`, `MarkerAcross`,
+`SplitCap` (browser-inline) and `WideFieldConditions`. The last golden fell from 261 KB to 79 KB, and what
+is left of it is its 833 update lines. `ownership/ApartAcrossModules` reads a list literal's apart and a
+record's apart through another module's summary. Its distinct operands are accepted and a list handed twice
+is refused. `-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and
+`LevelPlacesKinds` (#694), as on `master`, and `test-records-lost` shows no difference in 1 091 programs.
+The ownership phase's instructions (callgrind, ReleaseFast, `build --release --no-cache --jobs=1`) on the
+research dashboard went from 25.2M to 23.3M at N = 16, from 121M to 87.8M at N = 64, and from 1 140M to 597M
+at N = 256. On `nowd` they went from 122M to 90.4M. #665's parent measured 23.2M, 85.9M, 571M and 85.4M. Every
+output hash is unchanged. On the safe binary, which is the budget's reference, `WideFieldConditions` fell from
+2 617M to 1 579M. The two core ownership tests rose from 4 716M to 4 755M (*surface*) and from 4 563M to
+4 603M (*clean*), and Conduit's dump rose from 3 160M to 3 189M. Of each rise, 21M to 23M is the safety
+build's check against the expansion, which builds each checked condition a second time, and 8M to 17M is
+the one pass's own bookkeeping. A condition no longer than its members is built pair by pair, so a
+construction of two or three operands costs what it did. From N = 64 to 256 the phase still grows ×6.8,
+as #665's parent did (×6.6), and the construction conditions are not the cause. At N = 256,
+`containingCondition` and `instPairwiseApart` take 43M of the phase's 597M, and the entry protocol
+(`entryFn`) takes 501M (#716).
 
 ### 16.8 The library
 
@@ -3835,7 +4054,7 @@ nothing by a session's id:
 - a **local** of a carried lambda (§24.9) by its index in the declaration, as BIR numbers it.
 
 The format is versioned with the rule set (`summary_bytes.version`, thesis §8.5): a block of another version is
-absent. Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
+absent. *Amended 2026-10-22 (#693):* version 21 writes the `apart` atom's groups (§16.7). Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
 re-merges nothing.
 
 **Where it is kept.** In the module's **cache entry**, as a fifth section (`entry_bytes` format 10), written by
@@ -4344,6 +4563,70 @@ The new capture-after-append rejection closes an existing unsound acceptance:
 master accepted that retained-closure twin. Its negative regression fails with
 the fix set aside; no pre-existing golden is changed.
 
+### *Amended 2026-10-22 (#720):* fold ownership follows the written path
+
+Amends §16.4 item 6 and the dated fold-invariant amendment above. A fold's
+accumulator conditions distinguish each element path. In a table of pairs,
+`acc[*].0` may hold shared comparison keys while `acc[*].1` holds separately
+owned value-list containers. Sharing the keys does not refute ownership of the
+outer table array or of the value-list arrays. It does refute a write of the
+keys unless their own conditions establish ownership.
+
+The greatest must-invariant retains each written container's `spine` condition
+and its `sep_spine` conditions against every other result position, including
+unwritten keys. A focus's `keep_spine` selects the replacement at the written
+path; its descendants are not implicitly owned. A container write relies on
+these path-qualified conditions rather than deep exclusivity of the entire
+accumulator element. Deep writes retain their deep conditions. This changes
+neither the initial-value check nor the non-escape and liveness obligations.
+
+The induction is per written path: its initial containers are owned; each
+callback transfers them once or creates fresh replacements; separation from
+all retained positions preserves the next step. Keys may alias each other,
+but a key that aliases a written value list refutes separation, and writing a
+key still held by the table refutes liveness. The list-key table fold of #720
+must be accepted, with its String-key and explicit-call controls; both unsafe
+twins must remain refused. No table representation change is required.
+
+**Construction evidence.** Before equal `[*]` entries are merged, a construction
+records a value-scoped container condition at each path whose containers must
+be separated from another operand's containers. Repeated placement at that
+path refutes its condition. A duplicate at the key path therefore refutes the
+key condition without refuting the value path. These annotations follow the
+containing value through projection, results and callback supplies; they do
+not weaken an allocation globally. Summary blocks carry the container
+condition of a supplied annotation as well as its existing deep and record
+conditions. Old blocks are invalidated.
+
+The dictionary's existing asserted focus row (§20.8) states the tree algorithm's
+structural separation itself. Construction annotations made inside that
+algorithm are not additional arrivals or results of the primitive: the row
+publishes the actual selected value under its existing conditional loan and
+the actual result under its existing keep/keep_spine proof. Caller annotations
+on the selected value still follow projection and remain checked. In
+particular, a caller's duplicate value or key/value alias is not an internal
+tree annotation and is never discarded by this rule.
+
+**A symbolic operand keeps a projection rule.** A guard for two whole parameter
+values cannot be reduced to a fixed root condition: `[ row, row ]` also shares
+`row.1`, and two different rows may share that field. The guard records
+`sep_root(a, b)`: the array at the selected root of `a` is separate from every
+array reachable in `b`. Projecting the annotation projects `a` and retains `b`.
+Instantiation distributes it over the actual entries of `a`, at their own
+relative result paths, and over all entries of `b`, before equal entries merge.
+Thus a guard over an opaque tuple becomes distinct guards for its key and value
+paths when the tuple is supplied. It is asymmetric and is never canonicalised
+by swapping its operands. Callback supplies and cached summaries retain the
+projection rule. This requires neither a path enumeration cap nor a deep
+exclusivity assumption for an unwritten sibling.
+
+At a polymorphic-recursive call, an annotation uses the same variable boundary
+and first-mark/next-fold rule as its selected source. The boundary remains
+anchored when distributing the annotation has already expanded its result
+path. Folding merges the annotations at that boundary and creates no new
+array provenance. These marks are cleared before a settled summary is
+published, as the existing data-path marks are.
+
 ### *Amended 2026-10-14 (markup slots):* rendered data is not an event payload
 
 The platform-declared markup type has two internal opaque slots in the sense
@@ -4420,6 +4703,14 @@ fresh-across-calls meaning of §18.2. Concrete retained cells, shared values,
 unknown results and failed requirements remain rejected. After excluding only
 captures proven empty by these requirements, the usual returns-owned proof
 checks every remaining result position and supply.
+
+*Amended 2026-10-22 (issue #709):* the same conditional proof applies when a
+callee sees its tagger calls and supplies its input borrowed. Seeing the calls
+does not give a retained capture ownership, and losing sight of the calls is
+not required to publish the no-tracked-cell requirement. Every other result
+position and every supplied parameter still passes the usual returns-owned
+proof. This clears generic constant-message subscription wrappers when their
+actual messages hold no list, without accepting a retained list.
 
 Thus the generic helper checks for a scalar message, without accepting a list
 kept by its tagger. This does not confer an owned or once permission on a
@@ -4923,6 +5214,10 @@ behaviour changes.
   §31 specifies it and supersedes C4. It comes after O5 and after #286, #289 and #293 (§31.12). The three
   identity sections above are amended for records with §31 (§31.11), on every platform.
 
+*Amended 2026-10-22 (#315, the owner's 2026-10-18 plan):* record work builds the hoist channel
+and the record sanitiser before O5, and O5 reuses them. The channel alone does not depend on #286;
+record enforcement and in-place record lowering do. This supersedes O6's earlier ordering above.
+
 ### 30.8 Open questions
 
 The platform question is closed, and the slices have no open question. One decision is the owner's,
@@ -5031,6 +5326,43 @@ state. None accepts a write the rules before it rejected for a reason the text s
 11. **Labels** (§28.5). A `need` rejection of a function value is approximate exactly when it fails only
     through an approximate entry, `⊤`, what another callback returns, or a function the checker cannot
     place; the eight lines §30.2 found printed as exact now print approximate.
+
+*Amended 2026-10-22 (issue #223):* a lambda's call of its own function
+parameter has that parameter's result in its class, as a declaration's
+function parameter does. The call keeps its argument provenances in the
+class's supply rows, conservatively borrowed. At a consumer, the callee's
+supplies identify that function; instantiating the class follows the supplied
+function's result, or keeps the unidentified-call result when it cannot. An
+owned-result obligation follows the same supplies and reaches a declaration's
+function slot when one supplies it. This supplies no ownership permission to
+a local write onto the still-symbolic result: that write retains the
+conservative unknown verdict. A callback result is scoped to the frame whose
+function parameter it names, never to a parameter with the same index in
+another frame.
+
+*Amended 2026-10-22 (issue #223):* recursive summary joins retain returned
+read-only lambda classes. Compatible classes join all result, read, capture,
+callback and ownership requirements; different arities or send/record-result
+protocols stay alternatives. Fixpoint equality compares the contents of the
+classes as well as their indices. Function slot numbers stay stable across
+rounds: each walk begins with the declaration's previous slot table and
+appends new keys. This replaces the earlier prohibition on slots and carried
+classes in recursive groups.
+
+An empty current approximation of a recursive member returning a function
+is callable bottom at its solved arity, with no result or effect facts.
+A function whose class cannot be carried is instead an unknown alternative
+(`λ?`, class index `none`), including through a top-level value. It never
+becomes callable bottom. Captured list cells retain their ordinary facts.
+Other unidentified callees keep §30.11's conservative answer. Ownership
+blocks advance to version 22 so old summaries cannot bypass the new facts.
+
+The owner confirmed on 2026-10-22 that moving `RecursiveHolds`'s refusal
+from `pushed`'s generic body to `run` and `runOne` is correct: the supplied
+callbacks return `Node xs` and `One xs`, retaining the list that the callee
+then pushes onto. Each call has real sharing and would make a cycle. No
+safe whole program changes from accepted to rejected. Such a safe-program
+regression remains a stop condition, with a reduced reproduction.
 
 **Words** (§24.2, §24.4, §24.8, amended). A parameter of type `List` of a function written out takes a
 function's words, which describe each element: the summary's function slot at the parameter's `[*]`
@@ -5799,6 +6131,51 @@ summary block (§28.4), and its format is versioned with it. It names only BIR i
 of the module's source, so determinism holds (§10). Under runtime safety, `Lower` asserts that every
 `record_update` it lowers is an accepted demand of a module whose entry is clean.
 
+*Amended 2026-10-22 (#315): the channel precedes mutation and enforcement.* The channel may be
+built independently of #286 and of record enforcement. Until the in-place lowering lands, every
+record update still emits a spread. A table distinguishes an accepted demand from a **clean
+module**: all its record demands were accepted and it was checked under ownership enforcement.
+Report-only and unchecked modules cannot authorise a store. The lowering's store guard requires
+both facts; retaining a table never enables mutation by itself.
+
+The table has its own versioned section in the cache entry (including entries in the checked core),
+beside the summary block. Its format uses module-local BIR instructions, declaration-local locals
+qualified by their declaration, and offsets into a module-local field-name blob. It contains no
+ownership path, cell, frame or interner id. A field path is copied from the BIR without a depth limit. Each accepted
+record demand names its instruction and written fields; each hoist names its holder, the read
+instruction or record-pattern binding to rewrite, the prefix through the written field, and its
+placement. Captured paths additionally name the closure creation at which they are read eagerly.
+A placement says either before an instruction or after an update's operands and before its stores;
+a call's hoists go before the call. A write in a branch with reads after the join uses the enclosing
+statement before the branch. Two writes that invalidate the same read retain the first placement.
+A bad or unknown table format is a cache miss. The table is implementation information, outside the
+interface record. It adds no dependency to the existing cache-key and interface-firewall rules.
+
+*Amended 2026-10-22, cache replay:* a nullary dot is a call in checked BIR and a field-access
+instruction in the cached frontend BIR. The table is validated before the cached nullary rewrite
+is replayed: such a demand must have a callee site in the cached dispatch table. A field read
+without that callee is not a demand. No ownership fact is recomputed on a hit.
+
+The ownership dump exposes the table's hoists by source positions and written paths, without
+internal ids. Its goldens pin placement before stores, across branches, at calls, and at closure
+creation. These are channel tests; running the corresponding programs under spreads records the
+value-semantics answers for the subsequent in-place lowering. A test-only wrong-placement mutation
+must change a golden before any store is enabled.
+
+*As built 2026-10-22 (#315), the channel only.* `own/Hoists.zig` format 1 is section seven
+of cache-entry format 13, in the checked core as in the on-disk cache. `Check.hoists` owns fresh
+and installed tables; `Lower.Input.ownership` borrows its module's table. A table's `clean` bit
+stays false while records are report-only. No record update's emitted JavaScript changes.
+`ownership/RecordHoistChannel` pins direct and call-site writes, a branch join, an old alias,
+a record pattern, a capture after a write, two writes in sequence, and a ten-field capture path.
+`tests/generate-record-hoists.mjs` (seed 315) writes `run/RecordHoistValues`: its 30 answers were
+recorded under spreads and compared with the pre-channel compiler (59b52e349). The existing generated
+research pages, `browser/inline/ResearchS2` and `ResearchS3`, retain their spread transcripts.
+These files and the rest of `run/`, `browser/` and `emit/` are the subsequent lowering's differential
+corpus. All five record mutation controls are caught, including `wrong-placement`. The sanitiser,
+eager loads, stores and optimiser barrier remain the subsequent lowering's work; the two research
+scenarios' `rr check` at multiple sizes and seeds remain its and the inline integration's gates.
+
 **The order** (`language.md` §6's *Evaluation order*, unchanged: the base, then the updated fields in written
 order). The base is evaluated into a temporary `b`, and each new value into a temporary `tᵢ`, in written order.
 Then the fields are assigned, `b.f₁ = t₁; …; b.fₙ = tₙ`, and the update's value is `b`. Every value is evaluated
@@ -6163,3 +6540,212 @@ one form at two variants of one field (#410, 28), its `ChangedUrl` address (#412
 platforms (6): `Direct.beni`'s state read back from JavaScript (`Tea.commands (Js.to self)`) and `perform`'s
 `List.foldl` accumulator, whose record supply the checker does not yet follow through the callback's loans.
 Those wait for the checker (R2d) or a decision on the driver's state; none was rewritten to pass.
+
+---
+
+## 32. Ordered Dict and Set (specified 2026-10-22)
+
+*Specifies the owner's decisions of 2026-10-17 and 2026-10-19 (#294), before
+implementation. Amends §4.4, §16.7, §16.8, §20.8, §20.9 and §24. The API is
+`language.md` §6.8, the representation `backend.md` §4, **Ordered dictionaries**.
+These rules take effect together with the representation change. Until then
+the tree's existing rules remain the implementation contract.*
+
+### 32.1 Places and storage
+
+A dictionary owns mutable collection storage, independently of whether its value
+type holds a cell. Its entries are key/value pairs, and its index maps scalar
+keys to positions. Keys cross: only Int and String are valid. Every value has
+its own concrete place. The finite ownership summary uses `[*]` for the values'
+representative, as for List, never a recursive Tree path. The root `ε` names the
+collection's storage (header, entries, private pairs and Map treated as one
+allocation unit), and `[*]q` names place `q` of its stored values. Nested
+collections retain their own roots under that step.
+
+The representative does not mean that distinct keys alias. `excl d` says the
+values at distinct positions are disjoint from each other and from the
+collection storage; repeated references inside a value also count, following
+the existing deep conditions. Storing the same List at two keys fails it.
+Storing a tuple or record containing that List at two keys fails it too. The
+property belongs to that particular dictionary value, not to the allocation of
+one operand or to a globally interned path. The sound construction conditions
+of #456 stay intact. No Dict exemption is added to recover acceptance.
+
+An edit of the collection's storage demands ownership of `d` at `ε`, not of
+all cells in its values. A callback that writes a selected value adds its own
+demand on the supplied place; it does not indiscriminately write every value.
+A borrowed lookup aliases the selected value and grants no exclusive loan.
+Reading the old dictionary after a writer prevents the storage write even if
+the read observes only size. A copy separates storage but retains every value
+alias, including tuple/record payloads and their deep sharing conditions.
+
+This is the meaning of the finite insertion-ordered map and `dictFocus` in
+#522/#580: get, body, insert-or-remove, on one entries allocation. The Lean
+model uses Int keys and a Result for Maybe; String is another scalar key and
+Maybe has the corresponding payload path. It is not necessary to change its
+meaning model to match the host's index. The model's read-then-replace `reads`
+program is refused while the original dictionary remains live (#579). That
+program writes storage despite only reading the supplied value. This work
+makes no theorem claim beyond the proof work's own stated coverage.
+
+### 32.2 Primitive rows
+
+Every foreign declaration carries its summary in core, beside its type. These
+are precise primitive rows, like List's element-supply rows; §24's coarse words
+alone cannot express a root-only write or a conditional destructive supply.
+They must not be replaced by a deep `consumed Dict` row, which would require
+ownership of values an insertion never edits. The declared row is validated,
+published in interfaces and summary caches, used for function-value calls, and
+printed by `dump --stage=ownership`. A name in an unrelated module cannot
+acquire a Dict row. Missing declarations are conservative foreign calls, never
+optimistic borrowed calls.
+
+In the table, `D` is argument 1, `V` its `[*]` representative, `W ε` is a demand
+on collection storage only, and `fresh` means fresh storage with the listed
+value aliases. A row keeps no host reference after the call. Scalar arguments
+cross. Callback results include their captured aliases and retain their full
+conditions; fresh storage never implies exclusive values.
+
+| Dict primitive | Uses and result | Callback supply and conditions |
+|---|---|---|
+| `empty ⊤` | fresh root; no value cells; exclusive | an ordinary unit function, fresh on every call, including calls through function values |
+| `singleton k v` | read/alias argument 2 at result `[*]`; fresh root | exclusivity is that of `v`, with no other entry |
+| `get d k` | read `ε` and `V`; result `#Just.0` aliases `V`, or Nothing | borrowed; result is not fresh value storage |
+| `member d k`, `size d`, `isEmpty d` | read `ε`; scalar result | no value read or write |
+| `insert d k v`, `insertAt d i k v` | read and `W ε`; return root `D`; retain old values plus supplied value | result exclusivity requires exclusive stored values and separation of the arrival from retained values; no value write |
+| `remove d k` | read and `W ε`; return `D` and retained values | preserves their exclusivity; conservative value provenance may retain the removed value |
+| `swap d a b` | read and `W ε`; return `D` with the same values | permutation preserves both value and spine conditions |
+| `sortBy d f` | read and `W ε`; return `D` with the same values | call `f` once per entry, in order, key scalar and value borrowed; callback results are temporary sort keys, not retained values; writes to supplied values are refused |
+| private `focus d k f` | read and `W ε`; return `D`, retained values and callback's Just payload | call argument 3 exactly once with Maybe v; its `#Just.0` aliases the selected `V`, taken and owned conditionally on `excl D`; absence supplies no value |
+| `copy d` | read `ε` and `V`; fresh root; values alias `V` | preserves value exclusivity internally, but shares them with `d`; no demand on input storage |
+| `keys d` | read `ε`; fresh exclusive List of scalar keys | no value alias |
+| `values d` | read `ε` and `V`; fresh List, result `[*]` aliases `V` | preserves internal exclusivity, shares with `d` |
+| `toList d` | read `ε` and `V`; fresh List and tuples; result `[*].1` aliases `V` | tuple keys cross; private entry pairs never escape |
+| `eq left right` | read both roots and value representatives; scalar result | sync value-equality evidence borrows each value; identity shortcut first |
+
+Private storage primitives used by beni loops have the corresponding subset
+of these rows. In particular, an internal index read is borrowed; a store
+writes only `ε` and aliases the value at `[*]`; a fresh builder has no values;
+a builder finish transfers the same root and its precise stored-value aliases.
+No unworded host operation may erase the builder's aliases or conditions.
+
+A focus removes the selected occurrence from the dictionary's holders for the
+callback, as List.focus does. Ownership of its supplied value is conditional
+on the dictionary being exclusive and the collection being owned and dead
+outside this call. The loan cannot overlap a value kept elsewhere, in another
+key, in a capture, or in a callback result that remains live at a later write.
+When the callback returns its taken value with shape preserved, the write-back
+recovers its exclusivity and spine conditions. A replacement must be separated
+from the other retained values; an unknown or aliasing callback does not gain
+that property by assertion. A callback that only reads needs no value loan,
+but focus still demands the storage write. `update` is a beni wrapper over
+focus with its inferred summary, not a second independent assertion.
+
+### 32.3 Derived operations and Set
+
+The following public bodies are inferred from the primitives and their actual
+beni callback loops. This table fixes the behaviour their inferred rows must
+express; a foreign implementation must declare the equivalent precise row.
+The callback protocol, including suspension and accumulator loans, is the
+existing one (§18 and §28).
+
+| Operation | Ownership contract |
+|---|---|
+| `Dict.fromList pairs` | fresh dictionary root; values alias `pairs[*].1`; repeated entries may lose exclusivity; reading and building never consumes the input List |
+| `Dict.map d f` | fresh dictionary root; callback results at `[*]`; callbacks in insertion order; each value supplied taken/owned only under `excl d` and the usual call-site demand when the actual edits it; retained outputs participate in subsequent holder checks |
+| `Dict.foldl`, `Dict.foldr` | borrowed dictionary values, no destructive value supply; accumulator supply/result follows the fold invariant; callback order forward/reverse; result is the final accumulator and may alias inputs through it |
+| `Dict.filter d f` | fresh root, retained values alias `V`; callback borrows each key/value; no value ownership granted; preserve order |
+| `Dict.partition d f` | two distinct fresh roots, each retaining input values; callback borrows; a representative may approximate both partitions, never fabricate their separation |
+| `Dict.union left right` | fresh root; left values and right-only values alias the inputs; exclusivity requires separation between retained values, even at distinct keys |
+| `Dict.intersect`, `Dict.diff` | fresh root; retained left values alias the left; right is borrowed for membership only |
+| `Dict.merge` | both dictionaries borrowed; one of three callbacks per distinct key; accumulator supply/result follows the folds; no taken value supply from either dictionary |
+| `Dict.update` | exactly focus's inferred row, including the unconditional root write |
+| `Set.empty ⊤`, `singleton`, `fromList`, `map` | fresh dictionary storage; members cross; map callbacks borrowed, outputs checked as valid scalar keys |
+| `Set.insert`, `remove`, `swap`, `insertAt`, `sortBy` | Dict's root-write row on the wrapped dictionary; same root returned; sort keys transient |
+| `Set.copy`, `filter`, `union`, `intersect`, `diff` | fresh dictionary storage; inputs read only; no member cells |
+| `Set.partition` | two distinct fresh dictionary roots; scalar members |
+| `Set.member`, `size`, `isEmpty`, `eq` | read wrapped dictionary roots; scalar result |
+| `Set.toList` | fresh exclusive List of scalar members |
+| `Set.foldl`, `Set.foldr` | scalar members borrowed; accumulator protocol unchanged |
+
+Set has no independently asserted row: its wrapper bodies infer these contracts
+through Dict. Neither Dict nor Set has a compare primitive or derived compare.
+Dict storage is a mutable cell even with a crossing value type; Set's wrapper
+therefore does not cross merely because its members are scalar.
+
+### 32.4 Removal of the tree exceptions and acceptance evidence
+
+Once the ordered representation and rows are built, delete `dictTree`, its
+path helper where unused, the `unmarked` branch in projection and the Dict skip
+in call-site other-place checks. Remove the tree-specific self-separation and
+fold exemptions from §16.7 and the trusted-surface exemption from §20.9.
+Retain the precise focus row on the trusted surface: the tree's exemption is
+withdrawn, not the need to audit a destructive loan.
+
+Runtime fixtures pin insertion order, duplicate replacement, remove/reinsert,
+forward/reverse folds, ordered equality, stable sort with callback order,
+swap (including missing keys), insert-at (including existing keys and clamped
+bounds), in-place storage edits and explicit shallow copies. Set gets the same
+behavioural checks. Build refusals name the scalar-key restriction and
+`Dict.copy`/`Set.copy` for a live old collection. A copied collection whose
+shared List payload is edited remains refused unless the payload itself is
+copied. No identity test is allowed to excuse a rendering error.
+
+The pending `DictFocus.grow` acceptance must recover and return to the corpus
+(#663), preserving the refused twins for repeated values, tuple/record
+payloads, captured aliases and live old dictionaries. The read-then-replace
+case in #579 must now refuse. An unexpected safe refusal or an instruction
+budget failure is a stop condition, not a reason to weaken the rows or tests.
+This section adds no keyed For, Dict write-set positions (O3), or recogniser
+for List.map keyed updates. Those belong to the rendering work.
+
+### *Amended 2026-10-22 (#670):* a write's extent
+
+A summary use carrying W also carries an **extent**, `storage` or `deep`.
+`storage` at p writes the collection's own slots and order, including inserting,
+replacing or removing a slot; it does not write any value stored in those slots.
+`deep` at p may write every value below p, as the previous keep-edge overlap
+rule assumed. A write that edits a stored value is deep at that value's path.
+An unclassified write is deep. This distinction is independent of the send bit
+S (§23.2), which continues to give up every cell of its payload.
+
+For a storage write at p, a value loan strictly below p (in particular p[*])
+does not overlap the write. A loan at p, or above p, still overlaps: keeping
+the collection observes its slots and order. A deep write uses the existing
+symmetric path overlap. Paths containing wildcards or recursive level markers
+retain their set-of-places meaning (§16.7): storage overlap asks whether some
+loan place is an ancestor of, or equal to, some written place. Unknown places
+remain conservative. Neither extent grants ownership or a destructive loan.
+
+The keep edge (§16.4), including a write through another callback, uses this
+extent-aware overlap. The supply edge uses it too: changing container storage
+does not edit a supplied value strictly below that storage. All demands on the
+written storage still require Known, Unescaped, Disjoint and Dead. Deep writes,
+value aliases, exclusive-content conditions and sends keep their prior checks.
+
+Extent is carried through inferred wrappers, function classes, captured writes,
+callback write-back, normalization, joins and summary serialization. At the same
+parameter and path, any deep write makes the joined write deep; a read without
+W does not change a storage write's extent. Canonicalization must not discard
+a deep write under a storage-only fact. Existing unclassified rows default to
+deep. Summary blocks advance from version 19 to 20 and serialize the extent;
+an older block is absent and is recomputed, never read with the new rules.
+The report keeps W/w and S/s spelling and marks a storage W as W[storage]
+(or w[storage]).
+
+List's precise slot writers (`set`, `insertAt`, `put`, `push`, `pop`,
+`removeAt`, `swap`, `done`, `append` and the root write of `focus`) are storage
+writes. Their result aliases and callback/value-write demands remain unchanged.
+List operations inferred from these primitives preserve the extent. In §32.2,
+every W ε is storage-only, including private `permute`, stores and builder
+finish; a callback's own value write is deep at its supplied value, or storage
+at that value's own collection root when its precise primitive says so. Set
+inherits these facts through its wrapper, with no separate trusted assertion.
+The ordered Dict rows take effect with §32's representation change.
+
+Regression evidence must accept a borrowed-value identity callback followed by
+a storage permutation, and refuse the twins that write the kept value, retain
+the storage itself, or send the value. Existing verdicts stay unchanged.
+The Lean model's write paths need the same extent and overlap distinction;
+#316 tracks that oracle work alongside #165, in Jayson's files. This amendment
+makes no new theorem claim for rules the oracle does not yet judge.

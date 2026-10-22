@@ -40,8 +40,8 @@ show entry =
 main : Program
 main = Io.run λ⊤ →
     seen = Ref.make []
-    Log.setSink λentry → Ref.update seen λlines → [ …lines, "first sink: ${show entry}" ]
-    Log.setSink λentry → Ref.update seen λlines → [ …lines, show entry ]
+    Log.setSink λentry → Ref.update seen λlines → [ …List.copy lines, "first sink: ${show entry}" ]
+    Log.setSink λentry → Ref.update seen λlines → [ …List.copy lines, show entry ]
     clock = Clock.virtual 1000
     Clock.run clock λ⊤ →
         Log.trace "fine detail"

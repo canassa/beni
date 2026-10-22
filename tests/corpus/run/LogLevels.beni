@@ -33,7 +33,7 @@ levelName level =
 
 record : Ref (List String), String, Entry → ⊤
 record seen sink entry = Ref.update seen λlines →
-    [ …lines, "${sink}: ${levelName entry.level} ${entry.message}" ]
+    [ …List.copy lines, "${sink}: ${levelName entry.level} ${entry.message}" ]
 
 
 main : Program

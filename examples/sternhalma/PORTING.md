@@ -1,5 +1,12 @@
 # Sternhalma in beni: what the port changed
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 Sternhalma is Lucas's (rvcas) Chinese Checkers for two, three, four or six
 players, <https://github.com/rvcas/sternhalma>. This directory ports it from
 commit `ffb3f91bd1b2be28015f4c69beaadbb5763bb0f4` (2025-12-18, Elm 0.19.1),

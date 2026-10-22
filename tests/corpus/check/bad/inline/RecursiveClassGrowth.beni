@@ -1,0 +1,24 @@
+-- The recursive fixpoint must notice changes inside a returned class.
+shared : List Int
+shared = [ 1 ]
+
+
+a : Int → (⊤ → List Int)
+a n = λ⊤ → (b n) ⊤
+
+
+b : Int → (⊤ → List Int)
+b n = λ⊤ → (c n) ⊤
+
+
+c : Int → (⊤ → List Int)
+c n =
+    λ⊤ →
+        if n > 0 then
+            (a (n - 1)) ⊤
+        else
+            shared
+
+
+pub bad : ⊤ → List Int
+bad ⊤ = List.push ((a 1) ⊤) 2

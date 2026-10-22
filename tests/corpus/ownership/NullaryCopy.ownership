@@ -1,8 +1,8 @@
 module NullaryCopy
   8:45 ++ <call>: accepted call
   12:38 ++ current.trail: rejected later-use: current.trail is read again at 12:22
-  summary copied: π1.trail RA, π1.trail[*] RA, π2.trail R, π2.trail[*] A; res .0 fresh1{lost}r{lost}, .0[*] π1.trail[*] π2.trail[*], .1 π1.trail
-  summary kept: π1.trail RAW, π2.trail R, π2.trail[*] A; res .0 π1.trail{lost}r{lost}, .0[*] π2.trail[*], .1 π1.trail{lost}r{lost}
+  summary copied: π1.trail RA, π1.trail[*] RA, π2.trail R, π2.trail[*] A; res .0 fresh1{lost}r{lost}, .0[*] condition(fresh2) π1.trail[*] π2.trail[*], .1 condition(fresh4) π1.trail, condition(fresh3){lost}
+  summary kept: π1.trail RAW, π2.trail R, π2.trail[*] A; res .0 condition(fresh2) π1.trail{lost}r{lost}, .0[*] condition(fresh3) π2.trail[*], .1 condition(fresh4) π1.trail{lost}r{lost}, condition(fresh1){shared}
   demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause later-use 1

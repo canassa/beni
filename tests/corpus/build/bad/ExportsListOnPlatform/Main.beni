@@ -1,0 +1,9 @@
+-- `unknown_exports_mode`, the list form (boundary.md §5.2, amended
+-- 2026-10-20): a platform declares the mechanism, `"exports": "program"`,
+-- and only an app's beni.json lists the names. This platform lists a name
+-- itself, and the build is refused against its manifest at 1:1.
+import Prog exposing (Program)
+
+
+main : Program
+main = Prog.say "hello"

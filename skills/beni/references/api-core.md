@@ -289,6 +289,7 @@ module Log
   value log : Level, String → ⊤  -- impure
   value logfmt : Entry → String  -- impure
   value minimum : Level, (⊤ → a) → a  -- impure
+  value setMinimum : Level → ⊤  -- impure
   value setSink : (Entry → ⊤) → ⊤  -- impure
   value span : String, (⊤ → a) → a  -- impure
   value trace : String → ⊤  -- impure

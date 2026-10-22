@@ -241,17 +241,23 @@ test "the table's structural bits are read by their listed readers alone" {
             const text = try dir.readFileAlloc(io, entry.name, gpa, .limited(1 << 24));
             defer gpa.free(text);
             read += 1;
+            // A name the file never spells is on none of its lines: each
+            // line is searched only for the names the file has.
+            const equatable_call = std.mem.indexOf(u8, text, "isEquatable(") != null;
+            var spelled: [bits.len]bool = undefined;
+            for (bits, &spelled) |b, *sp| sp.* = std.mem.indexOf(u8, text, b.name) != null;
+            if (!equatable_call and std.mem.indexOfScalar(bool, &spelled, true) == null) continue;
             var lines = codeLines(text);
             var n: usize = 0;
             while (lines.next()) |line| {
                 n += 1;
                 if (isComment(line)) continue;
-                if (std.mem.indexOf(u8, line, "isEquatable(") != null and !std.mem.eql(u8, path, "check/Marker.zig")) {
+                if (equatable_call and std.mem.indexOf(u8, line, "isEquatable(") != null and !std.mem.eql(u8, path, "check/Marker.zig")) {
                     std.debug.print("src/{s}:{d} reads a structural bit of the type table: `isEquatable`\n", .{ path, n });
                     bad += 1;
                 }
-                for (bits) |b| {
-                    if (tableReads(line, b.name) == 0 or listed(path, b.readers)) continue;
+                for (bits, spelled) |b, sp| {
+                    if (!sp or tableReads(line, b.name) == 0 or listed(path, b.readers)) continue;
                     std.debug.print("src/{s}:{d} reads a structural bit of the type table: `{s}`\n", .{ path, n, b.name });
                     bad += 1;
                 }

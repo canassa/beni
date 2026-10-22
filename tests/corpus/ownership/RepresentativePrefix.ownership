@@ -1,0 +1,4 @@
+module RepresentativePrefix
+  summary supply: π2 R, π3 R; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}r{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{shared}r{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{shared}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

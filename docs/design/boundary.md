@@ -1,5 +1,12 @@
 # The JavaScript boundary — platforms, ports and `foreign`
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for M3, and the input M4's cache key needs. [`fast-compiler.md`](fast-compiler.md)
 §3.1 settles that the language is pure with effects as values interpreted by a platform, and its
 header states the stance this document implements: *Elm's walled garden, better equipped.*
@@ -398,6 +405,16 @@ through the protocol, and one coming in is a fresh array the codec built.
 
 #### What JavaScript may read of a beni value
 
+**Amended 2026-10-22: field spellings may be reused.** One source field text
+has one spelling everywhere. Different texts that can coexist in one runtime
+record have different spellings; fields whose full set is unknown conflict
+with every other text. Release assignment greedily colours these sets by uses
+(descending), then text, choosing the lowest available spelling. Boundary-pinned
+and plain-property field texts keep their source names, no spelling equals a
+kept text or contains `$`, and the library and development rules below remain.
+This changes the single global namespace in backend §9, not what a host may
+read or which records it may construct.
+
 *Added 2026-10-01, with `backend.md` §9's* Item 4, taken up. A `--release` build renames record
 fields and gives constructors integer tags wherever no JavaScript can see the difference, so
 "where can JavaScript see it" is now part of this contract. **JavaScript sees the representation
@@ -427,6 +444,27 @@ through references, and of each variant's payload, transitively. They are pinned
 fields above are (`Fields`), so a field of that name keeps its name wherever the program names
 it. What JavaScript may read of these values is unchanged: the reader writes them, nothing
 outside beni reads them.
+
+**Amended 2026-10-22 (the owner's decision): shape-read records get release field
+names.** This supersedes the 2026-10-19 requirement that records read by shapes
+keep their source field names. A shape produces an internal beni record, as a
+validator worker does, and alone pins no field. Each record entry names the
+field it writes using the existing deterministic whole-program field assignment
+(`assignFields`), the same spelling every other use of the field gets.
+Slot 0 stays the host key. Slot 3 uses the existing `[key, shape, flag, name]`
+format: `["cups", shape]` can become `["cups", shape, 0, "z"]` in release.
+When the written name equals the host key, no name is added. Development
+entries and fields independently pinned by a real host boundary keep their
+existing format, including any `as "…"` output name. Optional fields retain
+flag 1, derived `Maybe` fields flag 2. This includes nested records, tagged
+payloads, references and Json codec shapes.
+
+The 2026-10-19 copy design stays: one shared copy loop, no `make` arrow, and
+a fresh object. Its four protections are unchanged: getters are read once,
+later host writes cannot change the record, no extra or inherited keys are
+copied, and beni's writes never land in the host object. Only the written name
+changes. T remains 29; [#655](https://github.com/canassa/beni/issues/655) tracks
+re-measuring the crossover with short names.
 
 **A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
 Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may
@@ -779,6 +817,10 @@ be Node. Code written against the Bun platform does not run on Node — which is
 §5.3's per-platform compilation already reports as a resolution failure rather than a runtime
 surprise.
 
+*Amended 2026-10-20:* "not a compiler change" held for every platform until the fifth, `cloudflare`
+(§9.12), whose host finds a Durable Object class by the entry module's export names: that needed
+one general output key, `"exports"` (§5.2), and nothing else.
+
 The duplication this implies is smaller than it looks, and needs no compiler feature: **platforms
 are packages and packages depend on packages**, so runtime platforms share their beni code through
 an ordinary dependency and differ only in their foreigns.
@@ -866,6 +908,22 @@ and `browser-direct`'s manifest drops it. What a platform does owe instead:
   runtime calls (`ownership-checker.md` §30.3);
 - **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
   `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
+
+**The entry file's named exports are part of that shape, and it is `"exports"`** (*added
+2026-10-20*, §9.12 (c)). A platform whose host finds code by the entry module's export names — a
+Durable Object class, under Cloudflare Workers — declares `"exports": "program"`: the entry file
+then takes what `run(main)` returns, writes its `default` as the default export, and writes one
+named export per name the app's `beni.json` lists under `"exports"` (`frontend.md` §10.1), each the
+answer of the result's `exports(name)`. The platform declares the mechanism and the app the names,
+as the app replaces the chain's `"html"` with its own. Any other string, or a list, under the
+platform's key is `unknown_exports_mode`, and a value of another JSON type is the manifest's exit-2
+failure, as any key of the wrong type is; a name that is not an ASCII identifier name (letters,
+digits, `_` and `$`), is `default`, is `flush` or is listed twice is `invalid_entry_export`, both
+against the manifest that holds them at `1:1` (*amended 2026-10-21, P599-1, P599-3 and P599-5:
+`flush`, `$` and the wrong type; a reserved word is legal, §9.12 (c)*);
+a list on a chain that declares no `"exports"` is the warning `exports_ignored`. A chain that
+does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
+contract whole.
 
 ### 5.3 One project, several platforms
 
@@ -1145,6 +1203,9 @@ two:
 | `browser-tea` | `browser` | The Elm Architecture in beni over `browser`'s `Program`; re-exports `Html` and `browser`'s modules |
 | `node` | `html` | today's Node platform, plus the `ssr` lowering, so a `view` renders to a string under Node and `tests/corpus/run/` can test it (research 36 §5.5); re-exports `Html` |
 
+*Amended 2026-10-20:* a fifth platform ships, `cloudflare` (§9.12), which depends on no platform and
+declares no markup.
+
 **Why `html` is a platform of its own**, and not part of `browser` and `node` each: a view module
 must check once and build under both (§5.3's full-stack case, research 36 §5.5), and it can only if
 both builds type it against **one** vocabulary module and **one** `Html` type — two copies would be
@@ -1399,6 +1460,15 @@ lowering sees the text (`language.md` §11.4, `frontend.md` §9.7).
 of its HTML integration points, none of HTML's rules apply, and an element whose declared namespace the
 parser would not give it where it stands is `markup_restructured`. Which namespace an element is declared
 in is the vocabulary's fact, handed to the table by the lowering.
+
+*Amended 2026-10-20* (§9.8.20 (d)): **every lowering calls a `via` extractor synchronously, while
+the event is dispatched; for an event that is not `delegated`, in the listener of the element that
+has the handler, so that `currentTarget` is that element.** A `delegated` event's extractor can run
+in a listener higher up — under `dom`, the document's (`backend.md` §15.3, *Events*), where
+`onInput`'s and `onChange`'s `targetValue` and `onCheck`'s `targetChecked` run — so it must not read
+`currentTarget`. An extractor may read what is true only during the dispatch — the pointer events'
+reads `currentTarget` and its box — so a lowering that queues an event and extracts later breaks it
+(issue #559).
 
 *As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
 The smallest readings, and what waits for the lowering interface:
@@ -2508,7 +2578,9 @@ the pieces below. `browser-tea` re-exports `Cmd`, `Sub`, `Time`, `Dom`, `Http` a
 
 *Amended 2026-10-12 (§9.8.16):* `init` is a function the platform calls once per mount — `init :
 ⊤ → ( model, Cmd msg )` — on every program constructor, and `Storage`, `Http` and `Log` gain the
-commands `save`, `send` and `write`, which take the value they store, send or log.
+commands `save`, `send` and `write`, which take the value they store, send or log. *(Amended
+2026-10-21: since the browser's `Log` moved into core, the log's command is `Cmd.log`, in `Cmd`;
+§9.8.16 (b).)*
 
 `Tea.sandbox` stays `Browser.program`, and a page built on it reaches no byte of `Task` (R45 §7).
 
@@ -2612,9 +2684,8 @@ reflective walk.
   key applied to the two values**. Two keys of one identity are of one type, so either key's
   evidence orders both.
 - **What it guarantees.** Two keys are one key exactly when they are of one type and that type's
-  `compare` says `EQ`: two equal `Set`s or `Dict`s built in different orders are one key (their
-  modules' own `compare`, `static-dispatch-spike.md` §3.5), and so are two values of a program's
-  type with a hand-written `compare` that calls them equal; `Alpha.Key 1` and `Beta.Key 1`, and
+  `compare` says `EQ`, including two different values of a program's type with a hand-written
+  `compare` that calls them equal; `Alpha.Key 1` and `Beta.Key 1`, and
   `Id User` and `Id Post` over one `Int`, are two. `tests/corpus/browser/tea/ValueKeyRestart` and
   `browser/tea/TypedKeys` pin both, for commands and for subscriptions. The rule of thumb above,
   and the requirement that a library key `Sub.listen` by a type of its own, are withdrawn as
@@ -2625,8 +2696,8 @@ reflective walk.
   infers and supplies, never written (`static-dispatch-spike.md` §8.6). A program's function that
   is generic over a key and calls one of them — `restart key name = Cmd.keyed key Cmd.Restart …`,
   annotated with `where k.compare` or not — is handed the identity by its own callers the same
-  way. The one program refused is one whose key type mentions a type variable its declaration
-  has no requirement on, `type_identity_unknown` (§8.6).
+  way. A key type that mentions a type variable its declaration has no requirement on is refused
+  with `type_identity_unknown` (§8.6).
 - **The order of keys changed for keys of one type**: it is that type's `compare`, so a derived
   one orders constructors by declaration and records by field name, the same in a development and
   a release build (renamed fields and integer tags reach neither the identity nor the evidence).
@@ -2634,6 +2705,51 @@ reflective walk.
   the walk compared the tags' text. Keys of two types are ordered by their identities' text.
 - **The cost.** A program that keys nothing is byte for byte what it was. A keyed call passes one
   string literal more, and a declaration generic over a key one parameter more.
+
+*Amended 2026-10-22 (#294, the owner's decision):* Dict and Set no longer
+have `compare`, and neither is a valid command or subscription key. The earlier
+examples of equal dictionaries or sets as keys are withdrawn. Passing one to
+`Hosted.key`, `Cmd.keyed`, `Cmd.cancel`, `Cmd.map`, `Sub.listen`, or another API
+requiring its `compare` is a type error. Its message must explain that **Dict
+and Set have no compare because insertion order is part of their value**;
+an unexplained missing-method error is insufficient. This also applies when
+comparison of an enclosing tuple, list, record or custom type would require
+a Dict or Set comparison. A program's explicit comparator on its own type
+remains its own policy; it must not request a missing collection comparator.
+
+Tea's tables do not encode these keys as Int or String, and do not store
+`Hosted.Key` in Dict. W47's type identity and per-type comparison remain the
+contract. The private ordered table specified below preserves them.
+
+**Tea's private ordered tables — added 2026-10-22 (#294, the owner's
+decision).** Tea stores jobs and live subscription tables in its own private
+sorted array of `(key, value)` pairs. A live or wanted subscription uses
+`Hosted.Key`; a jobs entry uses a `List Hosted.Key` path. A binary search finds
+the lower bound using `Hosted.compare`, or lexicographic path comparison with
+`Hosted.compare` on each segment (a proper prefix sorts first). A matching
+entry is exactly a comparison result of `EQ`, including distinct values that
+a type's own comparator calls equal. Search must not use JavaScript identity,
+string encoding, hashing by representation, or Dict's scalar-key index.
+
+Insertion replaces the value at an equal key, retaining its position and key,
+or inserts at the lower bound. Removal closes the gap. Iteration is in sorted
+key order, preserving command and subscription lifecycle ordering. These
+are internal platform operations, with no new public API. Empty tables are
+constructed afresh for each program or diff. The table uses owned array operations; every accepted write edits in place,
+and a write ownership cannot prove safe is a compile error. There is no
+persistent or copying fallback and no ownership exemption for the table.
+Callbacks and subscription bodies retain their existing effect contracts.
+
+All paths with a given prefix form one contiguous range: `cancelAll` finds
+its beginning by lower-bound search, scans to the first nonmatching prefix,
+cancels those jobs in path order, and removes that range. It does not partition
+an insertion-ordered Dict. Subscription lookup, replacement and the live /
+wanted diff use the same sorted-table comparison rule. The existing keyed
+browser fixtures, including `TupleKeyRestart`, `ListKeyRestart`
+and `TypedKeys`, continue unchanged. `ValueKeyRestart` retains its program-type
+comparison coverage; its direct Dict and Set key cases become refusal fixtures
+under the restriction above. A fixture with two distinct values whose own
+`compare` returns `EQ` pins matching for commands and subscriptions.
 
 #### 9.8.4 Running a command, and the dispatch order (W53)
 
@@ -4498,7 +4614,12 @@ The level is core's `Log.Level`. The other option was a module `Browser.Log` wit
 default log context: no annotation, no span, and the minimum `Info`. An `annotate` or a `minimum`
 around the `update` arm that makes the command does not reach it, and a `Cmd.log Log.Trace` or
 `Cmd.log Log.Debug` is not written. A program-wide minimum that would let it be written is the
-owner's decision, #551.
+owner's decision, #551. *Amended 2026-10-21 (#551, the owner's decision):* the default context's
+minimum is the program's minimum when the command runs, which `Log.setMinimum` sets (proposal
+§17.11), so after `Log.setMinimum Log.Debug` — in `init`, say — a `Cmd.log Log.Debug` is written.
+The command reads the minimum when it runs, not when `update` makes it: a `Cmd.log Log.Debug` made
+before a `Log.setMinimum Log.Error` in the same `update` is not written. A command still does not
+see `update`'s `annotate` or `minimum`; that it should is #597.
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
@@ -4892,6 +5013,202 @@ brotli 11, the whole output): `browser/tea/ValueCommands`, whose `send` has no t
 machinery every `Sub.on` page shares, the chunked read, the table and the waits. Its `Maybe` keeps
 integer tags. No page of `bench/size.mjs --pages-only` moved by a byte, dev or release, `browser-tea
 http` and `ApiAndRoutes` among them.
+
+#### 9.8.20 Pointer input (2026-10-20)
+
+*Added 2026-10-20* (issue #525). Normative for the pointer events of the `html` vocabulary and for
+what a handler reads of them. A browser game steers by the mouse or by a finger, and before this
+section a page could not read where the pointer is: `onMouseMove` handed an `Event` with no reader
+of its position, and nothing handed a touch.
+
+**(a) Pointer Events, and not mouse and touch events.** One event model serves the mouse, the pen
+and the touch screen, in every current browser (Chrome 55, Firefox 59, Safari 13). Each pointer has
+an identity, `pointerId`, so two fingers are two pointers, and the browser sends `pointercancel`
+when it takes a pointer for itself. Touch events (`touchstart`, `touchmove`, …) hand a list of
+touches per event, serve no mouse, and are passive by default on the window, the document, the
+document element and the body (DOM, *default passive value*), so a page would need two APIs to do
+what one does. The mouse
+events stay as they are (§9.9 (c)). **The model**: elm/html has no pointer events, and the package
+Elm programs use is mpizenberg/elm-pointer-events (`Html.Events.Extra.Pointer`), whose `onDown`,
+`onMove`, `onUp`, `onCancel`, `onEnter` and `onLeave` hand a decoded record with the pointer's id,
+type and positions. beni names each event as its vocabulary names every event (`onPointerDown`),
+and each reader as the DOM names the property it reads.
+
+**(b) The API.** `Html`, the vocabulary module, gains:
+
+| | Is |
+|---|---|
+| `onPointerDown`, `onPointerMove`, `onPointerUp`, `onPointerCancel`, `onPointerEnter`, `onPointerLeave` | the DOM event of the lower-cased name, `via pointer : Pointer`, **not** `delegated` |
+| `Pointer` | `pub crossing foreign type`: the event, and its position in its handler's element, made by the extractor `pointer`, (d) |
+| `pointerId : Pointer → Int` | the pointer's identity, the same from its `pointerdown` to its `pointerup` or `pointercancel` |
+| `pointerType : Pointer → String` | `"mouse"`, `"pen"` or `"touch"`; `""` when the browser cannot say |
+| `isPrimary : Pointer → Bool` | the mouse, or the first finger of a touch |
+| `clientX`, `clientY : Pointer → Float` | the position in the viewport, CSS pixels |
+| `localX`, `localY : Pointer → Float` | the position in the handler's element, (c) |
+| `pointerEvent : Pointer → Event` | the same event as an `Event`: the modifier readers and `preventDefault` take it |
+
+`pointerover`, `pointerout`, `gotpointercapture` and `lostpointercapture` wait for a use, as the
+drag events that no program has needed do (§9.8.10, *amended 2026-10-13*). So do the pen's pressure
+and tilt, `getCoalescedEvents()` (the points between two `pointermove`s, which a drawing page needs
+and a game that reads one point per frame does not) and `pointerrawupdate` (no Safari).
+
+**(c) The coordinate system.** `localX` and `localY` are CSS pixels from the top-left corner of the
+**border box of the element whose handler runs**: the element that carries `onPointerMove`, not the
+innermost element under the pointer, such as a dot drawn inside the arena. Each is `clientX −
+getBoundingClientRect().left` (and `top`), read while the event is dispatched. So a page whose
+arena is laid out at `width: 600px` reads arena coordinates directly. A page that scales its arena
+— an SVG `viewBox`, a width in percent — multiplies by its own units per pixel, and can read the
+box's size with `Dom.box` (§9.8.6). Under a CSS `transform` other than a translation, the box is
+the bounding box of the transformed element, so the point is in that box and not in the element's
+own frame. A point outside the box is a value like any other: a touch has implicit capture, so its
+moves go to the element where it started, wherever the finger is, and `localX` can be negative.
+
+Two consequences of the border box. An absolutely positioned child is placed from its parent's
+**padding** box, so on an arena with a border, a dot drawn at `left: localX` is one border width
+off: a page with a bordered arena subtracts the border, or puts the border on a wrapper. And on an
+arena that scrolls itself (`overflow: auto`), the point is in the visible box, not in the scrolled
+content: the page adds its own scroll offset.
+
+`clientX` and `clientY` are the viewport's coordinates. There is no `offsetX`: the DOM measures it
+from the padding edge of the event's target, the innermost element, which is the wrong element for
+a surface with children. `pageX`, which adds the scroll, and `screenX` wait for a use.
+
+**(d) Why a `Pointer`, and why the pointer events are not `delegated`.** The position needs the
+handler's element. While an event is dispatched, `currentTarget` is that element only when the
+listener is on the element itself. The `dom` lowering's delegated listener is on the document
+(`backend.md` §15.3, *Events*), so under it `currentTarget` is the document. This section **chooses**
+not to delegate the pointer events: `dom` attaches one listener to each element that has a pointer
+handler, through the runtime's `listen`, and `browser-inline` attaches every listener to its element
+already (its runtime's `on`, `platforms/browser-inline/Inline.beni`). The other choice is Solid 2's:
+it delegates `pointerdown`, `pointermove`, `pointerover`, `pointerout` and `pointerup`, and during
+its walk redefines `currentTarget` as the walk's node (dom-expressions
+`packages/runtime/src/constants.js`, `client.js`). beni's `fire` has that node too.
+
+**A known gap of the choice** (issue #557): each listener of one trusted event is its own turn
+(`backend.md` §15.11), so a user's `pointerdown` on an element inside another that also has
+`onPointerDown` renders between the two handlers, and the outer one runs with the handler that the
+first render wrote. A delegated event's walk is one turn and one render. The `.steps` step sends
+untrusted events, which are no turn, so no fixture sees the difference yet. #557 takes Solid's
+choice, or specifies the turn per listener.
+
+The position is taken by `pointer`, the events' extractor and a `foreign` of `Html` (§9.3), while
+the event is dispatched. After the dispatch `currentTarget` is null and the box can have moved, so
+a reader that ran later — in `update`, on a `Pointer` that a message carries — would read nothing,
+or a wrong box. **No program can call `pointer`**: on another event, such as a delegated `onClick`
+under `dom`, the element would be the document, which has no box. Its type is `pointer : Dispatched
+→ Pointer`, and `Dispatched` is a `foreign type` of `Html` that is not `pub`: no event hands one to a
+handler and no function returns one. `pointer` itself is `pub` until issue #532 is fixed: today the
+lowering finds an extractor in the vocabulary module's interface, which holds only `pub` values, and
+a non-`pub` extractor is accepted by the checker and then replaced by the raw event.
+
+**A lowering's obligation.** The pointer events are not `delegated`, so a lowering calls their
+extractor **synchronously, in the listener of the element that has the handler, while the event is
+dispatched**, and `currentTarget` is that element (§9.3, amended here). `dom` does: `listen`'s
+listener calls `fire`, which applies the extractor before it computes the message. `browser-inline`
+does on its usual path, but a send made while another send runs is queued with its raw event, and
+the extractor would run after the dispatch (issue #559; latent, because a host never dispatches a
+pointer event inside a send). **The type is the guarantee**, given that obligation: a `Pointer`
+comes only from the listener of a pointer event on its own element, so `localX` of every `Pointer`
+is a point in its handler's element, under every lowering and at any time after. The other readers
+read properties of the event, which do not change after the dispatch. **The second wall is `Js`**:
+`Js.to : Value → a` can make a value of any type, so a package that may import `Js` can make a
+`Dispatched` and call `pointer` on any event. A program cannot import `Js` (`js_outside_platform`,
+§4.2), so only a platform package can, which is the trust every `foreign` has (rule 6).
+
+The cost is one listener for each element that has a pointer handler, not one for each page: a
+`For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
+surface is one element. A delegated form waits for a page that needs it and a measurement (rule 8).
+The extractor also reads the element's box on every event. **Measured** (2026-10-20, the review of
+PR #548: headless Chrome, synthetic `pointermove` on an arena, the median of 5 × 2 000 events, µs per
+event):
+
+| arena | layout before the event | read `clientX` only | the extractor | read `offsetX` |
+|---|---|---|---|---|
+| 20 absolute children | clean | 5.6 | 7.1 | 6.7 |
+| 20 absolute children | one child moved | 6.6 | 69 | 65 |
+| 1 000 absolute children | clean | 4.2 | 6.3 | 5.1 |
+| 1 000 absolute children | one child moved | 6.5 | 1 075 | 1 172 |
+| 1 000 in flow | width changed | 5.6 | 886 | 898 |
+| 5 000 in flow | one child moved | 8.4 | 6 762 | 6 500 |
+
+On a clean layout the extractor adds 1.5 to 4.5 µs. On a changed layout it forces the layout, as
+`offsetX` does: any point in an element's box needs one, so a delegated handler that reads the box,
+as Solid's would, pays the same. Chrome dispatches `pointermove` once per frame, before the
+`requestAnimationFrame` callbacks, so a steady single pointer reads the layout that the last frame
+made. A forced layout comes with a second pointer event in one frame after a render that changed the
+layout: a second finger, or a `pointerdown` and then a `pointermove`. On a 1 000-element arena that
+is about 1 ms for each such event. The cost is accepted: it is the price of a point that stays right
+after the dispatch.
+
+**(e) The browser's own gestures.** A page stops scrolling, pinch zoom and double-tap zoom on its
+game surface with CSS: **`touch-action: none`** in the element's `style`, an ordinary attribute
+(`language.md` §11.19). That is the Pointer Events standard's way, and the only one that works. The
+browser decides on a gesture at the `pointerdown`, from `touch-action`, before any listener can
+answer, and `preventDefault` on a pointer event never stops a scroll or a zoom (Pointer Events
+§4.1.3.1). One exception is known: on iOS, `touch-action: none` does not stop a double-tap zoom on
+an absolutely positioned element (WebKit bug 218015, open). On a `pointerdown`, `preventDefault`
+stops the compatibility mouse events `mousedown`, `mousemove` and `mouseup` until that pointer's
+`pointerup` or `pointercancel` (Pointer Events §11.2), and never `mouseover`, `mouseout`,
+`mouseenter`, `mouseleave`, `click`, `auxclick` or `contextmenu`. `Html.preventDefault
+(Html.pointerEvent p)` does it, as for any event. When the browser does take a gesture — on an
+element with no `touch-action: none` — it sends `pointercancel`, then `pointerout` and
+`pointerleave`, and nothing more of that pointer, so a game ends a pointer's steering on
+`onPointerCancel` as on `onPointerUp`, and an `onPointerLeave` hears a leave after each cancel.
+
+The runtimes register their listeners with no options. A browser makes a listener passive by
+default only for `touchstart`, `touchmove`, `wheel` and `mousewheel` on the window, the document,
+the document element or the body, so a pointer handler's `preventDefault` is never ignored.
+`user-select: none`, also CSS, keeps a long press from selecting text; Safari and iOS Safari need
+`-webkit-user-select: none` beside it, and iOS needs `-webkit-touch-callout: none` to stop the
+long-press menu. **Pointer capture** (`setPointerCapture`) is not exposed: a
+touch is captured by the element where it started, which is what a surface needs, and a mouse that
+leaves the surface sends `onPointerLeave`. Explicit capture waits for a use; it can throw
+`NotFoundError` and `InvalidStateError`, so it will return a `Result` (rule 9).
+
+**(f) Rules 7 and 8.** Nothing is refused: a page can use the mouse events, the pointer events or
+both, on any element. A page that does not use the pointer events pays nothing: the vocabulary's
+declarations carry no JavaScript (§9.3), and reachability (`backend.md` §9) and the release
+minifier's export pruning remove the readers and the extractor when no handler reaches them.
+
+**(g) Proofs.** The `.steps` language gains `pointer`, a pointer event at a point given in an
+element's box (`tests/corpus/README.md`). Under happy-dom, which has no layout, every box is at 0,
+so only Chrome (`zig build test-browser`) shows the conversion of (c); a step names its point in
+the box of the handler's element, so both DOMs print the same transcript. That step is neither a
+gate nor a CI job, so today no automatic check sees the conversion (issue #558). `browser/tea/PointerInput`
+pins movement, up, cancel, enter and leave, identity and type, `preventDefault`, a handler on an
+element with a child (the box is the handler's, not the target's), a `Pointer` read in `update`
+after its dispatch, and a handler that the view changes in place. `browser/dom/PointerEvents` pins
+the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot steered toward the
+pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
+a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
+
+*As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
+specified, with these findings:
+
+- **The extractor is `pub`**, as (d) says. A non-`pub` `via` is accepted by the checker, and the
+  lowering then hands the handler the raw event (issue #532).
+- **Measured** (`bench/size.mjs --pages-only`, the compiler before and after this change): every
+  release figure is the same, and TodoMVC's release file is the same bytes. Every page that reaches
+  no `foreign` of `Html` is the same in development too. TodoMVC and Conduit reach `targetValue`, and
+  a development build copies the sibling file whole, with the new export and its comments: 523
+  bytes raw more in TodoMVC (measured), and the same file in Conduit. `examples/steer`, the demonstration, is 10 800 bytes raw
+  and 4 267 brotli under `--release`.
+- **The extractor's key is `ev`, not `e`.** A first version returned `{ e, x, y }`. The release
+  minifier keeps the spelling of a name that stands where a property name can, anywhere in the file
+  (`src/js/Minify.zig`, *A2*), so the parameter `e` of `targetValue` and `targetChecked` kept its
+  name, and TodoMVC's release file changed.
+- **`browser-inline`** needed no change. It compiles neither a `style` attribute nor a lambda
+  handler yet (`browser-inline.md` §5), so `browser/inline/PointerPoint` has constructors as its
+  handlers and no style.
+- **`Html.Pointer` is `crossing`**, as `Html.Event` is, and `tests/corpus/ownership/
+  trusted-surface.txt` lists it: without the word, `ownership/WordsBrowser`'s summary of `update`
+  has the `Pointer` of a message escape.
+- The page fuzzer sends no pointer events yet (issue #527). The trusted path of nested handlers
+  (#557) and the conversion under the gates (#558) have issues of their own.
+- **Reviewed** (PR #548): the facts of (a) and (e) were checked against Pointer Events level 3, the
+  DOM Standard and MDN's compatibility data, and four were corrected — the events after a
+  `pointercancel`, the mouse events a prevented `pointerdown` stops, Safari's `user-select`, and
+  iOS's double-tap zoom.
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
@@ -5880,7 +6197,69 @@ session per accepted upgrade in the order the upgrades arrive, as it starts requ
   request is.
 - **Both together** — the demonstration of #524: a server program and a page program in one
   fixture, the page loaded under the page driver with the host's real `WebSocket`, connected to
-  the server the serve driver started. Its kind and its steps are specified with its slice.
+  the server the serve driver started. Its kind and its steps are specified with its slice
+  (*Amended 2026-10-21*, below).
+
+*Amended 2026-10-21, the page and the server together* ((l)'s last item; #524's demonstration;
+#571). A page and a server that are both beni talk through a real WebSocket in one test:
+
+- **The example.** `examples/chat/` holds three directories, as `examples/todo/` does: `shared/`,
+  `server/` (`node`) and `page/` (`browser-tea`). `shared/Chat.beni` is the protocol: the events and
+  their lines, and `tell`, which writes an event with `WebSocket.write`. It names only the handle
+  operations that every platform shares (the amendment's item 1), so the page's build and the
+  server's build check it, each on its own platform. The server serves the page's build and
+  accepts sockets at `/chat`, and refuses one whose `origin` is another site's (item 21). It tells
+  each page's events to every other page. The page holds its socket in a `listen` subscription,
+  shows what the room says, and connects again after a wait when the connection ends. The wait
+  is a second longer after each failure in a row, 30 seconds at most.
+- **The page driver's `--server=127.0.0.1:<port>`** (happy-dom only) opens the page at
+  `http://127.0.0.1:<port>/_page.html`, so a socket the page opens to `/chat` reaches the server
+  on that port. The page's `WebSocket` is then happy-dom's own, which wraps the `ws` library, not
+  the scripted one: it is the independent client of item 30. Item 30 named Node 24's own
+  `WebSocket` (undici), which cannot run in the page: it calls `unref` on what `setTimeout`
+  returns, and the page's virtual clock returns a number, as a browser's does. undici drives the
+  server in `bench/websocket/load.mjs`. Each socket is still numbered and logged, and the scripted
+  `socket` steps are refused. What the host's socket does (`open`, `message`, `error`, `close`) is
+  held, in the order it happened, and reaches the page only in a step `socket <n> wait <k>`,
+  `wait open` or `wait closed`. That step gives the page the held events one at a time, each in
+  a task of its own, until the socket has received `k` messages in all, opened, or closed, and
+  waits for the next event in real time, 5 seconds at most; then the page settles as after any
+  step. So a snapshot depends on the script, and never on when the server answered. The socket's
+  `protocol` is the one of the `open` the page was given; its `bufferedAmount` is still the
+  host's at the time the page reads it (#632). In this mode the driver writes the line of each
+  step it has run to file descriptor 3. `--wait-handshakes` tests the hold: after each step, the
+  driver waits until the host has answered every socket's handshake, and lets the page settle
+  again before the snapshot.
+- **The serve driver's page steps.** `{"page": "<entry>", "steps": "<file>"}` runs a page under the
+  page driver with `--server` set to the program's port and prints its transcript, each line
+  `| …`. With `"wait": false` it runs beside the next steps. `{"page-wait": "<step>"}` waits until
+  the page has run that step (the line on file descriptor 3), 5 seconds at most, and uses the
+  lines up to it, so a second wait for the same step waits for the next one. `{"page-end": true}`
+  waits for the page to end, 20 seconds at most, then stops it, and prints its transcript. So a
+  script orders what the page and the driver's own clients do. With the page driver's hold, the
+  order of the transcript depends on no timing. The time limits only stop a fixture that fails,
+  and the driver ends after every script.
+- **The test** is `tests/blackbox/chat_example_test.zig`. It builds the example as its README says,
+  with a `Config` that listens on port 0, and runs the server under the serve driver. In its script
+  the driver's own client and the page talk: the page connects, says a line, and hears the
+  client's answer; the client hears the page join and speak; a socket from another site is
+  refused; `/` is the page's shell and `/.env` is 404; the server shuts down and closes both
+  sockets with 1001. The page then connects again after 1 s on its virtual clock, that attempt
+  fails, and the next one starts 2 s later. The page runs with `--wait-handshakes`. Its last step
+  fails, and the script's last waits find no step and no page, so the same script pins the serve
+  driver's waits and its end.
+- **The scripted `open` follows the handshake** (#571). `socket <n> open "<protocol>"` fails the
+  step when the page did not offer that protocol, and `socket <n> open` with no protocol fails it
+  when the page offered some: a host fails both handshakes (RFC 6455 §4.1, the Fetch standard's
+  "establish a WebSocket connection"), so no golden shows a state that no browser reaches.
+- **The owner's decisions** ((n); the owner, 2026-10-21, each as recommended). `ws-q1`: the
+  wrappers take Elm's names — the command is `send` and the subscription `listen` — and the
+  direct forms are `read`, `write` and `close` on every platform; Workers uses `write` too. So
+  (a)–(d) stand as written. `ws-q3`: each host keeps its own reading style. `node` reads with the
+  pull `read` session of (e)–(h), with read back-pressure; Cloudflare delivers events to
+  handlers, so that an object can hibernate. Programs share the handle operations of item 1 and
+  their logic as plain functions, as `examples/chat/shared/Chat.beni` does. Item 1's "until it is
+  answered" is spent: (e)–(h) stay as written for `node`.
 
 **(m) The game's load, measured.** The slices measure what the game does: a server with 100
 players, each sent a 1 KiB state 30 times per second while it sends 5 small inputs per second;
@@ -5892,7 +6271,8 @@ reported with its number.
 
 **(n) The owner's decisions.**
 
-- **`ws-q1`, the API of (a)–(d).** *Recommended*: as written, which keeps §9.8.17's rule: the
+- **`ws-q1`, the API of (a)–(d).** *Decided 2026-10-21 as recommended* (the amendment of
+  2026-10-21, *the page and the server together*). *Recommended*: as written, which keeps §9.8.17's rule: the
   wrappers take Elm's names (`send`, `listen`), and the direct forms take other names (`read`,
   `write`, Effect's and the WHATWG `WebSocketStream`'s), so the names that a shared module uses
   are the same on both sides. *The other choice*: the direct forms take the host's names
@@ -6143,6 +6523,1038 @@ and (j) say, with these readings:
   costs what hand-written JavaScript costs. A click on the same page costs about 7.5 µs. The
   event's string reaches `update` as it is, with no copy. A constant state is cheaper, about 3.5
   µs, only because the view then has no text to write.
+
+### 9.12 The `cloudflare` platform: Workers and Durable Objects (2026-10-20)
+
+*Added 2026-10-20, for issue #526. Status: specified, not built. Three decisions are the owner's
+and are asked on the dashboard (`cf-workers-q1` to `q3`): the platform's name, the shape of a
+Durable Object in beni, and how the object classes reach the entry file. The text below assumes the
+recommended answer to each — `cloudflare`, direct handlers over an explicit state, a list in the
+app's manifest — and (l) records the answers as they come. *Every question is answered
+(2026-10-21)*: (e) and (f) are rewritten to the owner's design for the object (handlers that may
+suspend, one event at a time, one fiber runtime per object), (d) to his design for the Worker
+(q7: an ordinary handler with a scheduler and a scope per request), and the rest reads as decided. Every statement about the host cites
+Cloudflare's documentation as read on 2026-10-20; a statement marked* measured *was checked under
+`workerd` (version 1.20260518.1, the one nixpkgs' `wrangler` 4.93.0 bundles; a source line cites
+that tag), and one marked* owed *has not been. Amended 2026-10-20 after the review of this
+section (`cf-workers-review`, its H1–H6, M1–M12 and L1–L7): each amendment is marked* amended
+2026-10-20 *where it stands.*
+
+**(a) The host, in beni's terms.** A Worker is an ES module whose default export has a `fetch`
+handler, called once per request with the request, the bindings (`env`) and an execution context
+([the `fetch` handler](https://developers.cloudflare.com/workers/runtime-apis/handlers/fetch/)).
+Timers and `fetch` "are only available inside of the Request Context"
+([web standards](https://developers.cloudflare.com/workers/runtime-apis/web-standards/)), so what
+the entry file runs at module evaluation — `run(main)` — may start nothing: it builds the handler
+table and returns it. A Durable Object is a class the Worker's main module exports, named in the
+Wrangler configuration; one instance per id, and the host delivers its events — a request, a
+WebSocket message, a close, an error, an alarm — to one method each
+([the base class](https://developers.cloudflare.com/durable-objects/api/base/)), in series except
+where a method waits for I/O that is not storage ((e), *Order*; an alarm "can run concurrently with
+another request", the state page). "When hibernated,
+the in-memory state is discarded", and a hibernated object's WebSockets "stay connected"; the
+object hibernates "after 10 seconds of no incoming request or event" when no timer is set, no
+promise is pending and no request is in flight, and after 70 to 140 seconds of inactivity it is
+evicted; an incoming request or event while it is hibernated runs the `constructor()` again
+([lifecycle](https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/)).
+*Amended 2026-10-20 (M4):* what keeps an object from hibernating, by the same page, is a set
+timer, unfinished I/O or a promise given to `waitUntil`, an open outbound connection, a socket
+accepted with the standard `accept()` and its listeners, or an event in progress; a parked beni
+fiber is none of these, (g). A code deploy disconnects every WebSocket.
+A WebSocket accepted with `ctx.acceptWebSocket` is delivered to the class's `webSocketMessage`,
+`webSocketClose` and `webSocketError` methods and may hibernate; `serializeAttachment` keeps up to
+16 384 bytes with the socket across hibernation
+([WebSockets](https://developers.cloudflare.com/durable-objects/best-practices/websockets/),
+[`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)). An object schedules one
+alarm at a time, delivered to `alarm()` at least once, and retried on an uncaught exception
+([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)). A SQLite-backed object
+has a synchronous key-value store, `ctx.storage.kv`
+([storage](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)); its key and
+value together may hold 2 MB ([limits](https://developers.cloudflare.com/durable-objects/platform/limits/)).
+Each of these is one piece of the API below, and nothing else of the host is reached.
+
+**(b) The package.** `platforms/cloudflare/`, embedded like `node` (§5.3): a fifth platform in
+the binary, beside §9.1's four (*amended 2026-10-20, L5*; §5.1 and §9.1 carry a dated line each).
+Its manifest:
+
+```json
+{
+  "platform": true,
+  "name": "cloudflare",
+  "program": "Worker.Program",
+  "runtime": "runtime.js",
+  "entry": "_worker.mjs",
+  "exports": "program"
+}
+```
+
+It depends on no platform and declares no markup: a Worker that renders HTML wants the `ssr`
+lowering, which is (j)'s. Four modules, each the host's own words (`WebSocket`'s are §9.11's):
+
+| Module | Holds |
+|---|---|
+| `Worker` | the host types a Worker and an object share — `Program`, `Request`, `Response`, `Env`, `Context` (a request's), `Namespace msg`, `Ref msg`, `Service`, `Definition` — with `program`, the request and response operations, the bindings, `forward`, `callService` and their errors. It imports no module of the platform. *Amended 2026-10-21 (q7, q8): `Stub` became `Ref msg`; the object's `Context msg` moved to `Worker.Object`* |
+| `WebSocket` | the server WebSocket: the handle operations §9.11's amendment (item 1) shares, `id`, `tags`, the attachment. It imports `Worker` |
+| `Worker.Object` | `define`, `Context msg`, the handlers over `Worker.Definition`, `self`, `post`, `ask`, `reply`, `accept` and `autoReply` for sockets, `tick`, alarms, the attached sockets. It imports `Worker` and `WebSocket` |
+| `Worker.Storage` | the object's key-value store, through schemas. It imports `Worker` and `Worker.Object` |
+
+*Amended 2026-10-20 (H1); 2026-10-21 (q8).* The modules form no cycle (`fast-compiler.md` §3.1
+forbids one): `Worker` holds the shared host types and imports nothing; `WebSocket` imports
+`Worker` for `Request` and `Response` and knows no object; `Worker.Object` imports both, takes
+`WebSocket.Socket` and `WebSocket.Close` in its handlers, and holds `accept` and `autoReply`,
+which need its `Context msg`; `Worker.Storage` takes `Worker.Object.Context msg`.
+`Worker.Object.define` answers a `Worker.Definition`, the type `Worker.program`'s `objects` lists.
+
+`runtime.js` is the one file that defines a JavaScript class: the Durable Object classes the
+entry file exports, one per `Worker.Object.define`, each a subclass of `DurableObject` from
+`cloudflare:workers` whose methods hand every event to beni. Everything else is beni over `Js`
+and siblings of §4's shape. A sibling reaches `Response`, `WebSocketPair` and the other host
+globals that §5.1's common set does not list through `globalThis`, as `platforms/browser/Dom.js`
+reaches `document`; check 3 is lexical and that is the edge it makes visible.
+
+**(c) The entry file, and the `"exports"` output key** (a compiler change, the one §5.1's "not a
+compiler change" did not foresee: ES module exports are static, and a Durable Object class is found
+by its export name — `class_name` in the binding, and the key of the `exports` field, of the
+Wrangler configuration ([configuration](https://developers.cloudflare.com/workers/wrangler/configuration/#durable-objects)) —
+so the names must be known when the entry file is written). §5.2's amendment of this date adds the
+key; this is its whole contract.
+
+- **The platform manifest** declares `"exports": "program"`. Any other string, or a list, is
+  `unknown_exports_mode`, reported against the manifest at `1:1` with no excerpt, as
+  `invalid_entry_file` is; a value of another JSON type is the manifest's exit-2 failure, as any
+  key of the wrong JSON type is (*amended 2026-10-21, P599-5*). Inherited first-found down the
+  chain like every output key (§9.1).
+- **The app's `beni.json`** lists the names: `"exports": ["Arena"]` (`frontend.md` §10.1). Each
+  is an ASCII identifier name — letters, digits, `_` and `$`, not beginning with a digit; the
+  check is ASCII only because the name is printed into the entry file without escaping, as the
+  entry name's is — not `default`, not `flush`, and no name is listed twice (*amended 2026-10-21,
+  P599-1 and P599-3: the hoisted release file re-exports the runtime's `flush` when the build
+  keeps it, `backend.md` §15.11, and a module that exports one name twice does not load, measured
+  in Node 24 as `SyntaxError: Duplicate export of 'flush'`; the refusal is static, the same in
+  both builds, where a test of the runtime's exports would follow reachability and differ between
+  them; `stop` is not refused, because only a runtime module supplies it and this key refuses a
+  runtime module*); otherwise
+  `invalid_entry_export`, a diagnostic of the build reported during emit against the app's
+  manifest at `1:1`, naming the entry, as `invalid_entry_file` is (exit 1; a `"exports"` that is
+  not a list of strings is the manifest's exit-2 failure, as any key of the wrong JSON type is,
+  `frontend.md` §10.1). No reserved-word rule is needed (*amended 2026-10-20, M7*): a name is
+  written only as an export name, never as a binding. With the key absent, the list is empty. A
+  list on an app built for a chain that declares no `"exports"` does nothing, and a list that does
+  nothing is almost always a mistake, so it is the warning `exports_ignored` (rule 7), naming the
+  platform. Two `define`s of one name are `exports`'s to refuse at load, like a name defined by
+  none ((e)).
+- **The entry file** is, in a development build (being built in slice (b), with the fixture
+  `run/EntryExports` and a paragraph of `backend.md` §2),
+
+  ```js
+  // Generated by `beni build` (docs/design/boundary.md §5.2): the entry file
+  // the platform's output shape asks for.
+  import { run as $run } from "./_platform/runtime.foreign.mjs";
+  import { Main$main as $main } from "./Main.mjs";
+
+  const $beniProgram = $run($main);
+  export default $beniProgram.default;
+  const $beniExport0 = $beniProgram.exports("Arena");
+  export { $beniExport0 as Arena };
+  ```
+
+  *Amended 2026-10-20 (M7); 2026-10-21, the names.* The entry's own bindings begin with `$`,
+  which a listed name may hold too (*2026-10-21, P599-3: an export name is a namespace of its own
+  that no binding meets — measured in Node 24, a module that binds `$beniProgram` and writes
+  `export { $beniExport1 as $beniProgram }` loads*); `$beniProgram` and `$beniExport<N>` are longer than any short
+  name the release renamer spells (`src/js/Rename.zig`: eight characters at most, from an alphabet
+  that holds `$` and `_`, so a short `$p` is possible and `$beniProgram` is not), which matters in
+  the hoisted release file where they stand among short names, while `$run` and `$main` are safe
+  because the development entry file holds no short name at all; a listed name is written only in an
+  `export { … as Name }` clause, where any identifier name is legal — a reserved word included —
+  so no name can collide with `run`, `program`, `start`, `flush`, `stop`, the imported `main` or a
+  release build's short name (measured: `run`, `program` and `Main$main` as plain `export const`
+  names broke the file). The hoisted `--release` file writes the same bindings at its end.
+
+  and under `--release` the same statements with the header and the whitespace gone, `Main$main`
+  spelled as the exporting module spells it (§9 item 2 of `backend.md`). The names come in the
+  manifest's order, one `const` and one `export { … as Name }` each, so the file is a function of the program and the
+  manifest alone (rule 5). `--library` writes no entry file and ignores the list.
+- **What `run` returns** when the chain declares the key: an object with `default`, the value of
+  the default export, and `exports`, a function called once per listed name at load, whose answer
+  is that name's export. A name the program defines nothing for is `exports`'s to refuse: it throws
+  an `Error` whose message names the export and the manifest key, so the Worker fails to load with
+  that message rather than exporting `undefined` and failing in Wrangler's words. Without the key,
+  `run`'s result is not read, as today.
+
+**(d) `Worker`: the program and the request handler.**
+
+*Amended 2026-10-21, twice. First Jayson's answer to `cf-workers-q4` ((l)): a `sync` `fetch` that
+answers an `Answer` value the host runs — the form `respond | forward … (StubError → Response) |
+serve …`, whose constructors carried the `sync` mark in their signatures, since the marker is
+legal only in a top-level or `foreign` signature (§4; `src/parse/Parse.zig`). Then Cesar's
+answer to `cf-workers-q7` (12:17 UTC), **B, the final design, which replaces q4's form**: the
+Worker's `fetch` is an ordinary beni function, as an object's handlers are ((e.1)).*
+
+```elm
+module Worker   -- the one live declaration of the module (R6-1)
+
+pub foreign type Program
+pub program : { fetch : Context, Request → Response, objects : List Definition } → Program
+
+pub foreign type Context                 -- a request's: its bindings, its scope, `waitUntil`
+pub env : Context → Env
+pub foreign type Definition              -- a Durable Object class, made by `Worker.Object.define`
+pub foreign type Ref msg                 -- a typed reference to an object of protocol `msg`: `Object.self`, or one from a `Namespace msg` ((e.10))
+
+pub foreign type Request                 -- the host's `Request`, read through these
+pub method : Request → String            -- upper case, as the host gives it
+pub url : Request → String               -- the full URL as the host gives it: "https://h/arena/x/ws?k=v"
+pub path : Request → String              -- its `pathname`, "/arena/x/ws"
+pub header : Request, String → Maybe String    -- the header's value, the name in any case; the host joins repeats with ", "
+pub headers : Request → List (String × String) -- names lower-cased, sorted by name as the host keeps them; repeats joined with ", "
+-- A Worker's `fetch` reads no body in this slice ((j)): the stream is the host's, forwarded whole.
+
+pub opaque type Response
+pub text : Int, String → Response        -- `content-type: text/plain; charset=utf-8`
+pub html : Int, String → Response        -- `content-type: text/html; charset=utf-8`
+pub empty : Int → Response               -- no body
+pub withHeader : Response, String, String → Response   -- appended; a repeated name is written twice; an `x-beni-` name is an invalid response (R6-7)
+pub redirect : Request, String, Int → Response   -- `location`: the target resolved against the request's URL; 301, 302, 303, 307 or 308
+
+pub foreign type Env
+pub objects : Env, String, Schema e msg → Maybe (Namespace msg)   -- the Durable Object binding of that name, as objects of that protocol ((e.10))
+pub service : Env, String → Maybe Service      -- a service or assets binding: anything with `fetch`
+pub var : Env, String → Maybe String           -- a plain-text variable or secret
+
+pub foreign type Namespace msg
+pub byName : Namespace msg, String → Ref msg   -- `getByName`: the one object of that name
+pub unique : Namespace msg → Ref msg           -- `newUniqueId`, then `get`: a fresh object; its id is `refId`
+pub byId : Namespace msg, String → Result IdError (Ref msg)   -- `idFromString`: the id a `unique` ref reported through `refId`
+pub refId : Ref msg → String                   -- 64 hex digits
+pub refName : Ref msg → Maybe String           -- the name `byName` was given; `Nothing` otherwise
+
+pub type IdError = InvalidId                   -- the host's `TypeError`, "Invalid Durable Object ID"
+
+pub forward : Ref msg, Request → Result StubError Response        -- waits; the host's Response, body stream untouched
+pub type StubError
+    = Overloaded                               -- the error's `overloaded` is true: send fewer, or spread the load
+    | Reset                                    -- `durableObjectReset` is true: the host reset the object; the call may be made again
+    | Transient                                -- `retryable` is true and neither of the above: the connection, a shutdown; the call may be made again
+    | Cycle                                    -- the call's chain already holds a handler parked in the object called ((e.3)); the call is refused at once
+
+pub foreign type Service
+pub callService : Service, Request → Result ServiceError Response  -- waits; an assets or service binding
+pub type ServiceError = Unavailable            -- `retryable` is true: the call may be made again
+```
+
+- **`fetch` is an ordinary handler, and its effects are inferred.** It may wait — on `forward`,
+  `callService`, an `Object.ask` ((e.10)), `Task.sleep`, a `Task.join` — and a `fetch` that never
+  waits runs to its end inside the host's handler at the cost of a plain call. No marker.
+- **The form q4 took, as the record** (replaced by q7, above): a `sync` `fetch : Env, Request →
+  Answer`, where `Answer` was an opaque value built by `respond`, `forward` and `serve`, each
+  carrying a `sync` recovery (`StubError → Response`) in its top-level signature, since the
+  marker is legal only there; the runtime returned the host's promise itself and no fiber ran in
+  a Worker. It is prose here and no declaration, so the module is declared once.
+- **One scheduler and one scope per request.** Each request runs on its own scheduler
+  (`Task.withScheduler`, #596) and in its own scope, so a fiber never resumes in another request's
+  I/O context — the measured hazard below cannot arise — and a defect fails only its own request:
+  the throw leaves the request's drain, the host answers the client with 1101, the request's scope
+  is closed (its fibers cancelled, their finalisers run), and no other request is touched. **The
+  Worker slice therefore depends on #596** before it can be built.
+- **`forward ref request` waits** and returns the host's `Response` with its body stream
+  untouched, so the 101 of an upgrade and a streamed body pass through; it carries the chain id
+  ((e.3)) — a fresh one, after stripping any `x-beni-chain` the client sent. Its failures are
+  *What a stub's failure becomes* below. **Typed asks to an `Object.Ref msg` are ordinary waits**
+  ((e.10)), under the same cycle rule. *Two names differ from the owners' words (R6-6): the owners
+  wrote `Object.Ref msg`, and the type is `Worker.Ref msg`, because `Worker.forward` takes a ref
+  and `Worker` imports no other module of the platform (H1) — `Worker.Object` declares `pub type
+  alias Ref msg = Worker.Ref msg`, so `Object.Ref msg` names the same type (*R7-4*: importing a
+  type is not a re-export); and the owner wrote
+  `Worker.forward stub req`, where this text writes `ref`, because q8 replaced stubs with typed
+  refs.*
+- **Fibers that outlive the response** — spawned in the request's scope and still running when
+  `fetch` returns — run under `ctx.waitUntil`, with the host's 30-second cap after the response
+  ([context](https://developers.cloudflare.com/workers/runtime-apis/context/): work may run "for
+  up to 30 seconds after the response is sent or the client disconnects", and "if any Promises
+  have not settled after 30 seconds, they are canceled"): what they do is delivered at most once.
+  **The platform's deadline** (R6-3): the host says nothing of code after its cap, and
+  continuations of an ended request context are dropped, so the platform itself closes the
+  request's scope **5 seconds before the cap** — at 25 seconds after the response, a value #600's
+  measurement settles — with §9.8.14's teardown under the `cloudflare` platform's `deadline`,
+  1 000 ms, as `browser`'s (§9.8.14, choice 3) and `node`'s shutdown, and holds the teardown's
+  promise in the same `waitUntil`; a finaliser therefore runs if it finishes within that
+  deadline, and a fiber the platform
+  cancels there has its finalisers run before the host's cap (*wording, 2026-10-21, R7-6*). That the host honours the held teardown is a fact to
+  establish (#600, (k)).
+- **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
+  to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
+  starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
+  … the client disconnects" — under the same `deadline`. That the hold works after an
+  abort is #600's second half.
+
+The example of (i) becomes:
+
+```elm
+route : Worker.Context, Request → Response
+route ctx request =
+    case ( Worker.objects (Worker.env ctx) "ARENAS" arenaMessage, arenaOf (Worker.path request) ) of
+        ( Just arenas, Just name ) →
+            case Worker.forward (Worker.byName arenas name) request of
+                Ok response → response
+                Err _ → Worker.text 503 "the arena is not available"
+
+        _ →
+            Worker.text 404 "no such page"
+```
+
+*The bullets below are the record of the first text and its amendments; where one disagrees
+with the block above, the block holds.*
+
+- **`fetch` runs in a fiber of its own per request** *(the record; (d)'s amendment above says how,
+  with a scheduler and a scope per request)*, started with `Task.start` from the host's
+  `fetch` handler, which returns a promise resolved with the `Response` the fiber ends with. The
+    handler may suspend: `forward`, `callService` and `Task.sleep` park it.
+  The host may cancel the request's tasks when the client disconnects or the response is complete
+  ([limits](https://developers.cloudflare.com/workers/platform/limits/)); the fiber is not told, and
+  ends `Done` or not at all. A fiber that throws is a defect: the promise rejects with the throw,
+  and the host answers the client with its error 1101 "Worker threw a JavaScript exception"
+  ([errors](https://developers.cloudflare.com/workers/observability/errors/)). *Amended 2026-10-20
+  (H6):* that is not the end of it. A throw out of core's drain moves the scheduler to its stopped
+  phase (`core/Task.beni`, §9.8.14 (b)), after which every fiber started later is cancelled before
+  it runs; and one isolate serves many requests and every Durable Object of the Worker. So under
+  this form one defect in one request ends every later request of the isolate with `Cancelled`,
+    which the runtime would have to answer — a 500 — until the host makes a new isolate. The
+  per-request scheduler of (d)'s amendment (q7, #596) confines the stop to the one request.
+- **A fiber resumes in the request context it belongs to — and today it would not** (*measured
+  2026-10-20 under workerd, Miniflare 4.20260518.0; the probe becomes a fixture of the first code
+  slice, (k)*). The host refuses to
+  perform I/O "on behalf of a different request"
+  ([errors](https://developers.cloudflare.com/workers/observability/errors/)): an object the host
+  owns — a `Request`, a `Response`, a stub, a socket — may be used only while its request's
+  handler, or a continuation of it, runs. Core's scheduler drains every ready fiber in one
+  microtask (`core/Task.beni`), so a fiber woken by request A's reply can run in the microtask
+  request B's reply queued. Measured: a continuation of request B run from A's microtask could
+  not read B's body, and could not build a `new Response` at all; resolving B's own promise from
+  A's microtask with a `Response` built in B worked, and a promise made in B and resolved from A
+  ran its `.then` in B's context (the host's `handle_cross_request_promise_resolution`). So the
+  hazard is real, and a per-request trampoline through a promise is a way out. **Decided**: q4 took
+  the `sync` form, and q7 replaced it with fibers per request through the `scheduler` slot
+  (`Task.withScheduler`, #596), as (d)'s amendment says; the probe becomes a fixture of the Worker
+  slice.
+- **A `Response` is the host's object**, built when the constructor is called, and a 101 answer
+  carries the host's `webSocket` — the one value that cannot be plain data, which is why `Response`
+  is opaque where `Http.Server`'s is a record (§9.10). `Request` is opaque for the same reason: the
+  object the Worker forwards to a stub must be the one the host made, body stream and `Upgrade`
+  header included.
+- **A `Response` is validated in beni before the host is called** (*amended 2026-10-20, H4; it
+  used to say the host checks the status*). The constructors take any `Int` and `String`, and the
+  host throws on ordinary values (measured, workerd v1.20260518.1): a `TypeError` for a relative
+  redirect target ("Unable to parse URL: /login"), for a header name that is not a token, for a
+  header value with a control character, and for a body on 204, 205 or 304; a `RangeError` for a
+  status outside 200 to 599; and `Response.redirect`'s headers are immutable, so `withHeader` on
+  one would throw. So the platform builds every response with `new Response(body, { status,
+  headers })` and checks first, as §9.10 (d) does on `node`: the status is an integer from 200 to
+  599; 204, 205 and 304 take an empty body; a header name is a token and a value holds no CR, LF
+  or NUL; and `redirect`'s target is resolved against the request's URL in beni (`new URL(target,
+  base)`, whose `TypeError` is caught from that call alone and is the fault). **An invalid
+  response is a 500 with an empty body and no header of the program's, and one `console.error`
+  line names the fault**, in both builds; it is not a defect, for §9.10 (d)'s reason. `withHeader`
+  appends to a response the platform built, so nothing is immutable.
+- **The log** keeps core's default sink, the console method of each level: the host's logs collect
+  what `console` writes. `node`'s `logfmt` line on standard error has no equivalent here.
+- **Bindings are read by name and answer `Maybe`**: a binding the configuration does not declare
+  is `undefined` on `env`, which is not an error the host throws but a mismatch between two files
+  the program's author owns, so it is a value the program decides about — a 500, say — and never a
+  crash. `objects`, `service` and `var` read `env[name]` and test its shape. *Amended 2026-10-20
+  (M11):* a service binding and a stub answer every property name since the compatibility date
+  2024-04-03 (the host's wildcard properties), so a namespace is told apart by what it lacks: an
+  object whose `idFromName` is a function and whose `fetch` is `undefined`; a service is an object
+  whose `fetch` is a function; a variable is a string.
+- **What a stub's failure becomes** (*amended 2026-10-20, M3; 2026-10-21, R5-5: `Cycle`*). The texts the documentation
+  quotes ("Durable Object is overloaded", "Network connection lost", …) are the edge's, and workerd
+  carries none of them; what both set are four properties of the error, `overloaded`,
+  `retryable`, `remote` and `durableObjectReset` (workerd v1.20260518.1, `src/workerd/jsg/util.c++`).
+    `forward` and `callService` sort by them, in this order:
+  first a **refused cycle** ((e.3)), which is not an error of the host but an answer the refusing
+    object wrote — status `508 Loop Detected` (RFC 5842) with the header `x-beni-cycle: 1` — and
+  which `forward` and `ask` recognise by that status and that header together and answer `Err Cycle`
+  (nothing is caught: it is a `Response` read by its fields; a 508 a program wrote itself has no
+  such header, because `withHeader` refuses every name that begins with `x-beni-` in any case
+  (`X-Beni-Cycle` sets the same header, R7-5) as an invalid response — a 500 and a `console.error` line, (d)'s validation rule — and the Worker strips
+  `x-beni-chain` on entry, so the `x-beni-` names are the platform's alone, R6-7); then
+  `overloaded` is `Overloaded`; `durableObjectReset` is `Reset`; `retryable`
+  is `Transient`; **anything else is thrown again**:
+  an application error of the object — the object's own throw, which reaches the stub's caller
+  unchanged with `remote` true and no `durableObjectReset`, since (f)'s abort comes after it
+  (*amended 2026-10-21, R2-1*), so the Worker's request is a defect too — CPU or memory exceeded,
+  an internal error. After a stub has failed, the host asks that it be made again; a
+  program calls `byName` again for the next request, which it does by writing `route` as (i)
+  shows.
+
+**(e) `Worker.Object`: a Durable Object.** *Rewritten 2026-10-21 to the owner's design for
+`cf-workers-q2` and `q5` (Cesar Canassa, on PR #533; (l)), which replaces the 2026-10-20 text and
+its amendments: handlers that may suspend, run one event at a time, over one fiber runtime per
+object.* An object is a name, a function that restores its state, and the handlers it answers
+events with.
+
+**(e.1) Handlers are ordinary beni functions, and their effects are inferred.** A handler carries
+no `sync` marker, as transparent effects require (no surface syntax); the marker is legal only in
+a top-level or `foreign` signature, and inside a `type alias` it would be a type variable named
+`sync` (the defect of the 2026-10-20 text; `src/parse/Parse.zig:187-193`, `:1976-1982`). A
+handler that never waits runs to its end inside the host's method, at the cost of a plain call; a
+handler that waits runs as a fiber. The program's text is the same either way.
+
+```elm
+module Worker.Object
+
+-- `Definition` and `Ref msg` are `Worker`'s (b); this module imports `Worker` (qualified for `Ref`:
+-- `import Worker exposing (Ref)` plus the alias is `shadows_import`, measured, R8-3) and names the ref:
+pub type alias Ref msg = Worker.Ref msg  -- the same type, named here (R7-4: an import is no re-export)
+
+
+-- *Amended 2026-10-21 (q8, (e.10)): `define` takes the protocol's schema, `Context msg` carries the
+-- protocol, and the owner's `send` is `post` on a `Ref msg`. `Context msg` is this module's,
+-- `Worker.Context` the request's (d).*
+pub foreign type Context msg             -- an object of protocol `msg`: its id, storage, sockets, alarm, timer and mailbox
+pub define : String, Schema e msg, (Context msg → state), Handlers state msg → Worker.Definition
+
+
+pub type alias Handlers state msg =
+    { request : Context msg, state, Request → state × Response
+    , message : Context msg, state, Socket, String → state
+    , closed : Context msg, state, Socket, Close → state      -- `Close` is `WebSocket.Close`, §9.11 (a)
+    , failed : Context msg, state, Socket, String → state
+    , alarm : Context msg, state → state
+    , received : Context msg, state, msg → state              -- every message, from this object or another, (e.10)
+    , tick : state → Maybe Duration                           -- reads the state; it may not wait, (e.5)
+    , ticked : Context msg, state → state
+    }
+
+pub none : Handlers state msg            -- every handler leaves the state as it is; `request` answers 404; `tick` is `Nothing`
+
+pub foreign type Reply a                 -- the one-shot reply channel an `ask` carries, (e.10)
+pub self : Context msg → Ref msg         -- this object's own typed reference, (e.10)
+pub post : Ref msg, msg → ⊤              -- fire-and-forget, (e.10)
+pub ask : Ref msg, Schema e a, (Reply a → msg) → Result AskError a   -- post and wait for the reply, (e.10)
+pub reply : Reply a, a → ⊤               -- answer an `ask`, once, from `received` or a fiber it spawned (e.10)
+pub body : Request → String              -- the whole body as UTF-8 text, read by the platform before `request` runs; "" when there is none
+pub id : Context msg → String            -- `ctx.id.toString()`
+pub name : Context msg → Maybe String    -- `ctx.id.name`, when the object was reached by name; `Nothing` in an alarm's retried instance (measured), so `restore` never depends on it
+pub sockets : Context msg → List Socket  -- every accepted socket still open, `ctx.getWebSockets()`
+pub socketsTagged : Context msg, String → List Socket
+
+pub alarmAt : Context msg, Int → ⊤       -- `setAlarm(ms since the epoch)`; replaces the one set
+pub alarmIn : Context msg, Duration → ⊤  -- `alarmAt` of `Clock.now ⊤` plus the duration
+pub cancelAlarm : Context msg → ⊤        -- `deleteAlarm`
+
+-- The socket operations that need the object ((g) has their meaning):
+pub accept : Context msg, Request, List String → Result AcceptError (Socket × Response)
+pub acceptWith : Context msg, Request, { protocol : Maybe String, tags : List String } → Result AcceptError (Socket × Response)
+pub autoReply : Context msg, String, String → ⊤   -- `setWebSocketAutoResponse`: answered without waking the object
+```
+
+The program is written as `Worker.program`'s `objects` entry:
+
+```elm
+arena : Worker.Definition
+arena =
+    Object.define "Arena" arenaMessage restore
+        { Object.none
+            | request = join
+            , message = input
+            , closed = leave
+            , received = scored
+            , tick = λstate → if List.isEmpty state.players then Nothing else Just (Duration.millis 50)
+            , ticked = step
+        }
+```
+
+- **The name** is the class the entry file exports — `"Arena"` must be in the app's `"exports"`
+  list, and `exports("Arena")` of (c) answers this definition's class. A name listed and not
+  defined fails the load as (c) says; a name defined and not listed is a definition no export
+  reaches, which the host never instantiates, and `run` reports nothing: the configuration is the
+  author's, and (i)'s table says what to write.
+- **`restore` runs before the first event of each start.** The host runs the constructor on
+  creation, on every wake from hibernation and after every eviction or restart, and the in-memory
+  state is gone each time ((a)). The platform calls `restore ctx` once per instance, as the first
+  work of the first event — `restore` may wait, as a handler may, and the first event waits behind
+  it — and holds the state it returns; a program rebuilds it from `Storage` and from `sockets` with
+  their attachments. Nothing else of the previous life is visible, (e.6).
+- **The state is the platform's to hold** between events; a handler is handed it and returns it.
+  Nothing a handler returns is written anywhere by itself: what must survive a restart goes through
+  `Storage`, incrementally, as the host recommends (no shutdown hook exists).
+- **`send`'s message type** (*R5-1*) was that, as the owner first wrote it, `Context` carried no
+  type parameter, so `msg` was free at each call. The owner settled it the same day
+  (`cf-workers-q8`, (e.10)): `Context msg` carries the protocol, and a message travels only
+  through a `Ref msg`.
+- **`define`'s shape** (*R5-6*): the owner's signature — `restore` positional, `Handlers` an alias
+  — is what slice (b) builds. The ownership row of (e.7) does not need another shape: the checker
+  change that q5 asks for gives `restore` the `init` role by its position and the alias's fields
+  their roles by name, reading through the alias, so the owner's signature stands. If the checker
+  cannot read through the alias, the question goes back to the owner with the alternative,
+  `define` over one record written out.
+
+**(e.2) One event at a time, with the state passed from one to the next.** Every event of an
+object goes into **one mailbox**: a request, a socket message, a close, an error, an alarm, a
+tick, an own message. A handler takes the state, may wait, and returns the new state; **the next
+event starts only after it returns**. Within a handler there is no interleaving and no lost
+update, and waiting on another service before answering is written top to bottom:
+
+```elm
+join ctx state request =
+    case Auth.check (Object.body request) of    -- waits; the object's other events queue
+        Ok player →
+            case WebSocket.accept ctx request [ player.id ] of
+                Ok ( socket, response ) → ( addPlayer state player socket, response )
+                Err _ → ( state, Worker.text 400 "not a WebSocket upgrade" )
+
+        Err _ →
+            ( state, Worker.empty 401 )
+```
+
+The host delivers an object's methods in series and interleaves them only where one waits for
+I/O that is not storage ((a); measured, M6); the mailbox is what turns that into one handler at a
+time, whatever the host interleaves: the class's `fetch` reads a request's body, then puts the
+event in the mailbox, and the mailbox's one consumer runs the handlers in the order the events
+became ready. What a program observes depends on the events and the state, never on a host
+timer's resolution — a fixture drives time as (k) says.
+
+**(e.3) A cycle between objects is a typed error, not a deadlock.** A strict mailbox deadlocks
+when A calls B and B calls A back, as Orleans and Restate both document. The platform's stub
+wrapper carries a **call-chain id** on every call between objects: the header `x-beni-chain` on
+`stub.fetch`, and the same id through an RPC stub when RPC comes ((j)). The id is unguessable
+(`crypto.randomUUID()`); a Worker's `forward` strips any `x-beni-chain` a client sent and starts
+a fresh chain, and an object's `forward` or `ask` passes its current chain on; a fiber inherits the
+chain of the handler that spawned it and keeps it after that handler returned (*amended 2026-10-21,
+R7-3*: safe, because once the handler has returned no handler with that chain is parked, so no
+false `Cycle` occurs). An incoming event — a `forward`, an `ask` — whose chain
+holds a handler already parked in this object is refused at once: the object answers `508 Loop
+Detected` with `x-beni-cycle: 1` and runs no handler, and the caller's `forward` or `ask` answers `Err Cycle`
+((d)'s sorting); nothing hangs, and nothing is caught broadly (rule 9). That the id travels
+through both kinds of stub is a fact to establish (#594, (k)).
+
+**(e.4) Work that must not hold the object: spawn, then send.** To keep serving while slow work
+runs — so that an upstream call does not freeze the ticks — a handler spawns the work and sends
+the object its result, which arrives as an event of `received` in the mailbox's order: Akka's
+`pipeToSelf`, LiveView's `start_async`.
+
+```elm
+input ctx state socket text =
+    _ = Task.spawn λ⊤ → Object.post (Object.self ctx) (Scored socket (Leaderboard.submit text))
+    state
+```
+
+Holding the object or spawning is the program's choice, and both are safe (rule 7). A `post` to
+`self` from outside a handler — from a spawned fiber, as here — queues the message; one from
+inside a handler queues it behind the events already waiting ((e.10)).
+
+**(e.5) Each object gets its own fiber runtime.**
+
+- **Its own scheduler.** Every object instance gets its own scheduler through the `scheduler`
+  fiber slot `transparent-effects-proposal.md` §17.5 reserves (`Task.withScheduler`, a change to
+  `core/Task.beni`: #596, coordinated with #358 and #550). All events of one object share one
+  IoContext in workerd (`src/workerd/io/io-context.h`, `io-context.c++:657-660`), so I/O across
+  requests is not a hazard inside an object; objects that share an isolate refuse each other's
+  I/O — "Cannot perform I/O on behalf of a different Durable Object" (`io-context.c++:1539-1546`)
+  — and core's single drain per isolate is what would cross that line. A per-object scheduler
+  also confines a defect to its own object ((f); H6). That two objects in one isolate stay
+  isolated is a fact to establish (#595, (k)).
+- **Its own scope.** It is opened when the instance starts, and every handler that waits and
+  every spawned fiber lives in it. A handler that never waits lives in no fiber.
+- **A live fiber keeps the object in memory**, as a set timer does: while the scope has a live
+  fiber, the platform holds a host timer. Hibernation happens only when the mailbox is empty and
+  the scope has no live fiber, so it never strands a parked fiber. That the timer prevents
+  hibernation reliably is a fact to establish (#593, (k)).
+- **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
+  `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
+  marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
+  record's `tick` — the checker's answer for that field's function — and a `tick` that may
+  suspend is a defect at load, naming the object. Whether `Js.maySuspend` answers for a field of
+  a record argument, or conservatively, is *owed* (a probe before slice (c)); if it is
+  conservative, the compile-time form is `tick` in `define`'s own signature as `sync (state →
+  Maybe Duration)`, which changes the owner's signature and goes back to him (R5-6). `Just d` keeps one host timer of `d` armed — re-armed
+  from the moment it fires, the same `d` not re-arming it — and `ticked` is an event of the
+  mailbox; a different `d` re-arms from now; `Nothing` clears it. A set timer keeps the object
+  from hibernating ((a)), which is what an active arena wants, and `Nothing` is how the program
+  lets it sleep: "the game will stop its tick when the arena is idle" (#526). A timer keeps the
+  object from **eviction** only from the compatibility date 2026-10-01, for up to 15 minutes per
+  timer (the changelog of that date), and a timer does not reset the object's CPU allowance,
+  which each request or WebSocket message resets to 30 seconds; whether a hibernatable socket
+  counts as a connected client in that rule's sense is *owed* (no page says it). After an
+  eviction or a restart there is no timer until an event arrives; the alarm is the durable timer.
+- **A defect closes the scope, then aborts** ((f)).
+- **Eviction is a process kill.** A deploy, a reset and the 15-minute cap on pending operations
+  kill the instance with no code run, as SIGKILL does on Node. The guarantees hold while the
+  instance lives.
+
+**(e.6) What survives what.**
+
+| | Hibernation | Eviction, or a defect |
+|---|---|---|
+| the state | rebuilt by `restore` | rebuilt by `restore` |
+| sockets and their attachments | yes | yes, except after `abort` (1006, (f)) and after a deploy, which disconnects them all |
+| fibers in flight, own messages | cannot happen while they are live ((e.5)) | lost; delivery of an own message is **at most once** |
+| storage and the alarm | yes | writes flushed before the defect, yes; the failing event's own writes are discarded with the abort (measured) |
+
+Durable work follows one pattern: write the intent to `Storage`, then finish it in `restore` or
+in `alarm`. *The table corrects the owner's in two cells (R5-7): sockets do not survive an
+`abort` or a deploy, and storage keeps only what was flushed before a defect.*
+
+**(e.7) The ownership row** (`cf-workers-q5`, decided 2026-10-21: *owned, like `update`*). The
+state passed between handlers has the row §9.12 proposed: `restore` is like `init`, its result
+owned by the platform; each handler is like `update`: the state it is handed is owned, so a
+handler may edit a list of the state in place, and the state it returns is owned by the
+platform; `tick` is like `view`: it borrows the state and edits nothing; a `Response` and every
+socket are escaped values. A spawned fiber's closure that captures the state makes that value
+escape, so an in-place edit after the spawn is refused and the error offers `List.copy`. The
+runtime keeps P1–P4 and P7 by holding one state at a time: after a handler returns, nothing of
+the runtime reads the state it was handed, the timer's closure included. The row needs new field
+roles in the ownership checker, which reads them through the `Handlers` alias and gives the
+positional `restore` the `init` role, so the owner's `define` signature stands ((e.1), R5-6;
+`ownership-checker.md` §30.3 gains the rows); until that lands, an in-place edit in a handler is
+`pending` and `List.copy` is the way round it.
+
+**(e.9) What a handler waits on, in this slice** (*R5-2*). An object's handler may park on:
+`Object.ask` ((e.10)) and `Worker.forward ref request` ((d)), which carry the
+call-chain id ((e.3));
+`Worker.callService service request`; `Task.sleep`; `Task.join` of a fiber it or an earlier
+handler spawned; and nothing else — an upstream `fetch` is (j)'s, and a body read happens before
+the handler ((e.2)). Every wait keeps the object awake ((e.5)).
+
+**(e.10) Messages from anywhere: the protocol, refs, `post` and `ask`** (*added 2026-10-21, the
+owner's answer to `cf-workers-q8`; (l)*). The object's message type is its **protocol**, typed
+from anywhere: `define` takes it with a schema for it, `Context msg` carries it, and a reference
+to an object is typed by it.
+
+```elm
+-- The typed reach to an object is `Worker`'s: `objects env name schema`, `byName`, `unique`,
+-- `byId`, `refId`, `refName` ((d)). `self`, `post`, `ask`, `reply` are `Worker.Object`'s (e.1).
+
+pub replySchema : Schema e a → Schema String (Reply a)   -- a `Reply a` on the wire is a correlation id; the argument is the reply's own schema, kept for `reply` (R6-2, R7-2)
+
+pub type AskError
+    = Overloaded | Reset | Transient | Cycle   -- the host's, as `StubError` sorts them ((d))
+    | NoReply                                  -- the `received` call that got the `Reply` returned, every fiber it spawned ended, and no message to `self` carries it (e.10)
+    | Unprintable (List Schema.Issue)          -- the message does not print by the protocol's schema
+    | Unreadable (List Schema.Issue)           -- the reply does not parse by the asker's schema, or the message did not parse by the receiver's (its 422, (e.10))
+```
+
+- **`received` is the one entry point for messages**, from this object or from any other;
+  `request` stays for HTTP — upgrades, browsers, a Worker's `forward` of a client's request. A message from another
+  object arrives as the protocol's value, parsed by the schema, in the mailbox's order ((e.2)).
+- **A ref is typed by the protocol.** `self ctx` is this object's; a Worker or another object gets
+  one from a `Namespace msg`, which `objects` makes from the binding and the protocol's schema
+  — the same schema `define` took, so the type is the program's claim and the schema is what
+  checks it on the wire. A name or an id reaches the object as before. A ref of the wrong
+  protocol is a program error the schema finds: a message that does not parse at the receiver is
+  refused (below), never delivered as another type.
+- **`post` is fire-and-forget.** To `self`, the message goes straight into the mailbox and is
+  delivered exactly once, in order with the events before it, while the instance lives ((e.6)).
+  To another object, the platform prints the message by the schema and sends it through the
+  ref's `stub.fetch` with the chain id ((e.3)); `post` waits for nothing and answers nothing.
+  Across isolates — and the platform cannot tell whether the other object shares the isolate, so
+  for every ref but `self` — the message is encoded through the schema; a value that does not
+  print is dropped and one `Log.warn` line names it, since a `post` has no result to carry it.
+- **`ask` posts and waits for the reply**, like any other host I/O: the message carries a `Reply
+  a`, the receiver answers through `reply`, once, and the asking handler parks until the reply
+  comes back. **How a `Reply a` crosses the wire** (R6-2): the protocol's schema places it with
+  `replySchema aSchema`, so the receiver's schema knows the reply's shape; on the wire a `Reply a`
+  is a correlation id, and when the receiver calls `reply handle value` the platform prints
+  `value` with the schema `replySchema` captured as it parsed the message, and answers the asker's
+  waiting request with it. `ask`'s own `Schema e a` is the asker's side of the same shape: it
+  parses the reply back, and a mismatch between the two is the program's claim the schemas find
+  (`Unreadable`). **A reply may come later**: `received` may reply before it returns, or hand the
+  `Reply` to a fiber it spawns ((e.4)) which replies when its work is done; the asker waits until
+  the reply, until the asked instance ends (the host's error, as (d) sorts it), or until its own
+  `Task.timeout`. `NoReply` is answered when nothing can reply any more, a condition the platform
+  checks (*amended 2026-10-21, R8-2*): the `received` call that got the `Reply` has returned
+  without replying, every fiber that call spawned — directly, or through its fibers — has ended,
+  and no message posted to `self` by that call or those fibers still waits to run (a `Reply` in
+  such a message is not printed, so the `Unprintable` rule does not reach it; the queued message
+  holds the `Reply` until its own `received` returns, which lets a `Reply` pass within the object).
+  The platform tracks that set of fibers and messages; it cannot see which fiber captured a
+  `Reply`, so a test over the whole scope was not checkable. **An `ask` to `self` from a handler is `Err Cycle` at once**: the message
+  would wait in the mailbox behind the asking handler, so no stub and no chain is consulted. It
+  is subject to (e.3)'s cycle rule across objects, and every failure is a typed result: the host's
+  four ((d)'s sorting), `NoReply`, and the two schema failures. A second `reply` on the same
+  `Reply` is ignored; a `Reply` is one-shot. *Amended 2026-10-21 (R7-1; a choice the owners can
+  overturn, taken because q8 says "nothing hangs"): a `Reply` is valid only in the instance that
+  parsed it, and only while the `received` call that got it, a fiber that call spawned (directly
+  or through its fibers), or a message those posted to `self` can still reach it — the holders
+  the `NoReply` rule above counts. A `Reply` kept in the state is held by none of them, so the
+  asker gets `NoReply` as soon as the last of them ends, and a
+  `reply` that comes after `NoReply` was answered — from a later handler, or through a `Reply` kept
+  in the state — is not dropped in silence: the platform writes one `Log.warn` line naming the
+  object and the message. Printing a `Reply` into a message for any ref but `self` is
+  `Unprintable`: the correlation id names a request pending in this instance alone, and at another
+  object its `reply` would reach no one. The lobby that holds an asker until a second player comes
+  spawns a fiber from `received` that waits for the match and then replies ((e.4)); it does not
+  keep the `Reply` in the state. The other way — an ask that stays open until the reply or the end
+  of the instance — left an asker with no `Task.timeout` waiting on a dropped `Reply`. One shape
+  the self-cycle rule does not reach (R7-3): a handler that joins a fiber it spawned while that
+  fiber `ask`s `self` — the fiber's message waits behind the handler, and the handler waits for the
+  fiber. It is a hazard, bounded by `Task.timeout` on the join or on the ask, as (e.5)'s owed
+  checks are.*
+- **Delivery across objects is at most once.** The host confirms nothing beyond its own errors:
+  a `post` the host could not deliver — overloaded, reset, connection lost — is lost, and the
+  sender is not told; a program that must know asks instead, and gets the host's error as a typed
+  `Err`. Within the receiving object a delivered message runs `received` once, under the
+  mailbox's order; a receiver that is evicted mid-handler loses it ((e.6)'s table). Durable work
+  therefore follows (e.6)'s pattern: write the intent to `Storage`, then finish it in `restore`
+  or `alarm`, with the message as the trigger and never as the record.
+- **Refused messages.** A message that does not parse by the receiver's schema — a ref of the
+  wrong protocol, an older deploy's shape —   is answered with `422 Unprocessable Content` and the
+  header `x-beni-message: unparsed`, which the sender's `ask` reads as `Err (Unreadable issues)`
+  for its own reply and the platform logs for a `post`; `received` does not run. The header is
+  the platform's alone, as every `x-beni-` name is ((d)'s `withHeader`). Nothing is
+  caught (rule 9): the refusal is a response read by its fields, as the cycle's is.
+
+**(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
+state, msg → state × Cmd msg` — sits over `post` and spawn, as §9.8.11 puts TEA over a direct
+form. It is optional, adds no capability, and is a later slice ((j)).
+
+**(f) A defect closes the object's scope, then aborts** (rule 9; `transparent-effects-proposal.md`
+§16.5; the owner's decision 1 of #331 and his design for `cf-workers-q2`, (e.5)). *Rewritten
+2026-10-21 with (e).* A throw in a handler, in `restore`, in `ticked` or in a sibling is a defect.
+Nothing catches it: it leaves the fiber's drain, or the host's method when the handler ran in
+none, and reaches the host as the uncaught exception it is, with its message and its stack —
+measured: the stub's caller sees the original error with `remote` true and no
+`durableObjectReset`. On its way out the platform's hook for the object's scheduler (the
+per-object form of core's `onDefect`, #596) **closes the object's scope**: every fiber of it is
+cancelled and its finalisers and `Task.bracket` releases run without interruption, as §9.8.14's
+teardown runs them, under its deadline; **then it aborts the instance** with `ctx.abort(…)` and a
+fixed reason — `ctx.abort` does not return (workerd terminates the running JavaScript,
+`src/workerd/api/actor-state.c++:1133-1153`), which is why it comes last, after the teardown, and
+why the reason is fixed: an abort called before the throw has left would replace the defect with
+its own message (measured). From the throw to the abort no handler runs: the mailbox is stopped
+with the scope. `ctx.abort(message)` resets the Durable Object at once and the host logs an
+`Error` with the message ([`ctx`](https://developers.cloudflare.com/durable-objects/api/state/)):
+in-flight requests fail, (d)'s `forward` throws the object's error again as "anything else", so
+the Worker's request is a defect too, every attached socket is closed (measured: the client sees
+1006 with no reason, `wasClean` false), and the next event starts a new instance whose `restore`
+runs. **Every defect closes the scope, whether or not the throwing handler ran in a fiber** (R5-3):
+the scope may hold fibers that earlier handlers spawned ((e.4)), each with its finalisers, so a
+throw from a handler that never waited queues the same teardown and then the abort, on a timer of
+zero so that the throw leaves first.
+
+**A defect in `alarm` is retried by the host.** The host retries an alarm whose handler threw
+"using exponential backoff, starting at 2 second delays for up to 6 retries"
+([alarms](https://developers.cloudflare.com/durable-objects/api/alarms/)). In production the
+abort passes `{ retryAlarm: false }`, whose options "accept `retryAlarm` (boolean, default
+`true`)" (the state page; the changelog of 2026-08-25), so a defect is not retried as a transient
+failure would be. workerd v1.20260518.1 has `abort(reason)` alone and ignores the option, and
+nothing durable can stop the retry there — `abort` discards every write, a `deleteAlarm()`
+before it included (measured: with and without the delete, `alarm` ran again about 2 s later,
+`isRetry` true, on a fresh instance after `restore`, with `ctx.id.name` undefined). So under
+(k)'s pinned tools a defect in `alarm` is retried up to 6 times on fresh instances, each after
+`restore`, and the fixture expects that; the production rule is *owed* to a newer runtime in the
+shell. A defect in the Worker's `fetch` is (d)'s: the request fails with 1101 and the Worker goes
+on.
+
+**(g) `WebSocket`: the server WebSocket, with hibernation.** The shape is §9.11's (the `ws`
+worker's spec for the page and the `node` server) **where the host lets it be**: this platform's
+module is also named `WebSocket`, and it declares the *handle operations* that §9.11's amendment
+of 2026-10-20 shares (its item 1) — `Socket`, `eq`, `Close`, `CloseError` (with this host's set
+of codes a server may send, item 3), `WriteError`, `write`, `close`, `protocol` — with the same
+names, types and meaning, and an object answers an upgrade as §9.11 (e) does, with
+`Object.accept` or a refusing response. Nothing of those is defined a second time here. **It does not declare `read`,
+`buffered` or `drain`** — the *reading style* is the platform's (item 1), and `buffered` and
+`drain` are not shared (item 2) — and no protocol module may need them to check here; the review
+of #531 found why, and this section follows it:
+
+- **The reading style is per event, not a pull** (the owner's `ws-q3`, 2026-10-21: *each host
+  style* — `node` keeps the pull `read` session, Cloudflare uses event handlers so an object can
+  hibernate; (l)). §9.11 (a)'s `read` parks the fiber that waits
+  for the next message, and §9.11 (e)'s `accept session` runs the session in a fiber for as long
+  as the connection lives. Under hibernation an object's memory is discarded ((a) above), and
+  only the connection, its tags and an attachment of at most 16 384 bytes survive; a parked fiber
+  would either keep the object in memory — no hibernation — or be lost. The host's own shape is
+  one handler per event, `webSocketMessage`, `webSocketClose`, `webSocketError`, and that is (e)'s
+  `message`, `closed` and `failed`. So `read` is not declared: a `sync` handler could not call it,
+  and a fiber that called it would not survive hibernation. A handler may wait ((e.1)), but a
+  fiber of the object's scope keeps the object awake ((e.5)), so a program that parked on a socket
+  would give up hibernation; the per-event form keeps it.
+- **There is no back-pressure signal.** The host's `WebSocket` has no `bufferedAmount`
+  (*measured*, `undefined`), and `send` inserts each message into an unbounded `outgoingMessages` map with no size check
+  (workerd v1.20260518.1, `src/workerd/api/web-socket.c++:617-618`), so neither `buffered` nor
+  `drain` can be implemented; answering 0
+  would be a silent wrong answer. A program bounds its own rate: the arena sends one state per
+  tick per player and no more, and the host's advice is fewer, larger frames.
+- **The upgrade is answered by the `request` handler**, not by a second handler: it returns the
+    `Response` that `Object.accept` makes (§9.11 (e)'s `accept`, with the handlers of (e) as the
+  session), or any other response (its `refuse response`). The host routes every request the Worker
+  forwards to the one `fetch` of the class, so there is no `listenWith` to split them. A
+  subprotocol is a header of the 101 response on this host, so a form like §9.11 (e)'s `acceptWith
+  { protocol }` fits — this one takes `{ protocol, tags }` and no session — and the first slice
+  declares it (*amended 2026-10-20, M10*): a client that
+  offered subprotocols and is answered none fails its handshake (measured with Miniflare's client:
+  "Server sent no subprotocol"), and a page that passes protocols to §9.11's `connect` needs it.
+
+```elm
+module WebSocket   -- cloudflare: the handle operations §9.11's amendment shares (item 1), plus these
+
+-- *Amended 2026-10-21 (q8): `accept`, `acceptWith` and `autoReply` take the object's `Context msg`
+-- and live in `Worker.Object` ((e.1)); their meaning is below. This module knows no object.*
+pub id : Socket → String                 -- the platform's id, kept in the attachment: the same across hibernation
+pub tags : Socket → List String          -- `ctx.getTags(ws)`
+pub attach : Socket, Schema e a, a → Result AttachError ⊤
+pub attachment : Socket, Schema e a → Result (List Schema.Issue) (Maybe a)
+
+
+pub type AcceptError
+    = NotAnUpgrade                       -- no `Upgrade: websocket` header, or the method is not GET; nothing is accepted
+    | TooManyTags                        -- more than 10, or one over 256 characters
+    | TooManySockets                     -- `getWebSockets()` already holds 32 768: the host's limit per object, tested first
+    | ProtocolNotOffered                 -- `acceptWith`'s `protocol` is not in the request's `sec-websocket-protocol`
+
+pub type AttachError
+    = TooLarge                           -- the attachment as the host serialises it over 16 384 bytes ((h)'s count)
+    | Unprintable (List Schema.Issue)
+```
+
+- **`accept ctx request tags`** checks the handshake as §9.11 (e) does — the method is `GET`
+  and `upgrade` is `websocket`, without case — tests the socket count against the host's 32 768
+  (*M5*), makes a `WebSocketPair`, calls `ctx.acceptWebSocket(server, tags)` and answers the
+  socket and the 101 `Response` carrying the client, which the `request` handler returns.
+  `acceptWith` also writes the chosen `sec-websocket-protocol` on the 101, when `protocol` is one
+  the request offered. The host checks the rest of the handshake before the Worker runs. The
+  platform writes the socket's id and its protocol into the attachment first —
+  `{ id, protocol, data: null }` — so that both are the same after hibernation: `ctx.getWebSockets()`
+  hands the host's objects back, and `id` and `protocol` read them from there, since the server
+  socket's own `ws.protocol` is always `""` on this host (`src/workerd/api/web-socket.h:417`;
+  measured). `attach` prints the value with its schema and stores `{ id, protocol, data: text }`;
+  `attachment` parses it back. The attachment is the one place a
+  value of the program's crosses a restart beside `Storage`, so it crosses as JSON text through a
+  schema, (h). The host keeps attachments "as long as the WebSocket remains healthy" and drops
+  them when either side closes.
+- **`write`** is §9.11 (a)'s: `ws.send(text)` when `readyState` is OPEN, `Err NotOpen` otherwise,
+  tested before the host is called; the host documents no failure of `send` on an open socket, so
+  a throw is a defect. From a handler it is a direct call with no runtime between the program and
+  the host: the arena's twenty to thirty frames per second per player cost one `write` each. The
+  host's own advice — fewer, larger frames — is the program's to take.
+- **`close`** is §9.11 (a)'s: `ws.close(code, reason)` with a code this host lets a server send
+  — 1000 to 1003, 1007 to 1009, 1011 to 1014 and 3000 to 4999, the `node` server's set of
+  §9.11's amendment (item 3; 1010 is a client's code, RFC 6455 §7.4.1, so neither server sends
+  it; *amended 2026-10-21*); workerd accepts every code of it and refuses 1004, 1005, 1006
+  and 1015 (`src/workerd/api/web-socket.c++:636-643`, measured) — and a reason of at most 123
+  bytes, tested in beni; on a socket not open it does
+  nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
+  four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
+- **`protocol`** is the attachment's, as above. A close code the host refuses is its
+  `InvalidAccessError` (*measured* for 1005), which the check in beni keeps from being reached.
+- **`Close`, from the host's events** (*amended 2026-10-20, M10*), by §9.11 (a)'s four rules: a
+  peer's close frame is its code and reason (rule 1); the object's own `close`, then the peer's
+  answer (rule 2); an end with no close frame is `webSocketClose(1006, "WebSocket disconnected
+  without sending Close frame.", false)` (`io/hibernation-manager.c++:257-262`), which the
+  platform delivers as 1006 and `""` (rule 4); a message over 32 MiB and any other fault the host
+  finds arrive as `webSocketError`, not as a close, and `failed` then `closed` with 1006 is what
+  the program sees — rule 3's code is not available from the host, and `failed`'s message says
+  what happened.
+- **`eq`** compares by identity, as §9.11 (a) says. Within one life of the object every event
+  hands the same host object back, so a socket held in the state is equal to the one an event
+  names; across hibernation the state is rebuilt from `sockets`, and `id` is what a program keeps
+  in storage.
+- **Binary frames** are §9.11 (j)'s rule, applied by the platform: the socket is closed with
+  1003, one `console.warn` line names it, and the program sees `closed`.
+- **Hibernation.** A socket accepted here keeps the object free to hibernate; the standard
+  `ws.accept()` with listeners does not, and is not offered. The host answers ping frames and the
+  `autoReply` pair without waking the object.
+
+**(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
+SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
+every operation returns before the handler goes on, which is what lets a `sync` handler use it.
+
+```elm
+module Worker.Storage
+
+-- `Context msg` is `Worker.Object`'s ((e.1)).
+pub get : Context msg, Schema e a, String → Result (List Schema.Issue) (Maybe a)
+pub put : Context msg, Schema e a, String, a → Result PutError ⊤
+pub delete : Context msg, String → Bool     -- whether the key was there
+pub keys : Context msg, String → List String -- the keys with that prefix, in order
+
+pub type PutError
+    = TooLarge                          -- key and value as the host serialises them over 2 000 000 bytes (the count below)
+    | Full                              -- the host's `Error` "database or disk is full: SQLITE_FULL": the object's 10 GB
+    | Unprintable (List Schema.Issue)
+```
+
+- **A value is JSON text, printed and parsed by a schema** (`schema.md`). The host would take any
+  structured-clone value, and a beni record is one; but a `--release` build spells a record's
+  fields short (`backend.md` §9, *Item 4*), and the next deploy may spell them differently, so a
+  value stored as the host sees it would not parse after a release. A schema names every field
+  by text in every build (§4, *Types a shape reads keep their names*), so what one build wrote the
+  next reads.
+- **Limits are checked in beni before the host is called, counting more than the host can**
+  (*amended 2026-10-20, M2; 2026-10-21, R2-5*): the host serialises a value as V8 does, by the
+  string's representation and not its content — one byte per code unit for a one-byte string,
+  two per unit for a two-byte one, and a string sliced from one with an emoji stays two-byte with
+  ASCII content (measured: a 10 000-unit ASCII slice of such a string was refused as an
+  attachment at 20 024 bytes, and the same content built plainly passed) — so no count of the
+  content is the host's. `put` and `attach` therefore count **two bytes per UTF-16 code unit of
+  every string that is serialised** — the value's text and the platform's own `id` and `protocol`
+  alike — plus 64 bytes of envelope, and refuse `TooLarge` before the host is called. That halves
+  the room for ASCII (about 8 100 characters of attachment) and is never under the host's count.
+  A fixture that stores a sliced two-byte string pins the margin. `Full` is the one host exception caught, from `kv.put` alone, by the
+  `SQLITE_FULL` in its message; any other throw is a defect.
+- **The output gate** (*amended 2026-10-20, M1*). A write holds every outgoing message of the
+  object until it is durable: a `write` on a socket after a `put` is queued behind the gate
+  (workerd `src/workerd/api/web-socket.c++:601`, `:617-618`), and a `Response` leaves after it.
+  A write that fails at the disk discards those messages, answers the callers with errors and
+  restarts the object from scratch (the glossary's rule): the program sees a new instance and
+  `restore`, and a client sees its request fail. Nothing of that is a value of the program's: a
+  failed durable write is the host's defect, and the platform maps nothing of it.
+- The store is there from the constructor on (*measured*: `ctx.storage.kv` and `ctx.storage.sql`
+  are objects in the constructor), so `restore` may read it whenever it runs.
+- **A namespace that is not SQLite-backed** has no `ctx.storage.kv`. The platform finds that at
+  the first event and throws an `Error` naming the class and `"storage": "sqlite"` ((i)): the
+  configuration is wrong, nothing can run, and the message says what to write.
+- The asynchronous API, SQL and point-in-time recovery are (j)'s.
+
+**(i) The Wrangler configuration the program's author writes.** A build —
+`beni build --platform=cloudflare --out=out src/Server.beni`, or `beni build` with the project
+file — writes `out/_worker.mjs`, `out/_platform/runtime.foreign.mjs`, the modules and
+`out/_manifest.txt` (`backend.md` §2). The page, built separately for `browser-tea`
+(§5.3), goes to its own directory. The author writes `wrangler.jsonc` beside them:
+
+```jsonc
+{
+  "name": "snake-arena",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-10-01",
+  "durable_objects": { "bindings": [{ "name": "ARENAS", "class_name": "Arena" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Arena"] }],
+  "assets": { "directory": "page/", "binding": "ASSETS", "run_worker_first": ["/arena/*"] }
+}
+```
+
+| Key | Must be |
+|---|---|
+| `main` | the entry file, `out/_worker.mjs` |
+| `compatibility_date` | in production, 2026-10-01 or later, so a set timer holds the object ((e), M4); locally, no later than the pinned workerd's own build date, which it refuses to exceed (`2026-05-18` for the tools of (k)) |
+| `compatibility_flags` | `["enable_request_signal"]`, so a client's disconnect interrupts the request's scope ((d)); without it the scope ends with the response |
+| `durable_objects.bindings[].class_name` | a name in the app's `"exports"` list and a `Worker.Object.define` of the program |
+| `migrations[].new_sqlite_classes`, or `exports.<class>` | the class's storage is SQLite, which (h)'s synchronous store needs. The declarative `exports` form — `"exports": { "Arena": { "type": "durable-object", "storage": "sqlite" } }` — needs Wrangler 4.107.0 or later (*amended 2026-10-20, M12*); the pinned 4.93.0 reads `migrations` only, so this slice writes that form. The two "are mutually exclusive", and a Worker moved to `exports` does not move back |
+| `assets` | optional: the page, served by the host before the Worker unless `run_worker_first` names the paths the Worker takes |
+
+and the program:
+
+```elm
+main : Worker.Program
+main =
+    Worker.program { fetch = route, objects = [ arena ] }
+
+
+route : Env, Request → Response
+route env request =
+    case ( Worker.objects env "ARENAS", arenaOf (Worker.path request) ) of
+        ( Just arenas, Just name ) →
+            case Worker.forward (Worker.byName arenas name) request of
+                Ok response → response
+                Err _ → Worker.text 503 "the arena is not available"
+
+        _ →
+            Worker.text 404 "no such page"
+
+
+-- "/arena/<name>/ws" is `Just name`.
+arenaOf : String → Maybe String
+arenaOf path =
+    case String.split path "/" of
+        [ "", "arena", name, "ws" ] → Just name
+        _ → Nothing
+```
+
+**(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
+forwarded whole; an object reads its body through (e)); `Object.element`, The Elm Architecture over
+`post` and spawn ((e.8)); binary frames and `Bytes`; RPC methods on a stub and
+`WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
+recovery; a `waitUntil` for programs (the platform's own use is (d)'s); `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
+Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
+`setHibernatableWebSocketEventTimeout`; the `ssr` lowering for a Worker that renders markup; a
+`Response` validated in beni as §9.10 (d) validates one. Each gets an issue when a program needs
+it.
+
+**(k) The tests.** A Worker runs in `workerd`, which nixpkgs carries inside `wrangler` 4.93.0
+with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GB
+of disk in the store). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
+Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the design:*
+
+- **The driver is Miniflare's API, not a `wrangler` process**: `tests/workers/driver.mjs` imports
+  `Miniflare` from that path, builds the options from the fixture (Miniflare reads no
+  `wrangler.jsonc`; the driver maps `main`, the bindings and the SQLite classes), passes `cf:
+  false` so nothing is fetched from the network, keeps the object storage under the case's scratch
+  directory, listens on `127.0.0.1`, and disposes at the end. Nothing is deployed and no account is
+  used.
+- **The script** is a `.steps` file of requests, WebSocket opens, sends, reads and closes, and
+  the transcript after each step is the golden, with run hashes as `serve/`'s (§9.10 (h)).
+- **Time is driven, never waited for** (`cf-workers-q6`, decided 2026-10-21: *a hidden build
+  flag*; (l)). workerd has no test clock and Miniflare no alarm trigger or fake timers, so a
+  fixture that ticked for real would sleep for real. A hidden flag, `beni build --test-hooks` —
+  hidden as `--allow-debug` is, test-only surface — compiles two paths into every object:
+  `/__beni/tick` puts a `ticked` event in the mailbox as the timer would, and `/__beni/alarm` an
+  `alarm` event; the corpus passes the flag, and a user's build never holds the paths. The runtime
+  reads the flag's switch as it reads `Js.development`. The transcript is a function of the steps
+  alone (rule 5).
+- **The budget.** Measured with `perf stat -e instructions:u`: `node -e 0` is 112M, and one
+  Miniflare start, one request and its disposal 1 933M — 45% of the 4 300M budget before a build
+  runs — so a case starts Miniflare once, and the `run/` habit of a development and a `--release`
+  pass in one case does not fit. A `workers/` fixture is therefore **two cases**, `<name>` and
+  `<name>.release`, each one build and one Miniflare start over the same sources and script.
+- The probes behind every *measured* mark of this section — the cross-request scheduler, the
+  abort, the attachment and value sizes, the close handshake — become fixtures of the first code
+  slice under this driver; until then their result is what is cited, not a file. Three facts of
+  (e.5) and (e.3) are to establish the same way, each with its issue: the live-fiber timer
+  prevents hibernation (#593), the call-chain id travels through `stub.fetch` and an RPC stub
+  (#594), two objects in one isolate stay isolated (#595), and a request's scope teardown runs
+  under `waitUntil` at the platform's deadline and after a client disconnect (#600).
+
+**(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
+the part of the section it settles keeps its text.
+
+- **`cf-workers-q1`, the platform's name** (Jayson Reis, 2026-10-21 11:28 UTC): **`cloudflare`**,
+  as (b) writes it — `--platform=cloudflare`, `platforms/cloudflare/`, `Worker.Program`. The other
+  choice, `workerd` after the runtime, was not taken.
+- **`cf-workers-q3`, the class names** (Jayson Reis, 2026-10-21 11:28 UTC): **a list in the app's
+  `beni.json`**, as (c) and §5.2's `"exports"` key write it; the recommended answer. The other
+  choice, one fixed class per Worker, was not taken.
+- **`cf-workers-q4`, the Worker's `fetch`** (Jayson Reis, 2026-10-21 11:28 UTC): B, a `sync`
+  handler that answers a value the host runs. **Replaced by `cf-workers-q7`** the same day, below;
+  (d) keeps its form as the record.
+- **`cf-workers-q2`, the object shape** (Cesar Canassa, 2026-10-21 11:50 UTC, on PR #533):
+  **neither option as offered — handlers that may suspend, run one at a time**, the end state:
+  no `sync` marker and effects inferred; one mailbox per object with the state passed from one
+  event to the next; a call-chain id that turns a cycle into `Err Cycle`; spawn then `send` for
+  slow work; one fiber runtime per object through `Task.withScheduler`, with its own scope, a host
+  timer while a fiber is live, and a defect that closes the scope then aborts; the survival table;
+  The Elm Architecture as an optional `Object.element` layer. (e) and (f) are rewritten to it.
+- **`cf-workers-q5`, the ownership row** (Cesar Canassa, 2026-10-21 11:52 UTC): **owned, like
+  `update`**, as §8 of the same comment says: the state passed between handlers keeps the proposed
+  row, and a spawned closure that captures the state makes it escape ((e.7)).
+- **`cf-workers-q6`, the tests' time** (Cesar Canassa, 2026-10-21 11:53 UTC): **a hidden build
+  flag**: the tests drive a tick and an alarm through hooks that `--test-hooks` compiles in ((k)).
+- **`ws-q1`, the WebSocket names** (Cesar Canassa, 2026-10-21): Elm's names for the wrappers; the
+  direct forms are `read`, `write` and `close` on `browser` and `node`, and `write` and `close` on
+  Workers, which has no `read` (ws-q3); §9.11 and (g) already say so.
+- **`ws-q3`, the socket session** (Cesar Canassa, 2026-10-21 11:52 UTC): **each host style** —
+  `node` keeps the pull `read` session, Cloudflare uses event handlers so an object can hibernate
+  ((g)).
+- **`cf-workers-q8`, the message type** (Cesar Canassa, 2026-10-21 12:16 UTC): neither option as
+  offered — **the object's message type is its protocol, typed from anywhere**: `define` takes
+  the protocol with a schema for it; `Context msg` carries the type; `Object.self : Context msg →
+  Ref msg` and `Object.post : Ref msg, msg → ⊤`; the Worker and other objects get typed refs from
+  a `Namespace msg`, by name or id, and a post across isolates encodes through the schema;
+  `received` is the one entry point for messages from anywhere, and `request` stays for HTTP; a
+  post to another object is fire-and-forget; an ask waits like any other host I/O under (e.3)'s
+  cycle error; delivery across objects is at most once, with the host's errors as typed results
+  ((e.10)).
+- **`cf-workers-q7`, may a Worker's `fetch` wait** (Cesar Canassa, 2026-10-21 12:17 UTC): **B,
+  as the final design, and it replaces q4's form** (Jayson is told): the Worker's `fetch` is an
+  ordinary beni function, `Context, Request → Response`, effects inferred, as an object's
+  handlers are; each request runs on its own scheduler (`Task.withScheduler`, #596) and in its own
+  scope, so a fiber never resumes in another request's I/O context and a defect fails only its
+  own request (1101); `Answer` goes; `Worker.forward ref request` waits and returns the host's
+  `Response` with its body stream untouched; typed asks to an `Object.Ref msg` are ordinary waits;
+  fibers that outlive the response run under `ctx.waitUntil` with the host's 30-second cap and
+  are delivered at most once; a client disconnect interrupts the request's scope, so finalisers
+  run ((d)).
+- No question of this section is open.
 
 ## Appendix — what is deliberately not done
 

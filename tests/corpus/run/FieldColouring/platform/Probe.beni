@@ -1,0 +1,5 @@
+import Js
+
+
+pub roundTrip : a → a
+roundTrip value = Js.to (Js.from value)

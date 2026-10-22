@@ -4,11 +4,11 @@ module WideCtor
   101:7 call WideCtor.pushSmall <Big …>#Small.0: accepted fresh (WideCtor.pushSmall writes π1#Small.0)
   174:22 call WideCtor.pushSmall <Small …>#Small.0: rejected alias: xs holds it and is read at 174:20 (WideCtor.pushSmall writes π1#Small.0)
   179:5 call WideCtor.pushBig <Big …>#Big.64: accepted param (WideCtor.pushBig writes π1#Big.64)
-  summary pushBig: π1 R, π1#Big.64 RAW, π1#Big.64[*] A; res [*] ~π1#Big.64[*], fresh1 π1#Big.64
-  summary pushSmall: π1 R, π1#Small.0 RAW, π1#Small.0[*] A; res [*] ~π1#Small.0[*], fresh1 π1#Small.0
+  summary pushBig: π1 R, π1#Big.64 RAW[storage], π1#Big.64[*] A; res [*] ~π1#Big.64[*], fresh1 π1#Big.64
+  summary pushSmall: π1 R, π1#Small.0 RAW[storage], π1#Small.0[*] A; res [*] ~π1#Small.0[*], fresh1 π1#Small.0
   summary bigThenRead: π1 RA; res .0 ~fresh1, .1 π1
-  summary smallThenRead: π1 RAW, π1[*] A; res .0 ~fresh1 ~π1, .0[*] ~π1[*], .1 π1
-  summary bigWrite: π1 RAW, π1[*] A; res [*] ~π1[*], ~fresh1 ~π1
+  summary smallThenRead: π1 RAW[storage], π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh4) ~π1[*], .1 ~condition(fresh3) π1, condition(fresh2){lost}
+  summary bigWrite: π1 RAW[storage], π1[*] A; res [*] ~π1[*], ~fresh1 ~π1
   demands 5: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 5: accepted 4 (fresh 1, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause alias 1

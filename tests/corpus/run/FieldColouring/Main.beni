@@ -1,0 +1,46 @@
+-- Field colouring must preserve one spelling for cups across open rows,
+-- nested records, constructor payloads, copies, comparison and opaque casts.
+import Node
+import Probe
+import Record
+
+
+type Wrapped
+    = Wrapped { cups : Int, bids : Int }
+
+
+cups : { r | cups : Int } → Int
+cups row = row.cups
+
+
+first : { cups : Int, bids : Int } → String
+first row = "${String.fromInt (cups row)}:${String.fromInt row.bids}"
+
+
+second : { cups : Int, eggs : Int } → String
+second row = "${String.fromInt (cups row)}:${String.fromInt row.eggs}"
+
+
+unpack : Wrapped → Int
+unpack value =
+    case value of
+        Wrapped row →
+            row.bids + row.cups
+
+
+main : Node.Program
+main =
+    left = { cups = 3, bids = 7 }
+    right = { cups = 5, eggs = 11 }
+    nested = { outer = { inner = left }, other = right }
+    back = Probe.roundTrip nested
+    copied = Record.copy back.outer.inner
+    changed = { copied | cups = 13 }
+    Node.printLines
+        [ first back.outer.inner
+        , second back.other
+        , first changed
+        , String.fromInt (unpack (Wrapped changed))
+        , if back == nested then "equal" else "wrong"
+        , if changed > left then "greater" else "wrong"
+        ]

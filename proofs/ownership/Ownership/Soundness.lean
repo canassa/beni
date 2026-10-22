@@ -692,6 +692,7 @@ def obsTyped (ds : List Decl) (o : Observation) (t : Ty) : Bool :=
   | .record [.int tag, e, a], .result err ok =>
     if tag == 0 then obsTyped ds e err else tag == 1 && obsTyped ds a ok
   | .list os, .chain t | .list os, .list t | .list os, .builder t => os.attach.all fun o => obsTyped ds o.val t
+  | .list os, .dict t => os.attach.all fun o => obsTyped ds o.val (.record [.int, t])
   | .closure id caps, .fn ps r =>
     match ds[id]? with
     | some d => d.parameters == ps && d.result == r && caps.length == d.captures.length &&

@@ -3,9 +3,9 @@ module SubOnShared
   40:19 send SubOnShared.start: rejected supply: SubOnShared.start sends what it may still hold (shared(SubOnShared.shared)), and a send gives its payload up (§23.2)
   40:19 value Got: rejected need: Sub.on sends what it returns, and it returns what Sub.on hands it, which may be a list the sender still holds (§23.5)
   50:10 entry SubOnShared.update msg#Got.0: accepted entry
-  summary update: π1 R, π1#Got.0 RAW, π1#Got.0[*] A; res .0 π1#Got.0, .0[*] ~π1#Got.0[*]
+  summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A; res .0 π1#Got.0, .0[*] ~π1#Got.0[*]
   summary start: π1 R; res λr{lost}; π1 calls ≤1, supply 1 shared(SubOnShared.shared) borrowed
-  summary subscriptions: res #Sub.0 fresh1
+  summary subscriptions: res #Sub.0 fresh4, #Sub.0[*] condition(fresh1), #Sub.0[*].0 condition(fresh2), #Sub.0[*].1 condition(fresh3) λ?r{lost}, #Sub.0[*].2 λ?r{lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
 total 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2

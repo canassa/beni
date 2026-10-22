@@ -5483,7 +5483,9 @@ test "a release build lowers the representation keys a cold check gives from a w
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     const oracle = try runCounted(&w, arena, &no_cache, "oracle.json");
+    const oracle_js = try w.read("out/_main.mjs");
     const warm = try coldThenWarm(&w, arena, &cached, &cached);
+    const warm_js = try w.read("out/_main.mjs");
     // A comment in `Main`: it is checked again, against `Shapes` installed
     // from the cache.
     try w.write("Main.beni", "-- edited\n" ++ main_source);
@@ -5495,6 +5497,7 @@ test "a release build lowers the representation keys a cold check gives from a w
     // └─────────────────────────────────────────┘
     try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
     try testing.expectEqualStrings(oracle.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(oracle_js, warm_js);
     try testing.expectEqualStrings(edited_oracle.result.stdout, edited.result.stdout);
     // The keys are there to compare: `Main` keys names and nodes, and the
     // table names `Shapes`' type.
@@ -5508,4 +5511,105 @@ test "a release build lowers the representation keys a cold check gives from a w
     // The warm run checked nothing; the edited run checked `Main` alone.
     try testing.expectEqual(@as(u64, 0), warm.counters.checked);
     try testing.expectEqual(@as(u64, 1), edited.counters.checked);
+}
+
+// The hoist table is a cache-entry section, outside the interface hash.
+// Records still spread: these tests pin the channel before stores exist.
+const hoist_source =
+    \\pub old : { x : Int }, Int → Int
+    \\old p n =
+    \\    q = { p | x = n }
+    \\    q.x + p.x
+    \\
+;
+
+fn hoistCache(corrupt: enum { version, placement }) !void {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Old.beni", hoist_source);
+    // The caller has no BIR symbol for `hidden`. Its imported write still
+    // needs that field in the channel, independent of session symbol ids.
+    try w.write("src/Fields.beni",
+        \\pub type Box
+        \\    = Box { hidden : Int }
+        \\
+        \\
+        \\pub set : Box → Box
+        \\set box =
+        \\    case box of
+        \\        Box p → Box { p | hidden = 1 }
+        \\
+    );
+    try w.write("src/Use.beni",
+        \\import Fields
+        \\
+        \\
+        \\pub set : Fields.Box → Fields.Box
+        \\set p = p.set
+        \\
+    );
+    const args = [_][]const u8{ "build", "--library", "--platform=browser-inline", "--jobs=1", "--cache-dir=cache", "--out=out", "src" };
+    const cold = try runCounted(&w, a, &args, "cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    const js = try a.dupe(u8, try w.read("out/Old.mjs"));
+    const keys = try keysOf(&w, a, &.{ "--platform=browser-inline", "src" });
+    const use_key = lookup(keys, "app:Use") orelse return error.MissingKey;
+    const use_relative = entryPathFor(use_key);
+    const use_entry = try w.read(try std.fs.path.join(a, &.{ "cache", &use_relative }));
+    const use_base = std.mem.readInt(u32, use_entry[80..84], .little);
+    const use_len = std.mem.readInt(u32, use_entry[84..88], .little);
+    const use_table = use_entry[use_base..][0..use_len];
+    const names_len = std.mem.readInt(u32, use_table[32..36], .little);
+    try testing.expectEqualStrings("hidden\x00", use_table[use_table.len - names_len ..]);
+    const key = lookup(keys, "app:Old") orelse return error.MissingKey;
+    const relative = entryPathFor(key);
+    const victim = try std.fs.path.join(a, &.{ "cache", &relative });
+    const good = try a.dupe(u8, try w.read(victim));
+    // Entry header(32), then seven {offset,len} rows. Hoists is section 6.
+    try testing.expect(good.len >= 88);
+    try testing.expectEqual(@as(u32, 13), std.mem.readInt(u32, good[8..12], .little));
+    try testing.expectEqual(@as(u32, 7), std.mem.readInt(u32, good[12..16], .little));
+    const base = std.mem.readInt(u32, good[80..84], .little);
+    const len = std.mem.readInt(u32, good[84..88], .little);
+    try testing.expect(@as(u64, base) + len <= good.len);
+    const table = good[base..][0..len];
+    try testing.expectEqualStrings("BENIHOI\x00", table[0..8]);
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[8..12], .little));
+    // Report-only facts cannot authorise stores, even in a list-enforced build.
+    try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, table[12..16], .little));
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[16..20], .little));
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[20..24], .little));
+
+    const warm = try runCounted(&w, a, &args, "warm.json");
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stderr, warm.result.stderr);
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try testing.expectEqualStrings(js, try w.read("out/Old.mjs"));
+    try testing.expectEqualStrings(good, try w.read(victim));
+
+    const bad = try a.dupe(u8, good);
+    switch (corrupt) {
+        .version => std.mem.writeInt(u32, bad[base + 8 ..][0..4], 0, .little),
+        // Header(36), demand(16), then the read's placement word (word 8).
+        .placement => std.mem.writeInt(u32, bad[base + 36 + 16 + 8 * 4 ..][0..4], std.math.maxInt(u32), .little),
+    }
+    try w.write(victim, bad);
+    const repaired = try runCounted(&w, a, &args, "repaired.json");
+    try testing.expectEqual(@as(u8, 0), repaired.result.exit_code);
+    try testing.expectEqualStrings(cold.result.stdout, repaired.result.stdout);
+    try testing.expectEqualStrings(cold.result.stderr, repaired.result.stderr);
+    try testing.expectEqual(@as(u64, 1), repaired.counters.checked);
+    try testing.expectEqualStrings(good, try w.read(victim));
+    try testing.expectEqualStrings(js, try w.read("out/Old.mjs"));
+}
+
+test "a cached hoist table round trips and an unknown version is a miss" {
+    try hoistCache(.version);
+}
+
+test "a cached hoist table with a placement outside its BIR is a miss" {
+    try hoistCache(.placement);
 }

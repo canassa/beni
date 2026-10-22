@@ -1,0 +1,303 @@
+-- load
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol></ol>
+  </main>
+</body>
+-- pointer #arena pointerenter 0 50
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerdown 12 34
+(pointerdown's default prevented)
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"1"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointermove 20 40
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"1"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #dot pointermove 55 25 box:#arena
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"1"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerup 55 25
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerdown 100 50 id:7 type:touch
+(pointerdown's default prevented)
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"7"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerdown 150 60 id:8 type:touch secondary
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"7 8"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointermove -10 120 id:7 type:touch
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"7 8"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointercancel -10 120 id:7 type:touch
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">"8"</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+      <li>"cancel #7"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerup 150 60 id:8 type:touch secondary
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+      <li>"cancel #7"</li>
+      <li>"up #8"</li>
+    </ol>
+  </main>
+</body>
+-- click #zoom
+(the DOM did not change)
+-- pointer #arena pointermove 10 15
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+      <li>"cancel #7"</li>
+      <li>"up #8"</li>
+      <li>"move mouse #1 at 20.0, 30.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerleave 210 15
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+      <li>"cancel #7"</li>
+      <li>"up #8"</li>
+      <li>"move mouse #1 at 20.0, 30.0"</li>
+      <li>"leave \"mouse\""</li>
+    </ol>
+  </main>
+</body>
+-- pointer #corner pointerdown 3 4 type:pen
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+      <li>"cancel #7"</li>
+      <li>"up #8"</li>
+      <li>"move mouse #1 at 20.0, 30.0"</li>
+      <li>"leave \"mouse\""</li>
+      <li>"client 3.0, 4.0"</li>
+    </ol>
+  </main>
+</body>
+-- pointer #arena pointerenter 0 0 id:9 type:none
+<body>
+  <main>
+    <div id="arena" style="position: absolute; left: 40px; top: 30px; width: 200px; height: 100px; touch-action: none">
+      <span id="dot" style="position: absolute; left: 50px; top: 20px; width: 10px; height: 10px"></span>
+    </div>
+    <button id="zoom">"zoom"</button>
+    <div id="corner" style="position: fixed; left: 0; top: 0; width: 20px; height: 20px"></div>
+    <p id="held">""</p>
+    <ol>
+      <li>"enter \"mouse\""</li>
+      <li>"down mouse #1 at 12.0, 34.0"</li>
+      <li>"move mouse #1 at 20.0, 40.0"</li>
+      <li>"move mouse #1 at 55.0, 25.0"</li>
+      <li>"up #1"</li>
+      <li>"down touch #7 at 100.0, 50.0"</li>
+      <li>"down touch #8 secondary at 150.0, 60.0"</li>
+      <li>"move touch #7 at -10.0, 120.0"</li>
+      <li>"cancel #7"</li>
+      <li>"up #8"</li>
+      <li>"move mouse #1 at 20.0, 30.0"</li>
+      <li>"leave \"mouse\""</li>
+      <li>"client 3.0, 4.0"</li>
+      <li>"enter \"\""</li>
+    </ol>
+  </main>
+</body>

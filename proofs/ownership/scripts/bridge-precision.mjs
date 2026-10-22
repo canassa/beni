@@ -16,6 +16,10 @@ assert(input&&compiler&&output&&process.argv.length===5,
 const base=resolve(input),exe=resolve(compiler),exec=promisify(execFile),leads=[];
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const baseline=JSON.parse(await readFile(base+'/report.json','utf8'));
+// The campaign's in-place platform, recorded by bridge.mjs since 2026-10-20 (#418). A report
+// without one is from a campaign on `browser-direct`, which its pinned compiler carries; #423
+// retired that platform from master, and `browser-inline` replaced it.
+const platform=baseline.environment.platform??'browser-direct';
 assert.equal(hash(await readFile(exe)),baseline.environment.compilerSha256,'use the original campaign compiler');
 for(const stream of baseline.streams)
   assert.equal(hash(await readFile(base+'/'+stream.name)),stream.sha256,'stream hash');
@@ -25,7 +29,7 @@ async function flush(){
   const dir=await mkdtemp('/tmp/bridge-precision-');
   try {
     for(const p of ps)await writeFile(`${dir}/${p.module}.beni`,p.source);
-    const {stdout}=await exec(exe,['dump','--stage=ownership','--platform=browser-direct','--jobs=1',dir],{maxBuffer:32*1024*1024});
+    const {stdout}=await exec(exe,['dump','--stage=ownership',`--platform=${platform}`,'--jobs=1',dir],{maxBuffer:32*1024*1024});
     const seen=new Set();let current;
     for(const line of stdout.split('\n')){
       if(!line)continue;
@@ -36,10 +40,12 @@ async function flush(){
       }
       m=line.match(/^  (\d+):(\d+) (.+?): (accepted|rejected|pending)(?:(?: |: ?)(.*))?$/);
       if(m&&current){
+        // An `update` demand has no Lean verdict (#316) and no diagnostic (reported, not enforced, until §31.9's codes land): skipped, as in bridge.mjs.
+        if(m[3].startsWith('update '))continue;
         if(m[4]!=='accepted')current.refusals.push({row:+m[1],col:+m[2],operation:m[3],verdict:m[4],detail:m[5]??''});
         continue;
       }
-      assert(/^  (summary |value |demands )|^(total |cause |pending )/.test(line),`unparsed ownership dump: ${line}`);
+      assert(/^  (summary |value |demands |records )|^(total |cause |pending |limits |records )/.test(line),`unparsed ownership dump: ${line}`);
     }
     assert.equal(seen.size,ps.length,'missing module verdicts');
     for(const p of ps)if(p.refusals.length)leads.push(p);

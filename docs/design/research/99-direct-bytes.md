@@ -1,5 +1,12 @@
 # 99 — Direct bundle costs: template entries, masks and runtime
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-15. Research only: unchanged compiler, platform and application sources.
 Base `7ff72c031`; Node 24.19.0; Apple M2 Pro; Chrome 155.0.8059.80.
 The compiler SHA-256 and every baseline bundle hash are in

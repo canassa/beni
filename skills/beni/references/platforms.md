@@ -6,13 +6,14 @@ the host modules. Name it in `beni.json` (`"build": { "platform": "…" }`) or w
 
 | Platform | `main` | Runs where | Adds |
 |---|---|---|---|
-| `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `Ssr`, `Random`, and `Html` |
-| `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `Storage`, `Random`, `Log`, `Browser.Events`, `Browser.Navigation`, and `Html` |
+| `node` | `Node.Program` | Node | `Node`, `Io`, `Http.Server`, `WebSocket`, `Ssr`, `Random`, and `Html` |
+| `browser` | `Browser.Program` | a page | `Browser`, `Cmd`, `Sub`, `Time`, `Dom`, `Http`, `WebSocket`, `Storage`, `Random`, `Browser.Events`, `Browser.Navigation`, and `Html` |
 | `browser-tea` | `Tea.Program` | a page | `Tea`, over everything `browser` has |
 | `browser-inline` | `Tea.Program` | a page | `Tea`, `Browser`, `Cmd`, `Sub`, `Html`; compiled, no runtime loop |
 | `html` | none | — | the markup vocabulary the four above share |
 
-`api-<platform>.md` lists each module's public interface.
+`api-<platform>.md` lists each module's public interface. `websocket.md` tells how to use a
+WebSocket on a server and in a page.
 
 ## `node`
 
@@ -81,6 +82,7 @@ given `send : msg → ⊤`. A body can wait; it runs in a fiber of the program's
 | `Cmd.keyed key policy λsend → …` | a body under a key; `Cmd.Restart` cancels the running one, `Cmd.Queue` waits for it, `Cmd.Ignore` drops the new one, `Cmd.Concurrent` runs both |
 | `Cmd.cancel key`, `Cmd.cancelAll` | stops keyed work |
 | `Cmd.afterRender λsend → …` | runs after the page is patched: focus, measure, scroll |
+| `Cmd.log level line` | writes `line` with core's `Log` at `level`, with no annotation of `update`'s |
 | `Cmd.map cmd key Wrap` | a child's commands under a parent's message |
 
 **Subscriptions.** `subscriptions model` returns the set that must be live. After each message
@@ -99,7 +101,8 @@ Tick`, `Browser.Events.onKeyDown`, `onKeyUp`, `onResize`, `onAnimationFrame`, `S
 - `Time.now ⊤ : Posix`; `Time.sleep duration` waits; `Time.every`.
 - `Random.generate generator Made : Cmd msg`; `Random.int lo hi`, `Random.float`, `Random.map`.
 - `Browser.Navigation.pushUrl key url Failed`, `replaceUrl`, `load`.
-- `Log.info`, `Log.warn`, `Log.error`.
+- `Log` is core's: `Log.info line` inside a body, `Cmd.log Log.Info line` from `update`. A line
+  below `Info` is not written until `Log.setMinimum` lowers the minimum, in `init` for example.
 
 ```beni platform=browser-tea
 import Cmd exposing (Cmd)
@@ -182,7 +185,8 @@ The detailed eligibility and lifetime contract is `docs/design/browser-inline.md
 
 The vocabulary the page platforms and `Ssr` share: every element, attribute and event, with the
 payload each event carries (`onInput` gives the input's value as a `String`; `onClick` gives the
-`Event`). `Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this
-platform; the others include it.
+`Event`; the pointer events give an `Html.Pointer`, read with `Html.localX` and `Html.localY`).
+`Html.map`, `Html.text`, `Html.preventDefault`, `Html.key`. A program never names this platform;
+the others include it.
 
 Sources: `docs/design/boundary.md` §5, §9.1, §9.8, §9.10; `platforms/*/beni.json`; the modules' doc comments.

@@ -1311,6 +1311,15 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Result.withDefault` or `Result.toMaybe`, whose bodies match `Err _` and read nothing else of
   the error. The list is closed and names core functions only, because only their bodies are
   known not to read it; a program's own function that discards the error is a use like any other.
+  *(Amended 2026-10-18, the owner.)* **This rule is a syntactic recogniser for three shapes**,
+  not an analysis. It takes a run only as the scrutinee of a `case` whose `Err` arms are all
+  `Err _`, as the first argument of `Result.withDefault`, or as the first argument of
+  `Result.toMaybe` (`SchemaValid`). Every other use keeps the issues, even where the error is
+  in fact never read. **The owed form** is the general analysis: a run is a validator wherever its
+  `Err` payload is dead. That adds the cases the recogniser misses, such as
+  `Result.toMaybe (Result.andThen run f)`, `Result.withDefault (Result.map run f) d`, a run
+  bound by a `let` and matched later, and a program's own function that matches `Err _`
+  (#376).
 - **Only the program that reads pays.** The decision is the run's own, not the declaration's: a
   declaration whose runs are all validators ships no failure branch with prose; one with runs of
   both kinds ships both worker sets, each reached only from its own runs, so a program pays for
@@ -1519,6 +1528,27 @@ each widget's reader cost about 118 B brotli and the cap leaves about 15 B per w
   validator worker (4 M runs: 0.38 s against 2.4 s under Node 24). *(Re-measured 2026-10-18 with
   the leaner readers below, as CPU time on a loaded machine: 0.73 s against 4.3 s, 5.8×; the
   #384 review measured 4.2–5.2× under load. This is the one place the figure is kept.)*
+
+**Amended 2026-10-22 (the owner's decision): shape-read records get release field
+names.** This supersedes the 2026-10-19 requirement that records read by shapes
+keep their source field names. A shape produces an internal beni record, as a
+validator worker does, and alone pins no field. Each record entry names the
+field it writes using the existing deterministic whole-program field assignment
+(`assignFields`), the same spelling every other use of the field gets.
+Slot 0 stays the host key. Slot 3 uses the existing `[key, shape, flag, name]`
+format: `["cups", shape]` can become `["cups", shape, 0, "z"]` in release.
+When the written name equals the host key, no name is added. Development
+entries and fields independently pinned by a real host boundary keep their
+existing format, including any `as "…"` output name. Optional fields retain
+flag 1, derived `Maybe` fields flag 2. This includes nested records, tagged
+payloads, references and Json codec shapes.
+
+The 2026-10-19 copy design stays: one shared copy loop, no `make` arrow, and
+a fresh object. Its four protections are unchanged: getters are read once,
+later host writes cannot change the record, no extra or inherited keys are
+copied, and beni's writes never land in the host object. Only the written name
+changes. T remains 29; [#655](https://github.com/canassa/beni/issues/655) tracks
+re-measuring the crossover with short names.
 
 **How a program chooses between shapes and workers** *(added 2026-10-18, the owner's decision)*.
 A shape run (above) and a run that keeps its validator worker accept the same inputs and build the

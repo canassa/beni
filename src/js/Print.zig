@@ -266,6 +266,24 @@ pub const Context = struct {
         return @intCast(c.ir.extraSlice(c.ir.body, Index).len);
     }
 
+    /// Number one name a piece of text did NOT print: a unit spliced from a
+    /// row carries the maker's marks and identities, and the join puts its
+    /// names in the module's first-use order here (`backend.md` §9, *The
+    /// join*). Same dedupe and same `$` rule as `mapName`; the caller calls
+    /// this for the unit's `introduced` list in that list's order, before
+    /// the unit's piece, which is exactly where printing it would have put
+    /// those names.
+    pub fn numberName(c: *Context, index: JsIr.NameIndex) Allocator.Error!u32 {
+        if (!c.record_marks) return SourceMap.Mapping.no_name;
+        var marks: SourceMap.Marks = .init(c.arena);
+        marks.names = c.names_out;
+        marks.src = c.names_src;
+        const result = try mapNameIn(c.ir, c.names, false, &c.map_names, c.arena, &marks, index);
+        c.names_out = marks.names;
+        c.names_src = marks.src;
+        return result;
+    }
+
     /// Print `ir.body[from..to]` — one run of top-level statements — as one
     /// piece. The bytes and the marks come from the arena and live until
     /// the caller's join has copied them.
@@ -537,20 +555,7 @@ const Printer = struct {
     /// `--release` no binding is printed as written: a local's short name
     /// gets its beni name too (`backend.md` §11.2, item 5).
     fn mapName(p: *Printer, marks: *SourceMap.Marks, index: JsIr.NameIndex) Allocator.Error!u32 {
-        const n = p.ir.name(index);
-        if (p.rename == null and n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
-        if (std.mem.startsWith(u8, p.names.text(n.base), "$")) return SourceMap.Mapping.no_name;
-        if (p.map_names.len == 0) {
-            p.map_names = try p.spelled.alloc(u32, p.ir.names.len);
-            @memset(p.map_names, SourceMap.Mapping.no_name);
-        }
-        const slot = &p.map_names[index.int()];
-        if (slot.* == SourceMap.Mapping.no_name) {
-            slot.* = @intCast(marks.names.items.len);
-            try marks.names.append(marks.allocator, n.base);
-            try marks.src.append(marks.allocator, index.int());
-        }
-        return slot.*;
+        return mapNameIn(p.ir, p.names, p.rename != null, &p.map_names, p.spelled, marks, index);
     }
 
     // ---- Bytes out ---------------------------------------------------------
@@ -2315,6 +2320,29 @@ const Printer = struct {
         };
     }
 
+    /// One spelling for field keys, accesses, and shape output-key strings.
+    fn fieldText(p: *Printer, index: JsIr.NameIndex) []const u8 {
+        const text = p.names.text(p.ir.name(index).base);
+        if (p.fields) |table| {
+            if (table.get(text)) |short| return short;
+            if (std.debug.runtime_safety and !table.knows(text)) {
+                std.debug.panic("release printer: field has no spelling: {s}", .{text});
+            }
+        }
+        return text;
+    }
+
+    /// A shape record entry needs slot 3 only when it differs from slot 0.
+    /// Keep the original compact entry for independently pinned fields.
+    fn arrayElements(p: *Printer, d: Node.Data) []const Index {
+        const elements = p.ir.extraSlice(JsIr.inlineRange(d), Index);
+        if (elements.len != 4 or p.ir.tag(elements[3]) != .field_name) return elements;
+        const written = p.fieldText(@fromBackingInt(@intCast(p.ir.data(elements[3]).lhs)));
+        if (p.ir.tag(elements[0]) != .string or !std.mem.eql(u8, p.ir.bytes(elements[0]), written)) return elements;
+        if (p.ir.tag(elements[2]) == .number and std.mem.eql(u8, p.ir.bytes(elements[2]), "0")) return elements[0..2];
+        return elements[0..3];
+    }
+
     /// The recursive printer: `expand`'s twin, one Zig frame per level, used
     /// under `recursion_limit`. The bytes must be `expand`'s exactly; the test
     /// "the recursive and the iterative printer write the same bytes" holds it.
@@ -2325,6 +2353,7 @@ const Printer = struct {
             .ident => try p.name(@fromBackingInt(@intCast(d.lhs)), .binding),
             .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
+            .field_name => try p.quoted(p.fieldText(@fromBackingInt(@intCast(d.lhs)))),
             .template => {
                 // Everything between the backticks is inside the literal, so
                 // no adjacency guard applies to the literal halves; an
@@ -2409,7 +2438,7 @@ const Printer = struct {
             },
             .array => {
                 try p.push("[");
-                for (p.ir.extraSlice(JsIr.inlineRange(d), Index), 0..) |e, i| {
+                for (p.arrayElements(d), 0..) |e, i| {
                     if (i != 0) try p.tok(", ", ",");
                     try p.expression(e, prec_arrow, level);
                 }
@@ -2474,6 +2503,7 @@ const Printer = struct {
             .ident => try p.name(@fromBackingInt(@intCast(d.lhs)), .binding),
             .number, .regex => try p.push(p.ir.bytes(node)),
             .string => try p.quoted(p.ir.bytes(node)),
+            .field_name => try p.quoted(p.fieldText(@fromBackingInt(@intCast(d.lhs)))),
             .template => {
                 // `` ` `` part… `` ` ``. Everything between the backticks is
                 // inside the literal, so no adjacency guard applies to the
@@ -2570,7 +2600,7 @@ const Printer = struct {
                 // `[` element `, ` element … `]`
                 try p.push("[");
                 try p.later(.piece(.close_bracket));
-                const elements = p.ir.extraSlice(JsIr.inlineRange(d), Index);
+                const elements = p.arrayElements(d);
                 var i = elements.len;
                 while (i > 0) {
                     i -= 1;
@@ -4160,4 +4190,32 @@ test "generated: the recursive and the iterative printer agree at every switch-o
             try testing.expectEqualStrings(whole, text);
         }
     }
+}
+
+/// `mapName` without a `Printer`: what `Context.numberName` needs to number
+/// a name whose unit is not printed here. `rename` is `--release`'s short
+/// names; a development build (the only reader of rows) passes false.
+fn mapNameIn(
+    ir: *const JsIr,
+    names: Names,
+    rename: bool,
+    map_names: *[]u32,
+    spelled: Allocator,
+    marks: *SourceMap.Marks,
+    index: JsIr.NameIndex,
+) Allocator.Error!u32 {
+    const n = ir.name(index);
+    if (!rename and n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
+    if (std.mem.startsWith(u8, names.text(n.base), "$")) return SourceMap.Mapping.no_name;
+    if (map_names.len == 0) {
+        map_names.* = try spelled.alloc(u32, ir.names.len);
+        @memset(map_names.*, SourceMap.Mapping.no_name);
+    }
+    const slot = &map_names.*[index.int()];
+    if (slot.* == SourceMap.Mapping.no_name) {
+        slot.* = @intCast(marks.names.items.len);
+        try marks.names.append(marks.allocator, n.base);
+        try marks.src.append(marks.allocator, index.int());
+    }
+    return slot.*;
 }

@@ -1,0 +1,2 @@
+-- Keep the record observable as a whole at the JavaScript boundary.
+pub foreign impure inspect : { cups : Int } → String

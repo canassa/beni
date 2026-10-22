@@ -1,5 +1,12 @@
 # Backend implementation contract (M3)
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for M3. [`fast-compiler.md`](fast-compiler.md) §9 says *why* the backend is
 shaped this way and §2 what it must measure; [`boundary.md`](boundary.md) says how emitted code
 meets JavaScript; [`research/12-js-output-and-chunking.md`](research/12-js-output-and-chunking.md)
@@ -312,6 +319,37 @@ about a file rather than a place inside one. **Declaring the name is not on its 
 platform that declared `main.mjs` would put the defect straight back, which is why the rule is
 enforced and not documented.
 
+**A platform MAY declare that the entry file exports what `run` returns** (*added 2026-10-21*;
+`boundary.md` §5.2's `"exports"` key, §9.12 (c)). With `"exports": "program"` in the chain, the entry
+file binds `run(main)`'s result as `$beniProgram`, writes its `default` as the default export, and
+writes one named export per name the app's `beni.json` lists under `"exports"`, each the answer of
+the result's `exports(name)`, as `const $beniExport<N> = …; export { $beniExport<N> as Name };` in
+the list's order; the hoisted `--release` file does the same at its end. The entry's own bindings
+are longer than any short name `Rename` spells (eight characters), so no hoisted declaration can
+collide with them; a listed name is written only as an export name, a namespace of its own that no
+binding meets, so a listed `$beniProgram` is legal and loads. A name that is not an ASCII
+identifier name, is `default`, is `flush` or is listed twice is `invalid_entry_export`, against
+the app's manifest at `1:1`; any other mode is `unknown_exports_mode`, against the platform's; a
+list on a chain that declares no mode is the warning `exports_ignored`. `flush` is refused because
+the hoisted release file re-exports the runtime's `flush` when the build keeps it (§15.11), and a
+module that exports one name twice does not load (`SyntaxError: Duplicate export`); the refusal is
+static, the same in both builds, where a test of the runtime's exports would follow reachability
+and differ between them. `stop` is not refused: only a runtime module supplies it, and the exports
+mode refuses a runtime module. A chain whose runtime is a module (`boundary.md` §9.2) may not
+declare the key yet: the same `unknown_exports_mode`, found from the chain alone, so `check`, a
+development build and a release build refuse it alike. A listed name is ASCII only — letters,
+digits, `_` and `$` — although an export name may be any identifier name, a reserved word
+included: the name is printed into the entry file without escaping, as the entry file's name is,
+and the ASCII rule is what makes the print safe.
+**The runtime's `exports(name)` must throw for a name the program does not define**, with a
+message that names it, never return `undefined`: the entry file calls it unguarded, once at load
+(rule 9), so a silent `undefined` would ship as `export { undefined as Name }`, and no check of
+the compiler's sees it. `run/EntryExports` pins the shape and the order,
+`build/bad/UnknownExportsMode`, `build/bad/ExportsListOnPlatform`, `build/bad/ExportsWithRuntimeModule`,
+`build/bad/InvalidEntryExport` and `build/bad/FlushEntryExport` the refusals, `run/ExportsIgnored` the
+warning; `tests/blackbox/build_test.zig` runs the runtime-module chain under `--release` and `check`,
+which the corpus's `build/bad/` kind does not.
+
 **Rule 2 — two output paths equal under case folding is a build error.** It is the backstop for
 whatever rule 1 does not reach, and one case is not exotic at all: two modules whose paths differ
 only by case — `Json.Decode` and `JSON.Decode` — are two modules on Linux and one file on macOS.
@@ -442,6 +480,11 @@ quantifier crosses into JavaScript. This is the one place the backend sees a typ
 field-interference artifact (*Item 4 — field ambiguation, specified and then declined*) stays
 declined.
 
+*Amended 2026-10-22:* record-row field sets now also cross in this artifact
+(checker-v2.md §36) and feed release field colouring (§9, *Item 4, taken up*).
+They do not require closed field-value types; unknown rows are conservative.
+This supersedes the withdrawal of field-interference facts above.
+
 ## 4. Codegen, construct by construct
 
 Representation decisions are §9.4's and are not reopened here. What this section fixes is the
@@ -478,6 +521,91 @@ The last five are static dispatch's, and
 [`static-dispatch-spike.md`](static-dispatch-spike.md) §8 and §9 are the contract: §8 for the four
 call shapes and the evidence convention, §9 for the exact JavaScript of every derived function.
 Nothing here reopens a representation decision — §9.4's shapes are what derivation walks.
+
+### Ordered dictionaries
+
+*Added 2026-10-22 (#294), specifying the owner's 2026-10-17 and 2026-10-19
+decisions; specified before implementation. This extends §4's table and
+*Every platform edits in place* to Dict and Set. It supersedes tree-based
+representation and iteration claims. `language.md` §6.8 owns the public API.*
+
+`core/Dict` declares `pub equatable foreign type Dict k v`. Its JavaScript
+value is `{ entries, index }`: `entries` is a dense array of private two-slot
+arrays `[key, value]` in insertion order; `index` is a native `Map` from key to
+the pair's zero-based position. The value is stored in the entry, never in the
+Map. Each entry carries its key, so iteration reads `entries[i][0]` and
+`entries[i][1]` without a Map lookup. Both fields and each entry pair are
+private runtime storage, never a beni record, tuple or List exposed to callers.
+
+The invariant is a bijection: `index.size === entries.length`, each key occurs
+once, and `index.get(entries[i][0]) === i`. No tombstones, holes or parallel key
+array exist. A lookup uses `Map.get`; distinguish absence with `position ===
+undefined`, since zero is a valid position and a stored value can be `⊤`.
+Keys are checked `Int` or `String`; native SameValueZero agrees with their
+key identity (`-0` and `0` name one Int key). No key encoding, comparator,
+object-property lookup or broad catch is involved. These Map operations have
+no expected failure to catch (rule 9).
+
+`insert` overwrites the entry's value when present, otherwise appends a new
+pair and records its position. `remove` splices the pair and reindexes the
+tail. `swap` exchanges two pairs and updates two index positions. `insertAt`
+removes the previous occurrence before clamping and inserting, then reindexes
+the affected tail. `sortBy` evaluates its callback once per entry in entry
+order, stably sorts decorated entries by the supplied comparison evidence,
+writes the permutation back and rebuilds the index. Temporaries used to sort
+are algorithmic workspace, not a persistent or copying fallback. Callback
+loops preserve the effects contract, including suspension; a native sort
+comparator cannot call a suspendable beni callback. No half-updated collection
+is handed to a callback.
+
+Lookup, membership and size take expected O(1). Replacing an existing entry,
+append insertion and swap take expected/amortised O(1). Removing and insert-at
+take O(n); iteration, copying and rebuilding an index take O(n). Sorting takes
+O(n log n), plus the callback's work. These are representation costs, not
+measurements or claims about a browser benchmark.
+
+Every accepted writer mutates this storage on every platform. Ownership is
+required even when the dynamic operation does nothing. There is one writer,
+with no persistent alternative or silent copy. `copy` allocates a new header,
+entries array, entry pairs and Map, while retaining the values themselves.
+This prevents replacing a value in one copy from changing another's pair.
+`toList` also builds fresh beni tuples and a fresh List; `values` builds a fresh
+List of the values, and neither exposes the private entries array or pairs.
+`Set` stays an opaque wrapper over `Dict t ⊤` and delegates its storage to it.
+
+*Amended 2026-10-22, the owner's review of #664:* empty builders are ordinary
+functions of `⊤`: `Dict.empty ⊤` and `Set.empty ⊤`, following
+`Schema.defaultOptions`'s change of 2026-10-19. Each call allocates fresh
+storage. There is no compiler special case for either name and no mutable
+module-level singleton Map. An ordinary binding that stores a call's result
+aliases that one constructed value; its later reads do not construct it again.
+Passing `Dict.empty` or `Set.empty` as a function value follows the ordinary
+calling convention and constructs fresh storage at each call too.
+
+`eq` checks header identity first, then length and scalar keys and value `eq`
+in one array walk. No `compare` is emitted or structurally derived for either
+collection. In-place edits must never meet renderer identity comparisons of
+the collection or entries (`browser-direct.md` §7.4), the same obligation as
+for List. This work does not add keyed `For` or write-set positions (O3).
+
+The sibling follows `boundary.md` §4's four checks: the foreign type has the
+accepted shape, exports match declarations exactly, imports name declared
+dependencies, and exported functions write countable parameter lists with
+evidence parameters first. Higher-order loops may remain in beni over private
+primitives; moving them to a synchronous host callback must not lose effects
+or the declared ownership summaries (`ownership-checker.md` §32).
+
+*Amended 2026-10-22 (#294, the owner's Tea decision):* the platform's job
+and subscription tables are private sorted arrays of `(key, value)` pairs,
+searched by binary search with `Hosted.compare`. Jobs use lexicographic
+`List Hosted.Key` paths; subscription tables use `Hosted.Key`. They are
+edited in place under ownership,
+with no copying fallback. They are not Dicts and do not encode a key as an
+Int or String: a type's own comparator can equate distinct representations.
+`boundary.md` §9.8.3 specifies search, replacement, iteration and the contiguous
+prefix range used by `cancelAll`. W47's type identities and comparison evidence
+remain unchanged. Dict and Set themselves no longer have `compare` and are
+refused as keys with the reason named in the diagnostic.
 
 ### Corrections to the representation
 
@@ -2867,6 +2995,12 @@ amended the same day: a sibling may leave out a `foreign`'s trailing `()` parame
 passes `null` for them all the same. Fixture: `emit/UnitParameters`, and `run/ForeignUnitParameters`
 for the sibling.
 
+*Amended 2026-10-22: calls across modules.* A direct call of another module's beni
+function also omits trailing unit literals in positions its JavaScript declaration does not
+write. Lowering reads the callee's immutable declaration patterns through interface provenance,
+with the same rule for a whole-body lambda. A foreign sibling still receives every argument;
+a reference used as a value is unchanged. These facts are available before parallel lowering.
+
 ## 7. Pattern matching
 
 Decision trees, Scott and Ramsey's heuristics, compiled to a native `switch` for multi-way tests on
@@ -3071,6 +3205,18 @@ has nothing to evaluate and is left out. The rule is about the `case`; a `let` p
 nothing is a binding, and §9 item 1 still drops it in `--release` (`language.md` §6) — when its
 right-hand side is pure, since 2026-09-30; one that may be impure is kept (§9 item 1's amendment).
 `run/CaseSingleConstructorScrutinee` and `abuse_wide_test.zig`'s development build are the tests.
+
+*Amended 2026-10-22:* in a release build, a value-position case over one
+scrutinee whose tests are only literal equalities and whose leaves each lower to
+one expression, bind nothing and share nothing is a conditional chain, even at
+three or more labels: `x===l1?v1:x===l2?v2:vDefault`. This is the narrow
+exception to the switch threshold above promised by browser-inline.md §8.8;
+there is no separate arm-count limit. The tree's edge order and default are kept.
+A scrutinee other than a name or field read is bound before the chain so it is
+evaluated once. A binding, shared leaf or statements in a leaf keeps the existing
+form, as do tail and discarded positions and every development build. See §9,
+*Compact statements*, and `emit/release/inline/EnumCycle`,
+`emit/release/inline/EnumCycleModule` and `run/EnumCycle`.
 
 ### List patterns over arrays
 
@@ -4914,7 +5060,8 @@ three comparator flags — whether anything the build lowers asks for `eq$prim`,
 for the same reason (`uses_runtime` is the or of its three): a live declaration's evidence sets
 one exactly as a row's does, and the comparator constants of the unit list are selected by them;
 the markup and direct handles; the entry declaration; the schema plans and `--schema-library`;
-`core_private`; and the `debug` context. Two module-fixed reads go through the funnel as well, so
+the shapes fork's `schema_shapes` (`schema.md` §6: whether a module takes shape runs or workers,
+a module-level answer); `core_private`; and the `debug` context. Two module-fixed reads go through the funnel as well, so
 that a row can record them: the `Js.maySuspend` probe answers a `$s` body consumed, and whether a
 derived row's synthesis appended its `$$steps` helper (the helper is a unit of its own).
 Lowering reads each of them through **one accessor**, and the maker records, with each unit, the
@@ -4931,17 +5078,24 @@ accessor is a **defect of the same class as writing an output byte outside the p
 missed optimisation — and *What holds it*'s two trees, byte-identical with `emit_units_embedded`
 above zero, are the test that finds it.
 
-Two answers decide how much is reused, and both are measured when the slices land:
+Two answers decide how much is reused, and both are measured now that the slices have landed:
 
-- **A core unit's answers are canonical in every build.** Core's constructors are all live by
-  decree (`Reach.exempt`: core is exempt in every application build, and everything is in a
-  library or a schema build), so `patternDead` is `false` there whatever the program builds, and
-  every other fact on the list is a function of the module's own check. The maker's canonical
-  answers — everything live — are therefore every build's answers, and every core unit is reused.
+- **A core unit's answers are canonical in every build — except the effect facts.** Core's
+  constructors are all live by decree (`Reach.exempt`: core is exempt in every application build,
+  and everything is in a library or a schema build), so `patternDead` is `false` there whatever
+  the program builds, and every other fact on the list is a function of the module's own check —
+  except `probe` and the `arm_dead` bits of a `Js.maySuspend` site. **Which functions may suspend
+  is the whole program's inference** (`transparent-effects-proposal.md`), so that module's
+  dispatch table is not a function of its own check alone. A core unit is therefore reused unless
+  this program's effects answer one of its probe arms differently from the maker's core-only
+  world. Measured on the slice: `Task`'s row is 232 units and 227 of them ask `probe`; a program
+  that suspends differently lowers almost all of `Task` (`run/ForEachOrder` 175 lowered units,
+  `Task.forEach` with a pure callback 142, `run/BracketRelease` 143), while one whose answers
+  match takes them (`Io.run λ⊤ → Node.print "1"` 113 embedded and 10 lowered). The trees are
+  byte-identical either way; *As built (slice 3)*, below, has the rest.
 - **A platform unit's are not.** A `case` arm over a constructor an application never builds is
-  not printed, and which arms those are differs per program; such a unit falls back. Measured when
-  the slices land, not before: about a tenth of the platform modules' statement bytes vary across
-  the corpus.
+  not printed, and which arms those are differs per program; such a unit falls back. Measured on
+  the slice: the `browser-tea` page `ApiItems` lowers 41 units and `Hello` 3.
 
 **The maker** lowers each embedded module once with **canonical facts** — every declaration,
 derived row, twin, constructor and schema member live, every question answered as the world where
@@ -5051,9 +5205,12 @@ reuse rests on: a slice-1 test drops a middle declaration and compares a neighbo
 included, and the maker's self-check above splits and joins before any build reads a row. The
 acceptance is the
 measurement: the second step is worth about 235 million of ApiItems's 489 million instructions, the
-embedded modules' emit, and what it really saves is `perf stat`'s median of five on
-`run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` as one `--library` build, when the
-slices land.
+embedded modules' emit. Slice 3 measured wall time (21 interleaved runs a side, median of 17, Node
+24.19, under heavy load): `browser/tea/ApiItems` 122 → 115 ms (−6%), its emit phase 50.5 → 42.8 ms
+(−15%), and `run/Dictionaries` within noise (61 → 59 ms; the phases' sum +4%). The row read and its
+fact comparison pay for themselves on the large page and roughly cancel on the small program. The
+`perf stat` instruction count on `run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` as
+one `--library` build is issue #633's.
 
 **The slices.** (1) `Lower` lowers one unit at a time and a join assembles the module, with no pack
 and no funnel: the output is byte-identical and nothing is reusable yet — the foundation whatever
@@ -5093,10 +5250,11 @@ are §9's list: the six survivor sets (asked as `decl`, `derived`, `twin`, `ctor
 runtime exports, which are a module-level or (`orRuntime`). The asks made before the first unit
 — the reach walk, `findDeadArms`, the `wanted`/`consumed` loop, the entry declaration, the head
 imports and a lift — are recorded and belong to no unit, so a build that would answer one
-differently is a unit that falls back, never a refusal. One read escapes the list today: the
-shapes fork landed in `Lower` after the list was written, and its `schema_shapes` (`schema.md`
-§6) decides whether a module takes shape runs or workers; issue #432 carries its question, the
-maker's canonical answer and the fixture that proves the boundary.
+differently is a unit that falls back, never a refusal. One read escaped the list when this note was
+written: the shapes fork landed in `Lower` after the list was written, and its `schema_shapes`
+(`schema.md` §6) decides whether a module takes shape runs or workers. Slice 3 added it to §9's
+list, with issue #432's question, the maker's canonical answer and the fixture that proves the
+boundary (below).
 
 `src/js/EmitPack.zig` is the row (`Kind.emit`, pack `version` 3, the row format's v1): keyed by
 SipHash-1-3 over `"BENIEMIT"`, the format version, the module key and one byte of
@@ -5137,11 +5295,97 @@ determinism test passes. `zig build gates` is green. What the
 rows cost is theirs to hold: the pack grows from 3 486 231 to 5 570 755 bytes (2 081 276 of
 payload in the 51 records, plus 3 248 of row table), and the maker's run is 1 s in every
 compiler build beside the 9 s its one compile adds. The playground's wasm embeds the same pack,
-so it grows too: the reviewer's two-pack proxy is brotli q11 883 409 → 1 260 000 B
-(+376 591 B). Of the medians of `perf stat -e instructions:u`, five runs
+so it grows too: the reviewer's two-pack proxy is brotli q11 736 366 → 1 054 617 B
+(+318 251 B). Of the medians of `perf stat -e instructions:u`, five runs
 each, `acccea6a3` against the slice: `run/Dictionaries` 158.81M → 159.34M (+0.33%),
 `browser/tea/ApiItems` 531.97M → 536.51M (+0.85%) and `bench/corpus` as one `--library` build
 421.97M → 425.21M (+0.77%) — the funnel's asks, on the builds that answer them.
+
+*As built (slice 3, 2026-10-21).* A development build reads the row the binary carries.
+`Emit.Task.lowerModule` takes a row for a module whose file `Session.packCovers` and whose key is
+cacheable, and `Lower.lower` plans it before the first declaration is lowered; a release build
+reads none (its bytes are the release optimiser's), walk 1 reads none (`lower_only` prints
+nothing, §9 *What it does not do*) and the cross-check's second lowering reads none (it must
+compare fresh units with the first). The counters count only when a row was available, so a
+module whose first lowering was walk 1 contributes nothing rather than its units to
+`emit_units_lowered`.
+
+The plan is declaration at a time. A declaration is taken whole only when the row's units for it
+are exactly this build's — the direct body, the `$s` twin when this build gives the declaration
+one, and each surviving lift — and every fact those units asked answers the same, and every module
+their `Needed` entries name resolves, and every value slot they name exists on this side.
+Otherwise the whole declaration is lowered: a half-taken one would order its call sites by two
+different walks. A lifted piece is never taken (`planReuse` refuses a part at or above
+`Selector.part_lift`): the row does not carry the piece's identity — its site and captures — and
+the maker's canonical lowering has no direct handle, so no row has a lift today. A row with any
+`.schema` unit, any `schema` declaration or a virtual codec is refused whole: a schema walk has no
+`Bir.Decl` for the row's positions to name, and a schema declaration whose parts are all empty
+still takes a place in `emissionOrder` that the row's edges do not describe. Units no declaration
+owns — the nullary constants, the markup hoists, the synthesised values, the head and the tail —
+are always rebuilt by the build.
+
+A taken declaration asks nothing; what it would have asked is the row's. `seedReuse` seeds the
+runtime exports and the primitive comparators its units read and rebuilds every nullary constant
+they name, and `replayReuse` replays the row's `Needed` entries in the row's ask order at the same
+point of the walk, so the rebuilt head's import statements and their order, the rebuilt constants
+and the spliced bytes agree. The head, the tail and the footer are the build's, never the row's.
+
+`emissionOrder` is replayed, not filtered (#328). Each row unit records its outgoing edges as
+canonical positions; `replayOrder` runs the same depth-first walk over the declarations this build
+kept, in module order, and the units are written in that walk's order. A live declaration with no
+unit may join the walk only when it has no instructions and no `top_value` reference: the row has
+no edges for it, and an empty edge list is a lie about a body that reaches anything.
+
+A schema declaration is cut at the parts `SchemaLower.declaration` records (#349): the `via`s at
+`0`, the description at `1`, the shape at `2`, each operation's workers and wrapper at `3 + op`
+and the root at `3 + all_ops.len`. The indices are fixed by the schema's structure, so a part the
+build leaves empty does not renumber the later ones, and each part is its own funnel record and
+its own unit.
+
+`schema_shapes` joined the fact list (#432) and is asked where a shape run's printed bytes branch
+— `referenceName`, `callExpr` and `jsonValidatorCall`. The two `SchemaValid.sites` asks in the
+lowering's prep are before the first unit and belong to none, so they do not ask; every unit whose
+bytes read the answer asks at its own branch. The maker's canonical answer is `false`, and no row
+can carry the true side today: the build's answer is
+`e.reach.schema_shapes and m < edges_read.len and !edges_read[m]`, and the maker has neither a walk
+nor edge lists. `tests/corpus/run/SchemaShapeThreshold.beni` is thirty
+syntactic `Json.decodeValue` sites of one record type in one module, one more than
+`SchemaValid.shape_threshold`'s 29, so the default build takes the shape run and
+`--schema-shapes=never` does not; the test builds each tree against the core the binary carries
+and against a copy under `--core-root`, requires both pairs equal, and requires the two trees to
+differ — a fixture that no longer crosses the threshold would otherwise pass vacuously.
+
+Two things the differential tests caught. The first is a defect this slice introduced:
+`fiberNames` answered a cross-module name from its cache without asking the funnel on every call,
+so a unit taken from a later position in the walk carried no `Needed` entry for the import its
+text reads, and the rebuilt head of embedded `core/List` omitted
+`import { Task$andThen, Task$isWaiting } from "../_core/Task.mjs"` — the two trees differed by
+that line and nothing else. It now asks on every call, names still cached; every other
+cross-module name block already did. The second is the comparison, not the compiler: an embedded
+core's map names its sources `beni:///core/…`, a core read through `--core-root=mycore` the
+relative path to `mycore/…`, and the manifest hashes every map; the test normalizes both
+spellings on the two sides and masks the manifest's map lines, because the maps themselves are
+compared byte for byte after the normalization.
+
+Measured, `--self-profile`, `--no-cache`, the gate's ReleaseSafe beni: `Debug.toString 1` embeds
+23 units and lowers 1 (a nullary constant), `Io.run λ⊤ → Node.print "1"` 113 and 10,
+`Task.forEach` with a pure callback 39 and 142, `run/ForEachOrder` 41 and 175,
+`run/SuspendLoopClosure` 140 and 12, `run/ReleaseEverything` 64 and 12, `run/Dictionaries` 41 and
+15, `run/BracketRelease` 40 and 143; the `browser-tea` pages `Hello` 123 and 3,
+`SettlesManyFibers` 146 and 9 and `ApiItems` 309 and 41.
+
+The page numbers are the other side of the claim: `ApiItems` lowers 41 units — a platform unit
+falls back — and the tree still matches. The core side did not hold as §9 first said. The maker's `Task` row is 232 units — 205 direct, 22 twins, 2 nullary constants
+and 3 synthesised values — and 227 of them ask the `probe` (and the matching `arm_dead`) facts of
+the `Js.maySuspend` sites they contain; the whole-program effect inference answers those, not the
+module's own check. A program that suspends differently from the maker's core-only world therefore
+lowers almost all of `Task` (the 175, 142 and 143 above), while one whose answers match takes it
+(`Io.run` with a pure callback takes 113 and lowers 10). The trees are byte-identical in every
+case, so no unit is reused that the build cannot prove; what failed is the "every" — §9's two
+answers bullets now say what was measured. Making those units reusable is issue #629: a maker that
+writes the effect variants a program can ask for, keyed like the chain a module is checked in,
+because one differing arm changes a unit's bytes and the row's canonical text cannot serve a
+different answer.
 
 ### The release optimiser — items 1, 2, 3 and 5
 
@@ -5360,6 +5604,14 @@ none larger by more than 2. **The wider licence was measured again and stays out
 evaluated before its use there (`q=k(…);own(q)` → `own(k(…))`) is sound, but it was −6 on
 `emit/release/inline/PushAndTimer` and **+21** over twelve goldens (`direct/ListScripts` +19,
 `direct/TableSwap` +7), so it was not taken.
+
+*Amended 2026-10-22:* the distance to that one read is unbounded. The counting walk records
+its expression node, statement and statement list; a later read in the same list is found
+without a forward scan. A widget's handler can stand before 64 event registrations and still
+be made at its own registration. The compact printer's joined declarations may spell a
+preserved `const` as `let`; that spelling does not make the IR binding mutable.
+`emit/release/inline/WidgetHandler` pins this boundary, with a development twin under
+`emit/inline/`.
 
 *Amended 2026-10-17: never into a loop's head.* A use in a `for…of`'s iterable is no fold's, of
 either rule above: the printer writes the value in the loop's head, where the loop's own binding is
@@ -6009,6 +6261,33 @@ throughput within noise of today's **48.08 ms / 61.2 MB/s for 633 modules** (`be
 ReleaseFast, this machine), which a print-time table lookup cannot move.
 
 #### Item 4, taken up — record fields renamed, and integer constructor tags
+
+**Amended 2026-10-22: reuse spellings across disjoint record types.** This
+supersedes scheme (i)'s single namespace and the earlier rejection of colouring,
+including §3's withdrawal of field-interference facts. The unit stays the source
+field text: one text has one spelling everywhere, including extensible records.
+Two texts that may occur in the same runtime record have different spellings.
+The graph joins every pair in each record field set; an unknown set makes its
+known fields adjacent to every other text. Sort by generated uses descending,
+then source text ascending, and greedily choose the lowest `Rename.spell`
+ordinal unused by a neighbour. Kept fields, the `$` exclusion, library builds,
+source ordering, boundary rules and development output keep their contracts.
+No generated spelling equals a kept field text.
+
+Record field sets are independent of whether the types of their values are
+closed. Capture all record rows from the checker's store before it dies, with
+open rows marked conservative, and persist them with the type-key artifact.
+Merge with `RepKeys`' closed records, written record types and allocations in
+all modules (including embedded core and platforms), and resolved schema plan
+records. An update with an unknown full row makes its written fields
+conservative. Emitted object literals add cliques for compiler-created props;
+an emitted spread with an unknown full type makes its written fields
+conservative, and a field absent from the facts is conservative. Schema plans supply the sets
+for both validator workers and the shape copy loop, even when no object literal
+is emitted. These facts describe representation, so they also cover nested
+records, constructor payloads, row instantiations and `Js.Value` round trips.
+Shape output names, including slot 3 when present, use this same table (#659);
+this change does not settle the measurement owed by #655.
 
 *Added 2026-10-01, the owner's order: build item 4 and the integer tags under `--release`.* This
 amends the section above in three places and keeps the rest of it: **the unit is still the source
@@ -8065,6 +8344,33 @@ corrects the worklist note's *the order is kept on purpose* and its *Checked* bu
   1, 2, 4 and 5 keep the worklist-against-every-unit check until they move into the same
   solver.
 
+**Amended 2026-10-22 — compare facts independently of their storage** (issues #657, #658).
+The monotonicity premise above is unchanged. Two defects in its shuffled-order check compared
+representation choices instead of facts:
+
+- A `top` value's live sites are a **set** after mapping each site to the one made by the same
+  node. Site numbers follow the walk, so that map need not preserve their numeric order.
+  The check compares live-set cardinality and mapped membership, as it already does for a
+  value without `top`; it still checks every component flag and each site's escape state.
+- A site's property table is **sparse**. A missing entry means no values, no read, no definite
+  initialisation and no per-key write. Reading a missing property makes an empty entry; a
+  site is no longer marked once it escapes. A spread may therefore copy an empty key marked
+  before its source escaped in only one order. That copy marks the key written, but the
+  source's `any_written`, also copied, already subsumes the per-key written bit
+  (`neverWritten` checks it first). An empty, unread, uninitialised entry under `any_written`
+  is the same fact as its absence. The check compares the union of keys with those defaults,
+  retaining every read/initialisation bit and every write not covered by
+  `any_written`. It does not require equal numbers of storage entries.
+- A property read includes the site's unknown-key value (`any`). When `any` is top in
+  both runs, its component flags and the escaped sites retained by a transient spread
+  subsume the raw property's. The check compares the effective value, with top's flags
+  and the property's live sites. Every differing live site is still an error. Without
+  top in `any`, it compares the raw property values exactly as before.
+
+These corrections change no transfer, consumer, check limit or emitted JavaScript. They
+state the equivalence the safety check must test: live sites, initialised keys and every
+value or flag not subsumed by top remain facts that must agree.
+
 Every output is byte for byte as before — the `emit/release/` goldens, every release run hash,
 and all 411 release builds of research 52's E3 set compared file by file — so nothing in the
 corpus depended on the order the bits were gathered in. **`--self-profile`** counts the pass's
@@ -8466,6 +8772,16 @@ monotone in its test's truthiness, so executability is one more monotone compone
 every exec cell is true from the start, which is today's analysis: both arms of every `if` and
 every body.
 
+*Amended 2026-10-22 (issue #685).* **Every function body is a root, for now.** Fact 3's call graph
+misses calls the program makes: in `run/TaskRootScope`, a function that runs, the bracket's use
+function, has one recorded caller, and that caller is in a body the graph never reaches from a root,
+though Task runs that function through its fibers' frames. A body the solve leaves false contributes no
+argument to the functions it calls, so a parameter every other call passes the same literal would
+be dropped under a call that passes another. Until the graph is complete, every body is
+executable and only arms are decided. Arms are decided by the test's truthiness, which does not rest
+on the graph. Research 52's E2 (`SpecSelfGuard`) and `SpecDeadArm` are arms, and no `emit/release`
+golden moves.
+
 #### The worklist
 
 Two queues, rings of `u32` with a bitset of what is queued: changed cells and newly executable
@@ -8690,6 +9006,21 @@ the compiler before over every `run/` and `browser/` fixture and the `bench/todo
    the restarts go. Byte-identical or smaller.
 8. **Calls with known results** (8a, above, approved); **cloning** (8b) is **dropped** (the owner,
    2026-10-04): no mainstream JavaScript compiler clones, and the engine specialises hot code itself.
+
+*Amended 2026-10-22 (issue #637).* **E1's cliff goes with slice 4, not slice 6.** It was
+`max_sweeps`, and the solver has no sweep to run out of, so `emit/release/app/SpecDeepChain` moves
+in slice 4: every `x` is `7`, every test folds, and the program prints what it printed. `build_test`'s
+*solves a call chain deeper than the sweeps' old cap* asserts that 22 levels and 24 converge alike
+with no analysis declined. Every other output of slice 4 is byte for byte the same. E2
+(`SpecSelfGuard`) and `run/DerivedPartTypedLater` wait for slice 6's executability, as written.
+And *Where it runs*' "a module whose `Mod.version` did not change keeps its arrays" is per
+statement since slice 4 (*As built 2026-10-22*, below): the rewrite patches nearly every module,
+so whole modules were never kept.
+
+*Amended 2026-10-22 (issue #649).* Slice 5's double run against `Pts` survives `Pts`' walker as a
+shuffled replay: a safety build of a small program replays fact 3's extracted statements in a
+shuffled order and compares every fact with the replay in program order. That is the check
+*Determinism* specifies, and what goes is the recording walk and `byUnits`, not the order check.
 
 **As built 2026-10-19 — copy edges, field summaries and load cells inside `Pts`** (issue #464; a
 step toward slice 5, not slice 5). A release build of the research dashboard with 64 widgets
@@ -8946,6 +9277,32 @@ nothing past it sees the others. There is no context sensitivity, no filter at a
 call's node and none at a site's property var (the plan's slice 5), and `top` keeps its meaning (D4
 is not taken). Neither `max_sites` (#442) nor the inliner changes: the owner declined a cap and the
 inliner shortcut on 2026-10-20. `core` and the platforms are wild until a later version keys them.
+
+*Amended 2026-10-22 (issue #722): the filter at a site's property var.* **A site's own var of a
+property holds only sites of that field's key.** A record's key is canonical, with its fields
+ordered, so the key of each field follows from the site's own key. `Emit` lists, for every record
+representation, the key of each field under its property id (`Spec.Input.field_keys`), and
+`Pts.ownField` gives the var it makes that filter (`Pts.fieldFilter`). The var is wild in three
+cases: the site is wild, the field's key is in the wild set, or the field's type is a function,
+since an arrow is keyed by what it returns and not by its type. A field shared by a spread
+(`shareField`) keeps its wild var, because one shared var serves the fields of every site that
+spreads one record. The summary-link rule applies as for any var: a copy into a stricter filter
+folds. It is sound for the reason a binder's filter is: a value of a closed record type holds in
+each field a value of that field's type, and the type's parts are wild wherever the JavaScript does
+not follow the type. **Two key losses went with it.** `Mod.copyNode`, and so `foldTo`, keeps an
+allocation's key on the node it moves into, which is now that allocation. And `Copy` keeps every
+key, of a node and of a name made afresh: a key is a closed type, the same at every instantiation of
+the body it is in, so the rule *Copy keeps the keys of a body only when its declaration's type holds
+no type variable* buys nothing. As built it was stricter still, since it read whether the checker
+had keyed the declaration, so a declaration with a host-typed parameter (`step : Msg, Model →
+Model`, with `Value` inside `Msg`) lost every key. `JsIr.closed_decls` is gone. On the N = 64
+dashboard the solve after the structural pass no longer merges every widget's model into each field
+of `Main.Model`: it makes 1 623 folds where it made 10 569, 124 973 copies where it made 348 518,
+and 18 124 edges where it made 110 018. Its output goes from 104 494 to 103 200 bytes, and the build from 1.102 to 0.997 billion instructions. Fixtures:
+`run/TypedFilterField*`, which cover a function field, an unboxed field, a `Js.from`/`Js.to` cast
+into a field and the dashboard's `withDefault` into fields; `TypedFilterFieldFunctions` fails when
+a function field is filtered. Precision: `emit/release/app/FieldKeyFilter`. There is still no filter
+at a member read's or a call's node.
 
 **In a `browser-tea` page the filter changes nothing, in either direction.** The hosted runtime
 keeps the program's model in a `Js.ref` and reads it back with `Js.to`
@@ -9424,6 +9781,287 @@ Instructions of the gates' build: the new `emit/release/inline/SpreadCopiesLooku
 indexing of every lookup; what is left is the join machinery itself (`joinNow`, `enqueue`,
 `unionSets`, the set table's probes), the copies a fold makes, and `summaryPropAt`'s search past
 a gap in a summary's properties (about 4% of fact 3 at N = 64).
+
+**As built 2026-10-22 — slice 4: facts 1, 2, 4 and 5 by the solver** (issue #637, part of #464).
+`Spec.analyse` takes facts 1, 2, 4 and 5 and truthiness from one solve (`Spec.solve`) where the
+sweeps were: fact 3 is `Pts`, read as input, and every exec cell is true. What the rewrite reads
+is where it was (`memo`, `params`, `prop_lat`, `ret_lat`, `decided_conds`, the `escaped`,
+`assigned`, `reads`, `spread_sites` and `arg_effect` columns), so the rewrite and everything after
+it are unchanged. Where the code departs from the sections above:
+
+- **A constraint is a node's evaluation** (`Op`, `Extractor`). Extraction is one walk that does
+  what a sweep's walk does (`count`, then `evalStmt`) and, in place of each evaluation, emits the
+  constraint it would evaluate, in that order: one per node with its `combine`, plus a `store` per
+  `o.p = v` and a `ret` per `return` and per body that may run off its end. The *Extraction*
+  table's kinds are folded into them: `copy` is a `local` or `param` read, `σ` is that read's
+  flag (the guard is syntactic, `guardNames`), `op` is `unary`, `binary`, `cond` and `template`,
+  `alloc` and the literal's keys are `object`, `load` is `member`, and a `call`'s arguments join
+  the parameters of the function it names. Each transfer function is the one the walk used
+  (`unary`, `binary`, `identity`, `condValue`, `templateValue`, `memberValue`, `callValue`), its
+  operands read from cells, so the two agree by construction. A read of a local before its
+  declaration in the walk is ⊤, as the walk's `m.value` was.
+- **Cells.** A node's cell is its occurrence: its own index the first time the walk meets it,
+  `nodes + k` for a repeat (a node two parents share), and `memo` keeps the last, as the walk
+  left it. Then one cell per tracked parameter. Fields and returns are made as a write or a read
+  first reaches them, keyed by (site, property) and (module, function node) (`Solver.dynOf`), and
+  a field exists from its first write whatever the value, as `prop_lat`'s entries did, since
+  `tagValue` reads existence.
+- **The merge** numbers cells and constraints by prefix sums in module order, sums every module's
+  counts into `reads`, `escaped` and `assigned`, escapes a tracked function called with another
+  arity, writes every value fixed for the solve (literals interned in module order, names'
+  `globalValue`, a node's kind), finds each `param` read's cell, asks `effectFree` of each tracked
+  call's arguments (`arg_effect`) and marks spreads; then the parameters' readers index. A
+  module's own readers index is built with its extraction (`Extract.rd`).
+- **The worklist** is one first pass over every constraint in module and walk order, then a
+  first-in-first-out queue of the constraints the pass has passed whose reads changed. A field's
+  and a return's readers are registered as they read them. The work budget is the specified one
+  (64 evaluations per constraint and cell, `spec_solve_budget_hit`); no corpus program reaches it.
+- **The rewrite's dependency lists are the solve's**: `g_deps` from each statement's reads of
+  names, `site_deps` from `readsSite` as the transfers call it, `w_dirty` empty. The rewrite still
+  walks a statement again (`walkTop`) when a patch before it changed what it reads; that, `stale`
+  and the rounds go in slice 6.
+- **Extraction is kept per statement, not per module.** Measured on the dashboard, nearly every
+  module changed between analyses: the rewrite and `prune` changed modules wholesale. Their
+  changes are now made in the statement they touch (`within`), a new list of statements counts as
+  no change to any statement's nodes (`Mod.bodyChanged`, `Mod.keptNodes`), and an extraction
+  copies the constraints of each statement whose nodes stand (`Extractor.reuse`). On N = 64, 1 561
+  of 3 684 statement extractions are copies. The statements that change are the large ones (each
+  widget's handlers), so the time saved is small.
+- **Memory.** An extraction keeps 9 bytes a constraint (the kind and a flag in one byte, a cell or
+  node, an operand) and the pool, in an arena of the module's own. A solve's columns live in an
+  arena of their own (`Spec.solve_tmp`, emptied with `.keep_all`): in `Pts.tmp` they piled up
+  across the analyses that keep fact 3. Extraction runs on the emit workers, as many as its nodes
+  call for (`nodes_per_extractor`): one thread per module kept a scratch of the largest module in
+  each worker, and TodoMVC's safety build peaked 13% higher at 32 threads.
+- **Checked.** In a safety build of a program of at most `max_solve_checked_nodes` (1 500) nodes,
+  the sweeps run first (`checkedSweeps`), then the solver, which must agree on every node's value,
+  every parameter, field, return and decided conditional, and on the `escaped`, `assigned`,
+  `reads`, `spread_sites` and `arg_effect` columns; the panic names the node. A statement's copied
+  constraints are checked against a fresh extraction on the same programs (`Extract.expectSame`).
+  Both checks passed on the whole corpus run with no node limit (and no instruction budget), as a
+  measurement.
+
+Every `emit/release/` golden but `SpecDeepChain` (above), every run hash and the determinism
+test are as before. Measured on dagon (Ryzen 9 5950X, load about 1), master at `3fafb445c` before,
+outputs byte for byte the same. The facts 1, 2, 4 and 5 time is a throwaway `rdtsc` timer around
+the sweeps and around `solve` (extraction, merge and solve), minima of 11 interleaved runs, as are
+`specialise` and wall; peak RSS is the median:
+
+| ReleaseFast, `build --release --no-cache` | facts 1, 2, 4, 5 (ms) | `specialise` (ms) | wall (s) | peak RSS (MB) |
+|---|--:|--:|--:|--:|
+| N = 16, `--jobs=1` | 4.17 → 4.23 | 23.6 → 24.3 | 0.05 → 0.05 | 38.8 → 39.1 |
+| N = 64, `--jobs=1` | 10.09 → 11.56 | 84.1 → 83.9 | 0.15 → 0.15 | 98.2 → 100.9 |
+| N = 64 without `withDefault`, `--jobs=1` | 10.01 → 11.81 | 69.3 → 72.6 | 0.13 → 0.14 | 89.3 → 91.4 |
+| N = 16, `--jobs=32` | 4.28 → 3.93 | 24.0 → 24.2 | 0.05 → 0.05 | 37.4 → 38.5 |
+| N = 64, `--jobs=32` | 9.98 → 10.80 | 86.0 → 88.3 | 0.15 → 0.15 | 96.8 → 99.1 |
+| N = 64 without `withDefault`, `--jobs=32` | 10.44 → 10.70 | 72.1 → 74.0 | 0.13 → 0.13 | 87.7 → 90.3 |
+
+| ReleaseSafe (the tests' compiler) | instructions | peak RSS (MB) |
+|---|--:|--:|
+| `browser/tea/TodoMVC` | 1 360M → 1 385M (+1.9%) | 58.5 → 58.8 |
+| `abuse_wide_test`'s 16 400 arms | 2 786M → 2 892M (+3.8%) | 71.6 → 73.0 |
+| `bench --generate=100000`, `--library`, names migrated | 14 994M → 15 761M (+5.1%) | 332.8 → 343.3 (+3.2%) |
+
+**Slice 4 alone is slower, not faster.** At N = 64 and one thread the solve is about 4.4 ms of extraction,
+1.4 ms of merge and 6 ms of solving (one timed run), where the sweeps took 10.1 ms in all: the walk
+the sweeps made once per analysis is now an extraction and an evaluation, and the rewrite still
+re-extracts the large statements at every analysis. The solve itself is about one walk's worth of
+transfers (0.85 evaluations per constraint), since every transfer reads fact 3 as the walk did.
+What pays is slice 6: one solve per structural pass in place of 4 to 6 analyses.
+`spec_solve_extracted`, `spec_solve_kept`, `spec_solve_stmts_walked`, `spec_solve_stmts_kept`,
+`spec_solve_constraints`, `spec_solve_evaluations` and `spec_solve_budget_hit` count it.
+`check/rules_test`'s scan of `src/js` now searches a file for a bit's name before its lines: it
+read every line five times and reached its instruction budget as `Spec.zig` grew.
+
+*Added 2026-10-22, the same issue — the sweeps go.* `sweeps`, `walkAll`, `checkedSweeps`,
+`checkedSolve`, `count_logs` and `max_sweeps` are deleted, with the check against them and the
+`spec_sweeps` and `spec_analyses_declined` counters: no analysis is declined any more. The
+rewrite's per-statement walk (`walkTop`, `evalStmt`, `combine`) stays for its walks of statements
+a patch made stale, until slice 6. Its count of a statement (`countTop`) now walks the statement
+each time, where `count_logs` replayed a count kept while the module's version stood; the
+analysis's counts are the extraction's. The check of copied statement constraints against a fresh
+extraction stays (`max_solve_checked_nodes`). Outputs are byte for byte as with the check. In
+instructions of the ReleaseSafe compiler against the solver with the check: TodoMVC 1 385M →
+1 394M, the 16 400 arms 2 892M → 2 918M (the rewrite's counts), the 100 000 lines 15 761M →
+15 704M; ReleaseFast times and peak RSS within noise.
+
+**As built 2026-10-22 — slice 5, part 1: `prop_lat`, `ret_lat` and `decided_conds` go** (issue
+#649). What facts 4 and 5 know of a property is a column of fact 3's own cell of it
+(`Pts.Prop.lat`, with `lat_made` for "a write reached it" and `lat_readers` for the solver's
+readers), and what a function returns is one of its site (`Pts.Site.ret_lat`). The two maps and
+the solver's own table of fields and returns are gone. A write to a property fact 3 has no `Prop`
+for has nowhere to go and needs none: `propValue` and `tagValue` find the `Prop` before they read
+the field. Likewise no call reads the return of a function fact 3 made no site for. The cells
+start again from ⊥ at every solve, since fact 3's state may be the last analysis's
+(`fact3Kept`). A conditional fact 5 decides is read off the final values when the rewrite patches
+it (`decidedBranch`, the test of `nullTestTaken` on `memo`), which is what the map recorded at the
+last evaluation. Outputs are byte for byte the same. Measured as in slice 4, before → after
+(slice 4 with its sweeps gone): `specialise` on the dashboard N = 16 24.1 → 24.1 ms, N = 64
+85.9 → 82.4 ms, without `withDefault` 72.0 → 71.6 ms, peak RSS within 1%; ReleaseSafe
+instructions TodoMVC 1 394M → 1 400M, the 16 400 arms 2 918M → 2 908M, the 100 000 lines
+15 704M → 15 642M (peak RSS 339 → 334 MB).
+
+**As built 2026-10-22 — slice 5, part 2: fact 3's constraints from the extraction** (issue #649).
+`Pts`' first sweep by constraints no longer walks the program to record its constraints
+(`walkStatements` with `recording`). Each module's are extracted from its IR (`PtsExtract`,
+`PtsExtractor`) and replayed (`Pts.replayWalk`). The extraction follows the recording walk's own
+order, which is not the solver's: an assignment's value comes before its target's object, and a
+`try`'s `catch` before its `finally`. It also follows the walk's flow-sensitive guards exactly. A
+read's candidate guards are the ones in view whose chain it reads and that no unconditional kill
+(a call, a `new`, a `yield`, a declaration, an assignment, a loop's turn, a `try`'s part) has
+killed. Each carries its kill list, the reads through an object between its push and this read,
+and a read through a constant `top` object kills outright. Beside the constraints the extraction
+keeps the script of what the walk did between them, in its order. That is: a function's site and,
+for a declaration, its name holding it; a body's begin and end, with `undefined` returned when it
+may run off its end; the drains; the context a site is made in (`once`); `fresh_fn`; and every
+`const x = f(…)` (`decl_call`).
+
+**One choice the walk made at run time**, kept as it was. It noted a member read's guards only when
+the read's object was not `top` at its first evaluation (`narrowed` returns first otherwise), and
+whether a read has a guard decides whether a binding of it is a copy or a join (`copySource`). So
+the replay holds each read's candidate guards open (`Cons.narrow_open`) and decides at its first
+evaluation under the same test. It links a constraint's inputs and its guards' killers then, as
+the walk did.
+
+Replayed in this order, the first sweep makes the sites and vars the walk made, numbered alike, and
+reaches the state the walk reached. **Checked**: a safety build of a program of at most 1 500 nodes
+runs fact 3 three times. They are the shuffled-order sweeps (`byUnits`, as before), the recording
+walk, and the replay, which must equal the walk exactly, every site numbered as it was
+(`expectSame` numbered). With the node limit lifted and no instruction budget, the replay equals
+the recording walk on every corpus program, as a measurement. The shuffled-order comparison with
+the limit lifted fails on four programs on master before this change (`browser/tea/MapLambda` and
+three of Conduit's, a site's property entries): issue #657, which this check rests on and which is
+not this slice's. A statement's fact-3 constraints read only its own, so one whose nodes stand is
+copied into the next extraction with its ids shifted (`PtsExtractor.reuse`), checked against a
+fresh walk in the same small programs. Every output is byte for byte the same.
+Measured on dagon, master at `b271a9704` before, under a load of 5 to 19 from other work (so the
+instructions are the figures to read): instructions of the ReleaseFast compiler on the dashboard
+N = 16 340M → 348M, N = 64 1 440M → 1 465M, without `withDefault` 1 326M → 1 350M (+1.7 to
++2.2%); of the ReleaseSafe compiler TodoMVC 1 399M → 1 431M, the 16 400 arms 2 908M → 2 937M, the
+100 000 lines 15 645M → 16 009M (+1.0 to +2.3%); peak RSS within 2%. The replay itself costs less
+than the recording walk it replaces. What is added is the extraction of the statements that
+changed since the last analysis, and copying each run's constraints out of the extractions. What
+is left of the walker, the recording path and `byUnits`, goes in the next part with
+`max_pts_sweeps`.
+
+**As built 2026-10-22 — slice 5, part 3: `Pts`' walker and `max_pts_sweeps` go** (issue #649).
+The first sweep by constraints always replays the extractions (part 2). So the recording walk
+(`walkStatements` and the `stmt`, `list`, `branch`, `body` and `expr` it walked with), the guard
+and kill bookkeeping it carried at run time (`Guard`, `guards`, `reads`, `kill`, `killRead`, the
+recording branch of `narrowed`), `byUnits` (the sweep of everything a safety build compared
+against) and the cap of 64 sweeps are gone, with `spec_points_to_declined`, which counted fixpoints
+the cap stopped. A fixpoint runs until nothing changes. The order check is the *Amended* paragraph's
+shuffled replay, which with the node limit lifted and no instruction budget passes on the whole
+corpus (#657's fix, comparing effective facts, is on master). Every output is byte for byte the
+same.
+Measured on dagon against master at `21fa7eb22` (part 2): outputs byte for byte the same;
+instructions of the ReleaseFast compiler on the dashboard N = 16 348M → 347M, N = 64 1 465M →
+1 462M, without `withDefault` 1 350M → 1 348M; of the ReleaseSafe compiler TodoMVC 1 431M →
+1 430M, the 16 400 arms and the 100 000 lines unchanged (2 937M, 16 009M); peak RSS the same.
+
+**As built 2026-10-22 — slice 6, part 1: executability** (issue #676). The extraction gives every
+constraint the innermost exec cell it lies in: its module's top level, a function body (`func`),
+or an arm. An arm is the `then` or `else` of an `if` or `?:`, or the right side of `&&` or `||`.
+Its test is the cell of the test's node. `switch` cases, loops and `try` parts share their parent's
+cell. The cells, and the indexes from a cell to the constraints it gates, from a cell to the arms
+below it and from a test cell to the arms it decides, are built by counting sort with the rest
+(`Extract.execs`, `ec`, `ek`, `et`). A statement that is kept is renumbered with its cells, and
+the safety build's check of what was kept compares them too. The solver starts with every top
+level true. A body starts true when fact 3 made no site for it, or when its site escaped or has
+`odd_caller` (`new`, the entry file). It also starts true when its function is held under a key in
+`implicit_host_keys` or under a key the pass does not know, which the host may call with no call in
+the program. An executable `call` makes true the bodies of the function sites in its callee.
+An arm becomes true when its parent is true and its test's truthiness allows it, which is checked
+when either changes. A constraint whose cell is false is not evaluated, and a woken one is skipped
+until its cell is true. Past the budget, every cell is true. Fact 3 still analyses every body
+and both arms; its sets are a superset of what runs, which is sound. Two things follow from the
+facts holding only of what runs. **The rewrite's walks join nothing** (`Spec.frozen`): a walk of
+a statement already patched reads the solved parameters, fields and returns, and no longer widens
+them with what a dead arm passes. **An arm of a `?:` whose test may do something, and is always
+truthy or always falsy, is written as `0`** (`writeDead`), because its nodes have no values and
+nothing evaluates it. A tag read (`tagValue`) treats a literal with no write, which never ran, as
+holding nothing. `SpecSelfGuard` folds `go` as it folds `quiet` (371 → 341 bytes).
+`PayloadReassign` loses a dead object with its message (4 791 → 4 683). `SpecDeadArm` is new
+(473), and is 558 bytes before this part. No other golden moves. Development output is byte for
+byte the same, and 34 `run/` and `browser/` release outputs changed with the same results.
+Measured on dagon against master at `2a362f6e7`, load below 3: the measurement programs' outputs
+are byte for byte the same. Instructions of the ReleaseFast compiler are N = 16 355M → 365M,
+N = 64 1 504M → 1 534M, and without `withDefault` 1 390M → 1 419M (+2 to +3%). `spec_analyses`
+is unchanged (5, 4, 4), and the minimum `specialise` (27/135/107 ms → 29/130/98 ms) and wall are
+within noise. The ReleaseSafe compiler takes TodoMVC 1 440M → 1 488M, the 16 400 arms 2 958M →
+3 117M and the 100 000 lines 16 126M → 16 564M, with peak RSS within 2%. The cost is the exec
+cells' extraction and indexes. Parts 2 and 3 remove the rounds this part still runs.
+
+**As built 2026-10-22 — slice 6, part 2a: the names' cells** (issue #676). A whole-program name
+whose value is its initialiser's now reads that node's cell (`Spec.nameInit`). That is a name's one
+`const` or `let` with an initialiser that nothing assigns, other than a function, an arrow, or a
+`const` object or array, which stay the name itself (`nameLat`). Before, a read of such a name was
+`globalValue`, a function of the initialiser's tag alone, so a module-level constant was a literal
+only as written. The rounds and the rewrite's `stale` walks carried what its initialiser was found
+to be over to its readers, one round later. Now the solve does: a `global` read of a name with a
+cell is a reader of that cell, woken with it. The readers are kept per name in an index built by
+counting sort, and a bitset with a sorted list maps a cell to its name. A read before the
+declaration throws, so it has no value at all. The value the solve found is kept for the
+rewrite's walks (`name_solved`). Golden moves: `tea/HttpSendUntracked` 12 340 → 12 322 and
+`tea/HttpSendTracked` 17 867 → 17 861, an alias of a module constant gone. `SchemaWorkers` (5 722)
+and `app/ValidatorWorker` (1 324) keep their size, with a declaration ordered and named apart.
+Over the `run/` corpus's release builds, 51 programs shrink and none grows: 1 988 794 → 1 987 146
+bytes against master with part 1. TodoMVC is 23 620 → 23 614 bytes, and 8 762 → 8 771 after brotli
+from the names it renamed. Instructions of the ReleaseSafe compiler against master
+(`2a362f6e7`) are TodoMVC 1 440M → 1 492M, the 16 400 arms 2 958M → 3 121M and the 100 000 lines
+16 126M → 16 605M. Of the ReleaseFast compiler they are N = 16 355M → 366M, N = 64 1 504M → 1 536M
+and without `withDefault` 1 390M → 1 422M. Part 1 accounts for nearly all of it. Peak RSS is
+within 2%, and the measurement programs other than TodoMVC are byte for byte the same.
+
+**As built 2026-10-22 — slice 6, part 2b: one rewrite per solve** (issue #676). `rounds` is one
+solve, one rewrite and `prune`. `max_rounds`, the rewrite's `stale` re-walks (and `Spec.frozen`),
+`now_literal`, `deadReads`, and `releaseKeeps` with the solve after it are gone. `spec_analyses` is
+`spec_solves` (one per structural pass), and `spec_rounds_capped` is gone. The rewrite reads only
+the final facts, and every step below reads the program as the patch leaves it:
+- **A statement is patched until its own counts allow nothing more.** This happens only when the
+  patch refused a local read for its count (`refused_local`). A read of a module constant the
+  substitution rule refused is written once the whole patch has folded enough of its reads away
+  (`declined`, `folded_reads`). Dropped arguments, dead bindings and dropped keys count off what
+  they read (`noteGone`).
+- **Liveness of local bindings** (`liveness`). A `const` or `let`, declared once and assigned
+  nowhere, is dead when every read of it stands in a dead binding's initialiser. It must also not
+  be kept by lowering (`releaseKept` releases what does nothing by the facts), not be under a
+  qualified name, and have an initialiser that does nothing (`effectFree`). A dead binding goes
+  from its list. Lowering keeps only bindings it knew might go unread, so a `?` temporary whose
+  reads the patch folded keeps its effect: `run/QuestionOrder` pins that.
+- **Parameters.** A parameter literal by the solve goes by the counts the patch starts from. One
+  that nothing live reads goes when no argument for it does anything, as the patch left the
+  arguments (`argEffects`). Drops iterate inside the rewrite: a function that lost a parameter is
+  numbered anew, and the statements the drops changed are counted again (`applyDrops`,
+  `unreadParams`).
+- **Keys** a fact-3 read reached, but that no read the patch left reaches, go (`dropUnreadKeys`,
+  `liveKeys`), before the parameter decisions and again after `prune`.
+- **Reachability before the solve** (`liveStatements`, from the extraction's per-statement name
+  lists). A declaration that `prune` may drop and that nothing live refers to has its statement's
+  exec cell false: its constraints, its bodies, its reads and its assignments are not in the solve.
+  Every statement has an exec cell of its own.
+- **A field of an object literal that does nothing when made** is read as a chain: `{a: 1}.a` is
+  `1`.
+- **`self_assign` and `iife` run in the pass loop**, as one sweep (`tidy`).
+
+Moves: no `emit/release` golden grows. 24 shrink, including `SchemaSharedValidators` 2 327 → 2 140,
+`SchemaReaderTest` 1 811 → 1 656, `HttpSendUntracked` 12 322 → 12 285, the `Validator*` goldens by
+14 to 33 bytes and `IifeAtTopLevel` 202 → 182. The release builds of the `run/` corpus go
+1 988 548 → 1 985 525 bytes against master with #686: 119 programs shrink and 3 grow. Two are
+cascades that need facts only a later solve has: `CastInSuspendableTwin` +38 (a module `let`
+assigned only in a function the rewrite leaves unreferenced) and `EquatableMarkerIsNotEq` +18 (an
+evidence argument the rewrite substitutes leaves `eq` escaped for the solve). Both are #689,
+reachability inside the solve, which depends on #685. `MarkupNestedRows` +9 is the inliner's
+choice of shape now that `iife` is in the loop (#690). Development output is unchanged.
+Measured on dagon against `2a362f6e7` (before slice 6), cumulative with parts 1 and 2a:
+- **ReleaseFast instructions:** N = 16 355M → 267M, N = 64 1 504M → 1 322M, without `withDefault`
+  1 390M → 1 212M. `spec_solves` is 2, against 5, 4 and 4 analyses.
+- **Minimum `specialise`** 29 / 115 / 94 → 21 / 95 / 75 ms. Wall 0.05 / 0.21 / 0.19 →
+  0.05 / 0.19 / 0.17 s.
+- **ReleaseSafe instructions:** TodoMVC 1 440M → 1 356M, the 100 000 lines 16 126M → 14 976M.
+  The 16 400 arms are 2 958M → 3 357M (+13%), one more structural pass with its solve plus the
+  rewrite's work on one huge statement (#691), still within `abuse_wide_test`'s budget.
+- Peak RSS is within 5%. Every measurement program's output is smaller.
 
 ### Compact statements
 

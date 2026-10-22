@@ -3,6 +3,7 @@ module RecordFieldSets
   16:9 update p: accepted param (RecordFieldSets.modOpen writes it) [hoisted 1]
   22:9 update p: accepted param
   23:5 update q: accepted param (RecordFieldSets.modOpen writes it)
+  hoist p.y: read 17:12; before 16:9
   summary modOpen: π1 R, π2 R; res cb1{excl cb1}r{excl cb1}; π1 calls ≤1, need owned record, supply 1 π2 owned{excl π2}r{excl π2}
   summary readsOpen: π1 RW{}, π1.x R, π1.y R
   summary bothOpen: π1 RAW{}; res π1

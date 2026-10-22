@@ -222,8 +222,8 @@ pub const Selector = struct {
 /// - `arm_dead` — `index` the arm body's instruction.
 /// - `probe` — `index` the dropped arm's body instruction, `where` the
 ///   `Variant`.
-/// - `development`, `schema_library`, `markup`, `debug` — a module-level
-///   yes-or-no; `module` and `index` are 0.
+/// - `development`, `schema_library`, `schema_shapes`, `markup`, `debug` — a
+///   module-level yes-or-no; `module` and `index` are 0.
 /// - `consumed`, `wanted` — `index` the declaration.
 /// - `nullary` — `a` in `module`, `b` in `index`, `where` the key's
 ///   ext/schema flags; answer true at every ask, because asking is what
@@ -265,6 +265,10 @@ pub const Fact = struct {
         markup = 17,
         direct = 18,
         steps = 19,
+        /// The program's shape choice, per module (`Lower.Input.schema_shapes`,
+        /// reachability's per-module fork — issue #432). False for a module
+        /// whose edges came from the pack.
+        schema_shapes = 20,
     };
 
     fn lessThan(a: Fact, b: Fact) bool {

@@ -1,0 +1,48 @@
+-- run: record fields of function type whose values go through one generic
+-- helper (`backend.md` §9, *Declared-type filtering of fact 3*). An arrow is
+-- keyed by what it returns, so a field of function type filters nothing:
+-- each field holds the arrows the helper may return, and both builds call
+-- the right one.
+import Node
+
+
+type alias Pair =
+    a : Int
+    b : Int
+
+
+type alias Ops =
+    make : Int → Pair
+    name : Int → String
+
+
+choose : Maybe v, v → v
+choose found otherwise =
+    case found of
+        Just v →
+            v
+
+        Nothing →
+            otherwise
+
+
+find : Int, v → Maybe v
+find n v = if n > 2 then Just v else Nothing
+
+
+run : Ops → List String
+run ops =
+    p = ops.make 5
+    [ String.fromInt (p.a + p.b), ops.name 3 ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (run
+            { make = choose (find 3 λn → { a = n, b = n * 2 }) λn → { a = 0, b = n }
+            , name =
+                choose (find 1 λn → "found " ++ String.fromInt n) λn →
+                    "default " ++ String.fromInt n
+            }
+        )

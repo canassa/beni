@@ -1,0 +1,19 @@
+-- No program can call the pointer events' extractor (boundary.md §9.8.20
+-- (d)). Its parameter is `Html.Dispatched`, a type `Html` does not export
+-- and no event hands a handler, so an `onClick` handler that passes its
+-- `Event` to it is refused. `PointerExtractorType` names the type.
+import Html exposing (Html)
+
+
+type Msg
+    = Aimed Html.Pointer
+    | Clicked
+
+
+pub view : Html Msg
+view =
+    <div>
+        <button onPointerDown={Aimed} />
+        <button onClick={Clicked} />
+        <button onClick={λevent → Aimed (Html.pointer event)} />
+    </div>

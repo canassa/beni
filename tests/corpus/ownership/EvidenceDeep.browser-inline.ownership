@@ -2,8 +2,8 @@ module EvidenceDeep
   17:42 List.push xs: accepted param
   21:14 value EvidenceDeep.compare: pending: it is passed as evidence, whose calls the checker does not see
   27:11 value EvidenceDeep.compare: pending: it is passed as evidence, whose calls the checker does not see
-  summary compare: π1 R, π1#Box.0 RW, π2 R, π2#Box.0 R
-  summary shallow: π1 R, π1[*] RA; res [*] ~fresh2{lost}r{lost} ~π1[*], fresh1{lost}r{lost}
-  summary deep: π1 R, π1[*] RA; res [*] ~fresh2{lost}r{lost} ~π1[*], fresh1{lost}r{lost}
+  summary compare: π1 R, π1#Box.0 RW[storage], π2 R, π2#Box.0 R
+  summary shallow: π1 R, π1[*] RA; res [*] ~condition(fresh2){lost}r{lost} ~fresh2{lost}r{lost} ~π1[*], fresh1{lost}r{lost}
+  summary deep: π1 R, π1[*] RA; res [*] ~condition(fresh2){lost}r{lost} ~fresh2{lost}r{lost} ~π1[*], fresh1{lost}r{lost}
   demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0
 total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 2, rejected 0

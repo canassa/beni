@@ -297,7 +297,7 @@ def exprDepth : Expr → Nat
   | .letE _ a b => 1 + max (exprDepth a) (exprDepth b)
   | .resultCase _ _ _ a b | .chainCase _ _ _ a b | .entry a _ _ b => 1 + max (exprDepth a) (exprDepth b)
   | .branch _ a b => 1 + max (exprDepth a) (exprDepth b)
-  | .traverse _ _ _ _ _ _ b | .focus _ _ _ b => 1 + exprDepth b
+  | .traverse _ _ _ _ _ _ b | .focus _ _ _ b | .dictFocus _ _ _ b => 1 + exprDepth b
   | _ => 1
 
 /-- `inPlaceFailed`: the value run finished and the in-place run failed (for
@@ -370,6 +370,8 @@ def reductions : Expr → List Expr
       (atomReductions src).map (fun a => .traverse k a init i x acc body)
   | .focus src i x body => [.atom src] ++ (reductions body).map (fun b => .focus src i x b) ++
       (atomReductions i).map (fun a => .focus src a x body)
+  | .dictFocus src k x body => [.atom src] ++ (reductions body).map (fun b => .dictFocus src k x b) ++
+      (atomReductions k).map (fun a => .dictFocus src a x body)
 
 /-- Fuel-bounded greedy reduction over syntax, integers, indices and call counts. Every
     proposed reduction must remain ordinarily typed, accepted and disagreeing. -/

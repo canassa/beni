@@ -1,0 +1,9 @@
+module ConstructorDiscardedAlias
+  15:15 List.push xs: accepted param
+  24:19 call ConstructorDiscardedAlias.take <Node …>#Node.1: accepted fresh (ConstructorDiscardedAlias.take writes π1#Node.1)
+  25:5 call List.map next[*]: accepted call (<lambda> writes what List.map supplies it)
+  25:28 List.push inner: accepted callback-param (List.map supplies it owned)
+  summary take: π1 R, π1#Node.0 RA, π1#Node.1 RAW[storage], π1#Node.1[*] A; res .0 condition(fresh3) fresh3 π1#Node.1, .0[*] ~condition(fresh1) ~fresh1 ~π1#Node.1[*], .1 ~condition(fresh4) π1#Node.0, condition(fresh2){sep π1#Node.0 π1#Node.1, sep π1#Node.0 π1#Node.1[*]}r{sep π1#Node.0 π1#Node.1[*]}
+  summary afterDiscard: res [*] ~condition(fresh1) ~fresh1, [*][*] ~condition(fresh2) ~fresh2, fresh3
+  demands 4: accepted 4 (fresh 1, call 1, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 4: accepted 4 (fresh 1, call 1, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,5 +1,12 @@
 # Front-end implementation contract (M0 + M1)
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for the code written in M0 and M1. [`fast-compiler.md`](fast-compiler.md)
 says *why*; [`language.md`](language.md) says *what the language is*; this document says *what
 the code looks like* — the CLI surface the tests drive, the module layout, the shape of each
@@ -1255,6 +1262,7 @@ defaults, so that inside a project `beni build` and `beni serve` need no argumen
 | `"build"."out"` | what `--out` would say | `out` |
 | `"build"."base"` | the URL path `--out` is served under: what the page shell writes before the entry file (`{{entry}}`) and for `{{base}}`, and what `serve` takes off a request's path (*amended 2026-10-01*). It ends in `/` and holds no quote, `<`, `>` or whitespace, or it is `beni: beni.json's "build" "base" must be a URL path ending in '/', not '<value>'`, exit 2. It has no flag | `/` |
 | `"html"` | the page shell, a file relative to the manifest's directory, in the platform's place (`backend.md` §2, *The page shell*) | the platform chain's |
+| `"exports"` | the entry file's named exports, a list of ECMAScript identifiers, each the answer of `run(main)`'s `exports(name)` (*added 2026-10-20*, `boundary.md` §5.2 and §9.12 (c)); read when the platform chain declares `"exports": "program"`, and the warning `exports_ignored` otherwise; a name that is not an ASCII identifier name, is `default` or is listed twice is `invalid_entry_export`, a diagnostic of the build (exit 1, reported during emit as `invalid_entry_file` is); a value that is not a list of strings is this row's exit-2 failure, like any key of the wrong type | none |
 
 **The command line wins, field by field**: a `--platform`, a positional path or an `--out` replaces
 the manifest's value and nothing else. A manifest with no `"build"` — every manifest before this
@@ -1634,7 +1642,7 @@ synonym of plain `fmt`, so a branch can still be migrated with the flag its comm
 `build.zig` gains the step **`beni-fmt-check`**, part of `gates`. It walks `core/`, `platforms/`,
 `bench/`, `tests/corpus/` and `tests/platforms/` in sorted path order for `.beni` files, drops those
 `tests/fmt-exempt.txt` matches (`language.md` §12.5), and runs the gates' ReleaseSafe beni as
-`beni fmt --check` over the rest, in chunks small enough for the instruction budget. A file that is
+`beni fmt --check` over the rest, in batches. A file that is
 not canonical, or does not parse, fails the step with its path; so does an exemption entry naming a
 single file that does not exist or is canonical. The exemption list is one glob per line (`**` and
 `*`, matched against the repository-relative path), then `--` and a reason; blank lines and lines
@@ -2212,7 +2220,7 @@ folder through the rule and the reviewer only. The gate finds a stale signature,
 and a block that no longer checks. It does not find a sentence that is missing.
 
 **The cost.** The review of #523 measured it on the gates' ReleaseSafe beni at `4586e4fb0`,
-with `perf stat -e instructions:u`, the budget's unit:
+with `perf stat -e instructions:u`:
 
 | Process | Instructions |
 |---|---|
@@ -2222,9 +2230,9 @@ with `perf stat -e instructions:u`, the budget's unit:
 | `fmt --check` of two groups | 5M |
 | `help` | 1.5M |
 
-The six dumps together are 2 509M, 58% of one test's 4 300M, and the core dump grows with every
-core module. Hence one test per package for item 3, and one test per item for the rest. A test
-over the budget is split further, never granted an exemption.
+The six dumps together were 2 509M, and the core dump grows with every
+core module. Tests cover one package for item 3 and one item for the rest.
+Each test now has the same 120-second hang guard; performance is checked outside the gates.
 
 ### 12.5 What is not here
 

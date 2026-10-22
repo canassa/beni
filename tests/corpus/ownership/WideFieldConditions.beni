@@ -1,0 +1,241 @@
+-- #684: a record built from 64 fields of one parameter carries one
+-- construction condition (§16.7, as amended 2026-10-22) with an atom for
+-- every pair of its fields, and every call of `step` instantiates it over
+-- what the call hands `step`. Each atom names two projections of that one
+-- argument; instantiated afresh at every atom, the projections made the
+-- walk cubic in the width of the record, and this fixture went past the
+-- instruction budget. Each projection is now made once per condition.
+type alias Sub =
+    n : Int
+
+
+type alias Item =
+    a : Sub
+    b : Sub
+
+
+type alias Model =
+    f1 : Item
+    f2 : Item
+    f3 : Item
+    f4 : Item
+    f5 : Item
+    f6 : Item
+    f7 : Item
+    f8 : Item
+    f9 : Item
+    f10 : Item
+    f11 : Item
+    f12 : Item
+    f13 : Item
+    f14 : Item
+    f15 : Item
+    f16 : Item
+    f17 : Item
+    f18 : Item
+    f19 : Item
+    f20 : Item
+    f21 : Item
+    f22 : Item
+    f23 : Item
+    f24 : Item
+    f25 : Item
+    f26 : Item
+    f27 : Item
+    f28 : Item
+    f29 : Item
+    f30 : Item
+    f31 : Item
+    f32 : Item
+    f33 : Item
+    f34 : Item
+    f35 : Item
+    f36 : Item
+    f37 : Item
+    f38 : Item
+    f39 : Item
+    f40 : Item
+    f41 : Item
+    f42 : Item
+    f43 : Item
+    f44 : Item
+    f45 : Item
+    f46 : Item
+    f47 : Item
+    f48 : Item
+    f49 : Item
+    f50 : Item
+    f51 : Item
+    f52 : Item
+    f53 : Item
+    f54 : Item
+    f55 : Item
+    f56 : Item
+    f57 : Item
+    f58 : Item
+    f59 : Item
+    f60 : Item
+    f61 : Item
+    f62 : Item
+    f63 : Item
+    f64 : Item
+
+
+keep : Item → Item
+keep item = if item.a.n > 0 then item else { item | b = item.a }
+
+
+step : Model → Model
+step m =
+    { f1 = keep m.f1
+    , f2 = keep m.f2
+    , f3 = keep m.f3
+    , f4 = keep m.f4
+    , f5 = keep m.f5
+    , f6 = keep m.f6
+    , f7 = keep m.f7
+    , f8 = keep m.f8
+    , f9 = keep m.f9
+    , f10 = keep m.f10
+    , f11 = keep m.f11
+    , f12 = keep m.f12
+    , f13 = keep m.f13
+    , f14 = keep m.f14
+    , f15 = keep m.f15
+    , f16 = keep m.f16
+    , f17 = keep m.f17
+    , f18 = keep m.f18
+    , f19 = keep m.f19
+    , f20 = keep m.f20
+    , f21 = keep m.f21
+    , f22 = keep m.f22
+    , f23 = keep m.f23
+    , f24 = keep m.f24
+    , f25 = keep m.f25
+    , f26 = keep m.f26
+    , f27 = keep m.f27
+    , f28 = keep m.f28
+    , f29 = keep m.f29
+    , f30 = keep m.f30
+    , f31 = keep m.f31
+    , f32 = keep m.f32
+    , f33 = keep m.f33
+    , f34 = keep m.f34
+    , f35 = keep m.f35
+    , f36 = keep m.f36
+    , f37 = keep m.f37
+    , f38 = keep m.f38
+    , f39 = keep m.f39
+    , f40 = keep m.f40
+    , f41 = keep m.f41
+    , f42 = keep m.f42
+    , f43 = keep m.f43
+    , f44 = keep m.f44
+    , f45 = keep m.f45
+    , f46 = keep m.f46
+    , f47 = keep m.f47
+    , f48 = keep m.f48
+    , f49 = keep m.f49
+    , f50 = keep m.f50
+    , f51 = keep m.f51
+    , f52 = keep m.f52
+    , f53 = keep m.f53
+    , f54 = keep m.f54
+    , f55 = keep m.f55
+    , f56 = keep m.f56
+    , f57 = keep m.f57
+    , f58 = keep m.f58
+    , f59 = keep m.f59
+    , f60 = keep m.f60
+    , f61 = keep m.f61
+    , f62 = keep m.f62
+    , f63 = keep m.f63
+    , f64 = keep m.f64
+    }
+
+
+fresh : Int → Model
+fresh k =
+    { f1 = { a = { n = k + 1 }, b = { n = 1 } }
+    , f2 = { a = { n = k + 2 }, b = { n = 2 } }
+    , f3 = { a = { n = k + 3 }, b = { n = 3 } }
+    , f4 = { a = { n = k + 4 }, b = { n = 4 } }
+    , f5 = { a = { n = k + 5 }, b = { n = 5 } }
+    , f6 = { a = { n = k + 6 }, b = { n = 6 } }
+    , f7 = { a = { n = k + 7 }, b = { n = 7 } }
+    , f8 = { a = { n = k + 8 }, b = { n = 8 } }
+    , f9 = { a = { n = k + 9 }, b = { n = 9 } }
+    , f10 = { a = { n = k + 10 }, b = { n = 10 } }
+    , f11 = { a = { n = k + 11 }, b = { n = 11 } }
+    , f12 = { a = { n = k + 12 }, b = { n = 12 } }
+    , f13 = { a = { n = k + 13 }, b = { n = 13 } }
+    , f14 = { a = { n = k + 14 }, b = { n = 14 } }
+    , f15 = { a = { n = k + 15 }, b = { n = 15 } }
+    , f16 = { a = { n = k + 16 }, b = { n = 16 } }
+    , f17 = { a = { n = k + 17 }, b = { n = 17 } }
+    , f18 = { a = { n = k + 18 }, b = { n = 18 } }
+    , f19 = { a = { n = k + 19 }, b = { n = 19 } }
+    , f20 = { a = { n = k + 20 }, b = { n = 20 } }
+    , f21 = { a = { n = k + 21 }, b = { n = 21 } }
+    , f22 = { a = { n = k + 22 }, b = { n = 22 } }
+    , f23 = { a = { n = k + 23 }, b = { n = 23 } }
+    , f24 = { a = { n = k + 24 }, b = { n = 24 } }
+    , f25 = { a = { n = k + 25 }, b = { n = 25 } }
+    , f26 = { a = { n = k + 26 }, b = { n = 26 } }
+    , f27 = { a = { n = k + 27 }, b = { n = 27 } }
+    , f28 = { a = { n = k + 28 }, b = { n = 28 } }
+    , f29 = { a = { n = k + 29 }, b = { n = 29 } }
+    , f30 = { a = { n = k + 30 }, b = { n = 30 } }
+    , f31 = { a = { n = k + 31 }, b = { n = 31 } }
+    , f32 = { a = { n = k + 32 }, b = { n = 32 } }
+    , f33 = { a = { n = k + 33 }, b = { n = 33 } }
+    , f34 = { a = { n = k + 34 }, b = { n = 34 } }
+    , f35 = { a = { n = k + 35 }, b = { n = 35 } }
+    , f36 = { a = { n = k + 36 }, b = { n = 36 } }
+    , f37 = { a = { n = k + 37 }, b = { n = 37 } }
+    , f38 = { a = { n = k + 38 }, b = { n = 38 } }
+    , f39 = { a = { n = k + 39 }, b = { n = 39 } }
+    , f40 = { a = { n = k + 40 }, b = { n = 40 } }
+    , f41 = { a = { n = k + 41 }, b = { n = 41 } }
+    , f42 = { a = { n = k + 42 }, b = { n = 42 } }
+    , f43 = { a = { n = k + 43 }, b = { n = 43 } }
+    , f44 = { a = { n = k + 44 }, b = { n = 44 } }
+    , f45 = { a = { n = k + 45 }, b = { n = 45 } }
+    , f46 = { a = { n = k + 46 }, b = { n = 46 } }
+    , f47 = { a = { n = k + 47 }, b = { n = 47 } }
+    , f48 = { a = { n = k + 48 }, b = { n = 48 } }
+    , f49 = { a = { n = k + 49 }, b = { n = 49 } }
+    , f50 = { a = { n = k + 50 }, b = { n = 50 } }
+    , f51 = { a = { n = k + 51 }, b = { n = 51 } }
+    , f52 = { a = { n = k + 52 }, b = { n = 52 } }
+    , f53 = { a = { n = k + 53 }, b = { n = 53 } }
+    , f54 = { a = { n = k + 54 }, b = { n = 54 } }
+    , f55 = { a = { n = k + 55 }, b = { n = 55 } }
+    , f56 = { a = { n = k + 56 }, b = { n = 56 } }
+    , f57 = { a = { n = k + 57 }, b = { n = 57 } }
+    , f58 = { a = { n = k + 58 }, b = { n = 58 } }
+    , f59 = { a = { n = k + 59 }, b = { n = 59 } }
+    , f60 = { a = { n = k + 60 }, b = { n = 60 } }
+    , f61 = { a = { n = k + 61 }, b = { n = 61 } }
+    , f62 = { a = { n = k + 62 }, b = { n = 62 } }
+    , f63 = { a = { n = k + 63 }, b = { n = 63 } }
+    , f64 = { a = { n = k + 64 }, b = { n = 64 } }
+    }
+
+
+pub run : Int → Model
+run k =
+    m0 = fresh k
+    m1 = step m0
+    m2 = step m1
+    m3 = step m2
+    m4 = step m3
+    m5 = step m4
+    m6 = step m5
+    m7 = step m6
+    m8 = step m7
+    m9 = step m8
+    m10 = step m9
+    m11 = step m10
+    m12 = step m11
+    m12

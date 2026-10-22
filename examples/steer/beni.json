@@ -1,0 +1,5 @@
+{
+  "name": "steer",
+  "build": { "platform": "browser-tea", "paths": ["src"], "out": "out" },
+  "html": "index.html"
+}

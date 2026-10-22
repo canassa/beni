@@ -1,5 +1,12 @@
 # 88 — The second external port: rvcas/sternhalma, raw, under the ownership checker
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-13. This note reports what `beni dump --stage=ownership` says about the second application of
 thesis §12.4's external corpus, after research 82's Bike Wars: an Elm program written by someone else,
 ported to beni and frozen before any repair. The application is Lucas's (rvcas) Sternhalma

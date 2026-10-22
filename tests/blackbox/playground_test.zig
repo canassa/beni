@@ -21,8 +21,9 @@
 //! one both accept: the claim is the same bytes, not a clean build.
 //!
 //! The programs are split over `parts` tests by their index in sorted order,
-//! and `build.zig` runs one process per test. No budget: the step is not a
-//! gate, and one program costs about a billion instructions in Node.
+//! and `build.zig` runs one process per test. The step is not a gate. A part
+//! is a suite, so the hang guard (`tests/hang_guard.zig`) times each program
+//! on its own, as the corpus times each case.
 
 const std = @import("std");
 const world = @import("world.zig");
@@ -130,6 +131,9 @@ fn runPart(part: usize) !void {
     var compared: usize = 0;
     for (all, 0..) |program, i| {
         if (i % parts != part) continue;
+        var guard: @import("root").HangGuard = .{};
+        try guard.start(program.path);
+        defer guard.finish();
         var w = try World.init(testing.allocator, testing.io);
         defer w.deinit();
         const other: wasm.Other = .{ .wasm = wasm.wasmPath(w.arena.allocator()) orelse return error.NoWasmCompiler };

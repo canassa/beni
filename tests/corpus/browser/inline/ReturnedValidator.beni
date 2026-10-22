@@ -1,0 +1,56 @@
+-- A recursive function returns a validator lambda. Its class must
+-- survive recursive summary joins so the caller sees the fresh errors.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Validation
+    = Valid
+    | Invalid (List Int)
+
+
+firstOf : List (⊤ → Validation) → (⊤ → Validation)
+firstOf works =
+    λ⊤ →
+        case works of
+            [] →
+                Valid
+
+            [ work, …rest ] →
+                case work ⊤ of
+                    Valid →
+                        (firstOf rest) ⊤
+
+                    invalid →
+                        invalid
+
+
+pub run : ⊤ → List Int
+run ⊤ =
+    case (firstOf [ λ⊤ → Valid, λ⊤ → Invalid [ 1 ] ]) ⊤ of
+        Invalid xs →
+            List.push xs 2
+
+        Valid →
+            []
+
+
+type Msg
+    = Stay
+
+
+view : Int → Html Msg
+view n = <p>{n}</p>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → List.length (run ⊤)
+            , update = λ_ n → n
+            , view = view
+            }
+        )
+        "root"
