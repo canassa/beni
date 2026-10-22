@@ -179,6 +179,9 @@ pub const Input = struct {
     records_lost: bool = false,
     /// Render source-position hoist lines for the ownership dump only.
     format_hoists: bool = false,
+    /// Render each declaration's summary line, which only the ownership
+    /// dump prints (#684): a build would render them for no reader.
+    format_summaries: bool = false,
     /// §28.3: a checked module is read by another module through its block,
     /// written and read back, as an installed one is — so that the verdicts
     /// are the ones a build that installed it would give, and the block's
@@ -987,6 +990,7 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             };
             if (d.params == 0) continue;
             if (d.kind != .value and d.kind != .foreign_value) continue;
+            if (!o.in.format_summaries) continue;
             const s = (try o.ensureSummary(m, @intCast(di))) orelse continue;
             try lines.append(arena, .{ .text = try o.summaryText(m, @intCast(di), s) });
         }
@@ -6145,6 +6149,9 @@ const Walker = struct {
     /// Per cell, whether it may hold a record (`mayHoldRecord`): 0 not yet
     /// asked, 1 no, 2 yes. A cell's type does not change.
     cell_rec: std.ArrayList(u8) = .empty,
+    /// Per cell, its `rbase` once asked (#684), or `none`: the cell it
+    /// names depends only on cells, which never change once made.
+    cell_rbase: std.ArrayList(u32) = .empty,
     cell_spine: std.ArrayList(u32) = .empty,
     /// §31.2: the exception sets of `except` cells, each sorted, by index.
     exsets: std.ArrayList([]const u32) = .empty,
@@ -6316,6 +6323,7 @@ const Walker = struct {
         try w.cell_cond.append(w.a, none);
         try w.cell_rcond.append(w.a, none);
         try w.cell_rec.append(w.a, 0);
+        try w.cell_rbase.append(w.a, none);
         try w.cell_spine.append(w.a, none);
         return id;
     }
@@ -7406,11 +7414,19 @@ const Walker = struct {
     /// Whether two values share no cell.
     fn sepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
         if (x.len == 0 or y.len == 0) return cond_yes;
+        return w.sepOfCells(try w.sepCellList(x), try w.sepCellList(y));
+    }
+
+    /// The cells `sepValues` compares for `x`. Only the cells matter, and
+    /// whether each is reached exactly: a value holding one cell at many
+    /// paths is compared once (§20.4).
+    fn sepCellList(w: *Walker, x: AV) Allocator.Error!AV {
+        return w.cellsOf(try w.expand(x));
+    }
+
+    /// `sepValues` over two values' `sepCellList`.
+    fn sepOfCells(w: *Walker, ex: AV, ey: AV) Allocator.Error!u32 {
         var acc: CondAcc = .{};
-        // Only the cells matter, and whether each is reached exactly: a
-        // value holding one cell at many paths is compared once (§20.4).
-        const ex = try w.cellsOf(try w.expand(x));
-        const ey = try w.cellsOf(try w.expand(y));
         for (ex) |a| for (ey) |b| {
             try acc.add(w, try w.sepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (acc.shared) return cond_shared;
@@ -7577,6 +7593,13 @@ const Walker = struct {
     /// (`cell` interns: a record whose cell is always `nonlist` names
     /// itself).
     fn rbase(w: *Walker, c_in: u32) Allocator.Error!u32 {
+        if (w.cell_rbase.items[c_in] != none) return w.cell_rbase.items[c_in];
+        const b = try w.rbaseOnce(c_in);
+        w.cell_rbase.items[c_in] = b;
+        return b;
+    }
+
+    fn rbaseOnce(w: *Walker, c_in: u32) Allocator.Error!u32 {
         var c = c_in;
         while (w.cells.items[c].kind == .except) c = w.cells.items[c].a;
         const x = w.cells.items[c];
@@ -7697,9 +7720,17 @@ const Walker = struct {
     /// Whether two values share no record object.
     fn rsepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
         if (x.len == 0 or y.len == 0) return cond_yes;
+        return w.rsepOfCells(try w.rsepCellList(x), try w.rsepCellList(y));
+    }
+
+    /// The record cells `rsepValues` compares for `x`.
+    fn rsepCellList(w: *Walker, x: AV) Allocator.Error!AV {
+        return w.cellsOf(try w.rcellsOf(x));
+    }
+
+    /// `rsepValues` over two values' `rsepCellList`.
+    fn rsepOfCells(w: *Walker, ex: AV, ey: AV) Allocator.Error!u32 {
         var acc: RAcc = .{};
-        const ex = try w.cellsOf(try w.rcellsOf(x));
-        const ey = try w.cellsOf(try w.rcellsOf(y));
         for (ex) |a| for (ey) |b| {
             try acc.add(w, try w.rsepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (acc.shared) return cond_shared;
@@ -7840,18 +7871,98 @@ const Walker = struct {
         return .{ .atoms = w.o.pruneAtoms(out.items) };
     }
 
+    /// One condition's provenances at a call, each instantiated once
+    /// (#684). A construction's condition (§16.7, *as amended 2026-10-22*)
+    /// names every pair of its operands, so one parameter's projection is
+    /// named by as many atoms as the construction has operands, and was
+    /// projected again at each. A parameter's provenance is a projection of
+    /// what the call is handed: it reads nothing an atom's instantiation
+    /// changes, and the cells it reaches are interned, so the first atom
+    /// that names it makes every cell, in the order it always did, and a
+    /// later one would only find them. Its cells as `sepValues` and
+    /// `rsepValues` read them are kept too, for a value that holds no
+    /// closure, where they are its own entries; a closure's expansion reads
+    /// the locals it captured, which an atom that walks a callback may
+    /// bind. Every other provenance kind may act (escape, carry, iterate a
+    /// callback) and is instantiated at every atom, as before.
+    const ProvMemo = struct {
+        const Known = struct { av: AV, has_closure: bool, cells: ?AV = null, rcells: ?AV = null };
+        map: std.HashMapUnmanaged([4]u32, Known, WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
+        /// The condition's atom count: room for both provenances of each.
+        atoms: usize,
+
+        /// A parameter's provenance as a key: its kind is implied.
+        fn key(p: Prov) [4]u32 {
+            const flags = @as(u32, @intFromBool(p.taken)) | (@as(u32, @intFromBool(p.obj)) << 1) | (@as(u32, @intFromBool(p.condition_only)) << 2);
+            return .{ flags, p.a, p.b, p.path };
+        }
+
+        fn get(m: *ProvMemo, w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
+            if (p.kind != .param) return w.instProv(p, ctx);
+            if (m.map.capacity() == 0) try m.map.ensureTotalCapacity(w.a, @intCast(2 * m.atoms));
+            const g = try m.map.getOrPut(w.a, key(p));
+            // `instProv` never reads or grows this map.
+            if (!g.found_existing) {
+                const av = try w.instProv(p, ctx);
+                const has_closure = for (av) |e| {
+                    if (w.cells.items[e.cell].kind == .closure) break true;
+                } else false;
+                g.value_ptr.* = .{ .av = av, .has_closure = has_closure };
+            }
+            return g.value_ptr.av;
+        }
+
+        /// The entry for `p` whose cells may be kept, or null.
+        fn keeps(m: *ProvMemo, p: Prov) ?*Known {
+            if (p.kind != .param) return null;
+            const known = m.map.getPtr(key(p)).?;
+            return if (known.has_closure) null else known;
+        }
+
+        fn cells(m: *ProvMemo, w: *Walker, p: Prov, av: AV) Allocator.Error!AV {
+            const known = m.keeps(p) orelse return w.sepCellList(av);
+            if (known.cells == null) known.cells = try w.sepCellList(av);
+            return known.cells.?;
+        }
+
+        fn rcells(m: *ProvMemo, w: *Walker, p: Prov, av: AV) Allocator.Error!AV {
+            const known = m.keeps(p) orelse return w.rsepCellList(av);
+            if (known.rcells == null) known.rcells = try w.rsepCellList(av);
+            return known.rcells.?;
+        }
+
+        /// `sepValues(instProv(a), instProv(b))`.
+        fn sep(m: *ProvMemo, w: *Walker, a: Prov, b: Prov, ctx: InstCtx) Allocator.Error!u32 {
+            const x = try m.get(w, a, ctx);
+            const y = try m.get(w, b, ctx);
+            if (x.len == 0 or y.len == 0) return cond_yes;
+            const ex = try m.cells(w, a, x);
+            return w.sepOfCells(ex, try m.cells(w, b, y));
+        }
+
+        /// `rsepValues(instProv(a), instProv(b))`.
+        fn rsep(m: *ProvMemo, w: *Walker, a: Prov, b: Prov, ctx: InstCtx) Allocator.Error!u32 {
+            const x = try m.get(w, a, ctx);
+            const y = try m.get(w, b, ctx);
+            if (x.len == 0 or y.len == 0) return cond_yes;
+            const ex = try m.rcells(w, a, x);
+            return w.rsepOfCells(ex, try m.rcells(w, b, y));
+        }
+    };
+
     /// A summary's record condition, instantiated at a call.
     fn rinstXSum(w: *Walker, x: XSum, ctx: InstCtx) Allocator.Error!u32 {
         if (x.no == 1) return cond_lost;
         if (x.no == 2) return cond_shared;
         var acc: RAcc = .{};
+        var memo: ProvMemo = .{ .atoms = x.atoms.len };
         for (x.atoms) |t| {
             const c = switch (t.kind) {
-                .excl => try w.rdeepCond(try w.instProv(t.a, ctx)),
+                .excl => try w.rdeepCond(try memo.get(w, t.a, ctx)),
                 .sep => if (t.a.eql(t.b) and t.a.kind == .cb)
                     try w.rfreshAcross(t.a.a, ctx)
                 else
-                    try w.rsepValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                    try memo.rsep(w, t.a, t.b, ctx),
                 .keep => try w.rkeepShape(t.a.a, t.b, ctx),
                 // A spine is a list's array.
                 .spine, .sep_spine, .keep_spine => cond_yes,
@@ -7952,16 +8063,17 @@ const Walker = struct {
         // The conjunction gathered and sorted once (§16.3's amendment): a
         // fold of `condAnd` re-sorts what it holds at every atom.
         var acc: CondAcc = .{};
+        var memo: ProvMemo = .{ .atoms = x.atoms.len };
         for (x.atoms) |t| {
             const c = switch (t.kind) {
-                .excl => try w.deepCond(try w.instProv(t.a, ctx)),
-                .spine => try w.spineCond(try w.instProv(t.a, ctx)),
-                .sep_spine => try w.sepSpineValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                .excl => try w.deepCond(try memo.get(w, t.a, ctx)),
+                .spine => try w.spineCond(try memo.get(w, t.a, ctx)),
+                .sep_spine => try w.sepSpineValues(try memo.get(w, t.a, ctx), try memo.get(w, t.b, ctx)),
                 .keep_spine => try w.keepSpine(t.a.a, t.a.path, t.b, ctx),
                 .sep => if (t.a.eql(t.b) and t.a.kind == .cb)
                     try w.freshAcross(t.a.a, ctx)
                 else
-                    try w.sepValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
+                    try memo.sep(w, t.a, t.b, ctx),
                 .keep => try w.keepShape(t.a.a, t.b, ctx),
             };
             if (c == cond_shared) return cond_shared;
@@ -14835,9 +14947,27 @@ const Walker = struct {
     fn containingCondition(w: *Walker, inst: Inst.Index, avs: []const AV) Allocator.Error!AV {
         var acc: CondAcc = .{};
         var racc: RAcc = .{};
-        for (avs, 0..) |av, i| for (avs[i + 1 ..]) |other| {
-            try acc.add(w, try w.sepValues(av, other));
-            try racc.add(w, try w.rsepValues(av, other));
+        // Each operand's cells once, not once per pair (#684), and each made
+        // when the pairwise reading first needed it, so that every cell is
+        // interned in the order it always was.
+        const cells = try w.a.alloc(?AV, avs.len);
+        const rcells = try w.a.alloc(?AV, avs.len);
+        @memset(cells, null);
+        @memset(rcells, null);
+        for (avs, 0..) |av, i| for (avs[i + 1 ..], i + 1..) |other, j| {
+            // `sepValues(av, other)`, then `rsepValues(av, other)`.
+            if (av.len == 0 or other.len == 0) {
+                try acc.add(w, cond_yes);
+                try racc.add(w, cond_yes);
+                continue;
+            }
+            if (cells[i] == null) cells[i] = try w.sepCellList(av);
+            if (cells[j] == null) cells[j] = try w.sepCellList(other);
+            const k = try w.sepOfCells(cells[i].?, cells[j].?);
+            try acc.add(w, k);
+            if (rcells[i] == null) rcells[i] = try w.rsepCellList(av);
+            if (rcells[j] == null) rcells[j] = try w.rsepCellList(other);
+            try racc.add(w, try w.rsepOfCells(rcells[i].?, rcells[j].?));
         };
         const k = try w.condAndAll(&acc);
         const rk = try racc.done(w);
