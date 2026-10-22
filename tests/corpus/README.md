@@ -306,7 +306,9 @@ object per line, `#` for a comment:
                                 Worker that holds the text before the step
                                 ends, since a line an object writes from a
                                 socket event has no order with the mark;
-                                `(no line "…" in 5000 ms)` otherwise
+                                `(no line "…" in 5000 ms)` otherwise, one
+                                line on standard error names it, and the
+                                run fails
     {"receive": "a"}            the next thing socket `a` got: `< (socket a)
                                 "text"`, `close 1000 "reason"`, `binary <n>
                                 bytes` or `error …`; `(nothing arrived)`

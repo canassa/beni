@@ -401,6 +401,7 @@ for (const step of steps) {
   // A step that names a server line waits for it first (`"until"`).
   if (step.until !== undefined && !(await waitForLine(step.until))) {
     say(`< (no line ${JSON.stringify(step.until)} in ${stepLimit} ms)`);
+    process.stderr.write(`workers driver: no line ${JSON.stringify(step.until)} in ${stepLimit} ms; the run fails\n`);
     untilTimedOut = true;
   }
   // The Worker's console lines arrive on a stream of their own: the mark
@@ -415,5 +416,6 @@ for (const [name, pending] of detached) {
 await mf.dispose();
 flushConsole();
 // A step named a server line that never came: the run failed, whatever the
-// transcript says.
-if (untilTimedOut) process.exit(1);
+// transcript says. The exit code is set, not forced, so the transcript's
+// tail is flushed first.
+if (untilTimedOut) process.exitCode = 1;
