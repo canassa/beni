@@ -285,18 +285,7 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
 The same `Tea.sandbox` and `Tea.element` as `browser-tea`, so one source builds on both. The
 program is compiled, not run: each constructor is recognised where it is called, and the page ships
 only what it reaches. Lists are edited in place here, so the ownership checker's errors apply
-(`lists.md`, *Ownership*).
-
-A view may call a markup-returning helper in its own module; the compiler writes its markup
-at that call site. Markup held or passed as data is still a compiler limitation, as is a helper
-argument whose effectful evaluation would need sharing across binding functions. Keep the
-source program and report that limitation; do not rewrite its evaluation to make it compile.
-Only proven pure and total arm values may be evaluated eagerly. Other values run in the selected
-arm, with current model values on reveal. An effectful helper argument used only by an event is
-evaluated when its selected binding refreshes, retained for dispatch, and never rerun by a click.
-A public helper exported by `--library` is a markup value and receives the existing unsupported
-markup-value diagnostic; a successful build must never silently omit that export.
-The detailed eligibility and lifetime contract is `docs/design/browser-inline.md` §8.2/§8.4.
+(`lists.md`, *Ownership*). For view helpers, see `markup.md`, *Helpers on `browser-inline`*.
 
 ## `html`
 
