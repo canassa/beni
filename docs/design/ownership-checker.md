@@ -5006,6 +5006,10 @@ behaviour changes.
   §31 specifies it and supersedes C4. It comes after O5 and after #286, #289 and #293 (§31.12). The three
   identity sections above are amended for records with §31 (§31.11), on every platform.
 
+*Amended 2026-10-22 (#315, the owner's 2026-10-18 plan):* record work builds the hoist channel
+and the record sanitiser before O5, and O5 reuses them. The channel alone does not depend on #286;
+record enforcement and in-place record lowering do. This supersedes O6's earlier ordering above.
+
 ### 30.8 Open questions
 
 The platform question is closed, and the slices have no open question. One decision is the owner's,
@@ -5881,6 +5885,51 @@ its cached BIR, the table is a section of the module's **cache entry** and of th
 summary block (§28.4), and its format is versioned with it. It names only BIR instructions and locals, functions
 of the module's source, so determinism holds (§10). Under runtime safety, `Lower` asserts that every
 `record_update` it lowers is an accepted demand of a module whose entry is clean.
+
+*Amended 2026-10-22 (#315): the channel precedes mutation and enforcement.* The channel may be
+built independently of #286 and of record enforcement. Until the in-place lowering lands, every
+record update still emits a spread. A table distinguishes an accepted demand from a **clean
+module**: all its record demands were accepted and it was checked under ownership enforcement.
+Report-only and unchecked modules cannot authorise a store. The lowering's store guard requires
+both facts; retaining a table never enables mutation by itself.
+
+The table has its own versioned section in the cache entry (including entries in the checked core),
+beside the summary block. Its format uses module-local BIR instructions, declaration-local locals
+qualified by their declaration, and offsets into a module-local field-name blob. It contains no
+ownership path, cell, frame or interner id. A field path is copied from the BIR without a depth limit. Each accepted
+record demand names its instruction and written fields; each hoist names its holder, the read
+instruction or record-pattern binding to rewrite, the prefix through the written field, and its
+placement. Captured paths additionally name the closure creation at which they are read eagerly.
+A placement says either before an instruction or after an update's operands and before its stores;
+a call's hoists go before the call. A write in a branch with reads after the join uses the enclosing
+statement before the branch. Two writes that invalidate the same read retain the first placement.
+A bad or unknown table format is a cache miss. The table is implementation information, outside the
+interface record. It adds no dependency to the existing cache-key and interface-firewall rules.
+
+*Amended 2026-10-22, cache replay:* a nullary dot is a call in checked BIR and a field-access
+instruction in the cached frontend BIR. The table is validated before the cached nullary rewrite
+is replayed: such a demand must have a callee site in the cached dispatch table. A field read
+without that callee is not a demand. No ownership fact is recomputed on a hit.
+
+The ownership dump exposes the table's hoists by source positions and written paths, without
+internal ids. Its goldens pin placement before stores, across branches, at calls, and at closure
+creation. These are channel tests; running the corresponding programs under spreads records the
+value-semantics answers for the subsequent in-place lowering. A test-only wrong-placement mutation
+must change a golden before any store is enabled.
+
+*As built 2026-10-22 (#315), the channel only.* `own/Hoists.zig` format 1 is section seven
+of cache-entry format 13, in the checked core as in the on-disk cache. `Check.hoists` owns fresh
+and installed tables; `Lower.Input.ownership` borrows its module's table. A table's `clean` bit
+stays false while records are report-only. No record update's emitted JavaScript changes.
+`ownership/RecordHoistChannel` pins direct and call-site writes, a branch join, an old alias,
+a record pattern, a capture after a write, two writes in sequence, and a ten-field capture path.
+`tests/generate-record-hoists.mjs` (seed 315) writes `run/RecordHoistValues`: its 30 answers were
+recorded under spreads and compared with the pre-channel compiler (59b52e349). The existing generated
+research pages, `browser/inline/ResearchS2` and `ResearchS3`, retain their spread transcripts.
+These files and the rest of `run/`, `browser/` and `emit/` are the subsequent lowering's differential
+corpus. All five record mutation controls are caught, including `wrong-placement`. The sanitiser,
+eager loads, stores and optimiser barrier remain the subsequent lowering's work; the two research
+scenarios' `rr check` at multiple sizes and seeds remain its and the inline integration's gates.
 
 **The order** (`language.md` §6's *Evaluation order*, unchanged: the base, then the updated fields in written
 order). The base is evaluated into a temporary `b`, and each new value into a temporary `tᵢ`, in written order.
