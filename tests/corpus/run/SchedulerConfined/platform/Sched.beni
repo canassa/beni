@@ -11,7 +11,11 @@ import Task exposing (Scheduler)
 --| A scheduler named `name`, whose drains run in a promise reaction of
 --| their own, with `hook` for a defect under it.
 pub make : String, sync (⊤ → ⊤) → Scheduler
-make name hook = Task.schedulerWith (λdrain → later name (Js.from drain)) hook
+make name hook =
+    Task.schedulerWith
+        (λdrain → later name (Js.from drain))
+        (λdrain → later name (Js.from drain))
+        hook
 
 
 -- Run `drain` in a reaction of a resolved promise. A throw out of it

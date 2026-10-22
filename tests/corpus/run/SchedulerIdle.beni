@@ -1,0 +1,85 @@
+-- run: `Task.schedulerBusy` and `Task.onSchedulerIdle`
+-- (transparent-effects-proposal.md §17.5, added with the Worker slice).
+-- Busy counts a lent fiber and a parked one; `onSchedulerIdle` calls its
+-- function at once when no fiber runs, the last function given wins, the
+-- function runs with the fiber that ended still current, and during a
+-- stop it runs before `done`.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+busy : String, Task.Scheduler → ⊤
+busy label s =
+    _ = Debug.log label (Task.schedulerBusy s)
+    ⊤
+
+
+finish : Deferred Int, Int → ⊤
+finish done cut =
+    _ = Deferred.complete done cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+    busy "busy with nothing" s
+
+    -- At once, when no fiber runs.
+    Task.onSchedulerIdle s λ⊤ → say "idle at once"
+
+    -- A lent fiber counts.
+    Task.withScheduler s λ⊤ → busy "busy while lent" s
+    busy "busy after the loan" s
+
+    -- A parked member counts; the last function given wins; it runs with
+    -- the fiber that ended still current, which can own no child, so a
+    -- spawn there starts a root fiber of the same scheduler.
+    gate = Deferred.make ⊤
+
+    member = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            Task.spawn λ⊤ →
+                say "member parks"
+                _ = Deferred.wait gate
+                say "member goes on"
+    Task.withScheduler s λ⊤ → Task.yieldNow ⊤
+    busy "busy while a member parks" s
+    Task.onSchedulerIdle s λ⊤ → say "the first function, replaced"
+
+    Task.onSchedulerIdle s λ⊤ →
+        say "idle: the last fiber ended"
+        _ = Task.spawn λ⊤ → say "spawned from the idle function: a root of the scheduler"
+        ⊤
+    _ = Deferred.complete gate ⊤
+    _ = Debug.log "member" (outcome (Task.wait member))
+    busy "busy at the end" s
+
+    -- During a stop: idle runs when the last fiber ends, before `done`.
+    done = Deferred.make ⊤
+
+    held = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            Task.bracket (λ⊤ → ⊤) (λ_ _ → say "held released") λ_ → Task.never ⊤
+    Task.withScheduler s λ⊤ → Task.yieldNow ⊤
+    Task.onSchedulerIdle s λ⊤ → say "idle during the stop"
+    Task.stopScheduler s 1 (finish done _)
+    _ = Debug.log "cut" (Deferred.wait done)
+    _ = Debug.log "held" (outcome (Task.wait held))
+    Node.done
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"

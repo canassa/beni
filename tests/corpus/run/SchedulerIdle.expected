@@ -1,0 +1,13 @@
+busy with nothing: False
+idle at once: ⊤
+busy while lent: True
+busy after the loan: False
+busy while a member parks: True
+idle: the last fiber ended: ⊤
+spawned from the idle function: a root of the scheduler: ⊤
+member: "Done"
+busy at the end: False
+held released: ⊤
+idle during the stop: ⊤
+cut: 0
+held: "Cancelled"

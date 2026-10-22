@@ -996,7 +996,13 @@ spawn work =
     Js.write spawning True
     parent = Js.read current
     s = Js.read soonRunning
-    if not (Js.isNull parent) then
+    if not (Js.isNull parent) && Js.read many && not (Js.isNull (Js.get parent "outcome")) then
+        -- The current fiber has ended: a function run at its end, a
+        -- scheduler's idle or count hook, started this one. It can own no
+        -- child, so the child is a root fiber with its slots, of the same
+        -- scheduler, which that scheduler's stop reaches.
+        Js.to (fork Js.null (Js.from work) Js.null parent)
+    else if not (Js.isNull parent) then
         child = fork parent (Js.from work) Js.null parent
 
         -- Started by a finaliser of a fiber that is unwinding — after
@@ -2103,10 +2109,13 @@ scheduler hook =
 
 --| A scheduler for a platform: `run` is called once per batch of ready
 --| work, with the drain, and must run it later — in a microtask, a promise
---| reaction, a host callback — never during the call; `hook` is
---| `scheduler`'s.
-pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler
-schedulerWith runner hook = Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from runner))
+--| reaction, a host callback — never during the call; `more` is called
+--| with the rest of a drain that has used its 64 resumptions, and must run
+--| it in a later turn of the host's event loop — a timer — so that a fiber
+--| that keeps yielding starves nothing (the Worker slice, P705-5); `hook`
+--| is `scheduler`'s.
+pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler
+schedulerWith runner more hook = Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from more))
 
 
 --| Run `work` with the calling fiber's scheduler slot set to `scheduler`,
@@ -2201,6 +2210,13 @@ onSchedulerIdle sched f =
         f ⊤
     else
         Js.set s "idle" (Js.from f)
+
+
+--| How many schedulers the kernel lists: every one made that has not
+--| stopped for good. For a platform's test hook, where a fixture checks
+--| that a request's scheduler leaves the list (`boundary.md` §9.12 (k)).
+pub schedulersListed : ⊤ → Int
+schedulersListed ⊤ = Js.to (Js.get schedulers "length")
 
 
 --| Stop one scheduler, as `shutdown` stops the program: close its root
