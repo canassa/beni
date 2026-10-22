@@ -2053,12 +2053,27 @@ pub hasLogContext : ⊤ → Bool
 hasLogContext ⊤ = Js.read slotted && not (Js.isUndefined (currentLogContext ⊤))
 
 
---| Run `work` with the default log context, the program's, and put the
---| calling fiber's back when `work` ends, as `withLogContext` does. It does
---| not write `slotted`: a fiber has a context to drop only when a slot was
---| set already.
-pub withoutLogContext : (⊤ → a) → a
-withoutLogContext work = inLogContext Js.undefined work
+--| Run `work`, which cannot wait, with the default log context, the
+--| program's, and put the calling fiber's back when `work` returns or
+--| throws.
+pub withoutLogContext : sync (⊤ → a) → a
+withoutLogContext work =
+    -- The record that holds the context, found as `slotRecord` finds it:
+    -- `here ⊤` would make one, and `pushFinalizer` writes `finalising`.
+    -- Each of those writes, even unreached, keeps a cell that a build with
+    -- no fiber folds away (`newFiber`'s `fibered`). `work` cannot wait, so
+    -- a `Js.finally` puts the old slots back, and no finaliser is needed;
+    -- nor is a write of `slotted`, which was set already.
+    c = Js.read current
+    holder = if Js.isNull c then Js.read outside else c
+    if Js.isNull holder then
+        work ⊤
+    else
+        old = Js.get holder "slots"
+        next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
+        Js.set next "logContext" Js.undefined
+        Js.set holder "slots" next
+        Js.finally (λ⊤ → work ⊤) λ⊤ → Js.set holder "slots" old
 
 
 -- ---- Schedulers (§17.5, amended 2026-10-22; #596) --------------------------
