@@ -73,22 +73,44 @@ for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
 // ---- The Worker -------------------------------------------------------------
 
 // What the Worker writes to its console, printed after the step it came
-// with, each line `| ` and the stream's name.
+// with, each line `| ` and the stream's name. The host's stack lines are
+// left out: they hold a store path. After each step the driver asks the
+// Worker's test hook `/__beni/mark/<n>` and waits for its line, so a
+// step's lines never land under the next, however loaded the host.
 let consoleLines = [];
+let markWaiter = null;
 const capture = (name, stream) => {
   let rest = "";
   stream.on("data", (chunk) => {
     rest += chunk;
     let nl;
     while ((nl = rest.indexOf("\n")) !== -1) {
-      consoleLines.push(`| ${name}: ${rest.slice(0, nl)}`);
+      const line = rest.slice(0, nl);
       rest = rest.slice(nl + 1);
+      if (/^\s+at /.test(line)) continue;
+      const mark = /^beni:mark (\d+)$/.exec(line);
+      if (mark !== null) {
+        if (markWaiter !== null && markWaiter.n === Number(mark[1])) markWaiter.resolve();
+        continue;
+      }
+      consoleLines.push(`| ${name}: ${line}`);
     }
   });
 };
 const flushConsole = () => {
   for (const line of consoleLines) say(line);
   consoleLines = [];
+};
+let marks = 0;
+const awaitConsole = async () => {
+  marks += 1;
+  const n = marks;
+  const arrived = new Promise((resolve) => {
+    markWaiter = { n, resolve };
+  });
+  await mf.dispatchFetch(`${base}/__beni/mark/${n}`);
+  await Promise.race([arrived, new Promise((resolve) => setTimeout(resolve, stepLimit))]);
+  markWaiter = null;
 };
 
 const mf = new Miniflare({
@@ -157,7 +179,9 @@ const printResponse = async (res, prefix = "") => {
   const body = await res.text();
   if (body !== "") {
     say(`${prefix}<`);
-    for (const line of body.split("\n")) say(`${prefix}< ${line}`);
+    // The host's error page carries its stack lines, which hold a store
+    // path: left out, as the console's are.
+    for (const line of body.split("\n")) if (!/^\s+at /.test(line)) say(`${prefix}< ${line}`);
   }
 };
 
@@ -208,9 +232,9 @@ for (const step of steps) {
     printRequest(step);
     await printOutcome(await within(() => send(step)));
   }
-  // The Worker's console lines arrive on a stream of their own: give them
-  // a turn to land before they are printed with this step.
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  // The Worker's console lines arrive on a stream of their own: the mark
+  // says every line of this step has landed.
+  await awaitConsole();
   flushConsole();
 }
 for (const [name, pending] of detached) {

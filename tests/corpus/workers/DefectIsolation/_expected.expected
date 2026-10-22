@@ -1,0 +1,28 @@
+> GET /slow/60 (detached as slow)
+> GET /throw
+< 500
+< content-length: 194
+< content-type: text/plain;charset=UTF-8
+<
+< Error: TODO: the handler threw
+> (answer slow)
+(slow) < 200
+(slow) < content-type: text/plain; charset=utf-8
+(slow) <
+(slow) < slept 60
+> GET /late-throw
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< answered before the late throw
+| err: beni: a defect after the answer stopped the request's fibers: Error: TODO: the late fiber threw
+> GET /slow/20
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< slept 20
+> GET /__beni/schedulers
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< 0

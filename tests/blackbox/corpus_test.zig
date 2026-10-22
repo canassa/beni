@@ -2334,7 +2334,9 @@ const Case = struct {
         const pass: RunPass = if (release) .release else .dev;
         const out_dir = if (release) "out-release" else "out";
         var args: std.ArrayList([]const u8) = .empty;
-        try args.appendSlice(c.arena, &.{ "build", "--platform=cloudflare" });
+        // The corpus passes the hidden flag, so the fixtures can drive an
+        // object's tick and alarm (`boundary.md` §9.12 (k)).
+        try args.appendSlice(c.arena, &.{ "build", "--platform=cloudflare", "--test-hooks" });
         if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
         if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
         try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{out_dir}));
