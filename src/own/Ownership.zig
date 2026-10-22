@@ -7785,9 +7785,13 @@ const Walker = struct {
     /// left are one apart. Inside core `Dict`, where one arrival at a folded
     /// path is several places, the whole condition is pair by pair.
     fn pairwiseApart(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
-        const k = try w.pairwiseApartOnce(groups, fl);
         const sizes = try w.a.alloc(usize, groups.len);
         for (sizes, groups) |*s, g| s.* = g.len;
+        // No longer than its members: the condition is its expansion
+        // (`pairwiseApartAtoms`), and the pairs are the cheaper way to it.
+        const c = apartCounts(sizes);
+        if (c.pairs <= c.members) return w.pairwiseApartByPairs(groups, fl);
+        const k = try w.pairwiseApartOnce(groups, fl);
         if (checksApart(sizes)) {
             const want = try w.pairwiseApartByPairs(groups, fl);
             if (!try w.condSameExpanded(k, want, fl)) std.debug.panic("ownership: a pairwise-apart condition differs from its expansion", .{});
