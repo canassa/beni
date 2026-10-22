@@ -26,8 +26,15 @@
 //!        constructor u32, argument u32 · level: module u32, declaration
 //!        u32, where it stands u8 · elem, env, any: nothing
 //! decls: u32, then per declaration: index u32, flags u8 (1: a summary
-//!        follows; 2: a value whose type may hold a list), the summary
+//!        follows; 2: a value whose type may hold a list), and when a
+//!        summary follows, its length in bytes u32, the summary
 //! ```
+//!
+//! `open` reads the head, the module and string tables, and the offsets of
+//! the paths and the summaries; a summary is read the first time the run
+//! asks for it (`summary`), and a path the first time a summary it reads
+//! names it. A build that calls three functions of a large module reads
+//! three summaries, not the module's every one.
 //!
 //! A summary is its scalars, then each component's entries. Sets — `uses`,
 //! `res`, `supply`, `funs`, `xreq` and a condition's atoms — are written in
@@ -38,10 +45,12 @@
 //! carried lambdas, which a provenance names by index, and a carried
 //! lambda's bindings — keep theirs.
 //!
-//! Little-endian, read with bounds checks: a block that does not read is
-//! `error.Bad`, which the pass treats as no block — the module is then
-//! walked if it can be, and is otherwise a callee with no summary, never a
-//! wrong one (§16.4's last paragraph).
+//! Little-endian, read with bounds checks: a block whose head, tables or
+//! directory do not read is `error.Bad`, which the pass treats as no block —
+//! the module is then walked if it can be, and is otherwise a callee with no
+//! summary, never a wrong one (§16.4's last paragraph). A summary that does
+//! not read, or names a path that does not, is no summary for its
+//! declaration, by the same rule.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -94,7 +103,9 @@ pub const magic = "BENIOWN\x00";
 /// 24 invalidates rows before declaration-selected hosted entry protocols (#750).
 /// 25 preserves conditional container facts for folded Dict tree positions.
 /// 26 preserves each callback owned-result requirement's possible writers.
-pub const version: u32 = 26;
+/// 27 writes each summary's length before it, so a reader reads only the
+/// summaries the run asks for, and the paths they name (§28.4, #814).
+pub const version: u32 = 27;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -104,13 +115,6 @@ pub const Row = struct {
     sum: ?*const Summary,
     /// A value with no parameters whose type may hold a list (§23.6).
     holds_list: bool = false,
-};
-
-/// What `read` gives: per declaration of the module, its summary, and
-/// whether it is a value that may hold a list.
-pub const Block = struct {
-    sums: []?Summary,
-    holds_list: []bool,
 };
 
 // ---------------------------------------------------------------------------
@@ -309,7 +313,14 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         if (r.sum == null and !r.holds_list) continue;
         try w.int(r.decl);
         try w.byte(@as(u8, if (r.sum != null) 1 else 0) | @as(u8, if (r.holds_list) 2 else 0));
-        if (r.sum) |s| try writeSummary(&w, arena, s);
+        if (r.sum) |s| {
+            // Its length, so a reader can find the summary it wants
+            // without reading the ones before it.
+            const at = w.out.items.len;
+            try w.int(0);
+            try writeSummary(&w, arena, s);
+            std.mem.writeInt(u32, w.out.items[at..][0..4], @intCast(w.out.items.len - at - 4), .little);
+        }
     }
     return w.out.toOwnedSlice(gpa);
 }
@@ -603,9 +614,7 @@ const Reader = struct {
     arena: Allocator,
     bytes: []const u8,
     at: usize = 0,
-    modules: []u32 = &.{},
-    strings: []u32 = &.{},
-    paths: []u32 = &.{},
+    block: *Block,
 
     fn int(r: *Reader) Error!u32 {
         if (r.bytes.len - r.at < 4) return error.Bad;
@@ -627,6 +636,11 @@ const Reader = struct {
         return r.bytes[r.at - n .. r.at];
     }
 
+    fn skip(r: *Reader, n: usize) Error!void {
+        if (r.bytes.len - r.at < n) return error.Bad;
+        r.at += n;
+    }
+
     /// A count of items each at least `min` bytes long: a count the rest of
     /// the block cannot hold is a bad block, not an allocation.
     fn count(r: *Reader, min: usize) Error!u32 {
@@ -635,16 +649,20 @@ const Reader = struct {
         return n;
     }
 
+    /// A path by its table index, interned the first time a summary names
+    /// it (§28.4: a block is read as far as the run asks).
     fn path(r: *Reader) Error!u32 {
         const i = try r.int();
-        if (i >= r.paths.len) return error.Bad;
-        return r.paths[i];
+        const b = r.block;
+        if (i >= b.path_at.len) return error.Bad;
+        if (b.path_id[i] == unread) b.path_id[i] = try readPath(r.o, b, b.path_at[i]);
+        return b.path_id[i];
     }
 
     fn module(r: *Reader) Error!u32 {
         const i = try r.int();
-        if (i >= r.modules.len) return error.Bad;
-        return r.modules[i];
+        if (i >= r.block.modules.len) return error.Bad;
+        return r.block.modules[i];
     }
 
     fn enumOf(r: *Reader, comptime E: type) Error!E {
@@ -661,78 +679,92 @@ const Reader = struct {
     }
 };
 
-/// The block `bytes` of module `m`, its paths interned into `o`'s table and
-/// its summaries in `o`'s normal form. `error.Bad` when the bytes are not a
-/// block of this version, or name a module, declaration or constructor this
-/// session does not have.
-pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Block {
-    var r: Reader = .{ .o = o, .arena = arena, .bytes = bytes };
+const unread = std.math.maxInt(u32);
+
+/// What `open` gives: a block whose tables are resolved and whose
+/// summaries are read one declaration at a time, the first time the run
+/// asks for one (`summary`), and kept. Per declaration, whether it is a
+/// value that may hold a list is read at once.
+pub const Block = struct {
+    bytes: []const u8,
+    modules: []u32,
+    strings: []u32,
+    /// Each path's offset in `bytes`, and its id in this run once a
+    /// summary names it (`unread` until then).
+    path_at: []u32,
+    path_id: []u32,
+    /// Per declaration: the span of its summary in `bytes` (`sum_at` is
+    /// `unread` when it has none), and the summary once read.
+    sum_at: []u32,
+    sum_end: []u32,
+    sums: []?Summary,
+    /// Per declaration: 0 not read yet, 1 read, 2 no summary (none in the
+    /// block, or one that does not read).
+    state: []u8,
+    holds_list: []bool,
+};
+
+/// The block `bytes` of module `m`: its head, its tables and its row
+/// directory read; its paths and summaries read as `summary` asks.
+/// `error.Bad` when the bytes are not a block of this version, or name a
+/// module or declaration this session does not have.
+pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Block {
+    const decls = o.in.birs[m].decls.len;
+    var block: Block = .{
+        .bytes = bytes,
+        .modules = &.{},
+        .strings = &.{},
+        .path_at = &.{},
+        .path_id = &.{},
+        .sum_at = try arena.alloc(u32, decls),
+        .sum_end = try arena.alloc(u32, decls),
+        .sums = try arena.alloc(?Summary, decls),
+        .state = try arena.alloc(u8, decls),
+        .holds_list = try arena.alloc(bool, decls),
+    };
+    @memset(block.sum_at, unread);
+    @memset(block.sum_end, 0);
+    @memset(block.sums, null);
+    @memset(block.state, 0);
+    @memset(block.holds_list, false);
+    var r: Reader = .{ .o = o, .arena = arena, .bytes = bytes, .block = &block };
     if (bytes.len < magic.len or !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Bad;
     r.at = magic.len;
     if (try r.int() != version) return error.Bad;
 
     const n_modules = try r.count(5);
-    r.modules = try arena.alloc(u32, n_modules);
-    for (r.modules) |*slot| {
+    block.modules = try arena.alloc(u32, n_modules);
+    for (block.modules) |*slot| {
         const package = std.enums.fromInt(SourceStore.Package, try r.byte()) orelse return error.Bad;
         const name = try r.text();
         slot.* = o.moduleNamed(package, name) orelse return error.Bad;
     }
     const n_strings = try r.count(4);
-    r.strings = try arena.alloc(u32, n_strings);
-    for (r.strings) |*slot| {
+    block.strings = try arena.alloc(u32, n_strings);
+    for (block.strings) |*slot| {
         const name = try r.text();
         // A field the session never interned is a field no value of this
         // session has: the step is still a field, of no record it can meet.
         slot.* = if (o.in.interner.find(name)) |s| @backingInt(s) else Ownership.none;
     }
+    // The path table is only measured here: each path is read, and
+    // interned, when a summary first names it.
     const n_paths = try r.count(1);
-    r.paths = try arena.alloc(u32, n_paths);
-    for (r.paths) |*slot| {
+    block.path_at = try arena.alloc(u32, n_paths);
+    block.path_id = try arena.alloc(u32, n_paths);
+    @memset(block.path_id, unread);
+    for (block.path_at) |*slot| {
+        slot.* = @intCast(r.at);
         const n_steps = try r.byte();
         if (n_steps > Ownership.k_limit) return error.Bad;
-        var at: u32 = Ownership.eps;
-        for (0..n_steps) |_| {
-            const kind = try r.enumOf(StepKind);
-            const arg: u32 = switch (kind) {
-                .field => blk: {
-                    const i = try r.int();
-                    if (i >= r.strings.len) return error.Bad;
-                    break :blk r.strings[i];
-                },
-                .tuple => try r.int(),
-                .ctor => blk: {
-                    const cm = try r.module();
-                    const ci = try r.int();
-                    const k = try r.int();
-                    const arity = (try o.ctorArity(cm, ci)) orelse return error.Bad;
-                    if (k >= arity) return error.Bad;
-                    break :blk try o.ctorStep(try o.ctorId(cm, ci), k);
-                },
-                .level => blk: {
-                    const mi = try r.int();
-                    const td = try r.int();
-                    const where = std.enums.fromInt(Ownership.MarkerKind, try r.byte()) orelse return error.Bad;
-                    if (mi == std.math.maxInt(u32)) break :blk try o.markerId(Ownership.fn_type, where);
-                    if (mi >= r.modules.len) return error.Bad;
-                    const tm = r.modules[mi];
-                    if (td >= o.in.birs[tm].decls.len) return error.Bad;
-                    break :blk try o.markerId((@as(u64, tm) << 32) | td, where);
-                },
-                .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
-            };
-            at = try o.rawChild(at, kind, arg);
-        }
-        slot.* = at;
+        for (0..n_steps) |_| try r.skip(switch (try r.enumOf(StepKind)) {
+            .field, .tuple => 4,
+            .ctor => 12,
+            .level => 9,
+            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
+        });
     }
 
-    const decls = o.in.birs[m].decls.len;
-    const block: Block = .{
-        .sums = try arena.alloc(?Summary, decls),
-        .holds_list = try arena.alloc(bool, decls),
-    };
-    @memset(block.sums, null);
-    @memset(block.holds_list, false);
     const n_rows = try r.count(5);
     for (0..n_rows) |_| {
         const d = try r.int();
@@ -740,10 +772,80 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         const flags = try r.byte();
         if (flags > 3) return error.Bad;
         block.holds_list[d] = flags & 2 != 0;
-        if (flags & 1 != 0) block.sums[d] = try readSummary(&r, 0);
+        if (flags & 1 != 0) {
+            const len = try r.int();
+            const at = r.at;
+            try r.skip(len);
+            block.sum_at[d] = @intCast(at);
+            block.sum_end[d] = @intCast(r.at);
+        } else {
+            block.sum_at[d] = unread;
+        }
     }
     if (r.at != bytes.len) return error.Bad;
     return block;
+}
+
+/// Declaration `d`'s summary in `b`, read now if it is not yet, in `o`'s
+/// normal form; null when the block has none for it, or the one it has
+/// does not read — a callee with no summary, never a wrong one (§16.4).
+pub fn summary(o: *Ownership, arena: Allocator, b: *Block, d: u32) Allocator.Error!?*const Summary {
+    if (d >= b.state.len) return null;
+    switch (b.state[d]) {
+        1 => return &b.sums[d].?,
+        2 => return null,
+        else => {},
+    }
+    b.state[d] = 2;
+    if (b.sum_at[d] == unread) return null;
+    var r: Reader = .{ .o = o, .arena = arena, .bytes = b.bytes[0..b.sum_end[d]], .at = b.sum_at[d], .block = b };
+    const s = readSummary(&r, 0) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        error.Bad => return null,
+    };
+    if (r.at != r.bytes.len) return null;
+    b.sums[d] = s;
+    b.state[d] = 1;
+    return &b.sums[d].?;
+}
+
+/// The path at offset `at` of `b`'s table, interned into `o`'s table.
+fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
+    var r: Reader = .{ .o = o, .arena = undefined, .bytes = b.bytes, .at = at, .block = b };
+    const n_steps = try r.byte();
+    var id: u32 = Ownership.eps;
+    for (0..n_steps) |_| {
+        const kind = try r.enumOf(StepKind);
+        const arg: u32 = switch (kind) {
+            .field => blk: {
+                const i = try r.int();
+                if (i >= b.strings.len) return error.Bad;
+                break :blk b.strings[i];
+            },
+            .tuple => try r.int(),
+            .ctor => blk: {
+                const cm = try r.module();
+                const ci = try r.int();
+                const k = try r.int();
+                const arity = (try o.ctorArity(cm, ci)) orelse return error.Bad;
+                if (k >= arity) return error.Bad;
+                break :blk try o.ctorStep(try o.ctorId(cm, ci), k);
+            },
+            .level => blk: {
+                const mi = try r.int();
+                const td = try r.int();
+                const where = std.enums.fromInt(Ownership.MarkerKind, try r.byte()) orelse return error.Bad;
+                if (mi == std.math.maxInt(u32)) break :blk try o.markerId(Ownership.fn_type, where);
+                if (mi >= b.modules.len) return error.Bad;
+                const tm = b.modules[mi];
+                if (td >= o.in.birs[tm].decls.len) return error.Bad;
+                break :blk try o.markerId((@as(u64, tm) << 32) | td, where);
+            },
+            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
+        };
+        id = try o.rawChild(id, kind, arg);
+    }
+    return id;
 }
 
 fn readProv(r: *Reader) Error!Prov {
@@ -755,8 +857,8 @@ fn readProv(r: *Reader) Error!Prov {
     if (flags > 7) return error.Bad;
     const taken = flags & 1 != 0;
     const a = if (kind == .shared) blk: {
-        if (a_raw >= r.modules.len) return error.Bad;
-        const sm = r.modules[a_raw];
+        if (a_raw >= r.block.modules.len) return error.Bad;
+        const sm = r.block.modules[a_raw];
         if (b >= r.o.in.birs[sm].decls.len) return error.Bad;
         break :blk sm;
     } else a_raw;
@@ -840,8 +942,8 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         const fields = try r.arena.alloc(u32, try r.count(4));
         for (fields) |*f| {
             const i = try r.int();
-            if (i >= r.strings.len) return error.Bad;
-            f.* = r.strings[i];
+            if (i >= r.block.strings.len) return error.Bad;
+            f.* = r.block.strings[i];
         }
         // Interned in this session's order, as the summary's own are.
         std.mem.sort(u32, fields, {}, std.sort.asc(u32));
@@ -975,7 +1077,11 @@ test "a block naming a constructor field past the constructor's arity is refused
             return out.items;
         }
     };
-    _ = try read(&o, arena.allocator(), try bytes.of(arena.allocator(), 1), 0);
-    try std.testing.expectError(error.Bad, read(&o, arena.allocator(), try bytes.of(arena.allocator(), 2), 0));
-    try std.testing.expectError(error.Bad, read(&o, arena.allocator(), try bytes.of(arena.allocator(), 64), 0));
+    // A path is read when a summary first names it (§28.4), so the
+    // refusal is the path's.
+    for ([_]u32{ 1, 2, 64 }) |k| {
+        var block = try open(&o, arena.allocator(), try bytes.of(arena.allocator(), k), 0);
+        const got = readPath(&o, &block, block.path_at[0]);
+        if (k < 2) _ = try got else try std.testing.expectError(error.Bad, got);
+    }
 }

@@ -1753,7 +1753,7 @@ fn blockStates(o: *Ownership) Allocator.Error!void {
 /// one the caller handed in for a module it did not check. Null when there
 /// is none or it does not read — the module's functions are then callees
 /// with no summary (§6.1), as they were before blocks existed.
-fn blockOf(o: *Ownership, m: u32) Allocator.Error!?*const summary_bytes.Block {
+fn blockOf(o: *Ownership, m: u32) Allocator.Error!?*summary_bytes.Block {
     try o.blockStates();
     if (o.decoded[m]) |*b| return b;
     if (o.block_state[m] == 1) return null;
@@ -1766,7 +1766,7 @@ fn blockOf(o: *Ownership, m: u32) Allocator.Error!?*const summary_bytes.Block {
     defer if (o.in.profile) |p| {
         o.block_ns += p.since(token.?);
     };
-    o.decoded[m] = summary_bytes.read(o, o.keep.allocator(), bytes, m) catch |err| switch (err) {
+    o.decoded[m] = summary_bytes.open(o, o.keep.allocator(), bytes, m) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Bad => {
             o.block_state[m] = 1;
@@ -1778,9 +1778,12 @@ fn blockOf(o: *Ownership, m: u32) Allocator.Error!?*const summary_bytes.Block {
 
 fn blockSummary(o: *Ownership, m: u32, d: u32) Allocator.Error!?*const Summary {
     const b = (try o.blockOf(m)) orelse return null;
-    if (d >= b.sums.len) return null;
-    if (b.sums[d]) |*s| return s;
-    return null;
+    // §28.4: a summary is read the first time the run asks for it.
+    const token = if (o.in.profile) |p| p.begin() else null;
+    defer if (o.in.profile) |p| {
+        o.block_ns += p.since(token.?);
+    };
+    return summary_bytes.summary(o, o.keep.allocator(), b, d);
 }
 
 /// §28.3: the summary of declaration `d` of the checked module `m`, written
@@ -1794,11 +1797,12 @@ fn sealSlot(o: *Ownership, m: u32, d: u32, slot: *Slot) Allocator.Error!void {
     try o.seedPaths();
     const bytes = try summary_bytes.write(o, o.in.gpa, &.{.{ .decl = d, .sum = &slot.sum }});
     defer o.in.gpa.free(bytes);
-    const block = summary_bytes.read(o, o.keep.allocator(), bytes, m) catch |err| switch (err) {
+    var block = summary_bytes.open(o, o.keep.allocator(), bytes, m) catch |err| switch (err) {
         error.OutOfMemory => return error.OutOfMemory,
         error.Bad => std.debug.panic("ownership: {s}'s summary block does not read back", .{try o.declName(m, d)}),
     };
-    const s = block.sums[d].?;
+    const s = ((try summary_bytes.summary(o, o.keep.allocator(), &block, d)) orelse
+        std.debug.panic("ownership: {s}'s summary block does not read back", .{try o.declName(m, d)})).*;
     if (std.debug.runtime_safety and !try o.summaryDeepEql(slot.sum, s))
         std.debug.panic("ownership: {s}'s summary changes through its block", .{try o.declName(m, d)});
     slot.sum = s;
