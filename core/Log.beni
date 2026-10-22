@@ -13,9 +13,9 @@
 --!
 --! **Levels.** `Trace < Debug < Info < Warn < Error`. A line below the
 --! minimum is not written: the call builds nothing, and costs a read of
---! the fiber's slot and one comparison. The minimum is the program's —
---! `Info` until `setMinimum` changes it — unless `minimum` sets one for a
---! function and the fibers it starts.
+--! the fiber's slot, a read of the program's minimum when no `minimum` is
+--! in force, and one comparison. The minimum is the program's — `Info`
+--! until `setMinimum` changes it — unless `minimum` sets one.
 --!
 --! **The sink.** A call makes an `Entry` — the level, the line, the
 --! annotations and log spans of the calling fiber, and the time on its
