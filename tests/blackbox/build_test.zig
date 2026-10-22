@@ -7389,3 +7389,24 @@ test "a Worker built without --test-hooks holds no hook text, in both builds" {
     try testing.expect(std.mem.indexOf(u8, hoisted, "beni:mark") == null);
     try testing.expect(std.mem.indexOf(u8, hoisted, "/__beni/") == null);
 }
+test "Tea keyed tables do not reach core Dict" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Cmd
+        \\import Html
+        \\import Sub
+        \\import Tea
+        \\
+        \\main : Tea.Program
+        \\main = Tea.element
+        \\    { init = λ⊤ → ( 0, Cmd.keyed "job" Cmd.Restart (λsend → send 1) )
+        \\    , update = λmsg _ → ( msg, Cmd.cancelAll )
+        \\    , view = λn → <p>{n}</p>
+        \\    , subscriptions = λ_ → Sub.listen "subscription" (λsend → send 2) identity
+        \\    }
+    );
+    const r = try w.runWith(&.{ "build", "--platform=browser-tea", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(r);
+    try testing.expect(!w.exists("out/_core/Dict.mjs"));
+}

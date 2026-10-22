@@ -19,7 +19,6 @@
 import Browser exposing (Host, UrlRequest)
 import Browser.Navigation as Navigation
 import Cmd exposing (After, Cancel, CancelAll, Cmd, Concurrent, Ignore, Item, Keyed, KeyedNow, Now, Perform, Policy, Queue, Restart)
-import Dict exposing (Dict)
 import Hosted exposing (Hears, Job, Key, Kind, Outlet, Relay, Tap, Waits)
 import Html exposing (Html)
 import Js
@@ -161,7 +160,7 @@ titled page =
 type alias State model msg =
     model : model
     scope : Scope
-    jobs : Dict (List Key) (List (Run msg))
+    jobs : Table (List Key) (List (Run msg))
     live : Lives msg
 
 
@@ -171,7 +170,7 @@ type alias State model msg =
 -- arm on a constructor nothing builds*).
 type Lives msg
     = Idle
-    | Running (Dict Key (Live msg))
+    | Running (Table Key (Live msg))
 
 
 -- A keyed body that has not been forgotten, and the outlet its `send` goes
@@ -196,7 +195,7 @@ type alias Live msg =
 
 start : Host msg, model × Cmd msg → State model msg
 start host ( model, cmd ) =
-    perform host cmd { model = model, scope = Task.openRoot ⊤, jobs = Dict.empty, live = Idle }
+    perform host cmd { model = model, scope = Task.openRoot ⊤, jobs = tableEmpty ⊤, live = Idle }
 
 
 step : Host msg, model × Cmd msg, State model msg → State model msg
@@ -204,7 +203,17 @@ step host ( model, cmd ) state = perform host cmd { state | model = model }
 
 
 perform : Host msg, Cmd msg, State model msg → State model msg
-perform host cmd state = List.foldl (Cmd.items cmd) state λit s → item host it s
+perform host cmd state = performItems host (Cmd.items cmd) state
+
+
+performItems : Host msg, List (Item msg), State model msg → State model msg
+performItems host pending state =
+    case pending of
+        [] →
+            state
+
+        [ it, …rest ] →
+            performItems host rest (item host it state)
 
 
 item : Host msg, Item msg, State model msg → State model msg
@@ -227,16 +236,10 @@ item host it state =
             keyedNow host path policy job state
 
         Cancel path →
-            stopped state.scope (runsAt state path) { state | jobs = Dict.remove state.jobs path }
+            stopped state.scope (runsAt state path) { state | jobs = tableRemove state.jobs path }
 
         CancelAll prefix →
-            ( gone, kept ) = Dict.partition state.jobs λpath _ → startsWith path prefix
-            -- Each list is oldest first and `stopped` walks one from its end
-            -- (`runsAt`), so the lists go in reverse key order: the first
-            -- key's newest body is still the first stopped.
-            { state
-                | jobs = stopped state.scope (List.concat (List.reverse (Dict.values gone))) kept
-            }
+            { state | jobs = tableCancelAll state.scope prefix state.jobs }
 
         After work →
             Hosted.afterRender host work
@@ -357,11 +360,11 @@ running r =
 -- added at the end, where a list grows, and every walk of the list below
 -- goes from its end, so the newest is closed, stopped and waited for first.
 runsAt : State model msg, List Key → List (Run msg)
-runsAt state path = Maybe.withDefault (Dict.get state.jobs path) []
+runsAt state path = Maybe.withDefault (tableGet state.jobs path) []
 
 
 put : State model msg, List Key, List (Run msg) → State model msg
-put state path runs = { state | jobs = Dict.insert state.jobs path runs }
+put state path runs = { state | jobs = tableInsert state.jobs path runs }
 
 
 -- Close the outlets of `runs` now, so nothing they send after this message
@@ -480,11 +483,11 @@ settle host sub state =
                     { state | live = Running (diff host state.scope [] live) }
 
 
-lives : Lives msg → Dict Key (Live msg)
+lives : Lives msg → Table Key (Live msg)
 lives l =
     case l of
         Idle →
-            Dict.empty
+            tableEmpty ⊤
 
         Running live →
             live
@@ -493,41 +496,62 @@ lives l =
 -- Each key's declarations: how the first runs, which decides whether a
 -- fiber runs it, and every one's tap, in order.
 type alias Wanted msg =
-    Dict Key (Kind × List (Tap msg))
+    Table Key (Kind × List (Tap msg))
 
 
-diff : Host msg, Scope, List (Key × Kind × Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
+diff : Host msg, Scope, List (Key × Kind × Tap msg), Table Key (Live msg) → Table Key (Live msg)
 diff host scope declared live =
-    wanted = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
-    kept = Dict.foldl live Dict.empty λk l d → keep scope wanted k l d
-    Dict.foldl wanted kept λk ( kind, taps ) d → arrive host scope k kind taps d
+    wanted = declarations declared (tableEmpty ⊤)
+    kept = tableFoldl live (tableEmpty ⊤) λk l d → keep scope wanted k l d
+    tableFoldl wanted kept λk ( kind, taps ) d → arrive host scope k kind taps d
+
+
+declarations : List (Key × Kind × Tap msg), Wanted msg → Wanted msg
+declarations declared wanted =
+    case declared of
+        [] →
+            wanted
+
+        [ ( k, kind, t ), …rest ] →
+            declarations rest (want k kind t wanted)
 
 
 want : Key, Kind, Tap msg, Wanted msg → Wanted msg
-want k kind t d = Dict.update d k λcurrent →
-    ( first, taps ) = Maybe.withDefault current ( kind, [] )
-    Just ( first, List.append taps [ t ] )
+want k kind t (Table rows) =
+    i = tableLower rows k 0 (List.length rows)
+    case List.get rows i of
+        Just ( stored, _ ) →
+            if Hosted.compare stored k == EQ then
+                Table
+                    (List.update rows i λ( kept, ( first, taps ) ) →
+                        ( kept, ( first, List.push taps t ) )
+                    )
+            else
+                Table (List.insertAt rows i ( k, ( kind, [ t ] ) ))
+
+        Nothing →
+            Table (List.push rows ( k, ( kind, [ t ] ) ))
 
 
-keep : Scope, Wanted msg, Key, Live msg, Dict Key (Live msg) → Dict Key (Live msg)
+keep : Scope, Wanted msg, Key, Live msg, Table Key (Live msg) → Table Key (Live msg)
 keep scope wanted k l d =
-    case Dict.get wanted k of
+    case tableGet wanted k of
         Just ( _, taps ) →
             Hosted.retap l.relay taps
-            Dict.insert d k l
+            tableInsert d k l
 
         Nothing →
             l.stop scope
             d
 
 
-arrive : Host msg, Scope, Key, Kind, List (Tap msg), Dict Key (Live msg) → Dict Key (Live msg)
+arrive : Host msg, Scope, Key, Kind, List (Tap msg), Table Key (Live msg) → Table Key (Live msg)
 arrive host scope k kind taps d =
-    case ( Dict.member d k, taps ) of
+    case ( tableMember d k, taps ) of
         ( False, [ first, …_ ] ) →
             r = Hosted.relay host first
             Hosted.retap r taps
-            Dict.insert d k { relay = r, stop = begin scope r kind }
+            tableInsert d k { relay = r, stop = begin scope r kind }
 
         _ →
             d
@@ -571,3 +595,148 @@ hear : Relay msg → (Scope → ⊤)
 hear r =
     Hosted.hear r
     λ_ → Hosted.unhear r
+
+
+-- Private sorted storage for command and subscription keys (boundary.md §9.8.3). These keys
+-- use their types' comparisons and cannot be stored in the scalar-key Dict.
+type Table k v
+    = Table (List (k × v))
+
+
+tableEmpty : ⊤ → Table k v
+tableEmpty ⊤ = Table []
+
+
+-- The first position whose stored key is not less than the requested key.
+tableLower : List (k × v), k, Int, Int → Int
+    where k.compare : k, k → Order
+tableLower rows key lo hi =
+    if lo < hi then
+        mid = (lo + hi) // 2
+        case List.get rows mid of
+            Just ( stored, _ ) →
+                if stored.compare key == LT then
+                    tableLower rows key (mid + 1) hi
+                else
+                    tableLower rows key lo mid
+
+            Nothing →
+                lo
+    else
+        lo
+
+
+tableGet : Table k v, k → Maybe v
+    where k.compare : k, k → Order
+tableGet (Table rows) key =
+    i = tableLower rows key 0 (List.length rows)
+    case List.get rows i of
+        Just ( stored, value ) →
+            if stored.compare key == EQ then Just value else Nothing
+
+        Nothing →
+            Nothing
+
+
+tableMember : Table k v, k → Bool
+    where k.compare : k, k → Order
+tableMember table key =
+    case tableGet table key of
+        Just _ →
+            True
+        Nothing →
+            False
+
+
+-- An equal key keeps the key already stored, including when distinct
+-- values of its type compare EQ.
+tableInsert : Table k v, k, v → Table k v
+    where k.compare : k, k → Order
+tableInsert (Table rows) key value =
+    i = tableLower rows key 0 (List.length rows)
+    case List.get rows i of
+        Just ( stored, _ ) →
+            if stored.compare key == EQ then
+                Table (List.update rows i λ( kept, _ ) → ( kept, value ))
+            else
+                Table (List.insertAt rows i ( key, value ))
+
+        Nothing →
+            Table (List.push rows ( key, value ))
+
+
+tableRemove : Table k v, k → Table k v
+    where k.compare : k, k → Order
+tableRemove (Table rows) key =
+    i = tableLower rows key 0 (List.length rows)
+    case List.get rows i of
+        Just ( stored, _ ) →
+            Table (if stored.compare key == EQ then List.removeAt rows i else rows)
+
+        Nothing →
+            Table rows
+
+
+tableFoldl : Table k v, a, (k, v, a → a) → a
+tableFoldl (Table rows) initial f = List.foldl rows initial λ( key, value ) acc → f key value acc
+
+
+tableCancelAll :
+      Scope
+    , List Key
+    , Table (List Key) (List (Run msg))
+    → Table (List Key) (List (Run msg))
+tableCancelAll scope prefix (Table rows) =
+    first = tableLower rows prefix 0 (List.length rows)
+    last = tablePrefixEnd rows prefix first
+    tableCancelFrom scope rows first last
+    Table (tableRemoveRange rows first last)
+
+
+tablePrefixEnd : List ((List Key) × v), List Key, Int → Int
+tablePrefixEnd rows prefix i =
+    case List.get rows i of
+        Just ( key, _ ) →
+            if startsWith key prefix then tablePrefixEnd rows prefix (i + 1) else i
+
+        Nothing →
+            i
+
+
+-- Path order, with the newest run at each path stopped first.
+tableCancelFrom : Scope, List (k × List (Run msg)), Int, Int → ⊤
+tableCancelFrom scope rows i end =
+    if i < end then
+        case List.get rows i of
+            Just ( _, runs ) →
+                stopped scope runs ⊤
+                tableCancelFrom scope rows (i + 1) end
+
+            Nothing →
+                ⊤
+
+
+-- Rotate the removed range to the tail, then pop it. Swaps preserve the
+-- values and their separation; no slot is duplicated during the move.
+tableRemoveRange : List a, Int, Int → List a
+tableRemoveRange rows first end =
+    if first ≥ end then
+        rows
+    else
+        n = List.length rows
+        a = tableReverseRange rows first (end - 1)
+        b = tableReverseRange a end (n - 1)
+        c = tableReverseRange b first (n - 1)
+        tablePop c (end - first)
+
+
+tableReverseRange : List a, Int, Int → List a
+tableReverseRange rows lo hi =
+    if lo < hi then
+        tableReverseRange (List.swap rows lo hi) (lo + 1) (hi - 1)
+    else
+        rows
+
+
+tablePop : List a, Int → List a
+tablePop rows count = if count > 0 then tablePop (List.pop rows) (count - 1) else rows

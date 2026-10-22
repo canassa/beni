@@ -1398,3 +1398,11 @@ test "ownership entry: an unsupported settle shape leaves its writer pending" {
     try testing.expect(r.diagnostics.len != 0);
     for (r.diagnostics) |d| try testing.expectEqual(.list_may_be_shared, d.code);
 }
+
+test "ownership everywhere: Tea private key tables have no refused writer" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(&.{ "check", "--platform=browser-tea", "--ownership-everywhere", "--no-cache", "platforms/browser-tea/Tea.beni" }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
+}

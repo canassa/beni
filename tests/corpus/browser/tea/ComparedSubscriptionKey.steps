@@ -1,0 +1,5 @@
+advance 50
+click #flip
+advance 60
+click #flip
+advance 100
