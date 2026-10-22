@@ -22,5 +22,5 @@ glue a b = a ++ b
 
 pub later : List Int → List Int
 later xs =
-    doubled = xs ++ xs
+    doubled = List.copy xs ++ xs
     List.reverse doubled
