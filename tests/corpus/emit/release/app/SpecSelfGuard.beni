@@ -1,13 +1,11 @@
--- emit: a fact a branch hides from itself (research 52, E2), pinned at what
--- the release specialiser writes today. `go` is only ever called with
--- `False`, but its `verbose` arm — dead, because `verbose` is `False` —
--- passes `True` to its own `verbose`, so the facts, which analyse both arms
--- of every `if` whatever its test, make `verbose` ⊤, and ⊤ keeps the arm
--- alive: no round of analyse, rewrite and prune can see past it. `quiet`
--- is the same function with its dead arm passing `verbose` on, and folds
--- to its `else`, its parameter gone. A combined analysis that only follows
--- an arm its test can take folds both (research 52 §4, slice 6), and this
--- golden then moves.
+-- emit: a fact a branch hides from itself (research 52, E2). `go` is only
+-- ever called with `False`, and its `verbose` arm passes `True` to its own
+-- `verbose`. That arm is dead, because `verbose` is `False`. The release
+-- specialiser follows only the arms a test can take (`backend.md` §9,
+-- *Executability*), so the dead call passes nothing and `verbose` stays
+-- `False`. `go` therefore folds as `quiet` does, to its `else`, and loses
+-- its parameter. Before slice 6 the facts analysed both arms of every `if`,
+-- `verbose` was ⊤, and `go` kept the arm.
 import Node exposing (Program)
 
 
