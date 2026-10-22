@@ -259,7 +259,7 @@ Each fix was priced by editing the actual N = 16 and N = 64 output into the shap
 | # | Fix | Where | Estimate | Measured | Status |
 |---|---|---|---:|---:|---|
 | 1 | Leave out another module's trailing `⊤` argument, so `W.init ⊤` (`I(null)` against `I=()=>…`) is inlined | `Lower.zig` `unwrittenArgs`; `Spec.zig` `inlineAt` refused a call of another arity | −5.5 | **−3.9** | merged, #654 (#651) |
-| 2 | Write a handler used once in its listener | `Opt.zig` inlines an arrow used once only for a `const`; the handlers are `let` in release | −10.7 | — | not done as size work: #7 replaces it. The `let` that stops `Opt` is a defect of its own, not yet traced |
+| 2 | Write a handler used once in its listener | `Opt.zig` inlines an arrow used once only for a `const`; the handlers are `let` in release | −10.7 | — | **merged, #718** (#708): the cause was `Opt.zig`'s `scan_limit = 64`, a cap: a run of more than 64 declarations put each handler's one use out of reach. It is now a direct lookup of the use. The `let` was only the compact printer's spelling. Not yet measured |
 | 3 | Call a binding without a block or a hoisted `let`: `xd(jb,_a.w4,_a.w1);` | `inline.zig` `callFunction` | −5.9 | — | not done: #7 replaces it |
 | 4 | An enum cycle is a chain of conditionals, fused into its handler | `Lower.zig` `condChainPossible` refused every `switch` tree | −1.4 | **+0.2** (−0.8 from 16 to 64) | merged, #656 (#652): the shape is right, the bytes did not move |
 | 5 | A view `let` read once is written at its use | evaluation-order rule | −2.3 | — | in #618 |
@@ -285,7 +285,7 @@ the mean of three seeds.
 | ownership: approximate projections hide a repeated alias across recursive levels | #456 | **done**: #665 (2026-10-22). One known false refusal, `DictFocus.grow` (a callback line of `readLater` too), from the folded Dict tree; it is red in `tests/pending/` and comes back with #294 (#663) |
 | ownership path cut, the rest: #447 (the `nested` correction), F2 (cast marker, full type), (a), (d) `lvl`, (e), then the cut removed | #286, #447 | #447 next; the owner withdrew the measure-first conditions on 2026-10-22: build |
 | `Dict` and `Set` as an ordered keyed collection (entries plus a `Map` index), edited in place | #294, spec PR #664 | spec in review: the owner asked for `Dict.empty ⊤` (no name-keyed lowering) and the Int/String key constraint as its own slice. It removes the checker's Dict exemption and recovers #663 |
-| release field names coloured by co-occurrence: names unique only among fields that can meet in one record | — | an agent is on it; it changes #659's names |
+| release field names coloured by co-occurrence: names unique only among fields that can meet in one record | #662 | **done**: #667 (2026-10-22). Not yet measured together with #659 |
 | re-measure the shape threshold T with short names | #655 | after #659 |
 | the emit cache must key a caller's output on the callee's parameter patterns (since #654), not only its interface | #631 | to tell #631 |
 
