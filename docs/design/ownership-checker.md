@@ -1997,6 +1997,89 @@ size, its text and each call's instantiation grow with the square of a construct
 linear needs an atom for "these operands pairwise apart", a change to the summary vocabulary, its block
 format and every golden that prints a construction condition; it is not built.
 
+*Amended 2026-10-22 (issue #693, the manager's decision under the owner's delegation): pairwise apart is one
+atom.* The construction's condition keeps its meaning and changes its representation. No verdict changes.
+The Lean model of atoms gets the same atom under #704.
+
+**The atom.** `apart G₁ … Gₙ` (n ≥ 2) is one atom of a condition. Each group Gᵢ is a nonempty set of cells in
+the walk, or of provenances in a summary. It states that no member of one group shares a cell with a member
+of another group. Its meaning is its **expansion**, the conjunction of `sep a b` for every a in Gᵢ and b in Gⱼ
+with i < j. This includes `sep a a` when a member is in two groups, and for a callback's result that means
+*fresh across calls*, as in §18.2. In a record condition (§31.4 item 6), the expansion is `rsep`. A spine
+condition's form is `apart-spine`, whose expansion is `sep-spine` (§20.4). `spineOfSep` maps `apart` to
+`apart-spine` as it maps `sep` to `sep-spine`.
+
+**Where it is made.** It is made in two places, and in both the pairwise text was a clique, every operand
+against every other:
+
+- a construction's containing condition (above). This covers a tuple, a record, a constructor's operands and
+  a constructor function's summary, in its list and its record form;
+- a list literal's stored items, against each other and against what the list already holds (§18.2's table,
+  `storedCond` and `rstoredCond`). A literal of n items is `apart [v₁] … [vₙ] [elements]`, beside each
+  item's deep condition.
+
+**Its form.** A condition holds an `apart` only when its expansion has more atoms than the apart has members,
+that is Σᵢ<ⱼ |Gᵢ|·|Gⱼ| > Σ |Gᵢ|. Otherwise the condition holds the expansion. So `( a, b )` stays `sep π1 π2`,
+three single operands stay three `sep`s, and a condition is never longer than linear in its members. The
+groups are canonical: members distinct and in order, no group empty, groups in order. An apart is not merged
+with a plain `sep` that one of its pairs repeats, because a conjunction that states one atom twice says the
+same thing.
+
+**Computing it, in one pass.** The pass gives the conjunction of §18.2's `sepCells` over every pair of members
+of distinct groups, the same verdict and the same atoms. It forms only the pairs whose kinds do not settle
+them alone, as §16.3's amendment does for a result's spine conditions:
+
+- a closure, a function value and a condition-only cell are `yes` against every cell. A top-level value's
+  cell and a cell the body made are `yes` against every cell of another family, except that a made cell
+  against a callback's result is not settled by kind. These pairs are not formed. For a record condition, a
+  cell that cannot hold a record is also `yes`;
+- two cells are related (`covers`, either way) only within one family (kind, owner), and only when one path is
+  the other's step-by-step prefix. Each cell's ancestors are looked up in a table of its family's paths. A
+  family with a `⋆` path, where a marker may hold a place, is compared pair by pair. A related pair is
+  `sepCells`'s own answer (`shared` exact, else `lost`);
+- a callback's result against the cells made in the other groups: one `reaches` for each callback result;
+- `⊤`, a message (`payload`), a taken element and an `except` cell against every member of the other
+  groups: pair by pair, as before. Inside core `Dict` (§20.8, where one arrival at a folded path is several
+  places) the whole condition is pair by pair;
+- the arrivals that are left (parameters, captures, callbacks' results) are the apart's groups, as
+  `atomFacing` maps them for a list condition and as `rbase` names them for a record condition. A member with
+  no list-facing cell leaves its group, and this removes exactly the pairs that named it.
+
+**Instantiating it at a call.** Each group's provenances are instantiated once (`ProvMemo`) and joined. Their
+cells are read once, and the pass above runs over them. A callback's result that two groups name (`sep cb_j
+cb_j`, *fresh across calls*, which is not `sepValues` of the two instantiations) and every `apart-spine`
+instantiate their expansion, pair by pair. These two shapes stay quadratic. A callback's `xreq` (`classReq`)
+also instantiates its expansion.
+
+**Relying on it.** A frame owns an apart when it owns every member. Every member is in some pair of the
+expansion, so this agrees with the pairs. A requirement goes to `xreq` as the apart. When a call's `xreq`
+apart fails, the call instantiates its expansion pair by pair. This reports each failure on the argument it
+names, as before (§18.4 item 3). The entry protocol (§20.5) and a callback's `xreq` read an update's or a
+class's requirements through their expansion, because their reports take the first failure in atom order. A
+requirement that the read-off cannot name drops only that member. A condition with a member that the
+read-off cannot name fails approximately, as any of its pairs would.
+
+**Limits, the block and the text.** The `conditions` limit counts an apart as its members. The summary block
+advances to version 21 (§28.4). An atom's kind byte comes first. An `apart` or `apart-spine` then writes its
+group count (u32), and for each group its member count (u32) and its members as provenances. Members and groups
+are in the block's canonical order. A summary line prints `apart [π1.f1 π1.f1.a] [π1.f2 π1.f2.a] …`, with
+members and groups sorted by their text. So the only goldens that change are the ones that print a construction
+condition or a list literal's condition of four or more operands, or a requirement made from one of them.
+
+**Checked against its expansion.** Until #704 lands, a safety build compares each apart with its expansion.
+At a construction, the condition the pass builds is compared with the one that `sepOfCells` and
+`rsepOfCells` build pair by pair. At a call, the instantiation is compared with the instantiation of the
+expanded atoms. Two conditions are the same when they have one verdict and, with every apart expanded, the
+same atoms. The check runs in every safety build for an apart whose expansion has at most 64 pairs, and for
+every apart with `-Downership-full-cross-check` (#272). A difference is a panic.
+
+**What stays quadratic, and why.** §20.4's spine conditions of a result (`sc`, `sep-spine`) are per entry. Each
+of a result's N list entries has its own condition, which separates it from every other entry. This is N
+conditions of N − 1 atoms each, a star around each entry and not a clique inside one condition. One apart per
+entry would still hold N(N − 1) members in all. A linear form needs one condition shared by the entries,
+which is a change to the `res` entry's format, and this amendment does not make it. These conditions stay
+pairwise, and #665's parent was already quadratic through them.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
@@ -3938,7 +4021,7 @@ nothing by a session's id:
 - a **local** of a carried lambda (§24.9) by its index in the declaration, as BIR numbers it.
 
 The format is versioned with the rule set (`summary_bytes.version`, thesis §8.5): a block of another version is
-absent. Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
+absent. *Amended 2026-10-22 (#693):* version 21 writes the `apart` atom's groups (§16.7). Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
 re-merges nothing.
 
 **Where it is kept.** In the module's **cache entry**, as a fifth section (`entry_bytes` format 10), written by
