@@ -365,6 +365,11 @@ pub const Build = struct {
     /// each mount's dispatcher is reachable as
     /// `globalThis.__beniFuzz.send(program, msg)`.
     fuzz: bool = false,
+    /// `--check-call-graph` — **hidden**, for `--allow-debug`'s reason: a test
+    /// instrument (#685). Under `--release` every function body the
+    /// specialiser's call graph left unreached throws when it runs, so the
+    /// corpus's release passes fail on a body the graph missed.
+    check_call_graph: bool = false,
     /// `--points-to-largest` — **hidden**, for `--allow-debug`'s reason: a
     /// measuring instrument (`plans/type-directed-points-to.md` slice 0).
     /// Under `--release` the specialiser's fact 3 remembers where each of its
@@ -860,6 +865,7 @@ const BuildSpecific = struct {
     schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
+    check_call_graph: bool = false,
     points_to_largest: bool = false,
     rep_keys: bool = false,
     watch: bool = false,
@@ -920,6 +926,11 @@ const BuildSpecific = struct {
             // The fifth hidden flag (see `Build.fuzz`).
             if (value != null) return noValue(name);
             self.fuzz = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--check-call-graph")) {
+            // A hidden flag (see `Build.check_call_graph`).
+            if (value != null) return noValue(name);
+            self.check_call_graph = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--points-to-largest")) {
             // A hidden flag (see `Build.points_to_largest`).
@@ -994,6 +1005,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
         .points_to_largest = s.specific.points_to_largest,
+        .check_call_graph = s.specific.check_call_graph,
         .rep_keys = s.specific.rep_keys,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,
@@ -1885,6 +1897,18 @@ test "--checker is gone with v1: an unknown option" {
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "build", "--platform=node", "--checker=v1", "src" });
     try expectUsage("beni: unknown option '--checker'; run 'beni help' for usage", &.{ "dump", "--stage=types", "--checker=v2", "M.beni" });
     try testing.expect(std.mem.indexOf(u8, usage, "--checker") == null);
+}
+
+test "--check-call-graph is build's, hidden, and takes no value" {
+    // A test instrument (#685): `build`'s alone, since only a build runs the
+    // release specialiser, whose call graph it checks.
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .check_call_graph = true, .source_maps = false, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--release", "--check-call-graph", "src" },
+    );
+    try expectUsage("beni: option '--check-call-graph' does not take a value", &.{ "build", "--platform=node", "--check-call-graph=1", "src" });
+    try expectUsage("beni: unknown option '--check-call-graph'; run 'beni help' for usage", &.{ "check", "--check-call-graph", "src" });
+    try testing.expect(std.mem.indexOf(u8, usage, "call-graph") == null);
 }
 
 test "--points-to-largest is build's, hidden, and takes no value" {

@@ -2099,7 +2099,7 @@ const Case = struct {
             // so by carrying its own `.release-expected`, which does bless.
             const separate = c.goldenExists("release-expected");
             var release: std.ArrayList([]const u8) = .empty;
-            try release.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--out=release" });
+            try release.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--check-call-graph", "--out=release" });
             if (c.cfg.mode == .pending) try release.append(c.arena, "--diagnostics=json");
             try release.appendSlice(c.arena, try buildPaths(c.arena, sources));
             verified[1] = c.runOnce(
@@ -2119,7 +2119,7 @@ const Case = struct {
         if (differential and c.cfg.runs(Kind.run.partOf(.release_library))) {
             const separate = c.goldenExists("release-expected");
             var forced: std.ArrayList([]const u8) = .empty;
-            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--schema-library", "--out=release-library" });
+            try forced.appendSlice(c.arena, &.{ "build", platform_arg, "--release", "--allow-debug", "--check-call-graph", "--schema-library", "--out=release-library" });
             if (c.cfg.mode == .pending) try forced.append(c.arena, "--diagnostics=json");
             try forced.appendSlice(c.arena, try buildPaths(c.arena, sources));
             verified[3] = c.runOnce(
@@ -2451,7 +2451,7 @@ const Case = struct {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{ "build", platform_arg });
             if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
-            if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
+            if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug", "--check-call-graph" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
             try args.appendSlice(c.arena, try buildPaths(c.arena, sources));
             pages[slot] = c.pagePlan(pass, args.items, h, script, record) catch |err| blk: {
@@ -2650,7 +2650,7 @@ const Case = struct {
         var pair: browser.Fuzz = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
         // What each side is built with: the fixture's own platform,
         // `platform/` when it has one.
-        const sides = [2][]const []const u8{ &.{platform_arg}, &.{ platform_arg, "--release", "--allow-debug" } };
+        const sides = [2][]const []const u8{ &.{platform_arg}, &.{ platform_arg, "--release", "--allow-debug", "--check-call-graph" } };
         pair.script = script.name;
         // Messages as values cost a page two more builds and a dump
         // (browser-direct.md §8.3, amended for S1): the gates send them on
