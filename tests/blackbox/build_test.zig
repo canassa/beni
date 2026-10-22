@@ -3681,6 +3681,97 @@ test "a page with no delegated event calls no start and ships no listener" {
     try testing.expect(std.mem.indexOf(u8, try w.read("clicks-out/_main.mjs"), "addEventListener") != null);
 }
 
+test "a `via` that is not `pub` ships only when a surviving root names its event" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `checker-v2.md` §25.8, amended 2026-10-21: an extractor that is not
+    // `pub` is kept by the vocabulary row's name, so it is exported, and
+    // its sibling export kept, only when a root that survives names its
+    // event. Two such extractors in one vocabulary; the page names one.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("platform/beni.json",
+        \\{
+        \\  "platform": true,
+        \\  "name": "probe",
+        \\  "platforms": ["browser"],
+        \\  "reexports": ["Html", "Browser"],
+        \\  "markup": { "vocabulary": "Probe", "type": "Html.Html" }
+        \\}
+        \\
+    );
+    try w.write("platform/Probe.beni",
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\pub foreign type Event
+        \\
+        \\
+        \\pub markup text : String → Html msg
+        \\
+        \\
+        \\pub markup map : Html a, (a → b) → Html b
+        \\
+        \\
+        \\pub element "*"
+        \\
+        \\
+        \\pub attribute "*" : String
+        \\
+        \\
+        \\pub event "onProbe" name "probe" via probe : String
+        \\
+        \\
+        \\pub event "onOther" name "other" via other : String
+        \\
+        \\
+        \\foreign impure probe : Event → String
+        \\
+        \\
+        \\foreign impure other : Event → String
+        \\
+    );
+    try w.write("platform/Probe.js",
+        \\export const probe = (e) => `dropped ${e.detail}`;
+        \\export const other = (e) => `kept ${e.detail}`;
+        \\
+    );
+    try w.write("Main.beni",
+        \\import Browser
+        \\import Html exposing (Html)
+        \\
+        \\
+        \\view : String → Html String
+        \\view text =
+        \\    <button onOther={λvalue → value}>{text}</button>
+        \\
+        \\
+        \\main : Browser.Program
+        \\main =
+        \\    Browser.program { init = λ⊤ → "none", update = λnext _ → next, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const dev = try w.runWith(&.{ "build", "--platform=platform", "--out=dev", "Main.beni" }, .{ .raw_diagnostics = true });
+    const release = try w.runWith(&.{ "build", "--platform=platform", "--release", "--out=release", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(dev);
+    try expectBuilt(release);
+    const vocabulary = try w.read("dev/_platform/Probe.mjs");
+    try testing.expect(std.mem.indexOf(u8, vocabulary, "Probe$other") != null);
+    try testing.expect(std.mem.indexOf(u8, vocabulary, "Probe$probe") == null);
+    const shipped = try w.read("release/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, shipped, "`kept ") != null);
+    try testing.expect(std.mem.indexOf(u8, shipped, "`dropped ") == null);
+}
+
 /// A page on `Tea.element` whose `update` returns `cmd`, for the two tests
 /// below.
 fn elementPage(comptime cmd: []const u8) []const u8 {
