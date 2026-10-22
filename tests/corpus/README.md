@@ -289,6 +289,24 @@ object per line, `#` for a comment:
                                 Miniflare the Worker's client is Miniflare's
                                 own entry worker, so `request.signal` never
                                 fires here (§9.12 (k), #600)
+    {"socket": "a", "path": "/arena/x", "protocols": ["v1"]}
+                                open a WebSocket client named `a` through
+                                Miniflare's client (`dispatchFetch` with
+                                `upgrade: websocket`): `> (socket a) GET
+                                /arena/x ["v1"]`, then the 101 and its
+                                headers as `(socket a) < …`, or the refusing
+                                response the same way; what the server sends
+                                is kept, in order, until a `receive` step
+    {"send": "a", "text": "hi"} a text message: `> (socket a) "hi"`
+    {"close": "a", "code": 4000, "reason": "bye"}
+                                a close frame (no code when `code` is left out)
+    {"receive": "a"}            the next thing socket `a` got: `< (socket a)
+                                "text"`, `close 1000 "reason"`, `binary <n>
+                                bytes` or `error …`; `(nothing arrived)`
+                                after 5 s
+    {"receive": "a", "count": 3}
+                                the next 3 text messages, summed up as `3
+                                messages, <bytes> bytes`
 
 After each step the lines the Worker wrote to its console follow, `| out:
 …` and `| err: …`: the driver asks the Worker's test hook `/__beni/mark/<n>`

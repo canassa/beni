@@ -1,0 +1,69 @@
+> GET /arena/x/p1
+< 426
+< content-type: text/plain; charset=utf-8
+<
+< upgrade to a WebSocket
+> (socket a) GET /arena/x/p1
+(socket a) < 101
+(socket a) < sec-websocket-accept: (the key)
+(socket a) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket a) < upgrade: websocket
+< (socket a) "welcome p1"
+> (socket b) GET /arena/x/p2 ["v1","v2"]
+(socket b) < 101
+(socket b) < sec-websocket-accept: (the key)
+(socket b) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket b) < sec-websocket-protocol: v1
+(socket b) < upgrade: websocket
+< (socket b) "welcome p2"
+> GET /arena/x/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 2 sockets open
+> (socket a) "hello"
+< (socket a) "echo hello (an id, tags p1, protocol )"
+> (socket b) "hello"
+< (socket b) "echo hello (an id, tags p2, protocol v1)"
+> (socket a) "broadcast:tick"
+< (socket a) "all: tick"
+< (socket b) "all: tick"
+> (socket a) "attachment"
+< (socket a) "no attachment"
+> (socket a) "attach:seat 4"
+< (socket a) "attached"
+> (socket a) "attachment"
+< (socket a) "attachment seat 4"
+> (socket a) "ping?"
+< (socket a) "pong!"
+> (socket a) "close-bad"
+< (socket a) "refused code 1005"
+> (socket a) "close"
+< (socket a) close 4001 "server says bye"
+| out: closed p1 4001 server says bye: ⊤
+> (socket b) close 4002 "client says bye"
+| out: closed p2 4002 client says bye: ⊤
+> GET /arena/x/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 0 sockets open
+> (socket c) GET /arena/x/p3
+(socket c) < 101
+(socket c) < sec-websocket-accept: (the key)
+(socket c) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket c) < upgrade: websocket
+< (socket c) "welcome p3"
+> GET /arena/x/throw
+< 500
+< content-length: 192
+< content-type: text/plain;charset=UTF-8
+<
+< Error: TODO: the arena threw
+| err: beni: a defect stopped the object Arena; its next event starts a new instance
+< (socket c) close 1006 ""
+> GET /arena/x/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 0 sockets open
