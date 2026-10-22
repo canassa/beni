@@ -7,3 +7,11 @@
 # reads what it wrote.
 {"path": "/outlive"}
 {"path": "/seen"}
+# A fiber that parks after the answer is held under waitUntil until it
+# ends; the hook counts the holds.
+{"path": "/__beni/holds"}
+{"path": "/outlive-gate"}
+{"path": "/__beni/holds"}
+{"path": "/release"}
+{"path": "/__beni/holds"}
+{"path": "/seen"}

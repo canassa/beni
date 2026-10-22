@@ -7560,7 +7560,9 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   build: `/__beni/mark/<text>` writes `beni:mark <text>` to the console, which the driver waits
   for after each step so that a step's console lines never land under the next (*P705-9*), and
   `/__beni/schedulers` answers how many schedulers the kernel lists, so a fixture sees that a
-  request's leaves it. The flag's `tick` and `alarm` hooks are the object slice's.
+  request's leaves it, and `/__beni/holds` how many answered requests still hold work under
+  `waitUntil` (R4-1 of #705's review: `CrossRequest` parks a detached fiber on a `Deferred` a
+  later request completes, and the count goes 0, 1, 0). The flag's `tick` and `alarm` hooks are the object slice's.
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of

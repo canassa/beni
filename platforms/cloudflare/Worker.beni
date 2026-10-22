@@ -188,6 +188,12 @@ hooked request =
             [ Js.construct (Js.global "Response")
                 [ Js.from (String.fromInt (Task.schedulersListed ⊤)), Js.from { status = 200 } ]
             ]
+    else if at == "/__beni/holds" then
+        -- How many answered requests still hold work under `waitUntil`.
+        Js.call (Js.global "Promise") "resolve"
+            [ Js.construct (Js.global "Response")
+                [ Js.from (String.fromInt (Js.read holds)), Js.from { status = 200 } ]
+            ]
     else
         Js.call (Js.global "Promise") "resolve"
             [ Js.construct (Js.global "Response")
@@ -303,11 +309,18 @@ answered : V, Scheduler → ⊤
 answered t s =
     ctx = Js.get t "ctx"
     if Task.schedulerBusy s then
+        Js.write holds (Js.read holds + 1)
         Js.to (Js.call ctx "waitUntil" [ heldUntilIdle s ])
     else
         -- Nothing outlives the answer: the scheduler is stopped at once,
         -- so it leaves the kernel's list (P705-1).
         Task.stopScheduler s cleanupDeadline λ_ → ⊤
+
+
+-- The requests answered whose work is still held under `waitUntil`: what
+-- the test hook `/__beni/holds` reports (§9.12 (k)).
+holds : Js.Ref Int
+holds = Js.ref 0
 
 
 -- The platform's deadline after the response: 5 seconds before the
@@ -328,7 +341,9 @@ cleanupDeadline = 1000
 heldUntilIdle : Scheduler → V
 heldUntilIdle s =
     d = Js.call (Js.global "Promise") "withResolvers" []
-    resolve = Js.get d "resolve"
+    resolve = Js.from λ_ →
+        Js.write holds (Js.read holds - 1)
+        Js.apply (Js.get d "resolve") [ Js.null ]
     timer =
         Js.apply (Js.global "setTimeout")
             [ Js.from λ⊤ →
