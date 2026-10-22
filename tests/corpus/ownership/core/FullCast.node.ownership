@@ -1,0 +1,50 @@
+module FullCast
+  19:15 List.push <call FullCast.ints>: accepted param
+  26:7 List.push ys: rejected alias: xs holds it and is read at 26:5
+  34:23 List.push <call FullCast.generic>: accepted param
+  49:5 List.push ys: accepted param
+  55:7 List.push ys: rejected element: xs holds it and is read at 55:5 (approx)
+  63:5 List.push ys: accepted param
+  92:7 List.push <call FullCast.collect>: rejected call: root⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩.values may hold it through the call at 92:18, and is read at 92:38 (approx)
+  99:5 call List.map rows[*]: accepted param (<lambda> writes what List.map supplies it)
+  99:25 List.push ys: rejected exclusive: List.map hands its parameter 1 an element of rows, whose elements may share one list
+  126:5 List.push record.values: accepted param
+  133:7 List.push record.values: rejected element: xs holds it and is read at 133:5 (approx)
+  143:5 List.push record.values: accepted param
+  149:7 List.push record.values: rejected alias: xs holds it and is read at 149:5
+  160:7 List.push ys: rejected alias: xs holds it and is read at 160:5
+  summary ints: π1 R, π1⟨as 1:List::List(15:1:Basics::Int())⟩ A; res π1⟨as 1:List::List(15:1:Basics::Int())⟩
+  summary strings: π1 R, π1⟨as 1:List::List(18:1:String::String())⟩ A; res π1⟨as 1:List::List(18:1:String::String())⟩
+  summary roundTrip: π1 RA; res π1
+  summary first: π1 R, π1⟨as 1:List::List(15:1:Basics::Int())⟩ RAW[storage], π1⟨as 1:List::List(15:1:Basics::Int())⟩[*] A; res [*] ~π1⟨as 1:List::List(15:1:Basics::Int())⟩[*], π1⟨as 1:List::List(15:1:Basics::Int())⟩
+  summary retained: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary generic: π1 RA; res π1
+  summary genericRoundTrip: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary pack: π1 RA; res π1
+  summary unpack: π1 R, π1⟨as tuple(36:1:List::List(19:var(0:FullCast:8:0))15:1:Basics::Int())⟩ A; res π1⟨as tuple(36:1:List::List(19:var(0:FullCast:8:0))15:1:Basics::Int())⟩
+  summary genericPair: π1 RAw[storage]; res [*]⋆ ~π1, ⋆ ~π1
+  summary retainedPair: π1 RAw[storage]; res .0[*]⋆ ~condition(fresh4) ~π1, .0⋆ ~condition(fresh3) ~π1, .1 ~condition(fresh2) π1, condition(fresh1){lost}
+  summary exactPair: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary storedTwice: π1 R, π1⟨as 1:List::List(15:1:Basics::Int())⟩ RA; res [*] condition(fresh2) π1⟨as 1:List::List(15:1:Basics::Int())⟩, fresh1{shared}r{shared}
+  summary linkOf: π1 R, π1⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩ A; res π1⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩
+  summary collect: π2 R, π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩ R, π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩.parent R, π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩.values RA, π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺ R, π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.parent R, π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.values RA; res ~π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.values π2⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩.values
+  summary atTwoLevels: π1 RAw[storage], π1[*] A; res .0 ~condition(fresh13) ~condition(fresh2) ~condition(fresh5) ~π1, .0[*] ~condition(fresh4) ~π1[*], .0[*]⋆ ~condition(fresh1){lost} ~condition(fresh5) ~condition(fresh7) ~fresh501◦ ~π1, .0[*]⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.parent ~condition(fresh11) ~condition(fresh3) ~⊤{lost}r{lost}, .0[*]⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.values ~condition(fresh10) ~condition(fresh2) ~π1, .0⋆ ~condition(fresh1){lost} ~condition(fresh5) ~condition(fresh6) ~fresh501◦ ~π1, .0⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.parent ~condition(fresh3) ~condition(fresh9) ~⊤{lost}r{lost}, .0⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.values ~condition(fresh2) ~condition(fresh8) ~π1, .1 condition(fresh5) ~condition(fresh14) π1, .1⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.parent ~condition(fresh16) ~condition(fresh3) ~⊤{lost}r{lost}, .1⟨as record(6:parent=13:1:Js::Value()6:values=32:1:List::List(15:1:Basics::Int())|2:{})⟩⁺.values ~condition(fresh15) ~condition(fresh2) ~π1, condition(fresh12){lost}r{lost}
+  summary sharedStorage: π1 R, π1⟨as 1:List::List(15:1:Basics::Int())⟩ RAW[storage], π1⟨as 1:List::List(15:1:Basics::Int())⟩[*] A; res [*] ~condition(fresh1) ~fresh1{shared} ~π1⟨as 1:List::List(15:1:Basics::Int())⟩, [*][*] ~condition(fresh2) ~π1⟨as 1:List::List(15:1:Basics::Int())⟩[*], fresh3{shared}
+  summary intFunction: π1 R, π1⟨as fn(15:1:Basics::Int()→32:1:List::List(15:1:Basics::Int()))⟩ A; res π1⟨as fn(15:1:Basics::Int()→32:1:List::List(15:1:Basics::Int()))⟩
+  summary stringFunction: π1 R, π1⟨as fn(18:1:String::String()→32:1:List::List(15:1:Basics::Int()))⟩ A; res π1⟨as fn(18:1:String::String()→32:1:List::List(15:1:Basics::Int()))⟩
+  summary otherRecord: π1 R, π1⟨as record(6:parent=13:1:Js::Value()6:values=35:1:List::List(18:1:String::String())|2:{})⟩ A; res π1⟨as record(6:parent=13:1:Js::Value()6:values=35:1:List::List(18:1:String::String())|2:{})⟩
+  summary recordPack: π1 RA; res π1
+  summary recordUnpack: π1 R, π1⟨as record(6:values=37:1:List::List(20:var(0:FullCast:22:0))|20:var(0:FullCast:22:1))⟩ A; res π1⟨as record(6:values=37:1:List::List(20:var(0:FullCast:22:0))|20:var(0:FullCast:22:1))⟩
+  summary exactExtended: π1 RAw[storage]; res [*]⋆ ~π1, ⋆ ~π1
+  summary retainedExtended: π1 RAw[storage]; res .0[*]⋆ ~condition(fresh4) ~π1, .0⋆ ~condition(fresh3) ~π1, .1 ~condition(fresh2) π1, condition(fresh1){lost}
+  summary extendedRoundTrip: π1 RA; res π1
+  summary useExtended: π1 RAW[storage], π1[*] A; res [*] ~π1[*], π1
+  summary retainExtended: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary stringView: π1 R, π1⟨as 1:List::List(18:1:String::String())⟩ A; res π1⟨as 1:List::List(18:1:String::String())⟩
+  summary retainedView: π1 RA, π1⟨as 1:List::List(18:1:String::String())⟩ RAW[storage], π1⟨as 1:List::List(18:1:String::String())⟩[*] A; res .0 condition(fresh2) π1⟨as 1:List::List(18:1:String::String())⟩, .0[*] ~condition(fresh3) ~π1⟨as 1:List::List(18:1:String::String())⟩[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  demands 14: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 14: accepted 7 (fresh 0, call 0, param 7, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause alias 3
+cause element 2
+cause call 1
+cause exclusive 1

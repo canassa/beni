@@ -76,6 +76,8 @@ A `<path>` is a `.beni` file or a directory, walked recursively. Inside a projec
 
 The ownership dump shows where a field is read before a record write, and where a closure
 reads a field it captures. Each location uses source line and column numbers.
+A cast path shows the complete type after `as`. The first boundary is exact.
+A repeated complete type folds deeper paths and uses the `⁺` marker.
 
 ## Migration flags that a diagnostic names
 
@@ -103,4 +105,4 @@ beni build --release
 beni dump --stage=interface --platform=node src/Main.beni
 ```
 
-Sources: `docs/design/frontend.md` §1, §10, §12; `docs/design/ownership-checker.md` §31.10; `src/Cli.zig`'s usage text.
+Sources: `docs/design/frontend.md` §1, §10, §12; `docs/design/ownership-checker.md` §16.7, §31.10; `src/Cli.zig`'s usage text.

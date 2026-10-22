@@ -21,10 +21,13 @@
 //! version: u32               `version`
 //! modules: u32, then per module: package u8, name (u32 length, bytes)
 //! strings: u32, then per string: u32 length, bytes        field names
+//! cast types: u32, then per type: u32 length and portable structural node key
+//!        children reference earlier entries in this table
 //! paths: u32, then per path: steps u8, then per step: kind u8 and
 //!        field: string index u32 · tuple: index u32 · ctor: module u32,
 //!        constructor u32, argument u32 · level: module u32, declaration
-//!        u32, where it stands u8 · elem, env, any: nothing
+//!        u32, where it stands u8 · cast, cast_level: type-table index u32;
+//!        any: scope u32 (0 all, 1 runtime); elem, env: nothing
 //! decls: u32, then per declaration: index u32, flags u8 (1: a summary
 //!        follows; 2: a value whose type may hold a list), and when a
 //!        summary follows, its length in bytes u32, the summary
@@ -105,7 +108,8 @@ pub const magic = "BENIOWN\x00";
 /// 26 preserves each callback owned-result requirement's possible writers.
 /// 27 writes each summary's length before it, so a reader reads only the
 /// summaries the run asks for, and the paths they name (§28.4, #814).
-pub const version: u32 = 27;
+/// 28 records full structural type keys and cast signatures (§16.7, #712).
+pub const version: u32 = 28;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -131,6 +135,7 @@ const Writer = struct {
     module_index: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     /// Field symbol → index in the sorted table.
     string_index: std.AutoHashMapUnmanaged(u32, u32) = .empty,
+    cast_index: []u32 = &.{},
 
     fn int(w: *Writer, v: u32) Allocator.Error!void {
         var b: [4]u8 = undefined;
@@ -162,6 +167,9 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
     var paths: std.ArrayList(u32) = .empty;
     var modules: std.ArrayList(u32) = .empty;
     var strings: std.ArrayList(u32) = .empty;
+    var casts: std.ArrayList(u32) = .empty;
+    w.cast_index = try arena.alloc(u32, o.cast_types.items.len);
+    @memset(w.cast_index, Ownership.none);
     var seen_path: std.AutoHashMapUnmanaged(u32, void) = .empty;
     var seen_module: std.AutoHashMapUnmanaged(u32, void) = .empty;
     var seen_string: std.AutoHashMapUnmanaged(u32, void) = .empty;
@@ -171,6 +179,8 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         paths: *std.ArrayList(u32),
         modules: *std.ArrayList(u32),
         strings: *std.ArrayList(u32),
+        casts: *std.ArrayList(u32),
+        cast_index: []u32,
         seen_path: *std.AutoHashMapUnmanaged(u32, void),
         seen_module: *std.AutoHashMapUnmanaged(u32, void),
         seen_string: *std.AutoHashMapUnmanaged(u32, void),
@@ -183,8 +193,16 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
                 .field => if (!(try c.seen_string.getOrPut(c.arena, s.arg)).found_existing) try c.strings.append(c.arena, s.arg),
                 .ctor => try c.module(c.o.ctorKey(c.o.stepCtor(s.arg)).module),
                 .level => if (c.o.markerType(s.arg) != Ownership.fn_type) try c.module(@intCast(c.o.markerType(s.arg) >> 32)),
+                .cast, .cast_level => try c.cast(s.arg),
                 else => {},
             };
+        }
+
+        fn cast(c: *@This(), id: u32) Allocator.Error!void {
+            if (c.cast_index[id] != Ownership.none) return;
+            c.cast_index[id] = 0;
+            for (try c.o.castParts(id)) |part| try c.cast(part.key);
+            try c.casts.append(c.arena, id);
         }
 
         fn module(c: *@This(), m: u32) Allocator.Error!void {
@@ -219,6 +237,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         }
 
         fn summary(c: *@This(), s: *const Summary) Allocator.Error!void {
+            if (s.cast_signature != Ownership.none) try c.cast(s.cast_signature);
             for (s.uses) |u| {
                 try c.path(u.path);
                 for (u.fields) |f| if (!(try c.seen_string.getOrPut(c.arena, f)).found_existing) try c.strings.append(c.arena, f);
@@ -249,6 +268,8 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         .paths = &paths,
         .modules = &modules,
         .strings = &strings,
+        .casts = &casts,
+        .cast_index = w.cast_index,
         .seen_path = &seen_path,
         .seen_module = &seen_module,
         .seen_string = &seen_string,
@@ -276,6 +297,29 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
     };
     std.mem.sort(u32, strings.items, SortStrings{ .o = o }, SortStrings.less);
     for (strings.items, 0..) |s, i| try w.string_index.put(arena, s, @intCast(i));
+    // A deterministic DAG table: all children have smaller depth, and at
+    // one depth the key contains only already assigned block-local ids.
+    std.mem.sort(u32, casts.items, o, struct {
+        fn less(ow: *Ownership, x: u32, y: u32) bool {
+            return ow.cast_depth.items[x] < ow.cast_depth.items[y];
+        }
+    }.less);
+    const cast_keys = try arena.alloc([]const u8, o.cast_types.items.len);
+    var first: usize = 0;
+    while (first < casts.items.len) {
+        var end = first + 1;
+        const depth = o.cast_depth.items[casts.items[first]];
+        while (end < casts.items.len and o.cast_depth.items[casts.items[end]] == depth) : (end += 1) {}
+        for (casts.items[first..end]) |id| cast_keys[id] = try o.castWireKey(arena, id, w.cast_index);
+        std.mem.sort(u32, casts.items[first..end], cast_keys, struct {
+            fn less(keys: []const []const u8, x: u32, y: u32) bool {
+                return std.mem.lessThan(u8, keys[x], keys[y]);
+            }
+        }.less);
+        for (casts.items[first..end], first..) |id, i| w.cast_index[id] = @intCast(i);
+        first = end;
+    }
+
     // A path's key is its steps' keys, so ε (no steps) sorts first.
     const keys = try arena.alloc([]const u8, paths.items.len);
     var key_of: std.AutoHashMapUnmanaged(u32, []const u8) = .empty;
@@ -301,6 +345,8 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
     }
     try w.int(@intCast(strings.items.len));
     for (strings.items) |s| try w.text(o.in.interner.slice(@fromBackingInt(s)));
+    try w.int(@intCast(casts.items.len));
+    for (casts.items) |id| try w.text(cast_keys[id]);
     try w.int(@intCast(paths.items.len));
     for (paths.items) |p| try w.out.appendSlice(gpa, key_of.get(p).?);
 
@@ -335,7 +381,9 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
         try out.append(arena, @backingInt(st.kind));
         switch (st.kind) {
             .field => try appendInt(arena, &out, w.string_index.get(st.arg).?),
+            .cast, .cast_level => try appendInt(arena, &out, w.cast_index[st.arg]),
             .tuple => try appendInt(arena, &out, st.arg),
+            .any => try appendInt(arena, &out, st.arg),
             .ctor => {
                 const key = o.ctorKey(o.stepCtor(st.arg));
                 try appendInt(arena, &out, w.module_index.get(key.module).?);
@@ -349,7 +397,7 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
                 try appendInt(arena, &out, @truncate(t));
                 try out.append(arena, @backingInt(o.markerKind(st.arg)));
             },
-            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
+            .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
     }
     return out.items;
@@ -530,6 +578,7 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
 
 fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error!void {
     try w.int(s.params);
+    try w.int(if (s.cast_signature == Ownership.none) 0 else w.cast_index[s.cast_signature] + 1);
     try w.byte(@backingInt(s.limit));
     try w.int(s.limit_at);
     try w.byte(@as(u8, @intFromBool(s.asserted)) | @as(u8, @intFromBool(s.once)) << 2 | @as(u8, @intFromBool(s.words)) << 3);
@@ -689,6 +738,7 @@ pub const Block = struct {
     bytes: []const u8,
     modules: []u32,
     strings: []u32,
+    casts: []u32,
     /// Each path's offset in `bytes`, and its id in this run once a
     /// summary names it (`unread` until then).
     path_at: []u32,
@@ -714,6 +764,7 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         .bytes = bytes,
         .modules = &.{},
         .strings = &.{},
+        .casts = &.{},
         .path_at = &.{},
         .path_id = &.{},
         .sum_at = try arena.alloc(u32, decls),
@@ -747,6 +798,8 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         // session has: the step is still a field, of no record it can meet.
         slot.* = if (o.in.interner.find(name)) |s| @backingInt(s) else Ownership.none;
     }
+    block.casts = try arena.alloc(u32, try r.count(4));
+    for (block.casts, 0..) |*slot, i| slot.* = try o.readCastId(try r.text(), block.casts[0..i]);
     // The path table is only measured here: each path is read, and
     // interned, when a summary first names it.
     const n_paths = try r.count(1);
@@ -758,7 +811,7 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         const n_steps = try r.byte();
         if (n_steps > Ownership.k_limit) return error.Bad;
         for (0..n_steps) |_| try r.skip(switch (try r.enumOf(StepKind)) {
-            .field, .tuple => 4,
+            .field, .tuple, .cast, .cast_level => 4,
             .ctor => 12,
             .level => 9,
             .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
@@ -823,6 +876,11 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
                 break :blk b.strings[i];
             },
             .tuple => try r.int(),
+            .cast, .cast_level => blk: {
+                const i = try r.int();
+                if (i >= b.casts.len) return error.Bad;
+                break :blk b.casts[i];
+            },
             .ctor => blk: {
                 const cm = try r.module();
                 const ci = try r.int();
@@ -926,6 +984,9 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     // than the walk can make; a block that nests further is not one.
     if (depth > 16) return error.Bad;
     const params = try r.int();
+    const signature_index = try r.int();
+    if (signature_index > r.block.casts.len) return error.Bad;
+    const cast_signature = if (signature_index == 0) Ownership.none else r.block.casts[signature_index - 1];
     const limit = try r.enumOf(Ownership.Limit);
     const limit_at = try r.int();
     const flags = try r.byte();
@@ -987,6 +1048,7 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
 
     return r.o.normalizeRead(.{
         .params = params,
+        .cast_signature = cast_signature,
         .uses = uses,
         .res = res,
         .objs = objs,
@@ -1066,6 +1128,7 @@ test "a block naming a constructor field past the constructor's arity is refused
             try out.append(a, @backingInt(SourceStore.Package.app));
             try int(a, &out, 1);
             try out.append(a, 'M');
+            try int(a, &out, 0);
             try int(a, &out, 0);
             try int(a, &out, 1);
             try out.append(a, 1);

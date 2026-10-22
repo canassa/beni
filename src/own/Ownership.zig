@@ -132,8 +132,8 @@ const WideIndex = struct {
     by: std.AutoHashMapUnmanaged([2]u32, std.ArrayList(Entry)) = .empty,
 };
 
-/// §20.4: the widest value whose deep condition is computed pair by pair.
-const deep_cap: usize = 256;
+/// The retired value-cells limit, retained only for its diagnostic wire ordinal.
+const retired_deep_cap: usize = 256;
 /// How deep a callback's result is instantiated through another's (§16.7's
 /// `callbacks` limit).
 const inst_depth: u32 = 4;
@@ -533,6 +533,7 @@ pub const XAtom = struct {
     fn eql(x: XAtom, y: XAtom) bool {
         if (x.kind != y.kind or !x.a.eql(y.a) or !x.b.eql(y.b)) return false;
         if (x.groups.len != y.groups.len) return false;
+        if (x.groups.ptr == y.groups.ptr) return true;
         for (x.groups, y.groups) |g, h| {
             if (g.len != h.len) return false;
             for (g, h) |p, q| if (!p.eql(q)) return false;
@@ -557,6 +558,7 @@ pub const XAtom = struct {
 };
 
 fn provsLess(g: []const Prov, h: []const Prov) bool {
+    if (g.ptr == h.ptr and g.len == h.len) return false;
     for (g[0..@min(g.len, h.len)], h[0..@min(g.len, h.len)]) |p, q| {
         if (!p.eql(q)) return p.less(q);
     }
@@ -564,6 +566,7 @@ fn provsLess(g: []const Prov, h: []const Prov) bool {
 }
 
 fn groupsLess(x: []const []const Prov, y: []const []const Prov) bool {
+    if (x.ptr == y.ptr and x.len == y.len) return false;
     for (x[0..@min(x.len, y.len)], y[0..@min(x.len, y.len)]) |g, h| {
         if (provsLess(g, h)) return true;
         if (provsLess(h, g)) return false;
@@ -671,6 +674,7 @@ pub const XSum = struct {
 
     fn eql(x: XSum, y: XSum) bool {
         if (x.no != y.no or x.atoms.len != y.atoms.len) return false;
+        if (x.atoms.ptr == y.atoms.ptr) return true;
         for (x.atoms, y.atoms) |a, b| if (!a.eql(b)) return false;
         return true;
     }
@@ -854,7 +858,7 @@ pub const Limit = enum(u8) {
             .path_entries => path_entry_cap,
             .owned_atoms => atom_cap,
             .conditions => condition_cap,
-            .value_cells => deep_cap,
+            .value_cells => retired_deep_cap,
             .fixpoint => round_cap,
             .callbacks => inst_depth,
         };
@@ -880,6 +884,7 @@ pub const Carried = struct {
 
 pub const Summary = struct {
     params: u32,
+    cast_signature: u32 = none,
     uses: []const UseEntry = &.{},
     res: []const ResEntry = &.{},
     /// §31.7: what the result holds of records — a record's object (`◦`),
@@ -1009,6 +1014,15 @@ recursive_types: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.defau
 level_of: std.ArrayList(Level) = .empty,
 /// §16.7's level marker `⟨T⟩`: per marker step argument, its type
 /// `(module, declaration)`, and back.
+cast_types: std.ArrayList([]const u8) = .empty,
+cast_ids: std.StringHashMapUnmanaged(u32) = .empty,
+cast_parts: std.ArrayList(?[]const CastPart) = .empty,
+cast_open: std.ArrayList(bool) = .empty,
+cast_depth: std.ArrayList(u32) = .empty,
+cast_texts: std.ArrayList(?[]const u8) = .empty,
+cast_closed: []?[]u32 = &.{},
+cast_scopes: std.AutoHashMapUnmanaged([2]u32, []const u32) = .empty,
+cast_keys: std.HashMapUnmanaged([3]u32, u32, WordsKey(3), std.hash_map.default_max_load_percentage) = .empty,
 marker_types: std.ArrayList(u64) = .empty,
 /// Per marker: where it stands (§16.7, *Where a marker stands*).
 marker_kind: std.ArrayList(MarkerKind) = .empty,
@@ -1019,6 +1033,7 @@ region_steps: std.AutoHashMapUnmanaged([2]u64, []const u32) = .empty,
 member_paths: std.AutoHashMapUnmanaged([5]u64, []const u32) = .empty,
 /// `child`'s answers, by `(parent, kind, arg)`.
 child_memo: std.HashMapUnmanaged([3]u32, u32, StepKey, std.hash_map.default_max_load_percentage) = .empty,
+match_cache: ?*MatchCache = null,
 /// Per path: `canonicalSplit`'s and `canonicalPlaces`'s answers, as an
 /// index into `canon_splits` plus 2, 1 for none, 0 not yet asked.
 split_of: std.ArrayList(u32) = .empty,
@@ -1026,6 +1041,7 @@ places_of: std.ArrayList(u32) = .empty,
 canon_splits: std.ArrayList(CanonicalSplit) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
 concat_memo: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
+suffix_memo: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, type variable)`: whether a value of the type may hold a cell.
 tracked_memo: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, declaration)`: its qualified name.
@@ -1076,6 +1092,16 @@ pub fn deinit(o: *Ownership) void {
     o.in.gpa.free(o.nominal_link);
     o.in.gpa.free(o.nominal_on);
     o.holding.deinit(o.in.gpa);
+    o.cast_types.deinit(o.in.gpa);
+    o.cast_ids.deinit(o.in.gpa);
+    o.cast_parts.deinit(o.in.gpa);
+    o.cast_open.deinit(o.in.gpa);
+    o.cast_depth.deinit(o.in.gpa);
+    o.cast_texts.deinit(o.in.gpa);
+    for (o.cast_closed) |memo| if (memo) |items| o.in.gpa.free(items);
+    o.in.gpa.free(o.cast_closed);
+    o.cast_scopes.deinit(o.in.gpa);
+    o.cast_keys.deinit(o.in.gpa);
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
     o.ctor_key.deinit(o.in.gpa);
@@ -1090,10 +1116,15 @@ pub fn deinit(o: *Ownership) void {
     o.region_steps.deinit(o.in.gpa);
     o.member_paths.deinit(o.in.gpa);
     o.child_memo.deinit(o.in.gpa);
+    if (o.match_cache) |memo| {
+        memo.deinit(o.in.gpa);
+        o.in.gpa.destroy(memo);
+    }
     o.split_of.deinit(o.in.gpa);
     o.places_of.deinit(o.in.gpa);
     o.canon_splits.deinit(o.in.gpa);
     o.concat_memo.deinit(o.in.gpa);
+    o.suffix_memo.deinit(o.in.gpa);
     o.tracked_memo.deinit(o.in.gpa);
     o.names_memo.deinit(o.in.gpa);
     o.schema_taints.deinit(o.in.gpa);
@@ -1993,6 +2024,7 @@ pub fn normalizeRead(o: *Ownership, s: Summary) Allocator.Error!Summary {
 fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!bool {
     const x = try o.normalizeRaw(x_in);
     const y = try o.normalizeRaw(y_in);
+    if (x.cast_signature != y.cast_signature) return false;
     if (x.params != y.params or x.limit != y.limit or x.limit_at != y.limit_at or x.asserted != y.asserted or
         x.once != y.once or x.words != y.words) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or
@@ -2332,6 +2364,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
 }
 
 fn summaryEql(x: Summary, y: Summary) bool {
+    if (x.cast_signature != y.cast_signature) return false;
     if (x.limit != y.limit or x.limit_at != y.limit_at or x.params != y.params or x.once != y.once) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or x.funs.len != y.funs.len) return false;
     for (x.uses, y.uses) |a, b| if (!useEql(a, b)) return false;
@@ -2454,6 +2487,7 @@ fn xsumAnd(a: Allocator, x: XSum, y: XSum) Allocator.Error!XSum {
     if (x.no != 0 or y.no != 0) return .{ .no = @max(x.no, y.no) };
     if (y.atoms.len == 0) return x;
     if (x.atoms.len == 0) return y;
+    if (x.eql(y)) return x;
     const all = try a.alloc(XAtom, x.atoms.len + y.atoms.len);
     @memcpy(all[0..x.atoms.len], x.atoms);
     @memcpy(all[x.atoms.len..], y.atoms);
@@ -2598,6 +2632,7 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     try rxreq.appendSlice(keep, y.rxreq);
     return o.normalize(.{
         .params = @max(x.params, y.params),
+        .cast_signature = if (y.cast_signature != none) y.cast_signature else x.cast_signature,
         .uses = uses.items,
         .res = res.items,
         .objs = objs.items,
@@ -2963,6 +2998,7 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
     };
     const out: Summary = .{
         .params = s.params,
+        .cast_signature = s.cast_signature,
         .uses = uses[0..nu],
         .res = res,
         .objs = objs,
@@ -2988,6 +3024,12 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
 /// when the summary has no such set. Innermost marker first; the caller
 /// normalizes again, and asks again, until nothing changes.
 fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
+    // Inserting a nominal marker before composing a cast prefix can
+    // consume the path cut sooner than the expanded facts. Keep the
+    // complete expanded set for summaries that cross cast boundaries.
+    for (s.uses) |u| if (o.paths.casts.items[u.path]) return null;
+    for (s.res) |r| if (o.paths.casts.items[r.path] or o.paths.casts.items[r.prov.path]) return null;
+    for (s.supply) |r| if (o.paths.casts.items[r.path] or o.paths.casts.items[r.prov.path]) return null;
     // A use's bits written for more places only add reads and writes, so the
     // regions a use counts are the type's as written. A result's and a
     // supply's entries carry guarantees — its conditions, an owned supply —
@@ -3081,7 +3123,7 @@ fn canonicalList(o: *Ownership, comptime E: type, items_in: []const E, comptime 
     const gpa = o.in.gpa;
     // Only a path with a marker (or `⋆`) can be one of a canonical set.
     for (items_in) |e| {
-        if (o.paths.any.items[F.path(e)]) break;
+        if (o.paths.any.items[F.path(e)] and ((try o.canonicalSplit(F.path(e))) != null or (try o.canonicalPlaces(F.path(e))) != null)) break;
     } else return null;
     const items = try gpa.dupe(E, items_in);
     defer gpa.free(items);
@@ -3868,7 +3910,7 @@ fn slotProvs(o: *Ownership, s: *const Summary, t: [2]u32, shared: bool) Allocato
         const into_decoded, const into_encoded = if (first) |st| switch (st.kind) {
             .schema_decoded => .{ true, false },
             .schema_encoded => .{ false, true },
-            .any => .{ true, true },
+            .any => if (st.arg == 0) .{ true, true } else continue,
             else => continue,
         } else switch (r.prov.kind) {
             // The value itself, at the root. One its definition or call
@@ -4342,7 +4384,10 @@ fn pruneAtoms(o: *const Ownership, all: []XAtom) []const XAtom {
             var implied = false;
             for (sorted, 0..) |u, j| {
                 if (j == i or u.kind != .excl or u.a.kind != t.a.kind or u.a.a != t.a.a or u.a.path == t.a.path) continue;
-                if (o.isPrefix(u.a.path, t.a.path)) implied = true;
+                if (o.isPrefix(u.a.path, t.a.path)) {
+                    implied = true;
+                    break;
+                }
             }
             if (implied) continue;
         }
@@ -4589,7 +4634,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
 // ---------------------------------------------------------------------------
 
 /// `level` is §16.7's marker `⟨T⟩`, its argument a `markerId`.
-pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event, schema_decoded, schema_encoded, level };
+pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event, schema_decoded, schema_encoded, level, cast, cast_level };
 
 const Paths = struct {
     parent: std.ArrayList(u32) = .empty,
@@ -4601,19 +4646,24 @@ const Paths = struct {
     /// Whether the path holds a `⋆` step: two paths with none overlap
     /// only when one is the other's ancestor in the trie.
     any: std.ArrayList(bool) = .empty,
+    /// Exact cast boundaries need typed matching but stand for one place.
+    casts: std.ArrayList(bool) = .empty,
     /// A constructor step whose field can hold a value of its own type
     /// (`levelOf` here or below): a step a marker of the type may begin with.
     holds: std.ArrayList(bool) = .empty,
+    representative: std.ArrayList(bool) = .empty,
     map: std.HashMapUnmanaged([3]u32, u32, StepKey, std.hash_map.default_max_load_percentage) = .empty,
 
     fn deinit(p: *Paths, gpa: Allocator) void {
         p.holds.deinit(gpa);
+        p.representative.deinit(gpa);
         p.parent.deinit(gpa);
         p.kind.deinit(gpa);
         p.arg.deinit(gpa);
         p.depth.deinit(gpa);
         p.rest.deinit(gpa);
         p.any.deinit(gpa);
+        p.casts.deinit(gpa);
         p.map.deinit(gpa);
     }
 };
@@ -4661,6 +4711,8 @@ pub const eps: u32 = 0;
 
 pub fn seedPaths(o: *Ownership) Allocator.Error!void {
     if (o.paths.parent.items.len != 0) return;
+    o.match_cache = try o.in.gpa.create(MatchCache);
+    o.match_cache.?.* = .empty;
     const gpa = o.in.gpa;
     try o.paths.parent.append(gpa, none);
     try o.paths.kind.append(gpa, .any);
@@ -4668,7 +4720,194 @@ pub fn seedPaths(o: *Ownership) Allocator.Error!void {
     try o.paths.depth.append(gpa, 0);
     try o.paths.rest.append(gpa, none);
     try o.paths.any.append(gpa, false);
+    try o.paths.casts.append(gpa, false);
     try o.paths.holds.append(gpa, false);
+    try o.paths.representative.append(gpa, false);
+}
+
+/// A cache key is a complete, finite type term, not arbitrary marker text.
+/// Walk the encoded children iteratively so corrupt input cannot recurse.
+pub fn readCastId(o: *Ownership, key: []const u8, refs: []const u32) (Allocator.Error || error{Bad})!u32 {
+    try validateCastKeyRefs(o.in.gpa, key, refs.len);
+    const parts = try castKeyParts(o.in.gpa, key);
+    defer o.in.gpa.free(parts);
+    const local = try remapCastKey(o.in.gpa, key, parts, refs);
+    defer o.in.gpa.free(local);
+    return o.castId(local);
+}
+
+fn validateCastKey(gpa: Allocator, key: []const u8) (Allocator.Error || error{Bad})!void {
+    return validateCastKeyRefs(gpa, key, null);
+}
+
+fn validateCastKeyRefs(gpa: Allocator, key: []const u8, refs: ?usize) (Allocator.Error || error{Bad})!void {
+    var work: std.ArrayList([]const u8) = .empty;
+    defer work.deinit(gpa);
+    if (refs != null and key.len > 0 and key[0] == '@') return error.Bad;
+    try work.append(gpa, key);
+    while (work.pop()) |term| {
+        if (refs != null and term.len > 0 and term[0] == '@') {
+            const id = std.fmt.parseInt(u32, term[1..], 10) catch return error.Bad;
+            if (id >= refs.?) return error.Bad;
+            continue;
+        }
+        if (std.mem.eql(u8, term, "unit") or std.mem.eql(u8, term, "{}") or std.mem.eql(u8, term, "error")) continue;
+        if (std.mem.startsWith(u8, term, "var(")) {
+            if (term.len < 6 or term[term.len - 1] != ')') return error.Bad;
+            var parts = std.mem.splitScalar(u8, term[4 .. term.len - 1], ':');
+            const pkg = std.fmt.parseInt(u8, parts.next() orelse return error.Bad, 10) catch return error.Bad;
+            if (pkg > 2) return error.Bad;
+            if ((parts.next() orelse return error.Bad).len == 0) return error.Bad;
+            _ = std.fmt.parseInt(u32, parts.next() orelse return error.Bad, 10) catch return error.Bad;
+            _ = std.fmt.parseInt(u32, parts.next() orelse return error.Bad, 10) catch return error.Bad;
+            if (parts.next() != null) return error.Bad;
+            continue;
+        }
+        const open = std.mem.indexOfScalar(u8, term, '(') orelse return error.Bad;
+        if (term.len == 0 or term[term.len - 1] != ')') return error.Bad;
+        const head = term[0..open];
+        const record = std.mem.eql(u8, head, "record");
+        const func = std.mem.eql(u8, head, "fn");
+        if (!record and !func and !std.mem.eql(u8, head, "tuple")) {
+            const colon = std.mem.indexOfScalar(u8, head, ':') orelse return error.Bad;
+            const pkg = std.fmt.parseInt(u8, head[0..colon], 10) catch return error.Bad;
+            if (pkg > 2) return error.Bad;
+            const qualified = head[colon + 1 ..];
+            const sep = std.mem.indexOf(u8, qualified, "::") orelse return error.Bad;
+            if (sep == 0 or sep + 2 == qualified.len) return error.Bad;
+            if (std.mem.indexOfScalar(u8, qualified[0..sep], ':') != null or std.mem.indexOfScalar(u8, qualified[sep + 2 ..], ':') != null) return error.Bad;
+        }
+        var i = open + 1;
+        const end = term.len - 1;
+        var separated = false;
+        var after: usize = 0;
+        var label = false;
+        while (i < end) {
+            if ((record and term[i] == '|') or (func and std.mem.startsWith(u8, term[i..end], "→"))) {
+                if (separated or label) return error.Bad;
+                separated = true;
+                i += if (record) 1 else "→".len;
+                continue;
+            }
+            const from = i;
+            while (i < end and std.ascii.isDigit(term[i])) : (i += 1) {}
+            if (i == from or i >= end or term[i] != ':') return error.Bad;
+            const n = std.fmt.parseInt(usize, term[from..i], 10) catch return error.Bad;
+            i += 1;
+            if (n == 0 or n > end - i) return error.Bad;
+            const nested_term = term[i..][0..n];
+            i += n;
+            if (record and !separated and !label) {
+                if (i >= end or term[i] != '=') return error.Bad;
+                i += 1;
+                label = true;
+            } else {
+                if (refs != null and nested_term[0] != '@') return error.Bad;
+                try work.append(gpa, nested_term);
+                label = false;
+                if (separated) after += 1;
+            }
+        }
+        if (label or ((func or record) and (!separated or after != 1))) return error.Bad;
+    }
+    return;
+}
+
+pub const CastPart = struct { start: usize, end: usize, key: u32 };
+
+/// Children are complete interned types. Their local numbers never leave
+/// this session: the wire writer remaps them into its own type table.
+fn castKeyParts(a: Allocator, key: []const u8) Allocator.Error![]const CastPart {
+    if (std.mem.startsWith(u8, key, "var(")) return &.{};
+    var i = if (std.mem.indexOfScalar(u8, key, '(')) |p| p + 1 else return &.{};
+    var parts: std.ArrayList(CastPart) = .empty;
+    while (i < key.len) {
+        if (!std.ascii.isDigit(key[i])) {
+            i += 1;
+            continue;
+        }
+        const start = i;
+        var len: usize = 0;
+        while (i < key.len and std.ascii.isDigit(key[i])) : (i += 1) len = len * 10 + key[i] - '0';
+        i += 1;
+        const end = i + len;
+        if (end == key.len or key[end] != '=') {
+            std.debug.assert(key[i] == '@');
+            const ref_id = std.fmt.parseInt(u32, key[i + 1 .. end], 10) catch unreachable;
+            try parts.append(a, .{ .start = start, .end = end, .key = ref_id });
+        }
+        i = end;
+    }
+    return parts.toOwnedSlice(a);
+}
+
+pub fn castParts(o: *Ownership, id: u32) Allocator.Error![]const CastPart {
+    if (o.cast_parts.items[id]) |parts| return parts;
+    const parts = try castKeyParts(o.keep.allocator(), o.cast_types.items[id]);
+    o.cast_parts.items[id] = parts;
+    return parts;
+}
+
+fn writeCastRef(w: *std.Io.Writer, id: u32) std.Io.Writer.Error!void {
+    var buf: [16]u8 = undefined;
+    const text = std.fmt.bufPrint(&buf, "@{d}", .{id}) catch unreachable;
+    try w.print("{d}:{s}", .{ text.len, text });
+}
+
+fn remapCastKey(a: Allocator, key: []const u8, parts: []const CastPart, refs: []const u32) Allocator.Error![]u8 {
+    var b: std.Io.Writer.Allocating = .init(a);
+    errdefer b.deinit();
+    var at: usize = 0;
+    for (parts) |part| {
+        b.writer.writeAll(key[at..part.start]) catch return error.OutOfMemory;
+        writeCastRef(&b.writer, refs[part.key]) catch return error.OutOfMemory;
+        at = part.end;
+    }
+    b.writer.writeAll(key[at..]) catch return error.OutOfMemory;
+    return b.toOwnedSlice();
+}
+
+pub fn castWireKey(o: *Ownership, a: Allocator, id: u32, refs: []const u32) Allocator.Error![]u8 {
+    return remapCastKey(a, o.cast_types.items[id], try o.castParts(id), refs);
+}
+
+/// Expansion is for a requested human report only, never for interning or
+/// comparing type identities. Keep it once when many paths print one type.
+fn castText(o: *Ownership, id: u32) Allocator.Error![]const u8 {
+    if (o.cast_texts.items[id]) |text| return text;
+    const key = o.cast_types.items[id];
+    const parts = try o.castParts(id);
+    var b: std.Io.Writer.Allocating = .init(o.keep.allocator());
+    var at: usize = 0;
+    for (parts) |part| {
+        b.writer.writeAll(key[at..part.start]) catch return error.OutOfMemory;
+        const text = try o.castText(part.key);
+        b.writer.print("{d}:{s}", .{ text.len, text }) catch return error.OutOfMemory;
+        at = part.end;
+    }
+    b.writer.writeAll(key[at..]) catch return error.OutOfMemory;
+    const text = try b.toOwnedSlice();
+    o.cast_texts.items[id] = text;
+    return text;
+}
+
+pub fn castId(o: *Ownership, key: []const u8) Allocator.Error!u32 {
+    if (o.cast_ids.get(key)) |id| return id;
+    const saved = try o.keep.allocator().dupe(u8, key);
+    const id: u32 = @intCast(o.cast_types.items.len);
+    try o.cast_types.append(o.in.gpa, saved);
+    try o.cast_parts.append(o.in.gpa, null);
+    var open = std.mem.startsWith(u8, saved, "var(");
+    var depth: u32 = 0;
+    for (try o.castParts(id)) |part| {
+        open = open or o.cast_open.items[part.key];
+        depth = @max(depth, o.cast_depth.items[part.key] + 1);
+    }
+    try o.cast_open.append(o.in.gpa, open);
+    try o.cast_depth.append(o.in.gpa, depth);
+    try o.cast_texts.append(o.in.gpa, null);
+    try o.cast_ids.put(o.in.gpa, saved, id);
+    return id;
 }
 
 fn child(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u32 {
@@ -4692,6 +4931,18 @@ fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Erro
     // apart from `t#Node.1`, the root's own. A marker added inside a region
     // folds onto the region's.
     switch (kind) {
+        .cast, .cast_level => {
+            if (parent != eps and o.paths.arg.items[parent] == arg) {
+                if (o.paths.kind.items[parent] == .cast_level) return parent;
+                if (kind == .cast and o.paths.kind.items[parent] == .cast) return parent;
+            }
+            var at = parent;
+            var first: ?u32 = null;
+            while (at != eps) : (at = o.paths.parent.items[at]) {
+                if ((o.paths.kind.items[at] == .cast or o.paths.kind.items[at] == .cast_level) and o.paths.arg.items[at] == arg) first = at;
+            }
+            if (first) |f| return o.rawChild(f, .cast_level, arg);
+        },
         .ctor => if (o.ctorType(o.stepCtor(arg))) |ty| if (try o.regionOf(parent, ty)) |r| {
             // A type that does not reach itself has no levels: a path in it
             // twice was cast through `Js.Value` and read again, and it folds
@@ -4756,6 +5007,7 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
             .env => if (ty == fn_type and region == null) {
                 region = .{ .first = node };
             },
+            .cast, .cast_level => region = null,
             else => {},
         }
     }
@@ -4829,16 +5081,7 @@ pub fn markerType(o: *const Ownership, arg: u32) u64 {
 /// region's marker merged (§16.7). A demand there, or a holder there, is an
 /// approximate fact. A level's own field (`#Node.1`) is one place.
 fn representative(o: *Ownership, p: u32) Allocator.Error!bool {
-    var at = p;
-    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
-        switch (o.paths.kind.items[at]) {
-            .elem, .level => return true,
-            // core Dict's tree folds with no marker: its levels are one place.
-            .ctor => if (o.ctorType(o.stepCtor(o.paths.arg.items[at]))) |t| if (try o.dictTree(t)) return true,
-            else => {},
-        }
-    }
-    return false;
+    return o.paths.representative.items[p];
 }
 
 /// Whether a path goes through core Dict's recursive tree (§20.8).
@@ -5036,8 +5279,11 @@ pub fn rawChild(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.
     try o.paths.depth.append(o.in.gpa, o.paths.depth.items[parent] + 1);
     try o.paths.rest.append(o.in.gpa, none);
     // A marker is compared step by step (§16.7, *Overlap*).
-    try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any or kind == .level);
+    try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any or kind == .level or kind == .cast_level);
+    try o.paths.casts.append(o.in.gpa, o.paths.casts.items[parent] or kind == .cast);
     try o.paths.holds.append(o.in.gpa, kind == .ctor and try o.levelOf(arg) != .none);
+    const dict = if (kind == .ctor) if (o.ctorType(o.stepCtor(arg))) |t| try o.dictTree(t) else false else false;
+    try o.paths.representative.append(o.in.gpa, o.paths.representative.items[parent] or kind == .elem or kind == .level or kind == .cast_level or dict);
     return id;
 }
 
@@ -5079,6 +5325,8 @@ fn concat(o: *Ownership, p: u32, q: u32) Allocator.Error!u32 {
 
 /// Whether one path is a prefix of the other, step by step, with `⋆`
 /// overlapping anything (§4.1).
+const MatchCache = std.HashMapUnmanaged([3]u32, bool, WordsKey(3), std.hash_map.default_max_load_percentage);
+
 fn overlap(o: *const Ownership, p: u32, q: u32) bool {
     // Through the trie: the longer path's ancestor at the shorter's depth
     // is the shorter one exactly when their common steps agree; only a `⋆`
@@ -5086,8 +5334,12 @@ fn overlap(o: *const Ownership, p: u32, q: u32) bool {
     const short, const long = if (o.paths.depth.items[p] <= o.paths.depth.items[q]) .{ p, q } else .{ q, p };
     const at = o.ancestor(long, o.paths.depth.items[short]);
     if (at == short) return true;
-    if (!o.paths.any.items[at] and !o.paths.any.items[short]) return false;
-    return o.overlapSteps(p, q);
+    if (!o.paths.any.items[at] and !o.paths.any.items[short] and !o.paths.casts.items[at] and !o.paths.casts.items[short]) return false;
+    const key: [3]u32 = .{ p, q, 0 };
+    if (o.match_cache) |memo| if (memo.get(key)) |answer| return answer;
+    const answer = o.overlapSteps(p, q);
+    if (o.match_cache) |memo| memo.put(o.in.gpa, key, answer) catch {};
+    return answer;
 }
 
 /// A storage write does not write a strict descendant value (§32 amendment).
@@ -5119,6 +5371,18 @@ fn pathNodes(o: *const Ownership, p: u32, buf: *[k_limit + 1]u32) []const u32 {
     return buf[0..n];
 }
 
+fn physicalPath(o: *const Ownership, p: u32) u32 {
+    var at = p;
+    while (at != eps and o.paths.kind.items[at] == .cast) at = o.paths.parent.items[at];
+    return at;
+}
+
+fn exactRelatedPaths(o: *const Ownership, p: u32, q: u32) bool {
+    const x = o.physicalPath(p);
+    const y = o.physicalPath(q);
+    return o.startsWith(x, y) or o.startsWith(y, x);
+}
+
 fn sameStep(o: *const Ownership, x: u32, y: u32) bool {
     return o.paths.kind.items[x] == o.paths.kind.items[y] and o.paths.arg.items[x] == o.paths.arg.items[y];
 }
@@ -5144,7 +5408,7 @@ fn match(o: *const Ownership, a: []const u32, b: []const u32, mode: MatchMode) b
         // A loan of an unknown suffix or a nullable level may be the
         // written storage itself. Keep the older holds relation unchanged.
         const k = o.paths.kind.items[a[0]];
-        if (k == .any) return true;
+        if (k == .any or k == .cast or k == .cast_level) return true;
         if (k == .level) return o.expand(o.markerKind(o.paths.arg.items[a[0]]), a[0], a[1..], b, mode, true);
         return false;
     }
@@ -5152,7 +5416,8 @@ fn match(o: *const Ownership, a: []const u32, b: []const u32, mode: MatchMode) b
     const y = b[0];
     const kx = o.paths.kind.items[x];
     const ky = o.paths.kind.items[y];
-    if (kx == .any or ky == .any) return true;
+    if (kx == .cast and ky == .cast and o.paths.arg.items[x] == o.paths.arg.items[y]) return o.match(a[1..], b[1..], mode);
+    if (kx == .any or ky == .any or kx == .cast or ky == .cast or kx == .cast_level or ky == .cast_level) return true;
     if (kx == .level and ky == .level) {
         if (o.markerType(o.paths.arg.items[x]) != o.markerType(o.paths.arg.items[y])) return true;
         // Both end at a `T`; one expansion may be the other's and more,
@@ -5209,14 +5474,15 @@ fn regionStepKind(o: *const Ownership, kind: MarkerKind, t: u64, step: u32) ?Mar
 
 /// When `p` is a prefix of `q`, the rest of `q`; else null.
 fn suffix(o: *Ownership, p: u32, q: u32) Allocator.Error!?u32 {
-    var bp: [k_limit + 1]Step = undefined;
-    var bq: [k_limit + 1]Step = undefined;
-    const sp = o.steps(p, &bp);
-    const sq = o.steps(q, &bq);
-    if (sp.len > sq.len) return null;
-    for (sp, sq[0..sp.len]) |x, y| if (x.kind != y.kind or x.arg != y.arg) return null;
+    if (!o.startsWith(q, p)) return null;
+    if (p == q) return eps;
+    const key: [2]u32 = .{ p, q };
+    if (o.suffix_memo.get(key)) |cached| return cached;
+    var buf: [k_limit + 1]Step = undefined;
+    const sq = o.steps(q, &buf);
     var at: u32 = eps;
-    for (sq[sp.len..]) |s| at = try o.child(at, s.kind, s.arg);
+    for (sq[o.paths.depth.items[p]..]) |s| at = try o.child(at, s.kind, s.arg);
+    try o.suffix_memo.put(o.in.gpa, key, at);
     return at;
 }
 
@@ -5238,10 +5504,14 @@ fn startsWith(o: *const Ownership, p: u32, q: u32) bool {
 /// may be a prefix of one of the places at `q` through a marker (the
 /// prefix step by step is the exact case of `coversAt`).
 fn levelHoldsPaths(o: *const Ownership, p: u32, q: u32) bool {
-    if (!o.paths.any.items[p] and !o.paths.any.items[q]) return false;
+    if (!o.paths.any.items[p] and !o.paths.any.items[q] and !o.paths.casts.items[p] and !o.paths.casts.items[q]) return false;
+    const key: [3]u32 = .{ p, q, 1 };
+    if (o.match_cache) |memo| if (memo.get(key)) |answer| return answer;
     var bp: [k_limit + 1]u32 = undefined;
     var bq: [k_limit + 1]u32 = undefined;
-    return o.match(o.pathNodes(p, &bp), o.pathNodes(q, &bq), .holds);
+    const answer = o.match(o.pathNodes(p, &bp), o.pathNodes(q, &bq), .holds);
+    if (o.match_cache) |memo| memo.put(o.in.gpa, key, answer) catch {};
+    return answer;
 }
 
 /// Whether `p` is a prefix of `q`, `⋆` matching anything.
@@ -5280,7 +5550,7 @@ fn dropFirstRaw(o: *Ownership, p: u32) Allocator.Error!u32 {
     return at;
 }
 
-fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error!void {
+fn writePath(o: *Ownership, w: *std.Io.Writer, p: u32) (Allocator.Error || std.Io.Writer.Error)!void {
     var buf: [k_limit + 1]Step = undefined;
     for (o.steps(p, &buf)) |s| switch (s.kind) {
         .field => try w.print(".{s}", .{o.in.interner.slice(@fromBackingInt(@intCast(s.arg)))}),
@@ -5296,6 +5566,8 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
             try w.print("#{s}.{d}", .{ name, o.stepField(s.arg) });
         },
         .elem => try w.writeAll("[*]"),
+        .cast => try w.print("⟨as {s}⟩", .{try o.castText(s.arg)}),
+        .cast_level => try w.print("⟨as {s}⟩⁺", .{try o.castText(s.arg)}),
         .level => {
             const t = o.markerType(s.arg);
             if (t == fn_type) {
@@ -6667,8 +6939,19 @@ const Walker = struct {
     recursive: bool = false,
 
     point: u32 = 0,
+    cast_open_used: bool = false,
+    cast_ordinals: []const u32 = &.{},
+    cast_vars: []u32 = &.{},
+    cast_seen: []bool = &.{},
+    cast_next: u32 = 0,
+    cast_seeded: bool = false,
+    cast_subst_types: std.ArrayList(u32) = .empty,
+    cast_subst_paths: std.ArrayList(u32) = .empty,
+    cast_subst_touched_types: std.ArrayList(u32) = .empty,
+    cast_subst_touched_paths: std.ArrayList(u32) = .empty,
     cells: std.ArrayList(Cell) = .empty,
     cell_map: std.HashMapUnmanaged([5]u32, u32, WordsKey(5), std.hash_map.default_max_load_percentage) = .empty,
+    cover_memo: std.HashMapUnmanaged([2]u32, ?Cover, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
     /// §20.4, amended 2026-10-16 (#229): a lambda a callee's result carries
     /// is one closure per place it is made — the call, the callee's summary,
     /// the lambda, the callback depth and the entry's namespace — whatever
@@ -6818,6 +7101,8 @@ const Walker = struct {
     /// §20.4: `projPath`'s answers for a wide value with no type, by
     /// `(slice, length, path)`.
     projected: std.AutoHashMapUnmanaged([3]usize, AV) = .empty,
+    spine_indexes: std.AutoHashMapUnmanaged([2]usize, SpineIndex) = .empty,
+    record_shapes: std.AutoHashMapUnmanaged([2]usize, AV) = .empty,
     /// §28.6, a report walk only: the first and last token of what is being
     /// evaluated, and of each instruction evaluated so far — what a message
     /// underlines.
@@ -7200,10 +7485,33 @@ const Walker = struct {
     /// path from two paths `before`, as a fold of instantiation does too
     /// (§16.7, F3 as amended).
     fn foldedPairs(w: *Walker, before: AV, after: []const Entry) Allocator.Error!void {
+        // Only equal destination paths can merge. Keep source order inside
+        // each bucket, so lowering the cells' conditions has the same order
+        // as the pairwise walk, without comparing unrelated destinations.
+        const order = try w.a.alloc(u32, after.len);
+        for (order, 0..) |*x, i| x.* = @intCast(i);
+        std.mem.sort(u32, order, after, struct {
+            fn less(items: []const Entry, i: u32, j: u32) bool {
+                return items[i].path < items[j].path or (items[i].path == items[j].path and i < j);
+            }
+        }.less);
+        const ends = try w.a.alloc([2]usize, after.len);
+        var start: usize = 0;
+        while (start < order.len) {
+            var end = start + 1;
+            while (end < order.len and after[order[end]].path == after[order[start]].path) : (end += 1) {}
+            const different = for (order[start + 1 .. end]) |j| {
+                if (before[j].path != before[order[start]].path) break true;
+            } else false;
+            for (order[start..end], start..) |i, at| ends[i] = if (different) .{ at + 1, end } else .{ end, end };
+            start = end;
+        }
         for (after, 0..) |e, i| {
             if (!w.o.paths.any.items[e.path]) continue;
-            for (after[i + 1 ..], i + 1..) |f, j| {
-                if (f.path != e.path or before[i].path == before[j].path) continue;
+            for (order[ends[i][0]..ends[i][1]]) |j| {
+                const f = after[j];
+                if (before[i].path == before[j].path) continue;
+
                 // What the value's deep condition says of the pair before the
                 // fold, which no deep condition can say after it.
                 if (try w.nested(before[i], before[j])) continue;
@@ -7284,6 +7592,8 @@ const Walker = struct {
     }
 
     fn proj(w: *Walker, av: AV, s: Step, ty: ?Var) Allocator.Error!AV {
+        if (s.kind == .cast) return w.readCast(av, s.arg);
+        if (s.kind == .cast_level) return w.readCastLevel(av, s.arg);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         // A type that folds with no marker (core Dict's tree) keeps what
         // folding put at its levels below, as #341 did: at the same path
@@ -7299,7 +7609,22 @@ const Walker = struct {
                 continue;
             }
             const first = w.o.firstStep(e.path).?;
+            if (analysisStep(s.kind) and (first.kind == .cast or first.kind == .cast_level)) continue;
+            if (first.kind == .cast) {
+                var kept = e;
+                kept.path = try w.o.child(eps, .any, 1);
+                if (kept.approx == 0) kept.approx = approx_place;
+                try out.append(w.a, kept);
+                continue;
+            }
+            if (first.kind == .cast_level) {
+                var kept = e;
+                kept.approx = if (e.approx != 0) e.approx else approx_place;
+                try out.append(w.a, kept);
+                continue;
+            }
             if (first.kind == .any) {
+                if (first.arg == 1 and analysisStep(s.kind)) continue;
                 try out.append(w.a, e);
                 continue;
             }
@@ -7396,9 +7721,6 @@ const Walker = struct {
         if (!judge) return .{ .av = try w.norm(out.items) };
         // `norm` sorts in place, and `frames` follows `out`'s order.
         const normed = try w.norm(try w.a.dupe(Entry, out.items));
-        // A value wider than the deep condition's cap is judged pessimistic
-        // there; its pairs are not looked at.
-        if (w.pairedCells(normed) > deep_cap) return .{ .av = normed };
         // Only entries at one path can be a merged pair: sort by path and
         // look within each run.
         const order = try w.a.alloc(u32, out.items.len);
@@ -7485,7 +7807,12 @@ const Walker = struct {
     /// `proj(av, s)` for a wide value, through an index by first step that
     /// is built once per value: the same answer, without the scan.
     fn projFirst(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
-        if (s.kind == .level or (s.kind == .ctor and try w.o.levelOf(s.arg) != .none)) return w.proj(av, s, null);
+        if (analysisStep(s.kind) or s.kind == .cast or s.kind == .cast_level or s.kind == .level or (s.kind == .ctor and try w.o.levelOf(s.arg) != .none)) return w.proj(av, s, null);
+        // Decide fallback before inserting: an abandoned index must never
+        // leave an uninitialized cache entry for a later projection.
+        for (av) |e| if (w.o.firstStep(e.path)) |first| {
+            if (first.kind == .cast or first.kind == .cast_level) return w.proj(av, s, null);
+        };
         const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
         const gop = try w.wide.getOrPut(w.a, key);
         if (!gop.found_existing) {
@@ -7803,6 +8130,7 @@ const Walker = struct {
     /// the value's entries, where the pairwise definition is quadratic in
     /// them and cubic in its conditions.
     const SpineIndex = struct {
+        physical: *PhysicalIndex,
         av: AV,
         /// The cells found at two paths or more: every entry of one is
         /// `lost`, as the pairwise definition returns at the first such pair.
@@ -7822,7 +8150,17 @@ const Walker = struct {
     };
 
     fn spineIndex(w: *Walker, av: AV) Allocator.Error!SpineIndex {
-        var idx: SpineIndex = .{ .av = av };
+        if (av.len < wide_index) return w.spineIndexRaw(av);
+        const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
+        if (w.spine_indexes.get(key)) |idx| return idx;
+        const idx = try w.spineIndexRaw(av);
+        try w.spine_indexes.put(w.a, key, idx);
+        return idx;
+    }
+
+    fn spineIndexRaw(w: *Walker, av: AV) Allocator.Error!SpineIndex {
+        var idx: SpineIndex = .{ .av = av, .physical = try w.a.create(PhysicalIndex) };
+        idx.physical.* = .{};
         // `(cell, path)` sorted: a cell at two paths or more is two runs.
         const at = try w.a.alloc([2]u32, av.len);
         for (av, at) |e, *p| p.* = .{ e.cell, e.path };
@@ -7844,7 +8182,10 @@ const Walker = struct {
                     try idx.arrived.append(w.a, e);
                     try idx.cbres.append(w.a, e);
                 },
-                .site => try idx.made.append(w.a, e),
+                .site => {
+                    try idx.made.append(w.a, e);
+                    try w.familyAdd(&idx, c, e);
+                },
                 .result => {
                     try idx.made.append(w.a, e);
                     try w.familyAdd(&idx, c, e);
@@ -7854,6 +8195,94 @@ const Walker = struct {
             }
         }
         return idx;
+    }
+
+    const PhysicalIndex = struct {
+        ready: bool = false,
+        here: std.HashMapUnmanaged([4]u32, std.ArrayList(Entry), WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
+        below: std.HashMapUnmanaged([4]u32, std.ArrayList(Entry), WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
+        wrappers: std.ArrayList(Entry) = .empty,
+    };
+
+    fn physicalIndex(w: *Walker, idx: *const SpineIndex) Allocator.Error!*PhysicalIndex {
+        const out = idx.physical;
+        if (out.ready) return out;
+        out.ready = true;
+        for (idx.av) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.condition_only or c.kind == .closure or c.kind == .func) continue;
+            if (c.kind == .taken or c.kind == .except) {
+                try out.wrappers.append(w.a, e);
+                continue;
+            }
+            if (e.approx != 0 or try w.o.representative(c.path)) continue;
+            const physical = w.o.physicalPath(c.path);
+            const key: [4]u32 = .{ @backingInt(c.kind), c.a, c.b, physical };
+            const here = try out.here.getOrPut(w.a, key);
+            if (!here.found_existing) here.value_ptr.* = .empty;
+            try here.value_ptr.append(w.a, e);
+            var at = physical;
+            var previous: u32 = none;
+            while (true) {
+                const prefix = w.o.physicalPath(at);
+                if (prefix != previous) {
+                    const pk: [4]u32 = .{ key[0], key[1], key[2], prefix };
+                    const below = try out.below.getOrPut(w.a, pk);
+                    if (!below.found_existing) below.value_ptr.* = .empty;
+                    try below.value_ptr.append(w.a, e);
+                    previous = prefix;
+                }
+                if (at == eps) break;
+                at = w.o.paths.parent.items[at];
+            }
+        }
+        return out;
+    }
+
+    /// After an approximate failure, exact failure is still sought. The
+    /// ordinary-cell candidates are precisely physical ancestors/descendants
+    /// in one provenance family; wrappers keep the general relation.
+    const FailureDomain = enum { list, spine, record };
+
+    fn failedAt(w: *Walker, idx: *const SpineIndex, target: Entry, limited: bool, comptime domain: FailureDomain, comptime places: bool) Allocator.Error!u32 {
+        const physical = try w.physicalIndex(idx);
+        const tc = w.cells.items[target.cell];
+        if (tc.kind == .taken or tc.kind == .except) {
+            if (try w.failedPairs(idx.av, target, domain, places)) return cond_shared;
+        } else {
+            if (try w.failedPairs(physical.wrappers.items, target, domain, places)) return cond_shared;
+            if (target.approx == 0 and !try w.o.representative(tc.path)) {
+                const path = w.o.physicalPath(tc.path);
+                const key: [4]u32 = .{ @backingInt(tc.kind), tc.a, tc.b, path };
+                if (physical.below.get(key)) |items| if (try w.failedPairs(items.items, target, domain, places)) return cond_shared;
+                var at = path;
+                var previous = path;
+                while (at != eps) {
+                    at = w.o.paths.parent.items[at];
+                    const prefix = w.o.physicalPath(at);
+                    if (prefix == previous) continue;
+                    const pk: [4]u32 = .{ key[0], key[1], key[2], prefix };
+                    if (physical.here.get(pk)) |items| if (try w.failedPairs(items.items, target, domain, places)) return cond_shared;
+                    previous = prefix;
+                }
+            }
+        }
+        return if (limited) cond_limit else cond_lost;
+    }
+
+    fn failedPairs(w: *Walker, others: AV, target: Entry, comptime domain: FailureDomain, comptime places: bool) Allocator.Error!bool {
+        for (others) |other| {
+            if (other.path == target.path or (places and try w.nested(other, target))) continue;
+            const exact = target.approx == 0 and other.approx == 0;
+            if (places and domain == .record and target.cell == other.cell and (try w.o.representative(target.path) or try w.o.representative(other.path))) continue;
+            const k = switch (domain) {
+                .list => try w.sepCells(target.cell, other.cell, exact),
+                .spine => try w.sepSpines(target.cell, other.cell, exact),
+                .record => try w.rsepCells(target.cell, other.cell, exact),
+            };
+            if (k == cond_shared) return true;
+        }
+        return false;
     }
 
     fn familyAdd(w: *Walker, idx: *SpineIndex, c: Cell, e: Entry) Allocator.Error!void {
@@ -7885,7 +8314,7 @@ const Walker = struct {
             .site, .result => {
                 try w.spinePairs(&acc, idx.odd.items, target);
                 try w.spinePairs(&acc, idx.cbres.items, target);
-                if (c.kind == .result) if (idx.family.get(.{ @backingInt(c.kind), c.a, c.b })) |f| try w.spinePairs(&acc, f.items, target);
+                if (idx.family.get(.{ @backingInt(c.kind), c.a, c.b })) |f| try w.spinePairs(&acc, f.items, target);
             },
             .param, .env, .cbres => {
                 try w.spinePairs(&acc, idx.odd.items, target);
@@ -7893,7 +8322,7 @@ const Walker = struct {
                 if (c.kind == .cbres) try w.spinePairs(&acc, idx.made.items, target);
             },
         }
-        const k = try w.condAndAll(&acc);
+        const k = if (acc.lost or acc.limit) try w.failedAt(idx, target, acc.limit, .spine, true) else try w.condAndAll(&acc);
         // Values of eight entries or fewer in every safety build; every value
         // with `-Downership-full-cross-check` (#272).
         if (std.debug.runtime_safety and (idx.av.len <= 8 or @import("ownership_options").full_cross_check)) {
@@ -7909,18 +8338,23 @@ const Walker = struct {
     /// one, which a list literal of n list parameters made O(n⁴) in time and
     /// memory (issue #293); `spineAt` met the same (§16.3's amendment).
     const CondAcc = struct {
+        last: u32 = none,
         shared: bool = false,
         lost: bool = false,
         limit: bool = false,
         atoms: std.ArrayList(WAtom) = .empty,
 
         fn add(acc: *CondAcc, w: *Walker, k: u32) Allocator.Error!void {
+            if (acc.last == k) return;
+            acc.last = k;
             switch (k) {
                 cond_yes => {},
                 cond_shared => acc.shared = true,
                 cond_lost => acc.lost = true,
                 cond_limit => acc.limit = true,
-                else => try acc.atoms.appendSlice(w.a, w.conds.items[k].atoms),
+                else => if (!acc.shared and !acc.lost and !acc.limit) {
+                    try acc.atoms.appendSlice(w.a, w.conds.items[k].atoms);
+                },
             }
             // Kept within the `conditions` limit as it grows (§16.7):
             // duplicates folded, and past the limit nothing more is kept.
@@ -7940,6 +8374,7 @@ const Walker = struct {
         const tc = w.cells.items[target.cell];
         const t_arrived = tc.kind == .param or tc.kind == .env or tc.kind == .cbres;
         for (others) |other| {
+            if (acc.lost or acc.limit) return;
             if (w.cells.items[other.cell].condition_only) continue;
             if (acc.shared) return;
             if (other.path == target.path) continue;
@@ -7951,11 +8386,11 @@ const Walker = struct {
             // `sepSpines` makes it of `sepCond`'s (no condition stored).
             if (t_arrived and (oc.kind == .param or oc.kind == .env or oc.kind == .cbres) and target.cell != other.cell) {
                 // `covers` either way, without building the path between.
-                const related = tc.kind == oc.kind and tc.a == oc.a and tc.b == oc.b and
+                const related = tc.kind == oc.kind and tc.a == oc.a and tc.b == oc.b and tc.scope == oc.scope and
                     (w.o.startsWith(tc.path, oc.path) or w.o.startsWith(oc.path, tc.path) or
                         w.o.levelHoldsPaths(tc.path, oc.path) or w.o.levelHoldsPaths(oc.path, tc.path));
                 if (related) {
-                    const one = !(try w.o.representative(tc.path)) and !(try w.o.representative(oc.path));
+                    const one = !(try w.o.representative(tc.path)) and !(try w.o.representative(oc.path)) and w.o.exactRelatedPaths(tc.path, oc.path);
                     if (exact and one) acc.shared = true else acc.lost = true;
                     continue;
                 }
@@ -8224,7 +8659,7 @@ const Walker = struct {
         if (x == y or (try w.covers(x, y)) != null or (try w.covers(y, x)) != null) {
             // Exact only when the text shows it: one place, not a list's
             // elements or a folded level standing for many (§8.4).
-            const one = !(try w.o.representative(cx.path)) and !(try w.o.representative(cy.path));
+            const one = !(try w.o.representative(cx.path)) and !(try w.o.representative(cy.path)) and w.o.exactRelatedPaths(cx.path, cy.path);
             return if (exact and one) cond_shared else cond_lost;
         }
         if (cx.kind == .top or cy.kind == .top or cx.kind == .payload or cy.kind == .payload) return cond_lost;
@@ -8265,11 +8700,20 @@ const Walker = struct {
     }
 
     /// `sepValues` over two values' `sepCellList`.
+    fn sepFailed(w: *Walker, ex: AV, ey: AV, fl: Fl, limited: bool) Allocator.Error!u32 {
+        const Ent = struct { e: Entry, g: u32 };
+        const items = try w.a.alloc(Ent, ex.len + ey.len);
+        for (items[0..ex.len], ex) |*item, e| item.* = .{ .e = e, .g = 0 };
+        for (items[ex.len..], ey) |*item, e| item.* = .{ .e = e, .g = 1 };
+        return w.failedGroups(items, fl, limited);
+    }
+
     fn sepOfCells(w: *Walker, ex: AV, ey: AV) Allocator.Error!u32 {
         var acc: CondAcc = .{};
         for (ex) |a| for (ey) |b| {
             try acc.add(w, try w.sepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (acc.shared) return cond_shared;
+            if (acc.lost or acc.limit) return w.sepFailed(ex, ey, .list, acc.limit);
         };
         return w.condAndAll(&acc);
     }
@@ -8297,6 +8741,20 @@ const Walker = struct {
             return switch (acc.fl) {
                 .list => acc.l.shared,
                 .record => acc.r.shared,
+            };
+        }
+
+        fn failed(acc: *const FlAcc) bool {
+            return switch (acc.fl) {
+                .list => acc.l.lost or acc.l.limit,
+                .record => acc.r.lost or acc.r.limit,
+            };
+        }
+
+        fn limited(acc: *const FlAcc) bool {
+            return switch (acc.fl) {
+                .list => acc.l.limit,
+                .record => acc.r.limit,
             };
         }
 
@@ -8452,6 +8910,28 @@ const Walker = struct {
         return k;
     }
 
+    /// A false construction condition still checks every potential exact
+    /// alias across groups. Entry.path is a group number here, never a
+    /// place: the physical index reads each cell's own path instead.
+    fn failedGroups(w: *Walker, items: anytype, fl: Fl, limited: bool) Allocator.Error!u32 {
+        const av = try w.a.alloc(Entry, items.len);
+        for (av, items) |*e, x| {
+            e.* = x.e;
+            e.path = x.g;
+        }
+        const physical = try w.a.create(PhysicalIndex);
+        physical.* = .{};
+        const idx: SpineIndex = .{ .av = av, .physical = physical };
+        for (av) |e| {
+            const k = switch (fl) {
+                .list => try w.failedAt(&idx, e, limited, .list, false),
+                .record => try w.failedAt(&idx, e, limited, .record, false),
+            };
+            if (k == cond_shared) return k;
+        }
+        return if (limited) cond_limit else cond_lost;
+    }
+
     fn pairwiseApartOnce(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
         if (fl == .list and w.inCoreDict()) return w.pairwiseApartByPairs(groups, fl);
         const Ent = struct { e: Entry, g: u32 };
@@ -8501,7 +8981,7 @@ const Walker = struct {
             } else continue;
             var star = key[3] == 1;
             for (fam.items) |i| {
-                if (w.o.paths.any.items[w.cells.items[items[i].e.cell].path]) star = true;
+                if (w.o.paths.any.items[w.cells.items[items[i].e.cell].path] or w.o.paths.casts.items[w.cells.items[items[i].e.cell].path]) star = true;
             }
             if (star) {
                 // A `⋆` path, where a marker may hold a place, or one cell:
@@ -8513,6 +8993,7 @@ const Walker = struct {
                     if (x.e.cell != y.e.cell and (try w.covers(x.e.cell, y.e.cell)) == null and (try w.covers(y.e.cell, x.e.cell)) == null) continue;
                     try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
                     if (acc.shared()) return cond_shared;
+                    if (acc.failed()) return w.failedGroups(items, fl, acc.limited());
                 };
                 continue;
             }
@@ -8541,6 +9022,7 @@ const Walker = struct {
                         if (at == own and j >= i) continue;
                         try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
                         if (acc.shared()) return cond_shared;
+                        if (acc.failed()) return w.failedGroups(items, fl, acc.limited());
                     }
                     if (at == eps or at == none) break;
                     at = w.o.paths.parent.items[at];
@@ -8616,6 +9098,7 @@ const Walker = struct {
                 if ((ky == .taken or ky == .except) and j < i) continue;
                 try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
                 if (acc.shared()) return cond_shared;
+                if (acc.failed()) return w.failedGroups(items, fl, acc.limited());
             }
         }
         // A callback's result against what the body made: lost when what
@@ -8697,22 +9180,84 @@ const Walker = struct {
         if (av.len == 0) return cond_yes;
         const xc = try w.expandCond(av, true);
         const ex = xc.av;
-        // A value this wide is not told apart cell by cell: the pairs are
-        // quadratic. The answer is the pessimistic one, and the declaration
-        // an error (§16.7).
-        const paired = w.pairedCells(ex);
-        if (paired > deep_cap) {
-            try w.o.hitLimit(.value_cells, @intCast(@min(paired, std.math.maxInt(u32))));
-            return cond_limit;
-        }
+        if (ex.len > 8) return w.deepIndexed(ex, xc.k);
         var acc: CondAcc = .{};
         try acc.add(w, xc.k);
         for (ex) |e| try acc.add(w, try w.cellCond(e.cell));
         for (ex, 0..) |e, i| for (ex[i + 1 ..]) |f| {
+            if (!try w.nested(e, f)) try acc.add(w, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+        };
+        const k = try w.condAndAll(&acc);
+        if (std.debug.runtime_safety and ex.len > 1 and !w.condSame(k, try w.deepIndexed(ex, xc.k))) std.debug.panic("ownership: indexed deep condition differs from pairwise", .{});
+        return k;
+    }
+
+    /// The pairwise deep condition, omitting only pairs sepCells proves yes
+    /// from their kinds alone. The index is shared with spine read-off.
+    fn deepIndexed(w: *Walker, ex_in: AV, expansion: u32) Allocator.Error!u32 {
+        const ex = for (ex_in[1..], 0..) |e, i| {
+            if (ex_in[i].path > e.path) break try w.norm(try w.a.dupe(Entry, ex_in));
+        } else ex_in;
+        const idx = try w.spineIndex(ex);
+        var acc: CondAcc = .{};
+        try acc.add(w, expansion);
+        for (ex) |e| try acc.add(w, try w.cellCond(e.cell));
+        for (ex) |e| {
+            if (acc.shared or acc.lost or acc.limit) break;
+            const c = w.cells.items[e.cell];
+            switch (c.kind) {
+                .closure, .func => {},
+                .taken, .top, .payload, .except => try w.deepPairs(&acc, ex, e),
+                .shared => {
+                    try w.deepPairs(&acc, idx.odd.items, e);
+                    if (idx.family.get(.{ @backingInt(c.kind), c.a, c.b })) |f| try w.deepPairs(&acc, f.items, e);
+                },
+                .site, .result => {
+                    try w.deepPairs(&acc, idx.odd.items, e);
+                    try w.deepPairs(&acc, idx.cbres.items, e);
+                    if (idx.family.get(.{ @backingInt(c.kind), c.a, c.b })) |f| try w.deepPairs(&acc, f.items, e);
+                },
+                .param, .env, .cbres => {
+                    try w.deepPairs(&acc, idx.odd.items, e);
+                    try w.deepPairs(&acc, idx.arrived.items, e);
+                    if (c.kind == .cbres) try w.deepPairs(&acc, idx.made.items, e);
+                },
+            }
+        }
+        if (!acc.shared and (acc.lost or acc.limit)) for (ex) |e| {
+            if (try w.failedAt(&idx, e, acc.limit, .list, true) == cond_shared) {
+                acc.shared = true;
+                break;
+            }
+        };
+        const k = try w.condAndAll(&acc);
+        if (std.debug.runtime_safety and ex.len > 8 and @import("ownership_options").full_cross_check) {
+            var want: CondAcc = .{};
+            try want.add(w, expansion);
+            for (ex) |e| try want.add(w, try w.cellCond(e.cell));
+            for (ex, 0..) |e, i| for (ex[i + 1 ..]) |f| {
+                if (!try w.nested(e, f)) try want.add(w, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+            };
+            if (!w.condSame(k, try w.condAndAll(&want))) std.debug.panic("ownership: indexed deep condition differs from pairwise", .{});
+        }
+        return k;
+    }
+
+    fn deepPairs(w: *Walker, acc: *CondAcc, others: AV, e: Entry) Allocator.Error!void {
+        // The index retains the value’s path order. Entries at one path
+        // are alternative provenances, never two coexisting positions.
+        var lo: usize = 0;
+        var hi = others.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            if (others[mid].path <= e.path) lo = mid + 1 else hi = mid;
+        }
+        for (others[lo..]) |f| {
+            if (acc.shared or acc.lost or acc.limit) return;
+            // Both candidate lists offer the pair: form it once, in value order.
             if (try w.nested(e, f)) continue;
             try acc.add(w, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
-        };
-        return w.condAndAll(&acc);
+        }
     }
 
     /// Whether a deep condition may omit separation of two entries (§16.7).
@@ -8800,6 +9345,7 @@ const Walker = struct {
                 cond_lost => acc.lost = true,
                 cond_limit => acc.limit = true,
                 else => {
+                    if (acc.shared or acc.lost or acc.limit) return;
                     if (!acc.many and (acc.one == cond_yes or acc.one == k)) {
                         acc.one = k;
                         return;
@@ -8929,7 +9475,7 @@ const Walker = struct {
         if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
         if (!try w.mayHoldRecord(x) or !try w.mayHoldRecord(y)) return cond_yes;
         if (x == y or (try w.covers(x, y)) != null or (try w.covers(y, x)) != null) {
-            const one = !(try w.o.representative(cx.path)) and !(try w.o.representative(cy.path));
+            const one = !(try w.o.representative(cx.path)) and !(try w.o.representative(cy.path)) and w.o.exactRelatedPaths(cx.path, cy.path);
             return if (exact and one) cond_shared else cond_lost;
         }
         if (cx.kind == .top or cy.kind == .top or cx.kind == .payload or cy.kind == .payload) return cond_lost;
@@ -8967,6 +9513,16 @@ const Walker = struct {
     /// when any entry reaches it exactly. A cell that holds no record is no
     /// place of one (`mayHoldRecord`).
     fn rcellsOf(w: *Walker, av: AV) Allocator.Error!AV {
+        if (av.len < wide_index) return w.rcellsOfRaw(av);
+        for (av) |e| if (w.cells.items[e.cell].kind == .closure) return w.rcellsOfRaw(av);
+        const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
+        if (w.record_shapes.get(key)) |shape| return shape;
+        const shape = try w.rcellsOfRaw(av);
+        try w.record_shapes.put(w.a, key, shape);
+        return shape;
+    }
+
+    fn rcellsOfRaw(w: *Walker, av: AV) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
         for (try w.expand(av)) |e| {
             const k = w.cells.items[e.cell].kind;
@@ -8994,6 +9550,7 @@ const Walker = struct {
         for (ex) |a| for (ey) |b| {
             try acc.add(w, try w.rsepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
             if (acc.shared) return cond_shared;
+            if (acc.lost or acc.limit) return w.sepFailed(ex, ey, .record, acc.limit);
         };
         return acc.done(w);
     }
@@ -9026,11 +9583,18 @@ const Walker = struct {
         // A container and what it holds are not two places (`nested`).
         // A pair of cells is asked once, however many paths hold them: an
         // expanded value names one parameter at many paths.
-        var seen: std.ArrayList([3]u32) = .empty;
+        var seen: std.HashMapUnmanaged([3]u32, void, WordsKey(3), std.hash_map.default_max_load_percentage) = .empty;
+        var after_path: usize = 0;
         for (ex, 0..) |e, a| {
+            if (acc.shared or acc.lost or acc.limit) break;
+            if (after_path <= a) {
+                after_path = a + 1;
+                while (after_path < ex.len and ex[after_path].path == e.path) : (after_path += 1) {}
+            }
             const ke = w.cells.items[e.cell].kind;
             if (!arrived(ke) and ke != .taken and ke != .top and ke != .payload and ke != .except) continue;
-            for (ex[a + 1 ..]) |f| {
+            for (ex[after_path..]) |f| {
+                if (acc.shared or acc.lost or acc.limit) break;
                 const kf = w.cells.items[f.cell].kind;
                 // Two arrivals, or a callback's answer and what the body made.
                 const pair = if (madeHere(kf)) ke == .cbres else kf != .site and kf != .shared;
@@ -9039,27 +9603,39 @@ const Walker = struct {
             }
             // What the body made before it, against a callback's answer.
             if (ke == .cbres) for (ex[0..a]) |f| {
+                if (acc.shared or acc.lost or acc.limit) break;
+                if (e.path == f.path) continue;
                 if (!madeHere(w.cells.items[f.cell].kind)) continue;
                 try w.rpairOnce(&seen, e, f, &acc);
             };
+        }
+        if (!acc.shared and (acc.lost or acc.limit)) {
+            const idx = try w.spineIndex(ex);
+            for (ex) |e| {
+                if (try w.failedAt(&idx, e, acc.limit, .record, true) == cond_shared) {
+                    acc.shared = true;
+                    break;
+                }
+            }
         }
         return acc.done(w);
     }
 
     /// `rsepCells` of two entries' cells into `acc`, unless the pair was
     /// asked already, or the entries nest.
-    fn rpairOnce(w: *Walker, seen: *std.ArrayList([3]u32), e: Entry, f: Entry, acc: *RAcc) Allocator.Error!void {
+    fn rpairOnce(w: *Walker, seen: *std.HashMapUnmanaged([3]u32, void, WordsKey(3), std.hash_map.default_max_load_percentage), e: Entry, f: Entry, acc: *RAcc) Allocator.Error!void {
         const exact: u32 = @intFromBool(e.approx == 0 and f.approx == 0);
         const key: [3]u32 = if (e.cell < f.cell) .{ e.cell, f.cell, exact } else .{ f.cell, e.cell, exact };
-        for (seen.items) |s| if (s[0] == key[0] and s[1] == key[1] and s[2] == key[2]) return;
+        if (seen.contains(key)) return;
         if (try w.nested(e, f)) return;
-        try seen.append(w.a, key);
+        try seen.put(w.a, key, {});
         try acc.add(w, try w.rsepCells(e.cell, f.cell, exact == 1));
     }
 
     /// `rdeepCond`'s one cell at two places that do not nest, found by a
     /// sort.
     fn rduplicates(w: *Walker, ex: AV, acc: *RAcc) Allocator.Error!void {
+        if (acc.shared or acc.lost or acc.limit) return;
         const by_cell = try w.a.dupe(Entry, ex);
         std.mem.sort(Entry, by_cell, {}, struct {
             fn less(_: void, p: Entry, q: Entry) bool {
@@ -9075,6 +9651,7 @@ const Walker = struct {
                 if (try w.nested(e, f)) continue;
                 const one = !(try w.o.representative(e.path)) and !(try w.o.representative(f.path));
                 try acc.add(w, if (e.approx == 0 and f.approx == 0 and one) cond_shared else cond_lost);
+                if (acc.shared or acc.lost or acc.limit) return;
             };
             i = j;
         }
@@ -10441,7 +11018,7 @@ const Walker = struct {
                 },
                 // A step that stands for places it does not name: where the
                 // types differ, what is below may be below the variable.
-                .any, .level => return if (try w.grownIn(g, a, 0)) k else null,
+                .any, .level, .cast, .cast_level => return if (try w.grownIn(g, a, 0)) k else null,
                 else => null,
             };
             const n = next orelse return null;
@@ -12145,13 +12722,16 @@ const Walker = struct {
             },
             else => {},
         };
+        // The engine-owned Pair representation (§30.10), read at its full
+        // type before asking which function each field holds.
+        const pair_view = try w.readCast(made, try w.castRecord(&.{ .{ .name = "back", .key = try w.o.castId("1:Js::Value()") }, .{ .name = "there", .key = try w.o.castId("1:Js::Value()") } }, try w.o.castId("{}")));
         const fields = [_][]const u8{ "there", "back" };
         const kinds = [_]StepKind{ .schema_decoded, .schema_encoded };
         var parts: [2]AV = .{ &.{}, &.{} };
         for (fields, kinds, ends, &parts) |field, kind, end, *part| {
             if (end) |v| if (!try w.trackedVar(v)) continue;
             const answer = if (w.o.in.interner.find(field)) |sym|
-                try w.functionAnswer(try w.proj(made, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded, ends[1], ends[0])
+                try w.functionAnswer(try w.proj(pair_view, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded, ends[1], ends[0])
             else
                 try w.single(.{ .kind = .top, .a = unfollowed });
             part.* = try w.under(answer, try w.o.child(eps, kind, 0));
@@ -13428,7 +14008,9 @@ const Walker = struct {
     }
 
     /// §16.4: a call whose callee has a summary.
-    fn applySummary(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, callee_av: AV, callee_inst: ?CalleeRef) Allocator.Error!AV {
+    fn applySummary(w: *Walker, inst: Inst.Index, callee_in: Callee, args: []const Inst.Index, callee_av: AV, callee_inst: ?CalleeRef) Allocator.Error!AV {
+        var callee = callee_in;
+        callee.sum = try w.castSummary(callee.sum, args, inst);
         const s = callee.sum;
         // §16.7 (F3, the owner's choice (a)): what the fold reads of this
         // call wherever its summary is instantiated, a callback's supply
@@ -13969,6 +14551,540 @@ const Walker = struct {
         return own.items;
     }
 
+    /// Full structural identity, shared by casts and cached summaries. The
+    /// dense memo avoids walking a shared type term once per occurrence.
+    const CastBindings = std.ArrayList([2]u32);
+
+    fn castParts(w: *Walker, key: []const u8) Allocator.Error![]const CastPart {
+        return w.o.castParts(try w.o.castId(key));
+    }
+
+    const CastField = struct { name: []const u8, key: u32 };
+
+    fn castFields(w: *Walker, key: []const u8) Allocator.Error![]const CastField {
+        const parts = try w.castParts(key);
+        const fields = try w.a.alloc(CastField, parts.len - 1);
+        var at: usize = "record(".len;
+        for (fields, parts[0..fields.len]) |*field, part| {
+            const colon = std.mem.indexOfScalarPos(u8, key, at, ':').?;
+            const len = std.fmt.parseInt(usize, key[at..colon], 10) catch unreachable;
+            field.* = .{ .name = key[colon + 1 ..][0..len], .key = part.key };
+            at = part.end;
+        }
+        return fields;
+    }
+
+    /// Row substitution has the same canonical form as a solved store row:
+    /// all extension fields flattened and all labels in text order.
+    fn castRecord(w: *Walker, fields_in: []const CastField, ext_in: u32) Allocator.Error!u32 {
+        var fields: std.ArrayList(CastField) = .empty;
+        try fields.appendSlice(w.a, fields_in);
+        var ext = ext_in;
+        while (std.mem.startsWith(u8, w.o.cast_types.items[ext], "record(")) {
+            const key = w.o.cast_types.items[ext];
+            try fields.appendSlice(w.a, try w.castFields(key));
+            const parts = try w.castParts(key);
+            ext = parts[parts.len - 1].key;
+        }
+        if (fields.items.len == 0) return ext;
+        std.mem.sort(CastField, fields.items, {}, struct {
+            fn less(_: void, x: CastField, y: CastField) bool {
+                return std.mem.lessThan(u8, x.name, y.name);
+            }
+        }.less);
+        var b: std.Io.Writer.Allocating = .init(w.a);
+        b.writer.writeAll("record(") catch return error.OutOfMemory;
+        for (fields.items) |field| {
+            b.writer.print("{d}:{s}=", .{ field.name.len, field.name }) catch return error.OutOfMemory;
+            writeCastRef(&b.writer, field.key) catch return error.OutOfMemory;
+        }
+        b.writer.writeByte('|') catch return error.OutOfMemory;
+        writeCastRef(&b.writer, ext) catch return error.OutOfMemory;
+        b.writer.writeByte(')') catch return error.OutOfMemory;
+        return w.o.castId(b.written());
+    }
+
+    fn bindCastRecord(w: *Walker, pattern: []const u8, actual: []const u8, bindings: *CastBindings) Allocator.Error!void {
+        const pf = try w.castFields(pattern);
+        const af = try w.castFields(actual);
+        var rest: std.ArrayList(CastField) = .empty;
+        for (af) |field| {
+            for (pf) |p| {
+                if (!std.mem.eql(u8, p.name, field.name)) continue;
+                try w.bindCast(p.key, field.key, bindings);
+                break;
+            } else try rest.append(w.a, field);
+        }
+        const pp = try w.castParts(pattern);
+        const ap = try w.castParts(actual);
+        try w.bindCast(pp[pp.len - 1].key, try w.castRecord(rest.items, ap[ap.len - 1].key), bindings);
+    }
+
+    fn bindCast(w: *Walker, pattern: u32, actual: u32, bindings: *CastBindings) Allocator.Error!void {
+        if (pattern == actual) return;
+        const key = w.o.cast_types.items[pattern];
+        if (std.mem.startsWith(u8, key, "var(")) {
+            for (bindings.items) |*binding| if (binding[0] == pattern) {
+                if (binding[1] != actual) binding[1] = pattern;
+                return;
+            };
+            try bindings.append(w.a, .{ pattern, actual });
+            return;
+        }
+        const actual_key = w.o.cast_types.items[actual];
+        if (std.mem.startsWith(u8, key, "record(") and std.mem.startsWith(u8, actual_key, "record(")) return w.bindCastRecord(key, actual_key, bindings);
+        const ph = std.mem.indexOfScalar(u8, key, '(') orelse return;
+        const ah = std.mem.indexOfScalar(u8, actual_key, '(') orelse return;
+        if (!std.mem.eql(u8, key[0..ph], actual_key[0..ah])) return;
+        const p = try w.castParts(key);
+        const a = try w.castParts(w.o.cast_types.items[actual]);
+        if (p.len != a.len) return;
+        for (p, a) |x, y| try w.bindCast(x.key, y.key, bindings);
+    }
+
+    fn substCast(w: *Walker, id: u32, bindings: *const CastBindings) Allocator.Error!u32 {
+        if (!w.o.cast_open.items[id]) return id;
+        if (id < w.cast_subst_types.items.len and w.cast_subst_types.items[id] != none) return w.cast_subst_types.items[id];
+        for (bindings.items) |binding| if (binding[0] == id) return binding[1];
+        const key = w.o.cast_types.items[id];
+        const parts = try w.castParts(key);
+        if (parts.len == 0) return id;
+        if (std.mem.startsWith(u8, key, "record(")) {
+            const fields = try w.a.dupe(CastField, try w.castFields(key));
+            for (fields) |*field| field.key = try w.substCast(field.key, bindings);
+            const out = try w.castRecord(fields, try w.substCast(parts[parts.len - 1].key, bindings));
+            try w.memoCastSubst(&w.cast_subst_types, &w.cast_subst_touched_types, id, out);
+            return out;
+        }
+        var b: std.Io.Writer.Allocating = .init(w.a);
+        var at: usize = 0;
+        for (parts) |part| {
+            b.writer.writeAll(key[at..part.start]) catch return error.OutOfMemory;
+            writeCastRef(&b.writer, try w.substCast(part.key, bindings)) catch return error.OutOfMemory;
+            at = part.end;
+        }
+        b.writer.writeAll(key[at..]) catch return error.OutOfMemory;
+        const out = try w.o.castId(b.written());
+        try w.memoCastSubst(&w.cast_subst_types, &w.cast_subst_touched_types, id, out);
+        return out;
+    }
+
+    /// Re-key every path-bearing field, including atoms and carried classes.
+    /// Only a field literally named path (or a function-slot path) is a path;
+    /// provenance numbers and declaration indices are never substituted.
+    fn substCastValue(w: *Walker, comptime T: type, value: T, bindings: *const CastBindings) Allocator.Error!T {
+        switch (@typeInfo(T)) {
+            .@"struct" => |s| {
+                var out = value;
+                inline for (s.field_names, s.field_types) |name, FT| {
+                    if (comptime std.mem.eql(u8, name, "path") and FT == u32) {
+                        @field(out, name) = try w.substCastPath(@field(value, name), bindings);
+                    } else if (comptime std.mem.eql(u8, name, "cast_signature")) {
+                        @field(out, name) = if (@field(value, name) == none) none else try w.substCast(@field(value, name), bindings);
+                    } else @field(out, name) = try w.substCastValue(FT, @field(value, name), bindings);
+                }
+                if (T == Summary) {
+                    std.mem.sort(ResEntry, @constCast(out.res), {}, struct {
+                        fn less(_: void, x: ResEntry, y: ResEntry) bool {
+                            return x.path < y.path;
+                        }
+                    }.less);
+                    std.mem.sort(ResEntry, @constCast(out.objs), {}, struct {
+                        fn less(_: void, x: ResEntry, y: ResEntry) bool {
+                            return x.path < y.path;
+                        }
+                    }.less);
+                }
+                return out;
+            },
+            .pointer => |p| {
+                if (p.size == .one and p.child == Summary) {
+                    const out = try w.a.create(Summary);
+                    out.* = try w.substCastValue(Summary, value.*, bindings);
+                    return out;
+                }
+                if (p.size != .slice) return value;
+                if (T == []const [2]u32) {
+                    const out = try w.a.dupe([2]u32, value);
+                    for (out) |*slot| slot[1] = try w.substCastPath(slot[1], bindings);
+                    return out;
+                }
+                if (@typeInfo(p.child) != .@"struct" and @typeInfo(p.child) != .pointer) return value;
+                const out = try w.a.alloc(p.child, value.len);
+                for (value, out) |v, *x| x.* = try w.substCastValue(p.child, v, bindings);
+                return out;
+            },
+            else => return value,
+        }
+    }
+
+    fn memoCastSubst(w: *Walker, memo: *std.ArrayList(u32), touched: *std.ArrayList(u32), id: u32, out: u32) Allocator.Error!void {
+        if (id >= memo.items.len) {
+            const start = memo.items.len;
+            try memo.resize(w.a, @max(id + 1, 2 * start));
+            @memset(memo.items[start..], none);
+        }
+        memo.items[id] = out;
+        try touched.append(w.a, id);
+    }
+
+    fn substCastPath(w: *Walker, path: u32, bindings: *const CastBindings) Allocator.Error!u32 {
+        if (path == eps) return eps;
+        if (path < w.cast_subst_paths.items.len and w.cast_subst_paths.items[path] != none) return w.cast_subst_paths.items[path];
+        const kind = w.o.paths.kind.items[path];
+        const arg = w.o.paths.arg.items[path];
+        const parent = try w.substCastPath(w.o.paths.parent.items[path], bindings);
+        const out = try w.o.child(parent, kind, if (kind == .cast or kind == .cast_level) try w.substCast(arg, bindings) else arg);
+        try w.memoCastSubst(&w.cast_subst_paths, &w.cast_subst_touched_paths, path, out);
+        return out;
+    }
+
+    fn castSummary(w: *Walker, s: *const Summary, args: []const Inst.Index, inst: Inst.Index) Allocator.Error!*const Summary {
+        if (s.cast_signature == none) return s;
+        const parts = try w.castParts(w.o.cast_types.items[s.cast_signature]);
+        if (parts.len != args.len + 1) return s;
+        var bindings: CastBindings = .empty;
+        for (args, parts[0..args.len]) |arg, part| if (w.instType(arg)) |v| try w.bindCast(part.key, try w.castType(v), &bindings);
+        if (w.instType(inst)) |v| try w.bindCast(parts[args.len].key, try w.castType(v), &bindings);
+        if (bindings.items.len == 0) return s;
+        defer {
+            for (w.cast_subst_touched_types.items) |id| w.cast_subst_types.items[id] = none;
+            for (w.cast_subst_touched_paths.items) |id| w.cast_subst_paths.items[id] = none;
+            w.cast_subst_touched_types.clearRetainingCapacity();
+            w.cast_subst_touched_paths.clearRetainingCapacity();
+        }
+        const out = try w.a.create(Summary);
+        out.* = try w.substCastValue(Summary, s.*, &bindings);
+        return out;
+    }
+
+    fn seedCastVars(w: *Walker) Allocator.Error!void {
+        if (w.cast_seeded) return;
+        w.cast_seeded = true;
+        const scope: [2]u32 = .{ w.m, w.decl_index };
+        if (w.o.cast_scopes.get(scope)) |vars| {
+            w.cast_ordinals = vars;
+            return;
+        }
+        w.cast_vars = try w.a.alloc(u32, w.store.descriptors.len);
+        w.cast_seen = try w.a.alloc(bool, w.store.descriptors.len);
+        @memset(w.cast_vars, none);
+        @memset(w.cast_seen, false);
+        const module = w.o.in.modules[w.m];
+        if (w.decl_index < module.decl_display.len) if (module.decl_display[w.decl_index].unwrap()) |v| try w.visitCastVars(v);
+        // BIR order supplies stable identities for variables introduced locally.
+        for (w.decl.inst_start.int()..w.decl.inst_end.int()) |i| if (i < w.inst_type.len) if (w.inst_type[i].unwrap()) |v| try w.visitCastVars(v);
+        for (w.local_type) |t| if (t.unwrap()) |v| try w.visitCastVars(v);
+        const vars = try w.o.keep.allocator().alloc(u32, w.cast_next);
+        for (w.cast_vars, 0..) |ordinal, root| if (ordinal != none) {
+            vars[ordinal] = @intCast(root);
+        };
+        try w.o.cast_scopes.put(w.o.in.gpa, scope, vars);
+        w.cast_ordinals = vars;
+    }
+
+    fn visitCastVars(w: *Walker, v: Var) Allocator.Error!void {
+        const root = w.store.find(v);
+        if (w.cast_seen[root.int()]) return;
+        w.cast_seen[root.int()] = true;
+        switch (w.store.resolvedContent(root)) {
+            .flex, .rigid => {
+                w.cast_vars[root.int()] = w.cast_next;
+                w.cast_next += 1;
+            },
+            .structure => |s| switch (s) {
+                .app => |app| {
+                    for (w.store.vars(app.args)) |arg| try w.visitCastVars(arg);
+                },
+                .tuple => |range| {
+                    for (w.store.vars(range)) |arg| try w.visitCastVars(arg);
+                },
+                .func => |f| {
+                    for (w.store.vars(f.params)) |arg| try w.visitCastVars(arg);
+                    try w.visitCastVars(f.result);
+                },
+                .record => |r| {
+                    var all: std.ArrayList(TypeStore.Field) = .empty;
+                    try all.appendSlice(w.a, w.store.fields(r.fields));
+                    var ext = r.ext;
+                    while (true) {
+                        const ec = w.store.resolvedContent(ext);
+                        if (ec != .structure or ec.structure != .record) break;
+                        try all.appendSlice(w.a, w.store.fields(ec.structure.record.fields));
+                        ext = ec.structure.record.ext;
+                    }
+                    const fields = all.items;
+                    std.mem.sort(TypeStore.Field, fields, w.o.in.interner, struct {
+                        fn less(pool: *const InternPool.Global, x: TypeStore.Field, y: TypeStore.Field) bool {
+                            return std.mem.lessThan(u8, pool.slice(x.name), pool.slice(y.name));
+                        }
+                    }.less);
+                    for (fields) |field| try w.visitCastVars(field.value);
+                    try w.visitCastVars(ext);
+                },
+                .unit, .empty_record => {},
+            },
+            .alias => unreachable,
+            .err => {},
+        }
+    }
+
+    fn openCastPath(w: *Walker, path: u32) bool {
+        var at = path;
+        while (at != eps) : (at = w.o.paths.parent.items[at]) {
+            const kind = w.o.paths.kind.items[at];
+            if ((kind == .cast or kind == .cast_level) and w.o.cast_open.items[w.o.paths.arg.items[at]]) return true;
+        }
+        return false;
+    }
+
+    fn hasOpenCast(w: *Walker, comptime T: type, value: T) bool {
+        switch (@typeInfo(T)) {
+            .@"struct" => |s| {
+                inline for (s.field_names, s.field_types) |name, FT| {
+                    if (comptime std.mem.eql(u8, name, "path") and FT == u32) {
+                        if (w.openCastPath(@field(value, name))) return true;
+                    } else if (comptime !std.mem.eql(u8, name, "cast_signature")) {
+                        if (w.hasOpenCast(FT, @field(value, name))) return true;
+                    }
+                }
+            },
+            .pointer => |p| {
+                if (p.size == .one and p.child == Summary) return w.hasOpenCast(Summary, value.*);
+                if (p.size != .slice) return false;
+                if (T == []const [2]u32) {
+                    for (value) |slot| if (w.openCastPath(slot[1])) return true;
+                } else if (@typeInfo(p.child) == .@"struct" or @typeInfo(p.child) == .pointer) {
+                    for (value) |v| if (w.hasOpenCast(p.child, v)) return true;
+                }
+            },
+            else => {},
+        }
+        return false;
+    }
+
+    fn castDeclSignature(w: *Walker) Allocator.Error!u32 {
+        // A cast-free declaration needs no type vocabulary in its summary.
+        if (!w.cast_open_used) return none;
+        const module = w.o.in.modules[w.m];
+        if (w.decl_index >= module.decl_display.len) return none;
+        const v = module.decl_display[w.decl_index].unwrap() orelse return none;
+        return w.castType(v);
+    }
+
+    /// The layer's declared package name distinguishes platform modules
+    /// with the same dotted name. Hex keeps arbitrary package bytes out of
+    /// the structural key's delimiters; the module name remains readable.
+    fn castNamespace(w: *Walker, m: u32, name: []const u8) Allocator.Error![]const u8 {
+        if (m >= w.o.in.packages.len or w.o.in.packages[m] != .platform or m >= w.o.in.platform_names.len or w.o.in.platform_names[m].len == 0) return name;
+        var b: std.Io.Writer.Allocating = .init(w.a);
+        b.writer.writeAll("platform[") catch return error.OutOfMemory;
+        for (w.o.in.platform_names[m]) |byte| b.writer.print("{x:0>2}", .{byte}) catch return error.OutOfMemory;
+        b.writer.print("]/{s}", .{name}) catch return error.OutOfMemory;
+        return b.toOwnedSlice();
+    }
+
+    fn castType(w: *Walker, v: Var) Allocator.Error!u32 {
+        const root = w.store.find(v);
+        if (w.o.cast_closed.len == 0) {
+            w.o.cast_closed = try w.o.in.gpa.alloc(?[]u32, w.o.in.modules.len);
+            @memset(w.o.cast_closed, null);
+        }
+        if (w.o.cast_closed[w.m] == null) {
+            const memo = try w.o.in.gpa.alloc(u32, w.store.descriptors.len);
+            @memset(memo, none);
+            w.o.cast_closed[w.m] = memo;
+        }
+        const closed = w.o.cast_closed[w.m].?;
+        if (root.int() < closed.len and closed[root.int()] != none) return closed[root.int()];
+        const memo_key: [3]u32 = .{ w.m, w.decl_index, root.int() };
+        if (w.o.cast_keys.get(memo_key)) |known| {
+            w.cast_open_used = true;
+            return known;
+        }
+        var b: std.Io.Writer.Allocating = .init(w.a);
+        const writer = &b.writer;
+        const c = w.store.resolvedContent(root);
+        switch (c) {
+            .flex, .rigid => {
+                try w.seedCastVars();
+                writer.print("var({d}:{s}:{d}:{d})", .{ @backingInt(w.o.in.packages[w.m]), try w.castNamespace(w.m, w.o.in.module_names[w.m]), w.decl_index, std.mem.indexOfScalar(u32, w.cast_ordinals, root.int()).? }) catch return error.OutOfMemory;
+            },
+            .err => writer.writeAll("error") catch return error.OutOfMemory,
+            .alias => unreachable,
+            .structure => |s| switch (s) {
+                .unit => writer.writeAll("unit") catch return error.OutOfMemory,
+                .empty_record => writer.writeAll("{}") catch return error.OutOfMemory,
+                .app => |app| {
+                    const t = w.o.in.types.entries[app.type.int()];
+                    writer.print("{d}:{s}::{s}(", .{ @backingInt(t.package), try w.castNamespace(t.module.int(), w.o.in.interner.slice(t.module_name)), w.o.in.interner.slice(t.name) }) catch return error.OutOfMemory;
+                    for (w.store.vars(app.args)) |arg| try w.castPart(writer, arg);
+                    writer.writeAll(")") catch return error.OutOfMemory;
+                },
+                .tuple => |range| {
+                    writer.writeAll("tuple(") catch return error.OutOfMemory;
+                    for (w.store.vars(range)) |arg| try w.castPart(writer, arg);
+                    writer.writeAll(")") catch return error.OutOfMemory;
+                },
+                .func => |f| {
+                    writer.writeAll("fn(") catch return error.OutOfMemory;
+                    for (w.store.vars(f.params)) |arg| try w.castPart(writer, arg);
+                    writer.writeAll("→") catch return error.OutOfMemory;
+                    try w.castPart(writer, f.result);
+                    writer.writeAll(")") catch return error.OutOfMemory;
+                },
+                .record => |r| {
+                    // An extension chain is the same record however unification
+                    // split it. Sort all its fields by text, never symbol id.
+                    var fields: std.ArrayList(TypeStore.Field) = .empty;
+                    try fields.appendSlice(w.a, w.store.fields(r.fields));
+                    var ext = r.ext;
+                    while (true) {
+                        const ec = w.store.resolvedContent(ext);
+                        if (ec != .structure or ec.structure != .record) break;
+                        try fields.appendSlice(w.a, w.store.fields(ec.structure.record.fields));
+                        ext = ec.structure.record.ext;
+                    }
+                    std.mem.sort(TypeStore.Field, fields.items, w.o.in.interner, struct {
+                        fn less(pool: *const InternPool.Global, x: TypeStore.Field, y: TypeStore.Field) bool {
+                            return std.mem.lessThan(u8, pool.slice(x.name), pool.slice(y.name));
+                        }
+                    }.less);
+                    writer.writeAll("record(") catch return error.OutOfMemory;
+                    for (fields.items) |field| {
+                        const name = w.o.in.interner.slice(field.name);
+                        writer.print("{d}:{s}=", .{ name.len, name }) catch return error.OutOfMemory;
+                        try w.castPart(writer, field.value);
+                    }
+                    writer.writeAll("|") catch return error.OutOfMemory;
+                    try w.castPart(writer, ext);
+                    writer.writeAll(")") catch return error.OutOfMemory;
+                },
+            },
+        }
+        const id = try w.o.castId(b.written());
+        if (!w.o.cast_open.items[id] and root.int() < closed.len) {
+            closed[root.int()] = id;
+        } else {
+            w.cast_open_used = true;
+            try w.o.cast_keys.put(w.o.in.gpa, memo_key, id);
+        }
+        return id;
+    }
+
+    fn castPart(w: *Walker, writer: *std.Io.Writer, v: Var) Allocator.Error!void {
+        writeCastRef(writer, try w.castType(v)) catch return error.OutOfMemory;
+    }
+
+    fn opaqueCastType(w: *Walker, v: Var) bool {
+        const c = w.store.resolvedContent(v);
+        if (c != .structure or c.structure != .app) return false;
+        const id = c.structure.app.type;
+        return id != w.o.in.types.well_known.list and id != w.o.builderId() and w.o.in.types.entries[id.int()].kind == .foreign;
+    }
+
+    fn analysisStep(kind: StepKind) bool {
+        return switch (kind) {
+            .markup_render, .markup_event, .schema_decoded, .schema_encoded => true,
+            else => false,
+        };
+    }
+
+    fn analysisSlot(w: *Walker, path: u32) bool {
+        const first = w.o.firstStep(path) orelse return false;
+        return analysisStep(first.kind);
+    }
+
+    fn castResult(w: *Walker, av: AV, from: Var, to: Var) Allocator.Error!AV {
+        // A polymorphic returned primitive is not itself a cast. The caller
+        // that knows both endpoints records the boundary.
+        if (isVar(w.store, from) != null or isVar(w.store, to) != null) return av;
+        const fi = w.opaqueCastType(from);
+        const ti = w.opaqueCastType(to);
+        if (fi == ti) return av;
+        if (fi) return w.readCast(av, try w.castType(to));
+        const id = try w.castType(from);
+        var out: std.ArrayList(Entry) = .empty;
+        var folded = false;
+        for (av) |e| {
+            var x = e;
+            if (e.path != eps and !w.analysisSlot(e.path)) {
+                x.path = try w.o.prepend(.{ .kind = .cast, .arg = id }, e.path);
+                folded = folded or w.o.paths.depth.items[x.path] != w.o.paths.depth.items[e.path] + 1;
+            }
+            try out.append(w.a, x);
+        }
+        if (folded) try w.foldedPairs(av, out.items);
+        return w.norm(out.items);
+    }
+
+    /// A repeated full type denotes every deeper entry at that type. Keep
+    /// symbolic reads folded and scan concrete paths for every matching
+    /// boundary, never dropping a holder merely because projection moved it.
+    fn readCastLevel(w: *Walker, av: AV, id: u32) Allocator.Error!AV {
+        var out: std.ArrayList(Entry) = .empty;
+        for (av) |e| {
+            if (w.analysisSlot(e.path)) {
+                try out.append(w.a, e);
+                continue;
+            }
+            const ap = if (e.approx != 0) e.approx else approx_place;
+            if (e.path == eps) {
+                if (try w.projCell(e.cell, .{ .kind = .cast_level, .arg = id }, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = ap, .grown = e.grown });
+                continue;
+            }
+            const before = out.items.len;
+            var nodes: [k_limit + 1]u32 = undefined;
+            for (w.o.pathNodes(e.path, &nodes)) |node| {
+                const kind = w.o.paths.kind.items[node];
+                if (kind == .any) {
+                    try out.append(w.a, .{ .path = try w.o.child(eps, .any, w.o.paths.arg.items[node]), .cell = e.cell, .approx = ap, .grown = e.grown });
+                    break;
+                }
+                if ((kind != .cast and kind != .cast_level) or w.o.paths.arg.items[node] != id) continue;
+                const rest = (try w.o.suffix(node, e.path)).?;
+                try out.append(w.a, .{ .path = rest, .cell = e.cell, .approx = ap, .grown = e.grown });
+                if (kind == .cast_level) try out.append(w.a, .{ .path = try w.o.concat(try w.o.child(eps, .cast_level, id), rest), .cell = e.cell, .approx = ap, .grown = e.grown });
+            }
+            if (out.items.len == before) {
+                // An incompatible concrete view still holds its contents.
+                // The repeated-type read cannot name their precise place.
+                try out.append(w.a, .{ .path = try w.o.child(eps, .any, 1), .cell = e.cell, .approx = ap, .grown = e.grown });
+            }
+        }
+        return w.norm(out.items);
+    }
+
+    fn readCast(w: *Walker, av: AV, id: u32) Allocator.Error!AV {
+        var out: std.ArrayList(Entry) = .empty;
+        for (av) |e| {
+            var x = e;
+            if (w.analysisSlot(e.path)) {
+                try out.append(w.a, e);
+                continue;
+            }
+            if (e.path == eps) {
+                // A symbolic root can be projected at its new type. A local
+                // allocation already names the same physical object.
+                const original = w.cells.items[e.cell].ty.unwrap();
+                const same = if (original) |ty| try w.castType(ty) == id else false;
+                if (!same) {
+                    if (try w.projCell(e.cell, .{ .kind = .cast, .arg = id }, null)) |c| x.cell = c;
+                }
+            } else {
+                const first = w.o.firstStep(e.path).?;
+                if (first.kind == .cast and first.arg == id) {
+                    x.path = try w.o.dropFirst(e.path);
+                } else {
+                    x.path = try w.o.child(eps, .any, 1);
+                    if (x.approx == 0) x.approx = approx_place;
+                }
+            }
+            try out.append(w.a, x);
+        }
+        return w.norm(out.items);
+    }
+
     fn instRes(w: *Walker, s: *const Summary, ctx: InstCtx) Allocator.Error!AV {
         // `several` below reads neighbours: `normalize` sorts `res` by path.
         if (std.debug.runtime_safety and s.res.len > 1) for (s.res[1..], 0..) |r, i| std.debug.assert(s.res[i].path <= r.path);
@@ -14021,7 +15137,12 @@ const Walker = struct {
             if ((several or r.approx) and r.path == eps and r.prov.kind == .param and r.prov.path == eps and r.prov.a < ctx.arg_types.len) {
                 if (ctx.result_ty) |rt| if (ctx.arg_types[r.prov.a]) |at| if (!try w.o.mayShare(w.store, rt, at, 0)) continue;
             }
-            const raw_cells = try w.instResProv(r, ctx);
+            var raw_cells = try w.instResProv(r, ctx);
+            if (!r.prov.condition_only and r.prov.kind == .param and r.prov.path == eps and r.path == eps and r.prov.a < ctx.arg_types.len) {
+                if (ctx.arg_types[r.prov.a]) |at| if (ctx.result_ty) |rt| {
+                    raw_cells = try w.castResult(raw_cells, at, rt);
+                };
+            }
             const cells = if (r.prov.condition_only) try w.annotationSpines(raw_cells, r.sc, ctx, r.grown, grown) else raw_cells;
             // §18.3: a fresh cell starts at the summary's condition, and a
             // parameter's is lowered by it.
@@ -14769,7 +15890,7 @@ const Walker = struct {
         const ns = w.o.pathNodes(x.path, &buf);
         const cut = for (ns, 0..) |n, k| {
             switch (w.o.paths.kind.items[n]) {
-                .elem, .level => break k,
+                .elem, .level, .cast_level => break k,
                 else => {},
             }
         } else return null;
@@ -17050,21 +18171,41 @@ const Walker = struct {
             filled += 1;
         };
         if (filled < 2) return;
-        for (parts, 0..) |p, i| for (parts[i + 1 ..]) |q| for (p) |e| for (q) |f| {
-            if (e.path != f.path or e.cell == f.cell) continue;
-            const ke = w.cells.items[e.cell].kind;
-            const kf = w.cells.items[f.cell].kind;
-            if (ke == .closure or ke == .func or kf == .closure or kf == .func) continue;
-            const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
-            try w.lowerCond(e.cell, k);
-            try w.lowerCond(f.cell, k);
-            const rk = try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
-            try w.rlowerCond(e.cell, rk);
-            try w.rlowerCond(f.cell, rk);
-            const sk = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
-            try w.lowerSpine(e.cell, sk);
-            try w.lowerSpine(f.cell, sk);
+        // Every part came from shift/norm (the annotation is a singleton).
+        // Only equal destination paths can hide a coexisting occurrence.
+        for (parts) |p| if (std.debug.runtime_safety and p.len > 1) {
+            for (p[1..], 0..) |e, i| std.debug.assert(p[i].path <= e.path);
         };
+        for (parts, 0..) |p, i| for (parts[i + 1 ..]) |q| {
+            var from: usize = 0;
+            var to: usize = 0;
+            var last: u32 = none;
+            for (p) |e| {
+                if (e.path != last) {
+                    while (from < q.len and q[from].path < e.path) : (from += 1) {}
+                    to = from;
+                    while (to < q.len and q[to].path == e.path) : (to += 1) {}
+                    last = e.path;
+                }
+                for (q[from..to]) |f| try w.storedPair(e, f);
+            }
+        };
+    }
+
+    fn storedPair(w: *Walker, e: Entry, f: Entry) Allocator.Error!void {
+        if (e.cell == f.cell) return;
+        const ke = w.cells.items[e.cell].kind;
+        const kf = w.cells.items[f.cell].kind;
+        if (ke == .closure or ke == .func or kf == .closure or kf == .func) return;
+        const k = try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+        try w.lowerCond(e.cell, k);
+        try w.lowerCond(f.cell, k);
+        const rk = try w.rsepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+        try w.rlowerCond(e.cell, rk);
+        try w.rlowerCond(f.cell, rk);
+        const sk = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+        try w.lowerSpine(e.cell, sk);
+        try w.lowerSpine(f.cell, sk);
     }
 
     /// The entries of a list value at its elements, re-rooted.
@@ -17103,6 +18244,19 @@ const Walker = struct {
     /// `covers`, saying whether the hold is approximate: one of the places
     /// a region's marker stands for (§16.7).
     fn coversAt(w: *Walker, outer: u32, inner: u32) Allocator.Error!?Cover {
+        if (outer == inner) return if (w.cells.items[outer].condition_only) null else .{ .rest = eps };
+        const oc = w.cells.items[outer];
+        const ic = w.cells.items[inner];
+        if (oc.condition_only or ic.condition_only) return null;
+        if (oc.kind != .except and (oc.kind != ic.kind or oc.a != ic.a or oc.b != ic.b or oc.scope != ic.scope)) return null;
+        const key: [2]u32 = .{ outer, inner };
+        if (w.cover_memo.get(key)) |cached| return cached;
+        const answer = try w.coversAtRaw(outer, inner);
+        try w.cover_memo.put(w.a, key, answer);
+        return answer;
+    }
+
+    fn coversAtRaw(w: *Walker, outer: u32, inner: u32) Allocator.Error!?Cover {
         if (w.cells.items[outer].condition_only or w.cells.items[inner].condition_only) return null;
         if (outer == inner) return .{ .rest = eps };
         const o = w.cells.items[outer];
@@ -17125,7 +18279,7 @@ const Walker = struct {
         if (o.kind != i.kind or o.a != i.a or o.b != i.b or o.scope != i.scope) return null;
         // One place named twice (a definition's made cell, and the same value
         // through another's summary) is one cell.
-        if (o.path == i.path) return .{ .rest = eps };
+        if (w.o.physicalPath(o.path) == w.o.physicalPath(i.path)) return .{ .rest = eps };
         var bo: [k_limit + 1]Step = undefined;
         var bi: [k_limit + 1]Step = undefined;
         const so = w.o.steps(o.path, &bo);
@@ -17149,12 +18303,17 @@ const Walker = struct {
         // exact one reaches the cell.
         var found: ?Entry = null;
         for (try w.expand(av)) |e| {
+            // This holder cannot produce an exact hit, and its own mark
+            // takes precedence over every inner mark or approximate cover.
+            if (e.approx != 0) if (found) |f| if (f.approx <= e.approx) continue;
             for (cells) |c| {
+                if (e.approx == 0 and c.approx != 0) if (found) |f| if (f.approx <= c.approx) continue;
                 const cv = (try w.coversAt(e.cell, c.cell)) orelse
                     (if (try w.splitBase(c.cell, none)) |b| (try w.coversAt(e.cell, b)) orelse continue else continue);
                 const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0, .grown = gJoin(e.grown, c.grown) };
                 if (hit.approx == 0) return hit;
                 if (found == null or hit.approx < found.?.approx) found = hit;
+                if (e.approx != 0) break;
             }
         }
         return found;
@@ -17330,7 +18489,7 @@ const Walker = struct {
                 try cells.append(w.a, e);
                 continue;
             }
-            if (e.path != any) continue;
+            if (e.path != any and w.o.paths.kind.items[e.path] != .any) continue;
             const c = w.cells.items[e.cell];
             if (spec.base_ty) |bt| if (c.ty.unwrap()) |ct| if (!try w.o.mayShare(w.store, bt, ct, 0)) continue;
             try cells.append(w.a, e);
@@ -18453,6 +19612,7 @@ const Walker = struct {
         // The fields of a record update's base not yet read off, by
         // parameter, path, kind of read and record type.
         var split_left: std.AutoHashMapUnmanaged([4]u64, []u32) = .empty;
+        var read_shapes: std.HashMapUnmanaged([3]u32, void, WordsKey(3), std.hash_map.default_max_load_percentage) = .empty;
         // R: a use of a local whose value holds a parameter cell.
         for (w.uses.items) |u| {
             if (u.frame != frame) continue;
@@ -18465,6 +19625,10 @@ const Walker = struct {
                 if (w.cells.items[ec].nonlist) rec_use = true;
             };
             const held = w.local_av[u.local] orelse continue;
+            if (u.except.len == 0) {
+                const key: [3]u32 = .{ u.local, u.path, @intFromBool(rec_use) };
+                if ((try read_shapes.getOrPut(w.a, key)).found_existing) continue;
+            }
             for (held) |e| {
                 const rec_only = rec_use or w.listFacing(e.cell) == null;
                 const read_bit: u16 = if (rec_only) bit_q else bit_r;
@@ -18807,8 +19971,10 @@ const Walker = struct {
             _ = try w.xatomsOf(r.atom, frame, params, true, &rxreq);
         }
         if (atoms.items.len > atom_cap) return w.o.pessimistic(.{ .params = @intCast(params.len), .funs = funs.items }, .owned_atoms, @intCast(atoms.items.len));
+        const signature = if (frame == 0 and w.cast_open_used and (w.hasOpenCast([]const UseEntry, uses.items) or w.hasOpenCast([]const ResEntry, res.items) or w.hasOpenCast([]const ResEntry, objs.items) or w.hasOpenCast([]const SupplyEntry, supply.items) or w.hasOpenCast([]const SupplyEntry, rsupply.items) or w.hasOpenCast([]const XAtom, xreq.items) or w.hasOpenCast([]const XAtom, rxreq.items) or w.hasOpenCast([]const Carried, klasses.items))) try w.castDeclSignature() else none;
         return w.o.normalize(.{
             .params = @intCast(params.len),
+            .cast_signature = signature,
             .uses = uses.items,
             .res = res.items,
             .objs = objs.items,
@@ -18903,4 +20069,124 @@ test "write extents preserve unknown loans and join deep over storage" {
     try std.testing.expectEqualDeep(&[_]UseEntry{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_r, .extent = .deep }}, joined.uses);
     const read_storage = try o.normalize(.{ .params = 1, .uses = &.{ read, storage } });
     try std.testing.expectEqualDeep(&[_]UseEntry{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_r, .extent = .storage }}, read_storage.uses);
+}
+
+test "full cast type keys validate complete child terms" {
+    const a = std.testing.allocator;
+    for ([_][]const u8{
+        "1:List::List(15:1:Basics::Int())",
+        "1:List::List(18:1:String::String())",
+        "fn(15:1:Basics::Int()→4:unit)",
+        "record(1:x=15:1:Basics::Int()|2:{})",
+        "var(0:Main:2:0)",
+    }) |key| try validateCastKey(a, key);
+    for ([_][]const u8{
+        "",                                           "List",               "1:List::List(99:unit)",
+        "tuple(999999999999999999999999999999:unit)", "tuple(4:nope)",      "var(9:Main:2:0)",
+        "var(0:Main:2)",                              "record(1:x=4:unit)", "fn(4:unit)",
+        "fn(→4:unit4:unit)",
+    }) |key| try std.testing.expectError(error.Bad, validateCastKey(a, key));
+}
+
+test "full cast DAG keys preserve portable variables and shared type structure" {
+    const a = std.testing.allocator;
+    var o = Ownership.init(.{
+        .gpa = a,
+        .graph = undefined,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = undefined,
+    });
+    defer o.deinit();
+    const schema_member = try o.readCastId("0:Foo::Bar.Type()", &.{});
+    const nested_module = try o.readCastId("0:Foo.Bar::Type()", &.{});
+    try std.testing.expect(schema_member != nested_module);
+    const v = try o.readCastId("var(0:M:0:0)", &.{});
+    const u = try o.readCastId("var(0:M:0:1)", &.{});
+    const tuple = try o.readCastId("tuple(2:@02:@0)", &.{v});
+    try std.testing.expectEqual(tuple, try o.readCastId("tuple(2:@12:@1)", &.{ u, v }));
+    try std.testing.expect(tuple != try o.readCastId("tuple(2:@02:@0)", &.{u}));
+    try std.testing.expectEqualStrings("tuple(12:var(0:M:0:0)12:var(0:M:0:0))", try o.castText(tuple));
+    try std.testing.expectError(error.Bad, o.readCastId("tuple(2:@1)", &.{v}));
+    try std.testing.expectError(error.Bad, o.readCastId("tuple(3:@-1)", &.{v}));
+    try std.testing.expectError(error.Bad, o.readCastId("tuple(4:unit)", &.{}));
+    try std.testing.expectError(error.Bad, o.readCastId("@0", &.{v}));
+    // A linear DAG describes an exponentially expanded tree. Interning it
+    // never needs that expansion; both children retain their complete type.
+    var last = v;
+    for (0..64) |_| last = try o.readCastId("tuple(2:@02:@0)", &.{last});
+    try std.testing.expect(last != tuple);
+    try std.testing.expect(o.cast_open.items[last]);
+}
+
+test "a folded cast read retains an incompatible concrete holder" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var o = Ownership.init(.{
+        .gpa = gpa,
+        .graph = undefined,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = undefined,
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    var w: Walker = .{ .o = &o, .m = 0, .bir = undefined, .decl = std.mem.zeroes(Bir.Decl), .decl_index = 0, .store = undefined, .inst_type = &.{}, .local_type = &.{}, .a = arena.allocator(), .mode = .summary };
+    try w.cells.append(w.a, .{ .kind = .site, .a = 0 });
+    const target = try o.castId("unit");
+    const other = try o.castId("{}");
+    const path = try o.child(try o.child(eps, .cast, other), .tuple, 0);
+    const result = try w.readCastLevel(&.{.{ .path = path, .cell = 0 }}, target);
+    try std.testing.expectEqual(@as(usize, 1), result.len);
+    try std.testing.expectEqual(@as(u32, 0), result[0].cell);
+    try std.testing.expect(result[0].approx != 0);
+    try std.testing.expectEqual(try o.child(eps, .any, 1), result[0].path);
+}
+
+test "repeated wide projections retain every cast holder" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var o = Ownership.init(.{
+        .gpa = gpa,
+        .graph = undefined,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = undefined,
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    var w: Walker = .{ .o = &o, .m = 0, .bir = undefined, .decl = std.mem.zeroes(Bir.Decl), .decl_index = 0, .store = undefined, .inst_type = &.{}, .local_type = &.{}, .a = arena.allocator(), .mode = .summary };
+    try w.cells.append(w.a, .{ .kind = .site, .a = 0 });
+    const id = try o.castId("unit");
+    const entries = try w.a.alloc(Entry, wide_index);
+    for (entries, 0..) |*e, i| e.* = .{ .path = try o.child(eps, .cast, id), .cell = @intCast(i) };
+    for (1..wide_index) |i| try w.cells.append(w.a, .{ .kind = .site, .a = @intCast(i) });
+    const step: Step = .{ .kind = .tuple, .arg = 0 };
+    const first = try w.projFirst(entries, step);
+    const second = try w.projFirst(entries, step);
+    try std.testing.expectEqual(wide_index, first.len);
+    try std.testing.expectEqualDeep(first, second);
 }

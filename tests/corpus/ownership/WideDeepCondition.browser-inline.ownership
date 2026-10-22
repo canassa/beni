@@ -1,0 +1,10 @@
+module WideDeepCondition
+  7:13 List.push a: accepted param
+  14:5 call WideDeepCondition.first <literal>[*]: accepted fresh (WideDeepCondition.first writes π1[*])
+  277:14 call WideDeepCondition.first <literal>[*]: rejected alias: xs holds it and is read at 278:5 (WideDeepCondition.first writes π1[*])
+  summary first: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*][*]{excl π1}, fresh1 π1[*]{excl π1}; xreq excl π1
+  summary wideCall: res ~fresh1
+  summary sharing: π1 RAW[storage], π1[*] RA; res .0 ~condition(fresh1){shared} ~fresh1 ~π1{shared}, .0[*] ~condition(fresh3) ~π1[*]{shared}, .1 ~condition(fresh4) π1{shared}, condition(fresh2){lost}
+  demands 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause alias 1

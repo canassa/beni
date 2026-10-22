@@ -1,0 +1,40 @@
+-- Imported cast signatures specialize at the caller; source variable identities
+-- stay distinct from the caller's and survive the summary-block cache.
+import Casts
+import Js
+
+
+pub fresh : List Int → List Int
+fresh xs =
+    pair : List Int × Int
+    pair = Casts.unpack (Casts.pack ( xs, 0 ))
+    ( ys, _ ) = pair
+    List.push ys 1
+
+
+pub retained : List Int → List Int × List Int
+retained xs =
+    pair : List Int × Int
+    pair = Casts.unpack (Casts.pack ( xs, 0 ))
+    ( ys, _ ) = pair
+    ( List.push ys 1, xs )
+
+
+pub first : Js.Value → List String
+first value = List.push (Casts.list value) "x"
+
+
+extended : Js.Value → { count : Int, values : List Int }
+extended value = Casts.record value
+
+
+pub useExtended : List Int → List Int
+useExtended xs =
+    record = extended (Casts.seal { count = 0, values = xs })
+    List.push record.values 1
+
+
+pub retainExtended : List Int → List Int × List Int
+retainExtended xs =
+    record = extended (Casts.seal { count = 0, values = xs })
+    ( List.push record.values 1, xs )
