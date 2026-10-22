@@ -99,8 +99,10 @@ main = Io.run λ⊤ →
 - `Debug.log "label" value` prints and returns the value. `Debug.toString value` renders any
   value. A `--release` build refuses a program that reaches `Debug` (`debug_in_release`).
 - `Log` is for a shipped program: `Log.trace`, `Log.debug`, `Log.info`, `Log.warn`, `Log.error`,
-  each `String → ⊤`. A line below `Info` is not written. The default sink is the console at the
-  line's level; the `node` platform writes one `logfmt` line per entry to standard error.
+  each `String → ⊤`. A line below `Info` is not written. `Log.setMinimum Log.Debug` changes that
+  minimum for the whole program, and `Log.minimum Log.Debug λ⊤ → …` for one function. The default
+  sink is the console at the line's level; the `node` platform writes one `logfmt` line per entry
+  to standard error.
 - A log line is text. Format a value yourself; `Debug.toString`'s text is not a promise.
 
 ```beni
