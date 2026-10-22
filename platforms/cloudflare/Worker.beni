@@ -75,7 +75,8 @@ pub opaque type Response
 
 
 -- A response from the host's object, as `forward` and `callService` get
--- one: not the platform's own, so `withHeader` copies it first.
+-- one, and as `Object.accept` makes the 101 (§9.12 (g), through
+-- `withWorker`): not the platform's own, so `withHeader` copies it first.
 fromHost : V → Response
 fromHost r = Response r (Js.from False) (Js.from False)
 
@@ -148,6 +149,7 @@ withWorker definition =
             "worker"
             (Js.from
                 { chainNow = Js.from chainNow
+                , fromHost = Js.from fromHost
                 , hostResponse = Js.from hostResponse
                 , setDraining = Js.from λobject → Js.write draining object
                 }

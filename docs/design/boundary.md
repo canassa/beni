@@ -7486,6 +7486,34 @@ pub type AttachError
   `ws.accept()` with listeners does not, and is not offered. The host answers ping frames and the
   `autoReply` pair without waking the object.
 
+*As built (2026-10-22, the socket slice; `platforms/cloudflare/WebSocket.beni`, `Worker/Object.beni`,
+fixture `workers/ObjectSocket`).*
+- **The surface is as above**, with one change: **`tags` reads the attachment**, not
+  `ctx.getTags(ws)`. A `Socket` is the host's object alone and holds no state, so the envelope the
+  platform writes at `accept` is `{ id, protocol, tags, data }`; the tags are given once, at
+  `accept`, and the host keeps the attachment as long as the socket lives.
+- **`accept` and `acceptWith`** check the method and the `upgrade` header without case, the tag
+  count and length, the socket count and the offered subprotocols (`sec-websocket-protocol`, split
+  on commas), make the `WebSocketPair`, call `acceptWebSocket(server, tags)`, write the envelope
+  and answer the 101 through `Worker.fromHost`, with the chosen `sec-websocket-protocol` on it. A
+  client that offered `v1, v2` and was answered `v1` opened (*measured*).
+- **`attach`** counts as (h) counts — two bytes per code unit of the id, the protocol, the tags and
+  the text, plus 64 — against 16 384. **`autoReply`** is `setWebSocketAutoResponse` with a
+  `WebSocketRequestResponsePair`; the fixture's `ping?` is answered `pong!` with no `message` event.
+- **The events**: `webSocketMessage` with a string is a `message` event of the mailbox; a binary
+  frame is closed with 1003 and one `console.warn` line, with no event, and `closed` follows;
+  `webSocketClose` is `closed` with `Close` by the four rules (1006 with the host's text becomes
+  1006 and `""`); `webSocketError` is `failed` with the error's text. The object's own `close`
+  reaches the peer with its code and reason, and the peer's close reaches `closed` with the
+  peer's (*measured*, 4001 and 4002 in the fixture). A `write` after the object's own `close` is
+  `Err NotOpen` (the socket is closing).
+- **A defect closes every socket**: after (f)'s abort the client sees 1006 and `""` (*measured*).
+- **The driver** (`tests/workers/driver.mjs`, (k)) opens a client through Miniflare's own:
+  `dispatchFetch` with `upgrade: websocket` answers a `Response` whose `webSocket` is the client's
+  end, accepted and listened to; the steps are `socket`, `send`, `close` and `receive`
+  (`tests/corpus/README.md`, *A Worker*). The `sec-websocket-accept` answers Miniflare's random
+  key and is shown as `(the key)`. Hibernation itself is not driven: #593.
+
 **(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
 SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
 every operation returns before the handler goes on, which is what lets a `sync` handler use it.

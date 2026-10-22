@@ -181,7 +181,17 @@ start className schema restore handlers ctx bindings worker =
                 deliver instance (Js.from { error = error, kind = "failed", ws = ws })
         , webSocketMessage =
             Js.from λws message →
-                deliver instance (Js.from { kind = "message", message = message, ws = ws })
+                if Js.typeIs message "string" then
+                    deliver instance (Js.from { kind = "message", message = message, ws = ws })
+                else
+                    -- A binary frame is §9.11 (j)'s rule: closed with 1003, one
+                    -- warning line, and the program sees `closed`.
+                    _ =
+                        Js.call (Js.global "console") "warn"
+                            [ Js.from
+                                "beni: the object ${className} got a binary frame; the socket is closed with 1003"
+                            ]
+                    Js.call ws "close" [ Js.from 1003, Js.from "binary frames are not accepted" ]
         }
 
 
@@ -722,6 +732,106 @@ fired instance ms =
     ⊤
 
 
+-- ---- The socket ((g)) -------------------------------------------------------
+
+--| Why an upgrade was not accepted: no `upgrade: websocket` header or a
+--| method that is not GET, more than 10 tags or one over 256 characters,
+--| the host's 32 768 sockets per object already open, or a subprotocol the
+--| request did not offer.
+pub type AcceptError
+    = NotAnUpgrade
+    | TooManyTags
+    | TooManySockets
+    | ProtocolNotOffered
+
+
+--| Accept the request's upgrade with those tags: the socket, hibernatable,
+--| and the 101 `Response` the `request` handler returns. The socket's id
+--| and its tags go into the attachment first, so they are the same across
+--| hibernation.
+pub accept : Context msg, Request, List String → Result AcceptError (Socket × Response)
+accept ctx request tags = acceptWith ctx request { protocol = Nothing, tags = tags }
+
+
+--| `accept` with a subprotocol, written on the 101 when the request offered
+--| it: a client that offered subprotocols and is answered none fails its
+--| handshake.
+pub acceptWith :
+      Context msg
+    , Request
+    , { protocol : Maybe String, tags : List String }
+    → Result AcceptError (Socket × Response)
+acceptWith ctx request options =
+    offered =
+        case Worker.header request "sec-websocket-protocol" of
+            Just text →
+                List.map (String.split text ",") String.trim
+
+            Nothing →
+                []
+    if
+        Worker.method request ≠ "GET"
+            || Maybe.map (Worker.header request "upgrade") String.toLower ≠ Just "websocket"
+    then
+        Err NotAnUpgrade
+    else if
+        List.length options.tags > 10 || List.any options.tags λtag → String.length tag > 256
+    then
+        Err TooManyTags
+    else if List.length (sockets ctx) ≥ 32768 then
+        Err TooManySockets
+    else
+        case options.protocol of
+            Just protocol →
+                if List.member offered protocol then
+                    Ok (opened ctx options.tags protocol)
+                else
+                    Err ProtocolNotOffered
+
+            Nothing →
+                Ok (opened ctx options.tags "")
+
+
+opened : Context msg, List String, String → Socket × Response
+opened ctx tags protocol =
+    pair = Js.construct (Js.global "WebSocketPair") []
+    client = Js.at pair 0
+    server = Js.at pair 1
+    _ = Js.call (hostState ctx) "acceptWebSocket" [ server, Js.from tags ]
+    _ =
+        Js.call server "serializeAttachment"
+            [ Js.from
+                { data = Js.null
+                , id = Js.call (Js.global "crypto") "randomUUID" []
+                , protocol = Js.from protocol
+                , tags = Js.from tags
+                }
+            ]
+    headers =
+        if protocol == "" then
+            Js.array []
+        else
+            Js.array [ Js.array [ Js.from "sec-websocket-protocol", Js.from protocol ] ]
+    response =
+        Js.construct (Js.global "Response")
+            [ Js.null, Js.from { headers = headers, status = 101, webSocket = client } ]
+    ( Js.to server
+    , Js.to (Js.apply (Js.get (Js.get (Js.from ctx) "worker") "fromHost") [ response ])
+    )
+
+
+--| `setWebSocketAutoResponse`: a request text the host answers with the
+--| response text on every socket of the object, without waking it.
+pub autoReply : Context msg, String, String → ⊤
+autoReply ctx request response =
+    Js.to
+        (Js.call (hostState ctx) "setWebSocketAutoResponse"
+            [ Js.construct (Js.global "WebSocketRequestResponsePair")
+                [ Js.from request, Js.from response ]
+            ]
+        )
+
+
 --| `setAlarm`: the alarm at that epoch millisecond, replacing the one set.
 pub alarmAt : Context msg, Int → ⊤
 alarmAt ctx at = Js.to (Js.call (storage ctx) "setAlarm" [ Js.from at ])
@@ -738,7 +848,12 @@ cancelAlarm ctx = Js.to (Js.call (storage ctx) "deleteAlarm" [])
 
 
 storage : Context msg → V
-storage ctx = Js.get (Js.get (Js.from ctx) "ctx") "storage"
+storage ctx = Js.get (hostState ctx) "storage"
+
+
+-- The host's `DurableObjectState`.
+hostState : Context msg → V
+hostState ctx = Js.get (Js.from ctx) "ctx"
 
 
 -- ---- The object, from a handler ---------------------------------------------

@@ -155,4 +155,67 @@ main : Tea.Program
 main = Tea.element { init = init, update = update, view = view, subscriptions = subscriptions }
 ```
 
-Sources: `docs/design/boundary.md` §9.10, §9.11; `examples/chat/`; the modules' doc comments.
+## The object, on `cloudflare`
+
+- A Durable Object's `request` handler answers an upgrade with `Object.accept ctx request tags`
+  or `Object.acceptWith ctx request { protocol, tags }`: `Ok ( socket, response )`, the 101 to
+  return, or `Err` (`NotAnUpgrade`, `TooManyTags`, `TooManySockets`, `ProtocolNotOffered`).
+- There is no `read`. Each text message is a `message` event of the object, a close is `closed`
+  with `{ code, reason }`, and a fault is `failed`; so the object can hibernate between events.
+  A binary frame closes the socket with 1003.
+- `WebSocket.write socket text` and `WebSocket.close socket { code, reason }` are the shared
+  operations, with the `node` server's close codes. `WebSocket.id`, `WebSocket.tags` and
+  `WebSocket.protocol` are kept with the socket across hibernation. `WebSocket.attach socket
+  schema value` keeps a value of the program's with it, and `WebSocket.attachment` reads it back.
+- `Object.sockets ctx` lists the open sockets; `Object.autoReply ctx request response` makes the
+  host answer one text with another, without an event.
+
+```beni platform=cloudflare
+import Schema
+import String
+import WebSocket exposing (Socket)
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+room : Worker.Definition
+room = Object.define "Room" Schema.string (λ_ → ⊤) { Object.none | request = join, message = heard }
+
+
+join : Object.Context String, ⊤, Request → ⊤ × Response
+join ctx _ request =
+    case Object.accept ctx request [ "player" ] of
+        Ok ( socket, response ) →
+            _ = WebSocket.write socket "welcome"
+            ( ⊤, response )
+
+        Err _ →
+            ( ⊤, Worker.text 426 "upgrade to a WebSocket" )
+
+
+heard : Object.Context String, ⊤, Socket, String → ⊤
+heard ctx _ socket text =
+    _ = WebSocket.write socket "echo ${text}"
+    ⊤
+
+
+route : Context, Request → Response
+route ctx request =
+    case Worker.objects (Worker.env ctx) "ROOMS" Schema.string of
+        Just rooms →
+            case Worker.forward (Worker.byName rooms "main") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the room is not available"
+
+        Nothing →
+            Worker.text 500 "ROOMS is not declared"
+```
+
+Sources: `docs/design/boundary.md` §9.10, §9.11, §9.12 (g); `examples/chat/`; the modules' doc comments.
