@@ -1294,6 +1294,9 @@ const Spec = struct {
     /// take arrays as long as the whole program's names anew.
     io_refs_keep: []u32 = &.{},
     io_assigned_keep: []u32 = &.{},
+    /// `inlineScan`'s place of each name in the module it counts, plus
+    /// one: zero between modules.
+    io_slot: []u32 = &.{},
     io_sites: []?CallSite = &.{},
     io_flags: []bool = &.{},
     io_fit: []bool = &.{},
@@ -6960,18 +6963,16 @@ const Spec = struct {
 
     const CallSite = struct { module: u32, top: Index, call: Index };
 
-    /// One module's part of `inlineBatch`'s count: per whole-program name,
-    /// its mentions, its last call, and whether it is assigned — as of the
-    /// module's `version`.
+    /// One module's part of `inlineBatch`'s count, as of the module's
+    /// `version`: one entry per whole-program name the module mentions or
+    /// assigns, with its mentions, its last call and whether it is
+    /// assigned. Sparse, so that counting a module again costs what it
+    /// names and not what the whole program names (#742).
     const InlineScan = struct {
         version: u32 = none,
-        refs: []u32 = &.{},
-        sites: []?CallSite = &.{},
-        assigned: []bool = &.{},
-        /// The three columns' memory, kept when a name is added (#574).
-        refs_keep: []u32 = &.{},
-        sites_keep: []?CallSite = &.{},
-        assigned_keep: []bool = &.{},
+        entries: std.ArrayList(Mention) = .empty,
+
+        const Mention = struct { g: u32, refs: u32, assigned: bool, site: ?CallSite };
     };
 
     /// The first `n` entries of a scratch column kept across calls in
@@ -6985,7 +6986,7 @@ const Spec = struct {
 
     /// Bring `io_refs` and `io_assigned`, the whole program's counts, up to
     /// date: a module that changed since it was last counted is counted
-    /// again, and only that module.
+    /// again, and only that module, at the cost of the names it holds.
     fn inlineScan(s: *Spec) Allocator.Error!void {
         const n = s.globals;
         if (s.io_scans.len != s.mods.len) {
@@ -7000,36 +7001,41 @@ const Spec = struct {
             @memset(s.io_assigned, 0);
             for (s.io_scans) |*sc| {
                 sc.version = none;
-                sc.refs = &.{};
+                sc.entries.clearRetainingCapacity();
             }
         }
+        // Per name, its entry's place in the module being counted, plus
+        // one; zero between modules.
+        if (s.io_slot.len < n) {
+            s.io_slot = try s.arena.alloc(u32, n + n / 2);
+            @memset(s.io_slot, 0);
+        }
+        const slot = s.io_slot[0..n];
         for (s.mods, s.io_scans, 0..) |*m, *sc, mi| {
             if (sc.version == m.version) continue;
-            if (sc.refs.len == n) {
-                for (sc.refs, sc.assigned, 0..) |r, a, g| {
-                    s.io_refs[g] -= r;
-                    s.io_assigned[g] -= @intFromBool(a);
-                }
-            } else {
-                sc.refs = try s.scratchOf(u32, &sc.refs_keep, n);
-                sc.sites = try s.scratchOf(?CallSite, &sc.sites_keep, n);
-                sc.assigned = try s.scratchOf(bool, &sc.assigned_keep, n);
+            for (sc.entries.items) |e| {
+                s.io_refs[e.g] -= e.refs;
+                s.io_assigned[e.g] -= @intFromBool(e.assigned);
             }
-            @memset(sc.refs, 0);
-            @memset(sc.sites, null);
-            @memset(sc.assigned, false);
+            sc.entries.clearRetainingCapacity();
             const ir = m.ir;
             for (ir.extraSlice(ir.body, Index)) |top| {
                 for ((try s.nameScan(m, top)).uses.items) |*u| {
                     const g = m.globalOf(@fromBackingInt(@intCast(u.name))) orelse continue;
-                    sc.refs[g] += u.idents;
-                    for (u.calls.items) |call| sc.sites[g] = .{ .module = @intCast(mi), .top = top, .call = call };
-                    if (u.assigns != 0) sc.assigned[g] = true;
+                    if (slot[g] == 0) {
+                        try sc.entries.append(s.arena, .{ .g = g, .refs = 0, .assigned = false, .site = null });
+                        slot[g] = @intCast(sc.entries.items.len);
+                    }
+                    const e = &sc.entries.items[slot[g] - 1];
+                    e.refs += u.idents;
+                    for (u.calls.items) |call| e.site = .{ .module = @intCast(mi), .top = top, .call = call };
+                    if (u.assigns != 0) e.assigned = true;
                 }
             }
-            for (sc.refs, sc.assigned, 0..) |r, a, g| {
-                s.io_refs[g] += r;
-                s.io_assigned[g] += @intFromBool(a);
+            for (sc.entries.items) |e| {
+                slot[e.g] = 0;
+                s.io_refs[e.g] += e.refs;
+                s.io_assigned[e.g] += @intFromBool(e.assigned);
             }
             sc.version = m.version;
         }
@@ -7566,11 +7572,9 @@ const Spec = struct {
         @memset(sites, null);
         const assigned = try s.scratchOf(bool, &s.io_flags, n);
         for (assigned, s.io_assigned[0..n]) |*a, k| a.* = k != 0;
-        for (refs, 0..) |r, g| if (r == 1) {
-            for (s.io_scans) |*sc| if (sc.refs[g] != 0) {
-                sites[g] = sc.sites[g];
-                break;
-            };
+        // A name mentioned once is mentioned by one module only.
+        for (s.io_scans) |*sc| for (sc.entries.items) |e| {
+            if (e.refs != 0 and refs[e.g] == 1) sites[e.g] = e.site;
         };
         // Which are candidates at all.
         const fit = try s.scratchOf(bool, &s.io_fit, n);
