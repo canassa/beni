@@ -1,0 +1,46 @@
+-- run: `withScheduler` twice on one scheduler lends the fiber once
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22). After the
+-- inner block ends the fiber is still inside the outer one, so
+-- `stopScheduler` cancels it and runs its release, and `done` comes with
+-- no cleanup cut short.
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+report : Int → ⊤
+report cut =
+    _ = Debug.log "cut" cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+
+    inside = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            Task.withScheduler s λ⊤ → say "inner"
+            say "after inner"
+            Task.bracket (λ⊤ → ⊤) (λ_ _ → say "released") λ_ → Task.never ⊤
+    -- Queued behind `inside` on the scheduler: when this fiber goes on,
+    -- `inside` has run to its wait.
+    Task.withScheduler s λ⊤ → Task.yieldNow ⊤
+    _ = Debug.log "busy" (Task.schedulerBusy s)
+    Task.stopScheduler s 1 report
+    _ = Debug.log "inside" (outcome (Task.wait inside))
+    Node.done

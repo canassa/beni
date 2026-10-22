@@ -1,0 +1,6 @@
+inner: ⊤
+after inner: ⊤
+busy: True
+released: ⊤
+cut: 0
+inside: "Cancelled"

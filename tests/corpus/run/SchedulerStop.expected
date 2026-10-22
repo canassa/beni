@@ -1,8 +1,11 @@
+busy before: True
 z 3: ⊤
 x released: ⊤
 y releasing: ⊤
 z 2: ⊤
 z 1: ⊤
+other idle: ⊤
 x: "Cancelled"
 cut: 1
 y: "Cancelled"
+busy after: False
