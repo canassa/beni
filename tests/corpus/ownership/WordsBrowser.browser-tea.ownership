@@ -6,7 +6,7 @@ module WordsBrowser
   66:14 construction rows: rejected call: cmd#Cmd.0[*]#Keyed.0[*]⋆ may hold it through the call at 65:11, and is read at 67:5 (approx)
   72:5 entry WordsBrowser.update model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   72:5 update entry WordsBrowser.update model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
-  summary update: π2 RAW{draft, items}, π2.draft R, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
+  summary update: π2 RAW{draft, items}, π2.draft R, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary view: π1.items RA; res ⟨render⟩ fresh1{lost}r{lost}, ⟨render⟩⋆ ~π1.items
   summary keys: unused
   summary keysHeld: res .0#Cmd.0 fresh5{lost}r{lost}, .0#Cmd.0[*] condition(fresh4), .0#Cmd.0[*]#Keyed.0 fresh3{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*] fresh2{lost}r{lost}, .0#Cmd.0[*]#Keyed.0[*]⋆ ~fresh1, .0#Cmd.0[*]#Keyed.2 λr{lost}, .0#Cmd.0[*]#KeyedNow.0 fresh7{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*] fresh6{lost}r{lost}, .0#Cmd.0[*]#KeyedNow.0[*]⋆ ~fresh1, .0#Cmd.0[*]#KeyedNow.2 λr{lost}

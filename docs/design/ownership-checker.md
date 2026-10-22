@@ -6404,3 +6404,54 @@ case in #579 must now refuse. An unexpected safe refusal or an instruction
 budget failure is a stop condition, not a reason to weaken the rows or tests.
 This section adds no keyed For, Dict write-set positions (O3), or recogniser
 for List.map keyed updates. Those belong to the rendering work.
+
+### *Amended 2026-10-22 (#670):* a write's extent
+
+A summary use carrying W also carries an **extent**, `storage` or `deep`.
+`storage` at p writes the collection's own slots and order, including inserting,
+replacing or removing a slot; it does not write any value stored in those slots.
+`deep` at p may write every value below p, as the previous keep-edge overlap
+rule assumed. A write that edits a stored value is deep at that value's path.
+An unclassified write is deep. This distinction is independent of the send bit
+S (§23.2), which continues to give up every cell of its payload.
+
+For a storage write at p, a value loan strictly below p (in particular p[*])
+does not overlap the write. A loan at p, or above p, still overlaps: keeping
+the collection observes its slots and order. A deep write uses the existing
+symmetric path overlap. Paths containing wildcards or recursive level markers
+retain their set-of-places meaning (§16.7): storage overlap asks whether some
+loan place is an ancestor of, or equal to, some written place. Unknown places
+remain conservative. Neither extent grants ownership or a destructive loan.
+
+The keep edge (§16.4), including a write through another callback, uses this
+extent-aware overlap. The supply edge uses it too: changing container storage
+does not edit a supplied value strictly below that storage. All demands on the
+written storage still require Known, Unescaped, Disjoint and Dead. Deep writes,
+value aliases, exclusive-content conditions and sends keep their prior checks.
+
+Extent is carried through inferred wrappers, function classes, captured writes,
+callback write-back, normalization, joins and summary serialization. At the same
+parameter and path, any deep write makes the joined write deep; a read without
+W does not change a storage write's extent. Canonicalization must not discard
+a deep write under a storage-only fact. Existing unclassified rows default to
+deep. Summary blocks advance from version 19 to 20 and serialize the extent;
+an older block is absent and is recomputed, never read with the new rules.
+The report keeps W/w and S/s spelling and marks a storage W as W[storage]
+(or w[storage]).
+
+List's precise slot writers (`set`, `insertAt`, `put`, `push`, `pop`,
+`removeAt`, `swap`, `done`, `append` and the root write of `focus`) are storage
+writes. Their result aliases and callback/value-write demands remain unchanged.
+List operations inferred from these primitives preserve the extent. In §32.2,
+every W ε is storage-only, including private `permute`, stores and builder
+finish; a callback's own value write is deep at its supplied value, or storage
+at that value's own collection root when its precise primitive says so. Set
+inherits these facts through its wrapper, with no separate trusted assertion.
+The ordered Dict rows take effect with §32's representation change.
+
+Regression evidence must accept a borrowed-value identity callback followed by
+a storage permutation, and refuse the twins that write the kept value, retain
+the storage itself, or send the value. Existing verdicts stay unchanged.
+The Lean model's write paths need the same extent and overlap distinction;
+#316 tracks that oracle work alongside #165, in Jayson's files. This amendment
+makes no new theorem claim for rules the oracle does not yet judge.

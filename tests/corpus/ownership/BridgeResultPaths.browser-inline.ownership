@@ -36,7 +36,7 @@ module BridgeResultPaths
   summary oppositeArm: res fresh1
   summary freshResult: res fresh1
   summary caseProjection: π1 R; res fresh1
-  summary nestedBlock: π1 RAW, π1[*] R; res π1
+  summary nestedBlock: π1 RAW[storage], π1[*] R; res π1
   summary returnedReader: res .reader λr{lost}, .reader◇ fresh1, .values fresh1, condition(fresh2){shared}r{shared} fresh501◦
   summary laterNamedReader: res [*] fresh2 ~fresh1, fresh3{lost}r{lost}
   summary freshCallback: res [*] fresh1 ~fresh3{lost}r{lost}, fresh2{lost}r{lost}
@@ -46,7 +46,7 @@ module BridgeResultPaths
   summary recursiveField: res .0 fresh1, .1 fresh1, condition(fresh2){shared}r{shared}
   summary argumentCaptureField: res fresh1
   summary callbackCapture: π1 RA; res .0 ⊤call{lost}r{lost}, .0⋆ ~π1, .1 π1, condition(fresh1){lost}r{lost}
-  summary blockArm: π1 RAW, π1[*] RA; res [*] ~π1[*], π1
+  summary blockArm: π1 RAW[storage], π1[*] RA; res [*] ~π1[*], π1
   summary mutualCapture: res .0 fresh1, .1 fresh1, condition(fresh2){shared}r{shared}
   summary earlyResult: res #Err.0 fresh1, #Ok.0⋆ fresh1
   summary nestedRecursive: res .0 fresh1, .1 fresh1, condition(fresh2){shared}r{shared}

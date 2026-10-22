@@ -6,15 +6,15 @@ module Question
   89:10 List.push xs: accepted param
   100:10 List.push xs: rejected alias: got#Err.0 holds it and is read at 101:5
   summary pick: π1 R, π1#Err.0 A; res #Err.0 π1#Err.0
-  summary keepsErr: π1 RW, π1[*] R
-  summary local: π1 RW, π1[*] R
+  summary keepsErr: π1 RW[storage], π1[*] R
+  summary local: π1 RW[storage], π1[*] R
   summary check: π1 R, π1#Err.0 A; res #Err.0 π1#Err.0
-  summary statement: π1 RW, π1[*] R
+  summary statement: π1 RW[storage], π1[*] R
   summary first: π1 R
-  summary maybeOk: π1 RW, π1[*] R
+  summary maybeOk: π1 RW[storage], π1[*] R
   summary parse: π1 R
-  summary stringOk: π1 RW, π1[*] R
-  summary twoFrames: π2 RW, π2[*] R
+  summary stringOk: π1 RW[storage], π1[*] R
+  summary twoFrames: π2 RW[storage], π2[*] R
   demands 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 total 6: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause alias 4

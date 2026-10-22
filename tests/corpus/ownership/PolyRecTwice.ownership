@@ -7,12 +7,12 @@ module PolyRecTwice
   75:21 call PolyRecTwice.once xs: rejected call: xs is read again at 75:19; the callee writes it only through an approximate step (PolyRecTwice.once writes π1) (approx)
   summary wm: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨M⟩⁺#MLeaf.0#Just.0[*] π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
   summary wm2: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{shared}r{shared} ~fresh2{shared}r{shared}, ⟨M⟩⁺#MLeaf.0#Just.0[*] π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh1{shared}r{shared} ~fresh2{shared}r{shared} ~π2
-  summary once: π1 Rw; xreq excl π1
-  summary twice: π1 Rw
-  summary twiceDeep: π1 Rw, π1#Just.0[*] Rw
+  summary once: π1 Rw[storage]; xreq excl π1
+  summary twice: π1 Rw[storage]
+  summary twiceDeep: π1 Rw[storage], π1#Just.0[*] Rw[storage]
   summary twiceDeepFresh: unused
-  summary callOnce: π1 Rw; xreq excl π1
-  summary callOnceKeep: π1 RAw; res .1 π1; xreq excl π1
+  summary callOnce: π1 Rw[storage]; xreq excl π1
+  summary callOnceKeep: π1 RAw[storage]; res .1 π1; xreq excl π1
   demands 6: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 total 6: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause call 5

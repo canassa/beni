@@ -14,18 +14,18 @@ module Binders
   90:30 List.push model.items: rejected later-use: model.items is read again at 91:30
   97:24 List.push xs: rejected later-use: xs is read again at 97:42
   103:18 List.push xs: accepted param
-  summary nested: π1 RW
-  summary sink: π1 RW
-  summary statement: π1 RW
-  summary spreadArm: π1 RW
-  summary placeholder: π1 RW
-  summary accessor: π1.items RW
-  summary section: π1 RW, π1[*] R
+  summary nested: π1 RW[storage]
+  summary sink: π1 RW[storage]
+  summary statement: π1 RW[storage]
+  summary spreadArm: π1 RW[storage]
+  summary placeholder: π1 RW[storage]
+  summary accessor: π1.items RW[storage]
+  summary section: π1 RW[storage], π1[*] R
   summary localGroup: π1 RW
-  summary pipeline: π1 RW, π1[*] R
-  summary update: π1 W{items}, π1.items RW, π1.items[*] R, π1.other R
-  summary bind: π2 RW
-  summary distinct: π1 RW, π2 R
+  summary pipeline: π1 RW[storage], π1[*] R
+  summary update: π1 W{items}, π1.items RW[storage], π1.items[*] R, π1.other R
+  summary bind: π2 RW[storage]
+  summary distinct: π1 RW[storage], π2 R
   demands 14: accepted 4 (fresh 0, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
   records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 1, eager reads 0
 total 14: accepted 4 (fresh 0, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10

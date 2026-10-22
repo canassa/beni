@@ -3,9 +3,9 @@ module PolyRecLevels
   46:34 List.push q: rejected call: p may hold it through the call at 42:10, and is read at 46:52 (approx)
   66:50 List.push s: rejected call: t#Leaf.0 may hold it through the call at 57:9, and is read at 66:67 (approx)
   summary wrap: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
-  summary innerLive: π1 R, π1[*] Rw; xreq excl π1
-  summary innerLive2: π1 Rw; xreq excl π1
-  summary deepParam: π1 Rw, π1[*] R, π1[*][*] Rw; xreq excl π1
+  summary innerLive: π1 R, π1[*] Rw[storage]; xreq excl π1
+  summary innerLive2: π1 Rw[storage]; xreq excl π1
+  summary deepParam: π1 Rw[storage], π1[*] R, π1[*][*] Rw[storage]; xreq excl π1
   summary count: π1 R, π1⟨T⟩#Wrap.0 R
   demands 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 3: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
