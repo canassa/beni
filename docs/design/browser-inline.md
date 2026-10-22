@@ -465,6 +465,454 @@ tea-inline's output, as for every slice:
   Also decided then: what the lowering reads from #315 to know that a slice is stable, and how a
   reader's root finds the writer's table when the two mount in either order.
 
+*Design amendment 2026-10-22 (#668, proposed for owner review): the root piece and its mount
+contract.* This specifies the preceding owner's reversal; it is **not implemented**. It takes
+effect after #315 R6/R7, including enforcement, hoists, stores and the optimiser barrier. Until
+then the preceding *as built* rules describe the compiler. No section is renumbered. D-c now
+means **mount-time registration**, not static reader calls. The decisions explicitly left to
+the owner are listed at the end of this amendment; the rest is the proposed implementation
+contract, to be reviewed with them.
+
+**Who writes the closure.** The root's **own module** writes a root factory piece,
+`<Module>$<declaration>$$root$<n>`, beside its `$$html$<n>`. Calling the factory at mount creates
+one lexical scope holding the slice, elements, anonymous binding entries, groups and local
+handlers. A local root uses the same contract, without an import. `n` retains §8.4's
+preassigned declaration/call-path identity. This replaces `$$bind`/`$$on` exports for that root;
+it does not copy their bodies into `Main`. Release may fuse a single-use factory under its
+ordinary rules; development retains the piece call. Neither form changes module ownership.
+
+The serial direct-program pre-pass builds a **root plan** before parallel lowering. It joins
+the write-set pass's keys, split sites, exact per-tail writes and anchored per-call reads with
+ownership facts; it does not rediscover them by inspecting generated JavaScript. The plan gives
+each worker only the code it owns and named calls for everything else. The piece hook in
+`platforms/browser-inline/zig/inline.zig` writes the factory; `Lower.zig`'s `Direct.ViewPiece`,
+`piece_now`/`piece_pc`, `programPiece` and program/arm hooks carry the extended plan. This needs
+a versioned markup interface extension, not an unversioned cast to the current `PieceData`.
+An arm and its view can be in different modules: the arm remains an arm piece in its own
+module, called from the root. No worker lowers another module's BIR body.
+
+The factory takes, with unused arguments omitted by ordinary lowering:
+
+- the **slice object**, for a proved stable record slice; otherwise an explicit **slice cell**
+  for a value whose exact source semantics replace the value (a number, union, list, or an
+  entire record rebuilt fresh). A cell is one mutable slot, read afresh by bindings and
+  updated by the selected arm. A record cell is not permission to copy a rejected update;
+- the elements selected once from that root's markup, as today;
+- its own preallocated group table, the program's registration table, and live access to any
+  other model paths its bindings read (stable slices directly; replaceable values through
+  their cells). Passing a captured scalar snapshot is wrong;
+- handlers for keys whose arm belongs to the program site, and named arm-piece dependencies
+  for other modules' code. Their ordering and payload convention are in the plan, not inferred
+  from the first event at run time. If the program needs a root-local handler for a subscription
+  or command, the factory publishes that handler in a planned export slot.
+
+`Main` still writes the mount and combined HTML string, the fresh model, table allocation,
+factory calls, its own update arms, subscription starts/disposers and command host. It hands
+its own handlers into roots; it does not export every widget handler just to wire a click.
+A local handler may move to a root only when the plan proves that the enclosing forwarding
+arms contribute no additional model writes, condition, command or effect. Otherwise that key
+stays with its enclosing arm and is passed in. A sole local event can therefore be literally
+`on(e[0],()=>{t.cups=4;n(r[0])})`, without silently deleting work in `Main.update`.
+
+Rejected: writing the closure at the program site repeats §7's cross-body cache dependency;
+keeping handlers there preserves the repeated slice paths and reader calls #668 removes;
+a module-global widget registry couples independent mounts and makes mutable state global.
+The table here is fresh per mount, not a registry of modules at import time.
+
+**Numbering and registration.** A field group is a bucket of binding entries, not a function
+that takes `(elements, slice)` at every call. One anonymous entry contains the writes of one
+of §8.2's existing binding functions, retaining its `let`s and evaluate-before-write rule.
+The same entry can belong to several buckets when it reads several fields. Equal read sets
+at different roots do not merge entry identity (`write-sets.md`, *parameterised template reads*).
+
+Before workers start, root ids are assigned in markup placement order, using the input-derived
+module/declaration/call-path identities to distinguish sites. Within a root, bucket keys are
+anchored read paths relative to its model slice, ordered by their structural encoding: field
+names in source UTF-8 byte order, tuple/constructor indices numerically, a prefix before its
+extensions. Tag and whole-value reads have distinct tags in that encoding. This uses neither
+interner ids, release field names, hash iteration, absolute paths nor worker completion order.
+A prefix write selects every conflicting bucket, using the write-set pass's conflict relation;
+a whole-value read is not guessed to be a leaf field. Controlled-input repair and `ω`/every-key
+reads have explicit planned buckets too. Lost precision is still §5's class 4.
+
+Both the writer and reader are handed the same plan reference `(writer root id, bucket index)`.
+The reader knows the **index**, from substituted anchored reads; the writer knows which of its
+own buckets each tail writes. Neither reads the other's body or computes an index by counting
+the other's emitted bindings. An otherwise unread field gets a bucket when an external reader
+needs it. Changing such a reader can therefore change the writer's plan even with unchanged
+interfaces. No registration call appears in a writer's event handler.
+
+All bucket arrays for **all roots** exist before the first factory call. Factories append entries
+into existing arrays; they never replace them or grow the table by `r.push(newBucket)`. A reader
+may mount before its writer and execute `i[1][3].push(r[3])`; writer setup later appends its own
+entries to `i[1][3]`. Cycles of reads need no topological mount order. After all factories have
+registered, mount finalises each bucket in entry document order and does one first pass; only
+then are subscriptions and the initial command started. Listeners wired during setup enter the
+existing guard and cannot dispatch into partially initialised tables. Stop releases the tables,
+entries and listeners with the program; there are no registrations across mounts.
+
+**The synchronous group runner.** In the examples `n(...groups)` runs a write pass inside the
+existing dispatch guard, not tea-inline's microtask scheduler. A tail supplies all its selected
+groups in one call. Entries have preassigned document ordinals; finalised buckets are ordered by
+those ordinals. The runner merges the selected buckets in that order and executes each entry
+identity once, even when two selected fields reach it. It need not sort the page or enumerate
+unselected groups at each event. First render and a whole-slice load use the same runner over
+all that root's buckets. An empty write can still select the event element's controlled-input
+repair bucket. Commands run after this pass; nested sends retain §6's queue and defect rule.
+This replaces §8.3's compile-time-only deduplication with a group merge when registrations overlap;
+it makes no new speed or byte claim without the later owner's measurements.
+
+Rejected: immediate separate `n(r[0]); n(r[1])` calls can run a shared reader twice and reverse
+document order; `Set` insertion order alone is not document order; a microtask breaks D3;
+running every root on every event is the coarse pass §8.3 forbids. A binding still evaluates
+its potentially throwing values before its writes, and an unknown defect still stops the page.
+
+**Ownership: what authorises a held slice.** R5's channel is necessary, **not a stable-slice
+certificate by itself**. `Lower.Input.ownership` supplies `Hoists.Table` (format 1, currently
+cache-entry 13), its `clean` enforcement bit, accepted BIR demands, written fields, exact old-read
+identities, captures and placements. R6 consumes those placements and capture loads, performs
+base/operand evaluation before stores, and treats each demand as an optimiser barrier.
+The inline lowering must use that path for every original store and call-site demand it emits.
+Report-only acceptance, a missing table, or an unchecked module never authorises a store.
+
+In addition the root plan must prove, for **every reachable tail**, that a directly held slice
+and each held ancestor remain the same object: accepted nested updates return their base;
+forwarding arms reinstall that same base; a declared load copies into it under the contract
+below. Fresh reconstruction or assignment from another model path is not proof of identity,
+even if the old slice is dead. A cell is the exact representation of an accepted replacement;
+if a path can alternate between stable and replaced objects it uses a cell from the outset.
+A binding reading a replaceable foreign slice reads its cell, so it cannot go stale. A held
+nested stable slice must also survive ancestor loads; otherwise it too is cell-addressed.
+There is no run-time choice between a store and a spread.
+
+Generated root closures are **compiler-owned model access**, not source closures capturing old
+values. Source lambdas inside arms, bindings, commands and subscriptions still obey §31.6:
+field paths read at creation, whole captures keep their object, and once-writing closures keep
+their restrictions. The root plan neither suppresses an escape nor marks a user closure reusable.
+The model-entry exclusivity check (§31.8), accepted demands and absence of observable old whole
+holders justify retaining the current model behind generated accessors. An implementation that
+cannot establish this correspondence must stop with a class 4 compiler-limit diagnostic;
+R5 alone must never be treated as authority to retain an arbitrary source capture.
+
+Ownership rejects sharing, payload edits, old whole holders, escapes and unknown origins with
+§31.9's existing record errors and explicit `Record.copy`/restructure fixes. A known valid shape
+whose retention or group projection the compiler cannot represent is §5 class 4; a construct
+reserved for a later slice is class 1 (or a suspending command class 2). The existing language
+rules, including undeclared exact `*` replacement of a multi-field model, remain class 3.
+No rejection selects `browser-tea`, spreads, polling or a broad pass automatically.
+
+**Program-owned keys and pushed state.** `Pushed`, `Tick`, and a `*` key of a one-value model
+remain ordinary keys with arms at `Main` when that is where they are declared. Their own tails
+perform the writes and call `n(i[root][group], …)` for that tail's exact conflicts; registrations
+bring in external readers. They never call exported binding functions. A root event sending
+one of those keys calls the handler supplied by `Main`. A one-value model uses a cell:
+`c[0]=value; n(i[0][0])`. A scalar does not become a pretend mutable record.
+
+A declared `replace` is a semantic boundary, not permission to skip its body. The pre-pass may
+factor routes into **data** only after proving that each successful route consists of validation,
+replacement and the same command/result behavior, and that failures retain exactly the source
+behavior. `replace` names a source helper today; recognising its spelling alone is insufficient.
+Arbitrary route guards, transformations, error handling or side effects stay in their original
+arm or own-module piece and then select groups. This is exact lowering of accepted code, not
+a second renderer or a fallback representation. The existing key's schema tag switch is allowed.
+
+For eligible `serverSet`/`snapshot` routes the data row is `(validator, destination, copy plan,
+groups)` keyed by the source's widget key. One generic loader looks up the row, invokes the
+schema validator, and **only on success** commits the validated owned value and runs the groups.
+Unknown keys and invalid values follow the source arm (a no-op only if it was a no-op). There
+is no per-root route `case`, wrapper loader closure, or repeated list of binding calls. The
+validator is still beni's: host keys map to release field names under `schema.md` §6, unread
+`Err` values produce no issues/prose, and a source that reads the error retains its decoder.
+No `structuredClone` or unchecked `Object.assign(hostValue)` replaces validation.
+
+For a stable record, a copy plan enumerates the record's complete checked fields and installs
+the decoded values into the existing object; it does not retain a host object. For a stable
+nested root, it descends into that existing destination rather than overwriting the pointer;
+replaceable children/cells are assigned the new owned value. Validation completes before any
+store in that source transaction. A snapshot that validates all widgets before updating any
+keeps that atomicity: prepare every row, commit all rows, then one unioned pass. If source
+snapshots instead accept fields independently, retain that order and those failure boundaries.
+A fresh decoded record may donate fields only under ownership's disjoint/exclusivity conditions.
+
+These additional copy stores need **explicit checked replacement evidence** in the root plan:
+source tail and ownership entry/call demand, closed destination layout, owned decoded input,
+absence of retained old whole holders, and which nested destinations retain identity. They
+cannot be fabricated as accepted `record_update` instructions in the R5 table. R6/R7 provide
+the stores/barrier machinery; if their interface cannot express this replacement proof, extending
+that interface is a prerequisite of #668's implementation. The design must not claim that an
+ordinary accepted update demand proves an arbitrary `Object.assign` safe.
+
+`init` becomes a fresh literal allocation **inside mount** where the analysis proves it is data;
+there is no `W.init(null)` per root. Never hoist that mutable record to a shared module constant.
+A genuinely effectful/computed `init` keeps its evaluation and order; the target output is not
+licence to erase effects. Rejected: a route switch per widget repeats the measured shape;
+a loader which replaces a stable object invalidates all captured slices; a validator per binding
+repeats work; skipping validation violates beni's boundary guarantee.
+
+**Incremental lowering and the emit cache (#631), in both directions.** The checker's interface
+firewall is unchanged; the emit dependency graph is not that firewall. Persist a canonical,
+versioned root-plan artifact containing identities, call-path substitutions, bucket layout,
+entry ordinals, ownership/retention/replacement evidence, key ownership and payload conventions,
+external handler slots, markup/element facts, and named piece/arm dependencies. Persist portable
+indices/bytes and hashes, never `PieceFacts.data` pointers, scratch arenas or interner ids.
+
+- **Owner to program/reader:** a root's HTML, element order, bucket map, handler ABI, publication
+  slots or retention mode invalidates each consuming program/reader's emitted row even when its
+  interface hash stays unchanged. A body-only handler edit with an identical contract needs only
+  its owning piece re-lowered; no program copies that body. A changed arm-piece contract also
+  invalidates a root that calls it.
+- **Program/reader to owner:** edited forwarding arms, per-tail writes, replace routes,
+  substitutions/placement or a reader's anchored dependencies can change a writer's bucket layout,
+  handlers or retention proof. Rebuild the plan and invalidate every affected root piece and
+  consumer. An unchanged interface cannot mask that change. Unrelated roots may keep their rows
+  when their canonical plan projection is identical.
+
+Key rows on the module's own BIR/check artifacts and the exact plan/dependency projections they
+consume, plus lowering/interface/plan versions and relevant build options. Ownership tables and
+callee pattern facts (including #654's trailing unit arguments) are dependencies too. Restore
+piece facts and their dependencies before allowing a consuming program row to hit; regenerate
+reachability, consumed declarations and live piece selectors for this build before deciding reuse.
+A missing/mismatched fact or unknown artifact version is an emit miss, not unchecked reuse.
+The current cache's refusal to reuse markup is safe and can remain until these facts can be
+recorded and replayed. That miss must still lower the **new** root shape; it never selects the
+old handlers. Owner-first waves may remain for HTML facts, but bucket indices are fixed before
+workers start, and waves and replay cannot assign ids. Differential tests compare cold, warm,
+body-edited and cache-disabled output byte for byte at `--jobs=1` and `--jobs=8`, both for owner
+edits and reader/program edits, with identical interfaces deliberately retained.
+
+**Concrete output and goldens to build after the prerequisites.** The following is a readable
+release-shape oracle for two widgets; names stand for the ordinary release renamer's choices.
+It is proposed output, **not output of today's beni**. On dagon the reference was generated with
+`./rr build unique-components tea-inline --size 2 --seed 1 --lists none` and its `src/app.js`,
+widget modules, runtime and `dist/assets/index-DN-xTeer.js` read. Its two widgets initialise
+`cups/season/coins/status` and `venue`; they have no cross-reader at this seed. The small example
+below adds that edge deliberately. It retains beni's guard, synchronous pass, validation,
+code-point helpers and full clamp wherever those are used; tea-inline's microtask, unchecked
+loader and generator-only arithmetic simplifications are not imported.
+
+Here W1's only field is `cups`, W2's is `venue`; W2 also displays W1's cups. All records are
+stable. `text`, `prop`, `on` and the dispatch guard are the existing helpers; `n` is the ordered,
+once-per-entry synchronous group runner above. The markup constants keep the existing HTML
+parser/end-tag rules. A binding entry's ordinal is metadata shown by its placement here; the
+implementation must retain that ordering through release renaming.
+
+```js
+// W1.mjs: only W1 writes these bodies. Bucket 0 is cups.
+export const W1$html = '<section><button>Make it 4</button><p></p></section>';
+export function W1$root(e,t,r,i,m) {
+  r[0].push(()=>text(e[1],`${t.cups}`));
+  on(e[0],()=>{t.cups=4;n(r[0])});
+}
+// W2.mjs: only W2 writes these bodies. Bucket 0 is venue.
+export const W2$html = '<section><input><p></p><output></output></section>';
+export function W2$root(e,t,r,i,m) {
+  r[0].push(()=>{prop(e[0],t.venue);text(e[1],t.venue)});
+  const b=()=>text(e[2],`${m.w1.cups}`);
+  i[0][0].push(b);                         // register once, never per writer
+  on(e[0],v=>{t.venue=v.target.value;n(r[0])},'input');
+}
+// Main.mjs: fresh model and buckets; root calls, no imported bind/on pieces.
+const m={w1:{cups:-1},w2:{venue:''}},i=[[[]],[[]]];
+root.insertAdjacentHTML('beforeend',`<div>${W1$html}${W2$html}</div>`);
+W1$root(E1,m.w1,i[0],i,m);
+W2$root(E2,m.w2,i[1],i,m);
+// Finalise buckets, then first render exactly once per entry:
+n(i[0][0],i[1][0]);
+const tick=()=>{m.w1.cups=m.w1.cups+1;n(i[0][0])};
+// Push/interval starts get these Main-owned guarded handlers after first render.
+```
+
+The mount/stop guard, element selection and registration ordering are required around this
+excerpt, not optional runtime deletions. With initial `(-1, '')`, the first pass writes W1
+`-1`, W2's input/text `''`, W2's output `-1`. Clicking W1 writes `4` to both cups displays;
+inputting `Hall` changes only W2's venue group; a tick writes `5` to both cups displays.
+Reversing the two factory calls still works because the buckets already exist and finalisation
+restores document order. In a reversed markup placement the ordinals follow that placement.
+
+For an eligible two-widget push, **the extra output** is data plus this shared algorithm (the
+symbols `validCups`/`validVenue` denote the specialised schema validators, not truthiness tests;
+`prepare` returns an explicit success/failure result). Copy-plan tags distinguish stable records,
+nested stable destinations and cells. A flat stable-record case is shown:
+
+```js
+const routes=new Map([['w1',[validCups,m.w1,['cups'],i[0]]],
+                      ['w2',[validVenue,m.w2,['venue'],i[1]]]]);
+function prepare(key,raw) {
+  const d=routes.get(key);
+  return d===undefined ? failure : validate(d[0],raw,d);
+}
+function commit(p) {                       // p holds a validated owned value
+  const [validator,target,fields,groups]=p.route;
+  for(let k of fields) target[k]=p.value[k]; // known decoded keys, no host keys
+  return groups;
+}
+function serverSet(key,raw) {
+  const p=prepare(key,raw);
+  if(p.ok) n(...commit(p));
+}
+function snapshot(raw) {
+  const ps=prepareSnapshot(raw,routes);     // source's all-or-nothing validation
+  if(ps.ok) {
+    const groups=[];
+    for(const p of ps.values) groups.push(...commit(p));
+    n(...groups);
+  }
+}
+```
+
+These functions are shared, not emitted once for W1 and again for W2. Access to `routes` must
+be an own-key lookup (or a `Map`): `__proto__`/`constructor` are unknown keys, not route rows.
+The complete validator rejects missing/wrong fields before stores; a failed `w1` push leaves
+both displays unchanged, a valid `{cups:9}` push writes both to `9`, and a valid snapshot of
+`{w1:{cups:2},w2:{venue:'West'}}` commits both before either reader runs. Unknown keys and a
+snapshot with one bad widget follow the no-op behavior stipulated for this example. A source
+that adds one to decoded cups keeps that transformation in its arm; it is not this generic route.
+A route's fields are the decoded layout's release names, not necessarily the source strings
+shown here. Nested copy plans use the same generic interpreter and preserve planned identities.
+
+The fixture ledger below is a **future change list**, not permission to bless output in this
+PR. Prefixes are `tests/corpus/emit/release/inline/` and `tests/corpus/browser/inline/`.
+Every listed emit fixture pins the relevant projection of the code above; every page pins the
+observable transcript and retains its development/release comparison. Existing page transcripts
+should stay unchanged; emitted output/run hashes change. Development `emit/inline/` piece goldens
+must move with the new ABI too.
+
+| Existing emit fixtures to change | Expected shape from the two-widget oracle |
+|---|---|
+| `WidgetHandler/`, `ArmPiece/`, `ArmSingle/`, `EnumCycleModule/`, `MergedChildren/` | owner `$$root` plus HTML; anonymous group entries, local in-place handler or own-module arm-piece call; no `$$bind`/`$$on` exports; repeated child roots get distinct preassigned plans |
+| `ErrorUnreadWidgets/` | route data and one loader as above, schema validation retained with unread errors erased; threshold/shared shape validators retain the same contract |
+| `CounterLocal`, `FormLocal`, `EnumCycle`, `MemberReadsWide`, `SingleValueModel`, `TypedMerge`, `PushAndTimer/` | local root scope and `n(groups)`; Main-owned push/tick tails as above; one-value replacement through a cell; controlled input still repaired on empty writes |
+| `OldValueAfterWrite`, `SpreadArms`, `SpreadCopies`, `SpreadCopiesBatched`, `SpreadCopiesLookups`, `SpreadCopiesWide`, `SpreadEscapes`, `SpreadWide` | accepted stores use R6 temporaries/hoists before mutation, explicit copies remain explicit, exact whole replacements use cells or checked copy plans; no alias is legitimised by a root closure |
+
+`EmptyElement` and `EmptySandbox` have no dynamic root and need no table/factory solely to fit
+this design. Do not mechanically add a closure to static output.
+
+| Existing browser fixtures to rebuild (source basename; directories end in `/`) | Required behavior/projection |
+|---|---|
+| `CounterLocal`, `FormLocal`, `Counter/`, `Texts/`, `Reader/`, `ResearchS2/`, `ResearchS3/` | the oracle's local groups, cross-reader registration and generic eligible push routes; all existing actions and invalid-push outcomes retained |
+| `ArmDefault/`, `ArmEffectOnce/`, `ArmHeldFunction/`, `ArmLetBeforeCase/`, `ArmMessageWhole/`, `ArmNotCase/`, `ArmPiece/`, `ArmSingle/`, `ArmWrapMessage/`, `OneConstructor/`, `OneMessage/` | only proven forwarding keys move; opaque/default/whole-message arms keep their original execution once, then exact groups |
+| `PieceLet/`, `PieceLetGroups/`, `PieceRow/`, `PieceTable/`, `FunctionElements`, `EndTags`, `SelectEndTags` | group-local lets and existing markup parser/element facts survive the factory boundary |
+| `PlatformElement/`, `PlatformProgram/`, `PlatformReader/`, `PlatformRecord/`, `PlatformTwoLevels/`, `PlatformWidget/` | identical owner/module plan through a project platform layer, no body copied to Main |
+| `DefaultTagger/`, `InitCommand/`, `KeysPastCap/`, `LayerStart/`, `PushAndTimer/`, `TopStart/`, `PointerPoint` | handlers published only where needed; starts/init commands occur after registration/first pass; key and event payload semantics unchanged |
+| `OldValueAfterWrite`, `SingleValueModel`, `ThrowBeforeWrite/`, `ThrowingRead/`, `ReadDuringDispatch/`, `StopMidDispatch/`, `StopThrowingDisposer/` | hoisted old values, cell reads, throw-before-write, synchronous reads, queued sends and stop/defect behavior retained |
+
+`MissingRoot` and `TwoPrograms/` retain their existing refusal/fault contracts; the rewrite must
+not make them successful. Their run hashes are updated only if their emitted bytes change.
+
+New fixtures (the same basename under **both** prefixes unless stated otherwise) have these
+specific output and transcript oracles, all with two widgets so an accidental page-wide pass
+cannot pass unnoticed:
+
+| New fixture | Required written output and page assertion |
+|---|---|
+| `RootClosures/` | the complete W1/W2/Main oracle above, including fresh literal `init`; click/input/tick transcript `(-1,'',-1)` → `(4,'',4)` → `(4,'Hall',4)` → `(5,'Hall',5)` |
+| `ReaderBeforeWriter/` | W2 factory called first; `i=[[[]],[[]]]` precedes it, W2 appends to `i[0][0]`, W1 appends without overwriting; same displayed values as `RootClosures` |
+| `ReaderCycle/` | W1 also appends a reader into `i[1][0]`; neither event names the other factory/binding; each field's event updates its two displays synchronously |
+| `ReaderTwoFields/` | one W2 entry reads both `m.w1.cups` and `m.w2.venue`, registered in both buckets; an arm that writes both ends `n(i[0][0],i[1][0])`, and the entry executes once in document order |
+| `MainOwnedKeys/` | W1 factory takes a Main handler `h`, wires `on(e[0],h)`; Main arm writes both slices then `n(i[0][0],i[1][0])`; its command/effect occurs once after the pass; Tick and the root event give the same post-pass reads |
+| `ValidatedLoader/` | the two route rows and shared `prepare`/`commit`/load code above; valid push, invalid push, unknown/prototype keys, valid snapshot, bad second snapshot member; neither partial writes nor stale cross-reads |
+| `PushTransformed/` | Main keeps `decoded.cups+1` and its conditional/error behavior, then `n(i[0][0])`; no route entry pretends this arm is a direct replacement |
+| `ReplaceableSlice/` | W1 uses `c[0]`, W2 reads that same cell's current value; a fresh whole-slice replacement updates the cell then `n(i[0][0])`; W2 sees the new value, then the next local edit sees it too |
+| `NestedStableLoad/` | route copy-plan data descends into a held nested W1 slice, all validation precedes stores, W2's nested reader updates after push and after the next local event |
+| `ControlledNoWrite/` | W2 input's Main handler rejects the user's value with no model write but calls its planned repair bucket; the input returns to `''`, W1's group does not run |
+
+The other new emit goldens write the following deltas to that two-widget program, shown
+explicitly to fix the output shape. Each snippet replaces the corresponding part above; it
+is not an additional runtime abstraction. The same new pages exercise these variants.
+
+```js
+// ReaderBeforeWriter: allocation precedes either call; no R[i]=[] in a factory.
+const i=[[[]],[[]]];
+W2$root(E2,m.w2,i[1],i,m);
+W1$root(E1,m.w1,i[0],i,m);
+n(i[0][0],i[1][0]);
+
+// ReaderCycle: W1 also reads W2; W2's original foreign-reader registration stays.
+// Inside W1's factory (the additional output element is in its HTML):
+i[1][0].push(()=>text(e[2],m.w2.venue));
+// The writer handlers remain t.cups=4;n(r[0]) and t.venue=...;n(r[0]).
+
+// ReaderTwoFields: replace W2's foreign entry with this single entry.
+const b=()=>text(e[2],`${m.w1.cups}:${t.venue}`);
+r[0].push(b);
+i[0][0].push(b);
+// Main's arm writes both, then one pass (b has one identity in both buckets):
+m.w1.cups=4;m.w2.venue='Hall';n(i[0][0],i[1][0]);
+
+// MainOwnedKeys: replace W1's local event with the supplied Main handler.
+export function W1$root(e,t,r,i,m,h) {
+  r[0].push(()=>text(e[1],`${t.cups}`));
+  on(e[0],h);
+}
+const h=()=>{
+  m.w1.cups=4;m.w2.venue='Hall';n(i[0][0],i[1][0]);
+  enqueueCommand(commandBody); // existing command host, after writes and pass
+};
+W1$root(E1,m.w1,i[0],i,m,h);
+
+// PushTransformed: remains Main's code, not a direct-replace route row.
+const pushed=raw=>{
+  const p=readEvent(raw);
+  if(p.ok && p.value.cups>=0) {
+    m.w1.cups=p.value.cups+1;n(i[0][0]);
+  }
+};
+
+// ReplaceableSlice: the entire one-value W1 model is an Int.
+// Main owns its cell; both factories receive that same slot explicitly.
+const c=[-1];
+export function W1$root(e,c,r) {
+  r[0].push(()=>text(e[1],`${c[0]}`));
+  on(e[0],()=>{c[0]=c[0]+1;n(r[0])});
+}
+// W2's foreign entry and Main's exact whole-value push tail:
+i[0][0].push(()=>text(e[2],`${c[0]}`));
+const pushedValue=value=>{c[0]=value;n(i[0][0])};
+
+// NestedStableLoad: W1 captures m.w1.form, whose only field is cups.
+// Route data uses the generic copy interpreter's tagged nodes (not new code per root).
+const route=[validForm,m.w1,['record',['form',['record',['cups']]]],i[0]];
+// The shared interpreter descends before installing cups, preserving m.w1.form.
+// W1's local handler is still t.cups=4;n(r[0]); W2 reads m.w1.form.cups.
+
+// ControlledNoWrite: the source rejects W2's typed value; no model store.
+// The element's repair dependency selects its existing venue bucket.
+const rejectedInput=value=>{n(i[1][0])};
+// W2 receives rejectedInput and wires it in place of its local venue store:
+on(e[0],v=>rejectedInput(v.target.value),'input');
+```
+
+`ValidatedLoader` uses the full shared-loader block above, not a different delta. An accepted
+old-value demand (existing `OldValueAfterWrite`) still writes, schematically,
+`const old=t.cups; t.cups=4; use(old); n(r[0])`, with the hoist at R5's precise placement;
+a two-field swap evaluates both right-hand sides before either store. Neither the runner nor
+the root factory may re-inline `old` past that barrier. `ReplaceableSlice` has a second version
+where the cell holds a freshly reconstructed record, and its bindings read `c[0].cups`; its
+subsequent accepted nested edit mutates that current record, not the pre-push object.
+
+The two-field/order fixtures need an observable ordered probe (the corpus's existing Debug
+instrument in its permitted comparison mode), not only text comparisons that could hide double
+execution. Cache differential cases belong in `tests/blackbox/build_test.zig`: change only a
+writer's HTML/bucket contract, then only a reader's read path, then Main's forwarding/replace
+arm, then ownership eligibility; assert warm equals cold and disabled-cache, at both job counts.
+The accompanying bad-build fixtures exercise missing retention proof (class 4), unavailable
+constructs (class 1/2), the existing class 3 whole-model rule, and ownership's shared/escaped
+record errors. They never update a refusal golden to a spread or coarse pass.
+
+**Decisions for the owner (recommendations, not decisions already taken).**
+
+| Decision | Recommendation and rejected alternative |
+|---|---|
+| Slice versus slice cell | use a direct slice for proved stable records and a cell for semantically replaceable values; never reject an otherwise valid scalar/fresh replacement solely to force a direct record capture. Reject automatic copying of an ownership refusal. |
+| Scope of movable handlers | move only keys with proven pure forwarding wrappers; retain Main-owned work as explicit handler parameters. Reject moving a leaf while dropping its enclosing work. |
+| Retention and copy evidence | require the explicit root-plan proof above, extending R6/R7's interface if needed before implementation; R5's clean bit alone is insufficient. Reject an unchecked model-holder exemption or invented BIR demand. |
+| Multi-field and cross-root ordering | keep D3 and document order with an ordered union of registered groups per tail, deduplicated by entry identity. Reject tea-inline's microtask and immediate independent bucket calls. |
+| Generic pushed-state eligibility | factor only proved equivalent replace routes, retaining validation and source transaction boundaries; other arms remain exact Main/arm-piece code. Reject recognising only the helper's name or requiring users to weaken update semantics. |
+| Implementation boundary | land the shape only after R6/R7, with cold/warm differential and page/emit evidence together. Keep markup emit-cache misses until plan dependencies can be replayed safely. Reject partial release output that mixes old per-writer reader calls with registration. |
+
+No measurement was made for this amendment. The later implementation still owes #668's S1
+byte bar and the owner's comparison; the earlier report's estimates are not a result of this PR.
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host
