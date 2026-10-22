@@ -3,7 +3,9 @@
 -- a tag and the offered subprotocol, refuses a plain request, echoes each
 -- message with the socket's id, tags and protocol, keeps a value in the
 -- attachment and reads it back, closes with a code and a reason, refuses
--- a code a server may not send, sees the peer's close, answers the
+-- a code a server may not send, sees the peer's close — which the platform
+-- answers with the peer's code, 1005 for a frame with no code, while a
+-- `close` from `closed` does nothing and is `Ok` — answers the
 -- `autoReply` pair without an event, refuses a long `autoReply` text and a
 -- tag over 256 bytes in beni, closes a binary frame with 1003, sees a
 -- client that leaves with no close frame as 1006, and after a defect every
@@ -176,7 +178,16 @@ input ctx state socket text =
 left : Object.Context String, State, Socket, WebSocket.Close → State
 left _ state socket why =
     tagsText = String.join (WebSocket.tags socket) ","
-    Debug.log "closed ${tagsText} ${String.fromInt why.code} ${why.reason}" ⊤
+    -- The platform answered the peer's frame already, and a socket this
+    -- object closed is closed: a close from here does nothing and is `Ok`.
+    again =
+        case WebSocket.close socket { code = 1000, reason = "peer left" } of
+            Ok ⊤ →
+                "Ok"
+
+            Err _ →
+                "Err"
+    Debug.log "closed ${tagsText} ${String.fromInt why.code} ${why.reason}; close again: ${again}" ⊤
     state
 
 

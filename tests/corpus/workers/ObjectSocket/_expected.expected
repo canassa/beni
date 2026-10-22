@@ -60,10 +60,20 @@
 > (socket a) "close-bad"
 < (socket a) "refused code 1005"
 > (socket a) "close"
-| out: closed p1 4001 server says bye: ⊤
+| out: closed p1 4001 server says bye; close again: Ok: ⊤
 < (socket a) close 4001 "server says bye"
 > (socket b) close 4002 "client says bye"
-| out: closed p2 4002 client says bye: ⊤
+| out: closed p2 4002 client says bye; close again: Ok: ⊤
+< (socket b) close 4002 "client says bye"
+> (socket f) GET /arena/x/p7
+(socket f) < 101
+(socket f) < sec-websocket-accept: (the key)
+(socket f) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket f) < upgrade: websocket
+< (socket f) "welcome p7"
+> (socket f) close
+| out: closed p7 1005 ; close again: Ok: ⊤
+< (socket f) close 1005 ""
 > GET /arena/x/count
 < 200
 < content-type: text/plain; charset=utf-8
@@ -77,7 +87,7 @@
 < (socket c) "welcome p3"
 > (socket c) binary 3 bytes
 | err: beni: the object Arena got a binary frame; the socket is closed with 1003
-| out: closed p3 1003 binary frames are not accepted: ⊤
+| out: closed p3 1003 binary frames are not accepted; close again: Ok: ⊤
 < (socket c) close 1003 "binary frames are not accepted"
 > (socket d) GET /arena/x/p5
 (socket d) < 101
@@ -86,7 +96,7 @@
 (socket d) < upgrade: websocket
 < (socket d) "welcome p5"
 > (socket d) (dropped, no close frame)
-| out: closed p5 1006 : ⊤
+| out: closed p5 1006 ; close again: Ok: ⊤
 > GET /arena/x/count
 < 200
 < content-type: text/plain; charset=utf-8

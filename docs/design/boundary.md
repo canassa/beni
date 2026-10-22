@@ -7543,6 +7543,25 @@ pub type AttachError
   bytes, tested in beni; on a socket not open it does
   nothing and answers `Ok ⊤`. `closed` is delivered afterwards with §9.11 (a)'s `Close`, by its
   four rules; `clean` of `webSocketClose` is not a field, since rule 4 already names 1006.
+- ***Amended 2026-10-23 (#724): the platform answers a peer's close frame.*** Cloudflare
+  documents an automatic reciprocal close under `web_socket_auto_reply_to_close`, the default
+  since 2026-04-07, but on workerd 1.20260518.1 it does not reach a hibernatable socket: in
+  `webSocketClose` the socket's `readyState` is CLOSING and the client gets no frame in 5 s
+  (*measured* under the default flags and under `web_socket_manual_reply_to_close`; naming the
+  default flag refuses to start the runtime), so a client that closed with 1000 saw 1006 after
+  its own timeout, and a `close` from `closed` did nothing, since the socket was not open. The
+  platform answers in `webSocketClose`, before `closed` is delivered: `ws.close(code, reason)`
+  with the peer's code and reason, or a bare `ws.close()` when the code is one the host refuses
+  to send — 1004, 1005 (a frame with no code), 1006 and 1015 (`web-socket.c++:636-643`;
+  *measured*: 1005 and 1006 throw `InvalidAccessError`, a bare close answers 1005 to the client,
+  and is harmless on a dropped socket, which is CLOSING too). The client sees its own code within
+  a millisecond (*measured* for 1000, 1001, 1010, 3000, 4999, a 123-byte reason and no code). In
+  `closed` the socket is CLOSED: `close` does nothing and answers `Ok ⊤`, `write` is
+  `Err NotOpen`; after the object's own close the peer's answer finds the socket CLOSED already
+  (*measured*), and the platform sends nothing. No compatibility flag is set or needed: the
+  fixture's `wrangler.jsonc` keeps the date alone. The object's `closed` handler cannot complete
+  or alter the handshake, as a browser's `close` event cannot: the answer is the protocol's, not
+  the program's (rule 7: the guarantee is that no client waits on a program that forgot it).
 - **`protocol`** is the attachment's, as above. A close code the host refuses is its
   `InvalidAccessError` (*measured* for 1005), which the check in beni keeps from being reached.
 - **`Close`, from the host's events** (*amended 2026-10-20, M10*), by §9.11 (a)'s four rules: a
@@ -7585,6 +7604,10 @@ fixture `workers/ObjectSocket`).*
   peer's (*measured*, 4001 and 4002 in the fixture). A `write` after the object's own `close` is
   `Err NotOpen` (the socket is closing).
 - **A defect closes every socket**: after (f)'s abort the client sees 1006 and `""` (*measured*).
+- **A peer's close is answered** (2026-10-23, #724, above): in the fixture the client's close
+  4002 and an idle socket's close with no code are followed by the client's `close 4002` and
+  `close 1005 ""`, and `closed` calls `close` again and gets `Ok ⊤`. Before the fix the receive
+  steps printed `(nothing arrived)`.
 - **The driver** (`tests/workers/driver.mjs`, (k)) opens a client through Miniflare's own:
   `dispatchFetch` with `upgrade: websocket` answers a `Response` whose `webSocket` is the client's
   end, accepted and listened to; the steps are `socket`, `send`, `close` and `receive`

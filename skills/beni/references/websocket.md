@@ -164,11 +164,13 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
   with `{ code, reason }`, and a fault is `failed`; so the object can hibernate between events.
   A binary frame closes the socket with 1003.
 - `WebSocket.write socket text` and `WebSocket.close socket { code, reason }` are the shared
-  operations, with the `node` server's close codes. `WebSocket.id`, `WebSocket.tags` and
-  `WebSocket.protocol` are kept with the socket across hibernation. `WebSocket.attach socket
-  schema value` keeps a value of the program's with it, and `WebSocket.attachment` reads it back;
-  the attachment is at most 16 384 bytes, counted as two bytes per character (about 8 100
-  characters of ASCII), else `Err TooLarge`.
+  operations, with the `node` server's close codes. The platform answers a client's close frame
+  with the client's code, so in `closed` the socket is closed already: `WebSocket.close` does
+  nothing and answers `Ok ⊤`, and `WebSocket.write` is `Err NotOpen`. `WebSocket.id`,
+  `WebSocket.tags` and `WebSocket.protocol` are kept with the socket across hibernation.
+  `WebSocket.attach socket schema value` keeps a value of the program's with it, and
+  `WebSocket.attachment` reads it back; the attachment is at most 16 384 bytes, counted as two
+  bytes per character (about 8 100 characters of ASCII), else `Err TooLarge`.
 - `Object.sockets ctx` lists the open sockets; `Object.autoReply ctx request response` makes the
   host answer one text with another, without an event; each text is at most 2 048 bytes, else
   `Err RequestTooLarge` or `Err ResponseTooLarge`. A tag is at most 256 bytes of UTF-8.
