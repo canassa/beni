@@ -2343,6 +2343,83 @@ Nothing else changes in meaning: inheritance is the copy of that one reference, 
 changed and puts the old record back when its function ends, and reading a slot is two loads, paid
 only where a slot is read.
 
+*Amended 2026-10-22 (#596; `boundary.md` §9.12 (d), (e.5) and (f)): the scheduler slot gets its
+writer.* **`Task.withScheduler`** sets the slot, and a fiber whose slot names a scheduler is queued
+through that scheduler and never through the program's drain. The `cloudflare` platform needs one
+scheduler per request and one per Durable Object instance, so that a fiber resumes only in the I/O
+context it belongs to — the host refuses I/O "on behalf of a different request", and core's one
+drain per isolate crosses that line (§9.12 (d), *measured*) — and so that a defect stops only its
+own request or object.
+
+```elm
+-- core/Task.beni
+pub foreign type Scheduler
+pub scheduler : (⊤ → ⊤) → Scheduler                            -- drains in a microtask of its own; the defect hook; what a program uses
+pub schedulerWith : sync ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, and the defect hook
+pub withScheduler : Scheduler, (⊤ → a) → a                     -- the slot's writer, scoped to `work` as every slot change is
+pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutdown` for one scheduler
+```
+
+- **A scheduler is a queue of its own**: the ready work of its fibers, FIFO, drained as the
+  program's queue is — 64 resumptions, then the rest in a later turn — but by a drain of its own,
+  which `run` queues. The kernel calls `run` once per batch, when work arrives at an empty queue,
+  with the drain as its argument; `run` must run the drain **later** — in a microtask, a promise
+  reaction, a host callback — and never during the call, which would run a woken fiber inside
+  the call that woke it (§17.1 item 3). `scheduler hook`'s `run` is `queueMicrotask`. The budget's
+  continuation goes through `run` as well, not through the program's macrotask, so the platform
+  decides where a scheduler's fibers run: on `cloudflare`, through a promise made in the request's
+  own context, so that a continuation runs where its I/O is allowed (§9.12 (d)).
+- **The slot's writer.** `withScheduler s work` sets the calling fiber's scheduler slot to `s` for
+  `work`, as `Clock.run` sets the clock: a new slot record with the one slot changed, and the old
+  one back when `work` ends, returned or cancelled. While inside, the calling fiber is **lent** to
+  `s`: its own resumptions go through `s`'s queue. The fibers `work` starts copy the slot
+  (*Inheritance*) and **belong** to `s`: a fiber belongs to the scheduler its slot names when it
+  starts — `spawn`, `spawnIn`, `spawnDetached`, a combinator's child — for its whole life, whatever
+  its slot is set to later; and a root scope (`openRoot`) belongs to the scheduler of the first
+  fiber it is given. `start`'s root fiber belongs to the program's scheduler, as before: a platform
+  that wants a request's fiber on a scheduler of its own writes `Task.start (λ⊤ → Task.withScheduler
+  s body) report`, and the root is lent for the whole of `body`.
+- **A defect under a scheduler stops that scheduler alone** — §9.8.14 (b)'s three phases, for one
+  scheduler. A throw that leaves `s`'s drain: in the **stop**, `s` enters *stopping*, runs nothing
+  more and calls its defect hook, `schedulerWith`'s second argument, the per-scheduler form of
+  `onDefect` under the same rule — no program code, no finaliser and no canceller runs there;
+  `scheduler hook` takes the same hook, `λ⊤ → ⊤` when nothing needs to know; the throw then goes on to the **host** unchanged, out of whatever
+  `run` queued the drain in, so a promise `run` used rejects with it; then the **teardown** of `s`
+  runs, queued through `run` and not through the program's macrotask: every root scope of `s` is
+  closed, every fiber that belongs to `s` and every fiber lent to it is interrupted, the culprit
+  is unwound, their finalisers run under `s`'s deadline, and when the last has ended `s` is
+  *stopped* for good. The program's scheduler and every other scheduler are not touched: their
+  fibers run on and their queues drain as before. A fiber started under a stopped scheduler is
+  cancelled before it runs, as `fork` does while the program stops. A throw that leaves the
+  program's drain is what it was: the program stops, and every scheduler with it (below).
+- **`stopScheduler s deadline done`** is `shutdown` for one scheduler: it closes `s`'s root scopes,
+  cancels its fibers and the fibers lent to it, drops its queued work and starts nothing new under
+  it; a finaliser that waits is given `deadline` milliseconds from the call, and `done` is called
+  once every fiber of `s` has ended, with how many were cut short. It returns at once — the cleanup
+  runs in `s`'s later turns — and a second call does nothing. It is what the `cloudflare` platform
+  calls at a request's deadline (§9.12 (d)), and what an object's defect hook calls before
+  `ctx.abort` (§9.12 (f)). A lent fiber is cancelled whole, its children included, whichever
+  scheduler they belong to, because cancellation is structured (§16.4). **The program's `shutdown`**
+  stops every scheduler made as well, with its own deadline, so nothing outlives the program.
+- **`soon` work** queued from under a scheduler goes on that scheduler's queue and is dropped once
+  the scheduler has stopped, as the program's is. `fromHost` and `onTurn` are the program
+  scheduler's: a wake under a scheduler always goes through its `run`.
+- **The clock, the log context and the seed are slots of their own.** A scheduler changes nothing
+  of them, and `Log.setSink` stays program-wide (§17.11).
+- **Cost** (§17.1 item 6). A program that makes no scheduler pays nothing: the kernel asks whether
+  one exists behind a cell that only `scheduler`, `schedulerWith` and `withScheduler` write, and a
+  release build that reaches none of them folds the question away, as it folds `slotted`; the
+  pull request measures the bytes and the instructions of the corpus, as #688 did. A fiber that
+  belongs to a scheduler carries one field more — the scheduler it belongs to, written at its
+  start — and a drain of a scheduler costs what the program's costs, plus the `run` call per batch.
+- **Fixtures.** `run/SchedulerOwnQueue`: two fibers that yield under two schedulers run one after
+  the other, where under one scheduler they alternate — a fiber resumes through its own queue.
+  `run/SchedulerStop`: `stopScheduler` on one scheduler cancels its fibers and runs their
+  finalisers, cuts one that waits past the deadline and tells `done` 1, while a fiber under
+  another scheduler runs on and ends. `run/SchedulerDefect`: a throw under one scheduler runs that
+  scheduler's hook and not the other's, and ends the program as every defect on `node` does
+  (`.crash`). The `cloudflare` fixtures of §9.12 (k) take the rest when the platform lands.
+
 ### 17.6 Time: `Duration`, `Task.sleep`, `Clock` (P2)
 
 ```elm
@@ -2929,6 +3006,11 @@ call is `impure`, so `--release` never drops one, and an unused `Log` costs noth
   test reads what was logged. `f` is `sync`: a sink is called during the log call (§17.2), and a
   log line that could suspend would make every function that logs suspend.
 - **`Log.logfmt entry`** is the Node sink's text, for a sink of one's own.
+- *Amended 2026-10-22 (#596).* **A scheduler does not change the log.** §17.5's scheduler slot,
+  written by `Task.withScheduler`, is a slot of its own beside the log context: a fiber under a
+  scheduler logs through the context it copied or set, and `setSink` stays program-wide, so on the
+  `cloudflare` platform every request and every object shares the program's sink (§9.12 (d),
+  *The log*). Nothing here reads the scheduler slot.
 
 **`Trace`.** **`Trace.span name work`** runs `work` inside a span: it takes the next span id — a
 counter per program, from 1, in the order spans begin, so ids are deterministic — records the
@@ -3017,6 +3099,8 @@ Each was taken here so the slices can proceed, and each is reversible until its 
    metadata, as Effect's does, where research 48 wrote `i → Bool`; `Queue.takeAll`/`takeN`, v4's
    names, where it wrote `takeUpTo`; `upTo` takes only a duration.
 7. **The scheduler slot is reserved**: present on every fiber, written by nothing yet (§17.5).
+   *Amended 2026-10-22 (#596):* `Task.withScheduler` writes it; §17.5's amendment of that date is
+   its contract.
 8. **The program ends when `Io.run`'s fiber ends**, with `Task.shutdown` for what is left (§17.10).
 9. **Logging**: `Info` is the default minimum; the browser keeps today's console output; Node logs
    `logfmt` to standard error, installed by `Io.run`; spans are exported only when a program installs
