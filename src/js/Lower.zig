@@ -3586,8 +3586,8 @@ pub const Lowerer = struct {
         // A payload extractor that is not `pub` is in no interface, and a
         // module that lowers its event imports it by name
         // (`Reach.privateExtractor`). Exported when it is live: reachability
-        // keeps it only for a surviving markup root that names an event with
-        // that `via`. Two events can name one extractor.
+        // keeps it for a surviving markup root that names an event with that
+        // `via`. Two events can name one extractor.
         if (l.in.graph.markup.vocabulary) |vocabulary| if (vocabulary == l.in.module) {
             const iface = &l.in.interfaces[l.in.module.int()];
             const first = names.items.len;
