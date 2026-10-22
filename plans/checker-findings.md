@@ -6265,3 +6265,14 @@ alias-bearing subtree restores exclusivity (`ConstructorDiscardedAlias`).
 The rejected `restMayBeEmpty` tightening is not part of the fix; ValuePath and
 EntryInvariantCommand remain accepted. The approximate-copy assumption in #447
 is withdrawn, rather than asserted as an invariant.
+
+## CK-266 — a fresh dictionary tuple payload loses exclusivity at focus (2026-10-22)
+
+**Issue:** #759. **Fixture:** `tests/pending/ownership/DictTupleFocus.beni`.
+The earlier compiler accepts the whole program under `--ownership-everywhere`;
+current master rejects List.append on the tuple's fresh list, stating that
+Dict.update may supply an element shared at two positions. There is only one
+fresh key and no retained version or capturing callback. This is outside the
+owner's narrow DictFocus.grow/readLater exception in #663, so #210 stops for
+the reduced safe-program regression. The original accepted golden stays red;
+no copying workaround, weakened condition or representation exception fixes it.
