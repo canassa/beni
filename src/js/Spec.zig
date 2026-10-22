@@ -7227,6 +7227,9 @@ const Spec = struct {
         const ir = m.ir;
         const take = how == .take;
         if (take) scan.nodes -= @intCast(nodes.len) else scan.nodes += @intCast(nodes.len);
+        // The whole-program ids the module has one name of, which no walk
+        // can name two ways (`namedTwice`).
+        const uniq: []const u32 = if (how != .fresh and scan.ordered) try s.uniqOf(m) else &.{};
         for (nodes) |node| {
             if (take) scan.fp -%= contribution(ir, node) else scan.fp +%= contribution(ir, node);
             const d = ir.data(node);
@@ -7250,7 +7253,7 @@ const Spec = struct {
                         // A whole-program name the module names more than
                         // one way: which the walk meets first may have
                         // changed.
-                        if (how != .fresh and scan.ordered and namedTwice(m, scan, g)) scan.ordered = false;
+                        if (how != .fresh and scan.ordered and namedTwice(m, scan, g, uniq)) scan.ordered = false;
                     }
                 },
                 .member => {
@@ -7373,7 +7376,10 @@ const Spec = struct {
 
     /// Whether `scan` names whole-program name `g` by more than one name
     /// with an `ident` left: which the walk meets first is then not known.
-    fn namedTwice(m: *Mod, scan: *const NameScan, g: u32) bool {
+    /// `uniq` is `Mod.uniq`, or empty: an id the module has one name of is
+    /// named one way, whatever the walk meets, and costs no search (#746).
+    fn namedTwice(m: *Mod, scan: *const NameScan, g: u32, uniq: []const u32) bool {
+        if (g < uniq.len and uniq[g] != uniq_many) return false;
         var seen: ?u32 = null;
         for (scan.globals.items) |at| {
             const u = &scan.uses.items[at];
@@ -8046,19 +8052,28 @@ const Spec = struct {
     /// Module `m`'s one name of whole-program id `g`, when it has exactly
     /// one.
     fn onlyName(s: *Spec, m: *Mod, g: u32) Allocator.Error!?NameIndex {
-        const many = none - 1;
+        const uniq = try s.uniqOf(m);
+        if (g >= uniq.len) return null;
+        const n = uniq[g];
+        return if (n == none or n == uniq_many) null else @fromBackingInt(@intCast(n));
+    }
+
+    /// `Mod.uniq`, brought up to date with the module's names.
+    fn uniqOf(s: *Spec, m: *Mod) Allocator.Error![]const u32 {
         if (m.uniq_len != m.global.len or m.uniq.len < s.globals) {
             if (m.uniq.len < s.globals) m.uniq = try s.arena.alloc(u32, s.globals);
             @memset(m.uniq, none);
             for (m.global, 0..) |x, i| if (x != none and x < m.uniq.len) {
-                m.uniq[x] = if (m.uniq[x] == none) @intCast(i) else many;
+                m.uniq[x] = if (m.uniq[x] == none) @intCast(i) else uniq_many;
             };
             m.uniq_len = m.global.len;
         }
-        if (g >= m.uniq.len) return null;
-        const n = m.uniq[g];
-        return if (n == none or n == many) null else @fromBackingInt(@intCast(n));
+        return m.uniq;
     }
+
+    /// `Mod.uniq`'s mark of a whole-program id the module has several
+    /// names of.
+    const uniq_many = none - 1;
 
     /// `namedIn` by walking the module until `g` is met.
     fn namedInWalk(s: *Spec, m: *Mod, g: u32) Allocator.Error!?NameIndex {
