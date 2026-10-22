@@ -71,7 +71,13 @@ pub foreign type Request
 --| body and no header of the program's, and one `console.error` line
 --| names the fault (§9.12 (d)).
 pub opaque type Response
-    = Response V
+    = Response V V V
+
+
+-- A response from the host's object, as `forward` and `callService` get
+-- one: not the platform's own, so `withHeader` copies it first.
+fromHost : V → Response
+fromHost r = Response r (Js.from False) (Js.from False)
 
 
 --| The Worker's bindings, read by name: each answers `Maybe`, because a
@@ -149,18 +155,66 @@ env ctx = Js.to (Js.get (Js.from ctx) "env")
 -- trampoline's chain, so the host answers 1101 with it.
 handle : (Context, Request → Response), V, V, V → V
 handle fetch request bindings ctx =
+    if Js.testHooks ⊤ && isHook request then hooked request else serve fetch request bindings ctx
+
+
+-- The Worker's test hooks (§9.12 (k)), in a `--test-hooks` build only:
+-- `/__beni/mark/<text>` writes `beni:mark <text>` to the console, so the
+-- tests' driver knows every line of a step has landed; `/__beni/schedulers`
+-- answers how many schedulers the kernel lists, so a fixture sees that a
+-- request's leaves it.
+isHook : V → Bool
+isHook request = String.startsWith (pathOf request) "/__beni/"
+
+
+hooked : V → V
+hooked request =
+    at = pathOf request
+    if String.startsWith at "/__beni/mark/" then
+        _ = Js.call (Js.global "console") "log" [ Js.from "beni:mark ${String.dropLeft at 13}" ]
+        Js.call (Js.global "Promise") "resolve"
+            [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
+    else if at == "/__beni/schedulers" then
+        Js.call (Js.global "Promise") "resolve"
+            [ Js.construct (Js.global "Response")
+                [ Js.from (String.fromInt (Task.schedulersListed ⊤)), Js.from { status = 200 } ]
+            ]
+    else
+        Js.call (Js.global "Promise") "resolve"
+            [ Js.construct (Js.global "Response")
+                [ Js.from "no such hook", Js.from { status = 404 } ]
+            ]
+
+
+pathOf : V → String
+pathOf request = Js.to (Js.get (Js.construct (Js.global "URL") [ Js.get request "url" ]) "pathname")
+
+
+serve : (Context, Request → Response), V, V, V → V
+serve fetch request bindings ctx =
     d = Js.call (Js.global "Promise") "withResolvers" []
-    t = Js.from { reject = Js.get d "reject", tasks = Js.array [], wake = Js.null }
+    t =
+        Js.from
+            { answered = False
+            , ctx = ctx
+            , reject = Js.get d "reject"
+            , tasks = Js.array []
+            , wake = Js.null
+            }
     arm t
     holder = Js.ref Js.null
 
-    s = Task.schedulerWith (λdrain → runLater t (Js.from drain)) λ⊤ → stop ctx (Js.read holder)
+    s =
+        Task.schedulerWith
+            (λdrain → runLater t (Js.from drain))
+            (λdrain → laterTurn t (Js.from drain))
+            λ⊤ → stop ctx (Js.read holder)
     Js.write holder (Js.from s)
     context = Js.from { ctx = ctx, env = bindings, request = request, scheduler = Js.from s }
     Task.withScheduler s λ⊤ →
         _ = Task.spawnDetached λ⊤ → answer d (fetch (Js.to context) (Js.to request))
         ⊤
-    _ = Js.call (Js.get d "promise") "then" [ Js.from λ_ → answered ctx s, Js.null ]
+    _ = Js.call (Js.get d "promise") "then" [ Js.from λ_ → answered t s, Js.null ]
     listenForAbort request ctx s
     Js.get d "promise"
 
@@ -175,7 +229,37 @@ handle fetch request bindings ctx =
 arm : V → ⊤
 arm t =
     p = Js.construct (Js.global "Promise") [ Js.from λresolve _ → Js.set t "wake" resolve ]
-    _ = Js.call (Js.call p "then" [ Js.from λ_ → fire t ]) "then" [ Js.null, Js.get t "reject" ]
+    _ =
+        Js.call (Js.call p "then" [ Js.from λ_ → fire t ]) "then"
+            [ Js.null, Js.from λreason → failed t reason ]
+    ⊤
+
+
+-- A throw out of a drain: before the answer it is the request's failure,
+-- handed to the request's `reject` unchanged, so the host answers 1101
+-- with it; after the answer `reject` would do nothing, so the reason is
+-- written to the console — the decided defect rule, logged and stopped —
+-- and thrown again, where it is an unhandled rejection the host keeps
+-- (`CLAUDE.md` rule 9: never dropped in silence; measured, workerd writes
+-- nothing of its own for one). Nothing is caught.
+failed : V, V → ⊤
+failed t reason =
+    if Js.to (Js.get t "answered") then
+        _ =
+            Js.call (Js.global "console") "error"
+                [ Js.from "beni: a defect after the answer stopped the request's fibers:", reason ]
+        Js.throw reason
+    else
+        Js.to (Js.apply (Js.get t "reject") [ reason ])
+
+
+-- The scheduler's continuation after 64 resumptions: a timer of zero in
+-- this request's context, so the isolate's event loop runs between the
+-- batches of a request that keeps yielding, and every other request gets
+-- its events (§17.5's amendment of the Worker slice).
+laterTurn : V, V → ⊤
+laterTurn t task =
+    _ = Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → runLater t task, Js.from 0 ]
     ⊤
 
 
@@ -196,15 +280,22 @@ runLater t task =
 
 -- The handler's fiber answers the promise with the host's response.
 answer : V, Response → ⊤
-answer d (Response r) = Js.to (Js.apply (Js.get d "resolve") [ r ])
+answer d (Response r _ _) = Js.to (Js.apply (Js.get d "resolve") [ r ])
 
 
 -- After the response: work that outlives it — a fiber `fetch` started
 -- with `Task.spawnDetached`, still running — runs under `ctx.waitUntil`
 -- until it ends or the platform's deadline stops it (§9.12 (d)).
 answered : V, Scheduler → ⊤
-answered ctx s =
-    if Task.schedulerBusy s then Js.to (Js.call ctx "waitUntil" [ heldUntilIdle s ]) else ⊤
+answered t s =
+    Js.set t "answered" (Js.from True)
+    ctx = Js.get t "ctx"
+    if Task.schedulerBusy s then
+        Js.to (Js.call ctx "waitUntil" [ heldUntilIdle s ])
+    else
+        -- Nothing outlives the answer: the scheduler is stopped at once,
+        -- so it leaves the kernel's list (P705-1).
+        Task.stopScheduler s cleanupDeadline λ_ → ⊤
 
 
 -- The platform's deadline after the response: 5 seconds before the
@@ -234,7 +325,9 @@ heldUntilIdle s =
             ]
     Task.onSchedulerIdle s λ⊤ →
         _ = Js.apply (Js.global "clearTimeout") [ timer ]
-        Js.to (Js.apply resolve [ Js.null ])
+        -- The last fiber ended: the scheduler is stopped, so it leaves the
+        -- kernel's list, and the request is let go.
+        Task.stopScheduler s cleanupDeadline λ_ → Js.to (Js.apply resolve [ Js.null ])
     Js.get d "promise"
 
 
@@ -298,8 +391,12 @@ path request =
 --| `", "`. `Nothing` when the request has none.
 pub header : Request, String → Maybe String
 header request name =
-    value = Js.call (Js.get (Js.from request) "headers") "get" [ Js.from name ]
-    if Js.isNull value then Nothing else Just (Js.to value)
+    if not (validName name) then
+        -- The host throws on a name that is not a token: no request has such a header.
+        Nothing
+    else
+        value = Js.call (Js.get (Js.from request) "headers") "get" [ Js.from name ]
+        if Js.isNull value then Nothing else Just (Js.to value)
 
 
 --| Every header, names lower-cased and sorted by name as the host keeps
@@ -353,16 +450,30 @@ redirect request target status =
 --| begins with `x-beni-`, in any case, is the platform's alone, and the
 --| response becomes invalid (§9.12 (d)).
 pub withHeader : Response, String, String → Response
-withHeader (Response r) name value =
-    if String.startsWith (String.toLower name) "x-beni-" then
+withHeader (Response r own bad) name value =
+    if Js.to bad then
+        -- An invalid response keeps no header of the program's.
+        Response r own bad
+    else if String.startsWith (String.toLower name) "x-beni-" then
         invalid "the header name \"${name}\" is the platform's: x-beni- names are refused"
     else if not (validName name) then
         invalid "the header name \"${name}\" is not a token"
     else if not (validValue value) then
         invalid "the value of the header \"${name}\" holds a control character"
-    else
+    else if Js.to own then
         _ = Js.call (Js.get r "headers") "append" [ Js.from name, Js.from value ]
-        Response r
+        Response r own bad
+    else if Js.to (Js.get r "status") == 101 then
+        -- The host's 101 carries its socket, which no copy keeps.
+        invalid
+            "a header cannot be added to a 101 answer from an object: its socket cannot be copied"
+    else
+        -- A response from `forward` or `callService` is the host's, whose
+        -- headers are immutable (measured): copied once, before the first
+        -- append, and the copy is the platform's from then on.
+        copy = Js.construct (Js.global "Response") [ Js.get r "body", r ]
+        _ = Js.call (Js.get copy "headers") "append" [ Js.from name, Js.from value ]
+        Response copy (Js.from True) bad
 
 
 -- Build the host's `Response` once every rule holds (§9.12 (d)).
@@ -379,7 +490,7 @@ build status body hs =
     else if List.any hs λ( name, value ) → not (validName name) || not (validValue value) then
         invalid "a header name is a token, and its value holds no control character"
     else
-        Response (construct status body hs)
+        Response (construct status body hs) (Js.from True) (Js.from False)
 
 
 bodyPresent : Maybe String → Bool
@@ -414,7 +525,10 @@ construct status body hs =
 invalid : String → Response
 invalid fault =
     _ = Js.call (Js.global "console") "error" [ Js.from "beni: invalid response: ${fault}" ]
-    Response (Js.construct (Js.global "Response") [ Js.null, Js.from { status = 500 } ])
+    Response
+        (Js.construct (Js.global "Response") [ Js.null, Js.from { status = 500 } ])
+        (Js.from True)
+        (Js.from True)
 
 
 validName : String → Bool
@@ -556,7 +670,7 @@ forward ref request =
             then
                 Err Cycle
             else
-                Ok (Response r)
+                Ok (fromHost r)
 
         Err reason →
             if Js.to (Js.get reason "overloaded") == True then
@@ -575,7 +689,7 @@ pub callService : Service, Request → Result ServiceError Response
 callService svc request =
     case settle (Js.call (Js.from svc) "fetch" [ Js.from request ]) of
         Ok r →
-            Ok (Response r)
+            Ok (fromHost r)
 
         Err reason →
             if Js.to (Js.get reason "retryable") == True then Err Unavailable else Js.throw reason

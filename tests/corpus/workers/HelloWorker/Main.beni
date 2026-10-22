@@ -1,8 +1,12 @@
 -- workers: a Worker's `fetch` answers each request (boundary.md §9.12 (d)):
 -- a text, an HTML and an empty body, a header appended, a redirect
 -- resolved against the request's URL, a plain-text binding, and a 404. An
--- invalid response — a body on a 204 — is a 500 with an empty body, and
--- one `console.error` line names the fault.
+-- invalid response — a body on a 204, a status out of range, a header name
+-- that is not a token, a value with a control character, a redirect whose
+-- target does not resolve or whose status is not a redirect's — is a 500
+-- with an empty body and no header of the program's, and one
+-- `console.error` line names the fault; `Worker.header` with a name that
+-- is not a token answers `Nothing`.
 import Worker exposing (Context, Request, Response)
 
 
@@ -30,6 +34,32 @@ route ctx request =
 
         "/redirect" →
             Worker.redirect request "/html" 302
+
+        "/redirect-bad-status" →
+            Worker.redirect request "/html" 200
+
+        "/redirect-bad-target" →
+            Worker.redirect request "http://[" 302
+
+        "/status-999" →
+            Worker.text 999 "out of range"
+
+        "/bad-name" →
+            Worker.withHeader (Worker.text 200 "never seen") "x name" "1"
+
+        "/bad-value" →
+            Worker.withHeader (Worker.text 200 "never seen") "x-value" "a\nb"
+
+        "/invalid-then-header" →
+            Worker.withHeader (Worker.text 999 "never seen") "x-program" "kept?"
+
+        "/header-bad" →
+            case Worker.header request "not a token" of
+                Just _ →
+                    Worker.text 500 "a header with that name?"
+
+                Nothing →
+                    Worker.text 200 "no such header, and no crash"
 
         "/method" →
             Worker.text 200 "${Worker.method request} ${Worker.url request}"

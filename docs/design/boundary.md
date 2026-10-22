@@ -6800,9 +6800,14 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   trampoline's chain (`then(null, reject)`: handed on unchanged, nothing caught), so the host
   answers 1101 with it. **A fiber that outlives the response is one `fetch` started with
   `Task.spawnDetached`**; a `Task.spawn` child ends with `fetch`'s fiber, as everywhere. After the
-  answer, the platform asks `Task.schedulerBusy`: with no fiber running nothing is held; otherwise a
-  promise is held in `waitUntil` that `Task.onSchedulerIdle` settles when the last fiber ends, or
-  the deadline's timer settles by stopping the scheduler. **A Worker's `forward` starts a fresh
+  answer, the platform asks `Task.schedulerBusy`: with no fiber running the scheduler is stopped at
+  once, so it leaves the kernel's list (*P705-1*); otherwise a promise is held in `waitUntil` that
+  `Task.onSchedulerIdle` settles when the last fiber ends, stopping the scheduler then, or the
+  deadline's timer settles by stopping it. A throw out of a drain after the answer is thrown
+  again from the trampoline's chain, where it is an unhandled rejection the host reports: never
+  dropped in silence (*P705-2*, rule 9). The scheduler's continuation after 64 resumptions is a
+  timer of zero in the request's context (`schedulerWith`'s `more`, §17.5), so a request that
+  keeps yielding starves no other request of the isolate (*P705-5*). **A Worker's `forward` starts a fresh
   chain per call** (`crypto.randomUUID()`), since a Worker parks in no object and so begins no
   cycle; an object's `forward` passes its chain on ((e.3), the object slice). **Two requests do not
   wait on each other through memory** (*measured* under workerd): a request parked on a wait that
@@ -6879,8 +6884,14 @@ with the block above, the block holds.*
   or NUL; and `redirect`'s target is resolved against the request's URL in beni (`new URL(target,
   base)`, whose `TypeError` is caught from that call alone and is the fault). **An invalid
   response is a 500 with an empty body and no header of the program's, and one `console.error`
-  line names the fault**, in both builds; it is not a defect, for §9.10 (d)'s reason. `withHeader`
-  appends to a response the platform built, so nothing is immutable.
+  line names the fault**, in both builds; it is not a defect, for §9.10 (d)'s reason, and a
+  `withHeader` on it leaves it as it is (*amended 2026-10-22, P705-7*). `withHeader` appends to
+  a response the platform built; a response from `forward` or `callService` is the host's, whose
+  headers are immutable (*measured*, "Can't modify immutable headers"), so `withHeader` copies it
+  once before the first append — `new Response(body, response)`, the copy the platform's from
+  then on — and a 101, whose socket no copy keeps, is an invalid response under `withHeader`
+  (*amended 2026-10-22, P705-4*). `Worker.header` with a name that is not a token answers
+  `Nothing`, since no request has such a header and the host would throw (*P705-3*).
 - **The log** keeps core's default sink, the console method of each level: the host's logs collect
   what `console` writes. `node`'s `logfmt` line on standard error has no equivalent here.
 - **Bindings are read by name and answer `Maybe`**: a binding the configuration does not declare
@@ -7540,7 +7551,13 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   connection destroyed — never reaches the Worker's `request.signal`, because the Worker's client
   is Miniflare's own entry worker, so #600's second half is owed to a run under `wrangler dev`;
   and a request parked on a wait no host operation of its own answers is cancelled as hung ((d)).
-  The `--test-hooks` flag is the object slice's, with `tick` and `alarm`.
+  **Both halves of #600 stay open** (*P705-8*): the first — a release that runs before the
+  platform's deadline, and the deadline's value, 25 000 ms in the code — has no fixture either,
+  since driving 25 seconds needs a hook (#707). The Worker's own test hooks, in a `--test-hooks`
+  build: `/__beni/mark/<text>` writes `beni:mark <text>` to the console, which the driver waits
+  for after each step so that a step's console lines never land under the next (*P705-9*), and
+  `/__beni/schedulers` answers how many schedulers the kernel lists, so a fixture sees that a
+  request's leaves it. The flag's `tick` and `alarm` hooks are the object slice's.
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of
