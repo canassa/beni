@@ -2315,6 +2315,14 @@ copies its starter's four fields **by reference** at the start — Effect's fork
 context the same way. A fiber `Task.start` makes (a platform's root) gets the defaults. Every slot
 value is immutable, so sharing one is safe: a change makes a new value.
 
+*Amended 2026-10-22 (#597; the owner, Cesar, dashboard `node-log-q3`):* a page program's command
+is made in one place and run in another, after `update` has returned. Its body has the **log
+context** of the place where the command was made: `Cmd.perform`, `Cmd.keyed` and
+`Cmd.afterRender` read the log-context slot when they make the command, and the body runs inside
+that context, in whatever fiber, or none, the page runs it in (`Task.keepLogContext`). The other
+slots are the running fiber's. Which context the `update` of a message that a body sends has is
+open (dashboard `node-log-q4`). `boundary.md` §9.8.16 (b), amended the same day, has the details.
+
 **Changing a slot** is only ever **scoped to a function**: `Clock.run`, `Log.annotate`, `Log.span`,
 `Log.minimum`, `Log.withSink`, `Trace.span`, `Trace.withExporter` and (P9) `Random.withSeed` set
 the field on the current fiber (or the outside record), run their function, and put the old value
@@ -3145,6 +3153,16 @@ context's minimum is its own when `Log.minimum` set one, and else the program's;
 slot and, when the context has no minimum of its own, the program's cell, and below the minimum it
 still builds nothing. Effect's counterpart is the `MinimumLogLevel` reference set for a whole
 runtime (`References.ts:349`).
+
+*Amended 2026-10-22 (#597; the owner, Cesar, dashboard `node-log-q3`): a command keeps the log
+context it was made in.* On a page, `annotate`, `span`, `minimum` and `withSink` around the
+`update` arm that makes a command reach the command's body: its lines carry the annotations and
+the spans, use the sink, and are written down to the minimum that `minimum` set, as the lines of
+a fiber that the arm started would. `Cmd.log` is such a command: `Log.annotate "request" "r1" λ⊤ →
+Log.minimum Log.Trace λ⊤ → ( n + 1, Cmd.log Log.Debug "sent" )` writes its line, with
+`request=r1`. When the context has no minimum of its own, the program's minimum is read when the
+line is written, as above. `boundary.md` §9.8.16 (b), amended the same day, and §17.5 have the
+rules, and the open question of the context of a message that a body sends.
 
 ### 17.12 Choices this section made, for the owner to see
 

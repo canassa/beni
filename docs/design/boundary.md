@@ -4631,6 +4631,47 @@ The command reads the minimum when it runs, not when `update` makes it: a `Cmd.l
 before a `Log.setMinimum Log.Error` in the same `update` is not written. A command still does not
 see `update`'s `annotate` or `minimum`; that it should is #597.
 
+*Amended 2026-10-22 (#597; the owner, Cesar, dashboard `node-log-q3`): a command's body has the log
+context of the place where the command was made.* This replaces "the default log context" of the
+amendment of 2026-10-20 for every command made inside an `annotate`, a `span`, a `minimum` or a
+`withSink`. Effect v4 does the same when it forks a fiber: the child copies its parent's context
+(`internal/effect.ts:5463`).
+
+- **What a command keeps.** `Cmd.perform`, `Cmd.keyed` and `Cmd.afterRender` read the calling
+  fiber's log context (proposal §17.5) when they make the command, and the body runs with it: the
+  annotations, the log spans, the minimum that `Log.minimum` set and the sink that `Log.withSink`
+  set. `Cmd.task`, `Cmd.do`, `Cmd.log` and each command written over `perform` (`Storage.save`,
+  `Http.send`, `WebSocket.send`, `Navigation`'s) make their body where the command is made, so they
+  keep it too. So `Log.annotate "request" "r1" λ⊤ → Log.minimum Log.Trace λ⊤ → ( n + 1, Cmd.log
+  Log.Debug "sent" )` writes its line, with the annotation `request=r1`. A span's milliseconds are
+  counted from where the span began to where the line is written, as in a fiber that `span` started.
+- **What a command reads when it runs.** The program's minimum, as the amendment of 2026-10-21
+  says: a context with no minimum of its own reads it when a line is written. And the clock: the
+  body's time and its spans' milliseconds come from the clock of the fiber it runs in.
+- **`Cmd.map` and `Cmd.batch`** keep each body's context. A child's `update` that its parent calls
+  inside `Log.annotate` makes its commands inside that annotation, so its commands carry it, and
+  `Cmd.map` adds nothing.
+- **Open: the context of a message that a body sends** (the owner's decision, dashboard
+  `node-log-q4`). The page runs a message's `update` inside the `send` call, so the `update` has
+  the log context of the code that calls `send`. A body that keeps a context therefore gives it to
+  the `update` of each message that it sends, and to the commands that this `update` makes. A
+  message from a click has the default context. The other option is that a message's `update`
+  always has the program's context. This amendment does not choose.
+- **Not changed: a subscription's body**, which has the default context, as before. The decision
+  is about commands. `subscriptions` runs when the page renders, in no `update` arm, and one body
+  serves each declaration of its key (§9.8.5), so there is no one place where it was made.
+- **Cost.** `Hosted.job` and `Hosted.later` give the body to `Task.keepLogContext`. Where no log
+  context is set, it reads the slot and gives back the body itself, which then runs as before. In a
+  build where nothing sets a slot, the read is the constant of §17.5's amendment of 2026-10-02:
+  `keepLogContext` is the identity, and a release build keeps no call of it. (The optimiser still
+  keeps a few traces of the code that it removes, #765.) Where a context is set, the body runs
+  inside that context, with `withLogContext`'s body, which `Log.annotate` uses. That function does
+  not write the cell that says a slot was set, so that a build in which nothing sets a slot still
+  folds the slots away. A development build folds nothing, so each page that makes a command ships
+  that code.
+- **Not covered:** `browser-inline`'s `Cmd.perform`, which runs its body in the same dispatch after
+  `update` returns. #751 tracks it.
+
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
 with `credentials: "include"`. A program that tracks progress or sends cookies to another origin no
