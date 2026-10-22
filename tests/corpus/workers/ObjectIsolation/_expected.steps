@@ -5,15 +5,20 @@
 {"answer": "x"}
 {"answer": "y"}
 # Spawn, then post the result to self; the release runs when the fiber ends.
+# While the fiber lives the live-fiber timer is held; after it ends, free.
+{"path": "/room/x/__beni/hold"}
 {"path": "/room/x/spawn"}
-{"path": "/room/x/slow"}
+{"path": "/room/x/__beni/hold"}
+{"path": "/room/x/finish"}
 {"path": "/room/x/get"}
+{"path": "/room/x/__beni/hold"}
 # A later handler joins a fiber an earlier one spawned.
 {"path": "/room/x/start"}
 {"path": "/room/x/joined"}
 # A defect in x: the held fiber's release runs before the abort; y serves
 # on; x's next request is a new instance.
 {"path": "/room/x/hold"}
+{"path": "/room/x/__beni/hold"}
 {"path": "/room/x/throw"}
 {"path": "/room/y/get"}
 {"path": "/room/x/get"}

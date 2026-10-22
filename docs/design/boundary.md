@@ -7278,11 +7278,13 @@ pub type AskError
   cancels them. `ObjectIsolation` shows spawn-then-`post` to `self` with the `bracket` release
   running when the fiber ends, a later handler joining a fiber an earlier one spawned, and two
   instances of one class each resuming a parked handler in its own context (#595, *measured*).
-- **The live-fiber timer** ((e.5)) is built: the same `onSchedulerCount` watcher holds one host
-  `setTimeout`, of the longest delay the host takes, while the scheduler runs any fiber beside
-  the consumer, and clears it when the count falls to the consumer alone; so an object whose
-  fiber is parked on a `Deferred` or a `join` is not hibernated under it. That the timer prevents
-  hibernation is #593's probe, still owed.
+- **The live-fiber timer** ((e.5)) is built: one host `setTimeout`, of the longest delay the
+  host takes, held while the scheduler runs any fiber beside the consumer and cleared when the
+  count falls to the consumer alone. The count is read after `restore` and after each handler
+  returns — the kernel reports an end, never a start, so the first fiber a handler spawns is seen
+  there — and at each end through `onSchedulerCount`. `ObjectIsolation` reads it through the
+  `--test-hooks` path `/__beni/hold` (`held` or `free`). That the timer prevents hibernation is
+  #593's probe, still owed, so #550 stays open until it settles.
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
@@ -7314,11 +7316,17 @@ pub type AskError
   spawned, the `Reply` kept in the state (`NoReply` at once), the late `reply` through it (the
   warning line, no answer), the holder that ends while the consumer is parked, and the unrelated
   fiber that delays a `NoReply`.
-- **`ask` to `self` is refused from every fiber of the object** (*amended 2026-10-22, P723-7*),
-  not from the running handler alone: the kernel does not say which fiber is current, so the
-  platform cannot tell a spawned fiber from the handler it serves. A fiber that needs its own
-  object's answer posts to `self` and lets `received` act. R7-3's hazard, a handler joining a
-  fiber that asks `self`, cannot occur.
+- **`ask` to `self` is refused from every fiber of the object** (*amended 2026-10-22, P723-7; a
+  choice the owners can overturn*), not from the running handler alone: the kernel does not say
+  which fiber is current, so the platform cannot tell a spawned fiber from the handler it serves.
+  For the handler the refusal prevents a deadlock. **For a spawned fiber it buys no guarantee**:
+  the consumer is free and could answer. **A capability is lost** with it: a post to `self`
+  carries no answer back, so a fiber that needs its own object's answer must route it another
+  way — a `Deferred` kept in the state that `received` completes, or a `post` whose `received`
+  acts. It narrows q8's `ask`, which is why it is the owners' to overturn. **The way out** is a
+  core way to name the running fiber (#730): with it the platform refuses the handler alone, and
+  R7-3's hazard — a handler joining a fiber that asks `self` — returns as the bounded hazard it
+  was.
 
 **(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
 state, msg → state × Cmd msg` — sits over `post` and spawn, as §9.8.11 puts TEA over a direct

@@ -2,9 +2,11 @@
 -- (e.4), (e.5), (e.9), (f); #595, #550). Each resumes a waiting handler in
 -- its own context; a handler spawns a fiber that posts the result to self
 -- and a `Task.bracket` release that runs when it ends; a later handler
--- joins a fiber an earlier one spawned; and a defect in one instance runs
+-- joins a fiber an earlier one spawned; the live-fiber timer is held while
+-- a fiber lives (the `/__beni/hold` hook); and a defect in one instance runs
 -- the releases of its live fibers before the abort, while the other
 -- instance serves on.
+import Deferred exposing (Deferred)
 import Duration
 import Schema exposing (Schema)
 import String
@@ -26,6 +28,7 @@ type alias State =
     done : Int
     released : Int
     pending : Maybe (Fiber Int)
+    gate : Deferred ⊤
 
 
 message : Schema String Message
@@ -55,7 +58,10 @@ message =
 
 room : Worker.Definition
 room =
-    Object.define "Room" message (λ_ → { done = 0, released = 0, pending = Nothing })
+    Object.define
+        "Room"
+        message
+        (λ_ → { done = 0, released = 0, pending = Nothing, gate = Deferred.make ⊤ })
         { Object.none | request = serve, received = received }
 
 
@@ -73,12 +79,17 @@ serve ctx state request =
 
         [ "spawn", …rest ] →
             -- Work that must not hold the object: spawn, then post the
-            -- result to self; the release runs when the fiber ends.
+            -- result to self; the release runs when the fiber ends. The
+            -- fiber waits for `/finish`, so no step depends on a timer.
             _ = Task.spawn λ⊤ →
                 Task.bracket (λ⊤ → ⊤) (λ_ _ → Object.post (Object.self ctx) Released) λ_ →
-                    Task.sleep (Duration.millis 5)
+                    Deferred.wait state.gate
                     Object.post (Object.self ctx) Done
             ( state, Worker.text 200 "spawned in ${who ctx}" )
+
+        [ "finish", …rest ] →
+            _ = Deferred.complete state.gate ⊤
+            ( state, Worker.text 200 "finished in ${who ctx}" )
 
         [ "hold", …rest ] →
             -- A fiber that never ends on its own: its release runs at the

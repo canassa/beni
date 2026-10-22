@@ -294,6 +294,16 @@ classify instance request text resolve reject =
                 deliverThen instance (Js.from { kind = "ticked" }) (noContent resolve)
         else if endsWith path "/__beni/alarm" then
             deliverThen instance (Js.from { kind = "alarm" }) (noContent resolve)
+        else if endsWith path "/__beni/hold" then
+            -- Whether the live-fiber timer is held ((e.5)).
+            Js.to
+                (Js.apply resolve
+                    [ Js.construct (Js.global "Response")
+                        [ Js.from (if Js.isNull (Js.get instance "hold") then "free" else "held")
+                        , Js.from { status = 200 }
+                        ]
+                    ]
+                )
         else
             classifyEvent instance request text chain resolve reject
     else
@@ -449,11 +459,19 @@ wake instance =
             Task.resume (Js.to w) ⊤
 
 
--- Each time a fiber of the object ends or leaves: with the consumer alone
--- left, the pending asks are settled ((e.10), `NoReply` with no next event
--- needed) and the live-fiber timer is released; with any fiber beside it,
--- the timer is held, so the host does not hibernate the object under a
--- parked fiber ((e.5)).
+-- The count as it stands, after `restore` and after each handler.
+recount : V → ⊤
+recount instance =
+    s : Scheduler
+    s = Js.to (Js.get instance "schedulerOf")
+    counted instance (Task.schedulerFibers s)
+
+
+-- Each time a fiber of the object ends or leaves, and after each handler:
+-- with the consumer alone left, the pending asks are settled ((e.10),
+-- `NoReply` with no next event needed) and the live-fiber timer is
+-- released; with any fiber beside it, the timer is held, so the host does
+-- not hibernate the object under a parked fiber ((e.5)).
 counted : V, Int → ⊤
 counted instance n =
     hold = Js.get instance "hold"
@@ -492,6 +510,7 @@ consume instance restore handlers =
         Js.set instance "state" (Js.from (restore (Js.to instance)))
         Js.set instance "restored" (Js.from True)
         retime instance handlers
+        recount instance
     mailbox = Js.get instance "mailbox"
     if Js.to (Js.get mailbox "length") == 0 then
         settlePending instance
@@ -507,7 +526,9 @@ consume instance restore handlers =
         Js.set instance "running" Js.null
         Js.set instance "chain" Js.null
         retime instance handlers
-        settlePending instance
+        -- A fiber the handler started is counted now: the kernel reports
+        -- an end, never a start ((e.5), the live-fiber timer).
+        recount instance
         consume instance restore handlers
 
 

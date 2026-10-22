@@ -10,21 +10,36 @@
 (y) < content-type: text/plain; charset=utf-8
 (y) <
 (y) < slow answered in y
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
 > GET /room/x/spawn
 < 200
 < content-type: text/plain; charset=utf-8
 <
 < spawned in x
-> GET /room/x/slow
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
+> GET /room/x/finish
 < 200
 < content-type: text/plain; charset=utf-8
 <
-< slow answered in x
+< finished in x
 > GET /room/x/get
 < 200
 < content-type: text/plain; charset=utf-8
 <
 < x: done 1 released 1
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
 > GET /room/x/start
 < 200
 < content-type: text/plain; charset=utf-8
@@ -40,6 +55,11 @@
 < content-type: text/plain; charset=utf-8
 <
 < held in x
+> GET /room/x/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
 > GET /room/x/throw
 < 500
 < content-length: 193

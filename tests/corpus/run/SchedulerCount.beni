@@ -2,8 +2,8 @@
 -- (transparent-effects-proposal.md §17.5, added with the object slice).
 -- The count is every fiber the scheduler runs, lent and parked ones
 -- included; `onSchedulerCount` calls its function with the count each time
--- a fiber ends or leaves, the last function given wins, and the function
--- runs outside the fiber that ended.
+-- a fiber ends or leaves, from the end of that fiber with it still the
+-- current one, and the last function given wins.
 import Deferred exposing (Deferred)
 import Io
 import Node exposing (Program)
