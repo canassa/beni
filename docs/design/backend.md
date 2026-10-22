@@ -10112,6 +10112,40 @@ Measured on dagon against `2a362f6e7` (before slice 6), cumulative with parts 1 
   rewrite's work on one huge statement (#691), still within `abuse_wide_test`'s budget.
 - Peak RSS is within 5%. Every measurement program's output is smaller.
 
+**As built 2026-10-22: the structural passes first** (issue #781; *Where it runs* and *Slice 8*,
+both amended 2026-10-22). `Spec.structureFirst` runs before the first solve, and `declTable` is
+the declaration part of `analyse`. These figures are ReleaseFast instructions against master
+`31414571d`, and the outputs are byte-identical:
+- N = 64: 953.6M → 764.1M (−19.9%).
+- Without `withDefault`: 949.3M → 763.1M (−19.6%).
+- 100 000 lines: 2 257.9M → 1 934.7M (−14.3%).
+- N = 16: 259.4M → 256.2M.
+
+The first three solve once instead of twice. N = 16 still solves twice: its first rewrite shrinks
+functions until slice 8 takes them. The release `run/` corpus goes 2 260 876 → 2 260 837 bytes.
+15 programs shrink, led by `JsMaySuspend` −75, `SchemaReadKeys` −58, `WebSocketFaults` −40 and
+`CastInSuspendableTwin` −38, which is one of #689's cascades. 15 programs grow by 349 bytes in
+all, in three groups, each an issue:
+- Keys whose last read the first rewrite removes (#788): `JsonDerivedDescribe` +151,
+  `SchemaCharScalar` +13, `PayloadUnreadField` +8, `SchemaValidatorGeneric` +6.
+- Bindings and parameters that become unread inside the first rewrite (#789): `LogDefaultSink`
+  +29, `DerivedEqLocalCustom` +26, `TryEscapeLowersOnlyItsOwn` +25, `ScheduleDelays` +16,
+  `PtsLiveSiteOrder` +4.
+- Small wrappers the pass after the solve no longer writes in (#790): `CoreMaybeResultRest` +16,
+  `CaseAcrossCall` +9, `LibraryArgumentOrder` +9, `UrlQuery` +8, `ConstrainedPartEvidence` +4,
+  `DceEtaEvidence` +4.
+
+`emit/release` goldens:
+- Shrink: `InlineReachable` −16, `SpecRecordLambdaField` −30 (the projection), `SpecFieldNames`
+  −16 (the projection), the four `Validator*` −9 each, `PayloadUnreadField` −9, `SpecSmall` −6 and
+  `SpreadEscapes` −5.
+- Grow: `CaseAcrossCall` +143, `SpecNodes` +19, `SchemaReaderTest` +12 and
+  `SchemaSharedValidators` +12.
+- `FieldColouring` changes in names only.
+
+The 100 000 lines write in the same 2 calls as on master, now before the solve, so their gain is the
+second solve that no longer runs. Development output is unchanged.
+
 ### Compact statements
 
 ### Compact statements
