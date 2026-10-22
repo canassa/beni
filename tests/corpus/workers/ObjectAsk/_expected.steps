@@ -1,0 +1,7 @@
+# A reply from `received` at once, and one later from a fiber it spawned.
+{"path": "/lobby/score"}
+{"path": "/lobby/slow"}
+# No reply, and nothing that could still reply: NoReply.
+{"path": "/lobby/quiet"}
+# An ask to self is Err Cycle at once.
+{"path": "/lobby/self"}

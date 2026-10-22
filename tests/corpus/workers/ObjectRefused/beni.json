@@ -1,0 +1,1 @@
+{ "name": "object-refused", "exports": ["Lobby", "Scorer"] }

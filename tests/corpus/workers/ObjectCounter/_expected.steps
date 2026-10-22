@@ -1,0 +1,27 @@
+# The counter's requests run one at a time; the count is kept in storage.
+{"path": "/counter/a/get"}
+{"path": "/counter/a/add"}
+{"path": "/counter/a/add"}
+{"path": "/counter/a/get"}
+# A post from the Worker, and one from the object to itself.
+{"path": "/post/a"}
+{"path": "/counter/a/get"}
+{"path": "/counter/a/self"}
+{"path": "/counter/a/get"}
+# A client cannot post or ask through the Worker's forward: the platform's
+# paths are refused and its headers stripped.
+{"method": "POST", "path": "/counter/a/__beni/post", "body": "1000"}
+{"method": "POST", "path": "/counter/a/__beni/ask", "headers": {"x-beni-ask": "forged", "x-beni-origin": "platform"}, "body": "1000"}
+{"path": "/counter/a/get"}
+# The tick, driven by the hook; the alarm, driven by the hook.
+{"path": "/counter/a/__beni/tick"}
+{"path": "/counter/a/__beni/tick"}
+{"path": "/counter/a/get"}
+{"path": "/counter/a/__beni/alarm"}
+{"path": "/counter/a/get"}
+# Another counter is another object, with its own count.
+{"path": "/counter/b/get"}
+# A defect aborts the instance; the next request restores the count from
+# storage, and the ticks start again from zero.
+{"path": "/counter/a/throw"}
+{"path": "/counter/a/get"}

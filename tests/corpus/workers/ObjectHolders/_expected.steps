@@ -1,0 +1,4 @@
+# The Reply held by a message to self, and by a fiber that message's
+# `received` spawned (#623).
+{"path": "/lobby/relay"}
+{"path": "/lobby/relay-fiber"}

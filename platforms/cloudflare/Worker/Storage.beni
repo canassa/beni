@@ -1,0 +1,103 @@
+--! An object's key-value store, through schemas (`docs/design/boundary.md`
+--! §9.12 (h)): the SQLite-backed synchronous API, `ctx.storage.kv`, so
+--! every operation returns before the handler goes on. A value is JSON text
+--! printed and parsed by a schema, because a release build spells a
+--! record's fields short and the next deploy may spell them differently;
+--! a schema names every field by text in every build, so what one build
+--! wrote the next reads.
+--!
+--!     case Storage.get ctx playerSchema "player:7" of
+--!         Ok (Just player) → …
+--!         Ok Nothing → …
+--!         Err issues → …
+--!
+--! Limits are checked in beni before the host is called, counting more
+--! than the host can: two bytes per UTF-16 code unit of the text plus 64,
+--! never under the host's count. `Full` is the one host exception caught,
+--! from `kv.put` alone, by the `SQLITE_FULL` in its message (the sibling);
+--! any other throw is a defect.
+
+import Js
+import List
+import Schema exposing (Schema)
+import String
+import Worker.Object exposing (Context)
+
+
+--| Why a `put` failed: the key and the value as the host serialises them
+--| over 2 000 000 bytes, the object's 10 GB full, or a value that does
+--| not print by its schema.
+pub type PutError
+    = TooLarge
+    | Full
+    | Unprintable (List Schema.Issue)
+
+
+--| The value under the key, parsed by the schema: `Nothing` when there is
+--| none, `Err` when the text there does not parse.
+pub get : Context msg, Schema e a, String → Result (List Schema.Issue) (Maybe a)
+get ctx schema key =
+    text = Js.call (kv ctx) "get" [ Js.from key ]
+    if Js.isNullish text then
+        Ok Nothing
+    else
+        case Schema.parse schema (Js.to text) of
+            Ok value →
+                Ok (Just value)
+
+            Err issues →
+                Err issues
+
+
+--| Write the value under the key, printed by the schema.
+pub put : Context msg, Schema e a, String, a → Result PutError ⊤
+put ctx schema key value =
+    case Schema.print schema value of
+        Err issues →
+            Err (Unprintable issues)
+
+        Ok text →
+            if 2 * (String.length key + String.length text) + 64 > 2000000 then
+                Err TooLarge
+            else if kvPut (kv ctx) key text then
+                Ok ⊤
+            else
+                Err Full
+
+
+--| Delete the key: whether it was there.
+pub delete : Context msg, String → Bool
+delete ctx key = Js.to (Js.call (kv ctx) "delete" [ Js.from key ])
+
+
+--| The keys with that prefix, in order.
+pub keys : Context msg, String → List String
+keys ctx prefix =
+    acc = Js.ref []
+    Js.each
+        (Js.call (Js.global "Array") "from"
+            [ Js.call (kv ctx) "list" [ Js.from { prefix = prefix } ] ]
+        )
+        λpair → Js.write acc (List.push (Js.read acc) (Js.to (Js.at pair 0)))
+    Js.read acc
+
+
+-- `ctx.storage.kv`: there from the constructor on. A namespace that is not
+-- SQLite-backed has none: the configuration is wrong, and nothing can run.
+kv : Context msg → Js.Value
+kv ctx =
+    store = Js.get (Js.get (Js.get (Js.from ctx) "ctx") "storage") "kv"
+    if Js.isNullish store then
+        Js.throw
+            (Js.construct (Js.global "Error")
+                [ Js.from
+                    "the object's storage is not SQLite-backed: give the class \"storage\": \"sqlite\" in the Wrangler configuration (boundary.md §9.12 (h), (i))"
+                ]
+            )
+    else
+        store
+
+
+-- `kv.put`: `False` for the host's `Error` "database or disk is full:
+-- SQLITE_FULL", caught by that text alone; anything else thrown again.
+foreign impure kvPut : Js.Value, String, String → Bool

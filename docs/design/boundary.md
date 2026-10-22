@@ -6769,7 +6769,10 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   Worker slice therefore depends on #596** before it can be built.
 - **`forward ref request` waits** and returns the host's `Response` with its body stream
   untouched, so the 101 of an upgrade and a streamed body pass through; it carries the chain id
-  ((e.3)) — a fresh one, after stripping any `x-beni-chain` the client sent. Its failures are
+  ((e.3)) — a fresh one, after stripping every `x-beni-` header the client sent (*amended
+  2026-10-22, P723-1*: not the chain alone — the ask id and the origin mark of (e.10) too — and a
+  path that holds `/__beni/` is answered 404 by `forward` itself, never sent, since the platform's
+  paths are no page of the program's; a `--test-hooks` build lets its two hooks through). Its failures are
   *What a stub's failure becomes* below. **Typed asks to an `Object.Ref msg` are ordinary waits**
   ((e.10)), under the same cycle rule. *Two names differ from the owners' words (R6-6): the owners
   wrote `Object.Ref msg`, and the type is `Worker.Ref msg`, because `Worker.forward` takes a ref
@@ -7116,7 +7119,10 @@ inside a handler queues it behind the events already waiting ((e.10)).
   suspend is a defect at load, naming the object. Whether `Js.maySuspend` answers for a field of
   a record argument, or conservatively, is *owed* (a probe before slice (c)); if it is
   conservative, the compile-time form is `tick` in `define`'s own signature as `sync (state →
-  Maybe Duration)`, which changes the owner's signature and goes back to him (R5-6). `Just d` keeps one host timer of `d` armed — re-armed
+  Maybe Duration)`, which changes the owner's signature and goes back to him (R5-6). *Measured
+  2026-10-22: it is conservative, and the form is the owner's (`cf-workers-q9`). Until the answer,
+  what is built is this: no check, and a `tick` that waits parks the object until it answers, its
+  other events waiting in the mailbox.* `Just d` keeps one host timer of `d` armed — re-armed
   from the moment it fires, the same `d` not re-arming it — and `ticked` is an event of the
   mailbox; a different `d` re-arms from now; `Nothing` clears it. A set timer keeps the object
   from hibernating ((a)), which is what an active arena wants, and `Nothing` is how the program
@@ -7246,12 +7252,90 @@ pub type AskError
   mailbox's order; a receiver that is evicted mid-handler loses it ((e.6)'s table). Durable work
   therefore follows (e.6)'s pattern: write the intent to `Storage`, then finish it in `restore`
   or `alarm`, with the message as the trigger and never as the record.
+- **A message comes only from the platform's own stub** (*amended 2026-10-22, P723-1*). The
+  object's `/__beni/post` and `/__beni/ask` are the stubs' own: a `post` or `ask` sends them with
+  the header `x-beni-origin: platform`, and the object runs `received` only with that mark, else
+  answers 404. A client cannot forge the mark through a Worker, because `forward` strips every
+  `x-beni-` header a client sent and answers 404 itself to a path that holds `/__beni/`, never
+  sending it ((d)); so a request a Worker forwards reaches `request` alone. `ObjectCounter` posts
+  and asks through `forward` and the count stays.
 - **Refused messages.** A message that does not parse by the receiver's schema — a ref of the
   wrong protocol, an older deploy's shape —   is answered with `422 Unprocessable Content` and the
   header `x-beni-message: unparsed`, which the sender's `ask` reads as `Err (Unreadable issues)`
   for its own reply and the platform logs for a `post`; `received` does not run. The header is
   the platform's alone, as every `x-beni-` name is ((d)'s `withHeader`). Nothing is
   caught (rule 9): the refusal is a response read by its fields, as the cycle's is.
+
+*As built (2026-10-22, the object slice; `platforms/cloudflare/Worker/Object.beni`, fixtures
+`workers/ObjectCounter`, `ObjectAsk`, `ObjectHolders`, `ObjectIsolation`, `ObjectStorage`).*
+- **The signature stands** ((e.1), R5-6): `define name schema restore handlers` with `Handlers` the
+  alias above. One name is added, **`env : Context msg → Worker.Env`**: the owner's `Context msg`
+  listed no bindings, and (e.3)'s B-calls-A-back needs a namespace from inside an object.
+- **The mailbox** ((e.2)): the class's `fetch` reads the body, then sorts the request — a test hook,
+  a refused cycle (508), `/__beni/post` or `/__beni/ask` parsed by the protocol's schema, or a
+  `request` event — and wakes the consumer: one detached fiber under the object's scheduler,
+  started where `restore`'s and the handlers' effects are known. *Measured* (`ObjectIsolation`): a
+  handler read back through `Js.to` is called in its sync form, so a `Task.sleep` in it answered
+  `TypeError … (reading 'a')`; the typed `restore` and `Handlers` are threaded from `define` to the
+  consumer instead.
+- **The chain id travels through `stub.fetch`** ((e.3), #594's first half, *measured*):
+  `ObjectAsk`'s `/lobby/back` — the Lobby asks the Scorer, whose `received` asks the Lobby back with
+  the same chain — answers `Ok Err Cycle`: the Lobby refused with 508 and `x-beni-cycle: 1`, the
+  Scorer saw `Err Cycle` and replied with it, and neither object hung. The RPC half waits for (j).
+- **Fibers in an object** ((e.4), (e.5), (e.9); #550, its option 2): a handler's fibers live under
+  the object's scheduler, where `Task.schedulerFibers` counts them and the defect's teardown
+  cancels them. `ObjectIsolation` shows spawn-then-`post` to `self` with the `bracket` release
+  running when the fiber ends, a later handler joining a fiber an earlier one spawned, and two
+  instances of one class each resuming a parked handler in its own context (#595, *measured*).
+- **The live-fiber timer** ((e.5)) is built: one host `setTimeout`, of the longest delay the
+  host takes, held while the scheduler runs any fiber beside the consumer and cleared when the
+  count falls to the consumer alone. The count is read after `restore` and after each handler
+  returns — the kernel reports an end, never a start, so the first fiber a handler spawns is seen
+  there — and at each end through `onSchedulerCount`. `ObjectIsolation` reads it through the
+  `--test-hooks` path `/__beni/hold` (`held` or `free`). That the timer prevents hibernation is
+  #593's probe, still owed, so #550 stays open until it settles.
+- **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
+  `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
+  pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
+  (`cf-workers-q9`); until it comes, a `tick` that waits parks the object until it answers. The
+  timer is one host `setTimeout`, re-armed as (e.5) says; under `--test-hooks` no host timer is
+  armed and `/__beni/tick` is its firing ((k)).
+- **`post` and `ask` on the wire** ((e.10)): `post` to `self` goes into the mailbox with the ids of
+  the `Reply`s the message holds (a walk of its records and lists, `Object.js`); to another object
+  it is `POST /__beni/post` on the stub with `x-beni-chain`, answered 204 after `received` ran.
+  `ask` is `POST /__beni/ask` with `x-beni-ask: <uuid>`; the receiver keeps the pending ask by that
+  id, `reply` prints the value with the schema captured at parse time and answers it 200, and the
+  asker sorts the answer: 508 with `x-beni-cycle` is `Cycle`, 422 with `x-beni-message: unparsed`
+  is `Unreadable`, 204 with `x-beni-reply: none` is `NoReply`, 200 is parsed by the asker's schema.
+  A `Reply` prints only for the ask that makes it: one parsed in this instance, printed for any
+  stub, is `Unprintable` (`ObjectAsk`'s `/hello`: the post is dropped with one warning line).
+- **The holders of a `Reply`** ((e.10), #623): the platform cannot see which fiber holds one, so
+  it counts **every fiber of the object**. `NoReply` is answered, after an event and before the
+  consumer parks, for each ask whose `received` has returned when the object's scheduler runs no
+  fiber but the consumer and no message to `self` waiting in the mailbox holds that `Reply`. That
+  set contains (e.10)'s recursive one — a fiber the second `received` spawned is a fiber of the
+  object — and is never smaller, so `NoReply` never comes while a holder lives. **It comes when
+  the count allows** (*amended 2026-10-22, P723-2*): the platform watches the scheduler with
+  `Task.onSchedulerCount`, so the last holder ending while the consumer is parked settles the
+  pending asks at once, with no next event needed. **A choice the owners can overturn:** because
+  the platform cannot see which fiber holds a `Reply`, one unrelated live fiber of the object
+  delays every `NoReply` until it ends; `NoReply` then comes, never fails to. The alternative,
+  holders tracked per ask, needs the checker to name the closures that capture a `Reply`.
+  `ObjectHolders` shows the relay through `self`, the relay through a fiber the second call
+  spawned, the `Reply` kept in the state (`NoReply` at once), the late `reply` through it (the
+  warning line, no answer), the holder that ends while the consumer is parked, and the unrelated
+  fiber that delays a `NoReply`.
+- **`ask` to `self` is refused from every fiber of the object** (*amended 2026-10-22, P723-7; a
+  choice the owners can overturn*), not from the running handler alone: the kernel does not say
+  which fiber is current, so the platform cannot tell a spawned fiber from the handler it serves.
+  For the handler the refusal prevents a deadlock. **For a spawned fiber it buys no guarantee**:
+  the consumer is free and could answer. **A capability is lost** with it: a post to `self`
+  carries no answer back, so a fiber that needs its own object's answer must route it another
+  way — a `Deferred` kept in the state that `received` completes, or a `post` whose `received`
+  acts. It narrows q8's `ask`, which is why it is the owners' to overturn. **The way out** is a
+  core way to name the running fiber (#730): with it the platform refuses the handler alone, and
+  R7-3's hazard — a handler joining a fiber that asks `self` — returns as the bounded hazard it
+  was.
 
 **(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
 state, msg → state × Cmd msg` — sits over `post` and spawn, as §9.8.11 puts TEA over a direct
@@ -7279,7 +7363,14 @@ the Worker's request is a defect too, every attached socket is closed (measured:
 runs. **Every defect closes the scope, whether or not the throwing handler ran in a fiber** (R5-3):
 the scope may hold fibers that earlier handlers spawned ((e.4)), each with its finalisers, so a
 throw from a handler that never waited queues the same teardown and then the abort, on a timer of
-zero so that the throw leaves first.
+zero so that the throw leaves first. *As built (2026-10-22):* the scheduler's hook stops it with a
+1 000 ms deadline; when the teardown is done, one `console.error` line — `beni: a defect stopped
+the object <name>; its next event starts a new instance` — and `ctx.abort` with that reason on a
+timer of zero. The event that was running and every event waiting in the mailbox fail with the
+throw (`arm`'s rejection), so the request in flight answers 500 with the error's text through the
+Worker's `forward` and nothing waits on a mailbox that never runs again. `ObjectIsolation`: the
+release of a fiber parked on `Task.never` prints before the abort line, the other instance serves
+on, and the next request to the aborted one is a new instance.
 
 **A defect in `alarm` is retried by the host.** The host retries an alarm whose handler threw
 "using exponential backoff, starting at 2 second delays for up to 6 retries"
@@ -7454,6 +7545,11 @@ pub type PutError
   the first event and throws an `Error` naming the class and `"storage": "sqlite"` ((i)): the
   configuration is wrong, nothing can run, and the message says what to write.
 - The asynchronous API, SQL and point-in-time recovery are (j)'s.
+- *As built (2026-10-22, `Worker/Storage.beni`, `workers/ObjectStorage`):* the four operations as
+  above; `TooLarge` counts two bytes per code unit of key and text plus 64 before the host is
+  called (a 2 000 000-character value is refused); `Full` is `kvPut`'s one caught text; a read
+  with another schema is `Err` with its issues; what one instance put, the instance after its
+  abort reads in `restore`.
 
 **(i) The Wrangler configuration the program's author writes.** A build —
 `beni build --platform=cloudflare --out=out src/Server.beni`, or `beni build` with the project
@@ -7571,7 +7667,12 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   `/__beni/schedulers` answers how many schedulers the kernel lists, so a fixture sees that a
   request's leaves it, and `/__beni/holds` how many answered requests still hold work under
   `waitUntil` (R4-1 of #705's review: `CrossRequest` parks a detached fiber on a `Deferred` a
-  later request completes, and the count goes 0, 1, 0). The flag's `tick` and `alarm` hooks are the object slice's.
+  later request completes, and the count goes 0, 1, 0). *The object's hooks (2026-10-22, as built):* on a request forwarded to an
+  object, a path ending in `/__beni/tick` is the timer's firing — a `ticked` event, answered 204
+  once it ran, or 409 when `tick` names no timer — and one ending in `/__beni/alarm` an `alarm`
+  event, answered 204; under the flag no host timer is armed, so the transcript is the steps'
+  alone. The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
+  hibernation needs more than the 10 s delay, and a step is limited to 5 s.
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of
