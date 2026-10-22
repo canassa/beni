@@ -25,7 +25,7 @@ const installed_root = "zig-out/share/beni/skills/beni";
 const cli_reference = "skills/beni/references/cli.md";
 
 /// The packages `zig build skill-api` writes a file for (`tests/skill_api.zig`).
-const packages = [_][]const u8{ "core", "node", "browser", "browser-tea", "browser-inline", "html" };
+const packages = [_][]const u8{ "core", "node", "browser", "browser-tea", "browser-inline", "html", "cloudflare" };
 
 /// The flags `beni help` hides but a diagnostic tells the user to run
 /// (`frontend.md` §12.4 item 2): each must be in the CLI reference and
@@ -448,6 +448,10 @@ test "the generated API reference of browser-inline is what zig build skill-api 
 
 test "the generated API reference of html is what zig build skill-api writes today" {
     try expectPackageCurrent("html");
+}
+
+test "the generated API reference of cloudflare is what zig build skill-api writes today" {
+    try expectPackageCurrent("cloudflare");
 }
 
 test "the generator's package list is every platform in the repository, and no generated file is an orphan" {
