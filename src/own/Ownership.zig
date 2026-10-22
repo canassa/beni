@@ -108,6 +108,21 @@ pub const round_cap: u32 = 32;
 pub const atom_cap: u32 = 8;
 /// §20.4: a value this wide is indexed by its first step when projected.
 const wide_index: usize = 256;
+/// The thresholds below choose between two ways to one answer (#716): the
+/// direct one, cheaper when small, and the one that stays linear when wide.
+/// `-Downership-full-cross-check` takes the wide way everywhere, so that
+/// its checks against the direct one run over the whole corpus.
+const wide_ways = @import("ownership_options").full_cross_check;
+/// A union of more than `union_merge_min` entries in more than
+/// `union_merge_parts` parts merges them (`unionOf`).
+const union_merge_min: usize = if (wide_ways) 0 else 64;
+const union_merge_parts: usize = if (wide_ways) 1 else 8;
+/// A record type wider than this has its closed updates' splits kept
+/// (`Walker.split_memo`, `readOffFrame`).
+const split_memo_min: usize = if (wide_ways) 0 else 8;
+/// A declaration with more locals than this keeps the log its demands
+/// look for holders in (`Walker.bound_log`).
+const holder_scan_max: usize = if (wide_ways) 0 else 64;
 
 const WideIndex = struct {
     roots: std.ArrayList(Entry) = .empty,
@@ -2554,15 +2569,6 @@ test "a summary past a limit says which and what it measured" {
     try std.testing.expectEqual(Over{ .limit = .conditions, .at = condition_cap + 1 }, overLimit(.{ .params = 1, .res = &one }).?);
 }
 
-/// §31.7: the fresh number of record object `cell` in a summary, the next
-/// one when it has none yet.
-fn objNumber(a: Allocator, numbers: *std.ArrayList([2]u32), next: *u32, cell: u32) Allocator.Error!u32 {
-    for (numbers.items) |cn| if (cn[0] == cell) return cn[1];
-    next.* += 1;
-    try numbers.append(a, .{ cell, next.* });
-    return next.*;
-}
-
 /// Two written-field sets (§31.7), merged and sorted. The empty set is
 /// every field — a write names at least one, so it never means none: a
 /// write a block could not name, an open type's `allFields`, a callback's
@@ -2586,6 +2592,57 @@ fn unionFields(a: Allocator, x: []const u32, y: []const u32) Allocator.Error![]c
         }
     }
     return out.items;
+}
+
+/// Whether `id` was marked in the column `marks` already; marks it.
+fn markOnce(a: Allocator, marks: *std.ArrayList(bool), id: u32) Allocator.Error!bool {
+    if (marks.items.len <= id) try marks.appendNTimes(a, false, id + 1 - marks.items.len);
+    defer marks.items[id] = true;
+    return marks.items[id];
+}
+
+/// The first of `range` (indices into `uses`, ascending, so by point) whose
+/// use is at `point` or after.
+fn firstAtLeast(range: []const u32, uses: []const Use, point: u32) usize {
+    return std.sort.partitionPoint(u32, range, UsePoint{ .uses = uses, .point = point }, UsePoint.before);
+}
+
+const UsePoint = struct {
+    uses: []const Use,
+    point: u32,
+    fn before(c: UsePoint, ui: u32) bool {
+        return c.uses[ui].point < c.point;
+    }
+};
+
+/// `unionFields` folded over `sets`, in one sort: the same answer, since
+/// the empty set absorbs and two strictly ascending sets merge to their
+/// sorted union. A set that is not strictly ascending is folded as before.
+fn unionFieldSets(a: Allocator, sets: []const []const u32) Allocator.Error![]const u32 {
+    var total: usize = 0;
+    for (sets) |x| {
+        if (x.len == 0) return &.{};
+        for (x[1..], 0..) |f, i| if (f <= x[i]) {
+            var acc = sets[0];
+            for (sets[1..]) |y| acc = try unionFields(a, acc, y);
+            return acc;
+        };
+        total += x.len;
+    }
+    const out = try a.alloc(u32, total);
+    var k: usize = 0;
+    for (sets) |x| {
+        @memcpy(out[k..][0..x.len], x);
+        k += x.len;
+    }
+    std.mem.sort(u32, out, {}, std.sort.asc(u32));
+    var n: usize = 0;
+    for (out) |f| {
+        if (n > 0 and out[n - 1] == f) continue;
+        out[n] = f;
+        n += 1;
+    }
+    return out[0..n];
 }
 
 /// `entries` sorted by path and provenance, each pair at one path merged.
@@ -2705,6 +2762,10 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
         }
     }.less);
     var nu: usize = 0;
+    // The field sets of one path's record writes, joined once the path's
+    // run ends: a model's N writes at one path are not N merges (#716).
+    var sets: std.ArrayList([]const u32) = .empty;
+    defer if (sets.capacity > 0) sets.deinit(o.in.gpa);
     for (uses) |u| {
         if (u.bits == 0) continue;
         if (nu > 0 and uses[nu - 1].param == u.param and uses[nu - 1].path == u.path) {
@@ -2713,7 +2774,8 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
             const was = uses[nu - 1].bits & bit_f != 0;
             const is = u.bits & bit_f != 0;
             if (was and is) {
-                uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
+                if (sets.items.len == 0) try sets.append(o.in.gpa, uses[nu - 1].fields);
+                try sets.append(o.in.gpa, u.fields);
             } else if (is) uses[nu - 1].fields = u.fields;
             if (u.bits & bit_w != 0) {
                 if (uses[nu - 1].bits & bit_w == 0 or u.extent == .deep) uses[nu - 1].extent = u.extent;
@@ -2721,10 +2783,15 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
             uses[nu - 1].bits |= u.bits;
             continue;
         }
+        if (sets.items.len > 0) {
+            uses[nu - 1].fields = try unionFieldSets(keep, sets.items);
+            sets.clearRetainingCapacity();
+        }
         uses[nu] = u;
         if (u.bits & bit_w == 0) uses[nu].extent = .deep;
         nu += 1;
     }
+    if (sets.items.len > 0) uses[nu - 1].fields = try unionFieldSets(keep, sets.items);
     const res = try sortedRes(keep, s.res);
     const objs = try sortedRes(keep, s.objs);
     const supply = try sortedSupply(keep, s.supply);
@@ -6252,6 +6319,9 @@ const DemandRec = struct {
     via: u32 = none,
     /// §31.3: a record update's demand, and the fields it writes.
     fields: ?[]const u32 = null,
+    /// `uses.items.len` when the demand was made: every use at or after
+    /// it was recorded later (`resolveRaw`). The largest value claims none.
+    use_mark: u32 = std.math.maxInt(u32),
 };
 
 /// §20.2: what a platform's runtime does with the model it hands `update`.
@@ -6280,6 +6350,22 @@ const Pending = struct {
 };
 
 const CtxNode = struct { parent: u32, case_id: u32, arm: u32, depth: u32 };
+
+/// One field of a closed update's split (`Walker.split_memo`): `.unknown`
+/// until an update first needs it.
+const SplitField = struct {
+    state: enum(u8) { unknown, none, cell } = .unknown,
+    cell: u32 = none,
+    path: u32 = eps,
+};
+
+/// A closed update's split of one base cell: its fields, how many are not
+/// known yet, and once all are, those with a cell in `norm`'s order.
+const SplitMemo = struct {
+    fields: []SplitField,
+    unknown: usize,
+    sorted: ?[]const u32 = null,
+};
 
 /// A `Maybe.withDefault (Maybe.map m f) d` (§7.2 as amended for slice 3f):
 /// the call, and the branch contexts of its `Just` and `Nothing` outcomes.
@@ -6550,6 +6636,8 @@ const Walker = struct {
     /// The uses by local, for `resolve` (§18.11).
     use_start: []u32 = &.{},
     use_order: []u32 = &.{},
+    /// Per position of `use_order`: the end of its run of one call's uses.
+    use_run_end: []u32 = &.{},
     /// §20.4: wide values indexed by first step, by their slice.
     wide: std.AutoHashMapUnmanaged([2]usize, WideIndex) = .empty,
     /// §20.4: `projPath`'s answers for a wide value with no type, by
@@ -6580,6 +6668,32 @@ const Walker = struct {
     inst_parent: []u32 = &.{},
 
     eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
+    /// §31.3: a closed update's split of one base cell, per field of
+    /// its record type, by `(cell, fields)`: whether the field is tracked,
+    /// and the cell and path it projects to. Each field is computed the
+    /// first time an update needs it, so cells and paths are interned in
+    /// the order the unshared walk interns them (#716).
+    split_memo: std.AutoHashMapUnmanaged([3]usize, *SplitMemo) = .empty,
+    /// The locals bound so far, in binding order, without those bound in
+    /// an earlier arm of a `case` whose later arm is being walked: those
+    /// are never compatible with where the walk is (`compatible`), so a
+    /// demand's holders are looked for among the rest (#716). Superset of
+    /// the bound locals compatible with `ctx`; a restore leaves stale and
+    /// repeated entries, which the readers filter.
+    bound_log: std.ArrayList(u32) = .empty,
+    /// Whether `bound_log` is kept: in a declaration with more locals
+    /// than `holder_scan_max`; a scan of every local costs less below.
+    logs_bindings: bool = false,
+    holder_buf: std.ArrayList(u32) = .empty,
+    /// Per cell, the read-off (`obj_gen`) that numbered it as a record
+    /// object, and its number (`objectNumber`): a column, not a list to scan.
+    obj_number: std.ArrayList([2]u32) = .empty,
+    obj_gen: u32 = 0,
+    /// `uses.items.len` when each `case` (by `case_id`) finished: a use
+    /// recorded after a demand, in an arm of a case other than the
+    /// demand's, and every use until the case ends, are in the case's
+    /// other arms (`resolveRaw`, #716).
+    case_end: std.ArrayList(u32) = .empty,
 
     // ---- setup -------------------------------------------------------------
 
@@ -6587,6 +6701,7 @@ const Walker = struct {
         try w.o.seedPaths();
         const n = w.decl.locals_end - w.decl.locals_start;
         w.local_av = try w.a.alloc(?AV, n);
+        w.logs_bindings = n > holder_scan_max;
         @memset(w.local_av, null);
         w.local_frame = try w.a.alloc(u32, n);
         @memset(w.local_frame, 0);
@@ -6805,9 +6920,82 @@ const Walker = struct {
     }
 
     fn unionOf(w: *Walker, parts: []const AV) Allocator.Error!AV {
-        var all: std.ArrayList(Entry) = .empty;
-        for (parts) |p| try all.appendSlice(w.a, p);
-        return w.norm(all.items);
+        var total: usize = 0;
+        for (parts) |p| total += p.len;
+        if (total <= union_merge_min or parts.len <= union_merge_parts) {
+            var all: std.ArrayList(Entry) = .empty;
+            for (parts) |p| try all.appendSlice(w.a, p);
+            return w.norm(all.items);
+        }
+        // `norm`'s answer — one entry per path and cell, its least `approx`
+        // and every `grown` joined, by path and cell — by merging the parts,
+        // each in that form already or put in it, two by two: a `case` over
+        // a wide model joins its arms' wide values, which are mostly the
+        // same entries, and a sort of all of them costs a log more (#716).
+        var runs: std.ArrayList(AV) = .empty;
+        for (parts) |p| {
+            if (p.len == 0) continue;
+            try runs.append(w.a, if (isNormal(p)) p else try w.norm(try w.a.dupe(Entry, p)));
+        }
+        while (runs.items.len > 1) {
+            var n: usize = 0;
+            var i: usize = 0;
+            while (i < runs.items.len) : (i += 2) {
+                runs.items[n] = if (i + 1 < runs.items.len) try w.mergeNormal(runs.items[i], runs.items[i + 1]) else runs.items[i];
+                n += 1;
+            }
+            runs.items.len = n;
+        }
+        // An array of its own, as `norm`'s is.
+        const got: AV = if (runs.items.len == 0) &.{} else try w.a.dupe(Entry, runs.items[0]);
+        if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+            var all: std.ArrayList(Entry) = .empty;
+            for (parts) |p| try all.appendSlice(w.a, p);
+            const want = try w.norm(all.items);
+            std.debug.assert(want.len == got.len);
+            for (want, got) |x, y| std.debug.assert(std.meta.eql(x, y));
+        }
+        return got;
+    }
+
+    /// Whether `av` is in `norm`'s form: strictly ascending by path and cell.
+    fn isNormal(av: AV) bool {
+        if (av.len < 2) return true;
+        for (av[1..], 0..) |e, i| {
+            const d = av[i];
+            if (d.path > e.path or (d.path == e.path and d.cell >= e.cell)) return false;
+        }
+        return true;
+    }
+
+    /// Two values in `norm`'s form, as one: an entry in both keeps the
+    /// lesser `approx` and both `grown` marks.
+    fn mergeNormal(w: *Walker, x: AV, y: AV) Allocator.Error!AV {
+        const out = try w.a.alloc(Entry, x.len + y.len);
+        var i: usize = 0;
+        var j: usize = 0;
+        var n: usize = 0;
+        while (i < x.len and j < y.len) {
+            const a = x[i];
+            const b = y[j];
+            if (a.path < b.path or (a.path == b.path and a.cell < b.cell)) {
+                out[n] = a;
+                i += 1;
+            } else if (b.path < a.path or (b.path == a.path and b.cell < a.cell)) {
+                out[n] = b;
+                j += 1;
+            } else {
+                out[n] = .{ .path = a.path, .cell = a.cell, .approx = @min(a.approx, b.approx), .grown = gJoin(a.grown, b.grown) };
+                i += 1;
+                j += 1;
+            }
+            n += 1;
+        }
+        @memcpy(out[n..][0 .. x.len - i], x[i..]);
+        n += x.len - i;
+        @memcpy(out[n..][0 .. y.len - j], y[j..]);
+        n += y.len - j;
+        return out[0..n];
     }
 
     fn shift(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
@@ -8124,9 +8312,59 @@ const Walker = struct {
             else => {},
         };
         // A taken element and an `except` cell: pair by pair, as before.
+        // An `except` cell no list faces (a record's object, written) is,
+        // in a list's table, `yes` against every cell it is not related to
+        // that is not `⊤`, a message or a taken element, and the pair
+        // touches nothing: only those pairs are formed, in their order, so
+        // a wide record's written fields cost their number (#716).
+        var by_key: std.AutoHashMapUnmanaged([3]u32, std.ArrayList(u32)) = .empty;
+        var special: std.ArrayList(u32) = .empty;
+        var indexed = false;
         for (items, 0..) |x, i| {
             const kx = w.cells.items[x.e.cell].kind;
             if (kx != .taken and kx != .except) continue;
+            if (kx == .except and fl == .list and (try w.atomCell(x.e.cell)) == null) {
+                if (!indexed) {
+                    indexed = true;
+                    for (items, 0..) |y, j| {
+                        switch (w.cells.items[y.e.cell].kind) {
+                            .top, .payload, .taken => try special.append(w.a, @intCast(j)),
+                            else => {},
+                        }
+                        const g = try by_key.getOrPut(w.a, w.coverKey(y.e.cell));
+                        if (!g.found_existing) g.value_ptr.* = .empty;
+                        try g.value_ptr.append(w.a, @intCast(j));
+                    }
+                }
+                var cand: std.ArrayList(u32) = .empty;
+                try cand.appendSlice(w.a, special.items);
+                if (by_key.get(w.coverKey(x.e.cell))) |l| try cand.appendSlice(w.a, l.items);
+                std.mem.sort(u32, cand.items, {}, std.sort.asc(u32));
+                var last: u32 = none;
+                for (cand.items) |j| {
+                    if (j == last) continue;
+                    last = j;
+                    const y = items[j];
+                    if (y.g == x.g) continue;
+                    const ky = w.cells.items[y.e.cell].kind;
+                    if ((ky == .taken or ky == .except) and j < i) continue;
+                    try acc.add(w, try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl));
+                    if (acc.shared()) return cond_shared;
+                }
+                if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+                    // Every pair left out is `yes`, and makes no condition.
+                    for (items, 0..) |y, j| {
+                        if (y.g == x.g) continue;
+                        const ky = w.cells.items[y.e.cell].kind;
+                        if ((ky == .taken or ky == .except) and j < i) continue;
+                        if (std.mem.indexOfScalar(u32, cand.items, @intCast(j)) != null) continue;
+                        const n0 = w.conds.items.len;
+                        std.debug.assert(try w.sepCellsFl(x.e.cell, y.e.cell, x.e.approx == 0 and y.e.approx == 0, fl) == cond_yes);
+                        std.debug.assert(w.conds.items.len == n0);
+                    }
+                }
+                continue;
+            }
             for (items, 0..) |y, j| {
                 if (y.g == x.g) continue;
                 const ky = w.cells.items[y.e.cell].kind;
@@ -9445,9 +9683,29 @@ const Walker = struct {
         return !(na.case_id == nb.case_id and na.arm != nb.arm);
     }
 
+    /// The case two contexts are in different arms of, when `compatible`
+    /// says they are not; null when they are.
+    fn divergentCase(w: *const Walker, x: u32, y: u32) ?u32 {
+        if (w.compatible(x, y)) return null;
+        var a = x;
+        var b = y;
+        var prev_a: u32 = none;
+        while (w.ctx_nodes.items[a].depth > w.ctx_nodes.items[b].depth) a = w.ctx_nodes.items[a].parent;
+        while (w.ctx_nodes.items[b].depth > w.ctx_nodes.items[a].depth) b = w.ctx_nodes.items[b].parent;
+        // Neither is above the other, or they would be compatible: the
+        // children of their common ancestor are two arms of one case.
+        std.debug.assert(a != b);
+        while (a != b) {
+            prev_a = a;
+            a = w.ctx_nodes.items[a].parent;
+            b = w.ctx_nodes.items[b].parent;
+        }
+        return w.ctx_nodes.items[prev_a].case_id;
+    }
+
     // ---- binding -------------------------------------------------------------
 
-    fn bindLocal(w: *Walker, l: u32, av: AV) void {
+    fn bindLocal(w: *Walker, l: u32, av: AV) Allocator.Error!void {
         if (l >= w.local_av.len) return;
         // §26.1: a local index is bound once per walk. Lowering gives every
         // binder — written or compiler-made — an index of its own, and BIR
@@ -9459,15 +9717,16 @@ const Walker = struct {
         w.local_av[l] = av;
         w.local_frame[l] = w.frame;
         w.local_ctx[l] = w.ctx;
+        if (w.logs_bindings) try w.bound_log.append(w.a, l);
     }
 
     fn bindPattern(w: *Walker, pat: Inst.Index, av: AV) Allocator.Error!void {
         const b = w.bir;
         const data = b.instData(pat);
         switch (b.instTag(pat)) {
-            .pat_var => w.bindLocal(data.lhs, av),
+            .pat_var => try w.bindLocal(data.lhs, av),
             .pat_as => {
-                w.bindLocal(data.rhs, av);
+                try w.bindLocal(data.rhs, av);
                 try w.bindPattern(@fromBackingInt(@intCast(data.lhs)), av);
             },
             .pat_tuple => for (b.extraSlice(Bir.inlineRange(data), Inst.Index), 0..) |el, i| {
@@ -9476,7 +9735,7 @@ const Walker = struct {
             .pat_record => for (b.extraSlice(Bir.inlineRange(data), u32)) |l| {
                 const name = b.locals[w.decl.locals_start + l].name;
                 const sym = if (name.unwrap()) |s| @backingInt(b.symbols[s]) else 0;
-                w.bindLocal(l, try w.proj(av, .{ .kind = .field, .arg = sym }, w.localType(l)));
+                try w.bindLocal(l, try w.proj(av, .{ .kind = .field, .arg = sym }, w.localType(l)));
             },
             .pat_ctor => {
                 const c = try w.ctorOf(@fromBackingInt(@intCast(data.lhs)));
@@ -10747,18 +11006,63 @@ const Walker = struct {
         // every field it did not write, through its exception set.
         var out: std.ArrayList(Entry) = .empty;
         const all_fields = w.recordFields(w.instType(base_inst));
+        // One base entry whose split is known whole, merged in its order
+        // rather than sorted again with the rest (#716).
+        var whole: ?struct { e: Entry, memo: *const SplitMemo } = null;
         for (base) |e| {
             const k = w.cells.items[e.cell].kind;
             if (e.path == eps and k != .top and k != .site and k != .closure and k != .func) {
                 try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, names, all_fields != null), .approx = e.approx, .grown = e.grown });
                 if (all_fields) |fs| {
-                    for (fs) |fl| {
-                        if (std.mem.indexOfScalar(u32, names, @backingInt(fl.name)) != null) continue;
-                        if (!try w.trackedVar(fl.value)) continue;
-                        const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
-                        if (try w.projCell(e.cell, s, fl.value)) |c| {
-                            try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
+                    if (fs.len <= split_memo_min) {
+                        for (fs) |fl| {
+                            if (std.mem.indexOfScalar(u32, names, @backingInt(fl.name)) != null) continue;
+                            if (!try w.trackedVar(fl.value)) continue;
+                            const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
+                            if (try w.projCell(e.cell, s, fl.value)) |c| {
+                                try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
+                            }
                         }
+                        continue;
+                    }
+                    // Every arm of a `case` over a wide model splits the same
+                    // base: each field's projection is computed once (#716).
+                    const gop = try w.split_memo.getOrPut(w.a, .{ e.cell, @intFromPtr(fs.ptr), fs.len });
+                    if (!gop.found_existing) {
+                        const fresh = try w.a.create(SplitMemo);
+                        fresh.* = .{ .fields = try w.a.alloc(SplitField, fs.len), .unknown = fs.len };
+                        @memset(fresh.fields, .{});
+                        gop.value_ptr.* = fresh;
+                    }
+                    const memo = gop.value_ptr.*;
+                    if (memo.sorted != null and whole == null) {
+                        whole = .{ .e = e, .memo = memo };
+                        continue;
+                    }
+                    for (fs, memo.fields) |fl, *m| {
+                        if (std.mem.indexOfScalar(u32, names, @backingInt(fl.name)) != null) continue;
+                        if (m.state == .unknown) {
+                            memo.unknown -= 1;
+                            m.state = .none;
+                            if (try w.trackedVar(fl.value)) {
+                                const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
+                                if (try w.projCell(e.cell, s, fl.value)) |c| {
+                                    m.* = .{ .state = .cell, .cell = c, .path = try w.o.child(eps, .field, s.arg) };
+                                }
+                            }
+                        }
+                        if (m.state == .cell) try out.append(w.a, .{ .path = m.path, .cell = m.cell, .approx = e.approx, .grown = gStep(e.grown) });
+                    }
+                    if (memo.unknown == 0 and memo.sorted == null) {
+                        var order: std.ArrayList(u32) = .empty;
+                        for (memo.fields, 0..) |m, i| if (m.state == .cell) try order.append(w.a, @intCast(i));
+                        std.mem.sort(u32, order.items, memo.fields, struct {
+                            fn less(ms: []const SplitField, x: u32, y: u32) bool {
+                                if (ms[x].path != ms[y].path) return ms[x].path < ms[y].path;
+                                return ms[x].cell < ms[y].cell;
+                            }
+                        }.less);
+                        memo.sorted = order.items;
                     }
                     continue;
                 }
@@ -10771,7 +11075,26 @@ const Walker = struct {
             try out.append(w.a, e);
         }
         var parts: std.ArrayList(AV) = .empty;
-        try parts.append(w.a, try w.norm(out.items));
+        try parts.append(w.a, base: {
+            const x = whole orelse break :base try w.norm(out.items);
+            const fs = all_fields.?;
+            var split: std.ArrayList(Entry) = .empty;
+            for (x.memo.sorted.?) |i| {
+                if (std.mem.indexOfScalar(u32, names, @backingInt(fs[i].name)) != null) continue;
+                const m = x.memo.fields[i];
+                try split.append(w.a, .{ .path = m.path, .cell = m.cell, .approx = x.e.approx, .grown = gStep(x.e.grown) });
+            }
+            if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+                var all: std.ArrayList(Entry) = .empty;
+                try all.appendSlice(w.a, out.items);
+                try all.appendSlice(w.a, split.items);
+                const want = try w.norm(all.items);
+                const got = try w.mergeNormal(split.items, try w.norm(try w.a.dupe(Entry, out.items)));
+                std.debug.assert(want.len == got.len);
+                for (want, got) |p, q| std.debug.assert(std.meta.eql(p, q));
+            }
+            break :base try w.mergeNormal(split.items, try w.norm(out.items));
+        });
         for (fields, avs) |f, av| {
             const shifted = try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
             try w.sight(shifted, .{ .pending = "it is stored in a record" }, w.token(inst));
@@ -10961,7 +11284,7 @@ const Walker = struct {
                     const value: Inst.Index = @fromBackingInt(@intCast(idata.rhs));
                     const av = try w.eval(value);
                     try w.consume(&.{value}, w.token(item));
-                    w.bindLocal(ld.local, av);
+                    try w.bindLocal(ld.local, av);
                 },
                 .let_pattern => {
                     const value: Inst.Index = @fromBackingInt(@intCast(idata.rhs));
@@ -11004,7 +11327,7 @@ const Walker = struct {
             const bottom = try w.a.create(Summary);
             bottom.* = .{ .params = @intCast(b.extraSlice(.{ .start = ld.params_start, .end = ld.params_end }, Inst.Index).len) };
             w.closures.items[g[1]].class = bottom;
-            w.bindLocal(g[0], try w.single(.{ .kind = .closure, .a = g[1] }));
+            try w.bindLocal(g[0], try w.single(.{ .kind = .closure, .a = g[1] }));
         }
         const snap = try w.snapshot();
         const assume = try w.a.alloc(*const Summary, group.len);
@@ -11206,6 +11529,10 @@ const Walker = struct {
         w.cases += 1;
         const saved = w.ctx;
         var results: std.ArrayList(AV) = .empty;
+        // The locals each arm binds are out of sight of the arms after it,
+        // and back in sight after the case (`bound_log`).
+        const log_mark = w.bound_log.items.len;
+        var parked: std.ArrayList(u32) = .empty;
         for (branches, 0..) |br, arm| {
             const node: u32 = @intCast(w.ctx_nodes.items.len);
             try w.ctx_nodes.append(w.a, .{ .parent = saved, .case_id = case_id, .arm = @intCast(arm), .depth = w.ctx_nodes.items[saved].depth + 1 });
@@ -11214,7 +11541,12 @@ const Walker = struct {
             const body: Inst.Index = @fromBackingInt(@intCast(b.instData(br).rhs));
             try results.append(w.a, try w.eval(body));
             try w.consume(&.{body}, w.token(body));
+            if (w.logs_bindings) try parked.appendSlice(w.a, w.bound_log.items[@min(log_mark, w.bound_log.items.len)..]);
+            if (w.logs_bindings) w.bound_log.shrinkRetainingCapacity(@min(log_mark, w.bound_log.items.len));
         }
+        if (w.logs_bindings) try w.bound_log.appendSlice(w.a, parked.items);
+        if (w.case_end.items.len <= case_id) try w.case_end.appendNTimes(w.a, none, case_id + 1 - w.case_end.items.len);
+        w.case_end.items[case_id] = @intCast(w.uses.items.len);
         w.ctx = saved;
         return w.unionOf(results.items);
     }
@@ -11792,6 +12124,15 @@ const Walker = struct {
     fn entryConditions(w: *Walker, inst: Inst.Index, update: EntryFn, payload: AV, initial: AV, model: AV) Allocator.Error!void {
         var fresh: std.ArrayList(u32) = .empty;
         const made_initially = try w.expand(initial);
+        // What init made, by the key a cover needs (`coverKey`): a model as
+        // wide as init's record asks each of its cells once (#716).
+        var init_by: std.AutoHashMapUnmanaged([3]u32, std.ArrayList(u32)) = .empty;
+        for (made_initially, 0..) |i, k| {
+            const g = try init_by.getOrPut(w.a, w.coverKey(i.cell));
+            if (!g.found_existing) g.value_ptr.* = .empty;
+            try g.value_ptr.append(w.a, @intCast(k));
+        }
+        var seen: std.ArrayList(bool) = .empty;
         for (model) |e| {
             const c = w.cells.items[e.cell];
             // The entry namespaces update below 100000, init from 100000,
@@ -11799,27 +12140,22 @@ const Walker = struct {
             if (c.kind != .result or c.a != inst.int() or c.b == 0 or c.b >= entry_init_ns or try w.isEscaped(e.cell)) continue;
             // A callback's cells may use the lower namespace too. Anything
             // present at init keeps its established condition, never a guess.
-            const initial_cell = for (made_initially) |i| {
-                if ((try w.covers(i.cell, e.cell)) != null) break true;
-            } else false;
-            if (initial_cell) continue;
-            if (std.mem.indexOfScalar(u32, fresh.items, e.cell) != null) continue;
+            if (try w.coveredBy(made_initially, &init_by, e.cell)) continue;
+            if (try markOnce(w.a, &seen, e.cell)) continue;
             try fresh.append(w.a, e.cell);
             w.cell_cond.items[e.cell] = cond_yes;
         }
         // §31.4 item 6: the records of the model, the same invariant, on the
         // record cell an update's object was written over too.
         var rfresh: std.ArrayList(u32) = .empty;
+        var rseen: std.ArrayList(bool) = .empty;
         for (model) |e| {
             const b = try w.rbase(e.cell);
             const c = w.cells.items[b];
             if (c.kind != .result or c.a != inst.int() or c.b == 0 or c.b >= entry_init_ns) continue;
             if (try w.isEscaped(b) or try w.isEscaped(e.cell) or try w.isEscaped(try w.exceptCell(b, &.{}, true))) continue;
-            const initial_cell = for (made_initially) |i| {
-                if ((try w.covers(i.cell, b)) != null) break true;
-            } else false;
-            if (initial_cell) continue;
-            if (std.mem.indexOfScalar(u32, rfresh.items, b) != null) continue;
+            if (try w.coveredBy(made_initially, &init_by, b)) continue;
+            if (try markOnce(w.a, &rseen, b)) continue;
             try rfresh.append(w.a, b);
             w.cell_rcond.items[b] = cond_yes;
         }
@@ -12014,6 +12350,12 @@ const Walker = struct {
         w.point += 1;
         // (b) The demands.
         const arena = w.o.out.allocator();
+        // The model and the view's messages, indexed once for the demand
+        // per path written: each asks whether another of their paths
+        // reaches its cells (#716).
+        const model_idx = try w.reachIndex(model);
+        const lists_idx = if (view_lists.len > 0) try w.reachIndex(view_lists) else null;
+        const msgs_idx = if (view_msgs.len > 0) try w.reachIndex(view_msgs) else null;
         const op = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(upd, "update")}) else "entry";
         // One demand per path written, its derivation and exclusivity the
         // worst any of update's classes gives (an exact write beats an
@@ -12055,15 +12397,15 @@ const Walker = struct {
                 // §20.5, §23.6: update writes its message in place — what a
                 // send gave up, or what a view event built from the model.
                 const at = try w.projPath(msg, x.path, null);
-                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep, x.extent);
+                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep, x.extent, null, none, lists_idx);
                 continue;
             }
             var rest: std.ArrayList(Entry) = .empty;
-            for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
+            if (model_idx == null) for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
             const at = try w.projPath(model, x.path, null);
             // Not Disjoint against this message: what a send put in the
             // model was another send's, given up there (§23.6).
-            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep, x.extent);
+            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, if (model_idx != null) &.{retained} else &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep, x.extent, model_idx, x.path, lists_idx);
         }
         // §31.8: each record update writes is an `update` demand at the entry,
         // with the fields written; reported, not enforced (R4).
@@ -12099,7 +12441,7 @@ const Walker = struct {
             for (rw.items) |x| {
                 const src = if (x.param == 0) msg else model;
                 var rest: std.ArrayList(Entry) = .empty;
-                if (x.param == 1) for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
+                if (x.param == 1 and model_idx == null) for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
                 const base = try w.projPath(src, x.path, null);
                 try w.demandOn(.{
                     .kind = .callsite,
@@ -12109,7 +12451,10 @@ const Walker = struct {
                     .base_ref = null,
                     .base_ty = null,
                     .base = base,
-                    .others = if (x.param == 0) &.{retained} else &.{ rest.items, retained },
+                    .others = if (x.param == 0 or model_idx != null) &.{retained} else &.{ rest.items, retained },
+                    .rest_index = if (x.param == 1) model_idx else null,
+                    .rest_except = x.path,
+                    .payload_index = msgs_idx,
                     .origin = x.origin,
                     .entry = row,
                     .payload_from = view_msgs,
@@ -12257,8 +12602,11 @@ const Walker = struct {
 
     /// A demand at the entry (§20.6): a call-site demand on the entry model
     /// at one path, or on the message.
-    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent) Allocator.Error!void {
+    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent, rest_index: ?*const ReachIndex, rest_except: u32, payload_index: ?*const ReachIndex) Allocator.Error!void {
         try w.demandOn(.{
+            .rest_index = rest_index,
+            .rest_except = rest_except,
+            .payload_index = payload_index,
             .kind = .callsite,
             .token = tok,
             .op = op,
@@ -13221,15 +13569,21 @@ const Walker = struct {
     };
 
     /// `s.res` instantiated at the call (§16.4 item 6).
-    /// §31.7: the number record object `cell` takes in this summary
-    /// (`objNumber`). §16.6: an object a member of this recursive group made
+    /// §31.7: the number record object `c` takes in this summary: the next
+    /// one when it has none yet, kept in `obj_number` for the read-off
+    /// `obj_gen` names. §16.6: an object a member of this recursive group made
     /// keeps the number the member gave it, at a call of it, so that the
     /// group's rounds settle; two objects that number may make one are
     /// one, which refuses more and never less.
-    fn objectNumber(w: *Walker, numbers: *std.ArrayList([2]u32), next: *u32, c: u32) Allocator.Error!u32 {
+    fn objectNumber(w: *Walker, next: *u32, c: u32) Allocator.Error!u32 {
         const x = w.cells.items[c];
         if (w.recursive and x.kind == .result and x.b >= obj_fresh_base and x.b < callback_ns_stride) return x.b;
-        return objNumber(w.a, numbers, next, c);
+        if (w.obj_number.items.len <= c) try w.obj_number.appendNTimes(w.a, .{ 0, 0 }, c + 1 - w.obj_number.items.len);
+        const n = &w.obj_number.items[c];
+        if (n[0] == w.obj_gen) return n[1];
+        next.* += 1;
+        n.* = .{ w.obj_gen, next.* };
+        return next.*;
     }
 
     /// §31.7: cell `c` as a cell no list's fact reads: itself when it is
@@ -16272,6 +16626,120 @@ const Walker = struct {
         return found;
     }
 
+    /// A value with no closure, its entries by the cell a cover needs: the
+    /// kind, `a` and `b` of the cell, or of the one an `except` cell was
+    /// written over. `coversAt(outer, inner)` is null, and touches nothing,
+    /// unless `outer`'s key is `inner`'s (#716).
+    const ReachIndex = struct {
+        av: AV,
+        by: std.AutoHashMapUnmanaged([3]u32, std.ArrayList(u32)) = .empty,
+    };
+
+    fn coverKey(w: *const Walker, c: u32) [3]u32 {
+        var x = w.cells.items[c];
+        if (x.kind == .except) x = w.cells.items[x.a];
+        return .{ @backingInt(x.kind), x.a, x.b };
+    }
+
+    /// Whether an entry of `av` covers `c` (`covers`), asked of `av`'s
+    /// entries in order until one does, as a scan of all of them asks: the
+    /// entries whose key (`by`) is not `c`'s answer null and touch nothing.
+    fn coveredBy(w: *Walker, av: AV, by: *const std.AutoHashMapUnmanaged([3]u32, std.ArrayList(u32)), c: u32) Allocator.Error!bool {
+        const got = if (by.get(w.coverKey(c))) |l| for (l.items) |k| {
+            if ((try w.covers(av[k].cell, c)) != null) break true;
+        } else false else false;
+        if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+            const want = for (av) |i| {
+                if ((try w.covers(i.cell, c)) != null) break true;
+            } else false;
+            std.debug.assert(got == want);
+        }
+        return got;
+    }
+
+    /// The index of `av`, or null when it holds a closure (`expand` would
+    /// change it).
+    fn reachIndex(w: *Walker, av: AV) Allocator.Error!?*ReachIndex {
+        for (av) |e| if (w.cells.items[e.cell].kind == .closure) return null;
+        const idx = try w.a.create(ReachIndex);
+        idx.* = .{ .av = av };
+        for (av, 0..) |e, i| {
+            const g = try idx.by.getOrPut(w.a, w.coverKey(e.cell));
+            if (!g.found_existing) g.value_ptr.* = .empty;
+            try g.value_ptr.append(w.a, @intCast(i));
+        }
+        return idx;
+    }
+
+    /// `reaches(rest, cells)`, `rest` the entries of the index's value that
+    /// do not overlap `except` (all of them when it is `none`): the same
+    /// answer through the same calls, in the same order, but for the
+    /// entries no cell's key names, which reach nothing and, once each
+    /// cell's `splitBase` has been asked for, change nothing (#716).
+    fn reachesIndexed(w: *Walker, idx: *const ReachIndex, except: u32, cells: []const Entry) Allocator.Error!?Entry {
+        const got = try w.reachesIndexedRaw(idx, except, cells);
+        if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+            var rest: std.ArrayList(Entry) = .empty;
+            for (idx.av) |e| if (except == none or !w.o.overlap(e.path, except)) try rest.append(w.a, e);
+            const want = try w.reaches(rest.items, cells);
+            std.debug.assert((got == null) == (want == null));
+            if (got) |g| std.debug.assert(std.meta.eql(g, want.?));
+        }
+        return got;
+    }
+
+    fn reachesIndexedRaw(w: *Walker, idx: *const ReachIndex, except: u32, cells: []const Entry) Allocator.Error!?Entry {
+        const av = idx.av;
+        var found: ?Entry = null;
+        // Whether `splitBase` was asked for each cell yet: the first ask
+        // may make its cell, as the scan of every entry would.
+        const asked = try w.a.alloc(bool, cells.len);
+        @memset(asked, false);
+        var left = cells.len;
+        var i: usize = 0;
+        // Until every cell's split base is asked for, entry by entry.
+        while (i < av.len and left > 0) : (i += 1) {
+            const e = av[i];
+            if (except != none and w.o.overlap(e.path, except)) continue;
+            for (cells, 0..) |c, ci| {
+                const cv = (try w.coversAt(e.cell, c.cell)) orelse blk: {
+                    if (!asked[ci]) {
+                        asked[ci] = true;
+                        left -= 1;
+                    }
+                    const b = (try w.splitBase(c.cell, none)) orelse continue;
+                    break :blk (try w.coversAt(e.cell, b)) orelse continue;
+                };
+                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0, .grown = gJoin(e.grown, c.grown) };
+                if (hit.approx == 0) return hit;
+                if (found == null or hit.approx < found.?.approx) found = hit;
+            }
+        }
+        if (i >= av.len) return found;
+        // Then only the entries a cell, or its split base, names.
+        var cand: std.ArrayList(u32) = .empty;
+        for (cells) |c| {
+            if (idx.by.get(w.coverKey(c.cell))) |l| try cand.appendSlice(w.a, l.items);
+            if (try w.splitBase(c.cell, none)) |b| if (idx.by.get(w.coverKey(b))) |l| try cand.appendSlice(w.a, l.items);
+        }
+        std.mem.sort(u32, cand.items, {}, std.sort.asc(u32));
+        var last: u32 = none;
+        for (cand.items) |ei| {
+            if (ei < i or ei == last) continue;
+            last = ei;
+            const e = av[ei];
+            if (except != none and w.o.overlap(e.path, except)) continue;
+            for (cells) |c| {
+                const cv = (try w.coversAt(e.cell, c.cell)) orelse
+                    (if (try w.splitBase(c.cell, none)) |b| (try w.coversAt(e.cell, b)) orelse continue else continue);
+                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0, .grown = gJoin(e.grown, c.grown) };
+                if (hit.approx == 0) return hit;
+                if (found == null or hit.approx < found.?.approx) found = hit;
+            }
+        }
+        return found;
+    }
+
     const DemandSpec = struct {
         inst: u32 = none,
         kind: DemandKind,
@@ -16304,6 +16772,12 @@ const Walker = struct {
         /// §31.3: a record update's demand on its base's object, and the
         /// fields it writes.
         fields: ?[]const u32 = null,
+        /// An operand before `others`: the indexed value's entries that do
+        /// not overlap `rest_except` (the model's other paths, §20.6).
+        rest_index: ?*const ReachIndex = null,
+        rest_except: u32 = none,
+        /// `payload_from`, indexed.
+        payload_index: ?*const ReachIndex = null,
     };
 
     fn demandOn(w: *Walker, spec: DemandSpec) Allocator.Error!void {
@@ -16350,6 +16824,7 @@ const Walker = struct {
             .deep = spec.deep,
             .extent = spec.extent,
             .fields = spec.fields,
+            .use_mark = @intCast(w.uses.items.len),
         };
         if (w.mode == .report) {
             rec.span = w.span;
@@ -16490,16 +16965,20 @@ const Walker = struct {
             return;
         }
         // §20.5: a message a view builds from the model may hold the cell.
-        if (spec.payload_from.len > 0 and (try w.reaches(spec.payload_from, cells.items)) != null) {
+        if (spec.payload_from.len > 0 and (if (spec.payload_index) |pi| try w.reachesIndexed(pi, none, cells.items) else try w.reaches(spec.payload_from, cells.items)) != null) {
             rec.prelim = .{ .cause = .payload, .detail = view_event_detail, .approx = true };
             try w.demands.append(w.a, rec);
             return;
         }
         // Disjoint: another operand of the demand reaches the cell.
         var approx_hit: u32 = 0;
-        for (spec.others) |av| {
+        const n_others = spec.others.len + @intFromBool(spec.rest_index != null);
+        for (0..n_others) |oi| {
             if (comptime record_mutation == .no_disjoint) if (spec.fields != null) break;
-            const hit = (try w.reaches(av, cells.items)) orelse continue;
+            const hit = (if (spec.rest_index) |ri|
+                (if (oi == 0) try w.reachesIndexed(ri, spec.rest_except, cells.items) else try w.reaches(spec.others[oi - 1], cells.items))
+            else
+                try w.reaches(spec.others[oi], cells.items)) orelse continue;
             if (hit.approx != 0) {
                 if (approx_hit == 0 or hit.approx < approx_hit) approx_hit = hit.approx;
                 continue;
@@ -16563,10 +17042,8 @@ const Walker = struct {
         }
         // The holders, resolved against later uses once the walk is done.
         var holders: std.ArrayList(Holder) = .empty;
-        for (w.local_av, 0..) |maybe, l| {
-            const av = maybe orelse continue;
-            if (w.local_frame[l] != w.frame) continue;
-            if (!w.compatible(w.local_ctx[l], w.ctx)) continue;
+        for (try w.holderLocals()) |l| {
+            const av = w.local_av[l].?;
             for (try w.expand(av)) |e| {
                 // §16.4's keep edge, in the callee (#281): a callback's
                 // result may keep what the call handed it. A list made here
@@ -16610,6 +17087,48 @@ const Walker = struct {
         }
         rec.holders = try holders.toOwnedSlice(w.a);
         try w.demands.append(w.a, rec);
+    }
+
+    /// The locals a demand here may find a holder among: bound, in this
+    /// frame, in a compatible branch, in index order. Read off `bound_log`,
+    /// which leaves out the earlier arms of the cases the walk is in, so a
+    /// `case` over a wide model costs each arm its own locals (#716).
+    fn holderLocals(w: *Walker) Allocator.Error![]const u32 {
+        // One buffer for every demand: nothing the holders' loop calls asks
+        // for them again.
+        const out = &w.holder_buf;
+        out.clearRetainingCapacity();
+        if (!w.logs_bindings) {
+            for (w.local_av, 0..) |maybe, l| {
+                if (maybe == null or w.local_frame[l] != w.frame or !w.compatible(w.local_ctx[l], w.ctx)) continue;
+                try out.append(w.a, @intCast(l));
+            }
+            return out.items;
+        }
+        for (w.bound_log.items) |l| {
+            if (w.local_av[l] == null or w.local_frame[l] != w.frame) continue;
+            if (!w.compatible(w.local_ctx[l], w.ctx)) continue;
+            try out.append(w.a, l);
+        }
+        // Binding order is mostly index order already.
+        if (!std.sort.isSorted(u32, out.items, {}, std.sort.asc(u32))) std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+        var n: usize = 0;
+        for (out.items) |l| {
+            if (n > 0 and out.items[n - 1] == l) continue;
+            out.items[n] = l;
+            n += 1;
+        }
+        const got = out.items[0..n];
+        if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+            var k: usize = 0;
+            for (w.local_av, 0..) |maybe, l| {
+                if (maybe == null or w.local_frame[l] != w.frame or !w.compatible(w.local_ctx[l], w.ctx)) continue;
+                std.debug.assert(k < got.len and got[k] == l);
+                k += 1;
+            }
+            std.debug.assert(k == got.len);
+        }
+        return got;
     }
 
     /// For an element a list pattern split off (§18.4 item 4), the element
@@ -16791,6 +17310,8 @@ const Walker = struct {
         };
         w.use_start = start[0 .. n + 1];
         w.use_order = order;
+        // Made when a demand first needs it (`callRunEnd`).
+        w.use_run_end = &.{};
         // Probes and creations first: a once closure's writes read them —
         // last made first, so that a creation inside a once lambda reads the
         // probes of the lambda's own creation and calls, made after it.
@@ -16815,6 +17336,25 @@ const Walker = struct {
             try out_list.append(out, verdict);
             if (rec.fields != null and rec.inst != none and verdict.verdict == .accepted) try w.publishDemand(rec);
         }
+    }
+
+    /// Where the run of uses at position `k` of `use_order` ends: the
+    /// local's uses before `to` after it at its point, of one call, with
+    /// its token. Each run is walked once per resolve.
+    fn callRunEnd(w: *Walker, to: u32, k: u32) Allocator.Error!u32 {
+        if (w.use_run_end.len == 0) {
+            w.use_run_end = try w.a.alloc(u32, w.use_order.len);
+            @memset(w.use_run_end, 0);
+        }
+        if (w.use_run_end[k] != 0) return w.use_run_end[k];
+        const u = w.uses.items[w.use_order[k]];
+        var e = k + 1;
+        while (e < to) : (e += 1) {
+            const v = w.uses.items[w.use_order[e]];
+            if (v.call == 0 or v.point != u.point or v.token != u.token) break;
+        }
+        for (k..e) |i| w.use_run_end[i] = e;
+        return e;
     }
 
     fn hoistName(w: *Walker, symbol: u32) Allocator.Error!u32 {
@@ -16994,8 +17534,36 @@ const Walker = struct {
         for (rec.holders) |h| {
             var first: ?Use = null;
             const range = if (h.local < w.use_start.len - 1) w.use_order[w.use_start[h.local]..w.use_start[h.local + 1]] else &[_]u32{};
-            for (range) |ui| {
+            // The uses are in the order they were recorded, so by point:
+            // those before the demand's are skipped by a search, and a run
+            // in the other arms of a case the demand is in, by one more
+            // (#716). Both are uses the filters below drop.
+            var ri: usize = firstAtLeast(range, w.uses.items, rec.point);
+            while (ri < range.len) : (ri += 1) {
+                const ui = range[ri];
                 const u = w.uses.items[ui];
+                if (ui >= rec.use_mark) if (w.divergentCase(u.ctx, rec.ctx)) |k| if (k < w.case_end.items.len and w.case_end.items[k] != none) {
+                    const end = w.case_end.items[k];
+                    if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+                        for (range[ri..]) |vi| {
+                            if (vi >= end) break;
+                            std.debug.assert(!w.compatible(w.uses.items[vi].ctx, rec.ctx));
+                        }
+                    }
+                    ri += std.sort.partitionPoint(u32, range[ri..], end, struct {
+                        fn before(e: u32, x: u32) bool {
+                            return x < e;
+                        }
+                    }.before);
+                    ri -= 1;
+                    continue;
+                };
+                // A call's own uses, one per path its callee reads, are one
+                // run: at this call, none is a later use (below).
+                if (rec.kind == .callsite and rec.fields != null and u.point == rec.point and u.call != 0 and u.token == rec.token) {
+                    ri = try w.callRunEnd(w.use_start[h.local + 1], w.use_start[h.local] + @as(u32, @intCast(ri))) - w.use_start[h.local] - 1;
+                    continue;
+                }
                 // A field read is recorded where it is evaluated, at no point of
                 // its own: one at the demand's point comes after the demand, whose
                 // own operands were read before it.
@@ -17348,6 +17916,9 @@ const Walker = struct {
     fn readOffFrame(w: *Walker, frame: u32, params: []const Inst.Index, result: AV) Allocator.Error!Summary {
         const keep = w.o.keep.allocator();
         var uses: std.ArrayList(UseEntry) = .empty;
+        // The fields of a record update's base not yet read off, by
+        // parameter, path, kind of read and record type.
+        var split_left: std.AutoHashMapUnmanaged([4]u64, []u32) = .empty;
         // R: a use of a local whose value holds a parameter cell.
         for (w.uses.items) |u| {
             if (u.frame != frame) continue;
@@ -17370,13 +17941,40 @@ const Walker = struct {
                         if (first.kind == .field and std.mem.indexOfScalar(u32, u.except, first.arg) != null) continue;
                     } else if (w.recordFields(w.localType(u.local))) |fields| {
                         // A record update reads every field but the ones it
-                        // replaces (§5's split, §16.4 item 1).
-                        for (fields) |fl| {
-                            if (std.mem.indexOfScalar(u32, u.except, @backingInt(fl.name)) != null) continue;
+                        // replaces (§5's split, §16.4 item 1). One field's
+                        // entry is the same at every update of the same base,
+                        // and normalizing merges the copies: each is read off
+                        // once, at the first update that reads it, so a wide
+                        // model's arms cost its width once (#716).
+                        if (fields.len <= split_memo_min) {
+                            for (fields) |fl| {
+                                if (std.mem.indexOfScalar(u32, u.except, @backingInt(fl.name)) != null) continue;
+                                if (!try w.trackedVar(fl.value)) continue;
+                                const bit: u16 = if (rec_only or !try w.listTrackedVar(fl.value)) bit_q else bit_r;
+                                try uses.append(keep, .{ .param = pi, .path = try w.o.child(c.path, .field, @backingInt(fl.name)), .bits = bit });
+                            }
+                            continue;
+                        }
+                        const gop = try split_left.getOrPut(w.a, .{ @as(u64, pi) | (@as(u64, @intFromBool(rec_only)) << 32), c.path, @intFromPtr(fields.ptr), fields.len });
+                        if (!gop.found_existing) {
+                            const all = try w.a.alloc(u32, fields.len);
+                            for (all, 0..) |*x, k| x.* = @intCast(k);
+                            gop.value_ptr.* = all;
+                        }
+                        const left = gop.value_ptr.*;
+                        var kept: usize = 0;
+                        for (left) |k| {
+                            const fl = fields[k];
+                            if (std.mem.indexOfScalar(u32, u.except, @backingInt(fl.name)) != null) {
+                                left[kept] = k;
+                                kept += 1;
+                                continue;
+                            }
                             if (!try w.trackedVar(fl.value)) continue;
                             const bit: u16 = if (rec_only or !try w.listTrackedVar(fl.value)) bit_q else bit_r;
                             try uses.append(keep, .{ .param = pi, .path = try w.o.child(c.path, .field, @backingInt(fl.name)), .bits = bit });
                         }
+                        gop.value_ptr.* = left[0..kept];
                         continue;
                     }
                 } else if (!w.o.overlap(e.path, u.path)) continue;
@@ -17531,8 +18129,7 @@ const Walker = struct {
         // rounds settle: there one object took a new number each round, and
         // the join never settled.
         var obj_next: u32 = obj_fresh_base;
-        // (cell, number): a few per declaration.
-        var obj_numbers: std.ArrayList([2]u32) = .empty;
+        w.obj_gen += 1;
         {
             for (try w.expand(result)) |e| {
                 if (w.listFacing(e.cell) != null) continue;
@@ -17540,7 +18137,7 @@ const Walker = struct {
                 const base_cell = if (x.kind == .except) x.a else e.cell;
                 const bx = w.cells.items[base_cell];
                 var prov: Prov = switch (bx.kind) {
-                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
+                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_next, base_cell) },
                     .closure, .func => continue,
                     .param, .env, .shared, .top, .cbres, .taken, .payload, .except => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
                 };
@@ -17649,7 +18246,7 @@ const Walker = struct {
                     else => {},
                 }
                 var prov: Prov = switch (bx.kind) {
-                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
+                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_next, base_cell) },
                     else => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
                 };
                 if (sr.taken and prov.kind == .param) prov.taken = true;
