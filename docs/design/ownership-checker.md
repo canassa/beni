@@ -1724,6 +1724,23 @@ check. The selected class still instantiates every capture binding and write
 requirement. This preserves callable identity without assuming that unknown
 contents are exclusive or that a folded type cancels exactly.
 
+*Amended 2026-10-23 (#748, precise signature crossings and environments):*
+the signature's crossing mark belongs to that signature. It is not inferred
+from an arbitrary body row: an already crossed inner class, or growth of another
+variable, cannot make a new signature's first crossing approximate. Use the same
+`Grown` crossed bit, include it in summary equality and joins, and clear it at
+settlement with the entry marks. It is never serialized.
+
+A function's `◇` is an engine analysis slot, not a physical field written in its
+function type. Casts preserve it at the root just as they preserve schema and
+markup slots. Its capture paths still fold by F1 and retain every cell and
+condition; only their needless qualification by the function's argument/result
+type is avoided. Ordinary class selection can then identify the unchanged root
+without treating captures as possible call targets. Unknown root alternatives
+remain unknown, and retained captures remain holders for all writes. Full function
+types still qualify physical cast steps and symbolic reads. Summary block 29
+invalidates the older environment placement, retaining the existing wire layout.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
