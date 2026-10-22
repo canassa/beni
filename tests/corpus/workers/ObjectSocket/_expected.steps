@@ -42,6 +42,13 @@
 {"send": "a", "text": "close", "until": "closed p1"}
 {"receive": "a"}
 {"close": "b", "code": 4002, "reason": "client says bye", "until": "closed p2"}
+{"receive": "b"}
+# A client's close is answered with its own code, an idle socket's too; a
+# close frame with no code is 1005.
+{"socket": "f", "path": "/arena/x/p7"}
+{"receive": "f"}
+{"close": "f", "until": "closed p7"}
+{"receive": "f"}
 {"path": "/arena/x/count"}
 # A binary frame is closed with 1003; a client that leaves with no close
 # frame is seen as 1006 with no reason.

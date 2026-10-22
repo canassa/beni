@@ -171,6 +171,7 @@ start className schema restore handlers ctx bindings worker =
         , fetch = Js.from λrequest → arrived instance request
         , webSocketClose =
             Js.from λws code reason clean →
+                answerClose ws code reason
                 deliver
                     instance
                     (Js.from
@@ -920,6 +921,29 @@ sockets ctx = socketsOf (Js.call (Js.get (Js.from ctx) "ctx") "getWebSockets" []
 pub socketsTagged : Context msg, String → List Socket
 socketsTagged ctx tag =
     socketsOf (Js.call (Js.get (Js.from ctx) "ctx") "getWebSockets" [ Js.from tag ])
+
+
+-- The host does not answer a peer's close frame on a hibernatable socket
+-- (§9.12 (g), amended 2026-10-23, #724): in `webSocketClose` the socket is
+-- still CLOSING and the client waits for the frame. So the platform answers
+-- before `closed` is delivered — the peer's code and reason, or a bare
+-- `close()` for a code the host refuses to send — and in the handler the
+-- socket is CLOSED: `close` does nothing and `write` is `Err NotOpen`. A
+-- socket this object closed is CLOSED already when the peer's answer comes.
+answerClose : V, V, V → ⊤
+answerClose ws code reason =
+    if Js.to (Js.get ws "readyState") == 2 then
+        if hostRefuses (Js.to code) then
+            Js.to (Js.call ws "close" [])
+        else
+            Js.to (Js.call ws "close" [ code, reason ])
+
+
+-- The close codes workerd refuses to send (`src/workerd/api/web-socket.c++:636-643`;
+-- measured: 1005, a peer's frame with no code, and 1006 throw
+-- `InvalidAccessError`).
+hostRefuses : Int → Bool
+hostRefuses code = code == 1004 || code == 1005 || code == 1006 || code == 1015
 
 
 -- The host's close event as a `Close` (§9.12 (g)): an end with no close

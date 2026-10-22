@@ -69,7 +69,9 @@ write socket text =
 
 --| Start the closing handshake with that code and reason. Nothing is
 --| written after it; `closed` is delivered afterwards with the peer's
---| answer. A connection that is not open is left as it is.
+--| answer. A connection that is not open is left as it is, and that is
+--| `Ok ⊤`: the platform answers a peer's close frame itself, so a `close`
+--| from the `closed` handler does nothing.
 pub close : Socket, Close → Result CloseError ⊤
 close socket why =
     if not (sendable why.code) then
