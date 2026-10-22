@@ -6,15 +6,22 @@
 -- `afterRender`, the first `perform` and `keyed`): both have it. A span's
 -- milliseconds run to where the line is written, so `save=5ms` after a
 -- wait of 5 ms. `Cmd.map` keeps the context of the child's command, which
--- holds its parent's annotation. A command made outside any context has
--- the default one. `Done` writes no line: which context the `update` of a
--- message that a body sends has is the owner's open question
+-- holds its parent's annotation, for a job and for an after-render body.
+-- A command made outside any context has the default one. Over a running
+-- keyed body, each body keeps the context of the click that made it (the
+-- request is `r` and the count before the click): `Restart` writes only
+-- the second click's line, `Queue` both in turn, `Ignore` only the
+-- first's, `Concurrent` both; a body that does not wait, queued behind one
+-- that waits, keeps its own `step`. A `Cmd.task` that waits keeps it too.
+-- A subscription declared inside `annotate` is not changed: its body has
+-- the default context. `Done` writes no line: which context the `update`
+-- of a message that a body sends has is the owner's open question
 -- (`node-log-q4`).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log exposing (Entry)
 import Ref exposing (Ref)
-import Sub
+import Sub exposing (Sub)
 import Tea
 import Time
 
@@ -29,16 +36,27 @@ type Msg
     | Plain
     | Sink
     | Show
+    | Restart
+    | Queue
+    | Behind
+    | Ignore
+    | Concurrent
+    | TaskWait
+    | MapAfter
+    | Listen
+    | Heard Int
 
 
 type alias Model =
     n : Int
     kept : Ref (List String)
+    listening : Bool
 
 
 update : Msg, Model → Model × Cmd Msg
 update msg model =
     next = { model | n = model.n + 1 }
+    r = "r${String.fromInt model.n}"
     case msg of
         Perform →
             Log.annotate "request" "p1" λ⊤ →
@@ -97,10 +115,84 @@ update msg model =
             Log.info "the sink kept: ${kept}"
             ( next, Cmd.none )
 
+        Restart →
+            Log.annotate "request" r λ⊤ →
+                ( next, Cmd.keyed "restart" Cmd.Restart (waits "restart" _) )
+
+        Queue →
+            Log.annotate "request" r λ⊤ → ( next, Cmd.keyed "queue" Cmd.Queue (waits "queue" _) )
+
+        Behind →
+            Log.annotate "request" r λ⊤ →
+                ( next
+                , Cmd.batch
+                    [ Cmd.keyed "behind" Cmd.Queue (waits "behind" _)
+                    , Log.annotate "step" "queued" λ⊤ →
+                        Cmd.keyed "behind" Cmd.Queue λ_ →
+                            Log.info "behind: a body that does not wait, queued behind one"
+                    ]
+                )
+
+        Ignore →
+            Log.annotate "request" r λ⊤ → ( next, Cmd.keyed "ignore" Cmd.Ignore (waits "ignore" _) )
+
+        Concurrent →
+            Log.annotate "request" r λ⊤ →
+                ( next, Cmd.keyed "concurrent" Cmd.Concurrent (waits "concurrent" _) )
+
+        TaskWait →
+            Log.annotate "request" r λ⊤ →
+                ( next
+                , Cmd.task
+                    (λ⊤ →
+                        Time.sleep (Time.millis 5)
+                        Log.info "a task after a wait"
+                        5
+                    )
+                    Done
+                )
+
+        MapAfter →
+            Log.annotate "request" r λ⊤ → ( next, Cmd.map (childAfter ⊤) ⊤ λm → m )
+
+        Listen →
+            ( { next | listening = True }, Cmd.none )
+
+        Heard _ →
+            ( { next | listening = False }, Cmd.none )
+
+
+-- A keyed body that waits 5 ms, then writes its name.
+waits : String, Cmd.Send Msg → ⊤
+waits name _ =
+    Time.sleep (Time.millis 5)
+    Log.info "${name}: a keyed body after a wait"
+
 
 -- A child's `update`, which its parent calls inside its own `annotate`.
 child : ⊤ → Cmd Msg
 child ⊤ = Log.annotate "child" "y" λ⊤ → Cmd.log Log.Info "a child's command"
+
+
+-- The same, for an after-render body.
+childAfter : ⊤ → Cmd Msg
+childAfter ⊤ = Log.annotate "child" "y" λ⊤ →
+    Cmd.afterRender λ_ → Log.info "a child's after-render body"
+
+
+subscriptions : Model → Sub Msg
+subscriptions model =
+    if model.listening then
+        Log.annotate "sub" "s" λ⊤ →
+            Sub.listen
+                "listen"
+                (λsend →
+                    Log.info "a subscription body: the default context"
+                    send 1
+                )
+                Heard
+    else
+        Sub.none
 
 
 keep : Ref (List String), Entry → ⊤
@@ -118,6 +210,14 @@ view model =
         <button id="plain" onClick={Plain}>plain</button>
         <button id="sink" onClick={Sink}>sink</button>
         <button id="show" onClick={Show}>show</button>
+        <button id="restart" onClick={Restart}>restart</button>
+        <button id="queue" onClick={Queue}>queue</button>
+        <button id="behind" onClick={Behind}>behind</button>
+        <button id="ignore" onClick={Ignore}>ignore</button>
+        <button id="concurrent" onClick={Concurrent}>concurrent</button>
+        <button id="taskwait" onClick={TaskWait}>taskwait</button>
+        <button id="mapafter" onClick={MapAfter}>mapafter</button>
+        <button id="listen" onClick={Listen}>listen</button>
         <p>{String.fromInt model.n}</p>
     </main>
 
@@ -125,8 +225,8 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = λ⊤ → ( { n = 0, kept = Ref.make [] }, Cmd.none )
+        { init = λ⊤ → ( { n = 0, kept = Ref.make [], listening = False }, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = λ_ → Sub.none
+        , subscriptions = subscriptions
         }
