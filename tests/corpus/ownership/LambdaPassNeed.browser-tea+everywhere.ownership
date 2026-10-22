@@ -2,8 +2,8 @@ module LambdaPassNeed
   34:22 value <lambda>: rejected need: LambdaPassNeed.load sends what it returns, which may be a list it does not own (§23.5)
   40:15 List.push xs: accepted param
   49:5 entry LambdaPassNeed.update msg#Got.0: accepted entry
-  summary load: π1 RA; res #Cmd.0 fresh1{excl π1}, #Cmd.0[*]#Now.0 λ?r{lost}, #Cmd.0[*]#Perform.0 λ?r{lost}, #Cmd.0[*]#Perform.0◇ ~π1; π1 calls many, need owned, unseen, supply 1 fresh owned
-  summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A, π2 RA; res .0 π1#Got.0 π2, .0[*] ~π1#Got.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}
+  summary load: π1 RA; res #Cmd.0 fresh1{lost}r{lost}, #Cmd.0[*]#Now.0 ~λ?r{lost}, #Cmd.0[*]#Now.0◇ ~⊤{lost}r{lost}, #Cmd.0[*]#Perform.0 ~λ?r{lost}, #Cmd.0[*]#Perform.0◇ ~⊤{lost}r{lost}, #Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π1; π1 calls many, need owned, unseen, supply 1 fresh owned
+  summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A, π2 RA; res .0 ~condition(fresh3) π1#Got.0 π2, .0[*] ~π1#Got.0[*], .1#Cmd.0 fresh1{lost}r{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 ~λ?r{lost}, .1#Cmd.0[*]#Now.0◇ ~condition(fresh5) ~⊤{lost}r{lost}, .1#Cmd.0[*]#Perform.0 ~λ?r{lost}, .1#Cmd.0[*]#Perform.0◇ ~condition(fresh4) ~⊤{lost}r{lost}, condition(fresh2){lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
 total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
