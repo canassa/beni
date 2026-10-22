@@ -1,0 +1,154 @@
+-- workers: the holders of a `Reply` (boundary.md §9.12 (e.10), #623). A
+-- Lobby asks a Scorer, whose `received` passes the `Reply` to itself in a
+-- message: the message holds it until its own `received` returns, which
+-- replies, or spawns the fiber that replies and holds it until then; a
+-- `Reply` kept in the state is held by nothing, so the asker gets
+-- `NoReply` at once, and a late `reply` through it is one warning line,
+-- not an answer.
+import Duration
+import Schema exposing (Schema)
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object exposing (Reply)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ lobby, scorer ] }
+
+
+-- The Scorer's protocol: an operation and the reply channel it carries.
+type alias ScorerMsg =
+    op : String
+    reply : Reply String
+
+
+toMsg ( ( ⊤, op ), reply ) = { op = op, reply = reply }
+
+
+fromMsg m = ( ( ⊤, m.op ), m.reply )
+
+
+scorerSchema : Schema { op : String, reply : String } ScorerMsg
+scorerSchema =
+    Schema.record
+        (Schema.fields
+            ▷ Schema.field "op" Schema.string
+            ▷ Schema.field "reply" (Object.replySchema Schema.string)
+        )
+        (Schema.mapping toMsg fromMsg)
+        (Schema.mapping toMsg fromMsg)
+
+
+-- ---- The Scorer ---------------------------------------------------------------
+
+type alias ScorerState =
+    kept : Maybe (Reply String)
+
+
+scorer : Worker.Definition
+scorer =
+    Object.define "Scorer" scorerSchema (λ_ → { kept = Nothing })
+        { Object.none | received = scored }
+
+
+scored : Object.Context ScorerMsg, ScorerState, ScorerMsg → ScorerState
+scored ctx state msg =
+    case msg.op of
+        "relay" →
+            -- The `Reply` travels in a message to self; the message holds it.
+            Object.post (Object.self ctx) { op = "relayed", reply = msg.reply }
+            state
+
+        "relayed" →
+            Object.reply msg.reply "relayed"
+            state
+
+        "relay-fiber" →
+            Object.post (Object.self ctx) { op = "relayed-fiber", reply = msg.reply }
+            state
+
+        "relayed-fiber" →
+            -- The second `received` call spawns the fiber that replies: a
+            -- holder too (#623).
+            _ = Task.spawn λ⊤ →
+                Task.sleep (Duration.millis 5)
+                Object.reply msg.reply "relayed by a fiber"
+            state
+
+        "keep" →
+            -- Kept in the state: no holder, so the asker gets `NoReply` at
+            -- once.
+            { state | kept = Just msg.reply }
+
+        _ →
+            -- "late": a reply through the kept `Reply`, after `NoReply`.
+            case state.kept of
+                Just r →
+                    Object.reply r "too late"
+                    { state | kept = Nothing }
+
+                Nothing →
+                    state
+
+
+-- ---- The Lobby ----------------------------------------------------------------
+
+lobby : Worker.Definition
+lobby = Object.define "Lobby" Schema.string (λ_ → ⊤) { Object.none | request = lobbyRequest }
+
+
+lobbyRequest : Object.Context String, ⊤, Request → ⊤ × Response
+lobbyRequest ctx _ request =
+    case
+        ( Worker.objects (Object.env ctx) "SCORERS" scorerSchema
+        , List.reverse (String.split (Worker.path request) "/")
+        )
+    of
+        ( Just scorers, [ op, …rest ] ) →
+            s = Worker.byName scorers "s"
+            -- "late" is asked too: its own `Reply` gets `NoReply`, and the
+            -- kept one gets the warning line.
+            ( ⊤
+            , Worker.text 200 (showAsk (Object.ask s Schema.string λr → { op = op, reply = r }))
+            )
+
+        _ →
+            ( ⊤, Worker.text 404 "no such page" )
+
+
+showAsk : Result Object.AskError String → String
+showAsk result =
+    case result of
+        Ok text →
+            "Ok ${text}"
+
+        Err Object.NoReply →
+            "Err NoReply"
+
+        Err _ →
+            "Err (another)"
+
+
+-- ---- The Worker ---------------------------------------------------------------
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "LOBBIES" Schema.string
+        , String.split (Worker.path request) "/"
+        )
+    of
+        ( Just lobbies, [ "", "lobby", …rest ] ) →
+            case Worker.forward (Worker.byName lobbies "l") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the lobby is not available"
+
+        ( Nothing, _ ) →
+            Worker.text 500 "no LOBBIES binding"
+
+        _ →
+            Worker.text 404 "no such page"

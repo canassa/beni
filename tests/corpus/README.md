@@ -294,7 +294,11 @@ After each step the lines the Worker wrote to its console follow, `| out:
 …` and `| err: …`: the driver asks the Worker's test hook `/__beni/mark/<n>`
 after each step and waits for its line, so a step's lines never land under
 the next; the host's stack lines (`    at …`) are left out, since they hold a
-store path. Each of the two cases starts Miniflare once.
+store path. A request forwarded to a Durable Object whose path ends in
+`/__beni/tick` fires the object's timer (a `ticked` event; 204, or 409 when
+no timer is armed), and one ending in `/__beni/alarm` runs its `alarm`
+(204); under `--test-hooks` the object arms no host timer. Each of the two
+cases starts Miniflare once.
 
 ### `browser/`: a program in a page
 

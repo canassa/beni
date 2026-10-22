@@ -1,0 +1,19 @@
+# Two instances park in the same isolate and each resumes in its own
+# context.
+{"path": "/room/x/slow", "detach": "x"}
+{"path": "/room/y/slow", "detach": "y"}
+{"answer": "x"}
+{"answer": "y"}
+# Spawn, then post the result to self; the release runs when the fiber ends.
+{"path": "/room/x/spawn"}
+{"path": "/room/x/slow"}
+{"path": "/room/x/get"}
+# A later handler joins a fiber an earlier one spawned.
+{"path": "/room/x/start"}
+{"path": "/room/x/joined"}
+# A defect in x: the held fiber's release runs before the abort; y serves
+# on; x's next request is a new instance.
+{"path": "/room/x/hold"}
+{"path": "/room/x/throw"}
+{"path": "/room/y/get"}
+{"path": "/room/x/get"}
