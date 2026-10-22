@@ -8,7 +8,7 @@ import Ref exposing (Ref)
 
 pub bumpAndLog : Ref Int, Ref (List Int) → ⊤
 bumpAndLog cell log = Ref.update cell λn →
-    Ref.update log λseen → List.push seen n
+    Ref.update log λseen → List.push (List.copy seen) n
     n + 1
 
 

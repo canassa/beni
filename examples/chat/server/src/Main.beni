@@ -94,7 +94,7 @@ member room socket =
     Ref.set room.next (n + 1)
     name = "guest${String.fromInt n}"
     tellOthers room socket (Chat.Joined name)
-    Ref.update room.members λmembers → [ …members, ( name, socket ) ]
+    Ref.update room.members λmembers → [ …List.copy members, ( name, socket ) ]
 
     Task.onExit (λ⊤ → listen room name socket) λ_ →
         Ref.update room.members λmembers → List.filter members λ( _, s ) → s ≠ socket
