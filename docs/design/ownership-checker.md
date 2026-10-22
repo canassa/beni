@@ -4163,6 +4163,22 @@ The format is versioned with the rule set (`summary_bytes.version`, thesis §8.5
 absent. *Amended 2026-10-22 (#693):* version 21 writes the `apart` atom's groups (§16.7). Reading a block re-interns its paths, re-sorts each summary by this run's ids (§16.6's normal form) and
 re-merges nothing.
 
+*Amended 2026-10-23 (#814): a block is read as far as the run asks.* Version 27 writes each summary's length
+(u32) before it. Opening a block reads its head, its module and string tables, the offset of each path in its
+path table and the span of each declaration's summary, and whether each value may hold a list. A summary is read
+and put in normal form the first time the run asks for it (`blockSummary`), and a path is interned the first
+time a summary being read names it; both are kept. A summary that does not read, or names a path that does not,
+is no summary for its declaration: a callee with no summary, as a block that does not read is (§16.4). A block
+whose head, tables or directory do not read is still no block. Nothing a summary says changes, and no verdict:
+only which of a module's summaries a run reads. Before, opening a block read and normalised every summary in it.
+Core `Schema`'s block holds 300 or so, and a program that calls `Schema.read` read them all, 14.8M
+instructions in every build of a TEA program that uses it, where every other module's block costs 0.2M or less.
+*As built:* the ownership phase's instructions (callgrind, ReleaseFast, `build --release --no-cache --jobs=1`)
+on the research dashboard went from 26.5M to 11.4M at N = 16 and from 68.7M to 53.7M at N = 64, and on `nowd`
+from 68.2M to 53.4M. Opening all ten blocks a dashboard build reads costs 0.19M at N = 16. Every output hash is
+unchanged; `test-records-lost` shows no difference in 1 168 programs, and `-Downership-full-cross-check` on
+`ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694), as on `master`.
+
 **Where it is kept.** In the module's **cache entry**, as a fifth section (`entry_bytes` format 10), written by
 every run that summarises the module and empty otherwise; so also in the checked core, whose rows are entries.
 Not in the interface record, which §16.10 specifies for the slice that moves the pass onto the DAG.
