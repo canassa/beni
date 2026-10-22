@@ -3,7 +3,7 @@
 //! fixture cannot state, because its claim is about TIME, or about a program
 //! too wide or deep to check in (generated, as `abuse_test.zig` generates
 //! its inputs), or because the scenario costs more than the gates' test
-//! budget (`over-budget`, in the budget's instructions). Run only by `zig build test-pending`
+//! behavior. Run only by `zig build test-pending`
 //! and `zig build test-pending-perf`, never by the gates: every scenario here
 //! is expected to be RED on the checker the gates run.
 //!
@@ -79,12 +79,6 @@ const scenarios = [_]struct { name: []const u8, step: Step }{
     // A fixed scenario leaves this table for `ordering_test.zig`,
     // `abuse_test.zig`, `abuse_wide_test.zig`, `perf_test.zig` or
     // `build_test.zig`, whichever states its claim.
-    // A scenario over the test budget (`over-budget`) is measured on the
-    // ReleaseSafe binary the gates run, in the budget's unit, and goes back
-    // into the file it came from once it fits.
-    // A wide alias DAG over the test budget went back into
-    // `abuse_test.zig`, and a symbolic link in `--out` and a failed write
-    // of the record into `build_test.zig`.
 };
 
 const Step = enum { fast, perf };
@@ -142,7 +136,6 @@ const Verdict = struct {
     green: bool,
     /// `tests/pending/RED`'s vocabulary, extended for time: `slow` (the
     /// ratio or the bound was exceeded on every run), `timeout`,
-    /// `over-budget` (more instructions than the gates' test budget), or
     /// the walker's `exit=<n> first=<code>` when a run did not even finish
     /// the way the scenario needs.
     signature: []const u8,
@@ -340,30 +333,6 @@ const Scenario = struct {
         };
     }
 
-    /// The gates' test budget in instructions (`BENI_PENDING_BUDGET_INSTRUCTIONS`,
-    /// which `build.zig` sets from `-Dtest-budget`), and a counter of the
-    /// instructions every process this scenario spawns from now on retires.
-    /// A machine that cannot count them skips the scenario: its verdict
-    /// would be in another unit than the gates'.
-    fn budget(s: *Scenario) !struct { limit: u64, counter: world.timing.Counter } {
-        const text = testing.environ.getAlloc(s.arena(), "BENI_PENDING_BUDGET_INSTRUCTIONS") catch "";
-        const limit = std.fmt.parseUnsigned(u64, text, 10) catch {
-            std.debug.print("{s}: no instruction budget to measure against (BENI_PENDING_BUDGET_INSTRUCTIONS); skipped\n", .{s.name});
-            return error.SkipZigTest;
-        };
-        const counter = world.timing.Counter.open() orelse {
-            std.debug.print("{s}: no instruction counter could be opened (perf_event_open); skipped\n", .{s.name});
-            return error.SkipZigTest;
-        };
-        return .{ .limit = limit, .counter = counter };
-    }
-
-    /// `over-budget` when `spent` instructions exceed the gates' `limit`.
-    fn againstBudget(s: *Scenario, spent: u64, limit: u64, what: []const u8) Verdict {
-        const detail = std.fmt.allocPrint(s.arena(), "{s}: {d} million instructions; the test budget is {d} million", .{ what, spent / 1_000_000, limit / 1_000_000 }) catch "";
-        return .{ .green = spent <= limit, .signature = if (spent <= limit) "" else "over-budget", .detail = detail };
-    }
-
     /// Print the verdict and apply rules (b) and (d).
     fn finish(s: *Scenario, v: Verdict) !void {
         if (v.green) {
@@ -372,7 +341,7 @@ const Scenario = struct {
             std.debug.print("PENDING  RED    {s}  {s}  [{s}]  {s}\n", .{ s.id, s.name, v.signature, v.detail });
         }
         if (v.green) {
-            std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/perf_test.zig (a timing scenario), the gated file it came from (an over-budget one), or tests/blackbox/abuse_test.zig (any other) and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
+            std.debug.print("PENDING  RULE (b)  {s}  {s} is GREEN under the default checker: move it verbatim into tests/blackbox/perf_test.zig (a timing scenario), the gated file it came from, or tests/blackbox/abuse_test.zig (any other) and delete its RED line (plans/checker-rewrite.md §2.5)\n", .{ s.id, s.name });
             return error.PendingScenarioIsGreen;
         }
         // Rule (d) and the record half of rule (a), as the corpus walker

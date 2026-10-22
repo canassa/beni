@@ -1,5 +1,12 @@
 # The ownership checker — the in-compiler contract
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *Normative from 2026-10-12. Slice 1 (report mode, intra-procedural) is specified here and built;
 slices 2–5 are specified as a plan (§13) and are not built. Sections are never renumbered
 (CLAUDE.md rule 2): a later amendment appends text to the section it changes, dated, or a new
@@ -594,8 +601,8 @@ diagnostic: no exit code depends on a rejection, and nothing reads the dump but 
   (paths, cells, points) are assigned in that walk; everything printed is sorted by position or text.
   A test runs the dump at `--jobs=1` and `--jobs=8`, twice each, and compares the bytes.
 - **Cost.** Linear in instructions times the width of abstract values (thesis §4.9), except the holder
-  search, which is locals × entries per demand. Every corpus fixture must stay within the per-test
-  instruction budget.
+  search, which is locals × entries per demand. Each corpus case has a
+  120-second hang guard. Performance claims belong in `test-perf` and `bench`.
 
 ---
 
@@ -864,7 +871,7 @@ pairwise definition's — under runtime safety the two are compared for every re
 no verdict moved: the dashboard's reports at 16 to 256 widgets are byte for byte the pairwise ones.
 *Amended 2026-10-17 (issue #272):* the build option `-Downership-full-cross-check` compares the two for every
 result, whatever its width, in a safety build; it is slow, so the gates refuse it and the budget does not hold it
-(`-Dtest-budget=0`). The whole black-box suite passed it on 2026-10-17 with no difference.
+(without changing assertions). The whole black-box suite passed it on 2026-10-17 with no difference.
 
 ### 16.4 Applying a summary at a call
 
@@ -1949,8 +1956,7 @@ containing construction. Substitution preserves annotation scope and allocation 
 preserves the implication separately for each alternative. This is the obligation for the ownership
 oracle as well as for the compiler, not a claim that the current Lean model proves it.
 
-The owner withdrew the pre-implementation cost-report conditions on 2026-10-22. The owner also authorized the two core ownership test budgets of 5 300M
-on 2026-10-22; no assertion changes. Both projected-alias twins and constructor/helper routes must be refused;
+The owner withdrew the pre-implementation cost-report conditions on 2026-10-22. The two core ownership tests retain all their assertions. Both projected-alias twins and constructor/helper routes must be refused;
 `ConstructorDiscardedAlias`, `EntryInvariantCommand` and the retained `ValuePath` program must stay
 accepted. The owner accepts the pending `DictFocusGrow` false refusal and the extra callback
 refusal inside the already-rejected `DictFocus.readLater` (#663, until #294); any other whole program

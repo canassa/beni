@@ -21,8 +21,7 @@
 //! one both accept: the claim is the same bytes, not a clean build.
 //!
 //! The programs are split over `parts` tests by their index in sorted order,
-//! and `build.zig` runs one process per test. No budget: the step is not a
-//! gate, and one program costs about a billion instructions in Node.
+//! and `build.zig` runs one process per test. The step is not a gate.
 
 const std = @import("std");
 const world = @import("world.zig");

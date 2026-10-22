@@ -300,9 +300,6 @@ const TestRow = struct {
     child: u64 = 0,
     beni: u32 = 0,
     node: u32 = 0,
-    /// Instructions spent against the budget (`timing.Test.spent`), when
-    /// the budget counted them.
-    instructions: u64 = 0,
 
     fn cpu(r: TestRow) u64 {
         return r.self + r.child;
@@ -321,7 +318,6 @@ fn renderTests(arena: Allocator, w: *Io.Writer, processes: []const Process, opti
             r.wall = @max(r.wall, t.wall_us);
             r.self += t.user_us + t.sys_us;
             r.child += t.child_user_us + t.child_sys_us;
-            if (std.mem.eql(u8, t.budget_unit, "instructions")) r.instructions += t.spent;
         }
         for (p.children) |c| {
             const r = rows.getPtr(c.@"test") orelse continue;
@@ -341,16 +337,14 @@ fn renderTests(arena: Allocator, w: *Io.Writer, processes: []const Process, opti
         \\### Per test
         \\
         \\The {d} most expensive of {d} tests by CPU. "Harness" is CPU in the test
-        \\process, "children" in what it spawned; "M instr" the millions of
-        \\instructions the test is held to its budget by (a corpus walker's tests
-        \\count what their cases did not; "–" where the budget did not count them).
+        \\process, "children" in what it spawned.
         \\
-        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | M instr | beni | node |
-        \\|---:|---|---:|---:|---:|---:|---:|---:|---:|
+        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | beni | node |
+        \\|---:|---|---:|---:|---:|---:|---:|---:|
         \\
     , .{ @min(options.top, sorted.len), sorted.len });
     for (sorted[0..@min(options.top, sorted.len)], 1..) |r, i| {
-        try w.print("| {d} | {s} | {f} | {f} | {f} | **{f}** | {s} | {d} | {d} |\n", .{ i, try testName(arena, r.name), secs(r.wall), secs(r.self), secs(r.child), secs(r.cpu()), try millions(arena, r.instructions), r.beni, r.node });
+        try w.print("| {d} | {s} | {f} | {f} | {f} | **{f}** | {d} | {d} |\n", .{ i, try testName(arena, r.name), secs(r.wall), secs(r.self), secs(r.child), secs(r.cpu()), r.beni, r.node });
     }
     try w.writeAll("\n**Distribution of tests by CPU:**\n\n");
     const cpus = try arena.alloc(u64, sorted.len);
@@ -378,8 +372,6 @@ const FixtureRow = struct {
     node: u32 = 0,
     node_cpu: u64 = 0,
     other_cpu: u64 = 0,
-    /// Instructions the case spent against the budget, when it counted them.
-    instructions: u64 = 0,
 
     fn cpu(r: FixtureRow) u64 {
         return r.harness + r.beni_cpu + r.node_cpu + r.other_cpu;
@@ -410,7 +402,6 @@ fn renderFixtures(arena: Allocator, w: *Io.Writer, processes: []const Process, o
             if (!gop.found_existing) gop.value_ptr.* = .{ .key = key, .path = f.path, .kind = kind };
             gop.value_ptr.wall += f.wall_us;
             gop.value_ptr.harness += f.thread_cpu_us;
-            gop.value_ptr.instructions += f.spent;
             try mine.put(arena, f.path, gop.index);
         }
         for (p.children) |c| {
@@ -445,13 +436,13 @@ fn renderFixtures(arena: Allocator, w: *Io.Writer, processes: []const Process, o
         \\The {d} most expensive of {d} corpus cases by CPU: the walker thread's own
         \\time plus every process the case spawned.
         \\
-        \\| # | fixture | kind | **CPU ms** | M instr | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
-        \\|---:|---|---|---:|---:|---:|---:|---:|---:|
+        \\| # | fixture | kind | **CPU ms** | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
+        \\|---:|---|---|---:|---:|---:|---:|---:|
         \\
     , .{ @min(options.top, sorted.len), sorted.len });
     for (sorted[0..@min(options.top, sorted.len)], 1..) |r, i| {
-        try w.print("| {d} | {s} | {s} | **{d}** | {s} | {d} | {f} | {d} / {d} | {d} / {d} |\n", .{
-            i, r.path, r.kind, ms(r.cpu()), try millions(arena, r.instructions), ms(r.wall), msTenths(r.harness), r.beni, ms(r.beni_cpu), r.node, ms(r.node_cpu),
+        try w.print("| {d} | {s} | {s} | **{d}** | {d} | {f} | {d} / {d} | {d} / {d} |\n", .{
+            i, r.path, r.kind, ms(r.cpu()), ms(r.wall), msTenths(r.harness), r.beni, ms(r.beni_cpu), r.node, ms(r.node_cpu),
         });
     }
     try w.writeAll("\n**Distribution of cases by CPU:**\n\n");
@@ -841,7 +832,7 @@ const testing = std.testing;
 /// fixture (a build and a Node run) and a sharded binary with two tests,
 /// one of which ran the same `check` twice in the repository root.
 const sample_corpus =
-    \\{"start":{"format":1,"binary":"corpus_test","pid":20,"shard":"","part":"run_dev","perf_shard":""}}
+    \\{"start":{"format":2,"binary":"corpus_test","pid":20,"shard":"","part":"run_dev","perf_shard":""}}
     \\{"child":{"test":"corpus_test.test.corpus: run","fixture":"tests/corpus/run/A.beni","tool":"beni","args":"build --platform=node --out=out tests/corpus/run/A.beni --no-cache","repo_cwd":false,"wall_us":30000,"user_us":20000,"sys_us":10000,"max_rss_kib":20480,"minor_faults":4000,"exit":0}}
     \\{"child":{"test":"corpus_test.test.corpus: run","fixture":"tests/corpus/run/A.beni","tool":"node","args":"out/_main.mjs","repo_cwd":false,"wall_us":60000,"user_us":40000,"sys_us":20000,"max_rss_kib":51200,"minor_faults":6000,"exit":0}}
     \\{"fixture":{"test":"corpus_test.test.corpus: run","kind":"run","path":"tests/corpus/run/A.beni","wall_us":95000,"thread_cpu_us":5000}}
@@ -851,7 +842,7 @@ const sample_corpus =
 ;
 
 const sample_shard =
-    \\{"start":{"format":1,"binary":"check_test","pid":10,"shard":"0/2","part":"","perf_shard":""}}
+    \\{"start":{"format":2,"binary":"check_test","pid":10,"shard":"0/2","part":"","perf_shard":""}}
     \\{"child":{"test":"check_test.test.a check twice","fixture":"","tool":"beni","args":"check --jobs=1 tests/corpus/check/good/B.beni","repo_cwd":true,"wall_us":12000,"user_us":8000,"sys_us":2000,"max_rss_kib":10240,"minor_faults":1000,"exit":0}}
     \\{"child":{"test":"check_test.test.a check twice","fixture":"","tool":"beni","args":"check --jobs=1 tests/corpus/check/good/B.beni","repo_cwd":true,"wall_us":14000,"user_us":8000,"sys_us":2000,"max_rss_kib":10240,"minor_faults":1000,"exit":0}}
     \\{"test":{"name":"check_test.test.a check twice","status":"pass","wall_us":30000,"user_us":1000,"sys_us":1000,"child_user_us":16000,"child_sys_us":4000}}
@@ -898,7 +889,7 @@ test "a file without a start record, or of another format, is refused" {
         \\{"start":{"format":999,"binary":"x","pid":1}}
     ));
     try testing.expectError(error.UnexpectedEndOfInput, parseProcess(arena,
-        \\{"start":{"format":1,"binary":"x","pid":1}}
+        \\{"start":{"format":2,"binary":"x","pid":1}}
         \\{"test":{"na
     ));
 }
@@ -982,13 +973,11 @@ test "the report of a small run is exactly these tables" {
         \\### Per test
         \\
         \\The 1 most expensive of 3 tests by CPU. "Harness" is CPU in the test
-        \\process, "children" in what it spawned; "M instr" the millions of
-        \\instructions the test is held to its budget by (a corpus walker's tests
-        \\count what their cases did not; "–" where the budget did not count them).
+        \\process, "children" in what it spawned.
         \\
-        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | M instr | beni | node |
-        \\|---:|---|---:|---:|---:|---:|---:|---:|---:|
-        \\| 1 | corpus_test · corpus: run | 0.1 | 0.0 | 0.1 | **0.1** | – | 1 | 1 |
+        \\| # | test | wall s | harness CPU s | children CPU s | **total CPU s** | beni | node |
+        \\|---:|---|---:|---:|---:|---:|---:|---:|
+        \\| 1 | corpus_test · corpus: run | 0.1 | 0.0 | 0.1 | **0.1** | 1 | 1 |
         \\
         \\**Distribution of tests by CPU:**
         \\
@@ -1005,9 +994,9 @@ test "the report of a small run is exactly these tables" {
         \\The 1 most expensive of 1 corpus cases by CPU: the walker thread's own
         \\time plus every process the case spawned.
         \\
-        \\| # | fixture | kind | **CPU ms** | M instr | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
-        \\|---:|---|---|---:|---:|---:|---:|---:|---:|
-        \\| 1 | tests/corpus/run/A.beni | run_dev | **95** | – | 95 | 5.0 | 1 / 30 | 1 / 60 |
+        \\| # | fixture | kind | **CPU ms** | wall ms | harness ms | beni runs / CPU ms | node runs / CPU ms |
+        \\|---:|---|---|---:|---:|---:|---:|---:|
+        \\| 1 | tests/corpus/run/A.beni | run_dev | **95** | 95 | 5.0 | 1 / 30 | 1 / 60 |
         \\
         \\**Distribution of cases by CPU:**
         \\
@@ -1074,10 +1063,4 @@ test "the report of a small run is exactly these tables" {
         \\
         \\
     , out.written());
-}
-
-/// `n` instructions in millions, or "–" when none were counted.
-fn millions(arena: Allocator, n: u64) ![]const u8 {
-    if (n == 0) return "–";
-    return std.fmt.allocPrint(arena, "{d}", .{(n + 500_000) / 1_000_000});
 }

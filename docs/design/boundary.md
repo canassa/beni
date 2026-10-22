@@ -1,5 +1,12 @@
 # The JavaScript boundary — platforms, ports and `foreign`
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for M3, and the input M4's cache key needs. [`fast-compiler.md`](fast-compiler.md)
 §3.1 settles that the language is pure with effects as values interpreted by a platform, and its
 header states the stance this document implements: *Elm's walled garden, better equipped.*

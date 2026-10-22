@@ -1,5 +1,10 @@
 # Where the test time goes
 
+The instruction columns in the recorded tables below are historical. Since
+2026-10-22 (#740), `test-time-report` records CPU and wall time without an
+instruction limit or instruction columns. Each test or corpus case has a
+120-second hang guard; performance measurements remain outside the gates.
+
 Measured 2026-09-28 on `master` at `96f6054`, in a separate worktree. The
 machine is a Ryzen 9 5950X (16 cores, 32 threads) with `/home` on btrfs. Other
 agents were building on it throughout, and the 1-minute load average ranged

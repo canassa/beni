@@ -1,5 +1,12 @@
 # The release optimiser against the state of the art
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** research, 2026-10-02. Not normative. **Nothing here changes the compiler.** The owner
 asked: *"are we using state-of-the-art algorithms for the release optimiser? This is an old
 problem; others have solved it."* The optimiser in question is `src/js/Spec.zig`, `backend.md`

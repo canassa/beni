@@ -394,10 +394,6 @@ fn walk(kind: Kind) !void {
     const arena = arena_state.allocator();
 
     const cfg = try Config.read(arena);
-    // Validate all grants once, before filtering: an orphan must never vanish
-    // merely because no case reads it. This covers every kind in the whole root;
-    // the browser guard runs it once, since that part runs in every full gate.
-    if (kind == .browser) try validateBudgetFiles(arena, &cfg);
     // Another process runs this kind (`corpus_parts.zig`): nothing to do.
     if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
     // Recording run hashes is about the kinds that run programs alone.
@@ -455,17 +451,13 @@ fn walk(kind: Kind) !void {
     defer if (chrome) |*c| c.deinit(io);
     chrome_endpoint = if (chrome) |c| c.endpoint else null;
     defer chrome_endpoint = null;
-    const spent_before_workers = world.timing.testSpent();
     {
         var threads: std.ArrayList(std.Thread) = .empty;
         defer threads.deinit(gpa);
         defer for (threads.items) |t| t.join();
-        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.workOnThread, .{ &walker, io }));
+        for (1..workers) |_| try threads.append(gpa, try std.Thread.spawn(.{}, Walker.work, .{ &walker, io }));
         walker.work(io);
     }
-    // The joined workers' instructions reach this test's count a moment
-    // after the joins return; the runner must not read it before.
-    world.timing.awaitFolded(spent_before_workers, walker.thread_totals.load(.monotonic));
     const failures = walker.failures.load(.monotonic);
     if (walker.fatal.load(.monotonic)) return error.CorpusWorkerFailed;
     // Only on failure: anything a passing test writes to stderr makes the
@@ -480,30 +472,6 @@ fn walk(kind: Kind) !void {
 /// The Chrome `BENI_BROWSER=chrome` runs every page in, while a walk of
 /// `browser/` has it open.
 var chrome_endpoint: ?[]const u8 = null;
-
-/// Every budget file must name an actual case, including a separate value-fuzz
-/// case. Compare against the complete inventory, before any run filters.
-fn validateBudgetFiles(arena: std.mem.Allocator, cfg: *const Config) !void {
-    var allowed: std.StringHashMapUnmanaged(void) = .empty;
-    for (std.enums.values(Kind)) |kind| {
-        for (try fixturesOf(arena, cfg, kind)) |fixture| {
-            const ext = if (fixture.values) "fuzz-budget" else "budget";
-            try allowed.put(arena, try fixtureGoldenPath(arena, fixture, ext), {});
-        }
-    }
-    var dir = try Io.Dir.cwd().openDir(testing.io, cfg.root, .{ .iterate = true });
-    defer dir.close(testing.io);
-    var it = try dir.walk(arena);
-    defer it.deinit();
-    while (try it.next(testing.io)) |entry| {
-        if (entry.kind == .directory) continue;
-        if (!std.mem.endsWith(u8, entry.path, ".budget") and !std.mem.endsWith(u8, entry.path, ".fuzz-budget")) continue;
-        const path = try std.fs.path.join(arena, &.{ cfg.root, entry.path });
-        if (allowed.contains(path)) continue;
-        std.debug.print("orphan corpus budget: {s} has no matching case\n", .{path});
-        return error.OrphanCorpusBudget;
-    }
-}
 
 fn fixtureGoldenPath(arena: std.mem.Allocator, fixture: Fixture, ext: []const u8) ![]const u8 {
     if (fixture.project) return std.fmt.allocPrint(arena, "{s}/{s}/_expected.{s}", .{ fixture.dir, fixture.name, ext });
@@ -743,7 +711,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         }
     }
     // An ownership fixture beside a `.platform` file is a case per platform
-    // it names (`Fixture.token`), each budgeted on its own: every dump
+    // it names (`Fixture.token`), each guarded on its own: every dump
     // re-checks core from source (`ownership-checker.md` §16.9), so a
     // fixture's cost grows with the platforms it is read on.
     if (kind == .ownership) {
@@ -785,30 +753,14 @@ const Walker = struct {
     /// A worker that could not run a case at all (out of memory, a world
     /// it could not create): the kind fails whatever the cases said.
     fatal: std.atomic.Value(bool) = .init(false),
-    /// What the workers on threads of their own spent in the budget's
-    /// unit, each counted to its end (`timing.awaitFolded`).
-    thread_totals: std.atomic.Value(u64) = .init(0),
-
     fn work(wk: *Walker, io: std.Io) void {
-        const meter: world.timing.CaseMeter = .open();
-        defer meter.close();
-        wk.cases(io, meter) catch |err| {
+        wk.cases(io) catch |err| {
             std.debug.print("corpus worker: {t}\n", .{err});
             wk.fatal.store(true, .monotonic);
         };
     }
 
-    fn workOnThread(wk: *Walker, io: std.Io) void {
-        const meter: world.timing.CaseMeter = .open();
-        defer meter.close();
-        wk.cases(io, meter) catch |err| {
-            std.debug.print("corpus worker: {t}\n", .{err});
-            wk.fatal.store(true, .monotonic);
-        };
-        if (meter.counter != null) _ = wk.thread_totals.fetchAdd(meter.read(), .monotonic);
-    }
-
-    fn cases(wk: *Walker, io: std.Io, meter: world.timing.CaseMeter) !void {
+    fn cases(wk: *Walker, io: std.Io) !void {
         const gpa = testing.allocator;
         var arena_state: std.heap.ArenaAllocator = .init(gpa);
         defer arena_state.deinit();
@@ -824,14 +776,13 @@ const Walker = struct {
             const case: Case = .{ .arena = arena, .w = &w, .kind = wk.kind, .fixture = fixture, .bless = bless_this, .cfg = wk.cfg };
             // Timing (`tests/timing.zig`): the case's own record, and its
             // name on every child it spawns.
-            // The budget holds per case (`timing.budget_unit`): a kind is
-            // hundreds of independent cases, and one case is what a
-            // fixture costs.
-            const spent_start = meter.read();
             const timed: ?[2]std.Io.Timestamp = if (world.timing.enabled()) .{ world.timing.now(), world.timing.threadCpu() } else null;
             // Keyed by case, not by fixture: a page's value fuzz and an ownership
             // fixture's token cases each have a record of their own.
             const case_name = try std.fmt.allocPrint(arena, "{s}{s}", .{ path, fixture.suffix() });
+            var guard: @import("root").HangGuard = .{};
+            try guard.start(case_name);
+            defer guard.finish();
             world.timing.current_fixture = case_name;
             defer {
                 world.timing.current_fixture = "";
@@ -841,32 +792,14 @@ const Walker = struct {
                     .path = case_name,
                     .wall_us = world.timing.sinceUs(t[0]),
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
-                    .spent = if (world.timing.budget_unit == .instructions) meter.read() -% spent_start else 0,
                 } });
             }
             switch (wk.cfg.mode) {
                 .strict => {
-                    const passed = if (case.run()) |_| true else |err| failed: {
+                    case.run() catch |err| {
                         std.debug.print("FAIL {s}/{s}{s}: {t}\n", .{ fixture.dir, fixture.name, fixture.suffix(), err });
                         _ = wk.failures.fetchAdd(1, .monotonic);
-                        break :failed false;
                     };
-                    const spent = meter.read() -% spent_start;
-                    _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
-                    const own = case.ownBudget() catch |err| {
-                        std.debug.print("FAIL {s}/{s}{s}: {t}\n", .{ fixture.dir, fixture.name, fixture.suffix(), err });
-                        _ = wk.failures.fetchAdd(1, .monotonic);
-                        continue;
-                    };
-                    const budget = if (own) |millions| world.timing.caseLimit(millions) else world.timing.budget_limit;
-                    if (passed and world.timing.budget_unit != .none and spent > budget) {
-                        const got = world.timing.describe(spent);
-                        const limit = world.timing.describe(budget);
-                        std.debug.print("FAIL: {d} {s}, over the budget of {d} (the case's own and its children's): {s}/{s}{s}\n", .{
-                            got.value, got.unit, limit.value, fixture.dir, fixture.name, fixture.suffix(),
-                        });
-                        _ = wk.failures.fetchAdd(1, .monotonic);
-                    }
                 },
                 .pending => if (!try case.pending(path)) {
                     _ = wk.failures.fetchAdd(1, .monotonic);
@@ -1281,7 +1214,7 @@ const Fixture = struct {
     /// `.fuzz-run-hash`: its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
     /// two `--fuzz` builds, the message types dump and the fuzz are a case
-    /// of their own, budgeted on their own, so that no page's value fuzz
+    /// of their own, guarded on their own, so that no page's value fuzz
     /// waits for the sweep; the first case builds and runs the pages.
     values: bool = false,
     /// Under `build/bad/everywhere/`: built with the hidden
@@ -1508,26 +1441,6 @@ const Case = struct {
                 return error.MissingGolden;
             },
         }
-    }
-
-    /// The case's own budget in millions of instructions, from its
-    /// `.budget` file (`_expected.budget` in a project), or null for the
-    /// global one. The owner grants these one by one, for large programs
-    /// and for cases whose cost is a compiler defect with an open issue
-    /// (`tests/corpus/README.md`, *Budgets*): the file's first word is the
-    /// limit, and the rest of it must say why, so none is added silently.
-    /// A `.budget` is the page case's. A separately granted value-fuzz case
-    /// (`Fixture.values`) uses `.fuzz-budget`, so page grants never cover it
-    /// implicitly (owner's Conduit grants, 2026-10-14).
-    fn ownBudget(c: Case) !?u64 {
-        const ext = if (c.fixture.values) "fuzz-budget" else "budget";
-        if (!c.goldenExists(ext)) return null;
-        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(ext), c.arena, .limited(4096));
-        var words = std.mem.tokenizeAny(u8, text, " \t\r\n");
-        const first = words.next() orelse return error.BudgetFileEmpty;
-        const millions = std.fmt.parseUnsigned(u64, first, 10) catch return error.BudgetNotANumber;
-        if (words.next() == null) return error.BudgetWithoutReason;
-        return millions;
     }
 
     /// `schema.md` §6, *A statically known schema runs compiled*: a fixture

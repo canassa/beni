@@ -1,5 +1,12 @@
 # The browser platform — the plan
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** plan **revision 2**, 2026-09-20. **Implementation is parked.** Nothing here is started
 and nothing here is normative: the normative documents are `language.md`, `frontend.md`,
 `checker.md`, `backend.md`, `boundary.md` and

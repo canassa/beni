@@ -1,5 +1,12 @@
 # The fiber runtime spike, measured
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Commissioned by** the owner's 2026-09-30 decisions on the effects plan: build step 3, the runtime
 spike — a fiber runtime and the lowering of every function whose inferred bit is `suspends`, with
 `spawn`, `join`, `scope` and `bracket` and one platform primitive — and measure it against

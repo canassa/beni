@@ -1,5 +1,12 @@
 # Deferred field reads after #135 (issue #131)
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 Measured 2026-10-15 on Apple M2 Pro, 16 GiB, macOS 26.7.1 (25G241),
 zorg 0.17.1+zorg.1. All timing binaries are **LLVM ReleaseSafe**
 (`-fllvm -fstrip -Osafe`), each built in its own worktree/local cache with

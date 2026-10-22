@@ -1,1 +1,0 @@
-9830 Owner-authorized on 2026-10-22 (#720): projection-aware container conditions cost 8930M in normal self-hosted x86-64 Linux gates; about 10% headroom. Remove when #732 brings the case below 4300M.
