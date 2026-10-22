@@ -78,6 +78,8 @@ The ownership dump shows where a field is read before a record write, and where 
 reads a field it captures. Each location uses source line and column numbers.
 A cast path shows the complete type after `as`. The first boundary is exact.
 A repeated complete type folds deeper paths and uses the `⁺` marker.
+Inside a recursive group, a later growing call can fold a growing type argument
+to `⋆`; the surrounding type stays complete and the first crossing stays exact.
 
 ## Migration flags that a diagnostic names
 
