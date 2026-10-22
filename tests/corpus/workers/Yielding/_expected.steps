@@ -1,4 +1,5 @@
-# The long request is in flight; the short one, sent after it, answers first.
+# The long request is in flight; the short one, sent after it, answers
+# first and sees the long one still running.
 {"path": "/spin/200000", "detach": "long"}
-{"path": "/spin/10"}
+{"path": "/short"}
 {"answer": "long"}

@@ -155,12 +155,18 @@ env ctx = Js.to (Js.get (Js.from ctx) "env")
 -- trampoline's chain, so the host answers 1101 with it.
 handle : (Context, Request → Response), V, V, V → V
 handle fetch request bindings ctx =
-    if Js.testHooks ⊤ && isHook request then hooked request else serve fetch request bindings ctx
+    -- Nested, not joined with `&&`: an `if` on `Js.testHooks` alone keeps
+    -- one arm, so a build without the flag holds nothing of the hooks.
+    if Js.testHooks ⊤ then
+        if isHook request then hooked request else serve fetch request bindings ctx
+    else
+        serve fetch request bindings ctx
 
 
 -- The Worker's test hooks (§9.12 (k)), in a `--test-hooks` build only:
--- `/__beni/mark/<text>` writes `beni:mark <text>` to the console, so the
--- tests' driver knows every line of a step has landed; `/__beni/schedulers`
+-- `/__beni/mark/<text>` writes `beni:mark <text>` to both console streams,
+-- so the tests' driver knows every line of a step has landed on each;
+-- `/__beni/schedulers`
 -- answers how many schedulers the kernel lists, so a fixture sees that a
 -- request's leaves it.
 isHook : V → Bool
@@ -171,7 +177,10 @@ hooked : V → V
 hooked request =
     at = pathOf request
     if String.startsWith at "/__beni/mark/" then
+        -- On both streams, since the driver orders each stream by its own
+        -- mark.
         _ = Js.call (Js.global "console") "log" [ Js.from "beni:mark ${String.dropLeft at 13}" ]
+        _ = Js.call (Js.global "console") "error" [ Js.from "beni:mark ${String.dropLeft at 13}" ]
         Js.call (Js.global "Promise") "resolve"
             [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
     else if at == "/__beni/schedulers" then
@@ -212,7 +221,7 @@ serve fetch request bindings ctx =
     Js.write holder (Js.from s)
     context = Js.from { ctx = ctx, env = bindings, request = request, scheduler = Js.from s }
     Task.withScheduler s λ⊤ →
-        _ = Task.spawnDetached λ⊤ → answer d (fetch (Js.to context) (Js.to request))
+        _ = Task.spawnDetached λ⊤ → answer t d (fetch (Js.to context) (Js.to request))
         ⊤
     _ = Js.call (Js.get d "promise") "then" [ Js.from λ_ → answered t s, Js.null ]
     listenForAbort request ctx s
@@ -279,8 +288,12 @@ runLater t task =
 
 
 -- The handler's fiber answers the promise with the host's response.
-answer : V, Response → ⊤
-answer d (Response r _ _) = Js.to (Js.apply (Js.get d "resolve") [ r ])
+answer : V, V, Response → ⊤
+answer t d (Response r _ _) =
+    -- Answered from here on: a throw out of a fiber that runs after this
+    -- one in the same drain is a defect after the answer (`failed`).
+    Js.set t "answered" (Js.from True)
+    Js.to (Js.apply (Js.get d "resolve") [ r ])
 
 
 -- After the response: work that outlives it — a fiber `fetch` started
@@ -288,7 +301,6 @@ answer d (Response r _ _) = Js.to (Js.apply (Js.get d "resolve") [ r ])
 -- until it ends or the platform's deadline stops it (§9.12 (d)).
 answered : V, Scheduler → ⊤
 answered t s =
-    Js.set t "answered" (Js.from True)
     ctx = Js.get t "ctx"
     if Task.schedulerBusy s then
         Js.to (Js.call ctx "waitUntil" [ heldUntilIdle s ])

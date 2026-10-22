@@ -2583,6 +2583,14 @@ and a `case` spelled with those patterns in either order — has a **dropped arm
   when the taken arm's pattern binds nothing), and otherwise writes the dropped arm as
   `undefined`, as any arm no value takes — never naming what `Reach` left out.
 
+So a development build writes `() => devOnly()` and a release one `() => "…"`, with `devOnly`
+absent. It is an `if`'s condition and nothing more: `if Js.development && x` is an ordinary test,
+both of whose branches are kept. Fixtures: `run/JsDevelopment` (a platform module asking in an
+`if`, a `case` and a constant, its release build printing its own golden), `emit/core/
+JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each without the other
+build's declaration).
+
+
 ### `Js.testHooks` is the build's test hooks
 
 *Added 2026-10-22* (`boundary.md` §9.12 (k): the hidden flag the owner chose for the corpus to
@@ -2596,13 +2604,6 @@ the corpus, which passes the flag to every `workers/` build, has them. A `--test
 no packed edge or emit row of an embedded module, since the rows are made without the flag, and
 its own emit rows carry the fact (`EmitPack.Fact.Question.test_hooks`). `--test-hooks` is hidden
 as `--allow-debug` is, for the same reason.
-
-So a development build writes `() => devOnly()` and a release one `() => "…"`, with `devOnly`
-absent. It is an `if`'s condition and nothing more: `if Js.development && x` is an ordinary test,
-both of whose branches are kept. Fixtures: `run/JsDevelopment` (a platform module asking in an
-`if`, a `case` and a constant, its release build printing its own golden), `emit/core/
-JsDevelopment` and `emit/release/core/JsDevelopment` (the two shapes, each without the other
-build's declaration).
 
 ### `Js.maySuspend` is the body's answer
 
