@@ -4944,14 +4944,13 @@ fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Erro
             if (first) |f| return o.rawChild(f, .cast_level, arg);
         },
         .ctor => if (o.ctorType(o.stepCtor(arg))) |ty| if (try o.regionOf(parent, ty)) |r| {
-            // A type that does not reach itself has no levels: a path in it
-            // twice was cast through `Js.Value` and read again, and it folds
-            // onto where it first entered the type, with no marker, until
-            // §16.7's decision (a) and the cast marker (F2) replace that fold.
-            // core Dict's tree folds so too: its levels are one place, which
-            // the module never makes share (§20.9), and no code outside it
-            // can name a level.
-            if (!try o.typeRecursive(ty) or try o.dictTree(ty)) return o.rawChild(switch (r) {
+            // Nonrecursive nesting has a finite shape: Maybe (Maybe a)
+            // has two different constructor places. Cast cycles now fold
+            // at complete-type boundaries instead of these type heads.
+            if (!try o.typeRecursive(ty)) return o.rawChild(parent, kind, arg);
+            // Core Dict's folded tree remains one place under its trusted
+            // representation rule (§20.9).
+            if (try o.dictTree(ty)) return o.rawChild(switch (r) {
                 .first => |f| o.paths.parent.items[f],
                 .marker => |m| m,
             }, kind, arg);
