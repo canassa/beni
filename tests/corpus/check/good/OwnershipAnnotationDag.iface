@@ -1,0 +1,2 @@
+module OwnershipAnnotationDag
+  value result : Bool
