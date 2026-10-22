@@ -152,9 +152,9 @@ programMinimum = Js.ref Info
 
 
 --| Make `level` the program's minimum from now on: a line below it is not
---| written, in every fiber, the ones a platform's runtime starts
---| included, unless `minimum` sets another for a function. The last call
---| wins, as `setSink`'s does. Until a call, the minimum is `Info`.
+--| written in any fiber, unless `minimum` sets another for a function.
+--| The last call wins, as `setSink`'s does, and the programs of one page
+--| (`Browser.programs`) share it. Until a call, the minimum is `Info`.
 --|
 --|     init ⊤ =
 --|         Log.setMinimum Log.Debug
