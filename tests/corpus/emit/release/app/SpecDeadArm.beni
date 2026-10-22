@@ -1,0 +1,34 @@
+-- emit: an arm whose test may do something and never takes it (`backend.md`
+-- §9, *Executability*). `walk` reads every element of its list and always
+-- answers `False`, so its call stays, and its result is always `False`. The
+-- release specialiser follows only the arms a test can take, so the call of
+-- `report` in the `then` arm never runs. The arm is written as `0`. Nothing
+-- that runs reads `report` any more, so it goes, and its message with it.
+-- Before, both arms of every `if` were analysed, and the arm stayed.
+import Node exposing (Program)
+
+
+walk : List Int → Bool
+walk xs =
+    case xs of
+        [] →
+            False
+
+        [ _, …rest ] →
+            walk rest
+
+
+report : Int → String
+report n = "a negative number was found among the " ++ String.fromInt n ++ " numbers given"
+
+
+describe : List Int → String
+describe xs =
+    if walk xs then
+        report (List.length xs)
+    else
+        "all fine"
+
+
+main : Program
+main = Node.printLines [ describe [ 1, 2, 3 ], describe [ 4, 5 ] ]

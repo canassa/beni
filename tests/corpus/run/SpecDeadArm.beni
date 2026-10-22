@@ -1,0 +1,30 @@
+-- run: the value `emit/release/app/SpecDeadArm` pins the shape of. The
+-- test of `describe` never takes its `then` arm, which the release build
+-- writes as `0`; both builds print the `else` arm's text.
+import Node exposing (Program)
+
+
+walk : List Int → Bool
+walk xs =
+    case xs of
+        [] →
+            False
+
+        [ _, …rest ] →
+            walk rest
+
+
+report : Int → String
+report n = "a negative number was found among the " ++ String.fromInt n ++ " numbers given"
+
+
+describe : List Int → String
+describe xs =
+    if walk xs then
+        report (List.length xs)
+    else
+        "all fine"
+
+
+main : Program
+main = Node.printLines [ describe [ 1, 2, 3 ], describe [ 4, 5 ] ]
