@@ -5315,9 +5315,9 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   vocabulary module's interface, and is absent when the extractor is not `pub`.
   *Amended 2026-10-21:* that absence is only the interface index. The vocabulary row already
   stores the extractor by name, because it need not be `pub` (§25.8). Reachability follows the
-  name to the `foreign` declaration, and the lowering imports it by that name. The module
-  exports the declaration when a build reaches the event. The runtime's `identity` is only
-  the extractor of an event with no `via`. `dump
+  name to the `foreign` declaration, and the lowering imports it by that name, or writes it in
+  the vocabulary module itself. The module exports the declaration when a build reaches the
+  event. The runtime's `identity` is only the extractor of an event with no `via`. `dump
   --stage=dispatch` prints `markup <root> <kind> …`, the root's instruction because a constant
   attribute has none of its own: `attr Html.class class_list`, `event Html.onInput payload via
   Html.targetValue`, `hole text number`, `for key arity=1 primitive=false`, `show identity arity=1
@@ -5337,7 +5337,9 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   imports the value as any other module's.
   *Amended 2026-10-21:* an extractor that is not `pub` has no interface index, so `markupEdges`
   does not name it. `js/Reach.zig` follows the vocabulary row's name to that declaration, and
-  `cx.extractor` imports the name. The declaring module exports it when it survived.
+  `cx.extractor` imports the name. The declaring module exports it when it survived. In the
+  vocabulary module itself, `cx.extractor` writes either kind of extractor by its local name,
+  because an import would declare that name a second time.
 - **`markup_type_in_foreign`** is checked with the vocabulary declarations, for every `foreign`
   value of a platform module when the build has a markup type. The graph carries the build's
   lowering (the first a package of the chain names) and each package's own, and the cache key of
