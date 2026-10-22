@@ -5598,6 +5598,14 @@ evaluated before its use there (`q=k(…);own(q)` → `own(k(…))`) is sound, b
 `emit/release/inline/PushAndTimer` and **+21** over twelve goldens (`direct/ListScripts` +19,
 `direct/TableSwap` +7), so it was not taken.
 
+*Amended 2026-10-22:* the distance to that one read is unbounded. The counting walk records
+its expression node, statement and statement list; a later read in the same list is found
+without a forward scan. A widget's handler can stand before 64 event registrations and still
+be made at its own registration. The compact printer's joined declarations may spell a
+preserved `const` as `let`; that spelling does not make the IR binding mutable.
+`emit/release/inline/WidgetHandler` pins this boundary, with a development twin under
+`emit/inline/`.
+
 *Amended 2026-10-17: never into a loop's head.* A use in a `for…of`'s iterable is no fold's, of
 either rule above: the printer writes the value in the loop's head, where the loop's own binding is
 already in scope, and `Rename` names scopes from the IR as written, so the binding may take a name
