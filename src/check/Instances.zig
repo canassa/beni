@@ -1173,25 +1173,27 @@ fn fieldTextLess(interner: *const InternPool.Global, a: TypeStore.Field, b: Type
 /// Keep the required record first so missing-field diagnostics stay identical.
 pub fn fieldRead(s: *Solve, receiver: Var, name: InternPool.Symbol, result: Var, origin: Bir.Inst.Index) Error!void {
     const st = s.store();
-    // A leaf field into a plain flex cannot fail or form a cycle. Avoid
-    // building and merging a throwaway row for this guaranteed success;
-    // every potentially failing case keeps the full record diagnostic.
-    const receiver_content = st.content(st.find(receiver));
+    // A field the receiver's row already holds, read into a plain flex,
+    // cannot fail: the full path below would bind a fresh extension to a
+    // throwaway copy of the rest of the row, unify the result with the
+    // field's type — this same unification, in this same order — and merge
+    // a record equal to the receiver's back into it. Only the middle step
+    // is visible to any other variable, so it is all that is done, and a
+    // read costs the field and not the record's width (checker-v2.md,
+    // *Deferred field-read optimisation*, amended 2026-10-22). A receiver
+    // that is an alias shows its expansion afterwards, as the full path's
+    // meeting of a record with a name leaves it (§7.1). Every potentially
+    // failing case keeps the full record diagnostic.
+    const named = st.find(receiver);
+    _, const receiver_content = st.resolved(named);
     const result_content = st.resolvedContent(result);
     if (receiver_content == .structure and receiver_content.structure == .record and result_content == .flex) {
         const flags = result_content.flex;
         if (flags.kind == .any and !flags.equatable and Walk.constraints(flags).isEmpty() and flags.obls == .none) {
             if (Walk.fieldIn(st, receiver_content.structure.record.fields, name)) |value| {
-                const value_content = st.resolvedContent(value);
-                const leaf = switch (value_content) {
-                    .flex => |f| Walk.constraints(f).isEmpty() and f.obls == .none,
-                    .structure => |flat| flat == .app and flat.app.args.len == 0,
-                    else => false,
-                };
-                if (leaf) {
-                    _ = try s.unify(result, value, origin, .{ .tag = .field_access, .index = @backingInt(name) });
-                    return;
-                }
+                _ = try s.unify(result, value, origin, .{ .tag = .field_access, .index = @backingInt(name) });
+                if (st.content(named) == .alias) try s.unifier.expand(named);
+                return;
             }
         }
     }

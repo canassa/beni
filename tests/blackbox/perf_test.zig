@@ -81,6 +81,36 @@ test "pending field reads scale linearly per receiver" {
     try s.finish("pending field reads per receiver", verdict);
 }
 
+// A read of a field that is not a leaf — a record in a record — built a
+// temporary open record, bound its extension to a fresh copy of the rest of
+// the receiver's row and merged a third row back into it, so one read of a
+// record of n fields cost O(n), and reading each of them O(n²) (issue #795).
+// It now unifies the result with the field directly (checker-v2.md,
+// *Deferred field-read optimisation*, amended 2026-10-22). Calibration
+// (ReleaseFast, instructions): the copying reads 255M / 996M / 4 452M at
+// 500 / 1 000 / 2 000 fields, a ratio of 3.9 and 4.5; the direct ones 23M /
+// 34M / 57M, 1.5 and 1.7. n = 1 000.
+test "reading every field of a wide record of records is linear in its width" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("Wide.beni", try wideReads(s.arena(), 1_000));
+    try s.w.write("Wide2.beni", try wideReads(s.arena(), 2_000));
+    const verdict = try s.ratio("Wide.beni", "Wide2.beni", 1_000);
+    try s.finish("field reads of a wide record of records", verdict);
+}
+
+/// `type alias Wide` of `count` fields `fi : { a : Int }`, and one function
+/// reading each of them: `[ m.f0.a, m.f1.a, … ]`.
+fn wideReads(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "type alias Wide =\n");
+    for (0..count) |i| try out.print(arena, "    f{d} : {{ a : Int }}\n", .{i});
+    try out.appendSlice(arena, "\n\ntotal : Wide → List Int\ntotal m =\n    [ m.f0.a\n");
+    for (1..count) |i| try out.print(arena, "    , m.f{d}.a\n", .{i});
+    try out.appendSlice(arena, "    ]\n");
+    return out.toOwnedSlice(arena);
+}
+
 fn pendingFields(arena: std.mem.Allocator, count: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
     try out.appendSlice(arena, "pub project r =\n");

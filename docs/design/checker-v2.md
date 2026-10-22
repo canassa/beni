@@ -5962,6 +5962,34 @@ extension add no information. Aliases, other result/field types, missing fields
 and open row searches keep ordinary record unification and its complete
 diagnostics.
 
+*Amended 2026-10-22 (#795): a read costs the field, not the row.* The rule above
+held for a leaf field only, so every other read — `model.w1`, a record in a
+record — built the temporary record, bound its extension to a fresh copy of the
+rest of the receiver's row, and merged a third row equal to the receiver's back
+into it: a read of a record of *w* fields cost O(*w*), and a function reading
+each of its fields O(*w*²) (a 2 000-field record read field by field, 4.45 G
+instructions to check). The direct unification now covers **any** field type,
+and a receiver that is an alias of a record:
+
+- **The same unification.** The full path's only step that any other variable
+  can see is the shared field's, `result ⊓ field`, in that order and in the same
+  category; the extension is fresh, and the record it is bound to and the
+  temporary record merged into the receiver hold nothing the receiver's row does
+  not. A result with no kind, marker, requirement or obligation cannot fail to
+  meet anything (§7.1's flex rows), so no diagnostic moves; a field whose type
+  holds the result forms the cycle the full path forms, at the same binder.
+- **An alias receiver shows its expansion afterwards** (`Unify.expand`), as the
+  full path's meeting of a record with a name leaves it (§7.1, *agree or
+  expand*): `check/bad/FieldReadThroughAliasExpands` pins the message that prints
+  it.
+- **What the full path left behind and nothing reads.** The rows it made were
+  copies or subsets of the receiver's, so the type-key artifact's record facts
+  (§36) lose only rows contained in one they keep, with the same openness, which
+  add no field conflict (`backend.md` §9 *Item 4*): emitted output is unchanged.
+
+A field outside the receiver's first row segment, a missing field, and a result
+that carries anything keep the full path and its diagnostics.
+
 Rank adjustment need not revisit a non-generalised escaped flex or rigid root
 whose rank is already below the boundary's young rank. Its rank is fixed by
 its own bucket, and I15 has already lowered its owned closure on every attachment and strict

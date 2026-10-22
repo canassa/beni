@@ -1,0 +1,30 @@
+-- A field read through a parameter whose type is a record ALIAS leaves the
+-- alias showing its expansion, whatever the field's type. `Box`'s `b` meets
+-- the record `{ p : Point }` the read requires, and a name that meets an
+-- unnamed type shows the expansion (checker-v2.md §7.1, agree or expand):
+-- `f`'s message prints `{ n : Int, p : Point }`, `g`'s, with no read, prints
+-- `Box`. A read whose result meets the field directly, without the
+-- temporary record, must still expand the receiver (checker-v2.md,
+-- *Deferred field-read optimisation*, amended 2026-10-22).
+type alias Point =
+    x : Int
+    y : Int
+
+
+type alias Box =
+    p : Point
+    n : Int
+
+
+f : Box → Int
+f b =
+    q = b.p
+    h b
+
+
+g : Box → Int
+g b = h b
+
+
+h : Int → Int
+h n = n
