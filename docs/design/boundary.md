@@ -7264,7 +7264,23 @@ inside a handler queues it behind the events already waiting ((e.10)).
   Maybe Duration)`, which changes the owner's signature and goes back to him (R5-6). *Measured
   2026-10-22: it is conservative, and the form is the owner's (`cf-workers-q9`). Until the answer,
   what is built is this: no check, and a `tick` that waits parks the object until it answers, its
-  other events waiting in the mailbox.* `Just d` keeps one host timer of `d` armed — re-armed
+  other events waiting in the mailbox.* ***Amended 2026-10-23 (Cesar's answer to `cf-workers-q9`,
+  closing it): the check is the compiler's, at `define`'s signature.*** Neither `Js.maySuspend`
+  nor a check at load: `define`'s annotation writes the handler record out instead of naming the
+  alias, with `tick : sync (state → Maybe Duration)` inside it, as `Browser.program`'s record
+  marks `update` and `view` (`transparent-effects-proposal.md` §15.2 item 1: the mark may stand
+  on a record field's function type in an argument position). `Handlers state msg` stays the
+  alias users write and `Object.none` keeps its type; every call site is unchanged, since the
+  alias and the written-out record are one type. A `tick` that may suspend is `sync_boundary` at
+  compile time, *"The `tick` function here must not suspend: `Worker.Object.define` hands it to
+  the platform, which calls it synchronously"*, with the chain; a handler that waits is still
+  accepted. *Measured 2026-10-23 on the reduced case before the slice: a `define` whose `request`
+  calls `Task.sleep` and whose `tick` does not is accepted; one whose `tick` calls a function
+  that sleeps is refused with `sync_boundary`; both written as `{ Object.none | request = …,
+  tick = … }`, so the demand survives the record update. The diagnostic's span is the update
+  expression's `{`, not the field's value, which §15.2's table names for a record literal.* The
+  sentence "a `tick` that waits parks the object" above describes what the platform did before
+  the check, and no longer arises. `Just d` keeps one host timer of `d` armed — re-armed
   from the moment it fires, the same `d` not re-arming it — and `ticked` is an event of the
   mailbox; a different `d` re-arms from now; `Nothing` clears it. A set timer keeps the object
   from hibernating ((a)), which is what an active arena wants, and `Nothing` is how the program

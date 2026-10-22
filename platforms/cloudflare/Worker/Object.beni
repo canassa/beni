@@ -93,15 +93,25 @@ pub type AskError
 --| A Durable Object class: its name — the one the app's `beni.json` lists
 --| under `"exports"` and the Wrangler configuration binds — the schema of
 --| its protocol, the function that restores its state at each start, and
---| its handlers. A `tick` that waits parks the object until it answers,
---| its other events waiting in the mailbox.
-pub define : String, Schema e msg, (Context msg → state), Handlers state msg → Worker.Definition
+--| its handlers, a `Handlers state msg`. The record is written out here so
+--| that `tick` carries the `sync` mark: the platform calls it outside any
+--| fiber, so a `tick` that may wait is refused at compile time
+--| (`sync_boundary`; §9.12 (e.5), amended 2026-10-23).
+pub define :
+      String
+    , Schema e msg
+    , (Context msg → state)
+    , { request : Context msg, state, Request → state × Response
+      , message : Context msg, state, Socket, String → state
+      , closed : Context msg, state, Socket, Close → state
+      , failed : Context msg, state, Socket, String → state
+      , alarm : Context msg, state → state
+      , received : Context msg, state, msg → state
+      , tick : sync (state → Maybe Duration)
+      , ticked : Context msg, state → state
+      }
+    → Worker.Definition
 define className schema restore handlers =
-    -- `tick` is to be checked sync here (§9.12 (e.5)); `Js.maySuspend` of
-    -- a field answers yes in the suspendable twin of this function, which
-    -- a caller whose other handlers may wait reaches, so the check is the
-    -- owner's to place (dashboard `cf-workers-q9`): until then a `tick`
-    -- that waits parks the object until it answers.
     Js.to
         (Js.from
             { handlers = Js.from handlers

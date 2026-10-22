@@ -1,0 +1,41 @@
+-- workers: an object's `tick` is called by the platform outside any fiber,
+-- so one that may wait is refused at compile time, through the `sync` mark
+-- on `define`'s record (boundary.md §9.12 (e.5), amended 2026-10-23). The
+-- handlers are given as a record update of `Object.none`, as programs
+-- write them; the `request` that waits is accepted, the `tick` is not.
+import Duration exposing (Duration)
+import Schema
+import Task
+import Worker exposing (Request, Response)
+import Worker.Object as Object
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ room ] }
+
+
+room : Worker.Definition
+room =
+    Object.define "Room" Schema.string (λ_ → 0)
+        { Object.none
+            | request = slow
+            , tick = waits
+        }
+
+
+-- A handler may wait.
+slow : Object.Context String, Int, Request → Int × Response
+slow _ n _ =
+    Task.sleep (Duration.millis 5)
+    ( n + 1, Worker.text 200 "ok" )
+
+
+-- `tick` may not.
+waits : Int → Maybe Duration
+waits n =
+    Task.sleep (Duration.millis 5)
+    if n > 0 then Just (Duration.millis 100) else Nothing
+
+
+route : Worker.Context, Request → Response
+route _ _ = Worker.text 404 "no such page"
