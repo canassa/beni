@@ -41,17 +41,17 @@
 {"receive": "a"}
 {"send": "a", "text": "close"}
 {"receive": "a"}
-{"close": "b", "code": 4002, "reason": "client says bye"}
+{"close": "b", "code": 4002, "reason": "client says bye", "until": "closed p2"}
 {"path": "/arena/x/count"}
 # A binary frame is closed with 1003; a client that leaves with no close
 # frame is seen as 1006 with no reason.
 {"socket": "c", "path": "/arena/x/p3"}
 {"receive": "c"}
-{"send": "c", "binary": 3}
+{"send": "c", "binary": 3, "until": "closed p3"}
 {"receive": "c"}
 {"socket": "d", "path": "/arena/x/p5"}
 {"receive": "d"}
-{"drop": "d"}
+{"drop": "d", "until": "closed p5"}
 {"path": "/arena/x/count"}
 # A defect closes every socket: the client sees 1006.
 {"socket": "e", "path": "/arena/x/p6"}

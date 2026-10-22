@@ -76,9 +76,9 @@
 (socket c) < upgrade: websocket
 < (socket c) "welcome p3"
 > (socket c) binary 3 bytes
-< (socket c) close 1003 "binary frames are not accepted"
 | err: beni: the object Arena got a binary frame; the socket is closed with 1003
 | out: closed p3 1003 binary frames are not accepted: ⊤
+< (socket c) close 1003 "binary frames are not accepted"
 > (socket d) GET /arena/x/p5
 (socket d) < 101
 (socket d) < sec-websocket-accept: (the key)
