@@ -8628,6 +8628,16 @@ monotone in its test's truthiness, so executability is one more monotone compone
 every exec cell is true from the start, which is today's analysis: both arms of every `if` and
 every body.
 
+*Amended 2026-10-22 (issue #685).* **Every function body is a root, for now.** Fact 3's call graph
+misses calls the program makes: in `run/TaskRootScope`, a function that runs, the bracket's use
+function, has one recorded caller, and that caller is in a body the graph never reaches from a root,
+though Task runs that function through its fibers' frames. A body the solve leaves false contributes no
+argument to the functions it calls, so a parameter every other call passes the same literal would
+be dropped under a call that passes another. Until the graph is complete, every body is
+executable and only arms are decided. Arms are decided by the test's truthiness, which does not rest
+on the graph. Research 52's E2 (`SpecSelfGuard`) and `SpecDeadArm` are arms, and no `emit/release`
+golden moves.
+
 #### The worklist
 
 Two queues, rings of `u32` with a bitset of what is queued: changed cells and newly executable
