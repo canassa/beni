@@ -1664,6 +1664,18 @@ All such descendants remain holders for the alias and construction checks.
 summary block is version 27, following version 26's conditional writer sets. It
 retains those sets together with full cast keys and signatures.
 
+*Amended 2026-10-23 (#748, deferred capture composition):* a carried binding
+is composed at the enclosing call with the same declared/actual parameter types
+and crossed-growing-call mark as a direct result. Its native path suffix and
+its cast types therefore take one exact crossing and fold at a later one, even
+when the carried function has not yet been invoked. For each binding, preserve
+all rows before composition and compare the merged rows before normalization:
+the existing occurrence check conjoins the conditions of coexisting placements.
+Alternative provenances at one original place remain alternatives. A carried
+site's equality includes entry marks and approximation, so a metadata-only change
+cannot stop the fixpoint before the fold has propagated. No capture or condition
+is discarded, and the callable class's own requirements remain unchanged.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
