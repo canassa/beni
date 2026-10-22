@@ -1,7 +1,8 @@
 -- No program can call the pointer events' extractor (boundary.md §9.8.20
--- (d)). Its parameter is `Html.Dispatched`, a type `Html` does not export
--- and no event hands a handler, so an `onClick` handler that passes its
--- `Event` to it is refused. `PointerExtractorType` names the type.
+-- (d), amended 2026-10-22). `Html.pointer` is not `pub`, so an `onClick`
+-- handler that passes its `Event` to it is refused by name. The handler
+-- of `onPointerDown`, whose `via` names it, is accepted.
+-- `PointerExtractorType` names its parameter type, which is private too.
 import Html exposing (Html)
 
 

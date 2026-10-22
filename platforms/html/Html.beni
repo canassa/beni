@@ -120,17 +120,16 @@ pub crossing foreign type Pointer
 
 
 -- What a pointer event's own listener hands its extractor: the event.
--- Not `pub`, and no event hands a handler one, so no program can call
--- `pointer`.
+-- Not `pub`, and no event hands a handler one.
 foreign type Dispatched
 
 
 -- The extractor of every pointer event: the event, and its position in
 -- the box of the element whose listener runs (`currentTarget`). Called on
--- another event, that element could be the document, which has no box.
--- `pub` only because a lowering finds an extractor among the module's
--- `pub` values (issue #532).
-pub foreign impure pointer : Dispatched → Pointer
+-- another event, that element could be the document, which has no box,
+-- so it is not `pub` and no program can call it. A `via` can name a value
+-- that is not `pub` (`boundary.md` §9.3).
+foreign impure pointer : Dispatched → Pointer
 
 
 --| The pointer's identity: the same number from its first event to its
