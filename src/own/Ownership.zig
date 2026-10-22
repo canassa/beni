@@ -753,10 +753,13 @@ test "annotation growth preserves deep boundaries and joins at the earlier bound
 /// a read-off or a row says otherwise.
 pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: Grown = 0, rxc: XSum = .{ .no = 1 } };
 
-/// A path's container condition, without a deep or record condition.
-/// Such an annotation describes its value, not an alternative allocation.
+/// A path's container condition, without a deep condition. Such an
+/// annotation describes its value, not an alternative allocation. Its
+/// record condition is not read: whether a path has several choices decides
+/// how a list's entries are approximated, and a list's line reads no record
+/// condition (§31.4 item 6, #773).
 fn spineAnnotation(r: ResEntry) bool {
-    return r.prov.condition_only and r.xc.no == 0 and r.xc.atoms.len == 0 and r.rxc.no == 0 and r.rxc.atoms.len == 0;
+    return r.prov.condition_only and r.xc.no == 0 and r.xc.atoms.len == 0;
 }
 
 pub const SupplyEntry = struct {
