@@ -1652,6 +1652,18 @@ that comparison ceased to prove physical separation at the host boundary.
 The summary block is version 26, following version 25's folded-Dict condition
 invalidation; old blocks are rechecked rather than decoded as full-type keys.
 
+*Amended 2026-10-22 (#748, unknown views at a write's root):* the two unknown
+suffix flags denote the same set of locations. A root wildcard may be the written
+root; a wildcard below a field, element or constructor remains below that prefix.
+An incompatible-view flag disables the old static-type filter, but cannot erase
+an otherwise precise prefix. Write-root selection therefore accepts either flag
+only at the root wildcard, retaining the baseline rule for strict descendants.
+All such descendants remain holders for the alias and construction checks.
+
+*Amended 2026-10-22 (after conditional callback requirements landed):* the
+summary block is version 27, following version 26's conditional writer sets. It
+retains those sets together with full cast keys and signatures.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
