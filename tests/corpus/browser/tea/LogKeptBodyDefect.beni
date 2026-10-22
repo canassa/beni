@@ -1,10 +1,11 @@
 -- A command's body has the log context of the `update` arm that made it
--- (boundary.md §9.8.16 (b), amended 2026-10-22), and a defect stops the
--- program (§9.8.14): the crash screen in development (§9.8.10 (c)), the
--- page as it was in release. Here the body does not wait, so it runs in
--- no fiber, inside the arm's `annotate`: its line carries the annotation,
--- then it throws. A command made outside any context works before the
--- defect, and after it the same click changes nothing.
+-- (boundary.md §9.8.16 (b), amended 2026-10-22; #597), and a defect stops
+-- the program (§9.8.14): the crash screen in development (§9.8.10 (c)),
+-- the page as it was in release. This is #597's defect case (#775). Here
+-- the body does not wait, so it runs in no fiber, inside the arm's
+-- `annotate`: its line carries the annotation, then it throws. A command
+-- made outside any context works before the defect, and after it the same
+-- click changes nothing.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Log
