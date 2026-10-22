@@ -442,7 +442,13 @@ quantifier crosses into JavaScript. This is the one place the backend sees a typ
 field-interference artifact (*Item 4 — field ambiguation, specified and then declined*) stays
 declined.
 
-## 4. Codegen, construct by construct
+*Amended 2026-10-22:* record-row field sets now also cross in this artifact
+(checker-v2.md §36) and feed release field colouring (§9, *Item 4, taken up*).
+They do not require closed field-value types; unknown rows are conservative.
+This supersedes the withdrawal of field-interference facts above.
+
+## 4. Codegen
+, construct by construct
 
 Representation decisions are §9.4's and are not reopened here. What this section fixes is the
 mapping.
@@ -6112,6 +6118,33 @@ throughput within noise of today's **48.08 ms / 61.2 MB/s for 633 modules** (`be
 ReleaseFast, this machine), which a print-time table lookup cannot move.
 
 #### Item 4, taken up — record fields renamed, and integer constructor tags
+
+**Amended 2026-10-22: reuse spellings across disjoint record types.** This
+supersedes scheme (i)'s single namespace and the earlier rejection of colouring,
+including §3's withdrawal of field-interference facts. The unit stays the source
+field text: one text has one spelling everywhere, including extensible records.
+Two texts that may occur in the same runtime record have different spellings.
+The graph joins every pair in each record field set; an unknown set makes its
+known fields adjacent to every other text. Sort by generated uses descending,
+then source text ascending, and greedily choose the lowest `Rename.spell`
+ordinal unused by a neighbour. Kept fields, the `$` exclusion, library builds,
+source ordering, boundary rules and development output keep their contracts.
+No generated spelling equals a kept field text.
+
+Record field sets are independent of whether the types of their values are
+closed. Capture all record rows from the checker's store before it dies, with
+open rows marked conservative, and persist them with the type-key artifact.
+Merge with `RepKeys`' closed records, written record types and allocations in
+all modules (including embedded core and platforms), and resolved schema plan
+records. An update with an unknown full row makes its written fields
+conservative. Emitted object literals add cliques for compiler-created props;
+an emitted spread with an unknown full type makes its written fields
+conservative, and a field absent from the facts is conservative. Schema plans supply the sets
+for both validator workers and the shape copy loop, even when no object literal
+is emitted. These facts describe representation, so they also cover nested
+records, constructor payloads, row instantiations and `Js.Value` round trips.
+Shape output names, including slot 3 when present, use this same table (#659);
+this change does not settle the measurement owed by #655.
 
 *Added 2026-10-01, the owner's order: build item 4 and the integer tags under `--release`.* This
 amends the section above in three places and keeps the rest of it: **the unit is still the source

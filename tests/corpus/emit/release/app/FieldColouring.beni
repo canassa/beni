@@ -1,0 +1,31 @@
+-- Disjoint closed rows reuse a/b; each pair in one row remains distinct.
+-- Lists retain record allocations and reads through the release optimiser.
+import Node
+
+
+type alias Tea =
+    saucers : Int
+    teacups : Int
+
+
+type alias Market =
+    asks : Int
+    bids : Int
+
+
+tea : Tea → Int
+tea row = row.saucers + row.teacups
+
+
+market : Market → Int
+market row = row.asks + row.bids
+
+
+main : Node.Program
+main =
+    teas = [ { saucers = 1, teacups = 2 }, { saucers = 3, teacups = 4 } ]
+    markets = [ { asks = 5, bids = 6 }, { asks = 7, bids = 8 } ]
+    Node.printLines
+        [ String.fromInt (List.sum (List.map teas tea))
+        , String.fromInt (List.sum (List.map markets market))
+        ]

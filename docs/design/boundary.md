@@ -398,6 +398,16 @@ through the protocol, and one coming in is a fresh array the codec built.
 
 #### What JavaScript may read of a beni value
 
+**Amended 2026-10-22: field spellings may be reused.** One source field text
+has one spelling everywhere. Different texts that can coexist in one runtime
+record have different spellings; fields whose full set is unknown conflict
+with every other text. Release assignment greedily colours these sets by uses
+(descending), then text, choosing the lowest available spelling. Boundary-pinned
+and plain-property field texts keep their source names, no spelling equals a
+kept text or contains `$`, and the library and development rules below remain.
+This changes the single global namespace in backend §9, not what a host may
+read or which records it may construct.
+
 *Added 2026-10-01, with `backend.md` §9's* Item 4, taken up. A `--release` build renames record
 fields and gives constructors integer tags wherever no JavaScript can see the difference, so
 "where can JavaScript see it" is now part of this contract. **JavaScript sees the representation

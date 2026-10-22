@@ -5979,6 +5979,19 @@ own their `extra` buffer through the session allocator.
 
 ## 36. Amendment of 2026-10-20: the type-key artifact
 
+**Amended 2026-10-22: record field sets for release colouring.** The artifact
+also carries `records` (field range and open-row bit) and `record_labels`.
+Before freeing a keyed module's store, walk every union-find root and flatten
+every record's row, independently of the types of its field values. An open
+row marks all its known fields conservative. Sort row sets by field text
+and the open-row bit, and deduplicate them before persisting; a store variable's
+allocation order is not part of the artifact. These facts include schema
+endpoints, constructor payloads, nested rows and instantiations. Modules
+without an artifact (embedded core and platforms) use conservative BIR facts
+in the backend (backend §9, amendment of 2026-10-22). The `type_keys` byte
+section is version 2, adding the two columns; version 1 is a cache miss.
+Development and release builds write the same facts.
+
 *The owner's decisions of 2026-10-20, D1 and D2 in its safe form (`plans/type-directed-points-to.md`
 §3); the contract is `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type filtering of fact
 3*, and `boundary.md` §4.2's amendment of the same day. Slice 2 of the plan, issue #489.* The
@@ -5991,7 +6004,10 @@ emits, and lowering does not read it yet (slice 3).
 `Check.type_keys`:
 
 ```zig
+pub const Record = struct { fields: Range, open: bool };
 pub const Artifact = struct {
+    records: []const Record,        // all record rows, including open ones
+    record_labels: []const Symbol,  // every row's labels, sorted by text
     nodes: []const KeyNode,         // the module's canonical closed types
     args: []const TypeKey,          // every node's children; never wild
     labels: []const Symbol,         // every record node's field labels
@@ -6070,7 +6086,7 @@ keeps its store (`Context.inst_type`).
 instructions, then the wild set's sources, each in index order, a record's fields visited and
 written in text order (§17): the artifact is a function of the module's source and its imports'
 interfaces, which the entry's key already pins. It is the cache entry's sixth section, `type_keys`
-(`cache/type_keys_bytes.zig`, format 1: nodes of 16 bytes, keys and labels of 4, instruction rows of
+(`cache/type_keys_bytes.zig`, format 1 (amended 2026-10-22: format 2 adds record-row sets): nodes of 16 bytes, keys and labels of 4, instruction rows of
 12, `type_refs` and `strings` as `dispatch_bytes` writes them), empty for an artifact with no key;
 `entry_bytes` goes 11 → 12, so an older entry is a miss. The keys are made on every build, not only
 under `--release`: `--release` is not a term of the entry's key, so keys made only for a release
