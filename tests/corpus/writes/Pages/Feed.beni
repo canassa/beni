@@ -24,8 +24,8 @@ pub type Msg
     | Failed String
 
 
-pub init : Model
-init = Model { items = [], errors = [] }
+pub init : ⊤ → Model
+init ⊤ = Model { items = [], errors = [] }
 
 
 pub update : Msg, Model → Model
