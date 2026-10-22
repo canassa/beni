@@ -6091,6 +6091,18 @@ Measured with `perf stat -e instructions:u`, ReleaseFast: `check --no-cache --jo
 dashboard N=64 221.5M → 206.9M (−6.6%), whose `TypeKeys.build` had been 16.5% of `Module.check`, two
 thirds of it in stable block sorts; the same for `nowd`.
 
+*Amended 2026-10-22 (#806): one text sort.* Every text order the keys and the facts need — a
+record key's fields (`direct`, `pushChildren`, `finish`), the crossing walk's, and each distinct
+row's labels — is `TypeStore.sortByText`, the checker's text sort (§4.1): the names' text ranks
+when the session made them, otherwise a radix sort of their first eight bytes with the whole text
+only for names that share them. Comparison sorts reading the same order compared the two names'
+bytes O(*w* log *w*) times per record key of *w* fields whenever the project was under the
+session's ranking threshold (`Session.rank_by_text_from`), and a record key is made for every
+declaration and local whose type holds the record. Both write the stable order by text, so every
+key and row is the one it was. A row in symbol order already — a stored row of one segment — is
+not sorted again before it is made distinct. Measured as above: the synthetic dashboard of 512
+fields of records 312.8M → 153.3M, N=64 205.2M → 203.1M.
+
 *The owner's decisions of 2026-10-20, D1 and D2 in its safe form (`plans/type-directed-points-to.md`
 §3); the contract is `backend.md` §3, *Amended 2026-10-20*, and §9, *Declared-type filtering of fact
 3*, and `boundary.md` §4.2's amendment of the same day. Slice 2 of the plan, issue #489.* The
