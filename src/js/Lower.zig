@@ -16081,7 +16081,17 @@ pub const Lowerer = struct {
                 frame.entered = true;
                 for (chain.params, 0..) |param, k| {
                     if (k >= values.len) break;
-                    try l.bindParam(&stmts, param, values[k]);
+                    // The caller may place an argument elsewhere too (an
+                    // event binding's captured arguments): bind a copy of a
+                    // literal, so a pass that rewrites this initialiser in
+                    // place (`Spec`'s dead bindings) never reaches the other.
+                    const value = values[k];
+                    const tag = l.b.tagOf(value);
+                    const own = if (atom_literals[@backingInt(tag)])
+                        try l.add(tag, l.b.nodes.items(.pos)[value.int()], l.b.dataOf(value).lhs, l.b.dataOf(value).rhs)
+                    else
+                        value;
+                    try l.bindParam(&stmts, param, own);
                 }
                 // The body's `let`s its markup does not read, where the
                 // call's markup is made.
