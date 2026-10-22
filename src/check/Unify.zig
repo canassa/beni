@@ -1118,15 +1118,12 @@ fn record(u: *Unify, ra: Var, rec_a: TypeStore.Structure.Record, rb: Var, rec_b:
     // Normalised on merge (§4.1): the survivor is ONE record, every field
     // and the chain's end. When `a` was already that — no chain, nothing
     // added — its own content is reused and nothing is allocated.
+    // Otherwise it is `a`'s fields and `only_b`, two runs in symbol order,
+    // merged as they are written.
     const merged: TypeStore.Structure.Record = if (!a.concatenated and only_b.items.len == 0)
         rec_a
-    else blk: {
-        const all = try u.scratch.alloc(TypeStore.Field, a.fields.items.len + only_b.items.len);
-        defer u.scratch.free(all);
-        @memcpy(all[0..a.fields.items.len], a.fields.items);
-        @memcpy(all[a.fields.items.len..], only_b.items);
-        break :blk .{ .fields = try st.addFields(all), .ext = end };
-    };
+    else
+        .{ .fields = try st.addFieldsMerged(a.fields.items, only_b.items), .ext = end };
     _ = try u.merge(st.find(ra), st.find(rb), .{ .structure = .{ .record = merged } });
     return true;
 }
@@ -1137,10 +1134,10 @@ fn sharedTextLessThan(interner: *const InternPool.Global, a: Shared, b: Shared) 
     return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
 }
 
+/// A fresh record of `fields`, a run of one side's row and so already in
+/// symbol order (`record`'s merge-join keeps the order it reads).
 fn freshRecord(u: *Unify, fields: []const TypeStore.Field, ext: Var) Error!Var {
-    const copied = try u.scratch.dupe(TypeStore.Field, fields);
-    defer u.scratch.free(copied);
-    const range = try u.store.addFields(copied);
+    const range = try u.store.addFieldsMerged(fields, &.{});
     return u.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
 }
 
