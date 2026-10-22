@@ -20,10 +20,10 @@ module OwnedSend
   125:5 update entry OwnedSend.shares model: accepted entry
   capture model.rows: read 88:42; before 88:32
   capture model.rows: read 91:60; before 91:34
-  summary loads: π1 R, π1#Grow.0 RW[storage], π1#Loaded.0 RA, π2 RAW{rows, total}, π2.rows RAW[storage], π2.rows[*] A; res .0 π2 π2◦, .0.rows π1#Loaded.0 π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  summary loads: π1 R, π1#Grow.0 RW[storage], π1#Loaded.0 RA, π2 RAW{rows, total}, π2.rows RAW[storage], π2.rows[*] A; res .0 π2 π2◦, .0.rows π1#Loaded.0 π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}
   summary fresh: res #Cmd.0 fresh1, #Cmd.0[*]#Now.0 λr{lost}, #Cmd.0[*]#Perform.0 λr{lost}
   summary reused: res #Cmd.0 fresh1, #Cmd.0[*]#Now.0 λr{lost}, #Cmd.0[*]#Perform.0 λr{lost}
-  summary shares: π1 R, π2 RAW{rows}, π2.rows RAS, π2.rows[*] A; res .0 π2 π2◦, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1{excl π2.rows} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇ π2.rows, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π2.rows, condition(fresh2){shared}r{shared}
+  summary shares: π1 R, π2 RAW{rows}, π2.rows RAS, π2.rows[*] A; res .0 π2 π2◦, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1{excl π2.rows} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0◇ π2.rows, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π2.rows, condition(fresh2){shared}r{shared}
   summary view: π1.total R; res ⟨render⟩ fresh1{lost}r{lost}
   summary initial: res .rows fresh1, fresh501◦
   demands 12: accepted 7 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 5

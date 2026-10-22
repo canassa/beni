@@ -1,7 +1,8 @@
 -- a function read out of a Dict returns a top-level list, which is pushed onto in place (issue #216).
 -- ownership (§30.11): the call's result is `⊤call`, so the write is refused,
 -- approximately: `f` may be the Dict's lambda or the default, which the
--- checker does not join (#278); `fromList`'s function it cannot identify.
+-- checker does not join (#278). A function-list parameter has a function slot:
+-- its result ownership requirement is checked at the caller.
 import Dict exposing (Dict)
 
 
@@ -26,3 +27,11 @@ fromList fs =
             List.push (f ⊤) 3
         [] →
             []
+
+
+pub badFromList : ⊤ → List Int
+badFromList ⊤ = fromList [ λ⊤ → shared ]
+
+
+pub goodFromList : ⊤ → List Int
+goodFromList ⊤ = fromList [ λ⊤ → [ 1 ] ]

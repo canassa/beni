@@ -8,6 +8,6 @@ module CapturedParam
   summary collect: π1 R; res ~fresh1
   summary collectSet: π1 R, π1[*] R; res ~fresh1
   summary stored: π1 RA; res .run λr{lost}, .run◇ π1, fresh501◦; π1 calls 0, unseen
-  summary usesStored: res fresh501◦
+  summary usesStored: res .run λ?r{lost}, fresh501◦
   demands 5: accepted 4 (fresh 2, call 0, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 1, rejected 0
 total 5: accepted 4 (fresh 2, call 0, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 1, rejected 0

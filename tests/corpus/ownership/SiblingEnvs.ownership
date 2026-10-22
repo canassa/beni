@@ -2,12 +2,12 @@ module SiblingEnvs
   capture r.r: read 54:15; before 54:9
   capture r.r: read 54:25; before 54:9
   summary size: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
-  summary mkH: π1 RA; res [*]◇ condition(fresh1){shared} fresh501◦, [*]◇⟨◇⟩◇ π1, fresh2{shared}
-  summary mkP: π1 RA; res [*]◇ condition(fresh1){shared}, [*]◇⟨◇⟩◇ π1, fresh2{shared}
-  summary mkR: π1 RA; res [*]◇ condition(fresh1){shared} fresh501◦, [*]◇⟨◇⟩◇ π1, fresh2{shared}
-  summary mkU: π1 RA; res [*]◇ condition(fresh1){shared}, [*]◇⟨◇⟩◇ π1, fresh2{shared}
-  summary mkS: π1 RA, π2 RA; res [*]◇ condition(fresh1){sep π1 π2} fresh501◦, [*]◇⟨◇⟩◇ π1 π2, fresh2{excl π1, excl π2, sep π1 π2}
-  summary mkT: π1 R, π1#Node.0 RA, π1#Node.1 RA; res [*]◇ condition(fresh1){sep π1#Node.0 π1#Node.1} fresh501◦, [*]◇⟨◇⟩◇ π1#Node.0 π1#Node.1, fresh2{excl π1#Node.0, excl π1#Node.1, sep π1#Node.0 π1#Node.1}r{excl π1#Node.0}
+  summary mkH: π1 RA; res [*] λ?r{lost}, [*]◇ condition(fresh1){shared} fresh501◦, [*]◇⟨◇⟩◇ π1, fresh2{shared}
+  summary mkP: π1 RA; res [*] λ?r{lost}, [*]◇ condition(fresh1){shared}, [*]◇⟨◇⟩◇ π1, fresh2{shared}
+  summary mkR: π1 RA; res [*] λ?r{lost}, [*]◇ condition(fresh1){shared} fresh501◦, [*]◇⟨◇⟩◇ π1, fresh2{shared}
+  summary mkU: π1 RA; res [*] λ?r{lost}, [*]◇ condition(fresh1){shared}, [*]◇⟨◇⟩◇ π1, fresh2{shared}
+  summary mkS: π1 RA, π2 RA; res [*] λ?r{lost}, [*]◇ condition(fresh1){sep π1 π2} fresh501◦, [*]◇⟨◇⟩◇ π1 π2, fresh2{excl π1, excl π2, sep π1 π2}
+  summary mkT: π1 R, π1#Node.0 RA, π1#Node.1 RA; res [*] λ?r{lost}, [*]◇ condition(fresh1){sep π1#Node.0 π1#Node.1} fresh501◦, [*]◇⟨◇⟩◇ π1#Node.0 π1#Node.1, fresh2{excl π1#Node.0, excl π1#Node.1, sep π1#Node.0 π1#Node.1}r{excl π1#Node.0}
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 0: accepted 0, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -89,7 +89,8 @@ pub const magic = "BENIOWN\x00";
 /// 19 distinguishes value-scoped construction conditions from allocations.
 /// 20 carries each write's storage/deep extent (§32 amendment, #670).
 /// 21 writes a pairwise-apart atom as its groups (§16.7, amended 2026-10-22, #693).
-pub const version: u32 = 21;
+/// 22 retains recursive function slots and returned classes, including unknown alternatives.
+pub const version: u32 = 22;
 
 pub const Error = error{Bad} || Allocator.Error;
 
