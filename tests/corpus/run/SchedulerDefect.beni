@@ -1,0 +1,34 @@
+-- run: a defect under a scheduler runs that scheduler's hook and no
+-- other's, and ends the program as every defect on `node` does
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22; boundary.md
+-- §9.8.14 (k)). The throw leaves the scheduler's drain uncaught: the
+-- program exits 1 with Node's report, what it logged before stands, and
+-- no release runs — not the one of the fiber parked under the other
+-- scheduler, whose hook never runs either.
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    first = Task.scheduler λ⊤ → say "first stopped"
+    second = Task.scheduler λ⊤ → say "second stopped"
+
+    _ = Task.spawn λ⊤ →
+        Task.withScheduler second λ⊤ →
+            Task.bracket (λ⊤ → ⊤) (λ_ _ → say "sleeper released") λ_ → Task.never ⊤
+
+    thrower = Task.spawn λ⊤ →
+        Task.withScheduler first λ⊤ →
+            -- Resumed through the scheduler's own drain before it throws.
+            Task.yieldNow ⊤
+            say "about to throw"
+            Debug.todo "the fiber threw"
+    Task.join thrower
+    say "not reached"
+    Node.done
