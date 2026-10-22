@@ -397,6 +397,15 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
             .true_ => {},
             .and_ => for (s.tree.constraints(node.a, node.b)) |child| try s.solve(child),
             .equal => _ = try s.unify(@fromBackingInt(@intCast(node.a)), @fromBackingInt(@intCast(node.b)), node.region, node.category),
+            .update_base => {
+                const required: Var = @fromBackingInt(@intCast(node.a));
+                const base: Var = @fromBackingInt(@intCast(node.b));
+                if (try s.unifier.updateBase(required, base, node.region)) {
+                    try s.reportJoins();
+                } else {
+                    _ = try s.unify(required, base, node.region, node.category);
+                }
+            },
             .call => try s.call(node),
             .instantiate => {
                 s.instantiate.origin = node.region;

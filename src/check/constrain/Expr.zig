@@ -159,7 +159,7 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             try parts.append(g.cx.scratch, try expr(g, @fromBackingInt(@intCast(data.lhs)), base, .{ .tag = .general }));
             // The base must HAVE every updated field; the result is the
             // base's own type, so an update never widens a record.
-            try parts.append(g.cx.scratch, try g.equal(required, base, inst, .{ .tag = .record_update, .index = Category.no_field }));
+            try parts.append(g.cx.scratch, try g.updateBase(required, base, inst));
             try parts.append(g.cx.scratch, try g.equal(expected, base, inst, category));
             for (written) |f| {
                 const name = bir.symbol(f.name);
