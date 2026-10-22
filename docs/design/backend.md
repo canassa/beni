@@ -11118,8 +11118,9 @@ conversion §11.6 refuses, paid on every patch.
 rewrites it only when the handler value changed (`c/dom/events.rs:60-66`); a payload-form handler's
 node also gets, at mount, `el.$$clickX = extractor` (or the runtime's identity when the payload is the
 raw event). *Amended 2026-10-21:* a `via` names its `foreign` whether or not the value is `pub`
-(`boundary.md` §9.3). The identity is the extractor of an event with no `via`. The runtime's one listener per delegated name walks up from the target to the first node
-with a `$$click`, applies the row's `preventDefault` and `stopPropagation`, computes the message —
+(`boundary.md` §9.3). The identity is the extractor of an event with no `via`. The runtime's one
+listener per delegated name walks up from the target to the first node with a `$$click`, applies
+the row's `preventDefault` and `stopPropagation`, computes the message —
 `X ? h(X(event)) : h` — passes it through the node's map chain (below), and sends it to the program
 whose mount root it reaches next (§15.11). *(The walk goes on past that first node, as the DOM's
 bubbling does: §15.11, amended 2026-10-08, states it exactly.)* A **non-delegated** event attaches, at mount, one stable
@@ -11899,7 +11900,8 @@ development build and again under `--release`, where an optimiser would break it
   edges, a component's callee among them; the one edge `Bir` does not have, a payload extractor, is
   the markup leg of `check/Edges.zig` (`checker-v2.md` §25.7). *Amended 2026-10-21:* an extractor
   that is not `pub` has no interface index, so that leg does not name it. `js/Reach.zig` follows
-  the vocabulary row's name to the declaration, and the module exports it when the event survived.
+  the vocabulary row's name to the declaration, and the vocabulary module exports it when it is
+  live: when a surviving markup root names an event with that `via`.
   A hoisted declaration is produced only by a surviving module's lowering, so it lives and dies with
   the roots that use it.
 - **Determinism**: kind and row names are sites; template-string numbers count in hoist order within
