@@ -7673,7 +7673,8 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   (`tests/corpus/README.md`, *A Worker*; `tests/blackbox/workers.zig`): a fixture is a project
   under `tests/corpus/workers/<Name>/` — its modules, `beni.json` with the `"exports"` list,
   `wrangler.jsonc` as (i) writes it, `_expected.steps` — and two cases, the development build and
-  the `--release --allow-debug` build, each one Miniflare start (the budget above), each with a
+  the `--release --allow-debug` build, each one Miniflare start (the shape *The budget* set;
+  #744 removed the per-test budgets on 2026-10-22, and the split stays as the kind's shape), each with a
   record file of its own (`_expected.run-hash`, `_expected.release-run-hash`), so neither case
   writes the other's. The driver takes Miniflare's entry file as `--miniflare=`, from
   `BENI_MINIFLARE` (`nix develop .#workers`, #698) or `-Dminiflare=`, because a program the harness

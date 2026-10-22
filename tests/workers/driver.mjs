@@ -81,7 +81,9 @@ for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
 let consoleLines = [];
 // Steps that wait for a server line the mark cannot order: a line an
 // object writes from a socket event has no order with a request to the
-// Worker, so such a step names the line it waits for (`"until"`).
+// Worker, so such a step names the line it waits for (`"until"`). A wait
+// that times out is a failure of the run, so no golden can keep it.
+let untilTimedOut = false;
 const lineWaiters = [];
 const waitForLine = (text) =>
   consoleLines.some((line) => line.includes(text))
@@ -357,8 +359,8 @@ for (const step of steps) {
     socketNamed(step.send)?.ws.send(step.text);
   } else if (step.drop !== undefined) {
     // The connection ends with no close frame: the server sees 1006. The
-    // step waits for the client's own close event, and a moment more, so
-    // the server's close handler has run before the step's mark.
+    // step waits for the client's own close event; the server's close
+    // handler is awaited through the step's `until`.
     say(`> (socket ${step.drop}) (dropped, no close frame)`);
     const entry = socketNamed(step.drop);
     if (entry !== undefined) {
@@ -397,7 +399,10 @@ for (const step of steps) {
     await printOutcome(await within(() => send(step)));
   }
   // A step that names a server line waits for it first (`"until"`).
-  if (step.until !== undefined && !(await waitForLine(step.until))) say(`< (no line ${JSON.stringify(step.until)} in ${stepLimit} ms)`);
+  if (step.until !== undefined && !(await waitForLine(step.until))) {
+    say(`< (no line ${JSON.stringify(step.until)} in ${stepLimit} ms)`);
+    untilTimedOut = true;
+  }
   // The Worker's console lines arrive on a stream of their own: the mark
   // says every line of this step has landed.
   await awaitConsole();
@@ -409,3 +414,6 @@ for (const [name, pending] of detached) {
 }
 await mf.dispose();
 flushConsole();
+// A step named a server line that never came: the run failed, whatever the
+// transcript says.
+if (untilTimedOut) process.exit(1);

@@ -60,8 +60,8 @@
 > (socket a) "close-bad"
 < (socket a) "refused code 1005"
 > (socket a) "close"
-< (socket a) close 4001 "server says bye"
 | out: closed p1 4001 server says bye: ⊤
+< (socket a) close 4001 "server says bye"
 > (socket b) close 4002 "client says bye"
 | out: closed p2 4002 client says bye: ⊤
 > GET /arena/x/count
