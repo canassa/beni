@@ -447,8 +447,7 @@ declined.
 They do not require closed field-value types; unknown rows are conservative.
 This supersedes the withdrawal of field-interference facts above.
 
-## 4. Codegen
-, construct by construct
+## 4. Codegen, construct by construct
 
 Representation decisions are §9.4's and are not reopened here. What this section fixes is the
 mapping.
