@@ -1,5 +1,12 @@
 # 98 — Browser application ownership: audited causes and idiomatic repairs
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-15. The original campaign on `52a2c5d2f` plus PR #116's
 initialization-transfer rule is retained as historical evidence in
 [`98-browser-app-ownership.json`](98-browser-app-ownership.json). The independent

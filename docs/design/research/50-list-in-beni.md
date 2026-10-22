@@ -1,5 +1,12 @@
 # The list runtime in beni: what `core/List.js` needs to move
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** research, 2026-10-02. Not normative. Commissioned as step 3 of
 [`plans/core-in-beni.md`](../../../plans/core-in-beni.md): work out what it takes to write
 `core/List.js` — the array-backed `List` of [`backend.md`](../backend.md) §4, *Lists are arrays*

@@ -1,5 +1,12 @@
 # Lean oracle extension evidence — 2026-10-15
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 `../../ORACLE-EXTENSION-RESULTS.md` reports the model boundary and measurements.
 The audited Lean implementation is `dac480495`; bridge tail-context fixes
 finish at `a85abcabf`. Both final campaigns use the frozen ReleaseSafe shipping

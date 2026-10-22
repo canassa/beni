@@ -97,7 +97,7 @@ macOS requires `zorg` on PATH).
 The job `lean` of `.github/workflows/ci.yml` checks the proofs.
 The guard `check` needs this job, so a failed proof blocks a merge.
 
-- The job runs `scripts/audit.sh HEAD`, then `lake build`, in `nix develop .#ownership`.
+- The job runs `scripts/audit.sh HEAD .lake`, then `lake build`, in `nix develop .#ownership`.
   The audit runs first. Its source scan rejects `#eval` and the other banned commands before any audited code runs.
   An `#eval` in an audited module runs during `lake build` and can rewrite the audit files.
   After `lake build`, the job fails when the build changed or added a file that git does not ignore.
@@ -109,18 +109,20 @@ The guard `check` needs this job, so a failed proof blocks a merge.
   #263 adds `.github/CODEOWNERS`, which names `@canassa` for these files.
   When the ruleset on `master` requires a review from code owners, a change to them needs the owner's review.
 - An `export-ignore` in a `.gitattributes` file removes a file from the export of `scripts/audit.sh` (#262).
-- The job restores `.lake` from the newest build on `master`.
-  Lake builds a module again when the hash of its source, its imports, its options or Lean's commit changes.
-- With a restored `.lake`, `lake build` does not run the source scan of `Axioms.lean` again when only a file outside its imports changes.
-  For example, a new `sorry` in `Triage.lean` passes a warm `lake build`.
-  `scripts/audit.sh` does not read `.lake`: it builds a clean export and scans every source, so CI catches that `sorry`.
+- `scripts/audit.sh` always builds a clean export from nothing and never reads a `.lake` that it did not build.
+  The job gives it a second argument, the checkout's `.lake`.
+  After every check of the audit passed, the script moves the build of the export there.
+- `lake build` in the checkout then finds every module up to date, and replays the logs of the audit's build, the source scan of `Axioms.lean` included.
+  Lake builds a module again when the hash of its source, its imports, its options or Lean's commit changes, so a module whose checkout source differs from the export is built again.
+- A warm `lake build` does not run the source scan of `Axioms.lean` again when only a file outside its imports changes (#255).
+  For example, a new `sorry` in `Triage.lean` passes a warm `lake build` on a local `.lake`.
+  `scripts/audit.sh` builds a clean export and scans every source, so CI catches that `sorry`.
 - The job does not run `lake exe ownership ci` (#259).
   The bridge of that command builds the beni compiler, so it depends on `src/` too.
-- On a GitHub runner, a cold run of the job took 9 to 14 minutes.
-  `lake build` took 184 to 310 s, and `scripts/audit.sh` took 257 to 428 s.
-- A restored `.lake` makes only `lake build` faster.
-  The audit always builds from nothing, so its time does not change.
-  Two warm runs took 7 min 45 s and 8 min 14 s: `lake build` took 1 s, and the audit took 410 s and 434 s.
+- Until #738, `lake build` started from master's cached `.lake`, and built the proofs a second time when a pull request changed a base module.
+  On run 39773374078 (a pull request, 20 min), the audit took 710 s and that second build 480 s.
+  The audit alone builds from nothing, so its time is the floor of the job.
+  On master after #738 (run 39782408151), the audit took 776 s, `lake build` 1 s, and the job 13 min 49 s; on master runs the audit took 404 to 776 s.
 
 ## Audit memory and replay
 
@@ -268,6 +270,7 @@ The write diagnostics count actual runtime write events.
 | `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–6, campaigns, shrinking, controls, distinct and precision counts |
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
+| `DictPrograms.lean`, `DictProbes.lean` | the dictionary model's probe programs and their probes: `DictFocus`, `DictValueWritten` and #474 as `#guard`s against `check` and both runs (#522) |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
 | `FlatFragment/` | the first flat fragment: the strengthened relation, records and field paths (`Fields.lean`), its heap frame, the expression cases (`Branch.lean` for `branch`, `ResultCase.lean` for `resultCase`, `ChainCase.lean` for `chainCase`), and the trace corollary, in one import chain |
@@ -349,9 +352,11 @@ fixed in the statement or the checker.
 ## Limits
 
 Result constructors and elimination, definition-local `?` lowering, recursive `Chain` types, and an
-initialization/retained-entry projection, constructions (`++`, spread literals) and list views are
-modelled (DESIGN.md, last section). Arbitrary user-defined or mutually recursive type
-declarations, `pop`/`swap`/`insertAt`/`removeAt`, dictionaries, sets, opaque types, release representations, implicit evidence,
+initialization/retained-entry projection, constructions (`++`, spread literals), list views and,
+since 2026-10-21, dictionaries with integer keys (`Ty.dict`, five primitives and `dictFocus`, edited
+in place; #522) are modelled (DESIGN.md, its last two sections). Arbitrary user-defined or mutually
+recursive type declarations, `pop`/`swap`/`insertAt`/`removeAt`, string keys and the dictionary
+folds, sets, opaque types, release representations, implicit evidence,
 effects, fibers, TEA and rendering remain outside the model. Chain tails copy their immutable spine;
 payload cells retain their identities. Private initialization uses a deliberately narrow single-read
 allocation/alias/capture chain; unsupported dependency graphs stay shared.

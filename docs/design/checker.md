@@ -1,5 +1,12 @@
 # Checker implementation contract (M2)
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for M2. [`fast-compiler.md`](fast-compiler.md) §7 says *why* the checker is
 shaped this way and §3.1 what it must not do; [`language.md`](language.md) §5–§8 and Appendix A
 say what names and forms reach it; [`frontend.md`](frontend.md) is the contract it extends

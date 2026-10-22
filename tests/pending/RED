@@ -1,3 +1,5 @@
+# Test policy, 2026-10-22: per-test instruction limits and grants were removed
+# (#740). Budget references below are historical, not red signatures.
 # The red signature of every fixture and scenario under tests/pending/
 # (plans/checker-rewrite.md §2.4 rules (a) and (d), S13;
 # tests/pending/README.md).

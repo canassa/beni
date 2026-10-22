@@ -440,7 +440,7 @@ The heap runtime copies the tail into a fresh array, which the checker names by 
 The probes `chainOps`, `chainEnd` (the dead link arm), `chainAlias` and `chainResult` check it at build time.
 What stays out: lists of lists and nested literals, and views.
 
-As built (2026-10-20, #165, `at`, `set`, `copy`, `prepend`): `FlatANF0` contains the four remaining primitives on flat integer lists, each a proved case restated (`ListPrimitives` in `Primitives.lean`).
+As built (2026-10-20, #165, `at`, `set`, `copy`, `prepend`): `FlatANF0` contains four more primitives on flat integer lists, each a proved case restated (`ListPrimitives` in `Primitives.lean`).
 `at` is `length` with a result: both runtimes read the element at the index, or the fallback for a negative or out-of-range index (`atResult`), and record it; the checker returns the join of the element abstract and the fallback's. `set` is `push` with the list after the write (`setResult`), unchanged for a negative or out-of-range index, when the counter does not move; its demand and frame are the push's (`primitive_set_demand_run`, `primitive_set_result`). `copy` is the literal case at the receiver's contents. `prepend` is the literal case with a read of the base on both sides (`valuePrepended`, `heapPrepended`, `prepend_post_invariant`) and a result the checker names by the fresh site root and the base's origins. A dead receiver returns bottom in the checker (`primitive_at_bottom_run` and its siblings), as the push does.
 The probes `atOps`, `setOps`, `setAlias`, `copyOps`, `prependOps` and `prependAlias` check them at build time.
 What stays out: lists of lists and nested literals (the real exclusivity certificates through nested arrays), constructions, builders and views.
@@ -523,3 +523,32 @@ Keep every audit check intact.
 
 Fetch `origin/master` before each later branch.
 If a model rule changes, add its cases and source baseline here before its proof.
+
+## Dictionaries (#522)
+
+The plan, written before the Lean (#522, 2026-10-21): model the meaning of a
+dictionary, not the tree (DESIGN.md, *Dictionaries*); three slices, each a PR
+that is part of #165 and of #522. (1) The model: syntax, typing, both
+interpreters, the checker rules and the probes as `#guard`s against the real
+`check` and both runs; the COVERAGE rows T32, T44 and T51 say what is checked;
+a verdict that differs from the Zig checker gets its own issue. (2) The flat
+relation over arrays of flat values (lists of lists): `heapInts` generalised to
+"every array holds flat values", an element shape in `AllocatedFlatValue.list`,
+`Describes` of an array through `namesAt`'s `.element` step, and real
+exclusivity certificates (`CertifiedExclusive` through the stored values, which
+the checker's `storeExclusive` and `storeSpines` must imply); the existing
+fragment theorems keep their statements. (3) The dictionary forms in
+`FlatANF0` and `flat_preserved`: the five primitives as primitive cases and
+`dictFocus` as a binder case like the list focus; the rows say what is proved.
+`accepted_flat_anf_traces_agree` keeps its statement throughout.
+
+As built (2026-10-21, #522, slice 1): `Ty.dict`, `dictEmpty`, `dictInsert`,
+`dictRemove`, `dictGet`, `dictSize` and `Expr.dictFocus` in `Syntax.lean`, both
+interpreters (`dictPut`, `dictDrop`, `dictFind`, counted writes of the entries)
+and the checker (`dictInsert` on the push's rule, `dictRemove` the push's
+demand, `dictGet` a read whose payload aliases the values, `dictFocus` on the
+list focus's rule through the shared `focusStep`). The frozen per-call checker,
+the aliasing and diagnostic interpreters, the oracle's shrinker, the
+falsifier's walkers, the bridge's printer and parser and `obsTyped` have the
+new forms. `DictPrograms.lean` holds eleven probe programs, `DictProbes.lean` their `#guard`s.
+No theorem changed; no theorem names a dictionary form yet.

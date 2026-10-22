@@ -11,7 +11,7 @@ module DirectCapture
   summary writesLive: π1 RW[storage], π1[*] R
   summary writesAfter: π1 RW[storage], π1[*] R
   summary writesWrapped: π1 RW[storage], π1[*] R
-  summary stores: π1 RA; res [*] λ?r{lost}, [*]◇⟨◇⟩◇ π1, fresh1{shared}
+  summary stores: π1 RA; res [*] λ?r{lost}, [*]◇⟨◇⟩◇ condition(fresh2) π1, fresh1{shared}
   summary fresh: unused
   summary writesInside: π1 RW[storage]
   summary writesInsideFresh: unused

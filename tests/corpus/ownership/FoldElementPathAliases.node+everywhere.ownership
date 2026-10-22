@@ -1,0 +1,37 @@
+module FoldElementPathAliases
+  9:17 List.update rows: accepted param
+  9:17 List.update rows[*].1: accepted param (<lambda> writes what List.update supplies it)
+  9:64 List.push values: accepted callback-param (List.update supplies it owned)
+  11:17 List.insertAt rows: accepted param
+  14:13 List.push rows: accepted param
+  19:5 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  19:5 call List.foldl <literal>[*].1: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.foldl supplies it)
+  19:5 call List.foldl <literal>[*].1: rejected call: another operand of the same operation reaches it; the callee writes it only through an approximate step (List.foldl writes what its callback returns, and the callback returns this argument) (approx)
+  19:53 call FoldElementPathAliases.put acc: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  19:53 call FoldElementPathAliases.put acc[*].1: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  24:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  24:12 call List.foldl <literal>[*].1: accepted fresh (<lambda> writes what List.foldl supplies it)
+  24:48 call FoldElementPathAliases.put acc: accepted callback-param (List.foldl supplies it owned)
+  24:48 call FoldElementPathAliases.put acc[*].1: accepted callback-param (List.foldl supplies it owned)
+  25:13 List.push key: rejected call: rows[*].0 may hold it through the call at 24:12, and is read at 25:5 (approx)
+  31:5 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  31:5 call List.foldl <literal>[*].1: accepted param (<lambda> writes what List.foldl supplies it)
+  31:46 call FoldElementPathAliases.put acc: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  31:46 call FoldElementPathAliases.put acc[*].1: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  34:26 call FoldElementPathAliases.repeatedRow <tuple>.1: accepted fresh (FoldElementPathAliases.repeatedRow writes π1.1)
+  43:5 call List.foldl rows: accepted call (<lambda> writes what List.foldl supplies it)
+  43:5 call List.foldl rows[*].1: accepted call (<lambda> writes what List.foldl supplies it)
+  43:42 call FoldElementPathAliases.put acc: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  43:42 call FoldElementPathAliases.put acc[*].1: rejected exclusive: it needs what List.foldl supplies it not to share, and it may
+  summary put: π1 RAW[storage], π1[*] RA, π1[*].0 RA, π1[*].1 AW[storage], π1[*].1[*] A, π2 RA; res [*] ~condition(fresh1){sep π1[*].0 π1[*].1, sep π1[*].0 π1[*].1[*]} ~π1[*], [*].0 ~condition(fresh2) ~π1[*].0 ~π2, [*].1 ~condition(fresh3) ~fresh3 ~π1[*].1, [*].1[*] ~condition(fresh4) ~π1[*].1[*], π1{excl π1[*].0, excl π1[*].1, excl π2, sep π1[*] π2, sep π1[*].0 π1[*].1, sep π1[*].0 π1[*].1[*]}; xreq spine π1[*].1
+  summary keyIsValue: res [*] ~condition(fresh3){shared}r{shared}, [*].0 ~condition(fresh2) ~fresh1, [*].1 ~condition(fresh4) ~fresh1 ~fresh4, [*].1[*] ~condition(fresh6) ~fresh6, ~fresh5{shared}r{shared}
+  summary keyWrittenLater: res .0 ~fresh3{lost}, .0[*] ~condition(fresh4), .0[*].0 ~condition(fresh2) ~fresh1, .0[*].1 ~condition(fresh5) ~fresh5, .0[*].1[*] ~condition(fresh6) ~fresh6, .1 fresh1 ~condition(fresh8), condition(fresh7){lost}r{lost}
+  summary repeatedRow: π1 RA, π1.0 RA, π1.1 AW[storage], π1.1[*] A; res [*] ~condition(fresh2){sep π1.0 π1.1, sep π1.0 π1.1[*]} ~π1, [*].0 ~condition(fresh3) ~π1.0, [*].1 ~condition(fresh4) ~fresh4 ~π1.1, [*].1[*] ~condition(fresh5) ~fresh5 ~π1.1[*], ~fresh1{shared}
+  summary repeatedRowFresh: res [*] ~condition(fresh4), [*].0 ~condition(fresh1) ~fresh1, [*].1 ~condition(fresh2) ~fresh2, [*].1[*] ~condition(fresh5) ~fresh5, ~fresh3{shared}
+  summary pairRows: π1 RA, π2 RA; res [*] condition(fresh2) π1 π2, fresh1{excl π1, excl π2, sep π1 π2}r{excl π1, excl π2, sep π1 π2}
+  summary sameValuesOpaque: res [*] ~condition(fresh4) ~fresh4{shared}r{shared}, [*].0 ~condition(fresh2) ~fresh2{shared}r{shared}, [*].1 ~condition(fresh1) ~fresh1{shared}r{shared}, [*].1[*] ~condition(fresh5) ~fresh5{shared}r{shared}, ~fresh3{shared}r{shared}
+  demands 24: accepted 15 (fresh 5, call 2, param 5, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 9
+total 24: accepted 15 (fresh 5, call 2, param 5, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 9
+cause disjoint 1
+cause call 2
+cause exclusive 6

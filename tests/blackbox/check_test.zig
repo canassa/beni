@@ -868,7 +868,7 @@ const surface_list = "tests/corpus/ownership/trusted-surface.txt";
 /// type — must be listed in `trusted-surface.txt` under that package, with
 /// a fixture that exists and names it; and every line listed under the
 /// package must be one the dump prints. One test per package, so that each
-/// stays within the per-test budget (one dump each).
+/// uses one dump per platform.
 fn expectSurface(package: []const u8, args: []const []const u8) !void {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -1154,26 +1154,12 @@ test "ownership words: the bodies they describe have not changed" {
     if (!ok) return error.WordedBodyChanged;
 }
 
-/// The budget of *ownership words: core's are catalogued*, in millions of
-/// instructions: a grant of its own (CLAUDE.md, *Every test has a budget*),
-/// decided by Jayson Reis on 2026-10-20 (dashboard question `node-log-q2`).
-/// The test runs the ownership stage on the whole of `core/`, so its count
-/// grows with every line of core: 4 270M of the gates' 4 300M on `master`
-/// `ffc2fdb84`, and 4 310M once the log context (#358) landed, about 3 050M
-/// of it in the ownership stage. The limit is that count plus about 10%. It
-/// goes when the test is back under 4 300M: issue #514.
-// The owner authorized both core tests at 5 300M on 2026-10-22, for
-// value-scoped construction conditions (#456). Observed: 4 810M and
-// 4 794M, plus about 10%. Reduce/remove these grants under #514.
-const core_surface_budget_millions = 5_300;
-const core_clean_budget_millions = 5_300;
-
 fn expectCoreSurface() !void {
     try expectSurface("core", &.{ "dump", "--stage=ownership", "core" });
 }
 
 test "ownership words: core's are catalogued" {
-    try world.withOwnBudget("the core surface test", core_surface_budget_millions, expectCoreSurface);
+    try expectCoreSurface();
 }
 
 test "ownership words: the browser platform's are catalogued" {
@@ -1188,9 +1174,13 @@ test "ownership words: the node platform's are catalogued" {
     try expectSurface("node", &.{ "dump", "--stage=ownership", "--platform=node", "platforms/node" });
 }
 
-test "ownership words: browser-tea and browser-inline carry none" {
+fn expectBrowserSurfaces() !void {
     try expectSurface("browser-tea", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser-tea" });
     try expectSurface("browser-inline", &.{ "dump", "--stage=ownership", "--platform=browser-inline", "platforms/browser-inline" });
+}
+
+test "ownership words: browser-tea and browser-inline carry none" {
+    try expectBrowserSurfaces();
 }
 
 // ---------------------------------------------------------------------------
@@ -1283,7 +1273,7 @@ fn expectCoreClean() !void {
 }
 
 test "ownership everywhere: core holds no rejected or pending line" {
-    try world.withOwnBudget("the core ownership test", core_clean_budget_millions, expectCoreClean);
+    try expectCoreClean();
 }
 
 test "ownership everywhere: the node platform holds no rejected or pending line" {
@@ -1302,8 +1292,12 @@ test "ownership everywhere: the browser-inline platform holds no rejected or pen
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-inline", "platforms/browser-inline" });
 }
 
-test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {
+fn expectTeaClean() !void {
     try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-tea", "platforms/browser-tea" });
+}
+
+test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {
+    try expectTeaClean();
 }
 
 test "ownership everywhere: Page.sandbox gets the direct entry row" {

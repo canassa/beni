@@ -1,0 +1,9 @@
+--! A test platform's scheduler whose `run` breaks the contract: it calls the
+--! drain during the call, which the kernel names as a defect.
+
+import Task exposing (Scheduler)
+
+
+--| A scheduler whose drains run at once, inside `run`.
+pub atOnce : ⊤ → Scheduler
+atOnce ⊤ = Task.schedulerWith (λdrain → drain ⊤) λ⊤ → ⊤

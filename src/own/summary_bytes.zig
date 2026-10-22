@@ -90,7 +90,8 @@ pub const magic = "BENIOWN\x00";
 /// 20 carries each write's storage/deep extent (§32 amendment, #670).
 /// 21 writes a pairwise-apart atom as its groups (§16.7, amended 2026-10-22, #693).
 /// 22 retains recursive function slots and returned classes, including unknown alternatives.
-pub const version: u32 = 22;
+/// 23 carries projection-aware container conditions and their sep_root atom (#720).
+pub const version: u32 = 23;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -221,6 +222,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
                 try c.path(e.path);
                 try c.prov(e.prov);
                 try c.xsum(e.xc);
+                try c.xsum(e.sc);
                 try c.xsum(e.rxc);
             };
             for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| try c.atom(a);
@@ -482,6 +484,7 @@ fn writeSupply(w: *Writer, arena: Allocator, items: []const SupplyEntry) Allocat
         try writeProv(w, e.prov);
         try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
         try writeXSum(w, arena, e.xc);
+        try writeXSum(w, arena, e.sc);
         try writeXSum(w, arena, e.rxc);
     }
 }
@@ -794,7 +797,7 @@ fn readSupply(r: *Reader) Error![]const SupplyEntry {
         const prov = try readProv(r);
         const bits = try r.byte();
         if (bits > 3) return error.Bad;
-        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r), .rxc = try readXSum(r) };
+        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r), .sc = try readXSum(r), .rxc = try readXSum(r) };
     }
     return supply;
 }

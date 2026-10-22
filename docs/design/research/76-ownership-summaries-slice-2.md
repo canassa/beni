@@ -1,5 +1,12 @@
 # 76 — The ownership checker's second slice: summaries, run over everything we have
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-12. What `beni dump --stage=ownership` says once calls go through inferred summaries
 (`ownership-checker.md` §16: summaries, the caller's side of a written parameter, the recursion
 fixpoint, the library's asserted primitive rows), over the corpora research 74 measured, compared

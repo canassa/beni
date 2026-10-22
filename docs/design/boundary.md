@@ -1,5 +1,12 @@
 # The JavaScript boundary — platforms, ports and `foreign`
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 **Status:** normative for M3, and the input M4's cache key needs. [`fast-compiler.md`](fast-compiler.md)
 §3.1 settles that the language is pure with effects as values interpreted by a platform, and its
 header states the stance this document implements: *Elm's walled garden, better equipped.*
@@ -1419,6 +1426,11 @@ version of the lowering interface (§9.4.6).
 String` names `foreign targetValue : Event -> String` of the same module, which is bound to an
 export of the module's sibling and held to all four of §4's checks like any other. So the one piece
 of a vocabulary that runs JavaScript at an event is exactly as walled as everything else that does.
+*Amended 2026-10-21.* The `foreign` need not be `pub`. Visibility is about names (`language.md`
+§5). A program cannot call the extractor, and the event can. The vocabulary row stores the
+name. A build that reaches the event imports that name, or writes it in the vocabulary module
+itself, and the vocabulary module exports the declaration, as it exports a core-private value.
+The runtime's `identity` stays the extractor of an event with no `via`.
 
 **A markup primitive binds to the markup runtime, not to a sibling.** `pub markup map : Html a,
 (a -> b) -> Html b` in the vocabulary module is a value whose implementation is the export `map` of
@@ -4169,6 +4181,11 @@ runs, closed or not ((d) step 5).)*
 `deadline` is a constant of the `browser` platform, **1 000 ms** (choice 3 below), as W3's slice
 and budget are the platform's.
 
+*Amended 2026-10-22 (#596):* `Task.stopScheduler` is `shutdown` for one scheduler of
+`transparent-effects-proposal.md` §17.5's amendment of that date — the same three phases, for the
+fibers of that scheduler alone — and `shutdown` itself stops every scheduler made. The `cloudflare`
+platform calls it per request and per object (§9.12 (d), (f)).
+
 **(d) The teardown, step by step.** Every step runs in the teardown's macrotask or in the drains
 after it; each is deterministic, ordered by creation and by the scheduler's FIFO.
 
@@ -4598,7 +4615,12 @@ The level is core's `Log.Level`. The other option was a module `Browser.Log` wit
 default log context: no annotation, no span, and the minimum `Info`. An `annotate` or a `minimum`
 around the `update` arm that makes the command does not reach it, and a `Cmd.log Log.Trace` or
 `Cmd.log Log.Debug` is not written. A program-wide minimum that would let it be written is the
-owner's decision, #551.
+owner's decision, #551. *Amended 2026-10-21 (#551, the owner's decision):* the default context's
+minimum is the program's minimum when the command runs, which `Log.setMinimum` sets (proposal
+§17.11), so after `Log.setMinimum Log.Debug` — in `init`, say — a `Cmd.log Log.Debug` is written.
+The command reads the minimum when it runs, not when `update` makes it: a `Cmd.log Log.Debug` made
+before a `Log.setMinimum Log.Error` in the same `update` is not written. A command still does not
+see `update`'s `annotate` or `minimum`; that it should is #597.
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
 `tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
@@ -7451,8 +7473,8 @@ Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not 
 it.
 
 **(k) The tests.** A Worker runs in `workerd`, which nixpkgs carries inside `wrangler` 4.93.0
-with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GB
-of disk in the store). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
+with Miniflare (`lib/packages/miniflare`, Miniflare 4.20260518.0 over `workerd` 1.20260518.1; 2.2 GiB
+of disk in the store, the dev shell `workers` of #698). Putting `wrangler` in the dev shell is a `flake.nix` change, which is
 Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the design:*
 
 - **The driver is Miniflare's API, not a `wrangler` process**: `tests/workers/driver.mjs` imports

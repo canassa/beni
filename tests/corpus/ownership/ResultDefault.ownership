@@ -18,15 +18,15 @@ module ResultDefault
   74:22 update model: rejected later-use: model is read again at 72:5 [copy]
   84:68 call ResultDefault.handle model.items: rejected later-use: model.items is read again at 84:17
   84:68 update model: rejected later-use: model is read again at 84:17 [copy]
-  summary handle: π1 W{items}, π1.items RAW[storage], π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other, π1◦
-  summary step: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
-  summary stepLambda: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
-  summary stepCase: π2 RAW{items}, π2.items RAW[storage], π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2 π2◦
+  summary handle: π1 W{items}, π1.items RAW[storage], π1.items[*] A, π1.other RA; res .items condition(fresh1) π1.items, .items[*] ~condition(fresh2) ~π1.items[*], .other ~condition(fresh3) π1.other, π1◦
+  summary step: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~condition(fresh1) ~π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) ~π2.other, ~π2 ~π2◦
+  summary stepLambda: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~condition(fresh1) ~π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) ~π2.other, ~π2 ~π2◦
+  summary stepCase: π2 RAW{items}, π2.items RAW[storage], π2.items[*] RA, π2.other RA; res .items condition(fresh1) π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) π2.other, π2 π2◦
   summary readAfter: π2 RW{items}, π2.items RW[storage], π2.items[*] R
-  summary defaultReads: π2 RW{items, other}, π2.items RAW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other, ~π2◦
-  summary resultAndThen: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
-  summary maybeAndThen: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
-  summary mixed: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
+  summary defaultReads: π2 RW{items, other}, π2.items RAW[storage], π2.items[*] A, π2.other A; res .items ~condition(fresh1) ~π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) ~π2.items ~π2.other, ~π2◦
+  summary resultAndThen: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~condition(fresh1) ~π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) ~π2.other, ~π2 ~π2◦
+  summary maybeAndThen: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~condition(fresh1) ~π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) ~π2.other, ~π2 ~π2◦
+  summary mixed: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~condition(fresh1) ~π2.items, .items[*] ~condition(fresh2) ~π2.items[*], .other ~condition(fresh3) ~π2.other, ~π2 ~π2◦
   demands 9: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 5
   records 10: accepted 4, pending 0, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
 total 9: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 5

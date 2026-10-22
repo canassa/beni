@@ -289,6 +289,7 @@ module Log
   value log : Level, String → ⊤  -- impure
   value logfmt : Entry → String  -- impure
   value minimum : Level, (⊤ → a) → a  -- impure
+  value setMinimum : Level → ⊤  -- impure
   value setSink : (Entry → ⊤) → ⊤  -- impure
   value span : String, (⊤ → a) → a  -- impure
   value trace : String → ⊤  -- impure
@@ -579,6 +580,7 @@ module Task
   type Fiber a
   type Restore
   type Resume a
+  type Scheduler
   type Scope
   type Soon
   value adjustClock : Value, Value → ⊤  -- suspends
@@ -617,6 +619,8 @@ module Task
   value resume : Resume a, a → ⊤  -- impure
   value retry : (Schedule e), (⊤ → Result e a) → Result e a  -- suspends
   value running : Fiber a → Bool  -- impure
+  value scheduler : (⊤ → ⊤) → Scheduler  -- impure
+  value schedulerWith : ((⊤ → ⊤) → ⊤), (⊤ → ⊤) → Scheduler  -- impure
   value scope : (Scope → a) → a  -- suspends
   value shutdown : Int, (Int → ⊤) → ⊤  -- impure
   value sleep : Duration → ⊤  -- suspends
@@ -625,6 +629,7 @@ module Task
   value spawnDetached : (⊤ → a) → Fiber a  -- impure
   value spawnIn : Scope, (⊤ → a) → Fiber a  -- impure
   value start : (⊤ → a), (Exit a → ⊤) → ⊤  -- impure
+  value stopScheduler : Scheduler, Int, (Int → ⊤) → ⊤  -- impure
   value timeout : Duration, (⊤ → a) → Maybe a  -- suspends
   value uninterruptible : (⊤ → a) → a  -- impure
   value uninterruptibleMask : (Restore → a) → a  -- impure
@@ -632,6 +637,7 @@ module Task
   value wait : Fiber a → Exit a  -- suspends
   value withClock : Value, (⊤ → a) → a  -- impure
   value withLogContext : Value, (⊤ → a) → a  -- impure
+  value withScheduler : Scheduler, (⊤ → a) → a  -- suspends
   value yieldNow : ⊤ → ⊤  -- suspends
 module Url
   type Protocol

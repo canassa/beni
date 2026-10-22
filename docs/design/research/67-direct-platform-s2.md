@@ -1,5 +1,12 @@
 # 67 — The direct platform, slice S2: rows, and kill criterion 4
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-09. What `browser-direct.md` §14's slice S2 built and what it measured against §13's
 kill criterion 4. S2 is `For`, keyed and positional; row templates and instances; static-key
 holes; the exact edit scripts under their tags' guards; the delegated listener per list with

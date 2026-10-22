@@ -1,1 +1,0 @@
-5600 Sternhalma value fuzz on browser-tea: two --fuzz builds, the message types dump and the fuzzer, measured 5 072M on the x86-64 Linux reference on 2026-10-19 with the fuzzer running, plus 10%. Re-sized from the paired browser-direct grant (12 600M), delegated. Remove when it fits 4 300M with the fuzzer running (#435).

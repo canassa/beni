@@ -1,5 +1,12 @@
 # The playground — beni compiled to WebAssembly, in a page
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-15. The normative design of the playground of issue #128: a web page where you write
 beni and see the result on the same page, with no server. The page holds an editor, the beni
 compiler compiled to WebAssembly, and the compiled program, which runs beside the editor. The
@@ -471,20 +478,12 @@ tests are what keeps their entries the same.
 
 *Why the gates do not run the shipped binary.* The LLVM build of the `.wasm` is about 90 s of
 single-threaded compile after each edit under `src/` (§7.1), about nine times the gates' time.
-The self-hosted build compiles in about 7 s, but its code is slow: under Node it spends about 3
-billion instructions on a printing program and 5 to 7 billion on a `browser-direct` page, and the
-budget of a test is 4.3 billion. So the gates run the self-hosted `.wasm` on the programs that fit
-the budget, and the native single-threaded compiler on everything else, because it runs the same
-guarded code at native speed. The shipped binary is proven by `test-playground`.
+The gates use the self-hosted `.wasm` on two small scenarios and the native
+single-threaded compiler on the remaining guarded code. Every test has the same
+120-second hang guard. The shipped binary is proven by `test-playground`.
 
 *Amended 2026-10-15, after review.*
 
-- **The two `.wasm` gate tests have a budget of their own**, 6 000M (`wasm_test.zig`'s
-  `wasm_budget_millions`). Most of their cost is fixed: Node, V8's compile of the self-hosted
-  build's 18 MB code section, and that build's start on the embedded core and platforms. A
-  one-line program costs 92% of what `run/Adt` costs, so no smaller input reduces it, and under
-  the gates' 4 300M the margin was 17%. Jayson Reis decided the grant on 2026-10-15 (dashboard
-  question `wasm-playground-q5`), with `test-playground` in CI; the budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`).
 - **`test-playground` runs in CI on every pull request**: the `playground` job of `ci.yml`,
   which the `check` guard needs, so a byte of difference blocks a merge.
 - **The printing-program test asserts the profile's counters** (`--self-profile`): the `.wasm`

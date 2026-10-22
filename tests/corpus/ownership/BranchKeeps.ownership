@@ -2,7 +2,7 @@ module BranchKeeps
   12:13 construction xs: accepted param
   14:13 construction xs: rejected later-use: xs is read again at 14:9
   21:15 construction xs: rejected later-use: xs is read again at 24:22
-  summary choose: π2 RAW; res .0 π2, .1 fresh1 π2, condition(fresh2){shared}
+  summary choose: π2 RAW; res .0 condition(fresh3) π2, .1 condition(fresh1) fresh1 π2, condition(fresh2){shared}
   summary after: π2 RW
   demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2

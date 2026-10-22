@@ -1,0 +1,13 @@
+-- check/bad: a scheduler's defect hook is `sync` (transparent-effects-proposal.md
+-- §17.5, amended 2026-10-22): it runs in the stop, so a hook that waits is
+-- refused.
+import Duration
+import Task exposing (Scheduler)
+
+
+hook : ⊤ → ⊤
+hook ⊤ = Task.sleep (Duration.millis 1)
+
+
+made : Scheduler
+made = Task.scheduler hook

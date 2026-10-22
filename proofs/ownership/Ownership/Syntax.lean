@@ -15,6 +15,10 @@ inductive Ty where
   | list (element : Ty)
   | builder (element : Ty)
   | fn (parameters : List Ty) (result : Ty)
+  /-- A dictionary with integer keys (`core/Dict`, #294, #522): a finite map
+      whose insertion order is part of its value. A string key would be a
+      second scalar key type and adds nothing to ownership. -/
+  | dict (value : Ty)
   deriving Repr, Inhabited
 
 /-- Explicitly total: Lean's derived BEq for nested inductives is opaque. -/
@@ -24,7 +28,7 @@ def Ty.equal (a b : Ty) : Bool :=
   | .record xs, .record ys =>
     xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
   | .result e a, .result f b => e.equal f && a.equal b
-  | .chain x, .chain y | .list x, .list y | .builder x, .builder y => x.equal y
+  | .chain x, .chain y | .list x, .list y | .builder x, .builder y | .dict x, .dict y => x.equal y
   | .fn xs x, .fn ys y => x.equal y && xs.length == ys.length &&
     (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
   | _, _ => false
@@ -71,6 +75,13 @@ inductive Prim where
   | builder (element : Ty)
   | put
   | close -- optional second operand is map's identity-preserving source
+  /-- The dictionary primitives (#522): `dictEmpty t` makes an empty
+      dictionary; `dictInsert` (dict, key, value) stores the value at the
+      key, replacing the entry in place or appending one; `dictRemove`
+      (dict, key) drops the entry; `dictGet` (dict, key) is `Maybe v` as
+      `Result Int v`, `ok v` or `err 0`; `dictSize` (dict) counts the
+      entries. -/
+  | dictEmpty (value : Ty) | dictInsert | dictRemove | dictGet | dictSize
   deriving Repr, BEq, Inhabited
 
 inductive Source where
@@ -92,6 +103,11 @@ inductive Expr where
   | traverse (source : Source) (input initial : Atom)
       (index element accumulator : Var) (step : Expr)
   | focus (input index : Atom) (element : Var) (body : Expr)
+  /-- `core/Dict`'s `focus` (`ownership-checker.md` §20.8) with its callback
+      inlined: `found : Result Int v` is the value at the key, `err 0` when
+      the key is absent; the body answers `ok w` to store `w` at the key or
+      `err _` to remove the key. The result is the dictionary. -/
+  | dictFocus (input key : Atom) (found : Var) (body : Expr)
   deriving Repr, BEq, Inhabited
 
 structure Decl where
@@ -164,6 +180,12 @@ def primType (p : Prim) (ts : List Ty) : Except String Ty := do
   | .close, [.builder t] => pure (.list t)
   | .close, [.builder t, .list u] =>
     if t == u then pure (.list t) else throw "incorrect close source"
+  | .dictEmpty t, [] => pure (.dict t)
+  | .dictInsert, [.dict t, .int, v] =>
+    if t == v then pure (.dict t) else throw "incorrect dictionary value"
+  | .dictRemove, [.dict t, .int] => pure (.dict t)
+  | .dictGet, [.dict t, .int] => pure (.result .int t)
+  | .dictSize, [.dict _] => pure .int
   | _, _ => throw s!"ill-typed primitive {repr p} on {repr ts}"
 
 def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except String Ty
@@ -217,6 +239,12 @@ def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except Str
     if (← atomType env idx) != .int then throw "non-integer index"
     if (← exprType ds self ((x, t) :: env) body) != t then throw "focus type mismatch"
     pure (.list t)
+  | .dictFocus src key found body => do
+    let .dict t ← atomType env src | throw "dictionary focus on non-dictionary"
+    if (← atomType env key) != .int then throw "non-integer key"
+    if (← exprType ds self ((found, .result .int t) :: env) body) != .result .int t then
+      throw "dictionary focus type mismatch"
+    pure (.dict t)
 
 /-- Ordinary typing only: every declaration body and the main expression. -/
 def typesOf (p : Program) : Except String Ty := do
@@ -252,7 +280,7 @@ def shadowFree (bound : List Var) : Expr → Except String Unit
       if bound.contains v then throw s!"shadowing: variable {v} is bound twice"
     if i == x || x == acc || i == acc then throw "shadowing: a traversal binds one variable twice"
     shadowFree (i :: x :: acc :: bound) body
-  | .focus _ _ x body => do
+  | .focus _ _ x body | .dictFocus _ _ x body => do
     if bound.contains x then throw s!"shadowing: variable {x} is bound twice"
     shadowFree (x :: bound) body
   | _ => pure ()

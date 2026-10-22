@@ -2,15 +2,6 @@
 # push to master, with the Zig and Node that flake.nix pins, so CI and every
 # developer run the same toolchain.
 #
-# CI does not enforce the instruction budget (`-Dtest-budget=0`); the budget
-# stays a local gate, `zig build gates` on an x86-64 Linux host. Jayson Reis
-# decided this on 2026-10-14 at 17:36 UTC, and Cesar Canassa, the repository
-# owner, agreed in a note at 17:34 UTC: "cancel the self-hosted solution.
-# disable the CPU counter in the CI". A GitHub-hosted x86-64 runner has no
-# hardware instruction counter (`perf_event_open` gives EACCES at
-# `perf_event_paranoid` = 4, ENOENT at -1, also as root), and its CPU-time
-# fallback failed 3, 55 and 56 tests and cases of one master commit on three
-# runs; the run with 3 passed both cases that the instruction count failed.
 name: ci
 
 on:
@@ -29,7 +20,7 @@ concurrency:
 
 jobs:
   tests:
-    name: tests (no budget)
+    name: tests
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -109,8 +100,8 @@ jobs:
             rm -rf .zig-cache ~/.cache/zig
           fi
 
-      - name: zig build test test-blackbox fmt-check beni-fmt-check
-        run: nix develop --command zig build test test-blackbox fmt-check beni-fmt-check -Dtest-budget=0
+      - name: zig build gates
+        run: nix develop --command zig build gates
 
       # Only a push to master saves, also when a test fails, so every pull
       # request starts from master's newest build. A pull request's run
@@ -137,10 +128,7 @@ jobs:
 
   # The playground's shipped compiler against the native one, byte for
   # byte, on the corpus (docs/design/playground.md §6): `zig build
-  # test-playground`. Jayson Reis decided on 2026-10-15 (dashboard question
-  # `wasm-playground-q5`) that it runs on every pull request, beside the two
-  # `.wasm` gate tests' budget of their own (CLAUDE.md, *Every test has a
-  # budget*). It compiles the LLVM ReleaseSmall `.wasm` and the native
+  # test-playground`. It compiles the LLVM ReleaseSmall `.wasm` and the native
   # ReleaseSafe compiler, and `check` needs it, so a difference blocks a
   # merge. Its Zig caches are its own (`zig-playground-`), first filled from
   # the `tests` job's, so the two jobs never save one key.
@@ -235,8 +223,9 @@ jobs:
   # exports the commit into a new directory, and Lean's parser rejects
   # `#eval` and the other banned commands before any audited code runs.
   # Then it builds the export from nothing. `lake build` runs after it, in
-  # the checkout. An `#eval` in an audited module runs during that build,
-  # before Axioms.lean, and can rewrite files. When `lake build` ran
+  # the checkout, on the build the audit hands over. An `#eval` in an
+  # audited module runs during a build, before Axioms.lean, and can
+  # rewrite files. When `lake build` ran
   # first, such a commit passed both steps with a `sorry` (#261). The step
   # after the build fails when the build changed or added a file that git
   # does not ignore.
@@ -318,30 +307,21 @@ jobs:
         if: ${{ steps.changes.outputs.run == 'true' }}
         run: nix develop .#ownership --command lean --version
 
+      # The audit builds a clean export of the commit from nothing and
+      # never reads a `.lake` it did not build. After every one of its
+      # checks passed, it moves that build to the checkout's `.lake`
+      # (scripts/audit.sh, step 7). The checkout is the same commit, so
+      # `lake build` below finds every module up to date and replays the
+      # logs of the audit's build, the source scan of Axioms.lean included,
+      # instead of building the proofs a second time. A module whose
+      # source in the checkout differs from the export is built again
+      # there. Before, `lake build` started from master's cached `.lake`,
+      # and on a pull request that changed a base module it built nearly
+      # everything again: 480 s of a 20 min run (#738).
       - name: scripts/audit.sh
         if: ${{ steps.changes.outputs.run == 'true' }}
         working-directory: proofs/ownership
-        run: nix develop ../..#ownership --command scripts/audit.sh HEAD
-
-      # Lake's build directory, from master's newest build. Lake rebuilds a
-      # module when the hash of its source, of its imports, of its options
-      # or of Lean's commit changes; it does not read file times. So a
-      # restored module is used only for the same inputs. The source scan
-      # of Axioms.lean reads files outside its inputs, and a warm `lake
-      # build` replays an old scan when only such a file changes (#255).
-      # The independent audit never reads this directory: it builds a clean
-      # export of the commit and scans every source. The key also changes
-      # with flake.lock, which pins the Lean that built the cache, and with
-      # every Lean source and the lakefile. When no proof changed, a run
-      # restores its own key and saves nothing.
-      - name: restore the Lake build
-        id: lake-cache
-        if: ${{ steps.changes.outputs.run == 'true' }}
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: proofs/ownership/.lake
-          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('proofs/ownership/lean-toolchain', 'proofs/ownership/lake-manifest.json', 'flake.lock') }}-${{ hashFiles('proofs/ownership/lakefile.toml', 'proofs/ownership/**/*.lean') }}
-          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('proofs/ownership/lean-toolchain', 'proofs/ownership/lake-manifest.json', 'flake.lock') }}-
+        run: nix develop ../..#ownership --command scripts/audit.sh HEAD .lake
 
       - name: lake build
         id: lake-build
@@ -349,10 +329,10 @@ jobs:
         working-directory: proofs/ownership
         run: nix develop ../..#ownership --command lake build
 
-      # Lean code of the pull request runs during `lake build` and can
-      # write files. A build that changed or added a file that git does not
-      # ignore fails the job, and its `.lake` is not saved. When `lake
-      # build` fails, this step is skipped, and the job is red already.
+      # Lean code of the pull request runs during a build and can write
+      # files. A build that changed or added a file that git does not
+      # ignore fails the job. When `lake build` fails, this step is
+      # skipped, and the job is red already.
       - name: the build changed no file
         id: tree
         if: ${{ steps.changes.outputs.run == 'true' }}
@@ -364,16 +344,6 @@ jobs:
             git diff
             exit 1
           fi
-
-      # As for the Zig caches, only a push to master saves, also when
-      # `lake build` fails. When the audit fails, `lake build` does not run,
-      # and nothing is saved. A build that changed a file saves nothing.
-      - name: save the Lake build
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.lake-build.outcome != 'skipped' && steps.tree.outcome != 'failure' && steps.lake-cache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: proofs/ownership/.lake
-          key: ${{ steps.lake-cache.outputs.cache-primary-key }}
 
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes

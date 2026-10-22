@@ -76,7 +76,7 @@ pub const entry_file = "out/_main.mjs";
 /// so it says nothing while the run is the thing being bounded. Rather than
 /// carry two non-portable syscalls in a test harness, the bound stays wall
 /// clock and the one case that needs more asks for more.
-pub const default_timeout_ms: i64 = 60_000;
+pub const default_timeout_ms: i64 = 120_000;
 
 /// What a case gets when the thing being bounded is 5 000 files rather than a
 /// program: five times the worst run ever measured, so that no scheduling
@@ -142,33 +142,6 @@ pub const RunOptions = struct {
     /// path (`variantExePath`).
     exe: ?[]const u8 = null,
 };
-
-/// Run `body` held to a budget of its own, `millions` million instructions,
-/// instead of the gates' budget: what it spends, its children included, is
-/// counted on a meter of its own and left out of the test's sum, as the
-/// corpus walker does for a case with a `.budget` file
-/// (`tests/corpus/README.md`, *Budgets*). Only for a grant the owner made
-/// (CLAUDE.md, *Every test has a budget*): the constant that holds
-/// `millions` says who decided it, when, why, and when it goes. `what`
-/// names the grant in the failure message.
-pub fn withOwnBudget(comptime what: []const u8, millions: u64, comptime body: fn () anyerror!void) !void {
-    const meter = timing.CaseMeter.open();
-    defer meter.close();
-    const start = meter.read();
-    // Counted on the way out of a failed body too, so that the test's own
-    // sum is right whichever way it ends.
-    errdefer _ = timing.cases_spent.fetchAdd(meter.read() -% start, .monotonic);
-    try body();
-    const spent = meter.read() -% start;
-    _ = timing.cases_spent.fetchAdd(spent, .monotonic);
-    const limit = timing.caseLimit(millions);
-    if (timing.budget_unit != .none and spent > limit) {
-        std.debug.print("FAIL: {d} {s}, over the budget granted to {s}, {d}\n", .{
-            timing.describe(spent).value, timing.describe(spent).unit, what, timing.describe(limit).value,
-        });
-        return error.OverBudget;
-    }
-}
 
 /// The compiler `build.zig` builds with a variant core (`BENI_VARIANT_EXE`,
 /// absolute), set only on the runs that ask for it; null elsewhere.
@@ -712,9 +685,13 @@ pub fn spawnAndCaptureIn(
         .stdout = .pipe,
         .stderr = .pipe,
         .request_resource_usage_statistics = true,
+        .pgid = 0,
     });
     // Whatever happens below, no process outlives this call.
     defer child.kill(io);
+    const child_pid = child.id.?;
+    try @import("root").HangGuard.trackChild(child_pid);
+    defer @import("root").HangGuard.untrackChild(child_pid);
 
     var stdout: std.ArrayList(u8) = .empty;
     var stderr: std.ArrayList(u8) = .empty;

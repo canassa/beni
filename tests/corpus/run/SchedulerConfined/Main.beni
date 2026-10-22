@@ -1,0 +1,56 @@
+-- run: a defect under one scheduler stops that scheduler alone
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22). The test
+-- platform's `run` hands the throw to a promise, so the process goes on:
+-- the throwing scheduler's hook runs, its other fiber is cancelled and its
+-- release runs, and the fibers under the second scheduler run on to their
+-- ends; the program ends with exit 0.
+import Io
+import Node exposing (Program)
+import Sched
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+steps : String, Int → ⊤
+steps name n =
+    if n == 0 then
+        ⊤
+    else
+        say "${name} ${String.fromInt n}"
+        Task.yieldNow ⊤
+        steps name (n - 1)
+
+
+main : Program
+main = Io.run λ⊤ →
+    first = Sched.make "a" λ⊤ → say "a stopped"
+    second = Sched.make "b" λ⊤ → say "b stopped"
+
+    held = Task.spawn λ⊤ →
+        Task.withScheduler first λ⊤ →
+            Task.bracket (λ⊤ → ⊤) (λ_ exit → say "a's release: ${outcome exit}") λ_ → Task.never ⊤
+
+    thrower = Task.spawn λ⊤ →
+        Task.withScheduler first λ⊤ →
+            Task.yieldNow ⊤
+            say "about to throw"
+            Debug.todo "the fiber threw"
+
+    other = Task.spawn λ⊤ → Task.withScheduler second λ⊤ → steps "b" 3
+    _ = Debug.log "other" (outcome (Task.wait other))
+    _ = Debug.log "held" (outcome (Task.wait held))
+    _ = Debug.log "thrower" (outcome (Task.wait thrower))
+    Node.done

@@ -406,6 +406,30 @@ recursion avoids inventing an implicit recursive alias fix.
 Nonproductive cycles (a reference cycle with no input descent) must fail at
 construction/execution under §5 rather than overflow or hang.
 
+*Amended 2026-10-16 (#196): mutual recursion.* Declarations of one module may name each other in
+a cycle of any length, through tagged and record declarations alike, provided the cycle passes
+through a tagged one.
+- **A tagged declaration is its nominal endpoints.** Naming one is never structural recursion,
+  so the checker names it without building its payloads first (`buildAll` builds every one). A
+  record declaration between two tagged ones that name it, `Expr` holding `Stmts` holding `Stmt`
+  holding `Stmts`, therefore checks in every declaration order. `recursive_alias` is a cycle of
+  record declarations alone.
+- **The derived contexts read the cycle as one unit** (checker-v2.md §11.5, *amended
+  2026-10-16*). So `eq` and `compare` derive over the cycle, and an exclusion reached anywhere
+  in it reaches every member that holds it.
+- **A generic cycle's description closes inside one use.** A generic declaration's description
+  makes one `describedRecursive` cell for every member of its cycle that takes as many
+  parameters (`Ping a` holding `Pong a`, which holds `Ping a`). Each member's body is described
+  once, and every reference to a member that hands the parameters on as they are reads that
+  member's cell. It is not a call of the member's factory, which would make a new cell of the
+  referrer on every level and describe without end. A cell's body runs when the cell is first
+  read, so the description stays linear in the cycle's size. A derived codec (§12.10) is a member
+  like any other: one derived where a type variable stays the caller's takes it as a parameter,
+  so `Rose a` holding `Grove a`, which holds `List (Rose a)`, gets one cell each, its
+  `codec_ref`s reading them as a declaration's references do. A reference with other arguments is
+  polymorphic recursion (`Nested a` holding `Nested (List a)`). It still builds a definition per
+  level, and §5's walks do not end on it: that is the open defect #213, which owes a decision.
+
 ## 5. The description and `core/Schema`
 
 **Context contract:** the schema engine owns and threads direction, full path,
@@ -1311,6 +1335,15 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Result.withDefault` or `Result.toMaybe`, whose bodies match `Err _` and read nothing else of
   the error. The list is closed and names core functions only, because only their bodies are
   known not to read it; a program's own function that discards the error is a use like any other.
+  *(Amended 2026-10-18, the owner.)* **This rule is a syntactic recogniser for three shapes**,
+  not an analysis. It takes a run only as the scrutinee of a `case` whose `Err` arms are all
+  `Err _`, as the first argument of `Result.withDefault`, or as the first argument of
+  `Result.toMaybe` (`SchemaValid`). Every other use keeps the issues, even where the error is
+  in fact never read. **The owed form** is the general analysis: a run is a validator wherever its
+  `Err` payload is dead. That adds the cases the recogniser misses, such as
+  `Result.toMaybe (Result.andThen run f)`, `Result.withDefault (Result.map run f) d`, a run
+  bound by a `let` and matched later, and a program's own function that matches `Err _`
+  (#376).
 - **Only the program that reads pays.** The decision is the run's own, not the declaration's: a
   declaration whose runs are all validators ships no failure branch with prose; one with runs of
   both kinds ships both worker sets, each reached only from its own runs, so a program pays for
@@ -1352,6 +1385,9 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Schema.validRun`). Not yet built for `parse` and `decode`, nor for
   a schema that `Schema.list` or a primitive maker makes at the call, whose core workers keep their
   issues.
+- **No path** *(amended 2026-10-19)*. A validator's workers build no path: a path exists only to
+  name where an issue is, and a validator makes none. Each child worker and each conversion is
+  handed none, and `Schema.pathAt` ships for no validator (`emit/release/app/ValidatorNoPath`).
 - **One failure, so fewer tests** *(amended 2026-10-17)*. Every failure of a validator is the one
   mark `c.fail`, so tests that only told failures apart merge. A required field whose value is a
   `String`, `Bool`, `Float`, `Int` or finite `Float` is read once and tested once — the key's read,

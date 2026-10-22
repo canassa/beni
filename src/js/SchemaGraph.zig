@@ -302,7 +302,8 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
                 return;
             }
             const op = member.op().?;
-            try out.append(scratch, "pathAt");
+            // A validator builds no path; keep in step with `SchemaLower`'s `pathArgs`.
+            if (op != .valid) try out.append(scratch, "pathAt");
             // `compiledFail`, for any failure branch: the depth bound and a
             // missing key call it too where the build does not share their
             // helpers (`SchemaShare`), which are roots of their own when it
@@ -849,20 +850,27 @@ fn paramsAt(
     }
 }
 
-/// Whether declaration `decl` of `m` is in a reference cycle of its module:
+/// Whether declaration `decl` of `m` is in a reference cycle of its module
+/// (`reaches` itself):
 /// its description is then built under `Schema.recursive`. A cycle cannot
 /// cross a module, since modules import in a DAG.
 pub fn recursive(g: SchemaGraph, scratch: Allocator, m: Graph.Index, decl: u32) Allocator.Error!bool {
-    // A depth-first search from `decl` over its module's references: is
-    // `decl` reachable from itself?
+    return g.reaches(scratch, m, decl, decl);
+}
+
+/// Whether declaration `to` of `m` is reachable from declaration `from`'s
+/// references, one reference or more: `from` and `to` are then in one
+/// reference cycle when `to` reaches `from` too.
+pub fn reaches(g: SchemaGraph, scratch: Allocator, m: Graph.Index, from: u32, to: u32) Allocator.Error!bool {
+    // A depth-first search from `from` over its module's references.
     var stack: std.ArrayList(u32) = .empty;
     var visited: std.ArrayList(u32) = .empty;
     const plan = g.planOf(m);
-    try stack.append(scratch, decl);
+    try stack.append(scratch, from);
     var first = true;
     while (stack.pop()) |at| {
         if (!first) {
-            if (at == decl) return true;
+            if (at == to) return true;
             var done = false;
             for (visited.items) |v| done = done or v == at;
             if (done) continue;

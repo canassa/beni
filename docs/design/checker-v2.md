@@ -3118,6 +3118,18 @@ so editing the private schema's field moved no digest and a cached importer kept
 (`digest_test.zig`). The digest's bytes change only for a module whose
 alias body names a schema — a key that moves, never a stale hit — so `digest_version` stays 2.
 
+*Amended 2026-10-16 (#196).* **A schema's mentions are read off its body.** *Mentions* above
+says a schema's references are its payloads'. The code read them off the declaration's `declRefs`,
+but a schema body records none: its operands are resolved in place (`schema_target_top`). So a
+tagged endpoint had no mention edges at all. Two tagged schemas that name each other were two
+units, and the first one's pass ran the second's fixpoint nested. That run read the first's
+approximation, which *The unit graph is exact* above makes `internal`. `ContextUnits.mentions` now
+reads a schema declaration's resolved operands as well as its references: another tagged schema
+is an edge to its two endpoints, a record schema is expanded as before. A cycle of schemas is
+then one unit, an exclusion anywhere in it reaches every member that holds it
+(`check/bad/SchemaMutualExclusion`), and it checks in every declaration order (`ordering_test`).
+A cycle across modules cannot form, since modules import in a DAG.
+
 ---
 
 ## 12. Evidence and elaboration
@@ -5300,7 +5312,12 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   roots in instruction order and each tree depth first, items before children; a component and a
   fragment have no row, and a component's children written as markup are rows of the root. It is
   built only for a module that checked clean. An event's extractor is recorded as a value of the
-  vocabulary module's interface, and is absent when the extractor is not `pub`. `dump
+  vocabulary module's interface, and is absent when the extractor is not `pub`.
+  *Amended 2026-10-21:* that absence is only the interface index. The vocabulary row already
+  stores the extractor by name, because it need not be `pub` (§25.8). Reachability follows the
+  name to the `foreign` declaration, and the lowering imports it by that name, or writes it in
+  the vocabulary module itself. The module exports the declaration when a build reaches the
+  event. The runtime's `identity` is only the extractor of an event with no `via`. `dump
   --stage=dispatch` prints `markup <root> <kind> …`, the root's instruction because a constant
   attribute has none of its own: `attr Html.class class_list`, `event Html.onInput payload via
   Html.targetValue`, `hole text number`, `for key arity=1 primitive=false`, `show identity arity=1
@@ -5318,6 +5335,11 @@ superseded. Where the text left a choice, the smallest reading, and these are th
   every build that has a vocabulary — an `ssr` build too, which ships an extractor its events drop;
   `check/Cycles.zig` needs no such edge, since an extractor is another module's. `cx.extractor`
   imports the value as any other module's.
+  *Amended 2026-10-21:* an extractor that is not `pub` has no interface index, so `markupEdges`
+  does not name it. `js/Reach.zig` follows the vocabulary row's name to that declaration, and
+  `cx.extractor` imports the name. The declaring module exports it when it survived. In the
+  vocabulary module itself, `cx.extractor` writes either kind of extractor by its local name,
+  because an import would declare that name a second time.
 - **`markup_type_in_foreign`** is checked with the vocabulary declarations, for every `foreign`
   value of a platform module when the build has a markup type. The graph carries the build's
   lowering (the first a package of the chain names) and each package's own, and the cache key of

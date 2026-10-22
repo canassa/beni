@@ -1,0 +1,28 @@
+module FoldElementPaths
+  10:17 List.update rows: accepted param
+  10:17 List.update rows[*].1: accepted param (<lambda> writes what List.update supplies it)
+  10:64 List.push values: accepted callback-param (List.update supplies it owned)
+  12:17 List.insertAt rows: accepted param
+  15:13 List.push rows: accepted param
+  20:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  20:12 call List.foldl <literal>[*].1: accepted fresh (<lambda> writes what List.foldl supplies it)
+  20:54 call FoldElementPaths.put acc: accepted callback-param (List.foldl supplies it owned)
+  20:54 call FoldElementPaths.put acc[*].1: accepted callback-param (List.foldl supplies it owned)
+  27:14 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  27:14 call List.foldl <literal>[*].1: accepted fresh (<lambda> writes what List.foldl supplies it)
+  27:50 call FoldElementPaths.put acc: accepted callback-param (List.foldl supplies it owned)
+  27:50 call FoldElementPaths.put acc[*].1: accepted callback-param (List.foldl supplies it owned)
+  28:13 call FoldElementPaths.put <literal>: accepted fresh (FoldElementPaths.put writes π1)
+  28:13 call FoldElementPaths.put <literal>[*].1: accepted fresh (FoldElementPaths.put writes π1[*].1)
+  29:15 call FoldElementPaths.put first: accepted fresh (FoldElementPaths.put writes π1)
+  29:15 call FoldElementPaths.put first[*].1: accepted call (FoldElementPaths.put writes π1[*].1)
+  39:5 call List.foldl rows: accepted call (<lambda> writes what List.foldl supplies it)
+  39:5 call List.foldl rows[*].1: accepted call (<lambda> writes what List.foldl supplies it)
+  39:38 call FoldElementPaths.put acc: accepted callback-param (List.foldl supplies it owned)
+  39:38 call FoldElementPaths.put acc[*].1: accepted callback-param (List.foldl supplies it owned)
+  summary put: π1 RAW[storage], π1[*] RA, π1[*].0 RA, π1[*].1 AW[storage], π1[*].1[*] A, π2 RA; res [*] ~condition(fresh1){sep π1[*].0 π1[*].1, sep π1[*].0 π1[*].1[*]} ~π1[*], [*].0 ~condition(fresh2) ~π1[*].0 ~π2, [*].1 ~condition(fresh3) ~fresh3 ~π1[*].1, [*].1[*] ~condition(fresh4) ~π1[*].1[*], π1{excl π1[*].0, excl π1[*].1, excl π2, sep π1[*] π2, sep π1[*].0 π1[*].1, sep π1[*].0 π1[*].1[*]}; xreq spine π1[*].1
+  summary sharedKeys: res .0 ~fresh3{lost}, .0[*] ~condition(fresh4), .0[*].0 ~condition(fresh2) ~fresh1, .0[*].1 ~condition(fresh5) ~fresh5, .0[*].1[*] ~condition(fresh6) ~fresh6, .1 fresh7{lost}, .1[*] ~condition(fresh8), .1[*].0 ~condition(fresh9) ~fresh1, .1[*].1 ~condition(fresh10) ~fresh10, .1[*].1[*] ~condition(fresh11) ~fresh11, condition(fresh12){lost}r{lost}
+  summary pairRows: π1 RA, π2 RA; res [*] condition(fresh2) π1 π2, fresh1{excl π1, excl π2, sep π1 π2}r{excl π1, excl π2, sep π1 π2}
+  summary opaqueSharedKeys: res [*] ~condition(fresh4) ~fresh4{shared}r{shared}, [*].0 ~condition(fresh1) ~fresh1{shared}r{shared}, [*].1 ~condition(fresh2) ~fresh2{shared}r{shared}, [*].1[*] ~condition(fresh5) ~fresh5{shared}r{shared}, ~fresh3{shared}r{shared}
+  demands 21: accepted 21 (fresh 7, call 3, param 4, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 21: accepted 21 (fresh 7, call 3, param 4, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -1,5 +1,12 @@
 # Write sets — what `update` may change, as a static analysis
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 *2026-10-08. The contract for the whole-program write summary that `plans/compile-away.md` R3
 (values that never change) and R4 (per-message handlers) consume, and for the read-only pass and
 the gate that come before either. The owner's decision of 2026-10-08: R4 is built **with nested-

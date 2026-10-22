@@ -2,7 +2,7 @@ module MutualCycles
   382:31 List.push zs: rejected alias: xs holds it and is read at 382:29
   398:13 List.push xs: accepted param
   410:21 List.push ys: accepted param
-  summary third: π1 RAW[storage], π1[*] A; res .0 fresh2 π1, .0[*] ~π1[*], .1 π1, condition(fresh1){shared}
+  summary third: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) fresh2 π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
   summary f: π1 R, π1#K0.0 RAW[storage], π1#K0.0[*] A; res [*] ~π1#K0.0[*], fresh1 π1#K0.0
   summary g: π1 R, π1#R0.3 R, π1#R0.3#Just.0#R3.0 RAW[storage], π1#R0.3#Just.0#R3.0[*] A; res [*] ~π1#R0.3#Just.0#R3.0[*], fresh1 π1#R0.3#Just.0#R3.0
   demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

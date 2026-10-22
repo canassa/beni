@@ -345,7 +345,16 @@ resumeFiber fiber value w =
 
 
 enqueue : V, V, V → ⊤
-enqueue fiber value w = schedule (Js.from resumeFiber) fiber value w
+enqueue fiber value w =
+    if Js.read many then
+        s = schedulerOf fiber
+        -- Resumed through a scheduler that has stopped for good: cancelled,
+        -- and its cleanup runs on the program's queue (§17.5's amendment,
+        -- *a stopped scheduler is a dead end*).
+        if hasEnded s then Js.set fiber "interrupted" (Js.from True)
+        scheduleOn s (Js.from resumeFiber) fiber value w
+    else
+        schedule (Js.from resumeFiber) fiber value w
 
 
 -- A fiber that throws is a defect (`boundary.md` §9.8.10 (c)): the
@@ -404,9 +413,10 @@ soonQueued = Js.ref False
 -- `slots` that `fork` adds only once a slot has been set anywhere
 -- (`slotted`), so a program that sets none pays nothing (§17.5's
 -- amendment). Undefined, or a field of the record undefined, is that slot
--- at its default (`clock`: the real clock; `scheduler`: reserved, nothing
--- writes it yet). Changing a slot makes a new record, so sharing one is
--- safe.
+-- at its default (`clock`: the real clock; `scheduler`: the program's,
+-- `withScheduler` writes it). A fiber under a scheduler also carries
+-- `sched`, the scheduler it belongs to, set when it starts (`adopt`).
+-- Changing a slot makes a new record, so sharing one is safe.
 --
 -- A build that makes one — a fiber, or the record of finalisers outside any
 -- — has something to tear down, and so keeps the teardown (`boundary.md`
@@ -546,6 +556,15 @@ shutdown ms over =
 
     if Js.read releasing then
         Js.to (Js.apply (Js.global "queueMicrotask") [ Js.from releaseAll ])
+    -- Nothing outlives the program: every scheduler stops with it.
+    if Js.read many then
+        Js.each schedulers λs →
+            Js.to
+                (Js.apply (Js.get s "stop")
+                    [ Js.from ms
+                    , Js.from λcut → Js.write abandoned (Js.read abandoned + Js.to cut)
+                    ]
+                )
     if Js.read fibered then closeAll ms (Js.from over)
 
 
@@ -612,7 +631,7 @@ loop fiber first =
             -- whatever the masks say, since there is no value to go on with.
             unwind fiber
             loop fiber Js.null
-        else if Js.read finalising && Js.read expired && inCleanup fiber then
+        else if Js.read finalising && expiredFor fiber && inCleanup fiber then
             -- Past the teardown's deadline a finaliser runs only to its
             -- first wait, and the fiber goes on to its next (§9.8.14 (f)).
             abandon fiber (Js.get p "wait")
@@ -693,6 +712,7 @@ complete fiber outcome =
     Js.set fiber "observers" Js.null
     if Js.isNull observers then ⊤ else Js.each observers λo → Js.to (Js.apply o [ fiber ])
     if Js.read live == 0 && Js.read phase == 2 then allEnded ⊤
+    if Js.read many then leave fiber
 
 
 observe : V, V → ⊤
@@ -903,6 +923,9 @@ fork parent work sc from =
     fiber = newFiber parent (Js.array [ Js.from finish, work ])
     if Js.read slotted then Js.set fiber "slots" (slotsOf from)
     Js.write live (Js.read live + 1)
+    -- The fiber belongs to the scheduler its slot names, for good
+    -- (§17.5's amendment of 2026-10-22).
+    if Js.read many then adopt fiber
 
     _ =
         if not (Js.isNull sc) then
@@ -915,19 +938,27 @@ fork parent work sc from =
                 -- that a build which opens one and starts none keeps no
                 -- registry (§9.8.14 (c)). A nested scope's finaliser is
                 -- its close; a root's is null until it is listed, and
-                -- `false` after.
+                -- `false` after. It is listed with the scheduler of this
+                -- first fiber.
                 Js.set sc "finalizer" (Js.from False)
-                Js.to (Js.call roots "push" [ sc ])
+                if Js.read many then
+                    Js.to (Js.call (rootsFor fiber) "push" [ sc ])
+                else
+                    Js.to (Js.call roots "push" [ sc ])
             Js.to (Js.call (Js.get sc "children") "add" [ fiber ])
         else if Js.read spawning && not (Js.isNull parent) then
             if Js.isNull (Js.get parent "children") then
                 Js.set parent "children" (Js.construct (Js.global "Set") [])
             Js.to (Js.call (Js.get parent "children") "add" [ fiber ])
+        else if Js.read many then
+            Js.to (Js.call (rootsFor fiber) "push" [ fiber ])
         else
             Js.to (Js.call roots "push" [ fiber ])
 
-    -- Started while the runtime stops: cancelled before it runs.
+    -- Started while the runtime stops, or while its scheduler does:
+    -- cancelled before it runs.
     if Js.read phase ≠ 0 then Js.set fiber "interrupted" (Js.from True)
+    if Js.read many && stoppedFor fiber then Js.set fiber "interrupted" (Js.from True)
     enqueue fiber Js.null Js.null
     fiber
 
@@ -1329,12 +1360,21 @@ runEach fins exit =
 -- A fiber of its own for finalisers that belong to no running fiber: it
 -- runs `fins`, last first, where nothing can interrupt them, and ends. The
 -- teardown waits for it, as for every fiber.
-cleanupFiber : V → ⊤
-cleanupFiber fins =
+-- Under a scheduler (`owner`, else null), the fiber is that scheduler's:
+-- it drains through its `run`, under its deadline, counted among its
+-- fibers.
+cleanupFiber : V, V → ⊤
+cleanupFiber fins owner =
     fiber = newFiber Js.null (Js.array [])
     Js.write live (Js.read live + 1)
     Js.write finalising True
     Js.set fiber "finalizers" fins
+
+    if Js.isNull owner then
+        ⊤
+    else
+        Js.set fiber "slots" (Js.from { scheduler = owner })
+        adopt fiber
     unwind fiber
     enqueue fiber Js.null Js.null
 
@@ -1369,10 +1409,13 @@ defer sc cleanup =
             Js.set s "deferred" (Js.array [])
 
         -- A root that has run no fiber is listed now, so that the program's
-        -- stop finds it (`fork`).
+        -- stop finds it (`fork`); under a scheduler, that scheduler's.
         if Js.isNull (Js.get s "finalizer") then
             Js.set s "finalizer" (Js.from False)
-            Js.to (Js.call roots "push" [ s ])
+            if Js.read many then
+                Js.to (Js.call (rootsFor (here ⊤)) "push" [ s ])
+            else
+                Js.to (Js.call roots "push" [ s ])
         Js.to (Js.call (Js.get s "deferred") "push" [ Js.from cleanup ])
 
 
@@ -1395,8 +1438,10 @@ runSoon s =
     w = Js.get s "w"
     Js.set s "w" Js.null
 
-    -- Program code, which no longer runs once the runtime stops: dropped.
-    if Js.read phase ≠ 0 then
+    -- Program code, which no longer runs once the runtime stops, or once
+    -- the scheduler it was queued under (`s`'s `s`, set by `soon`) does:
+    -- dropped.
+    if Js.read phase ≠ 0 || (Js.read many && hasStopped (Js.get s "s")) then
         False
     else
         outer = Js.read soonRunning
@@ -1425,7 +1470,13 @@ pub soon : sync (⊤ → ⊤) → Soon
 soon work =
     Js.write soonQueued True
     s = Js.from { w = Js.from work }
-    schedule (Js.from runSoon) s Js.null Js.null
+
+    if Js.read many then
+        sched = schedulerHere ⊤
+        Js.set s "s" sched
+        scheduleOn sched (Js.from runSoon) s Js.null Js.null
+    else
+        schedule (Js.from runSoon) s Js.null Js.null
     Js.to s
 
 
@@ -1452,12 +1503,16 @@ openRoot ⊤ =
 pub closeRoot : Scope → ⊤
 closeRoot sc =
     s = Js.from sc
+    -- The scheduler the root belongs to, found before the root leaves its
+    -- list: its deferred finalisers run in a fiber of that scheduler.
+    owner = if Js.read many then ownerOf s else Js.null
     unlist s
     Js.set s "closed" (Js.from True)
     Js.each (copy (Js.get s "children")) λf → halt f
 
     if Js.read deferring then
-        Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ⊤) ])
+        Js.to
+            (Js.apply (Js.get (Js.read deferral) "roots") [ Js.array [ s ], host (Done ⊤), owner ])
 
 
 -- ---- Shutdown (`boundary.md` §9.8.14) --------------------------------------
@@ -1475,6 +1530,7 @@ unlist root =
     i : Int
     i = Js.to (Js.call roots "indexOf" [ root ])
     if i ≥ 0 then Js.to (Js.call roots "splice" [ Js.from i, Js.from 1 ])
+    if Js.read many then Js.each schedulers λs → unlistFrom (Js.get s "roots") root
 
 
 -- The fibers that have not ended, so the teardown knows when it is over.
@@ -1572,7 +1628,7 @@ teardown ⊤ =
             else
                 Js.to (Js.call sweeping "push" [ root ])
         if Js.read deferring then
-            Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ roots, cancelled ])
+            Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ roots, cancelled, Js.null ])
     ok = Js.ref False
 
     Js.finally
@@ -1611,14 +1667,14 @@ teardown ⊤ =
 -- so each goes in front of those before it. What `closeRoot` (with its one
 -- root, told `Done ⊤`) and the program's stop (with every root, told
 -- `Cancelled`) call, through `deferral`.
-deferRoots : V, V → ⊤
-deferRoots list exit =
+deferRoots : V, V, V → ⊤
+deferRoots list exit owner =
     fins = Js.array []
 
     Js.each list λroot →
         if Js.isUndefined (Js.get root "stack") && not (Js.isNullish (Js.get root "deferred")) then
             Js.to (Js.call fins "unshift" [ Js.from λ_ → shutWith root exit ])
-    if Js.to (Js.get fins "length") == 0 then ⊤ else cleanupFiber fins
+    if Js.to (Js.get fins "length") == 0 then ⊤ else cleanupFiber fins owner
 
 
 sweep : ⊤ → ⊤
@@ -1683,7 +1739,7 @@ expire ⊤ =
 abandon : V, V → ⊤
 abandon fiber w =
     Js.set w "done" (Js.from True)
-    Js.write abandoned (Js.read abandoned + 1)
+    if Js.read many then countCut fiber else Js.write abandoned (Js.read abandoned + 1)
     cutBack fiber
     canceller = Js.get w "cancel"
     if Js.isNull canceller then ⊤ else Js.to (Js.apply canceller [ Js.null ])
@@ -1949,6 +2005,533 @@ withLogContext context work =
     Js.set next "logContext" context
     Js.set fiber "slots" next
     putSlots fiber old (work (pushFinalizer ⊤ λ⊤ → Js.set fiber "slots" old))
+
+
+-- ---- Schedulers (§17.5, amended 2026-10-22; #596) --------------------------
+
+--| A scheduler of its own: a queue of ready fibers drained apart from the
+--| program's, by a drain its maker queues. A fiber whose scheduler slot
+--| names one (`withScheduler`) is resumed through it and never through the
+--| program's queue, and a defect under it stops that scheduler alone — its
+--| fibers are cancelled and their cleanup run, and nothing else is touched.
+--| What a platform gives each request or each object a runtime of its own
+--| with; a program may make one too.
+pub foreign type Scheduler
+
+
+-- Whether any scheduler has been made. Until one has, every fiber is the
+-- program's and nothing of this section is consulted: a build that makes
+-- none folds this to `False` and keeps none of it, as `slotted` keeps the
+-- slots out of a build that sets none.
+many : Js.Ref Bool
+many = Js.ref False
+
+
+-- Every scheduler made, for `shutdown` to stop with the program, and for a
+-- root's removal to find its list.
+schedulers : V
+schedulers = Js.array []
+
+
+-- A scheduler's record: its queue as the program's (`queue`, `head`,
+-- `scheduled`), how a drain is queued (`run`) and the drain to queue
+-- (`drain`), how the rest of a long drain is queued (`more`: the
+-- program's macrotask for `scheduler`, `run` again for `schedulerWith`),
+-- its defect hook (`hook`), its stop (`stop`) and its
+-- end (`ended`) as closures — so that the teardown below is reachable only
+-- from here, and a build that makes no scheduler keeps none of it in
+-- development either — and the teardown's state
+-- the program keeps in cells — `phase`, `roots`, `live`, `culprit`,
+-- `whenDone`, `deadline`, `timer`, `expired`, `abandoned`, `sweeping`,
+-- `swept`, `torn` — one each. `members` holds the fibers that belong to
+-- it and have not ended, since one may be the child of a fiber of
+-- another scheduler and so out of reach of its roots; `lent` the fibers
+-- inside a `withScheduler` of it that belong to another.
+newScheduler : V, V, V → V
+newScheduler runner hook more =
+    Js.write many True
+
+    s =
+        Js.from
+            { abandoned = 0
+            , culprit = Js.null
+            , deadline = 0
+            , drain = Js.null
+            , ended = Js.null
+            , expired = False
+            , head = 0
+            , hook = hook
+            , lent = Js.construct (Js.global "Map") []
+            , live = 0
+            , members = Js.construct (Js.global "Set") []
+            , more = more
+            , phase = 0
+            , queue = Js.array []
+            , roots = Js.array []
+            , run = runner
+            , running = False
+            , scheduled = False
+            , stop = Js.null
+            , sweeping = Js.array []
+            , swept = 0
+            , timer = Js.null
+            , torn = False
+            , whenDone = Js.null
+            }
+    Js.set s "drain" (Js.from λ⊤ → drainS s)
+    Js.set s "ended" (Js.from λ⊤ → allEndedS s)
+    Js.set s "stop" (Js.from λms over → closeAllS s (Js.to ms) over)
+    _ = Js.call schedulers "push" [ s ]
+    s
+
+
+--| A scheduler whose drains run in a microtask of their own, and go on in
+--| a macrotask after 64 resumptions, as the program's do, so a timer and
+--| I/O get their turn. `hook` runs on a defect under it, in the stop,
+--| before the throw goes on to the host, as `onDefect`'s does for the
+--| program: the one piece of program code that runs there, and it may not
+--| wait. `λ⊤ → ⊤` when nothing needs to know.
+pub scheduler : sync (⊤ → ⊤) → Scheduler
+scheduler hook =
+    Js.to
+        (newScheduler (Js.from λd → Js.apply (Js.global "queueMicrotask") [ d ])
+            (Js.from hook)
+            (Js.from macrotask)
+        )
+
+
+--| A scheduler for a platform: `run` is called once per batch of ready
+--| work, with the drain, and must run it later — in a microtask, a promise
+--| reaction, a host callback — never during the call; `hook` is
+--| `scheduler`'s.
+pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler
+schedulerWith runner hook = Js.to (newScheduler (Js.from runner) (Js.from hook) (Js.from runner))
+
+
+--| Run `work` with the calling fiber's scheduler slot set to `scheduler`,
+--| and put the old one back when `work` ends, returned or cancelled, as
+--| `Clock.run` does with the clock. While inside, this fiber resumes
+--| through that scheduler; the fibers `work` starts copy the slot and
+--| belong to the scheduler for good. The body is `withClock`'s, plus the
+--| loan: change them together.
+pub withScheduler : Scheduler, (⊤ → a) → a
+withScheduler sched work =
+    Js.write slotted True
+    s = Js.from sched
+
+    -- A scheduler that is stopping, or has stopped for good, cancels the
+    -- fiber that would enter it, as `join` of a cancelled fiber does; so
+    -- this function may suspend. Outside any fiber, `work` runs, and every
+    -- fiber it starts is cancelled before it runs.
+    if hasStopped s && not (Js.isNull (Js.read current)) then
+        selfCancel ⊤
+    else
+        fiber = here ⊤
+        old = Js.get fiber "slots"
+        next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
+        Js.set next "scheduler" s
+        Js.set fiber "slots" next
+        lend fiber s
+        putBack fiber s old (work (pushFinalizer ⊤ λ⊤ → unlend fiber s old))
+
+
+putBack : V, V, V, a → a
+putBack fiber s old value =
+    popFinalizer ⊤
+    unlend fiber s old
+    value
+
+
+-- The calling fiber is lent to `s` for a `withScheduler`: counted among
+-- its fibers once, however many times it enters, and cancelled with them.
+-- `lent` maps the fiber to its depth. The record outside any fiber is
+-- never lent: nothing resumes it.
+lend : V, V → ⊤
+lend fiber s =
+    if Js.isNull (Js.read current) then
+        ⊤
+    else
+        depth = Js.call (Js.get s "lent") "get" [ fiber ]
+
+        if Js.isUndefined depth then
+            _ = Js.call (Js.get s "lent") "set" [ fiber, Js.from 1 ]
+            Js.set s "live" (Js.from (Js.to (Js.get s "live") + 1))
+        else
+            Js.to (Js.call (Js.get s "lent") "set" [ fiber, Js.from (Js.to depth + 1) ])
+
+
+unlend : V, V, V → ⊤
+unlend fiber s old =
+    Js.set fiber "slots" old
+    depth = Js.call (Js.get s "lent") "get" [ fiber ]
+
+    if Js.isUndefined depth then
+        ⊤
+    else if Js.to depth == 1 then
+        _ = Js.call (Js.get s "lent") "delete" [ fiber ]
+        countDown s
+    else
+        Js.to (Js.call (Js.get s "lent") "set" [ fiber, Js.from (Js.to depth - 1) ])
+
+
+--| Stop one scheduler, as `shutdown` stops the program: close its root
+--| scopes, cancel its fibers and run their cleanup, drop its queued work
+--| and start nothing new under it. Cleanup that suspends is given
+--| `deadline` milliseconds from the call; `done` is called once every
+--| fiber of the scheduler has ended, with how many cleanups were cut
+--| short. It returns at once, and a second call does nothing. Every other
+--| scheduler, the program's included, runs on.
+pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤
+stopScheduler sched ms over = closeAllS (Js.from sched) ms (Js.from over)
+
+
+-- The scheduler a fiber's slot names, or null for the program's.
+schedulerOf : V → V
+schedulerOf fiber =
+    slots = Js.get fiber "slots"
+    if Js.isNullish slots then
+        Js.null
+    else
+        s = Js.get slots "scheduler"
+        if Js.isUndefined s then Js.null else s
+
+
+-- The scheduler the current fiber's slot names, or the record outside
+-- any fiber's; null for the program's. The outside record is not made
+-- here: with none, nothing has set a slot outside any fiber.
+schedulerHere : ⊤ → V
+schedulerHere ⊤ =
+    c = Js.read current
+    src = if Js.isNull c then Js.read outside else c
+    if Js.isNull src then Js.null else schedulerOf src
+
+
+-- The scheduler a fiber belongs to — the one its slot named when it
+-- started (`adopt`) — or null for the program's.
+memberOf : V → V
+memberOf fiber =
+    s = Js.get fiber "sched"
+    if Js.isUndefined s then Js.null else s
+
+
+-- A fiber starting now belongs to the scheduler its slot names — unless
+-- that one has stopped for good, when the fiber is the program's to
+-- cancel (`enqueue`).
+adopt : V → ⊤
+adopt fiber =
+    s = schedulerOf fiber
+    if Js.isNull s || hasEnded s then
+        ⊤
+    else
+        Js.set fiber "sched" s
+        _ = Js.call (Js.get s "members") "add" [ fiber ]
+        Js.set s "live" (Js.from (Js.to (Js.get s "live") + 1))
+
+
+-- A fiber has ended: its scheduler has one fewer, and may be done.
+leave : V → ⊤
+leave fiber =
+    s = memberOf fiber
+    if Js.isNull s then
+        ⊤
+    else
+        _ = Js.call (Js.get s "members") "delete" [ fiber ]
+        countDown s
+
+
+countDown : V → ⊤
+countDown s =
+    n : Int
+    n = Js.to (Js.get s "live") - 1
+    Js.set s "live" (Js.from n)
+    if n == 0 && Js.to (Js.get s "phase") == 2 then Js.to (Js.apply (Js.get s "ended") [ Js.null ])
+
+
+-- Where a root a fiber is given, or a fiber that is one, is listed: its
+-- scheduler's roots, or the program's.
+rootsFor : V → V
+rootsFor fiber =
+    s = schedulerOf fiber
+    if Js.isNull s then roots else Js.get s "roots"
+
+
+-- The scheduler whose roots list holds `root`, or null for the program's.
+ownerOf : V → V
+ownerOf root =
+    found = Js.ref Js.null
+    Js.each schedulers λs →
+        if Js.to (Js.call (Js.get s "roots") "includes" [ root ]) then Js.write found s
+    Js.read found
+
+
+unlistFrom : V, V → ⊤
+unlistFrom list root =
+    i : Int
+    i = Js.to (Js.call list "indexOf" [ root ])
+    if i ≥ 0 then Js.to (Js.call list "splice" [ Js.from i, Js.from 1 ])
+
+
+-- Whether the scheduler `s` (null or undefined for the program's, which
+-- `phase` says) has stopped.
+hasStopped : V → Bool
+hasStopped s = not (Js.isNullish s) && Js.to (Js.get s "phase") ≠ 0
+
+
+-- Whether the scheduler a fiber's slot names has stopped.
+stoppedFor : V → Bool
+stoppedFor fiber = hasStopped (schedulerOf fiber)
+
+
+-- Whether the scheduler `s` (null for the program's) has stopped for good:
+-- nothing of it runs again, and what is queued through it goes to the
+-- program's queue, cancelled.
+hasEnded : V → Bool
+hasEnded s = not (Js.isNull s) && Js.to (Js.get s "phase") == 3
+
+
+-- Whether the deadline of the fiber's scheduler has passed.
+expiredFor : V → Bool
+expiredFor fiber =
+    if Js.read many then
+        s = schedulerOf fiber
+        if Js.isNull s then Js.read expired else Js.to (Js.get s "expired")
+    else
+        Js.read expired
+
+
+-- A cleanup cut short counts against the fiber's scheduler.
+countCut : V → ⊤
+countCut fiber =
+    s = schedulerOf fiber
+    if Js.isNull s then
+        Js.write abandoned (Js.read abandoned + 1)
+    else
+        Js.set s "abandoned" (Js.from (Js.to (Js.get s "abandoned") + 1))
+
+
+-- `schedule` for a scheduler, or for the program's when `s` is null: the
+-- work goes on the scheduler's queue, and its drain is queued through
+-- `run` when the queue was empty.
+scheduleOn : V, V, V, V, V → ⊤
+scheduleOn s task a b c =
+    if Js.isNull s || hasEnded s then
+        schedule task a b c
+    else
+        _ = Js.call (Js.get s "queue") "push" [ task, a, b, c ]
+        if Js.to (Js.get s "scheduled") then
+            ⊤
+        else
+            Js.set s "scheduled" (Js.from True)
+            requeue s (Js.get s "drain")
+
+
+-- Queue `task` through the scheduler's `run`, which must run it later:
+-- a `run` that calls it during the call is a defect `drainS` names.
+requeue : V, V → ⊤
+requeue s task =
+    Js.set s "running" (Js.from True)
+    _ = Js.apply (Js.get s "run") [ task ]
+    Js.set s "running" (Js.from False)
+
+
+-- `drainNow`, for a scheduler.
+drainS : V → ⊤
+drainS s =
+    if Js.to (Js.get s "running") then
+        Js.throw
+            (Js.construct (Js.global "Error")
+                [ Js.from
+                    "a scheduler's run called its drain during the call; it must queue it to run later (Task.schedulerWith)"
+                ]
+            )
+    else if Js.bitAnd (Js.to (Js.get s "phase")) 1 ≠ 0 then
+        ⊤
+    else
+        ok = Js.ref False
+
+        emptied =
+            Js.finally
+                (λ⊤ →
+                    r = drainFromS s 0
+                    Js.write ok True
+                    r
+                )
+                λ⊤ → if Js.read ok then ⊤ else failedS s
+        if emptied then
+            Js.set (Js.get s "queue") "length" (Js.from 0)
+            Js.set s "head" (Js.from 0)
+            Js.set s "scheduled" (Js.from False)
+
+
+-- `drainFrom`, for a scheduler: the rest of a long drain goes on through
+-- `more`, and a drain while the scheduler stops through its `run`.
+drainFromS : V, Int → Bool
+drainFromS s count =
+    q = Js.get s "queue"
+    h : Int
+    h = Js.to (Js.get s "head")
+    if h ≥ Js.to (Js.get q "length") then
+        True
+    else if count == 64 then
+        Js.to (Js.apply (Js.get s "more") [ Js.get s "drain" ])
+        False
+    else if Js.to (Js.get s "phase") == 1 then
+        requeue s (Js.get s "drain")
+        False
+    else
+        task = Js.at q h
+        a = Js.at q (h + 1)
+        b = Js.at q (h + 2)
+        c = Js.at q (h + 3)
+        Js.setAt q h Js.null
+        Js.setAt q (h + 1) Js.null
+        Js.setAt q (h + 2) Js.null
+        Js.setAt q (h + 3) Js.null
+        Js.set s "head" (Js.from (h + 4))
+        drainFromS s (if Js.to (Js.apply task [ a, b, c ]) then count + 1 else count)
+
+
+-- `failed`, for a scheduler: the throw goes on to the host out of
+-- whatever `run` queued the drain in; the scheduler stops, its hook runs,
+-- and its teardown is queued. One while it tears down is a cleanup's: the
+-- fiber goes on to its next finaliser, the drain in a new turn.
+failedS : V → ⊤
+failedS s =
+    fiber = Js.read current
+    Js.write current Js.null
+    Js.write pending Js.null
+    Js.write soonRunning Js.null
+    o = Js.read outside
+    if Js.isNull o then ⊤ else Js.set o "masks" (Js.from 0)
+
+    if Js.to (Js.get s "phase") < 2 then
+        Js.set s "culprit" fiber
+        stoppingS s
+        hook = Js.get s "hook"
+        if Js.isNull hook then ⊤ else Js.to (Js.apply hook [ Js.null ])
+    else
+        if not (Js.isNull fiber) && Js.isNull (Js.get fiber "outcome") then
+            recover fiber
+            enqueue fiber Js.null Js.null
+        requeue s (Js.get s "drain")
+
+
+-- `stopping`, for a scheduler: the teardown is queued through its `run`.
+stoppingS : V → ⊤
+stoppingS s =
+    if Js.to (Js.get s "phase") == 0 then Js.set s "phase" (Js.from 1)
+    Js.set s "scheduled" (Js.from True)
+    if Js.to (Js.get s "torn") then
+        ⊤
+    else
+        Js.set s "torn" (Js.from True)
+        requeue s (Js.from λ⊤ → teardownS s)
+
+
+-- `closeAll`, for a scheduler.
+closeAllS : V, Int, V → ⊤
+closeAllS s ms over =
+    if not (Js.isNull (Js.get s "whenDone")) || Js.to (Js.get s "phase") == 3 then
+        ⊤
+    else
+        Js.set s "whenDone" over
+        Js.set s "deadline" (Js.from ms)
+        if Js.to (Js.get s "phase") == 2 then armS s
+        stoppingS s
+
+
+armS : V → ⊤
+armS s =
+    Js.set s "timer"
+        (Js.apply (Js.global "setTimeout") [ Js.from λ⊤ → expireS s, Js.get s "deadline" ])
+
+
+-- `teardown`, for a scheduler: its root scopes closed, every fiber that
+-- belongs to it and every fiber lent to it interrupted, then the culprit
+-- unwound, then its drain. The deferred finalisers of its root scopes run
+-- in a fiber of the scheduler's own, so under its deadline and before its
+-- `done`.
+teardownS : V → ⊤
+teardownS s =
+    if Js.to (Js.get s "phase") == 1 then
+        Js.set s "phase" (Js.from 2)
+        if Js.isNull (Js.get s "whenDone") then ⊤ else armS s
+        targets = Js.get s "sweeping"
+        Js.each (Js.get s "roots") λroot →
+            if Js.isUndefined (Js.get root "stack") then Js.set root "closed" (Js.from True)
+        Js.each (Js.get s "members") λf → Js.to (Js.call targets "push" [ f ])
+        Js.each (Js.call (Js.global "Array") "from" [ Js.call (Js.get s "lent") "keys" [] ]) λf →
+            Js.to (Js.call targets "push" [ f ])
+        if Js.read deferring then
+            Js.to (Js.apply (Js.get (Js.read deferral) "roots") [ Js.get s "roots", cancelled, s ])
+    ok = Js.ref False
+
+    Js.finally
+        (λ⊤ →
+            sweepS s
+            Js.write ok True
+        )
+        λ⊤ → if Js.read ok then ⊤ else requeue s (Js.from λ⊤ → teardownS s)
+    c = Js.get s "culprit"
+
+    if Js.isNull c then
+        ⊤
+    else
+        Js.set s "culprit" Js.null
+        if Js.isNull (Js.get c "outcome") then
+            recover c
+            enqueue c Js.null Js.null
+    if Js.to (Js.get s "live") == 0 then allEndedS s else drainS s
+
+
+sweepS : V → ⊤
+sweepS s =
+    i : Int
+    i = Js.to (Js.get s "swept")
+    targets = Js.get s "sweeping"
+    if i < Js.to (Js.get targets "length") then
+        Js.set s "swept" (Js.from (i + 1))
+        halt (Js.at targets i)
+        sweepS s
+
+
+-- `expire`, for a scheduler: of the fibers inside a finaliser, those
+-- whose slot names it.
+expireS : V → ⊤
+expireS s =
+    Js.set s "timer" Js.null
+    Js.set s "expired" (Js.from True)
+    c = Js.read cleaning
+    if not (Js.read finalising) || Js.isNull c then
+        ⊤
+    else
+        ok = Js.ref False
+        Js.finally
+            (λ⊤ →
+                Js.each (copy c) λfiber →
+                    w = Js.get fiber "parked"
+                    if Js.isNull w || not (Js.same (schedulerOf fiber) s) then
+                        ⊤
+                    else
+                        Js.set fiber "parked" Js.null
+                        enqueue fiber Js.null Js.null
+                        abandon fiber w
+                Js.write ok True
+            )
+            λ⊤ → if Js.read ok then ⊤ else macrotask (Js.from λ⊤ → expireS s)
+
+
+-- `allEnded`, for a scheduler: stopped for good, it leaves the list, so
+-- a platform that makes one per request holds none of them.
+allEndedS : V → ⊤
+allEndedS s =
+    Js.set s "phase" (Js.from 3)
+    unlistFrom schedulers s
+    t = Js.get s "timer"
+    if Js.isNull t then ⊤ else Js.to (Js.apply (Js.global "clearTimeout") [ t ])
+    Js.set s "timer" Js.null
+    told = Js.get s "whenDone"
+    if Js.isNull told then ⊤ else Js.to (Js.apply told [ Js.get s "abandoned" ])
 
 
 -- ---- The virtual clock (§17.6) ---------------------------------------------
@@ -2531,7 +3114,7 @@ begin h work arg =
         else
             probe
 
-    if Js.read phase ≠ 0 then
+    if Js.read phase ≠ 0 || (Js.read many && stoppedFor fiber) then
         -- Cancelled before it runs, as `spawnIn` would.
         Js.set h "probe" Js.null
         _ =
@@ -2608,6 +3191,7 @@ enlist h fiber =
         else
             known
     Js.write live (Js.read live + 1)
+    if Js.read many then adopt fiber
     Js.set fiber "scope" s
     Js.to (Js.call (Js.get s "children") "add" [ fiber ])
 

@@ -1,0 +1,50 @@
+-- run: `Log.setMinimum` (transparent-effects-proposal.md §17.11, amended
+-- 2026-10-21) sets the program's minimum, for every fiber: a child
+-- started before the call writes its `Debug` line after it. `Log.minimum`
+-- still overrides it for its function. A context that `annotate` makes
+-- has no minimum of its own, so it reads the program's when a line is
+-- written: inside `annotate`, and in a child started there before the
+-- call. The last call wins: after `setMinimum Error`, a `Warn` line is
+-- not written.
+import Io
+import Log exposing (Entry, Debug, Info, Warn, Error)
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Task
+
+
+record : Ref (List String), Entry → ⊤
+record seen entry = Ref.update seen λlines → [ …lines, entry.message ]
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make []
+    Log.setSink (record seen _)
+    Log.debug "NOT WRITTEN: debug before setMinimum"
+    child = Task.spawn λ⊤ →
+        Task.yieldNow ⊤
+        Log.debug "debug in a child started before setMinimum"
+    Log.setMinimum Debug
+    Log.debug "debug after setMinimum Debug"
+    Log.trace "NOT WRITTEN: trace under the program's Debug"
+    Log.minimum Warn λ⊤ →
+        Log.info "NOT WRITTEN: info under Log.minimum Warn"
+        Log.warn "warn under Log.minimum Warn"
+    Task.join child
+    Log.setMinimum Info
+    Log.annotate "k" "v" λ⊤ →
+        Log.debug "NOT WRITTEN: debug inside annotate before setMinimum Debug"
+        Log.setMinimum Debug
+        Log.debug "debug inside annotate after setMinimum Debug"
+    Log.setMinimum Info
+    annotated = Log.annotate "k" "v" λ⊤ →
+        Task.spawn λ⊤ →
+            Task.yieldNow ⊤
+            Log.debug "debug in a child started inside annotate before setMinimum Debug"
+    Log.setMinimum Debug
+    Task.join annotated
+    Log.setMinimum Error
+    Log.warn "NOT WRITTEN: warn after setMinimum Error"
+    Log.error "error after setMinimum Error"
+    Node.printLines (Ref.get seen)

@@ -1,5 +1,12 @@
 # Work queue
 
+> Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
+> requirements were removed (#740). Each test or corpus case now has a
+> 120-second wall-clock hang guard. Older counts and budget references below
+> describe historical evidence, not a current gate or an outstanding grant.
+> Performance remains the job of `test-perf` and `bench`.
+
+
 > **PARKED 2026-09-19 by the owner.** No new agents after the one in flight (M4-3) finishes;
 > implementation is on hold. Resume from [`plans/resume.md`](resume.md).
 

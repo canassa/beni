@@ -574,31 +574,3 @@ test "the driver's cache pruning keeps the entries of the last hour" {
     defer w.deinit();
     try testing.expectEqual(@as(u32, 1025), try entriesLeft(&w, 1025, 60));
 }
-
-test "corpus: an orphan page budget fails before compiling any case" {
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("corpus/browser/Misspelled.budget", "5000 no matching page\n");
-    const r = try walker(&w, "");
-    try expectExit(1, r);
-    try expectReported(r, "Misspelled.budget has no matching case");
-}
-
-test "corpus: a fuzz budget beside a tea page has no matching value-fuzz case" {
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("corpus/browser/tea/Page.beni", "");
-    try w.write("corpus/browser/tea/Page.fuzz-budget", "5000 tea has no value fuzz\n");
-    const r = try walker(&w, "");
-    try expectExit(1, r);
-    try expectReported(r, "Page.fuzz-budget has no matching case");
-}
-
-test "corpus: a budget under an unknown corpus kind has no matching case" {
-    var w = try World.init(testing.allocator, testing.io);
-    defer w.deinit();
-    try w.write("corpus/unknown/Project/_expected.budget", "5000 no such corpus kind\n");
-    const r = try walker(&w, "");
-    try expectExit(1, r);
-    try expectReported(r, "_expected.budget has no matching case");
-}

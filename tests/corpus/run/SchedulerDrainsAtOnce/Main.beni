@@ -1,0 +1,27 @@
+-- run: a `run` that calls the drain during the call is a named defect
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22; §17.1 item
+-- 3). The test platform's scheduler drains at once; the first fiber that
+-- starts under it ends the program with the kernel's error.
+import Io
+import Node exposing (Program)
+import Sched
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Sched.atOnce ⊤
+    say "about to start"
+    _ = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            -- The first wait queues this fiber on the scheduler, whose `run`
+            -- drains at once: the kernel's named error ends the program.
+            Task.yieldNow ⊤
+            say "not reached"
+    Task.yieldNow ⊤
+    say "not reached either"
+    Node.done

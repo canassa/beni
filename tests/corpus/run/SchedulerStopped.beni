@@ -1,0 +1,45 @@
+-- run: a scheduler that has stopped for good is a dead end
+-- (transparent-effects-proposal.md §17.5, amended 2026-10-22). A fiber that
+-- enters it with `withScheduler` after the stop is cancelled at once, its
+-- releases run, and its parent sees `Cancelled`: nothing waits on the dead
+-- queue, so the program ends.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Task exposing (Cancelled, Done, Exit)
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+outcome : Exit a → String
+outcome exit =
+    case exit of
+        Done _ →
+            "Done"
+
+        Cancelled →
+            "Cancelled"
+
+
+finish : Deferred ⊤, Int → ⊤
+finish done _ =
+    say "stopped"
+    _ = Deferred.complete done ⊤
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+    done = Deferred.make ⊤
+    Task.stopScheduler s 1 (finish done _)
+    -- Stopped for good: `done` has been called.
+    Deferred.wait done
+
+    entering = Task.spawn λ⊤ →
+        Task.bracket (λ⊤ → ⊤) (λ_ exit → say "entering released: ${outcome exit}") λ_ →
+            Task.withScheduler s λ⊤ → say "not reached"
+    _ = Debug.log "entering" (outcome (Task.wait entering))
+    Node.done

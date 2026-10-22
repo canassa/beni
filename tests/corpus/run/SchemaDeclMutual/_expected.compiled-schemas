@@ -1,0 +1,2 @@
+Only declarations, a generic one given `Schema.int`, run by `parse` and
+`print`: no build of it ships the library interpreter.

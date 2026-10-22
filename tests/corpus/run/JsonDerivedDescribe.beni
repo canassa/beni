@@ -1,0 +1,295 @@
+-- `describe` of derived codecs that name themselves and each other
+-- (`schema.md` §12.10, §6 *What `describe` ships*): each describes
+-- finitely. `Tree a` closes on itself; `Expr` and `Stmt`, and `Rose a`
+-- and `Grove a`, are two definitions each, each named once, whichever one
+-- `describe` meets first; `Ring a`, `Bell a` and `Horn a` each name the
+-- other two. At a concrete type each codec is a constant; derived where
+-- the element type is the caller's (`describeRoses` …) each is a
+-- function of `a`'s, and a cycle of those hands its parameter round, so
+-- its description makes one cell per member and reads it at every
+-- reference — a new cell per reference described without end. A decode
+-- through a cycle runs its compiled worker.
+import Json
+import Node
+import Schema exposing (Codec, ConstructorShape, Definition, FieldShape, Schema, Shape, VariantShape)
+
+
+type Tree a
+    = Leaf
+    | Node (Tree a) a (Tree a)
+
+
+type Expr
+    = Num Int
+    | Add Expr Expr
+    | Block (List Stmt)
+
+
+type Stmt
+    = Let String Expr
+    | Do Expr
+
+
+type Rose a
+    = Rose a (Grove a)
+
+
+type Grove a
+    = Grove (List (Rose a))
+
+
+type Ring a
+    = Ring a (List (Bell a)) (List (Horn a))
+
+
+type Bell a
+    = Bell (List (Ring a)) (List (Horn a))
+
+
+type Horn a
+    = Horn (List (Ring a)) (List (Bell a))
+
+
+codecOf : List a → Codec a
+    where a.codec : ⊤ → Codec a
+codecOf _ = a.codec ⊤
+
+
+trees : List (Tree Int)
+trees = []
+
+
+exprs : List Expr
+exprs = []
+
+
+stmts : List Stmt
+stmts = []
+
+
+roses : List (Rose String)
+roses = []
+
+
+groves : List (Grove Bool)
+groves = []
+
+
+rings : List (Ring Int)
+rings = []
+
+
+shape : Shape → String
+shape s =
+    case s of
+        Schema.Primitive k →
+            primitive k
+
+        Schema.ListOf child →
+            "List (" ++ shape child ++ ")"
+
+        Schema.NullableOf child →
+            "Nullable (" ++ shape child ++ ")"
+
+        Schema.RecordOf fields →
+            "{ " ++ String.join (List.map fields field) ", " ++ " }"
+
+        Schema.TaggedOf discriminator variants →
+            "tagged \""
+                ++ discriminator
+                ++ "\" [ "
+                ++ String.join (List.map variants variant) " | "
+                ++ " ]"
+
+        Schema.Converted child →
+            "Converted (" ++ shape child ++ ")"
+
+        Schema.Flipped child →
+            "Flipped (" ++ shape child ++ ")"
+
+        Schema.TypeOnly child →
+            "TypeOnly (" ++ shape child ++ ")"
+
+        Schema.EncodedOnly child →
+            "EncodedOnly (" ++ shape child ++ ")"
+
+        Schema.Reference id →
+            "#" ++ String.fromInt id
+
+        Schema.Invalid message →
+            "Invalid \"" ++ message ++ "\""
+
+        Schema.TupleOf items →
+            "( " ++ String.join (List.map items shape) ", " ++ " )"
+
+        Schema.ConstructorsOf ctors →
+            "constructors [ " ++ String.join (List.map ctors constructor) " | " ++ " ]"
+
+        Schema.MaybeOf child →
+            "Maybe (" ++ shape child ++ ")"
+
+
+constructor : ConstructorShape → String
+constructor c = String.join [ c.name, …List.map c.arguments λa → "(" ++ shape a ++ ")" ] " "
+
+
+field : FieldShape → String
+field f =
+    f.name
+        ++ (if f.key == f.name then
+               ""
+            else
+               " as \"" ++ f.key ++ "\""
+           )
+        ++ (if f.optional then
+               " optional"
+            else
+               ""
+           )
+        ++ " : "
+        ++ shape f.shape
+
+
+variant : VariantShape → String
+variant v =
+    v.name
+        ++ " as \""
+        ++ v.tag
+        ++ "\""
+        ++ (case v.payload of
+               Just p →
+                   " " ++ shape p
+
+               Nothing →
+                   ""
+           )
+
+
+primitive : Schema.PrimitiveKind → String
+primitive k =
+    case k of
+        Schema.StringKind →
+            "String"
+
+        Schema.BoolKind →
+            "Bool"
+
+        Schema.IntKind →
+            "Int"
+
+        Schema.FloatKind →
+            "Float"
+
+        Schema.FiniteFloatKind →
+            "FiniteFloat"
+
+        Schema.NullKind →
+            "Null"
+
+        Schema.ValueKind →
+            "Value"
+
+        Schema.CharKind →
+            "Char"
+
+        Schema.Int32Kind →
+            "Int32"
+
+        Schema.NeverKind →
+            "⊥"
+
+
+definition : Definition → String
+definition d = "  #" ++ String.fromInt d.id ++ " " ++ d.name ++ " = " ++ shape d.shape
+
+
+describe : Schema e a → String
+describe s =
+    d = Schema.describe s
+    String.join [ shape d.root, …List.map d.definitions definition ] "\n"
+
+
+-- The element type is the caller's: these derive `Tree a`'s, `Rose a`'s,
+-- `Grove a`'s and `Ring a`'s codecs with `a` a parameter, so each cycle's
+-- descriptions are functions of `a`'s.
+treesOf : List a → List (Tree a)
+treesOf _ = []
+
+
+rosesOf : List a → List (Rose a)
+rosesOf _ = []
+
+
+grovesOf : List a → List (Grove a)
+grovesOf _ = []
+
+
+ringsOf : List a → List (Ring a)
+ringsOf _ = []
+
+
+describeTrees : List a → String
+    where a.codec : ⊤ → Codec a
+describeTrees xs = describe (codecOf (treesOf xs))
+
+
+describeRoses : List a → String
+    where a.codec : ⊤ → Codec a
+describeRoses xs = describe (codecOf (rosesOf xs))
+
+
+describeGroves : List a → String
+    where a.codec : ⊤ → Codec a
+describeGroves xs = describe (codecOf (grovesOf xs))
+
+
+describeRings : List a → String
+    where a.codec : ⊤ → Codec a
+describeRings xs = describe (codecOf (ringsOf xs))
+
+
+decodeGrove : List a, String → String
+    where a.codec : ⊤ → Codec a
+decodeGrove xs text =
+    case Schema.parse (codecOf (grovesOf xs)) text of
+        Ok _ →
+            "decoded"
+
+        Err _ →
+            "failed"
+
+
+ints : List Int
+ints = []
+
+
+bools : List Bool
+bools = []
+
+
+decoded : Result (List Schema.Issue) Expr → String
+decoded r =
+    case r of
+        Ok _ →
+            "decoded"
+
+        Err _ →
+            "failed"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ describe (codecOf trees)
+        , describe (codecOf exprs)
+        , describe (codecOf stmts)
+        , describe (codecOf roses)
+        , describe (codecOf groves)
+        , describe (codecOf rings)
+        , describeTrees ints
+        , describeRoses ints
+        , describeGroves bools
+        , describeRings bools
+        , decoded (Json.decode "{\"Block\":[{\"Do\":{\"Num\":1}}]}")
+        , decodeGrove ints "{\"Grove\":[{\"Rose\":[1,{\"Grove\":[]}]}]}"
+        ]

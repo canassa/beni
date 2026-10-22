@@ -422,3 +422,63 @@ pattern matched is an alias, not a demand); views of tries and the runtime's
 fixed-length view; and a `++` dispatched through hidden evidence in a generic
 declaration, which the shipping checker does not treat as a construction (the
 bridge spells `++` only where its operands are known lists).
+
+## Dictionaries (2026-10-21, #522)
+
+The model holds the meaning of a dictionary, not core's red-black tree: a
+finite map from integer keys to values, in insertion order (#294, the owner's
+second decision). A string key would be a second scalar key type and adds
+nothing to ownership, so the model has one key type. `Maybe v` is `Result Int v`
+with the error payload `0`: a lookup answers `ok v` or `err 0`, and a case on it
+is `resultCase`.
+
+Syntax (`Syntax.lean`): `Ty.dict v`; the primitives `dictEmpty v` (no operand),
+`dictInsert` (dictionary, key, value), `dictRemove` (dictionary, key),
+`dictGet` (dictionary, key) of type `Result Int v`, and `dictSize`
+(dictionary); and the focus `dictFocus input key found body`, which is
+`core/Dict`'s `focus` (`ownership-checker.md` §20.8) with its callback inlined:
+`found : Result Int v` is the value at the key, the body answers `ok w` to
+store `w` at the key or `err _` to remove the key, and the result is the
+dictionary. The flat fragment can take this form; it has no closures.
+
+Both interpreters (`Semantics.lean`): the entries are records `[int key,
+value]` in insertion order; `dictPut` replaces the entry at the key in place
+or appends one, `dictDrop` removes it. The value interpreter holds the entries
+as a list observation. The in-place interpreter holds them in one heap array:
+`dictInsert`, `dictRemove` and the focus's write-back are counted writes of
+that array (`writeCounted`), `dictGet` and `dictSize` read it, and a lookup
+records a read of the value (`0` when the key is absent), as `at` does. A
+dictionary is edited in place where the checker accepts the write, and the
+copying run is the oracle.
+
+The checker (`Checker.lean`): a dictionary's abstract is a list description
+`.list roots valueAbstract certificate`, every value at one folded position, as
+the thesis's `⟨Dict⟩.v`. `dictEmpty` is a fresh site root with a bottom
+element and true certificates (T51: it holds no cell). `dictGet` records a
+read of the roots and the values and answers `.record [.scalar, .scalar,
+valueAbstract]`, so its payload aliases the values (`DictValueWritten`).
+`dictInsert` is the push's rule: the demand on the dictionary's cells and
+`storeExclusive` of the value against the values already in (the thesis's
+dictionary row: the value must share no list with them). `dictRemove` is the
+push's demand with the certificate unchanged. `dictFocus` is the list focus's
+rule (`focusStep`, shared by both): the bound value is `.record [.scalar,
+.scalar, valueAbstract]`, granted exclusive when the dictionary is;
+`requireExclusive` or `requireSpine` when the body consumes it; the demand on
+the roots; the element joins what the body stores (`ok w` stores `w`); the
+certificates are the focus's.
+
+Checked, not proved (`DictPrograms.lean`, `DictProbes.lean`: `#guard` against
+`check` and both runs): `DictFocus.beni`'s `grow`, `twice`, `readLater` (as `valueLater`, read
+through the old dictionary), `reads` and `groups` (T44), #474's shared tuple
+and its fresh control, `DictValueWritten`, T51's focus on an empty dictionary,
+a removal and an insert at a key already in. One verdict differs from the Zig
+checker today: `reads` (a focus whose body reads the found value and stores a
+new list at the key, the old dictionary read afterwards through its size) is
+refused here, because the focus writes the entries back in place and the old
+dictionary is live after the write; its runs agree only because a size does
+not see a replace. Zig accepts
+`DictFocus.reads` because core's `Dict.update` builds a new tree (the old
+fold, until #294 lands); #579 tracks the difference. The frozen per-call checker refuses the focus as a
+limit and the primitives as shapes. Not modelled: string keys, `Dict.map`,
+`Dict.foldl` and the other folds, `Dict.keys`/`values`/`toList`, and the
+`Map` index of #294 (the meaning does not see it).

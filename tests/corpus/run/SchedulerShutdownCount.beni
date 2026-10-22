@@ -1,0 +1,39 @@
+-- run: the program's `shutdown` counts the cleanups cut short under a
+-- scheduler (transparent-effects-proposal.md §17.5, amended 2026-10-22). A
+-- release that never ends, under a scheduler, is cut at the deadline and
+-- counted in `done`.
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+report : Int → ⊤
+report cut =
+    _ = Debug.log "cut" cut
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+
+    _ = Task.spawn λ⊤ →
+        Task.withScheduler s λ⊤ →
+            Task.bracket
+                (λ⊤ → ⊤)
+                (λ_ _ →
+                    say "releasing"
+                    Task.never ⊤
+                )
+                λ_ → Task.never ⊤
+    Task.withScheduler s λ⊤ → Task.yieldNow ⊤
+
+    -- `shutdown` returns at once and cancels every fiber in a later turn:
+    -- this one ends first, with exit 0, and `done` reports after the
+    -- deadline has cut the release.
+    Task.shutdown 5 report
+    Node.done
