@@ -1159,8 +1159,10 @@ a condition the callee lowered as a plain lost one, a second error. So a call of
 its own errors until the limit is gone: what it does to its arguments rests on the limit, as it always did for
 `rounds` and the summary-size limits.
 
-`check/bad/direct/OwnershipLimitPessimistic` and `OwnershipLimitValueCells` pin both: each build has the limit's
-error alone, and every error of its own besides.
+`check/bad/direct/OwnershipLimitPessimistic` pins the pessimistic summary rule.
+The former `OwnershipLimitValueCells` refusal is retired by the complete indexed
+condition check in §16.7; `ownership/WideDeepCondition` pins its accepted fresh
+input and refused aliasing twin. There is no value-cells limit left to exercise.
 
 The bounds are set from the largest summaries measured, #220's dashboard at 1 024 widgets — one module of
 22 000 lines, its `step`, `pushed` and `update` the widest: 23 456 entries, 300 at one path and 87 764
@@ -1675,6 +1677,17 @@ Alternative provenances at one original place remain alternatives. A carried
 site's equality includes entry marks and approximation, so a metadata-only change
 cannot stop the fixpoint before the fold has propagated. No capture or condition
 is discarded, and the callable class's own requirements remain unchanged.
+
+*Amended 2026-10-23 (#748, declaration type views):* callback slots read through
+an ordinary constructor must resolve native schema endpoint types just as the
+checked store does. Tagged endpoints keep their nominal family; record endpoints
+expand their resolved plan term, with full arguments, aliases and rows. This is a
+read-only structural view: ownership never instantiates new store variables.
+An unavailable or poisoned type is `⋆`, never one shared exact `error` type.
+Conflicting substitutions likewise merge to `⋆`; retaining the callee variable
+would falsely equate an uncertain actual with the caller's variable at recursion.
+The wildcard cannot cancel a cast or prove separation. Complete checked types
+remain exact, and known schema types do not take this fallback.
 
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
