@@ -167,10 +167,12 @@ fn runOne(init: std.process.Init.Minimal, index: u32) Outcome {
     timing.current_test = test_fn.name;
     const started: Started = .now();
     var guard: HangGuard = .{};
-    // Corpus kinds are suites; their workers guard each individual case.
-    const corpus = std.mem.startsWith(u8, test_fn.name, "corpus_test.test.corpus:");
-    if (!corpus) guard.start(test_fn.name) catch @panic("cannot start test hang guard");
-    defer if (!corpus) guard.finish();
+    // Corpus kinds and the playground's parts are suites: they guard each
+    // individual case or program themselves.
+    const suite = std.mem.startsWith(u8, test_fn.name, "corpus_test.test.corpus:") or
+        std.mem.startsWith(u8, test_fn.name, "playground_test.test.part ");
+    if (!suite) guard.start(test_fn.name) catch @panic("cannot start test hang guard");
+    defer if (!suite) guard.finish();
     const status: @FieldType(Outcome, "status") = if (test_fn.func()) |_|
         .pass
     else |err| switch (err) {
