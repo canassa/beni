@@ -3,8 +3,7 @@
 -- message: the message holds it until its own `received` returns, which
 -- replies, or spawns the fiber that replies and holds it until then; a
 -- `Reply` kept in the state is held by nothing, so the asker gets
--- `NoReply` at once, and a late `reply` through it is one warning line,
--- not an answer.
+-- `NoReply` at once (`ObjectNoReply` has the rest of that rule).
 import Duration
 import Schema exposing (Schema)
 import String
@@ -43,12 +42,12 @@ scorerSchema =
 -- ---- The Scorer ---------------------------------------------------------------
 
 type alias ScorerState =
-    kept : Maybe (Reply String)
+    relayed : Int
 
 
 scorer : Worker.Definition
 scorer =
-    Object.define "Scorer" scorerSchema (λ_ → { kept = Nothing })
+    Object.define "Scorer" scorerSchema (λ_ → { relayed = 0 })
         { Object.none | received = scored }
 
 
@@ -76,20 +75,8 @@ scored ctx state msg =
                 Object.reply msg.reply "relayed by a fiber"
             state
 
-        "keep" →
-            -- Kept in the state: no holder, so the asker gets `NoReply` at
-            -- once.
-            { state | kept = Just msg.reply }
-
         _ →
-            -- "late": a reply through the kept `Reply`, after `NoReply`.
-            case state.kept of
-                Just r →
-                    Object.reply r "too late"
-                    { state | kept = Nothing }
-
-                Nothing →
-                    state
+            state
 
 
 -- ---- The Lobby ----------------------------------------------------------------

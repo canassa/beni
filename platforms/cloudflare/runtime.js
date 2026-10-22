@@ -23,7 +23,7 @@ export const run = (program) => ({
       throw new Error(`the app's beni.json lists the export "${name}", and the program defines no Durable Object of that name (boundary.md §9.12 (c))`);
     }
     function Instance(ctx, env) {
-      this.$ = definition.start(ctx, env);
+      this.$ = definition.start(ctx, env, definition.worker);
     }
     Instance.prototype.fetch = function (request) {
       return this.$.fetch(request);

@@ -23,16 +23,3 @@ pub type alias Close =
 --| Two sockets are the same host object.
 pub eq : Socket, Socket → Bool
 eq a b = Js.same (Js.from a) (Js.from b)
-
-
--- The host's close event as a `Close` (§9.12 (g)).
-pub closeOf : Js.Value, Js.Value → Close
-closeOf code reason = { code = Js.to code, reason = Js.to reason }
-
-
--- The host's socket array as a list.
-pub socketsOf : Js.Value → List Socket
-socketsOf array =
-    acc = Js.ref []
-    Js.each array λws → Js.write acc (List.push (Js.read acc) (Js.to ws))
-    Js.read acc
