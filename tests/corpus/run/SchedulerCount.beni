@@ -1,0 +1,50 @@
+-- run: `Task.schedulerFibers` and `Task.onSchedulerCount`
+-- (transparent-effects-proposal.md §17.5, added with the object slice).
+-- The count is every fiber the scheduler runs, lent and parked ones
+-- included; `onSchedulerCount` calls its function with the count each time
+-- a fiber ends or leaves, the last function given wins, and the function
+-- runs outside the fiber that ended.
+import Deferred exposing (Deferred)
+import Io
+import Node exposing (Program)
+import Task
+
+
+say : String → ⊤
+say line = Debug.log line ⊤
+
+
+count : String, Task.Scheduler → ⊤
+count label s =
+    _ = Debug.log label (Task.schedulerFibers s)
+    ⊤
+
+
+main : Program
+main = Io.run λ⊤ →
+    s = Task.scheduler λ⊤ → ⊤
+    count "with nothing" s
+    seen : Deferred Int
+    seen = Deferred.make ⊤
+
+    -- Each end is reported with the count after it; the last function wins.
+    Task.onSchedulerCount s λn → say "first watcher ${String.fromInt n}"
+    Task.onSchedulerCount s λn →
+        say "count ${String.fromInt n}"
+        if n == 0 then
+            _ = Deferred.complete seen n
+            ⊤
+
+    -- A lent fiber counts.
+    Task.withScheduler s λ⊤ →
+        count "while lent" s
+        _ = Task.spawn λ⊤ →
+            count "in a spawned fiber" s
+            Task.yieldNow ⊤
+        _ = Task.spawn λ⊤ → Task.yieldNow ⊤
+        count "with two spawned" s
+        ⊤
+    -- The loan ended, the two fibers end after their yields.
+    _ = Deferred.wait seen
+    count "after every end" s
+    Node.done
