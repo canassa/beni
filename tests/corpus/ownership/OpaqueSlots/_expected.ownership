@@ -10,9 +10,9 @@ module Main
 module Pair
   23:25 update r: accepted param
   23:37 construction r.a: accepted param
-  summary fromList: π1 RA; res #Pair.0 condition(fresh1){shared} fresh501◦, #Pair.0.a π1, #Pair.0.b π1
-  summary fromTwo: π1 RA, π2 RA; res #Pair.0 condition(fresh1){sep π1 π2} fresh501◦, #Pair.0.a π1, #Pair.0.b π2
-  summary pushA: π1#Pair.0 W{a}, π1#Pair.0.a RAW, π1#Pair.0.b RA; res #Pair.0 π1#Pair.0◦, #Pair.0.a π1#Pair.0.a, #Pair.0.b π1#Pair.0.b
+  summary fromList: π1 RA; res #Pair.0 condition(fresh1){shared} fresh501◦, #Pair.0.a condition(fresh3) π1, #Pair.0.b condition(fresh2) π1
+  summary fromTwo: π1 RA, π2 RA; res #Pair.0 condition(fresh1){sep π1 π2} fresh501◦, #Pair.0.a condition(fresh3) π1, #Pair.0.b condition(fresh2) π2
+  summary pushA: π1#Pair.0 W{a}, π1#Pair.0.a RAW, π1#Pair.0.b RA; res #Pair.0 π1#Pair.0◦, #Pair.0.a condition(fresh2) π1#Pair.0.a, #Pair.0.b condition(fresh1) π1#Pair.0.b
   summary getB: π1#Pair.0.b RA; res π1#Pair.0.b
   demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

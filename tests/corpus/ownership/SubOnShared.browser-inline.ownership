@@ -5,7 +5,7 @@ module SubOnShared
   50:10 entry SubOnShared.update msg#Got.0: accepted entry
   summary update: π1 R, π1#Got.0 RAW[storage], π1#Got.0[*] A; res .0 π1#Got.0, .0[*] ~π1#Got.0[*]
   summary start: π1 R; res λr{lost}; π1 calls ≤1, supply 1 shared(SubOnShared.shared) borrowed
-  summary subscriptions: res #Sub.0 fresh2, #Sub.0[*] condition(fresh1), #Sub.0[*].1 λ?r{lost}, #Sub.0[*].2 λ?r{lost}
+  summary subscriptions: res #Sub.0 fresh4, #Sub.0[*] condition(fresh1), #Sub.0[*].0 condition(fresh2), #Sub.0[*].1 condition(fresh3) λ?r{lost}, #Sub.0[*].2 λ?r{lost}
   summary view: π1 R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
 total 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2

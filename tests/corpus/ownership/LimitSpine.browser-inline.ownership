@@ -7,7 +7,7 @@ module LimitSpine
   285:15 List.push a: rejected limit: it came from a callee whose summary is past the checker's limits (approx)
   summary first: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*][*]{excl π1}, fresh1 π1[*]{excl π1}; xreq excl π1
   summary wide: π1 RAEwW{}; res ~⊤{lost}r{lost}; limit value-cells 258
-  summary mapped: π1 R, π1[*] EwW{}; res [*] fresh{lost} ~fresh2{lost} ~⊤limit{lost}r{lost}, [*][*] ~fresh{lost} ~⊤limit{lost}r{lost}, fresh1{lost}r{lost}; xreq excl π1
+  summary mapped: π1 R, π1[*] EwW{}; res [*] fresh{lost} ~condition(fresh2) ~fresh2{lost} ~⊤limit{lost}r{lost}, [*][*] ~condition(fresh3) ~fresh{lost} ~⊤limit{lost}r{lost}, fresh1{lost}r{lost}; xreq excl π1
   limit wide: value-cells 258, over 256
   demands 5: accepted 2 (fresh 0, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 3
   records 1: accepted 0, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0

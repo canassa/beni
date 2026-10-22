@@ -18,7 +18,7 @@ module InitializationTransfer
   162:14 List.push InitializationTransfer.markupSeed: rejected top-level: InitializationTransfer.markupSeed is a top-level value
   175:22 List.push InitializationTransfer.sourceWithEvidence: rejected top-level: InitializationTransfer.sourceWithEvidence is a top-level value
   185:44 List.set InitializationTransfer.issueSeed: accepted call
-  summary destinationStillShared: res [*] shared(InitializationTransfer.consumed)[*], shared(InitializationTransfer.consumed)
+  summary destinationStillShared: res [*] shared(InitializationTransfer.consumed)[*] ~condition(fresh1), shared(InitializationTransfer.consumed)
   summary functionRead: res shared(InitializationTransfer.functionSeed)
   demands 19: accepted 6 (fresh 0, call 6, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13
 total 19: accepted 6 (fresh 0, call 6, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13

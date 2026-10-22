@@ -414,6 +414,16 @@ are unchanged. Issue #514 tracks reducing and removing the grants. The same owne
 covers `ownership/Conduit` at 4 760M (4 320M observed plus about 10%); its
 `_expected.budget` names #286 and is removed when the case fits 4 300M again.
 
+**Owner amendment, 2026-10-22 (#720):** the owner explicitly authorized increasing
+budgets for projection-aware fold conditions. Normal self-hosted gates reported
+11 060M for core surface, 10 767M for core clean, 5 706M for browser ownership
+words, 4 931M for browser-tea clean, 5 545M for Conduit ownership, 8 930M for
+WideModel ownership and 18 292M for OwnershipEntryRounds. Their grants are,
+respectively, 12 170M, 11 850M, 6 280M, 5 430M, 6 100M, 9 830M and 20 130M
+(about 10% headroom). Assertions remain unchanged. Issue #732 tracks reducing
+these costs and retiring the grants, alongside #514 for core and #286 for
+Conduit. No separate measurement run was performed.
+
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)
 on **x86-64 Linux**, and every binary the build makes is built for one

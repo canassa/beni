@@ -1,0 +1,13 @@
+module FoldStringKeys
+  10:17 List.update rows: accepted param
+  10:17 List.update rows[*].1: accepted param (<lambda> writes what List.update supplies it)
+  10:64 List.push values: accepted callback-param (List.update supplies it owned)
+  12:17 List.insertAt rows: accepted param
+  15:13 List.push rows: accepted param
+  20:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  20:12 call List.foldl <literal>[*].1: accepted fresh (<lambda> writes what List.foldl supplies it)
+  20:50 call FoldStringKeys.put acc: accepted callback-param (List.foldl supplies it owned)
+  20:50 call FoldStringKeys.put acc[*].1: accepted callback-param (List.foldl supplies it owned)
+  summary put: π1 RAW[storage], π1[*] RA, π1[*].1 AW[storage], π1[*].1[*] A; res [*] ~π1[*], [*].1 ~fresh1 ~π1[*].1, [*].1[*] ~π1[*].1[*], π1{excl π1[*].1}; xreq spine π1[*].1
+  demands 9: accepted 9 (fresh 2, call 0, param 4, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 9: accepted 9 (fresh 2, call 0, param 4, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 0

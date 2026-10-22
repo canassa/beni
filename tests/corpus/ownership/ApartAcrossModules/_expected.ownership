@@ -7,8 +7,8 @@ module Main
   summary boxed: π1 RW[storage]
   demands 3: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 module Rows
-  summary four: π1 RA, π2 RA, π3 RA, π4 RA; res [*] π1 π2 π3 π4, fresh1{apart [π1] [π2] [π3] [π4], excl π1, excl π2, excl π3, excl π4}
-  summary box: π1 RA, π2 RA, π3 RA, π4 RA; res .a π1, .b π2, .c π3, .d π4, condition(fresh1){apart [π1] [π2] [π3] [π4]} fresh501◦
+  summary four: π1 RA, π2 RA, π3 RA, π4 RA; res [*] condition(fresh2) π1 π2 π3 π4, fresh1{apart [π1] [π2] [π3] [π4], excl π1, excl π2, excl π3, excl π4}
+  summary box: π1 RA, π2 RA, π3 RA, π4 RA; res .a condition(fresh2) π1, .b condition(fresh3) π2, .c condition(fresh4) π3, .d condition(fresh5) π4, condition(fresh1){apart [π1] [π2] [π3] [π4]} fresh501◦
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 3: accepted 2 (fresh 0, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause call 1

@@ -16,16 +16,16 @@ module WriteExtents
   60:25 call WriteExtents.borrowThenEdit xs: accepted param (WriteExtents.borrowThenEdit writes π1)
   60:25 call WriteExtents.borrowThenEdit xs[*]: accepted param (WriteExtents.borrowThenEdit writes π1[*])
   60:43 value <lambda>: rejected supply: WriteExtents.borrowThenEdit changes what it hands this function (π1[*]) after the call, itself or through another function, and the function's result may keep it (approx)
-  summary borrowThenPermute: π1 RAW[storage], π1[*] RA, π2 R; res .0 π1, .0[*] π1[*], .1#Just.0 cb2{excl cb2}r{excl cb2}, condition(fresh1){sep π1 cb2, sep π1[*] cb2}r{sep π1[*] cb2}; π2 calls ≤1, supply 1 π1[*] borrowed{excl π1[*]}r{excl π1[*]}
-  summary borrowedPermutation: π1 RAW[storage], π1[*] RA; res .0 π1, .0[*] π1[*], .1#Just.0 π1[*], condition(fresh1){lost}
-  summary keepStorage: π1 RAW[storage], π1[*] A, π2 R; res .0 π1, .0[*] π1[*], .1 cb2{excl cb2}, condition(fresh1){sep π1 cb2, sep π1[*] cb2}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}
-  summary keptStorage: π1 RAW[storage], π1[*] RA; res .0 π1, .0[*] π1[*], .1 π1, condition(fresh1){shared}
-  summary keepThenWrite: π1 RAW[storage], π1[*] A, π2 R; res .0 π1, .0[*] ~π1[*], .1 cb2{excl cb2}, condition(fresh1){sep π1 cb2, sep π1[*] cb2}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}
-  summary keptValueWritten: π1 RAW[storage], π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1, condition(fresh1){shared}
-  summary keepThenCallback: π1 R, π2 R, π3 R; res .0 cb3{excl cb3}, .1 cb2{excl cb2}, condition(fresh1){sep cb2 cb3}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}; π3 calls ≤1, supply 1 π1 owned{excl π1}
-  summary keptValueWrittenByCallback: π1 RAW[storage], π1[*] A; res .0 π1, .0[*] ~π1[*], .1 π1, condition(fresh1){shared}
-  summary borrowThenEdit: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A, π2 R; res .0 π1{excl π1[*]}, .0[*] ~π1[*], .0[*][*] ~π1[*][*], .1#Just.0 cb2{excl cb2}r{excl cb2}, condition(fresh1){sep π1 cb2, sep π1[*] cb2, sep π1[*][*] cb2}r{sep π1[*] cb2, sep π1[*][*] cb2}; π2 calls ≤1, supply 1 π1[*] borrowed{excl π1[*]}r{excl π1[*]}; xreq excl π1
-  summary keptElementWritten: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] RA; res .0 π1{excl π1[*]}, .0[*] ~π1[*], .0[*][*] ~π1[*][*], .1#Just.0 π1[*], condition(fresh1){lost}; xreq excl π1
+  summary borrowThenPermute: π1 RAW[storage], π1[*] RA, π2 R; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1#Just.0 cb2{excl cb2}r{excl cb2} condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2}r{sep π1[*] cb2}; π2 calls ≤1, supply 1 π1[*] borrowed{excl π1[*]}r{excl π1[*]}
+  summary borrowedPermutation: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1#Just.0 condition(fresh4) π1[*], condition(fresh1){lost}
+  summary keepStorage: π1 RAW[storage], π1[*] A, π2 R; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1 cb2{excl cb2} condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}
+  summary keptStorage: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1 condition(fresh4) π1, condition(fresh1){shared}
+  summary keepThenWrite: π1 RAW[storage], π1[*] A, π2 R; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 cb2{excl cb2} ~condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}
+  summary keptValueWritten: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 ~condition(fresh4) π1, condition(fresh1){shared}
+  summary keepThenCallback: π1 R, π2 R, π3 R; res .0 cb3{excl cb3} condition(fresh2), .1 cb2{excl cb2} condition(fresh3), condition(fresh1){sep cb2 cb3}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}; π3 calls ≤1, supply 1 π1 owned{excl π1}
+  summary keptValueWrittenByCallback: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) π1, .0[*] ~condition(fresh3) ~π1[*], .1 condition(fresh4) π1, condition(fresh1){shared}
+  summary borrowThenEdit: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A, π2 R; res .0 condition(fresh2) π1{excl π1[*]}, .0[*] ~condition(fresh3) ~π1[*], .0[*][*] ~condition(fresh5) ~π1[*][*], .1#Just.0 cb2{excl cb2}r{excl cb2} ~condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2, sep π1[*][*] cb2}r{sep π1[*] cb2, sep π1[*][*] cb2}; π2 calls ≤1, supply 1 π1[*] borrowed{excl π1[*]}r{excl π1[*]}; xreq spine π1[*]
+  summary keptElementWritten: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh2) π1{excl π1[*]}, .0[*] ~condition(fresh3) ~π1[*], .0[*][*] ~condition(fresh5) ~π1[*][*], .1#Just.0 ~condition(fresh4) π1[*], condition(fresh1){lost}; xreq spine π1[*]
   demands 17: accepted 13 (fresh 0, call 0, param 11, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 4
 total 17: accepted 13 (fresh 0, call 0, param 11, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 4
 cause supply 4

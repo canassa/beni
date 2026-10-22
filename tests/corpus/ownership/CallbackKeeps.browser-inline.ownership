@@ -24,30 +24,30 @@ module CallbackKeeps
   134:25 value <lambda>: rejected supply: CallbackKeeps.kBefore changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
   161:13 List.push xs: rejected alias: kept.0 holds it and is read at 161:5
   169:23 List.push b: rejected alias: kept.0 holds it and is read at 169:13
-  summary kParam: π1 R, π2 RAW[storage], π2[*] A; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*], condition(fresh1){sep π2 cb1, sep π2[*] cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
-  summary kTree: π1 R, π2 RAW[storage], π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1}, .1 π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3, condition(fresh1){sep π2 cb1, sep π2[*] cb1, sep π3 cb1}r{sep π2 cb1, sep π2[*] cb1, sep π3 cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
-  summary kOne: π1 R, π2 RAW[storage], π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1}, .1 π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3, condition(fresh1){sep π2 cb1, sep π2[*] cb1, sep π3 cb1}r{sep π2 cb1, sep π2[*] cb1, sep π3 cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
-  summary kFresh: π1 R; res .0 cb1{excl cb1}, .1 fresh1, condition(fresh2){lost}; π1 calls ≤1, supply 1 fresh1 borrowed
-  summary wrap: π1 R; res .0 cb1{excl cb1}r{excl cb1}, .1 fresh1, condition(fresh2); π1 calls ≤1, need owned, supply 1 fresh1 borrowed
-  summary keepParam: res .0.0 fresh1, .1 fresh1, condition(fresh2){shared}
-  summary dropParam: res .0.0 fresh3, .1 fresh1, condition(fresh2)
-  summary keepCtor: res .0#Node.0 fresh1, .1 fresh1, condition(fresh2){shared}r{shared}
-  summary keepOne: res .0#One.0 fresh1, .1 fresh1, .1[*]#One.0 ~fresh2, condition(fresh3){shared}r{shared}
-  summary keepFresh: res .0.0 fresh1, .1 fresh1, condition(fresh2){lost}
-  summary wrapKeep: res .0.0 fresh1, .1 fresh1, condition(fresh2)
-  summary wrapDrop: res .0.0 fresh3, .1 fresh1, condition(fresh2)
-  summary keepThenHand: π1 R, π2 R, π3 R; res .0 cb1{excl cb1}, .1 cb2{excl cb2}, condition(fresh1){sep cb1 cb2}; π1 calls ≤1, supply 1 π3 borrowed{excl π3}; π2 calls ≤1, supply 1 π3 owned{excl π3}
-  summary makeKeepReturn: π1 R; res .0 cb1{excl cb1}, .1 fresh1, condition(fresh2){lost}; π1 calls ≤1, supply 1 fresh1 borrowed
-  summary handKeep: res .0.0 fresh1, .1 fresh1, condition(fresh2){shared}
-  summary handDrop: res .0.0 fresh3, .1 fresh1, condition(fresh2)
-  summary returnKeep: res .0.0 fresh1, .1 fresh1, .1[*] ~fresh2, condition(fresh3){shared}
-  summary returnDrop: res [*] ~fresh2, fresh1
-  summary kBefore: π1 R, π2 RAW[storage], π2[*] RA; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*], condition(fresh1){sep π2 cb1, sep π2[*] cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2[*]}, supply 1[*] π2[*] borrowed{excl π2}r{excl π2[*]}
-  summary writeFirst: res .0.0 fresh1, .1 fresh1, condition(fresh2){shared}
-  summary pickSecond: π2 R; res .0 cb2{excl cb2}, .1 fresh1, condition(fresh2){lost}; π2 calls ≤1, supply 1 fresh1 borrowed
-  summary inList: π1 R; res .0 cb1{excl cb1}, .1 fresh2, .1[*] fresh1, condition(fresh3){lost}; π1 calls ≤1, supply 1 fresh1 borrowed
-  summary secondKeep: res .0.0 fresh1, .1 fresh1, .1[*] ~fresh2, condition(fresh3){shared}
-  summary listKeep: res .0.0 fresh1, .1 fresh2, .1[*] fresh fresh1, .1[*][*] ~fresh, condition(fresh3){shared}
+  summary kParam: π1 R, π2 RAW[storage], π2[*] A; res .0 cb1{excl cb1} ~condition(fresh2), .1 condition(fresh3) π2, .1[*] ~condition(fresh4) ~π2[*], condition(fresh1){sep π2 cb1, sep π2[*] cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary kTree: π1 R, π2 RAW[storage], π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1} ~condition(fresh3), .1 condition(fresh4) π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~condition(fresh1) ~π2[*] ~π3, condition(fresh2){sep π2 cb1, sep π2[*] cb1, sep π3 cb1}r{sep π2 cb1, sep π2[*] cb1, sep π3 cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary kOne: π1 R, π2 RAW[storage], π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1} ~condition(fresh3), .1 condition(fresh4) π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~condition(fresh1) ~π2[*] ~π3, condition(fresh2){sep π2 cb1, sep π2[*] cb1, sep π3 cb1}r{sep π2 cb1, sep π2[*] cb1, sep π3 cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary kFresh: π1 R; res .0 cb1{excl cb1} condition(fresh3), .1 condition(fresh1) fresh1, condition(fresh2){lost}; π1 calls ≤1, supply 1 fresh1 borrowed
+  summary wrap: π1 R; res .0 cb1{excl cb1}r{excl cb1} ~condition(fresh3), .1 condition(fresh1) fresh1, .1[*] ~condition(fresh4), condition(fresh2); π1 calls ≤1, need owned, supply 1 fresh1 borrowed
+  summary keepParam: res .0 ~condition(fresh3), .0.0 fresh1 ~condition(fresh4), .1 condition(fresh5) fresh1, .1[*] ~condition(fresh6), condition(fresh2){shared}
+  summary dropParam: res .0 ~condition(fresh3), .0.0 fresh5, .1 condition(fresh1) fresh1, .1[*] ~condition(fresh4), condition(fresh2)
+  summary keepCtor: res .0 ~condition(fresh4), .0#Node.0 fresh1 ~condition(fresh5), .1 condition(fresh6) fresh1, .1[*] ~condition(fresh2), condition(fresh3){shared}r{shared}
+  summary keepOne: res .0 ~condition(fresh5), .0#One.0 fresh1 ~condition(fresh6), .1 condition(fresh7) fresh1, .1[*] ~condition(fresh3), .1[*]#One.0 ~fresh2, condition(fresh4){shared}r{shared}
+  summary keepFresh: res .0 condition(fresh4), .0.0 fresh1, .1 condition(fresh2) fresh1, condition(fresh3){lost}
+  summary wrapKeep: res .0 ~condition(fresh4), .0.0 fresh1, .1 condition(fresh2) fresh1, .1[*] ~condition(fresh5), condition(fresh3)
+  summary wrapDrop: res .0 ~condition(fresh3), .0.0 fresh5, .1 condition(fresh1) fresh1, .1[*] ~condition(fresh4), condition(fresh2)
+  summary keepThenHand: π1 R, π2 R, π3 R; res .0 cb1{excl cb1} condition(fresh2), .1 cb2{excl cb2} condition(fresh3), condition(fresh1){sep cb1 cb2}; π1 calls ≤1, supply 1 π3 borrowed{excl π3}; π2 calls ≤1, supply 1 π3 owned{excl π3}
+  summary makeKeepReturn: π1 R; res .0 cb1{excl cb1} condition(fresh3), .1 condition(fresh1) fresh1, condition(fresh2){lost}; π1 calls ≤1, supply 1 fresh1 borrowed
+  summary handKeep: res .0 condition(fresh3), .0.0 condition(fresh4) fresh1, .1 condition(fresh5) fresh1, condition(fresh2){shared}
+  summary handDrop: res .0 condition(fresh3), .0.0 fresh4, .1 condition(fresh1) fresh1, condition(fresh2)
+  summary returnKeep: res .0 condition(fresh4), .0.0 fresh1 ~condition(fresh6), .1 condition(fresh2) fresh1, .1[*] ~condition(fresh3) ~fresh3, condition(fresh5){shared}
+  summary returnDrop: res [*] ~fresh2, condition(fresh1) fresh1
+  summary kBefore: π1 R, π2 RAW[storage], π2[*] RA; res .0 cb1{excl cb1} ~condition(fresh2), .1 condition(fresh3) π2, .1[*] ~condition(fresh4) ~π2[*], condition(fresh1){sep π2 cb1, sep π2[*] cb1}; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2[*]}, supply 1[*] π2[*] borrowed{excl π2}r{excl π2[*]}
+  summary writeFirst: res .0 ~condition(fresh3), .0.0 fresh1 ~condition(fresh4), .1 condition(fresh5) fresh1, .1[*] ~condition(fresh6), condition(fresh2){shared}
+  summary pickSecond: π2 R; res .0 cb2{excl cb2} condition(fresh3), .1 condition(fresh1) fresh1, condition(fresh2){lost}; π2 calls ≤1, supply 1 fresh1 borrowed
+  summary inList: π1 R; res .0 cb1{excl cb1} condition(fresh4), .1 fresh2, .1[*] condition(fresh1) fresh1, condition(fresh3){lost}; π1 calls ≤1, supply 1 fresh1 borrowed
+  summary secondKeep: res .0 condition(fresh4), .0.0 fresh1 ~condition(fresh6), .1 condition(fresh2) fresh1, .1[*] ~condition(fresh3) ~fresh3, condition(fresh5){shared}
+  summary listKeep: res .0 condition(fresh4), .0.0 condition(fresh8) fresh1 ~condition(fresh6), .1 fresh3, .1[*] condition(fresh2) fresh fresh1, .1[*][*] ~condition(fresh7) ~fresh, condition(fresh5){shared}
   demands 25: accepted 15 (fresh 8, call 1, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
 total 25: accepted 15 (fresh 8, call 1, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
 cause alias 3

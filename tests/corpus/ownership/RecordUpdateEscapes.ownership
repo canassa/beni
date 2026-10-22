@@ -13,7 +13,7 @@ module RecordUpdateEscapes
   72:9 update <literal>[*]: accepted fresh (RecordUpdateEscapes.escHead writes it)
   73:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   summary size: π1.items R, π1.n R
-  summary keep: π1 RAE; res .children ⊤{lost}r{lost}, .finalizers ⊤{lost}r{lost}, .observers ⊤{lost}r{lost}, .outcome ⊤{lost}r{lost}, .parent ⊤{lost}r{lost}, .parked ⊤{lost}r{lost}, .scope ⊤{lost}r{lost}, .stack esc2{lost}r{lost}, .stack⋆ ~esc1{excl π1} ~λ?r{lost} ~λr{lost} ~π1, condition(fresh3){shared}r{shared} fresh501◦ fresh502◦ fresh503◦
+  summary keep: π1 RAE; res .children condition(fresh4) ⊤{lost}r{lost}, .finalizers condition(fresh5) ⊤{lost}r{lost}, .observers condition(fresh6) ⊤{lost}r{lost}, .outcome condition(fresh7) ⊤{lost}r{lost}, .parent condition(fresh8) ⊤{lost}r{lost}, .parked condition(fresh9) ⊤{lost}r{lost}, .scope condition(fresh10) ⊤{lost}r{lost}, .stack condition(fresh11) esc2{lost}r{lost}, .stack⋆ ~esc1{excl π1} ~λ?r{lost} ~λr{lost} ~π1, condition(fresh3){shared}r{shared} fresh501◦ fresh502◦ fresh503◦
   summary openEsc: π1 REW{n}, π1.items RAW; res π1.items
   summary plain: π1 RE, π1.items RAW; res π1.items
   summary viaCallee: π1 REW{n}, π1.items RAW; res π1.items

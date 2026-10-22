@@ -1,0 +1,24 @@
+import List
+import Node
+
+
+put : List ((List Int) × List Int), List Int, Int → List ((List Int) × List Int)
+put rows key value =
+    case List.get rows 0 of
+        Just ( stored, _ ) →
+            if List.compare stored key == EQ then
+                List.update rows 0 λ( kept, values ) → ( kept, List.push values value )
+            else
+                List.insertAt rows 0 ( key, [ value ] )
+
+        Nothing →
+            List.push rows ( key, [ value ] )
+
+
+main : Node.Program
+main =
+    key = [ 1 ]
+    rows = List.foldl [ key, key ] [] λk acc → put acc k 7
+    first = put [] key 7
+    explicit = put first key 7
+    Node.print (Debug.toString rows ++ "\n" ++ Debug.toString explicit)
