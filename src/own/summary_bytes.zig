@@ -87,7 +87,8 @@ pub const magic = "BENIOWN\x00";
 /// condition `rxc` after each `res`, `objs` and supply entry's list ones, and
 /// the summary's `rxreq` after its `xreq`.
 /// 19 distinguishes value-scoped construction conditions from allocations.
-pub const version: u32 = 19;
+/// 20 carries each write's storage/deep extent (§32 amendment, #670).
+pub const version: u32 = 20;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -479,6 +480,7 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
         // §31.7: two bytes of bits, and a record write's fields, by name.
         try w.byte(@truncate(u.bits));
         try w.byte(@truncate(u.bits >> 8));
+        try w.byte(@backingInt(u.extent));
         try w.int(@intCast(u.fields.len));
         const fields = try arena.alloc(u32, u.fields.len);
         for (u.fields, fields) |f, *x| x.* = w.string_index.get(f).?;
@@ -755,12 +757,13 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     // Bit 2 was a coarsened summary's, before §16.7 deleted coarsening.
     if (flags > 15 or flags & 2 != 0) return error.Bad;
 
-    const uses = try r.arena.alloc(UseEntry, try r.count(14));
+    const uses = try r.arena.alloc(UseEntry, try r.count(15));
     for (uses) |*u| {
         const param = try r.int();
         const path = try r.path();
         const lo = try r.byte();
         const hi = try r.byte();
+        const extent = try r.enumOf(Ownership.WriteExtent);
         const fields = try r.arena.alloc(u32, try r.count(4));
         for (fields) |*f| {
             const i = try r.int();
@@ -769,7 +772,7 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         }
         // Interned in this session's order, as the summary's own are.
         std.mem.sort(u32, fields, {}, std.sort.asc(u32));
-        u.* = .{ .param = param, .path = path, .bits = @as(u16, lo) | @as(u16, hi) << 8, .fields = fields };
+        u.* = .{ .param = param, .path = path, .bits = @as(u16, lo) | @as(u16, hi) << 8, .extent = extent, .fields = fields };
     }
 
     const res = try readRes(r);

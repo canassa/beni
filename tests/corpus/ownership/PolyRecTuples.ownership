@@ -4,7 +4,7 @@ module PolyRecTuples
   37:26 List.push a: rejected call: b⋆ may hold it through the call at 35:15, and is read at 37:43 (approx)
   49:34 List.push a: rejected call: p may hold it through the call at 45:10, and is read at 49:51 (approx)
   summary w: π2 RA, π3 RA; res #Leaf.0 π2{sep π2 π3}r{sep π2 π3}, ⟨T⟩⁺#Leaf.0 condition(fresh1){shared}r{shared} ~condition(fresh3){shared}r{shared}, ⟨T⟩⁺#Leaf.0.0 ~condition(fresh1){shared}r{shared} ~condition(fresh3){shared}r{shared} π2{sep π2 π3}r{sep π2 π3}, ⟨T⟩⁺#Leaf.0.0⋆ ~condition(fresh1){shared}r{shared} ~condition(fresh2){shared}r{shared} ~condition(fresh3){shared}r{shared} ~π2{sep π2 π3}r{sep π2 π3} ~π3{lost}r{lost}, ⟨T⟩⁺#Leaf.0.1 ~condition(fresh2){shared}r{shared} ~condition(fresh3){shared}r{shared} π3{lost}r{lost}, ⟨T⟩⁺#Leaf.0.1⋆ ~condition(fresh2){shared}r{shared} ~condition(fresh3){shared}r{shared} ~π3{lost}r{lost}
-  summary wrX: π1 R, π1⟨T⟩⁺#Leaf.0.0.0.1 RW, π1⟨T⟩⁺#Leaf.0.0.1.0 R
+  summary wrX: π1 R, π1⟨T⟩⁺#Leaf.0.0.0.1 RW[storage], π1⟨T⟩⁺#Leaf.0.0.1.0 R
   summary viaX: unused
   summary local: unused
   summary st: unused

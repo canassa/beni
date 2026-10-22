@@ -5,7 +5,7 @@ module RecordField
   21:32 construction model.items: accepted param
   22:5 update next: accepted param
   26:23 construction model.items: rejected later-use: model.items is read again at 26:19
-  summary add: π1 W{items}, π1.items RAW, π1.items[*] A; res .items π1.items, .items[*] ~π1.items[*], π1◦
+  summary add: π1 W{items}, π1.items RAW[storage], π1.items[*] A; res .items π1.items, .items[*] ~π1.items[*], π1◦
   summary rename: π1 W{items, name}, π1.items RAW, π1.name R; res .items π1.items, π1◦
   summary keepOld: π1.items RAW; res .0 π1.items, .1 π1.items, condition(fresh1){shared}
   demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

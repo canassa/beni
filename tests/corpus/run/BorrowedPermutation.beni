@@ -1,0 +1,23 @@
+-- #670's borrowed-value identity reduction, using List's storage permutation.
+-- The callback's retained value must keep its contents after the outer swap.
+import Node exposing (Program)
+
+
+borrowThenPermute :
+      List (List Int)
+    , (List Int → List Int)
+    → List (List Int) × Maybe (List Int)
+borrowThenPermute xs f =
+    score = Maybe.map (List.get xs 0) f
+    ( List.swap xs 0 1, score )
+
+
+main : Program
+main =
+    ( swapped, kept ) = borrowThenPermute [ [ 1 ], [ 2 ] ] λv → v
+    Node.print
+        (if swapped == [ [ 2 ], [ 1 ] ] && kept == Just [ 1 ] then
+            "ok"
+         else
+            "bad"
+        )

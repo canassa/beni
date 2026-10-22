@@ -5,7 +5,7 @@ module PolyRecThrough
   summary pick: π2 RA, π3 RA; res π2 π3
   summary wrap2: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
   summary wrap3: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~fresh3{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*][*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*][*]⋆ ~fresh1{excl π2}r{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~π2
-  summary push2: π1 Rw; xreq excl π1
-  summary push3: π1 Rw; xreq excl π1
+  summary push2: π1 Rw[storage]; xreq excl π1
+  summary push3: π1 Rw[storage]; xreq excl π1
   demands 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 2: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

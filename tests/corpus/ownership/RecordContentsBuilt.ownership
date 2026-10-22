@@ -36,7 +36,7 @@ module RecordContentsBuilt
   summary a2: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary a3: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary a4: π1 RW{done}; res [*] ~fresh2r{shared} ~π1◦, fresh1r{shared}
-  summary a5: π1 RAW, π1[*] RW{done}; res [*] ~fresh2r{lost} ~π1[*]◦r{excl π1}, fresh1r{lost} π1{lost}r{lost}
+  summary a5: π1 RAW[storage], π1[*] RW{done}; res [*] ~fresh2r{lost} ~π1[*]◦r{excl π1}, fresh1r{lost} π1{lost}r{lost}
   summary a6: π1 RW{done}; res [*] ~fresh2r{lost} ~π1◦, fresh1r{lost}
   summary mk: π1 R; res [*] π1, fresh1{shared}r{shared}
   summary a7: π1 RW{done}; res [*] ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
@@ -50,7 +50,7 @@ module RecordContentsBuilt
   summary a13: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary a14: π1 RW{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary a15: π1 RW{done}; res [*] ~fresh2r{shared} ~π1◦, fresh1r{shared}
-  summary a16: π1 RW, π1[*] RW{done}; res [*] ~fresh2r{lost} ~π1[*]◦, fresh1r{lost}
+  summary a16: π1 RW[storage], π1[*] RW{done}; res [*] ~fresh2r{lost} ~π1[*]◦, fresh1r{lost}
   summary a17: π1 RA, π1[*] RW{done}; res .0 fresh1r{excl π1}, .0[*] ~fresh2r{excl π1} ~π1[*]◦, .1 π1, condition(fresh3)r{lost}; rxreq excl π1
   summary a18: π1 R, π1[*] W{done}; res [*] ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1[*]◦, fresh1r{lost}
   summary a19: π1 RW{done}; res [*] ~fresh2r{shared} ~fresh501◦r{shared} ~fresh502◦r{shared} ~π1◦, fresh1r{shared}

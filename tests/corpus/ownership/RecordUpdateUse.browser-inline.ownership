@@ -10,7 +10,7 @@ module RecordUpdateUse
   59:10 List.push xs: accepted fresh
   60:10 update r: accepted fresh
   summary pushThenUpdate: res .p fresh1, .q fresh1, condition(fresh2){shared}r{shared} fresh501◦
-  summary ofParam: π1 RAW, π1[*] RA; res .0 fresh501◦, .0.a π1, .1 π1, .1[*] ~π1[*], condition(fresh1){shared}
+  summary ofParam: π1 RAW[storage], π1[*] RA; res .0 fresh501◦, .0.a π1, .1 π1, .1[*] ~π1[*], condition(fresh1){shared}
   summary nested: res .p fresh1, .q fresh1, condition(fresh2){shared}r{shared} fresh501◦
   summary inBranch: res .p fresh1 fresh2, .q fresh1, condition(fresh3){shared}r{shared} fresh501◦
   summary replaced: res .p fresh2, .q fresh1, fresh501◦
