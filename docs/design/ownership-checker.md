@@ -1687,7 +1687,9 @@ An unavailable or poisoned type is `⋆`, never one shared exact `error` type.
 Conflicting substitutions likewise merge to `⋆`; retaining the callee variable
 would falsely equate an uncertain actual with the caller's variable at recursion.
 The wildcard cannot cancel a cast or prove separation. Complete checked types
-remain exact, and known schema types do not take this fallback.
+remain exact, and known schema types do not take this fallback. Summary block
+version 28 invalidates earlier exact fallback keys while retaining the version
+27 layout and conditional writer sets.
 
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
