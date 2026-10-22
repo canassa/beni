@@ -2390,7 +2390,7 @@ open (dashboard `node-log-q4`). `boundary.md` §9.8.16 (b), amended the same day
 the program's log context, whoever sends the message: a context stops at the body. When the
 caller of the page's `send` has a log context of its own, `send` runs `update` inside
 `Task.withoutLogContext`, which sets the slot to the default and puts the old one back when
-`update` returns. So the `annotate` around a body does not reach the `update` of a message that the
+`update` returns or throws. So the `annotate` around a body does not reach the `update` of a message that the
 body sends, or that `update`'s commands. The other slots are the caller's. `boundary.md`
 §9.8.16 (b), amended the same day, has the details.
 
