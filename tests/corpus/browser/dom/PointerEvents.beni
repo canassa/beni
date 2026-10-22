@@ -3,8 +3,8 @@
 -- listens itself, so the extractor reads the box of that element, and a
 -- point is in the handler's box whichever element is the target. Each row
 -- of the list listens for its own `pointerdown`, and a row added later
--- listens as well. The surface's move handler reads the model's `track`,
--- and the render writes the new handler in place: after `#track` the
+-- listens as well. The move handler captures only the scalar `track` flag,
+-- and the render replaces that handler: after `#track` the
 -- moves are logged again.
 import Browser
 import Html exposing (Html)
@@ -55,17 +55,18 @@ update msg model =
             model
 
 
-moved : Model, Html.Pointer → Msg
-moved model p = if model.track then Moved (Html.localX p) (Html.localY p) else Ignored
+moved : Bool, Html.Pointer → Msg
+moved track p = if track then Moved (Html.localX p) (Html.localY p) else Ignored
 
 
 view : Model → Html Msg
 view model =
+    track = model.track
     <main>
         <div
             id="surface"
             style="position: absolute; left: 20px; top: 60px; width: 300px; height: 200px; touch-action: none"
-            onPointerMove={λp → moved model p}
+            onPointerMove={λp → moved track p}
             onPointerUp={λp → Lifted (Html.pointerId p)}
             onPointerCancel={λp → Cancelled (Html.pointerId p)}
         >
