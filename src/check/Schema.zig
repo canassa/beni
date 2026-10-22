@@ -12,6 +12,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const KeyKinds = @import("KeyKinds.zig");
 const InterfaceTerms = @import("InterfaceTerms.zig");
 
 pub const Var = TypeStore.Var;
@@ -40,6 +41,9 @@ pub const State = struct {
     vias: std.ArrayList(Via) = .empty,
     recursive_aliases: std.ArrayList(Bir.Inst.Index) = .empty,
     errors: std.ArrayList(SchemaError) = .empty,
+    key_observer: ?KeyKinds.Observer = null,
+    key_errors: ?*std.ArrayList(KeyKinds.Issue) = null,
+    key_region: Bir.Inst.Index = @fromBackingInt(0),
 
     const Status = enum(u8) { absent, pending, building, done, poisoned };
 
@@ -256,6 +260,9 @@ pub const State = struct {
     }
 
     fn node(s: *State, owner: Bir.DeclIndex, inst: Bir.Inst.Index) Allocator.Error!Pair {
+        const saved_key_region = s.key_region;
+        s.key_region = inst;
+        defer s.key_region = saved_key_region;
         if (inst.int() >= s.bir.insts.len) return s.errPair();
         const d = s.bir.instData(inst);
         return switch (s.bir.instTag(inst)) {
@@ -588,6 +595,9 @@ pub const State = struct {
     fn applied(s: *State, id: Types.TypeId, args: []const Var) Allocator.Error!Var {
         if (id == .none) return s.store.freshErr(TypeStore.generalized);
         var b: Types.Builder = .init(s.store, s.types, s.graph, s.artifacts, s.module, s.bir, .flex, TypeStore.generalized, s.allocator, s.interner);
+        b.key_observer = s.key_observer;
+        b.key_errors = s.key_errors;
+        b.key_region = s.key_region;
         defer b.deinit();
         return b.apply(id, args);
     }

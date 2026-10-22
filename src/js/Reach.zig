@@ -1886,7 +1886,7 @@ pub const Builder = struct {
             // lowerer writes with no target of their own (see the header).
             // The other three primitives are this module's own synthesised
             // comparators and are discovered during lowering.
-            .primitive => |prim| if (prim == .string_compare) {
+            .primitive => |prim| if (prim == .string_compare or prim == .key_compare) {
                 if (b.string_compare) |node| try out.append(b.scratch, node);
             },
             // `undetermined` is `===` in place (`Lower.partEq`): no edge.

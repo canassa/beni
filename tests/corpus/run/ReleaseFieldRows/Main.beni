@@ -230,7 +230,7 @@ main =
 
     pairs = [ Shapes.pairOf 1 9, Shapes.pairOf 9 1, Shapes.pairOf 5 5, Shapes.pairOf 0 9 ]
 
-    byPair = Dict.fromList (List.map pairs λp → ( p, p.zeta + p.alpha ))
+    byPair = Dict.fromList (List.map pairs λp → ( p.alpha * 10 + p.zeta, p ))
 
     letters : Letters
     letters = { a = 1, b = "b" }
@@ -246,7 +246,7 @@ main =
         , String.fromInt (Shapes.area rect)
         , String.fromInt (disc.radius + rect.width + rect.height)
         , String.join (List.map (List.sort pairs) pairText) " "
-        , String.join (List.map (Dict.keys byPair) pairText) " "
+        , String.join (List.map (Dict.values byPair) pairText) " "
         , if Shapes.pairOf 1 2 == Shapes.pairOf 1 2 then "equal" else "unequal"
         , if Shapes.pairOf 2 1 < Shapes.pairOf 1 2 then "zeta second" else "zeta first"
         , String.fromInt (Shapes.zetaOf (Shapes.pairOf 7 8))

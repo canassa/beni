@@ -188,6 +188,9 @@ pub fn undeterminedMethodReceiver(
         switch (kind) {
             .number => "`number` — a literal I never had to choose between `Int` and `Float` for",
             .appendable => "`appendable` — either a `String` or a `List`",
+            .dict_key => "`key` — either Int or String",
+            .int_key => "an Int key",
+            .string_key => "a String key",
             .any => "a type variable no use of this value determines",
         },
         method_text,
@@ -363,9 +366,9 @@ pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v:
         .tuple => "tuple",
         .unit => "`⊤`",
         .function => "function",
-        .contains_function, .not_orderable, .too_wide, .open_record, .other => "type",
+        .contains_function, .collection, .not_orderable, .too_wide, .open_record, .other => "type",
     };
-    if (shape == .contains_function or shape == .not_orderable) {
+    if (shape == .contains_function or shape == .collection or shape == .not_orderable) {
         w.print("This type has no `{s}`:\n\n    ", .{method_text}) catch return error.OutOfMemory;
         Render.writeVar(w, r.cx(), &namer, v, .top) catch return error.OutOfMemory;
         if (shape == .contains_function) {
@@ -379,6 +382,10 @@ pub fn noMethodsOnShape(r: *Reporter, region: Bir.Inst.Index, method: Symbol, v:
                 \\next to the function.
                 \\
             ) catch return error.OutOfMemory;
+        } else if (shape == .collection) {
+            w.writeAll("\n\nDict and Set have no compare because insertion order is part of their value.\n" ++
+                "A type holding one cannot derive compare. Give your own wrapper a pub compare\n" ++
+                "that orders the fields you choose, or pass an ordering function instead.\n") catch return error.OutOfMemory;
         } else {
             // §3.3 and A.54: derivation is structural and recursive, so
             // a type can only be ordered when everything it holds can

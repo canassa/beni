@@ -858,18 +858,10 @@ pub const Reporter = struct {
 
     // ---- Kinds, cycles, obligations --------------------------------------
 
-    pub fn kindMismatch(r: *Reporter, region: Bir.Inst.Index, left: TypeStore.Kind, right: TypeStore.Kind) Error!void {
-        var out = r.writer();
-        defer out.deinit();
-        const w = &out.writer;
-        w.print(
-            \\This value has to be `{s}` and `{s}` at the same time, and nothing is both.
-            \\
-            \\`number` is `Int` or `Float`; `appendable` is `String` or `List a`.
-            \\
-        , .{ left.text(), right.text() }) catch return error.OutOfMemory;
-        try r.emit(.kind_mismatch, region, &out);
-    }
+    pub const invalidDictKey = @import("KindTexts.zig").invalidDictKey;
+    pub const keyScalarMismatch = @import("KindTexts.zig").keyScalarMismatch;
+
+    pub const kindMismatch = @import("KindTexts.zig").kindMismatch;
 
     /// A kind that met a structure it is not a member of: `appendable`
     /// against `Int`, `number` against `String`.
@@ -881,6 +873,7 @@ pub const Reporter = struct {
         expected: Var,
         actual: Var,
     ) Error!void {
+        if (kind.isKey()) return r.invalidDictKey(region, actual);
         if (category.tag == .if_without_else) return StatementTexts.ifWithoutElse(r, region, actual);
         var out = r.writer();
         defer out.deinit();
@@ -897,6 +890,7 @@ pub const Reporter = struct {
         w.print("\n\n{s}\n\n    ", .{lines.wanted}) catch return error.OutOfMemory;
         Render.writeVar(w, r.cx(), &namer, expected, .top) catch return error.OutOfMemory;
         switch (kind) {
+            .dict_key, .int_key, .string_key => unreachable,
             // `Int32` is the one type a reader is likely to have reached
             // for ON PURPOSE and then found the operators missing, so it
             // gets the hint that says what to write instead. The general
@@ -1046,7 +1040,7 @@ pub const Reporter = struct {
     /// `record` is a dot-call's (its hint is the field call); `record_required`
     /// a requirement that is not one, and `open_record` a well-known method
     /// on an open record (static-dispatch-spike.md §10.3).
-    pub const ShapeKind = enum { record, record_required, open_record, tuple, unit, function, contains_function, not_orderable, too_wide, other };
+    pub const ShapeKind = enum { record, record_required, open_record, tuple, unit, function, contains_function, collection, not_orderable, too_wide, other };
 
     // The texts of static dispatch and of the obligations (§10, checker.md
     // §8.4), in `DispatchTexts.zig` (checker-v2.md §19.1).

@@ -858,7 +858,8 @@ pub fn lower(
         .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare,
         .comparators = (@as(u8, @intFromBool(l.needs.eq_prim))) |
             (@as(u8, @intFromBool(l.needs.compare_prim)) << 1) |
-            (@as(u8, @intFromBool(l.needs.compare_char)) << 2),
+            (@as(u8, @intFromBool(l.needs.compare_char)) << 2) |
+            (@as(u8, @intFromBool(l.needs.compare_key)) << 3),
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .markup_exports = l.markup_exports.items,
         .markup_module_uses = l.markup_module_uses.items,
@@ -1221,7 +1222,7 @@ pub const Lowerer = struct {
     slot_names: std.ArrayList(Symbol.Optional) = .empty,
     /// The three primitive comparators' names (`primitiveValue`), interned
     /// the first time: a wide type names one per evidence slot.
-    prim_names: [3]JsIr.NameIndex = @splat(.none),
+    prim_names: [4]JsIr.NameIndex = @splat(.none),
     /// `apply`, interned the first time a steps form spreads a call.
     apply_symbol: Symbol.Optional = .none,
     /// This module's markup, while a lowering compiles it.
@@ -1423,6 +1424,7 @@ pub const Lowerer = struct {
         eq_prim: bool = false,
         compare_prim: bool = false,
         compare_char: bool = false,
+        compare_key: bool = false,
         /// The exports of `_core/_derived.mjs` this module imports
         /// (`runtimeImport`): the engine a derived function past
         /// `derived_depth_limit` continues in, and `List`'s two loops.
@@ -2827,7 +2829,7 @@ pub const Lowerer = struct {
     /// this side; a primitive's `where` is one of the three comparators.
     fn reuseNullary(l: *Lowerer, row: *const EmitPack.Row, modules: []const ?Graph.Index, fact: EmitPack.Fact) bool {
         _ = row;
-        if (fact.question == .primitive) return fact.where <= 2;
+        if (fact.question == .primitive) return fact.where <= 3;
         if (fact.question != .nullary) return true;
         if (fact.where & EmitPack.Selector.nullary_schema != 0) return false;
         const ext = fact.where & EmitPack.Selector.nullary_ext != 0;
@@ -2873,6 +2875,7 @@ pub const Lowerer = struct {
                         0 => l.needs.eq_prim = true,
                         1 => l.needs.compare_prim = true,
                         2 => l.needs.compare_char = true,
+                        3 => l.needs.compare_key = true,
                         // `planReuse` ran `reuseNullary` over every fact of
                         // a taken unit, so `where` is one of the three here.
                         else => unreachable,
@@ -7061,6 +7064,11 @@ pub const Lowerer = struct {
                 l.askSelf(.primitive, true, 2, 0);
                 return l.ident(try l.primName(2, "compare$char"), p);
             },
+            .key_compare => {
+                l.needs.compare_key = true;
+                l.askSelf(.primitive, true, 3, 0);
+                return l.ident(try l.primName(3, "compare$key"), p);
+            },
             .string_compare => return l.stringCompare(p),
         }
     }
@@ -7162,6 +7170,12 @@ pub const Lowerer = struct {
                 entry.record = table_record;
                 try tables.append(l.scratch, entry);
             }
+        }
+        if (l.needs.compare_key) {
+            l.restartNames();
+            const record = try l.recBegin(Funnel.Selector.synthesisedValue(.primitive, 3));
+            try list.append(l.scratch, .{ .base = "compare$key", .node = try l.compareKeyDecl(), .record = record });
+            try l.recEnd(record, null);
         }
         if (l.needs.compare_char) {
             l.restartNames();
@@ -8260,6 +8274,7 @@ pub const Lowerer = struct {
                     return null;
                 },
                 .num_compare => return try l.orderOf(left, right, p),
+                .key_compare => return try l.call(try l.primitiveValue(.key_compare, p), &.{ left, right }, p),
                 .char_compare => {
                     // The steps form binds no `const`s (`stepsTemp`): it
                     // calls `compare$char` (§9.1) instead.
@@ -8656,6 +8671,24 @@ pub const Lowerer = struct {
         try stmts.append(l.scratch, try l.returnStmt(body, p));
         const arrow = try l.arrowOf(&.{ x, y }, stmts.items, p);
         return l.add(.const_decl, p, @backingInt(try l.synthesisedName("compare$char")), arrow.int());
+    }
+
+    /// A closed Dict/Set key is Int or String. Only the latter needs
+    /// Unicode scalar comparison; JavaScript's string `<` is not that order.
+    fn compareKeyDecl(l: *Lowerer) !Node.Index {
+        const p = Node.no_pos;
+        const x, const y = try l.operandNames();
+        const left = try l.ident(x, p);
+        const right = try l.ident(y, p);
+        const is_string = try l.binary(.strict_eq, try l.unary(.type_of, left, p), try l.stringNode("string", p), p);
+        const arms = try l.b.addRecord(JsIr.Cond{
+            .consequent = try l.call(try l.stringCompare(p), &.{ left, right }, p),
+            .alternate = try l.orderOf(left, right, p),
+        });
+        const body = try l.add(.cond, p, is_string.int(), @backingInt(arms));
+        const stmts = [_]Node.Index{try l.returnStmt(body, p)};
+        const arrow = try l.arrowOf(&.{ x, y }, &stmts, p);
+        return l.add(.const_decl, p, @backingInt(try l.synthesisedName("compare$key")), arrow.int());
     }
 
     /// `l < r ? "LT" : l > r ? "GT" : "EQ"` — the `Order` of two values
@@ -9261,6 +9294,7 @@ pub const Lowerer = struct {
             // order and `<` is UTF-16 code-unit order, and a language where
             // `"a" < "b"` and `String.compare a b` disagree is worse than
             // one with neither (§3.2, §9.1, A.26).
+            .key_compare => return l.orderTest(try l.call(try l.primitiveValue(.key_compare, p), &.{ left, right }, p), origin, p),
             .string_compare => {
                 const callee = try l.stringCompare(p);
                 return l.orderTest(try l.call(callee, &.{ left, right }, p), origin, p);

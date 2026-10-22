@@ -132,7 +132,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 5cc397fe0c0bf78d56d06f7bb50102d81b5d984b0df700b7673cd822a37216ea
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 b5a412d4b31f47d697fe6c64c319c8c730f62cdd763a012305fc1bac94131c5c
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 21ce0115e4dfb17b9e9b1f7bb07a31fe3762fec23eff4793522f94b14d50653f

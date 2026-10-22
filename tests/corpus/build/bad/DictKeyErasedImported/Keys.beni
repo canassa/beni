@@ -1,0 +1,4 @@
+import Dict
+
+
+pub keep key = if Dict.isEmpty (Dict.singleton key ⊤) then key else key

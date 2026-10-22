@@ -1,0 +1,12 @@
+import Dict
+
+
+key : Maybe Int
+key = Just 1
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

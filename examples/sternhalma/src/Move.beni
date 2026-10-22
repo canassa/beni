@@ -14,6 +14,10 @@ pub type MoveType
     | Invalid
 
 
+coordKey : Coord → String
+coordKey c = String.fromInt c.x ++ ":" ++ String.fromInt c.z
+
+
 --| Check if a move from one cell to another is valid
 pub canMove : Int, Int, Cell, Cell, Board → Bool
 canMove totalPlayers currentPlayer from to board =
@@ -54,21 +58,21 @@ isValidMovement from to board =
 
         _ →
             -- Must be reachable via hop chain
-            Set.member (reachableByHops from board) ( to.coord.x, to.coord.z )
+            Set.member (reachableByHops from board) (coordKey to.coord)
 
 
 --| Find all cells reachable via hop chains from a starting cell.
 --|     Uses BFS to explore all possible hop sequences.
-pub reachableByHops : Cell, Board → Set (Int × Int)
+pub reachableByHops : Cell, Board → Set String
 reachableByHops start board =
     bfsHops
         board
-        (Set.singleton ( start.coord.x, start.coord.z ))
+        (Set.singleton (coordKey start.coord))
         [ start.coord ]
         Set.empty
 
 
-bfsHops : Board, Set (Int × Int), List Coord, Set (Int × Int) → Set (Int × Int)
+bfsHops : Board, Set String, List Coord, Set String → Set String
 bfsHops board visited frontier reachable =
     case frontier of
         [] →
@@ -77,9 +81,9 @@ bfsHops board visited frontier reachable =
         [ current, …rest ] →
             hopTargets =
                 getHopTargets current board
-                    ▷ List.filter λc → not (Set.member visited ( c.x, c.z ))
-            newVisited = List.foldl hopTargets visited λc s → Set.insert s ( c.x, c.z )
-            newReachable = List.foldl hopTargets reachable λc s → Set.insert s ( c.x, c.z )
+                    ▷ List.filter λc → not (Set.member visited (coordKey c))
+            newVisited = List.foldl hopTargets visited λc s → Set.insert s (coordKey c)
+            newReachable = List.foldl hopTargets reachable λc s → Set.insert s (coordKey c)
             newFrontier = rest ++ hopTargets
             bfsHops board newVisited newFrontier newReachable
 

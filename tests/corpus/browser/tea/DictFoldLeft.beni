@@ -18,7 +18,8 @@ main =
         { init =
             λ⊤ →
                 sub = Sub.listen 1 (λ_ → ⊤) λ_ → {}
-                declared = Sub.taps (Sub.batch [ sub, sub ])
+                declared = List.map (Sub.taps (Sub.batch [ sub, sub ])) λ( _, how, tap ) →
+                    ( 0, how, tap )
                 rows = Dict.fromList (List.indexedMap declared λi item → ( i, item ))
                 case declared of
                     [ ( k, kind, t ), …_ ] →

@@ -65,7 +65,7 @@ pub fn decide(s: *Solve, id: Obligations.Id, default: bool) Error!void {
     if (content == .flex) {
         // Numeric aliases may be decided before defaulting. Preserve the
         // legacy bridge before retrying a still-flexible receiver.
-        if (!(content.flex.kind == .number and Resolve.isWellKnownName(p.name))) {
+        if (!(content.flex.kind.scalar() and Resolve.isWellKnownName(p.name))) {
             if (!default) return Decide.reopen(s, id);
             if (s.recursive_frames == 0)
                 return Instances.fieldRead(s, row.vars[0], p.name, row.vars[1], row.region);
@@ -94,7 +94,7 @@ pub fn decide(s: *Solve, id: Obligations.Id, default: bool) Error!void {
     r.index = wanted.int();
     r.vars[1] = method_type;
     if (s.recursive_frames != 0) try Recursion.row(s, id);
-    if (content == .flex and !(content.flex.kind == .number and Resolve.isWellKnownName(p.name)))
+    if (content == .flex and !(content.flex.kind.scalar() and Resolve.isWellKnownName(p.name)))
         return Instances.fieldCall(s, wanted, row.vars[0]);
     return Resolve.step(s, wanted, true);
 }

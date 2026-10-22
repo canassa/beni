@@ -1,0 +1,5 @@
+import Dict
+
+
+pub make : k → Dict.Dict k Int
+make key = Dict.singleton key 0

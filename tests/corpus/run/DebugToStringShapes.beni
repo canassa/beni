@@ -54,7 +54,7 @@ main =
         , Debug.toString (-0.0)
         , Debug.toString (-3)
         , Debug.toString (Dict.fromList [ ( 2, "b" ), ( 1, "a" ) ])
-        , Debug.toString (Set.fromList [ 'b', 'a' ])
+        , Debug.toString (Set.fromList [ "b", "a" ])
         , Debug.toString (Just (Dict.fromList [ ( 1, True ) ]))
         , Debug.toString (Dict.singleton "k" ( 1, 2 ))
         , Debug.toString λx → x + 1

@@ -69,6 +69,8 @@ const files = [_]File{
     .{ .path = "Instances.zig", .text = @embedFile("Instances.zig") },
     .{ .path = "Instantiate.zig", .text = @embedFile("Instantiate.zig") },
     .{ .path = "InterfaceTerms.zig", .text = @embedFile("InterfaceTerms.zig") },
+    .{ .path = "KeyKinds.zig", .text = @embedFile("KeyKinds.zig") },
+    .{ .path = "KindTexts.zig", .text = @embedFile("KindTexts.zig") },
     .{ .path = "Marker.zig", .text = @embedFile("Marker.zig") },
     .{ .path = "Markup.zig", .text = @embedFile("Markup.zig") },
     .{ .path = "MarkupDecide.zig", .text = @embedFile("MarkupDecide.zig") },

@@ -80,7 +80,7 @@ const iface_bytes = @import("../resolve/iface_bytes.zig");
 
 pub const magic = "BENIEMIT";
 /// 1: the first.
-pub const version: u32 = 1;
+pub const version: u32 = 2;
 
 /// The build options a row depends on beyond its module key.
 pub const Options = struct {
@@ -121,8 +121,9 @@ pub const Flags = struct {
     eq_prim: bool = false,
     compare_prim: bool = false,
     compare_char: bool = false,
+    compare_key: bool = false,
 
-    pub const all: u8 = 0x3F;
+    pub const all: u8 = 0x7F;
 
     pub fn byte(f: Flags) u8 {
         return @as(u8, @intFromBool(f.deep)) |
@@ -130,7 +131,8 @@ pub const Flags = struct {
             (@as(u8, @intFromBool(f.list_compare)) << 2) |
             (@as(u8, @intFromBool(f.eq_prim)) << 3) |
             (@as(u8, @intFromBool(f.compare_prim)) << 4) |
-            (@as(u8, @intFromBool(f.compare_char)) << 5);
+            (@as(u8, @intFromBool(f.compare_char)) << 5) |
+            (@as(u8, @intFromBool(f.compare_key)) << 6);
     }
 
     pub fn of(b: u8) Flags {
@@ -141,6 +143,7 @@ pub const Flags = struct {
             .eq_prim = b & 8 != 0,
             .compare_prim = b & 16 != 0,
             .compare_char = b & 32 != 0,
+            .compare_key = b & 64 != 0,
         };
     }
 };

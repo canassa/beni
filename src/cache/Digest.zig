@@ -95,7 +95,7 @@ pub const magic = "BENIDEP\x00";
 ///
 /// Version 2 (`checker-v2.md` §14.2): `arity` is a `u16`, with
 /// interface v3's `Type.arity`. Version 3: flag bit 4, `holds_markup`.
-pub const digest_version: u32 = 3;
+pub const digest_version: u32 = 4;
 
 pub const Digest = [16]u8;
 
@@ -121,6 +121,7 @@ pub const Type = struct {
     /// Whether the body holds the build's markup type: what a dependent
     /// platform module's `markup_type_in_foreign` reads of a type it names.
     holds_markup: bool,
+    key_kinds: []const u8 = &.{},
     /// `type_body.zig`'s encoding of the alias's expansion, or empty.
     body: []const u8,
 };
@@ -170,6 +171,7 @@ pub fn writeBytes(gpa: Allocator, out: *std.ArrayList(u8), t: Terms) Allocator.E
         try appendInt(gpa, out, u16, ty.arity);
         try out.append(gpa, @backingInt(ty.kind));
         try out.append(gpa, flags(ty));
+        try appendText(gpa, out, ty.key_kinds);
         try appendText(gpa, out, ty.body);
     }
 
@@ -344,6 +346,7 @@ pub fn collect(
             .comparable = e.comparable,
             .has_function = e.has_function,
             .holds_markup = e.holds_markup,
+            .key_kinds = std.mem.sliceAsBytes(s.types.keyKinds(id)),
             .body = body,
         };
     }
@@ -584,6 +587,8 @@ test "the digest's byte string is the recipe, field by field" {
     at += 1;
     try testing.expectEqual(@as(u8, 2 | 4), bytes.items[at]); // equatable | comparable
     at += 1;
+    try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, bytes.items[at..][0..4], .little)); // key kinds
+    at += 4;
     try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, bytes.items[at..][0..4], .little)); // body
     at += 4;
     // derived
@@ -628,6 +633,13 @@ test "every term of the recipe moves the digest" {
     inline for (.{ "is_opaque", "equatable", "comparable", "has_function", "holds_markup" }) |field| {
         var moved = sample_type;
         @field(moved, field) = !@field(sample_type, field);
+        var t = sampleTerms();
+        t.types = &.{moved};
+        try expectDifferent(base, t);
+    }
+    {
+        var moved = sample_type;
+        moved.key_kinds = &.{3};
         var t = sampleTerms();
         t.types = &.{moved};
         try expectDifferent(base, t);

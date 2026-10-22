@@ -93,32 +93,64 @@ pub const TypeId = enum(u32) {
     }
 };
 
-/// The closed set of ad-hoc constraints of `fast-compiler.md` §3.1. Nothing
-/// may be added here without revisiting that section: `comparable` is the
-/// one that would force an O(term size) walk back onto the unification hot
-/// path, and it is the reason this enum is three values and not four.
-///
-/// The lattice is `any ⊒ number`, `any ⊒ appendable`, and
-/// `number ⊓ appendable = ⊥` (checker.md §6.2).
+/// Closed scalar and appendable constraints (checker-v2.md §37). The two
+/// singleton key intersections retain both restrictions without defaulting
+/// an otherwise generic key to either scalar type.
 pub const Kind = enum(u8) {
     any,
     number,
     appendable,
+    dict_key,
+    int_key,
+    string_key,
 
-    /// The greatest lower bound, or null when the two are incompatible
-    /// (`kind_mismatch`).
     pub fn meet(a: Kind, b: Kind) ?Kind {
         if (a == b) return a;
         if (a == .any) return b;
         if (b == .any) return a;
-        return null;
+        const am = a.members();
+        const bm = b.members();
+        return switch (am & bm) {
+            1 => .int_key,
+            4 => .string_key,
+            3 => .number,
+            12 => .appendable,
+            5 => .dict_key,
+            else => null,
+        };
+    }
+
+    // Int, Float, String and List. Membership is closed at the scalar head;
+    // these bits are a constraint lattice, never a structural type walk.
+    fn members(k: Kind) u4 {
+        return switch (k) {
+            .any => 15,
+            .number => 3,
+            .appendable => 12,
+            .dict_key => 5,
+            .int_key => 1,
+            .string_key => 4,
+        };
+    }
+
+    pub fn permits(k: Kind, actual: Kind) bool {
+        return (k.members() & actual.members()) == actual.members();
+    }
+
+    pub fn isKey(k: Kind) bool {
+        return k == .dict_key or k == .int_key or k == .string_key;
+    }
+
+    pub fn scalar(k: Kind) bool {
+        return k == .number or k.isKey();
     }
 
     pub fn text(k: Kind) []const u8 {
         return switch (k) {
             .any => "a",
-            .number => "number",
-            .appendable => "appendable",
+            .number, .int_key => "number",
+            .appendable, .string_key => "appendable",
+            .dict_key => "key",
         };
     }
 };

@@ -47,8 +47,8 @@ main =
         , yesNo (List.member [ [] ] [])
         , show (List.isEmpty (List.sort [ [] ]))
         , String.fromInt (List.length (List.sort [ [ [] ] ]))
-        , show (Dict.isEmpty (Dict.fromList [ ( [], 1 ) ]))
-        , show (Set.isEmpty (Set.fromList []) && not (Set.isEmpty (Set.fromList [ [] ])))
+        , show (Dict.isEmpty (Dict.fromList [ ( "", 1 ) ]))
+        , show (Set.isEmpty (Set.fromList []) && not (Set.isEmpty (Set.fromList [ "" ])))
         , show (Pair [] 1 == Pair [] 1)
         , show (Pair (Pair [] 1) 1 == Pair (Pair [] 2) 1)
         ]

@@ -454,6 +454,8 @@ pub const Code = enum {
     /// which is almost always a mistake. Reported against the app's
     /// manifest at 1:1. A `warning` (CLAUDE.md rule 7).
     exports_ignored,
+    /// A core Dict or Set key has a non-scalar head (language.md §6.8).
+    invalid_dict_key,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -531,6 +533,7 @@ pub fn title(code: Code) []const u8 {
         .rigid_mismatch => "TYPE MISMATCH",
         .infinite_type => "INFINITE TYPE",
         .kind_mismatch => "TYPE MISMATCH",
+        .invalid_dict_key => "INVALID DICTIONARY KEY",
         .too_few_args => "TOO FEW ARGS",
         .too_many_args => "TOO MANY ARGS",
         .not_a_function => "NOT A FUNCTION",

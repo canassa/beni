@@ -1,0 +1,9 @@
+import Set
+
+
+type alias Refused =
+    Set.Set Char
+
+
+main : Int
+main = 0

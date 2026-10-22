@@ -1,0 +1,12 @@
+module Main
+module Models
+  opaque type Box a
+  schema Pass a
+    type Type : a
+    type Encoded : a
+    value schema : Schema a a2 → Schema (Pass.Encoded a) (Pass.Type a2)
+    value parse : Schema a a2, String → Result (List Issue) (Pass.Type a2)
+    value print : Schema a a2, Pass.Type a2 → Result (List Issue) String
+    value parseWith : Schema a a2, Options, String → Result (List Issue) (Pass.Type a2)
+    value printWith : Schema a a2, Options, Pass.Type a2 → Result (List Issue) String
+  value preserve : key, Box key → key

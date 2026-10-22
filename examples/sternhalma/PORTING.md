@@ -227,3 +227,7 @@ an explained behavior change.
 - **The page shell's build** (Vite, `main.js`, `styles.css`), replaced by
   `index.html` above.
 - **`README.md`**, two lines naming the game.
+
+Dict keys are Int or String in beni. The board's coordinate lookup encodes its
+integer x/z pair as a colon-separated String; the board still exposes the same
+coordinates and cell indices.

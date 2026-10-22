@@ -1434,3 +1434,62 @@ test "ownership everywhere: Tea private key tables have no refused writer" {
     try testing.expectEqual(@as(u8, 0), r.exit_code);
     try testing.expectEqual(@as(usize, 0), r.diagnostics.len);
 }
+
+test "dict keys: cached opaque facts constrain a fresh importer" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Maps.beni", "import Dict\n\npub opaque type Wrapped k = Wrapped (Dict.Dict k Int)\n");
+    try w.write("Main.beni", "import Maps\n\ntype alias Value = Maps.Wrapped Int\n\nmain : Int\nmain = 0\n");
+    const good = try w.run(&.{ "check", "--cache-dir=c", "Main.beni", "Maps.beni" });
+    try testing.expectEqual(@as(u8, 0), good.exit_code);
+    try w.write("Main.beni", "import Maps\n\ntype alias Value = Maps.Wrapped Bool\n\nmain : Int\nmain = 0\n");
+    const warm = try w.run(&.{ "check", "--cache-dir=c", "Main.beni", "Maps.beni" });
+    try testing.expectEqual(@as(u8, 1), warm.exit_code);
+    try testing.expect(warm.diagnostics.len != 0);
+    for (warm.diagnostics) |d| try testing.expectEqual(.invalid_dict_key, d.code);
+    const cold = try w.run(&.{ "check", "--no-cache", "Main.beni", "Maps.beni" });
+    try testing.expectEqual(@as(u8, 1), cold.exit_code);
+    try testing.expectEqualStrings(warm.stderr, cold.stderr);
+}
+
+test "dict keys: a hidden body change invalidates a cached importer" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Maps.beni", "pub opaque type Wrapped k = Wrapped k\n");
+    try w.write("Main.beni", "import Maps\n\ntype alias Value = Maps.Wrapped Bool\n\nmain : Int\nmain = 0\n");
+    const before = try w.run(&.{ "check", "--cache-dir=c", "Main.beni", "Maps.beni" });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    try w.write("Maps.beni", "import Dict\n\npub opaque type Wrapped k = Wrapped (Dict.Dict k Int)\n");
+    const after = try w.run(&.{ "check", "--cache-dir=c", "Main.beni", "Maps.beni" });
+    try testing.expectEqual(@as(u8, 1), after.exit_code);
+    try testing.expect(after.diagnostics.len != 0);
+    for (after.diagnostics) |d| try testing.expectEqual(.invalid_dict_key, d.code);
+}
+
+test "dict keys: late schema facts survive a cached opaque boundary" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Models.beni",
+        \\import Dict
+        \\import Schema exposing (Conversion)
+        \\
+        \\conversion : Conversion a a
+        \\conversion = Debug.todo "checker-only conversion"
+        \\
+        \\pub schema Pass item = item via conversion
+        \\
+        \\pub opaque type Box k = Box (Dict.Dict (Pass.Type k) Int)
+        \\
+    );
+    try w.write("Main.beni", "import Models\n\ntype alias Value = Models.Box String\n\nmain : Int\nmain = 0\n");
+    const good = try w.run(&.{ "check", "--cache-dir=c", "Main.beni", "Models.beni" });
+    try testing.expectEqual(@as(u8, 0), good.exit_code);
+    try w.write("Main.beni", "import Models\n\ntype alias Value = Models.Box Bool\n\nmain : Int\nmain = 0\n");
+    const warm = try w.run(&.{ "check", "--cache-dir=c", "Main.beni", "Models.beni" });
+    try testing.expectEqual(@as(u8, 1), warm.exit_code);
+    try testing.expect(warm.diagnostics.len != 0);
+    for (warm.diagnostics) |d| try testing.expectEqual(.invalid_dict_key, d.code);
+    const cold = try w.run(&.{ "check", "--no-cache", "Main.beni", "Models.beni" });
+    try testing.expectEqual(@as(u8, 1), cold.exit_code);
+    try testing.expectEqualStrings(warm.stderr, cold.stderr);
+}

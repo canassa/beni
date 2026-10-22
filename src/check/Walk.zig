@@ -263,6 +263,19 @@ pub fn function(store: *TypeStore, v: Var) ?Function {
     };
 }
 
+/// A named application's own head and arguments, before expanding an alias.
+/// Type formation needs its parameter constraints even when an expansion
+/// erases an argument; alias projection also needs the alias's identity.
+pub const Nominal = struct { type: TypeStore.TypeId, args: []const Var };
+
+pub fn nominal(store: *TypeStore, v: Var) ?Nominal {
+    return switch (store.content(store.find(v))) {
+        .alias => |a| .{ .type = a.type, .args = store.vars(a.args) },
+        .structure => |s| if (s == .app) .{ .type = s.app.type, .args = store.vars(s.app.args) } else null,
+        else => null,
+    };
+}
+
 /// A tuple's elements or an application's arguments, `v` resolved through
 /// aliases, or none: the positions a derived shape is answered over (§9.3
 /// step 5). A view into the store's `extra`, valid until the store grows.

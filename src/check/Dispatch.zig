@@ -65,7 +65,7 @@ pub const Shape = union(enum(u8)) {
 
 /// The four comparisons the backend emits as an operator or a synthesised
 /// comparator (static-dispatch-spike.md §8.3, §9.1).
-pub const Primitive = enum(u8) { strict_eq, num_compare, char_compare, string_compare };
+pub const Primitive = enum(u8) { strict_eq, num_compare, char_compare, string_compare, key_compare };
 
 // ---------------------------------------------------------------------------
 // The record the backend reads (checker-v2.md §13.1)

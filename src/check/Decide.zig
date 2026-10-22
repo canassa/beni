@@ -160,7 +160,7 @@ fn decide(s: *Solve, id: Id, default: bool) Error!void {
             const wanted: Evidence.WantedId = @fromBackingInt(row.index);
             switch (s.store().resolvedContent(row.vars[0])) {
                 .flex => |flags| {
-                    if (flags.kind == .number and Resolve.isWellKnownName(s.evidence.get(wanted).method))
+                    if (flags.kind.scalar() and Resolve.isWellKnownName(s.evidence.get(wanted).method))
                         return Resolve.step(s, wanted, true);
                     if (!default) return reopen(s, id);
                     return @import("Instances.zig").fieldCall(s, wanted, row.vars[0]);

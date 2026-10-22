@@ -1,0 +1,17 @@
+import Dict
+
+
+type alias Identity a =
+    a
+
+
+type Wrapped k
+    = Wrapped (Dict.Dict (Identity k) Int)
+
+
+type alias Refused =
+    Wrapped Bool
+
+
+main : Int
+main = 0

@@ -6175,3 +6175,28 @@ its keys need no evidence. Neither Dict nor Set exports compare. The foreign
 Dict has no structural comparison body to derive; Set's wrapper does not make
 it comparable. Types containing these collections have the same derivation
 boundary unless their own module supplies an order explicitly.
+
+*Implementation amendment, 2026-10-22 (the owner, #294).* The restriction lands
+before the storage work in O4 (#681). The current tree remains: this slice does
+not change iteration order, empty construction, persistence, or storage APIs.
+It restricts key formation, preserves that restriction through every generic
+boundary, and withdraws collection comparison as specified above.
+
+The closed key constraint entails scalar equality and ordering without a method
+requirement on a caller. As with the number bridge, the checker can supply the
+primitive operation for a constrained variable. Int ordering is numeric; String
+ordering remains Unicode scalar order, exactly String.compare, including astral
+characters. A variable that can be either key type must select that operation
+without comparing strings in JavaScript's UTF-16 code-unit order. This adds no
+public API or user-written constraint clause. A type's constrained parameter
+positions are published, including an opaque type's positions, so a hidden body
+change cannot leave an importer with a stale unconstrained type.
+
+A schema's `via` conversion is inferred as a value. When that inference reveals
+an endpoint's parameter projection, finish the module's parameter facts before
+publication. If a key domain narrows then, validate its already formed live
+applications with one memoized type-graph walk; constrain generalized variables
+in place so the published schemes retain the domain. This is a formation check,
+not recursive membership in a key kind. Each membership check still inspects
+only the scalar head. A schema used with Bool outside a Dict remains valid when
+only a separate wrapper's use of that endpoint requires a scalar key.

@@ -1,0 +1,25 @@
+import Dict
+import Set
+
+
+pub lookup : Dict.Dict k v, k → Maybe v
+lookup dict key = Dict.get dict key
+
+
+pub member : Set.Set k, k → Bool
+member set key = Set.member set key
+
+
+pub make : k → Dict.Dict k Int
+make key = Dict.singleton key 0
+
+
+pub divided : number → Dict.Dict number Int
+divided key = Dict.singleton (key // 2) 0
+
+
+pub suffixed : appendable → Dict.Dict appendable Int
+suffixed key = Dict.singleton (key ++ "!") 0
+
+
+pub keep key = if Dict.isEmpty (Dict.singleton key ⊤) then key else key

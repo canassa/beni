@@ -102,30 +102,29 @@ module Deferred
   value wait : Deferred a → a  -- suspends
 module Dict
   opaque type Dict a b
-  value compare : Dict k v, Dict k v → Order where k.compare : k, k → Order, v.compare : v, v → Order
-  value diff : Dict k a, Dict k b → Dict k a where k.compare : k, k → Order
-  value empty : Dict k v
-  value eq : Dict k v, Dict k v → Bool where k.compare : k, k → Order, v.eq : v, v → Bool
-  value filter : Dict k v, (k, v → Bool) → Dict k v where k.compare : k, k → Order
-  value foldl : Dict k v, b, (k, v, b → b) → b
-  value foldr : Dict k v, b, (k, v, b → b) → b
-  value fromList : List (k × v) → Dict k v where k.compare : k, k → Order
-  value get : Dict k v, k → Maybe v where k.compare : k, k → Order
-  value insert : Dict k v, k, v → Dict k v where k.compare : k, k → Order
-  value intersect : Dict k v, Dict k v → Dict k v where k.compare : k, k → Order
-  value isEmpty : Dict k v → Bool
-  value keys : Dict k v → List k
-  value map : Dict k a, (k, a → b) → Dict k b
-  value member : Dict k v, k → Bool where k.compare : k, k → Order
-  value merge : Dict k a, Dict k b, result, (k, a, result → result), (k, a, b, result → result), (k, b, result → result) → result where k.compare : k, k → Order
-  value partition : Dict k v, (k, v → Bool) → Dict k v × Dict k v where k.compare : k, k → Order
-  value remove : Dict k v, k → Dict k v where k.compare : k, k → Order
-  value singleton : k, v → Dict k v
-  value size : Dict k v → Int
-  value toList : Dict k v → List (k × v)
-  value union : Dict k v, Dict k v → Dict k v where k.compare : k, k → Order
-  value update : Dict k v, k, (Maybe v → Maybe v) → Dict k v where k.compare : k, k → Order
-  value values : Dict k v → List v
+  value diff : Dict key a, Dict key b → Dict key a
+  value empty : Dict key v
+  value eq : Dict key v, Dict key v → Bool where v.eq : v, v → Bool
+  value filter : Dict key v, (key, v → Bool) → Dict key v
+  value foldl : Dict key v, b, (key, v, b → b) → b
+  value foldr : Dict key v, b, (key, v, b → b) → b
+  value fromList : List (key × v) → Dict key v
+  value get : Dict key v, key → Maybe v
+  value insert : Dict key v, key, v → Dict key v
+  value intersect : Dict key v, Dict key v → Dict key v
+  value isEmpty : Dict key v → Bool
+  value keys : Dict key v → List key
+  value map : Dict key a, (key, a → b) → Dict key b
+  value member : Dict key v, key → Bool
+  value merge : Dict key a, Dict key b, result, (key, a, result → result), (key, a, b, result → result), (key, b, result → result) → result
+  value partition : Dict key v, (key, v → Bool) → Dict key v × Dict key v
+  value remove : Dict key v, key → Dict key v
+  value singleton : key, v → Dict key v
+  value size : Dict key v → Int
+  value toList : Dict key v → List (key × v)
+  value union : Dict key v, Dict key v → Dict key v
+  value update : Dict key v, key, (Maybe v → Maybe v) → Dict key v
+  value values : Dict key v → List v
 module Duration
   opaque type Duration
   value hours : Int → Duration
@@ -508,25 +507,24 @@ module Schema
   value writeWith : Schema e a, Options, a → Result (List Issue) Value  -- impure
 module Set
   opaque type Set a
-  value compare : Set t, Set t → Order where t.compare : t, t → Order
-  value diff : Set t, Set t → Set t where t.compare : t, t → Order
-  value empty : Set t
-  value eq : Set t, Set t → Bool where t.compare : t, t → Order
-  value filter : Set t, (t → Bool) → Set t where t.compare : t, t → Order
-  value foldl : Set t, b, (t, b → b) → b
-  value foldr : Set t, b, (t, b → b) → b
-  value fromList : List t → Set t where t.compare : t, t → Order
-  value insert : Set t, t → Set t where t.compare : t, t → Order
-  value intersect : Set t, Set t → Set t where t.compare : t, t → Order
-  value isEmpty : Set t → Bool
-  value map : Set a, (a → b) → Set b where b.compare : b, b → Order
-  value member : Set t, t → Bool where t.compare : t, t → Order
-  value partition : Set t, (t → Bool) → Set t × Set t where t.compare : t, t → Order
-  value remove : Set t, t → Set t where t.compare : t, t → Order
-  value singleton : t → Set t
-  value size : Set t → Int
-  value toList : Set t → List t
-  value union : Set t, Set t → Set t where t.compare : t, t → Order
+  value diff : Set key, Set key → Set key
+  value empty : Set key
+  value eq : Set key, Set key → Bool
+  value filter : Set key, (key → Bool) → Set key
+  value foldl : Set key, b, (key, b → b) → b
+  value foldr : Set key, b, (key, b → b) → b
+  value fromList : List key → Set key
+  value insert : Set key, key → Set key
+  value intersect : Set key, Set key → Set key
+  value isEmpty : Set key → Bool
+  value map : Set key, (key → key2) → Set key2
+  value member : Set key, key → Bool
+  value partition : Set key, (key → Bool) → Set key × Set key
+  value remove : Set key, key → Set key
+  value singleton : key → Set key
+  value size : Set key → Int
+  value toList : Set key → List key
+  value union : Set key, Set key → Set key
 module String
   type String
   value all : String, (Char → Bool) → Bool

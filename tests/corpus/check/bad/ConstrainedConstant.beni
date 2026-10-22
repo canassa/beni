@@ -1,15 +1,15 @@
 -- check/bad: §10.10. `blank` is a `pub` value of NO beni parameters and a
--- NON-function type whose inferred scheme carries `k.compare`. A value that
+-- NON-function type whose inferred scheme carries `a.compare`. A value that
 -- needs a method has to receive it, which would make `blank` a thunk of one
 -- hidden argument (§8.1, checker-v2.md §12.5) and change what its type says
 -- across the module boundary, so the checker refuses it.
 --
--- It must be UNANNOTATED: with `pub blank : Dict k v` the annotation
+-- It must be UNANNOTATED: with `pub blank : List a` the annotation
 -- declares `k` rigid with an empty constraint set and the body's requirement
 -- is `missing_where_constraint` (§10.4) instead. And its type must not be a
 -- function: `pub equals = (==)` is accepted, see
 -- `run/ConstrainedPubFunctionConstant/`.
-import Dict
+import List
 
 
-pub blank = Dict.fromList []
+pub blank = List.sort []

@@ -1,0 +1,11 @@
+import Dict
+
+
+make key = Dict.singleton key 0
+
+
+bad = make True
+
+
+main : Int
+main = 0

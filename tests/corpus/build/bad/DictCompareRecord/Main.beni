@@ -1,0 +1,9 @@
+import Dict
+
+
+bad : Bool
+bad = { value = Dict.singleton 1 0 } < { value = Dict.singleton 1 0 }
+
+
+main : Int
+main = 0

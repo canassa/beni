@@ -1,0 +1,9 @@
+import Dict
+
+
+type alias Refused =
+    Dict.Dict ⊥ Int
+
+
+main : Int
+main = 0

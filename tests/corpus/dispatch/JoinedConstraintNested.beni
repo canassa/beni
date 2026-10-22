@@ -76,13 +76,13 @@ nestedList =
 pub nestedDict : Int
 nestedDict =
     seed = Dict.empty
-    Dict.size (Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b")
+    Dict.size (Dict.insert (Dict.insert seed "one-two" "a") "three" "b")
 
 
-pub annotatedDict : Dict (List Int) String
+pub annotatedDict : Dict String String
 annotatedDict =
     seed = Dict.empty
-    Dict.insert (Dict.insert seed [ 1, 2 ] "a") [ 3 ] "b"
+    Dict.insert (Dict.insert seed "one-two" "a") "three" "b"
 
 
 pub nestedOwn : Int

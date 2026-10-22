@@ -1,0 +1,5 @@
+import Dict
+
+
+pub opaque type Wrapped k
+    = Wrapped (Dict.Dict k Int)

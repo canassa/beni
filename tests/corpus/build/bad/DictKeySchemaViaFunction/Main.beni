@@ -1,0 +1,9 @@
+import Models
+import Node exposing (Program)
+
+
+bad = Models.preserve False (Debug.todo "checker-only argument")
+
+
+main : Program
+main = Node.print ""

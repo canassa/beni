@@ -1,0 +1,12 @@
+import Dict
+
+
+key : Float
+key = 1.25
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

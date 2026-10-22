@@ -1,0 +1,23 @@
+import Dict
+import Node exposing (Program)
+import Schema exposing (Conversion)
+
+
+conversion : Conversion a a
+conversion = Debug.todo "checker-only conversion"
+
+
+pub schema Pass item =
+    item via conversion
+
+
+pub opaque type Box k
+    = Box (Dict.Dict (Pass.Type k) Int)
+
+
+bad : Box Bool
+bad = Debug.todo "checker-only annotation"
+
+
+main : Program
+main = Node.print ""

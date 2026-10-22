@@ -250,7 +250,7 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             // (checker-v2.md §7.1), so the name it
             // prints does not depend on which came first.
             if (st.find(w.receiver) != root) try s.unifier.expand(w.receiver);
-            if (flags.kind == .number and isWellKnownName(w.method)) return bridge(s, id, root);
+            if (flags.kind.scalar() and isWellKnownName(w.method)) return bridge(s, id, root);
             return attach(s, id, root, flags);
         },
         .rigid => |flags| return rigid(s, id, root, flags),
@@ -429,7 +429,16 @@ pub fn nullaryArity(s: *Solve, id: WantedId, found: Var) Error!bool {
 fn bridge(s: *Solve, id: WantedId, root: Var) Error!void {
     const w = s.evidence.get(id);
     if (!try unifyWellKnown(s, id, root)) return reject(s, id, false);
-    answer(s, id, .{ .primitive = if (w.method == InternPool.WellKnown.eq.symbol()) .strict_eq else .num_compare });
+    const kind = switch (s.store().resolvedContent(root)) {
+        .flex, .rigid => |flags| flags.kind,
+        else => unreachable,
+    };
+    answer(s, id, .{ .primitive = if (w.method == InternPool.WellKnown.eq.symbol()) .strict_eq else switch (kind) {
+        .dict_key => .key_compare,
+        .string_key => .string_compare,
+        .number, .int_key => .num_compare,
+        else => unreachable,
+    } });
 }
 
 /// A wanted on a flex rides on it: one entry of its constraint set (§4.1,
@@ -561,7 +570,7 @@ fn rigid(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void 
         }
         return answer(s, id, .{ .param = .{ .decl = given.decl, .k = given.k } });
     }
-    if (flags.kind == .number and isWellKnownName(w.method)) return bridge(s, id, root);
+    if (flags.kind.scalar() and isWellKnownName(w.method)) return bridge(s, id, root);
     const key: MissingKey = .{ .origin = lineageOrigin(s, id), .rigid = root, .method = w.method };
     const seen = try s.resolver.missing.getOrPut(s.cx.gpa, key);
     if (seen.found_existing) return reject(s, id, false);
@@ -602,7 +611,7 @@ pub fn checkGivens(s: *Solve, decl: u32) Error!void {
             .rigid => |f| f,
             else => continue,
         };
-        if (flags.kind != .number) continue;
+        if (!flags.kind.scalar()) continue;
         const wanted = try wellKnownType(s, g.method, root);
         s.report.texts.clause = .{ .variable = flags.name, .method = g.method };
         defer s.report.texts.clause = null;
@@ -716,7 +725,7 @@ fn undeterminedInGroup(s: *Solve, members: []const u32) Error!void {
                 .flex => |f| f,
                 else => continue,
             };
-            if (flags.kind != .number) continue;
+            if (!flags.kind.scalar()) continue;
             const unreached = for (members) |other| {
                 const od = bir.decls[other];
                 if (!od.kind.isValue() or od.body == .none or od.annotation != .none) continue;

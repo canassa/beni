@@ -1,0 +1,8 @@
+import Set
+
+
+bad = Set.singleton True
+
+
+main : Int
+main = 0

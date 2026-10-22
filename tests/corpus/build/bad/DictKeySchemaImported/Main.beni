@@ -1,0 +1,14 @@
+import Dict
+import Models
+
+
+pub type alias Map k =
+    Dict.Dict (Models.Pass.Type k) Int
+
+
+bad : Map Bool
+bad = Dict.empty
+
+
+main : Int
+main = 0

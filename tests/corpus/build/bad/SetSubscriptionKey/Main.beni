@@ -1,0 +1,10 @@
+import Cmd
+import Set
+import Sub
+
+
+bad = Sub.listen (Set.singleton 1) (λ_ → ⊤) identity
+
+
+main : Int
+main = 0

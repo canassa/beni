@@ -1,0 +1,17 @@
+import Dict
+
+
+type First k
+    = First (Second k)
+
+
+type Second k
+    = Second (Dict.Dict k Int)
+
+
+type alias Refused =
+    First Bool
+
+
+main : Int
+main = 0

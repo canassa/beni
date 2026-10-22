@@ -1,0 +1,13 @@
+import Dict
+import Set
+
+
+key : Set.Set String
+key = Set.singleton "inner"
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0

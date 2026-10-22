@@ -1,0 +1,12 @@
+import Dict
+
+
+key : Int → Int
+key n = n + 1
+
+
+bad = Dict.singleton key 0
+
+
+main : Int
+main = 0
