@@ -1694,6 +1694,24 @@ remain exact, and known schema types do not take this fallback. Summary block
 version 28 invalidates earlier exact fallback keys while retaining the version
 27 layout and conditional writer sets.
 
+*Amended 2026-10-23 (#748, returned function signatures):* a carried function's
+full signature belongs to the same composed view as its marker-bearing body.
+Otherwise erasing a function such as `λy → Js.from [x, y]` during polymorphic
+recursion grows its signature forever after its paths have folded. Retain exact
+and folded alternatives for type keys as well as paths. A carried body's first
+crossing leaves its signature exact; when that body already has a crossed entry,
+a later crossing folds the signature's growing substituted terms with the same
+alternatives as its paths. Pending boundaries alone are not crossed entries.
+The fixed function shape and all nongrowing terms remain complete.
+
+This signature is specialization metadata, not another physical holder. Making
+it less precise cannot remove a body entry or its occurrence conditions: wildcard
+terms cannot establish a precise binding or exact cancellation. Every body and
+capture row is still composed and joined, including exact alternatives, and its
+crossing marks participate in settlement. A closed or nongrowing signature stays
+exact. A returned function's erased growing case and write-through aliasing twin
+must pin this route before merge.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
