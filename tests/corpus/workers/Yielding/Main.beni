@@ -1,0 +1,37 @@
+-- workers: a request that keeps yielding starves no other request of the
+-- isolate (boundary.md §9.12 (d); transparent-effects-proposal.md §17.5,
+-- `schedulerWith`'s `more`): the drain goes on in a timer of the request's
+-- context after 64 resumptions, so a short request sent while a long one
+-- spins answers first.
+import String
+import Task
+import Worker exposing (Context, Request, Response)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [] }
+
+
+yields : Int → ⊤
+yields n =
+    if n == 0 then
+        ⊤
+    else
+        Task.yieldNow ⊤
+        yields (n - 1)
+
+
+route : Context, Request → Response
+route ctx request =
+    case String.split (Worker.path request) "/" of
+        [ "", "spin", count ] →
+            case String.toInt count of
+                Just n →
+                    yields n
+                    Worker.text 200 "spun ${count}"
+
+                Nothing →
+                    Worker.text 400 "not a number"
+
+        _ →
+            Worker.text 404 "no such page"

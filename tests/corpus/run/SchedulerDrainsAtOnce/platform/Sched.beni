@@ -6,4 +6,4 @@ import Task exposing (Scheduler)
 
 --| A scheduler whose drains run at once, inside `run`.
 pub atOnce : ⊤ → Scheduler
-atOnce ⊤ = Task.schedulerWith (λdrain → drain ⊤) λ⊤ → ⊤
+atOnce ⊤ = Task.schedulerWith (λdrain → drain ⊤) (λdrain → drain ⊤) λ⊤ → ⊤

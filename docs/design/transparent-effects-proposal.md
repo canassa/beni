@@ -2355,11 +2355,12 @@ own request or object.
 -- core/Task.beni
 pub foreign type Scheduler
 pub scheduler : sync (⊤ → ⊤) → Scheduler                       -- drains in a microtask of its own; the defect hook; what a program uses
-pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, and the defect hook
+pub schedulerWith : sync ((⊤ → ⊤) → ⊤), sync ((⊤ → ⊤) → ⊤), sync (⊤ → ⊤) → Scheduler   -- for a platform: how a drain is queued, how a long drain goes on, and the defect hook (amended with the Worker slice)
 pub withScheduler : Scheduler, (⊤ → a) → a                     -- the slot's writer, scoped to `work` as every slot change is
 pub stopScheduler : Scheduler, Int, sync (Int → ⊤) → ⊤         -- `shutdown` for one scheduler
 pub schedulerBusy : Scheduler → Bool                           -- whether a fiber of it still runs (the Worker slice, 2026-10-22)
 pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` once, the next time none does; at once when none does now
+pub schedulersListed : ⊤ → Int                                 -- how many the kernel lists, for a platform's test hook
 ```
 
 - **A scheduler is a queue of its own**: the ready work of its fibers, FIFO, drained as the
@@ -2371,9 +2372,15 @@ pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` 
   the drain names (*2026-10-22, P699-10*). `scheduler hook`'s `run` is `queueMicrotask`, and the
   rest of a drain that has used its 64 resumptions goes on in the program's macrotask, as the
   program's own drain does, so a timer, I/O or a render gets its turn while a fiber under it keeps
-  yielding (*P699-4*). `schedulerWith`'s continuation goes through `run` again, so the platform
-  decides where a scheduler's fibers run: on `cloudflare`, through a promise made in the request's
-  own context, so that a continuation runs where its I/O is allowed (§9.12 (d)).
+  yielding (*P699-4*). *Amended with the Worker slice (2026-10-22, P705-5):* `schedulerWith` takes
+  its continuation as a second function, `more`, called with the rest of a drain that has used its
+  64 resumptions, which must run it in a later turn of the host's event loop — on `cloudflare`, a
+  timer of zero in the request's own context, so that a request that keeps yielding starves no
+  other request of the isolate, where a reaction would run the next batch before the loop turned;
+  `run` is where every drain starts, through a promise made in the request's own context, so that
+  a continuation runs where its I/O is allowed (§9.12 (d)). `schedulersListed` answers how many
+  schedulers the kernel lists, for a platform's test hook: a request's scheduler must leave the
+  list once nothing of it runs.
 - **The slot's writer.** `withScheduler s work` sets the calling fiber's scheduler slot to `s` for
   `work`, as `Clock.run` sets the clock: a new slot record with the one slot changed, and the old
   one back when `work` ends, returned or cancelled. While inside, the calling fiber is **lent** to
@@ -2429,9 +2436,10 @@ pub onSchedulerIdle : Scheduler, sync (⊤ → ⊤) → ⊤              -- `f` 
   calls `f` once, the next time no fiber of `s` runs, and at once, during the call, when none
   does now; one `f` waits, the last one given replacing the one before; `f` runs at the end of
   the last fiber, where that fiber's `complete` or its leave from `withScheduler` counts it off,
-  with that fiber still the current one, so a `resume` from `f` is queued as any other and a
-  `spawn` makes a child of the fiber that ended; during a stop it runs when the last fiber ends,
-  before `done`. They are what the `cloudflare` platform asks after a request's answer: with no
+  with that fiber still the current one, so a `resume` from `f` is queued as any other, and a
+  `spawn` there — from a fiber that has ended and can own no child — starts a root fiber of the
+  same scheduler, which that scheduler's stop reaches; during a stop it runs when the last fiber
+  ends, before `done`. They are what the `cloudflare` platform asks after a request's answer: with no
   fiber running nothing is held, otherwise `waitUntil` holds a promise that `onSchedulerIdle`
   settles when the last fiber ends, or the deadline's timer settles by stopping the scheduler.
   The `workers/` fixtures cover them in the host (§9.12 (k)).
