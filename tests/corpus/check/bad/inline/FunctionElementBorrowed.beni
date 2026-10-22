@@ -1,0 +1,31 @@
+-- A validator may return the list its caller handed it. Calling it
+-- through a fold must keep that alias and refuse an owned-result claim.
+type Validation
+    = Valid
+    | Invalid (List Int)
+
+
+collect : List (List Int → Validation), List Int → Validation
+collect works input = List.foldl works Valid λwork acc →
+    case ( acc, work input ) of
+        ( Invalid left, Invalid right ) →
+            Invalid (left ++ right)
+
+        ( Invalid left, Valid ) →
+            Invalid left
+
+        ( Valid, result ) →
+            result
+
+
+pub refused : ⊤ → List Int × Int
+refused ⊤ =
+    kept = [ 1 ]
+    result =
+        case collect [ Invalid ] kept of
+            Invalid xs →
+                List.push xs 2
+
+            Valid →
+                []
+    ( result, List.length kept )

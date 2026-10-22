@@ -1,0 +1,7 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <p>"2"</p>
+  </div>
+</body>
