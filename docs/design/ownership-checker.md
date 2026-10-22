@@ -5270,6 +5270,30 @@ conservative unknown verdict. A callback result is scoped to the frame whose
 function parameter it names, never to a parameter with the same index in
 another frame.
 
+*Amended 2026-10-22 (issue #223):* recursive summary joins retain returned
+read-only lambda classes. Compatible classes join all result, read, capture,
+callback and ownership requirements; different arities or send/record-result
+protocols stay alternatives. Fixpoint equality compares the contents of the
+classes as well as their indices. Function slot numbers stay stable across
+rounds: each walk begins with the declaration's previous slot table and
+appends new keys. This replaces the earlier prohibition on slots and carried
+classes in recursive groups.
+
+An empty current approximation of a recursive member returning a function
+is callable bottom at its solved arity, with no result or effect facts.
+A function whose class cannot be carried is instead an unknown alternative
+(`λ?`, class index `none`), including through a top-level value. It never
+becomes callable bottom. Captured list cells retain their ordinary facts.
+Other unidentified callees keep §30.11's conservative answer. Ownership
+blocks advance to version 22 so old summaries cannot bypass the new facts.
+
+The owner confirmed on 2026-10-22 that moving `RecursiveHolds`'s refusal
+from `pushed`'s generic body to `run` and `runOne` is correct: the supplied
+callbacks return `Node xs` and `One xs`, retaining the list that the callee
+then pushes onto. Each call has real sharing and would make a cycle. No
+safe whole program changes from accepted to rejected. Such a safe-program
+regression remains a stop condition, with a reduced reproduction.
+
 **Words** (§24.2, §24.4, §24.8, amended). A parameter of type `List` of a function written out takes a
 function's words, which describe each element: the summary's function slot at the parameter's `[*]`
 (`many aliased List (⊤ → a)`). Three new rows in §24.8:

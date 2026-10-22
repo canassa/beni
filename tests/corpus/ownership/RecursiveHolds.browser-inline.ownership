@@ -1,13 +1,15 @@
 module RecursiveHolds
-  23:20 List.push xs: rejected call: another operand may be it, through the call at 22:17 (approx)
+  23:20 List.push xs: accepted param
   33:20 List.push <call List.copy>: accepted call
   39:9 call RecursiveHolds.pushed <literal>: accepted fresh (RecursiveHolds.pushed writes π2)
+  39:9 value <call RecursiveHolds.pushed>: rejected supply: RecursiveHolds.pushed changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
   43:12 call RecursiveHolds.pushed <literal>: accepted fresh (RecursiveHolds.pushed writes π2)
-  summary pushed: π1 R, π1[*] RA, π2 RAW[storage], π2[*] A; res [*] condition(fresh1){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, [*].1 π2{lost}r{lost}, [*].1[*] ~π2[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~π1[*]{excl π1} ~π2{lost}r{lost}, fresh2{lost}r{lost}
-  summary copied: π1 R, π1[*] RA, π2 RA, π2[*] RA; res [*] condition(fresh3){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~π1[*]{excl π1} ~π2, [*].1 fresh1{lost}r{lost}, [*].1[*] ~fresh2{lost}r{lost} ~⊤call{lost}r{lost} π2[*], [*].1[*]⋆ ~π1[*]{excl π1} ~π2, fresh4{lost}r{lost}
-  summary run: res [*] condition(fresh2){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1{lost}r{lost} ~λr{lost}, [*].1 fresh1{lost}r{lost}, [*].1[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1{lost}r{lost} ~λr{lost}, fresh3{lost}r{lost}
-  summary runOne: res [*] condition(fresh2){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1{lost}r{lost} ~λr{lost}, [*].1 fresh1{lost}r{lost}, [*].1[*] ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1{lost}r{lost} ~λr{lost}, fresh3{lost}r{lost}
-  summary runCopied: res [*] condition(fresh4){lost}r{lost}, [*].0 ⊤call{lost}r{lost}, [*].0⋆ ~fresh1 ~λr{lost}, [*].1 fresh2{lost}r{lost}, [*].1[*] ~fresh3{lost}r{lost} ~⊤call{lost}r{lost}, [*].1[*]⋆ ~fresh1 ~λr{lost}, fresh5{lost}r{lost}
-  demands 4: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-total 4: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-cause call 1
+  43:12 value <call RecursiveHolds.pushed>: rejected supply: RecursiveHolds.pushed changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
+  summary pushed: π1 R, π1[*] R, π2 RAW[storage], π2[*] A; res [*] condition(fresh1){lost}r{lost}, [*].0 cb(π1[*]){excl cb(π1[*])}r{excl cb(π1[*])}, [*].1 π2{excl cb(π1[*]), sep π2[*] cb(π1[*])}r{excl cb(π1[*]), sep π2[*] cb(π1[*])}, [*].1[*] ~cb(π1[*]){excl cb(π1[*])}r{excl cb(π1[*])} ~π2[*], fresh2{lost}r{lost}; π1[*] calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary copied: π1 R, π1[*] R, π2 R, π2[*] RA; res [*] condition(fresh3){lost}r{lost}, [*].0 cb(π1[*]){excl cb(π1[*])}r{excl cb(π1[*])}, [*].1 fresh1{lost}r{lost}, [*].1[*] ~cb(π1[*]){excl cb(π1[*])}r{excl cb(π1[*])} ~fresh2{lost}r{lost} π2[*], fresh4{lost}r{lost}; π1[*] calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary run: res [*] condition(fresh2){lost}r{lost}, [*].0#Node.0 fresh1, [*].1 fresh1, [*].1[*]#Node.0 ~fresh1, fresh3{lost}r{lost}
+  summary runOne: res [*] condition(fresh2){lost}r{lost}, [*].0#One.0 fresh1, [*].1 fresh1, [*].1[*]#One.0 ~fresh1, fresh3{lost}r{lost}
+  summary runCopied: res [*] condition(fresh4){lost}r{lost}, [*].0#Node.0 fresh1, [*].1 fresh2{lost}r{lost}, [*].1[*] ~fresh3{lost}r{lost}, [*].1[*]#Node.0 ~fresh1, fresh5{lost}r{lost}
+  demands 6: accepted 4 (fresh 2, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 6: accepted 4 (fresh 2, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause supply 2

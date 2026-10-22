@@ -1,0 +1,29 @@
+pub type Validation
+    = Valid
+    | Invalid (List Int)
+
+
+pub firstOf : List (⊤ → Validation) → (⊤ → Validation)
+firstOf works =
+    λ⊤ →
+        case works of
+            [] →
+                Valid
+
+            [ work, …rest ] →
+                case work ⊤ of
+                    Valid →
+                        (firstOf rest) ⊤
+
+                    invalid →
+                        invalid
+
+
+held : List Int
+held = [ 1 ]
+
+
+pub unknown : ⊤ → (⊤ → List Int)
+unknown ⊤ =
+    f = λ⊤ → held
+    λ⊤ → f ⊤

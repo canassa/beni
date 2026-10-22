@@ -1999,21 +1999,40 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
 /// Only a group's own fixpoint composes its summaries with themselves, so
 /// the marks end with it, and a summary made here equals one read back
 /// from the summary block, which does not carry them.
+fn summaryHasMarks(s: Summary) bool {
+    for (s.res) |r| if (r.grown != 0) return true;
+    for (s.supply) |e| if (e.grown != 0) return true;
+    for (s.klasses) |k| {
+        if (summaryHasMarks(k.sum.*)) return true;
+        for (k.binds) |b| for (b.provs) |r| if (r.grown != 0) return true;
+    }
+    return false;
+}
+
 fn clearMarks(o: *Ownership, s: Summary) Allocator.Error!Summary {
-    const any = for (s.res) |r| {
-        if (r.grown != 0) break true;
-    } else for (s.supply) |e| {
-        if (e.grown != 0) break true;
-    } else false;
-    if (!any) return s;
+    if (!summaryHasMarks(s)) return s;
     const keep = o.keep.allocator();
+    var t = s;
     const res = try keep.dupe(ResEntry, s.res);
     for (res) |*r| r.grown = 0;
     const supply = try keep.dupe(SupplyEntry, s.supply);
     for (supply) |*e| e.grown = 0;
-    var t = s;
     t.res = res;
     t.supply = supply;
+    const klasses = try keep.dupe(Carried, s.klasses);
+    for (klasses) |*k| {
+        const sum = try keep.create(Summary);
+        sum.* = try o.clearMarks(k.sum.*);
+        k.sum = sum;
+        const binds = try keep.dupe(Carried.Bind, k.binds);
+        for (binds) |*b| {
+            const provs = try keep.dupe(ResEntry, b.provs);
+            for (provs) |*r| r.grown = 0;
+            b.provs = provs;
+        }
+        k.binds = binds;
+    }
+    t.klasses = klasses;
     return o.normalize(t);
 }
 
@@ -2144,6 +2163,16 @@ fn summaryEql(x: Summary, y: Summary) bool {
     for (x.xreq, y.xreq) |a, b| if (!a.eql(b)) return false;
     if (x.rxreq.len != y.rxreq.len) return false;
     for (x.rxreq, y.rxreq) |a, b| if (!a.eql(b)) return false;
+    if (x.slots.len != y.slots.len or x.klasses.len != y.klasses.len) return false;
+    for (x.slots, y.slots) |a, b| if (a[0] != b[0] or a[1] != b[1]) return false;
+    for (x.klasses, y.klasses) |a, b| {
+        if (!summaryEql(a.sum.*, b.sum.*) or a.binds.len != b.binds.len or a.cb_js.len != b.cb_js.len) return false;
+        for (a.binds, b.binds) |p, q| {
+            if (p.local != q.local or p.path != q.path or p.provs.len != q.provs.len) return false;
+            for (p.provs, q.provs) |u, v| if (!resEql(u, v)) return false;
+        }
+        if (!std.mem.eql(u32, a.cb_js, b.cb_js)) return false;
+    }
     return true;
 }
 
@@ -2257,16 +2286,106 @@ pub fn sortAtoms(all: []XAtom) []const XAtom {
     return all[0..n];
 }
 
+/// Classes with different callback protocols remain alternatives.
+fn carriedProtocol(a: Allocator, s: *const Summary) Allocator.Error![]const u32 {
+    var key: std.ArrayList(u32) = .empty;
+    try key.appendSlice(a, &.{ s.params, @intCast(s.slots.len) });
+    for (s.slots) |slot| try key.appendSlice(a, &slot);
+    for (s.funs) |f| if (f.send != none or f.rneed) {
+        try key.appendSlice(a, &.{ f.param, f.send, @intFromBool(f.rneed) });
+    };
+    return key.items;
+}
+
+fn joinCarried(o: *Ownership, x: Carried, y: Carried) Allocator.Error!Carried {
+    const keep = o.keep.allocator();
+    const sum = try keep.create(Summary);
+    sum.* = try o.join(x.sum.*, y.sum.*);
+    var binds: std.ArrayList(Carried.Bind) = .empty;
+    try binds.appendSlice(keep, x.binds);
+    try binds.appendSlice(keep, y.binds);
+    std.mem.sort(Carried.Bind, binds.items, {}, struct {
+        fn less(_: void, a: Carried.Bind, b: Carried.Bind) bool {
+            return if (a.local != b.local) a.local < b.local else a.path < b.path;
+        }
+    }.less);
+    var n: usize = 0;
+    for (binds.items) |b| {
+        if (n > 0 and binds.items[n - 1].local == b.local and binds.items[n - 1].path == b.path) {
+            const before = binds.items[n - 1].provs;
+            const both = try keep.alloc(ResEntry, before.len + b.provs.len);
+            @memcpy(both[0..before.len], before);
+            @memcpy(both[before.len..], b.provs);
+            binds.items[n - 1].provs = try sortedRes(keep, both);
+        } else {
+            binds.items[n] = b;
+            n += 1;
+        }
+    }
+    var callbacks: std.ArrayList(u32) = .empty;
+    try callbacks.appendSlice(keep, x.cb_js);
+    for (y.cb_js) |j| if (std.mem.indexOfScalar(u32, callbacks.items, j) == null) try callbacks.append(keep, j);
+    std.mem.sort(u32, callbacks.items, {}, std.sort.asc(u32));
+    return .{ .sum = sum, .binds = binds.items[0..n], .cb_js = callbacks.items };
+}
+
+const JoinedCarried = struct { classes: []const Carried, x: []const u32, y: []const u32 };
+
+/// Union the read-only function classes a recursive result may carry.
+fn joinCarriers(o: *Ownership, x: []const Carried, y: []const Carried) Allocator.Error!JoinedCarried {
+    const keep = o.keep.allocator();
+    var classes: std.ArrayList(Carried) = .empty;
+    var keys: std.HashMapUnmanaged([]const u32, u32, U32SliceContext, std.hash_map.default_max_load_percentage) = .empty;
+    const maps = [2][]u32{ try keep.alloc(u32, x.len), try keep.alloc(u32, y.len) };
+    for ([_][]const Carried{ x, y }, maps) |input, map| for (input, map) |c, *index| {
+        const g = try keys.getOrPut(keep, try carriedProtocol(keep, c.sum));
+        if (!g.found_existing) {
+            g.value_ptr.* = @intCast(classes.items.len);
+            try classes.append(keep, c);
+        }
+        index.* = g.value_ptr.*;
+    };
+    const initialized = try keep.alloc(bool, classes.items.len);
+    @memset(initialized, false);
+    for ([_][]const Carried{ x, y }, maps) |input, map| for (input, map) |c, index| {
+        if (initialized[index]) {
+            classes.items[index] = try o.joinCarried(classes.items[index], c);
+        } else {
+            classes.items[index] = c;
+            initialized[index] = true;
+        }
+    };
+    return .{ .classes = classes.items, .x = maps[0], .y = maps[1] };
+}
+
+fn joinedClass(p: Prov, map: []const u32) Prov {
+    var out = p;
+    // 'none' is an unknown function alternative, not a class index.
+    if (out.kind == .klass and out.a < map.len) out.a = map[out.a];
+    return out;
+}
+
 fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     if (x.limit != .none) return x;
     if (y.limit != .none) return o.pessimistic(x, y.limit, y.limit_at);
     const keep = o.keep.allocator();
+    const carried = try o.joinCarriers(x.klasses, y.klasses);
+    std.debug.assert(x.slots.len <= y.slots.len);
+    for (x.slots, y.slots[0..x.slots.len]) |a, b| std.debug.assert(a[0] == b[0] and a[1] == b[1]);
     var uses: std.ArrayList(UseEntry) = .empty;
     try uses.appendSlice(keep, x.uses);
     try uses.appendSlice(keep, y.uses);
     var res: std.ArrayList(ResEntry) = .empty;
-    try res.appendSlice(keep, x.res);
-    try res.appendSlice(keep, y.res);
+    for (x.res) |r| {
+        var next = r;
+        next.prov = joinedClass(r.prov, carried.x);
+        try res.append(keep, next);
+    }
+    for (y.res) |r| {
+        var next = r;
+        next.prov = joinedClass(r.prov, carried.y);
+        try res.append(keep, next);
+    }
     var supply: std.ArrayList(SupplyEntry) = .empty;
     try supply.appendSlice(keep, x.supply);
     try supply.appendSlice(keep, y.supply);
@@ -2298,6 +2417,8 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
         .xreq = xreq.items,
         .rxreq = rxreq.items,
         .once = x.once or y.once,
+        .slots = y.slots,
+        .klasses = carried.classes,
     });
 }
 
@@ -4170,7 +4291,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
             const slot = s.slots[p.a - s.params];
             break :blk std.fmt.allocPrint(arena, "cb(π{d}{s}){s}", .{ slot[0] + 1, try o.pathText(slot[1]), pt });
         } else std.fmt.allocPrint(arena, "cb{d}{s}", .{ p.a + 1, pt })) else std.fmt.allocPrint(arena, "cb{d}{s}", .{ p.a + 1, pt }),
-        .klass => "λ",
+        .klass => if (p.a == none) "λ?" else "λ",
         .env => std.fmt.allocPrint(arena, "◇{d}{s}", .{ p.a, pt }),
     };
 }
@@ -6441,6 +6562,11 @@ const Walker = struct {
         for (w.params, 0..) |p, i| {
             if (w.patternType(p)) |v| w.fn_state.items[i].is_fn = isFunc(w.store, v);
             try w.bindParam(p, 0);
+        }
+        if (w.recursive) {
+            const previous = w.o.slots[w.m].?[w.decl_index].sum.slots;
+            try w.slot_keys.appendSlice(w.a, previous);
+            try w.fn_state.appendNTimes(w.a, .{ .is_fn = true }, previous.len);
         }
         const result = try w.withEarly(0, try w.eval(body));
         try w.consume(&.{body}, w.bir.insts.items(.main_token)[body.int()]);
@@ -11117,11 +11243,11 @@ const Walker = struct {
         const source = w.bir.decls[t.d];
         if (source.is_pub or source.params != 0 or source.kind != .value) return false;
         for (s.res) |r| switch (r.prov.kind) {
-            .fresh, .esc, .shared => {},
+            .fresh, .esc, .shared, .klass => {},
             else => return false,
         };
         for (s.objs) |r| switch (r.prov.kind) {
-            .fresh, .esc, .shared => {},
+            .fresh, .esc, .shared, .klass => {},
             else => return false,
         };
         if (w.o.private_reads[w.m] == null) {
@@ -11146,6 +11272,10 @@ const Walker = struct {
             // carried binding cannot say. Dropped otherwise: a call of the
             // value then finds no class and is §6.1's, as it was before.
             if (r.prov.kind == .klass) {
+                if (r.prov.a == none) {
+                    try out.appendSlice(w.a, try w.under(try w.carry(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 }), r.path));
+                    continue;
+                }
                 // A capture that holds no cell (a number) is no capture.
                 const holds_nothing = r.prov.a < s.klasses.len and for (s.klasses[r.prov.a].binds) |b| {
                     if (b.provs.len != 0) break false;
@@ -12701,6 +12831,20 @@ const Walker = struct {
         const arg_types = try w.a.alloc(?Var, args.len);
         for (args, arg_types) |arg, *t| t.* = w.instType(arg);
         const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .poly = callee.poly });
+        if (res.len == 0 and callee.merge_fresh) if (ty) |v| switch (w.store.resolvedContent(v)) {
+            .structure => |st| if (st == .func) {
+                const site: CarrySite = .{ .inst = inst.int(), .sum = @intFromPtr(s), .klass = none, .depth = 0, .ns = 0, .merge = true };
+                const g = try w.carry_sites.getOrPut(w.a, site);
+                if (!g.found_existing) {
+                    const bottom = try w.a.create(Summary);
+                    bottom.* = .{ .params = @intCast(w.store.vars(st.func.params).len) };
+                    g.value_ptr.* = @intCast(w.closures.items.len);
+                    try w.closures.append(w.a, .{ .captures = &.{}, .class = bottom, .token = w.token(inst) });
+                }
+                return w.single(.{ .kind = .closure, .a = g.value_ptr.* });
+            },
+            else => {},
+        };
         // An approximate entry may name an argument the result's type
         // cannot be (§6.1's type filter, thesis §3.8): a `Js` coercion's
         // result is never its argument at another type.
@@ -13994,12 +14138,11 @@ const Walker = struct {
     /// the path: the slot is the declaration's, called or handed on wherever
     /// the lambda runs.
     fn slotOf(w: *Walker, av: AV) Allocator.Error!?u32 {
-        if (w.recursive) return null;
         var found: ?Cell = null;
         for (av) |e| {
             if (w.o.firstStep(e.path)) |s| if (s.kind == .env) continue;
             if (e.path != eps or found != null) return null;
-            found = w.cells.items[e.cell];
+            found = w.cells.items[try w.takenBase(e.cell)];
         }
         var c = found orelse return null;
         if (w.frame != 0) {
@@ -14008,7 +14151,7 @@ const Walker = struct {
             if (c.kind != .env or c.a >= w.local_frame.len or w.local_frame[c.a] != 0) return null;
             const held = w.local_av[c.a] orelse return null;
             if (held.len != 1 or held[0].path != eps) return null;
-            const hc = w.cells.items[held[0].cell];
+            const hc = w.cells.items[try w.takenBase(held[0].cell)];
             if (hc.kind != .param or hc.b != 0) return null;
             const path = try w.o.concat(hc.path, c.path);
             c = hc;
@@ -14028,6 +14171,15 @@ const Walker = struct {
     /// the callee's parameters go to leave sight here — the checker does not
     /// see what the lambda hands them.
     fn carry(w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
+        if (p.a == none) {
+            const site: CarrySite = .{ .inst = ctx.inst.int(), .sum = @intFromPtr(ctx.s), .klass = none, .depth = ctx.depth, .ns = ctx.fresh_ns, .merge = false };
+            const g = try w.carry_sites.getOrPut(w.a, site);
+            if (!g.found_existing) {
+                g.value_ptr.* = @intCast(w.closures.items.len);
+                try w.closures.append(w.a, .{ .captures = &.{}, .token = w.token(ctx.inst) });
+            }
+            return w.single(.{ .kind = .closure, .a = g.value_ptr.* });
+        }
         if (p.a >= ctx.s.klasses.len) return w.single(.{ .kind = .top, .a = 0 });
         const k = ctx.s.klasses[p.a];
         var inner = ctx;
@@ -15406,7 +15558,7 @@ const Walker = struct {
         }
         for (c.res) |r| {
             // A condition annotation is not an allocation whose spine is returned.
-            if (r.prov.condition_only) continue;
+            if (r.prov.condition_only or r.prov.kind == .klass) continue;
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
             if (within != eps and !w.o.overlap(r.path, within)) continue;
             // A list from JavaScript is a limit of the analysis, not sharing
@@ -17035,11 +17187,18 @@ const Walker = struct {
         for (expanded) |e| {
             // §24.9: a lambda the result holds keeps its class, when it is
             // one a caller can call with nothing but its result and reads.
-            if (frame == 0 and !w.recursive and w.cells.items[e.cell].kind == .closure and !w.o.hasStep(e.path, .env)) {
+            if (frame == 0 and w.cells.items[e.cell].kind == .closure and !w.o.hasStep(e.path, .env)) {
                 if (try w.carried(w.cells.items[e.cell].a, params, fresh)) |k| {
                     try klasses.append(keep, k);
                     try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = @intCast(klasses.items.len - 1) }, .approx = e.approx != 0, .grown = e.grown });
+                } else {
+                    // An unavailable class is unknown, never recursive bottom.
+                    try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = none }, .approx = e.approx != 0, .grown = e.grown });
                 }
+                continue;
+            }
+            if (!w.o.hasStep(e.path, .env) and (w.cells.items[e.cell].kind == .closure or w.cells.items[e.cell].kind == .func)) {
+                try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = none }, .approx = e.approx != 0, .grown = e.grown });
                 continue;
             }
             const c = w.cells.items[try w.takenBase(e.cell)];

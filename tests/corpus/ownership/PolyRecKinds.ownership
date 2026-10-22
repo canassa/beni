@@ -1,5 +1,5 @@
 module PolyRecKinds
-  summary wf: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0◇ π2
+  summary wf: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 ~λ?r{lost} λr{lost}, ⟨T⟩⁺#Leaf.0◇ π2
   summary wd: π2 RA; res #DLeaf.0 π2, ⟨D⟩⁺#DLeaf.0#Dict.0 condition(fresh1) ~condition(fresh2), ⟨D⟩⁺#DLeaf.0#Dict.0#Node.2 π2, ⟨D⟩⁺#DLeaf.0#Dict.0#Node.2⋆ ~condition(fresh1) ~condition(fresh2) ~π2
   summary wm: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨M⟩⁺#MLeaf.0#Just.0[*] π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
   summary wr: π2 RA; res #RLeaf.0 π2, #RWrap.0⟨R⟩#RLeaf.0 fresh501◦ fresh502◦r{excl π2}, #RWrap.0⟨R⟩#RLeaf.0.v[*] fresh501◦ fresh502◦r{excl π2}, #RWrap.0⟨R⟩#RLeaf.0.v[*]⋆ ~fresh501◦ ~fresh502◦r{excl π2}, ⟨R⟩⁺#RLeaf.0.v fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨R⟩⁺#RLeaf.0.v[*] π2, ⟨R⟩⁺#RLeaf.0.v[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2

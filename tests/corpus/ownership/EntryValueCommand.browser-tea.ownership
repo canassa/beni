@@ -9,9 +9,9 @@ module EntryValueCommand
   110:5 update entry EntryValueCommand.closure model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   capture model.items: read 83:82; before 83:29
   summary joined: π1 R
-  summary values: π2 RAW{items}, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λr{lost}, .1#Cmd.0[*]#Perform.0 λr{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~fresh501◦, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇.headers ~fresh2
+  summary values: π2 RAW{items}, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost} λr{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost} λr{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~fresh501◦, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇.headers ~fresh2
   summary ignored: unused
-  summary closure: π2 RAW{items}, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items, condition(fresh2){shared}
+  summary closure: π2 RAW{items}, π2.items RAW[storage], π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0 λ?r{lost}, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items, condition(fresh2){shared}
   summary view: π1.items R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
   records 4: accepted 2, pending 0, rejected 2 (copy 0, restructure 0); hoisted 0, eager reads 1

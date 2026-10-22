@@ -1,0 +1,28 @@
+-- An uncarriable function alternative must stay unknown through recursion.
+shared : List Int
+shared = [ 1 ]
+
+
+a : Int → (⊤ → List Int)
+a n = f n
+
+
+f : Int → (⊤ → List Int)
+f n =
+    if n > 0 then
+        g = λ⊤ → shared
+        λ⊤ → g ⊤
+    else
+        a (n + 1)
+
+
+pub bad : ⊤ → List Int
+bad ⊤ = List.push ((a 1) ⊤) 2
+
+
+choice : ⊤ → List Int
+choice = a 1
+
+
+pub badThroughValue : ⊤ → List Int
+badThroughValue ⊤ = List.push (choice ⊤) 2

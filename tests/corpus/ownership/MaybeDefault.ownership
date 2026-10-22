@@ -23,7 +23,7 @@ module MaybeDefault
   72:65 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 72:19
   72:65 update model: rejected later-use: model is read again at 72:19 [copy]
   summary handle: π1 W{items}, π1.items RAW[storage], π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other, π1◦
-  summary handler: π1 RW{items, other}, π1.items RAW[storage], π1.items[*] RA, π1.other RA; res ◇ π1◦, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
+  summary handler: π1 RW{items, other}, π1.items RAW[storage], π1.items[*] RA, π1.other RA; res λ?r{lost}, ◇ π1◦, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
   summary step: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   summary stepLambda: π2 RAW{items}, π2.items AW[storage], π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2 ~π2◦
   summary stepCase: π2 RAW{items}, π2.items RAW[storage], π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2 π2◦

@@ -6,7 +6,7 @@ module ClosureCapture
   capture model.name: read 24:23; before 24:13
   summary t7: π1 RW
   summary perPath: π1 W{name, rows}, π1.name R, π1.rows RAW; res .rows π1.rows, π1◦
-  summary pusher: π1 RAW; res ◇ π1
+  summary pusher: π1 RAW; res λ?r{lost}, ◇ π1
   demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
   records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
