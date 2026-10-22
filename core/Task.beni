@@ -2043,6 +2043,24 @@ inLogContext context work =
     putSlots fiber old (work (pushFinalizer ⊤ λ⊤ → Js.set fiber "slots" old))
 
 
+--| Whether the calling fiber has a log context of its own: one that
+--| `withLogContext` set, and not the default. For `browser`'s `send`, which
+--| runs a message's `update` with the program's context only when the
+--| caller has another (`boundary.md` §9.8.16 (b), amended 2026-10-23). It
+--| reads `slotted` first, so in a build in which nothing sets a slot it is
+--| `False`, and a release build keeps no call of it.
+pub hasLogContext : ⊤ → Bool
+hasLogContext ⊤ = Js.read slotted && not (Js.isUndefined (currentLogContext ⊤))
+
+
+--| Run `work` with the default log context, the program's, and put the
+--| calling fiber's back when `work` ends, as `withLogContext` does. It does
+--| not write `slotted`: a fiber has a context to drop only when a slot was
+--| set already.
+pub withoutLogContext : (⊤ → a) → a
+withoutLogContext work = inLogContext Js.undefined work
+
+
 -- ---- Schedulers (§17.5, amended 2026-10-22; #596) --------------------------
 
 --| A scheduler of its own: a queue of ready fibers drained apart from the
