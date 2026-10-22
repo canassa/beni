@@ -3,7 +3,7 @@
 {"path": "/slow/40", "detach": "long"}
 {"path": "/slow/10"}
 {"answer": "long"}
-# A fiber that outlives the answer: not seen at once, seen once it has run.
+# A fiber that runs after the answer, in the same turn: the next request
+# reads what it wrote.
 {"path": "/outlive"}
 {"path": "/seen"}
-{"path": "/wait-then-seen/30"}

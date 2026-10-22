@@ -19,8 +19,3 @@
 < content-type: text/plain; charset=utf-8
 <
 < the detached fiber ran after the answer
-> GET /wait-then-seen/30
-< 200
-< content-type: text/plain; charset=utf-8
-<
-< the detached fiber ran after the answer
