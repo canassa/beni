@@ -5173,8 +5173,10 @@ comes only from the listener of a pointer event on its own element, so `localX` 
 is a point in its handler's element, under every lowering and at any time after. The other readers
 read properties of the event, which do not change after the dispatch. **The second wall is `Js`**:
 `Js.to : Value → a` can make a value of any type, so a package that may import `Js` can make a
-`Dispatched` and call `pointer` on any event. A program cannot import `Js` (`js_outside_platform`,
-§4.2), so only a platform package can, which is the trust every `foreign` has (rule 6).
+`Dispatched` and call `pointer` on any event. *Amended 2026-10-22* (#696): only `Html` can call
+`pointer`. A package that may import `Js` can still make a `Pointer` with `Js.to`. A program cannot
+import `Js` (`js_outside_platform`, §4.2), so only a platform package can, which is the trust every
+`foreign` has (rule 6).
 
 The cost is one listener for each element that has a pointer handler, not one for each page: a
 `For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
