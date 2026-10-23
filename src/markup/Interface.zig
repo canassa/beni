@@ -1290,10 +1290,11 @@ pub const Context = struct {
     /// body in place, a `case` on the message taking the key's branch, a
     /// function of the program's module in place, another module's by its arm
     /// piece (`browser-inline.md` §8.4) — into `block`; returns `update`'s
-    /// result, or `Reported` with a limit of the compiler. The result is
-    /// `model`'s own handle when the arm answers the object `model` names (a
-    /// record written in place, `ownership-checker.md` §31.10, or the model
-    /// unchanged): storing it back would change nothing.
+    /// result, or `Reported` with a limit of the compiler. The result may be
+    /// `model`'s own handle, and is only when the arm answers the object `model`
+    /// names (a record written in place, `ownership-checker.md` §31.10, or the
+    /// model unchanged): storing it back would change nothing. Any other handle
+    /// may answer the same object, so it says nothing either way.
     pub fn programArmFields(cx: *Context, key: u32, block: Block, fields: []const Name, model: Expr, update: ?Expr) Error!Expr {
         return cx.vtable.program_arm_fields(cx.impl, key, block, fields, model, update);
     }

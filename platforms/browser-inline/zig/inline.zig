@@ -2186,7 +2186,9 @@ const Page = struct {
             result = try js.name(pair);
         }
         // An arm that wrote the model in place answers the object the model
-        // already holds (`programArmFields`): no store.
+        // already holds, as `before` itself (`programArmFields`; the compiler
+        // side is `Lower.directArmFields`): no store. A handle that is not
+        // `before` stores, which is never wrong.
         if (element_ or next != before) try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
         for (pass) |fi| try pg.callFunction(blk, fi);
         if (element_) switch (cx.programCommand(k)) {
