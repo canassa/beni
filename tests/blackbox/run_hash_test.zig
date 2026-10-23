@@ -1,25 +1,23 @@
 //! Run hashes (`run_hash.zig`), through the corpus walker itself: the
 //! walker binary (`BENI_CORPUS_TEST_EXE`, installed by `build.zig`) is run
 //! as a program against a corpus of the scenario's own, a `run/` directory
-//! in the world's project, and what it did is read from the files it leaves:
-//! the `.run-hash` records, and the counts `BENI_RUN_HASH_REPORT` makes it
-//! write — how many builds it did not run under Node, how many it ran
-//! because their digest was not recorded, and, recording, how many lines it
-//! wrote and how many builds it refused one.
+//! in the world's project, with a run-hash cache of its own
+//! (`BENI_RUN_HASH_DIR`, the project's `cache/`), and what it did is read
+//! from what it leaves: the digests in the cache, and the counts
+//! `BENI_RUN_HASH_REPORT` makes it write — how many builds it did not run
+//! under Node, how many it ran because the cache held no digest for them.
 //!
 //! No `BENI_CORPUS_PART` is given, so one walker process runs both builds
-//! of each fixture, development first, the way `zig build test-run-hashes`
-//! does.
+//! of each fixture, development first.
 //!
-//! The scenario programs' index is driven the same way, through
+//! The scenario programs' cache is driven the same way, through
 //! `run_hash_probe.zig` (`BENI_RUN_HASH_PROBE_EXE`): a test binary whose one
-//! test builds and runs a program the environment describes, on an index in
-//! the world's project, followed by the summary tool
-//! (`BENI_RUN_HASH_SUMMARY_EXE`) where a recording merges into the index.
+//! test builds and runs a program the environment describes, on a cache in
+//! the world's project.
 //!
 //! These scenarios run Node on purpose, and every time: what they test is
 //! whether a run is skipped, so a skip of their own would test nothing.
-//! The one that compares digests does not run Node: it builds, then reads
+//! The ones that compare digests do not run Node: they build, then read
 //! the digest a scenario's run hash would record.
 
 const std = @import("std");
@@ -61,55 +59,62 @@ const goodbye =
     \\
 ;
 
-/// Run the corpus walker over `corpus/` in the world's project, with
-/// `BENI_RUN_HASHES=<mode>` ("" to check), writing its counts into
-/// `counts/`.
-fn walker(w: *World, mode: []const u8) !world.Result {
+/// The cache the walker and the probe are given: `cache/` in the world's
+/// project, by its absolute path, since a walk from another directory
+/// (`browser_test.zig`) must find the same one.
+fn cachePath(w: *World) ![]const u8 {
+    return w.projectSubPath(w.arena.allocator(), "cache");
+}
+
+/// Run the corpus walker over `corpus/` in the world's project, on the
+/// project's `cache/`, writing its counts into `counts/`.
+fn walker(w: *World) !world.Result {
+    return walkerWith(w, try cachePath(w), false);
+}
+
+/// `walker`, on `cache` (empty for no cache) and, `bless`, writing the
+/// goldens instead of comparing with them.
+fn walkerWith(w: *World, cache: []const u8, bless: bool) !world.Result {
     const arena = w.arena.allocator();
     var env = std.process.Environ.Map.init(arena);
     // The walker finds Node on `PATH`, as the build's own runs of it do.
     try env.put("PATH", try testing.environ.getAlloc(arena, "PATH"));
     try env.put("BENI_EXE", w.exe);
     try env.put("BENI_CORPUS_ROOT", "corpus");
-    try env.put("BENI_RUN_HASHES", mode);
+    try env.put(run_hash.dir_env, cache);
     try env.put("BENI_RUN_HASH_REPORT", "counts");
+    if (bless) try env.put("BENI_WRITE_EXPECTED", "1");
     const argv = try arena.dupe([]const u8, &.{try testing.environ.getAlloc(arena, "BENI_CORPUS_TEST_EXE")});
     return world.spawnAndCaptureIn(arena, w.io, argv, .{ .dir = w.tmp.dir }, world.default_timeout_ms, &env);
 }
 
-/// `node --version`: what every record line names after its build — the
-/// build's answer, asked once for every test process.
+/// `node --version`: what every digest covers — the build's answer, asked
+/// once for every test process.
 fn nodeVersion(w: *World) ![]const u8 {
     return run_hash.nodeVersion(w);
 }
 
-/// Assert `record` is exactly one `<build> <node version> <sha-256 hex>`
-/// line per build of `builds`, in order.
-fn expectRecord(w: *World, record: []const u8, builds: []const []const u8) !void {
-    const version = try nodeVersion(w);
-    var lines = std.mem.splitScalar(u8, record, '\n');
-    for (builds) |build| {
-        const line = lines.next() orelse return error.RecordTooShort;
-        var fields = std.mem.splitScalar(u8, line, ' ');
-        try testing.expectEqualStrings(build, fields.next().?);
-        try testing.expectEqualStrings(version, fields.next() orelse return error.NoVersion);
-        const digest = fields.next() orelse return error.NoDigest;
-        try testing.expectEqual(64, digest.len);
-        for (digest) |ch| try testing.expect(std.ascii.isDigit(ch) or (ch >= 'a' and ch <= 'f'));
-        try testing.expectEqual(null, fields.next());
+/// The cache's entries, sorted: each an empty file named by a SHA-256 in
+/// lower-case hex, and nothing else in the directory.
+fn digests(w: *World) ![]const []const u8 {
+    const files = try w.listFiles("cache");
+    for (files) |name| {
+        try testing.expectEqual(run_hash.digest_len, name.len);
+        for (name) |ch| try testing.expect(std.ascii.isDigit(ch) or (ch >= 'a' and ch <= 'f'));
+        try testing.expectEqualStrings("", try w.read(try std.fmt.allocPrint(w.arena.allocator(), "cache/{s}", .{name})));
     }
-    // The file ends in a newline and holds nothing else.
-    try testing.expectEqualStrings("", lines.next().?);
-    try testing.expectEqual(null, lines.next());
+    return files;
 }
 
-fn counts(skipped: u32, stale: u32, recorded: u32, refused: u32) ![]const u8 {
-    return std.fmt.allocPrint(testing.allocator, "skipped {d}\nstale {d}\nrecorded {d}\nrefused {d}\n", .{ skipped, stale, recorded, refused });
+/// Assert the cache holds exactly `want` entries.
+fn expectDigests(w: *World, want: usize) ![]const []const u8 {
+    const found = try digests(w);
+    try testing.expectEqual(want, found.len);
+    return found;
 }
 
-fn expectCounts(w: *World, skipped: u32, stale: u32, recorded: u32, refused: u32) !void {
-    const want = try counts(skipped, stale, recorded, refused);
-    defer testing.allocator.free(want);
+fn expectCounts(w: *World, skipped: u32, stale: u32) !void {
+    const want = try std.fmt.allocPrint(w.arena.allocator(), "skipped {d}\nstale {d}\n", .{ skipped, stale });
     try testing.expectEqualStrings(want, try w.read("counts/all.txt"));
 }
 
@@ -118,7 +123,7 @@ fn expectExit(want: u8, r: world.Result) !void {
     try testing.expectEqual(want, r.exit_code);
 }
 
-test "a build whose run hash is recorded is not run under Node" {
+test "a build whose run hash is verified is not run under Node" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -130,25 +135,26 @@ test "a build whose run hash is recorded is not run under Node" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const recording = try walker(&w, "record");
-    try expectExit(0, recording);
-    try expectCounts(&w, 0, 0, 2, 0);
-    const record = try w.read("corpus/run/Hello.run-hash");
-    const checking = try walker(&w, "");
+    // The first walk finds an empty cache: both builds run and, matching,
+    // record their digests.
+    const first = try walker(&w);
+    try expectExit(0, first);
+    try expectCounts(&w, 0, 2);
+    const recorded = try expectDigests(&w, 2);
+    const second = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectExit(0, checking);
-    try expectRecord(&w, record, &.{ "dev", "release" });
+    try expectExit(0, second);
     // Both builds skipped, neither ran.
-    try expectCounts(&w, 2, 0, 0, 0);
+    try expectCounts(&w, 2, 0);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // Checking never writes a record.
-    try testing.expectEqualStrings(record, try w.read("corpus/run/Hello.run-hash"));
+    // A skipped build writes nothing: the cache is as the first walk left it.
+    try testing.expectEqualDeep(recorded, try digests(&w));
 }
 
 test "a program whose output changed runs under Node though its golden still matches" {
@@ -159,28 +165,30 @@ test "a program whose output changed runs under Node though its golden still mat
     defer w.deinit();
     try w.write("corpus/run/Hello.beni", hello);
     try w.write("corpus/run/Hello.expected", "hello\n");
-    try expectExit(0, try walker(&w, "record"));
-    const record = try w.read("corpus/run/Hello.run-hash");
+    try expectExit(0, try walker(&w));
+    const recorded = try expectDigests(&w, 2);
     try w.write("corpus/run/Hello.beni", hello_joined);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExit(0, r);
-    try expectCounts(&w, 0, 2, 0, 0);
+    try expectCounts(&w, 0, 2);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(record, try w.read("corpus/run/Hello.run-hash"));
+    // Two more digests, the first two kept: a digest is never removed.
+    const now = try expectDigests(&w, 4);
+    for (recorded) |d| try testing.expect(contains(now, d));
 }
 
-test "a changed program with a stale run hash that prints the wrong thing fails" {
+test "a changed program with a verified run hash that prints the wrong thing fails" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -188,14 +196,14 @@ test "a changed program with a stale run hash that prints the wrong thing fails"
     defer w.deinit();
     try w.write("corpus/run/Hello.beni", hello);
     try w.write("corpus/run/Hello.expected", "hello\n");
-    try expectExit(0, try walker(&w, "record"));
-    const record = try w.read("corpus/run/Hello.run-hash");
+    try expectExit(0, try walker(&w));
+    const recorded = try expectDigests(&w, 2);
     try w.write("corpus/run/Hello.beni", goodbye);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -203,15 +211,16 @@ test "a changed program with a stale run hash that prints the wrong thing fails"
     try expectExit(1, r);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "FAIL corpus/run/Hello.beni: GoldenMismatch") != null);
     // The development build ran, failed, and ended the case.
-    try expectCounts(&w, 0, 1, 0, 0);
+    try expectCounts(&w, 0, 1);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(record, try w.read("corpus/run/Hello.run-hash"));
+    // A failed run writes nothing.
+    try testing.expectEqualDeep(recorded, try digests(&w));
 }
 
-test "an edited golden makes a recorded run hash stale" {
+test "an edited golden makes a verified run hash stale" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -219,23 +228,29 @@ test "an edited golden makes a recorded run hash stale" {
     defer w.deinit();
     try w.write("corpus/run/Hello.beni", hello);
     try w.write("corpus/run/Hello.expected", "hello\n");
-    try expectExit(0, try walker(&w, "record"));
+    try expectExit(0, try walker(&w));
+    const recorded = try expectDigests(&w, 2);
     try w.write("corpus/run/Hello.expected", "hullo\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExit(1, r);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "FAIL corpus/run/Hello.beni: GoldenMismatch") != null);
-    try expectCounts(&w, 0, 1, 0, 0);
+    try expectCounts(&w, 0, 1);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualDeep(recorded, try digests(&w));
 }
 
-test "recording writes no run hash for a program whose output does not match" {
+test "a run that fails writes no digest, and the runs beside it that passed write theirs" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -245,14 +260,11 @@ test "recording writes no run hash for a program whose output does not match" {
     try w.write("corpus/run/Good.expected", "hello\n");
     try w.write("corpus/run/Wrong.beni", hello);
     try w.write("corpus/run/Wrong.expected", "goodbye\n");
-    // A record from when the golden matched does not survive a recording
-    // that no longer matches.
-    try w.write("corpus/run/Wrong.run-hash", "dev v0.0.0 0000000000000000000000000000000000000000000000000000000000000000\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "record");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -260,32 +272,164 @@ test "recording writes no run hash for a program whose output does not match" {
     try expectExit(1, r);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "FAIL corpus/run/Wrong.beni: GoldenMismatch") != null);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "FAIL corpus/run/Good.beni") == null);
-    // Both builds of each program ran; only `Good`'s two were recorded.
-    try expectCounts(&w, 0, 0, 2, 2);
+    // Good's two builds ran and Wrong's development build ran and failed.
+    try expectCounts(&w, 0, 3);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try expectRecord(&w, try w.read("corpus/run/Good.run-hash"), &.{ "dev", "release" });
-    try testing.expect(!w.exists("corpus/run/Wrong.run-hash"));
+    // Exactly two digests, and they are Good's: a walk of Good alone skips
+    // both of its builds.
+    _ = try expectDigests(&w, 2);
+    try w.tmp.dir.deleteFile(w.io, "corpus/run/Wrong.beni");
+    try w.tmp.dir.deleteFile(w.io, "corpus/run/Wrong.expected");
+    try expectExit(0, try walker(&w));
+    try expectCounts(&w, 2, 0);
+    _ = try expectDigests(&w, 2);
 }
 
-/// The index line id of the probe's one program run.
-const probe_id = "run_hash_probe.test.the program the scenario describes does what it expects #0";
+test "a blessed build looks nothing up and writes no digest" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The development build's golden is written from its output, not
+    // compared with it: that is no verdict to cache. The release build is
+    // compared with the golden the development build just wrote, as always
+    // (`.expected` is the development build's golden), so it is verified
+    // and recorded. The next ordinary run compares the development build
+    // and records it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Hello.beni", hello);
+    try w.write("corpus/run/Hello.expected", "stale\n");
 
-const ProbeMode = enum { check, record };
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try walkerWith(&w, try cachePath(&w), true);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(0, r);
+    try testing.expectEqualStrings("hello\n", try w.read("corpus/run/Hello.expected"));
+    // Only the release build was looked up, and it ran.
+    try expectCounts(&w, 0, 1);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The release build's digest alone; the next walk runs the development
+    // build, records it, and skips the release build.
+    _ = try expectDigests(&w, 1);
+    try expectExit(0, try walker(&w));
+    try expectCounts(&w, 1, 1);
+    _ = try expectDigests(&w, 2);
+}
+
+test "without a cache directory every program runs and nothing is written" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Hello.beni", hello);
+    try w.write("corpus/run/Hello.expected", "hello\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try expectExit(0, try walkerWith(&w, "", false));
+    try expectCounts(&w, 0, 2);
+    const again = try walkerWith(&w, "", false);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectExit(0, again);
+    try expectCounts(&w, 0, 2);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!w.exists("cache"));
+}
+
+/// The digest the concurrent writers record: any 64 hex digits name an
+/// entry.
+const shared_digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+test "eight writers that record one digest at the same time all succeed and leave one file" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The gates run many test processes at once, and two can verify the
+    // same program: each writes an unnamed file and renames it over the
+    // final name, so none fails on the other's entry.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const dir = try cachePath(&w);
+    const Writer = struct {
+        dir: []const u8,
+        failures: *std.atomic.Value(u32),
+        fn go(r: @This()) void {
+            for (0..25) |_| run_hash.recordIn(testing.io, r.dir, shared_digest) catch {
+                _ = r.failures.fetchAdd(1, .monotonic);
+            };
+        }
+    };
+    var failures: std.atomic.Value(u32) = .init(0);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    var threads: [8]std.Thread = undefined;
+    for (&threads) |*t| t.* = try std.Thread.spawn(.{}, Writer.go, .{Writer{ .dir = dir, .failures = &failures }});
+    for (threads) |t| t.join();
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(0, failures.load(.monotonic));
+    try testing.expect(try run_hash.verifiedIn(testing.io, dir, shared_digest));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One entry, and no unnamed file left behind.
+    const found = try expectDigests(&w, 1);
+    try testing.expectEqualStrings(shared_digest, found[0]);
+}
+
+test "a digest that is not 64 lower-case hex digits names no entry" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The digest is the file's name: anything else would name a file the
+    // caller did not mean, `../x` included.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const dir = try cachePath(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE / VERIFY                        │
+    // └─────────────────────────────────────────┘
+    try testing.expectError(error.MalformedDigest, run_hash.recordIn(testing.io, dir, "../escape"));
+    try testing.expectError(error.MalformedDigest, run_hash.recordIn(testing.io, dir, shared_digest[0..63]));
+    try testing.expectError(error.MalformedDigest, run_hash.verifiedIn(testing.io, dir, "0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef"));
+    try testing.expect(!w.exists("cache"));
+}
 
 /// Run the probe binary in the world's project: `source` built and
-/// expected to print `stdout`, against `index.txt`, reporting into
-/// `report_dir`. `with_node` false hands it the Node version and a `PATH`
-/// with nothing on it, so a probe that started Node would fail.
-fn probe(w: *World, mode: ProbeMode, source: []const u8, stdout: []const u8, report_dir: []const u8, with_node: bool) !world.Result {
+/// expected to print `stdout`, against the project's `cache/`, reporting
+/// into `report_dir`. `with_node` false hands it the Node version and a
+/// `PATH` with nothing on it, so a probe that started Node would fail.
+fn probe(w: *World, source: []const u8, stdout: []const u8, report_dir: []const u8, with_node: bool) !world.Result {
     const arena = w.arena.allocator();
     var env = std.process.Environ.Map.init(arena);
     try env.put("PATH", if (with_node) try testing.environ.getAlloc(arena, "PATH") else "");
     try env.put("BENI_EXE", w.exe);
-    try env.put("BENI_RUN_HASH_INDEX", "index.txt");
-    try env.put("BENI_RUN_HASHES", if (mode == .record) "record" else "");
+    try env.put(run_hash.dir_env, try cachePath(w));
     try env.put("BENI_RUN_HASH_REPORT", report_dir);
     try env.put("BENI_PROBE_SOURCE", source);
     try env.put("BENI_PROBE_STDOUT", stdout);
@@ -295,131 +439,102 @@ fn probe(w: *World, mode: ProbeMode, source: []const u8, stdout: []const u8, rep
     return world.spawnAndCaptureIn(arena, w.io, argv.items, .{ .dir = w.tmp.dir }, world.default_timeout_ms, &env);
 }
 
-/// Merge the recording reported into `report_dir` into `index.txt`, as
-/// `zig build test-run-hashes` does after its last process.
-fn merge(w: *World, report_dir: []const u8) !void {
-    const arena = w.arena.allocator();
-    var env = std.process.Environ.Map.init(arena);
-    const argv = try arena.dupe([]const u8, &.{ try testing.environ.getAlloc(arena, "BENI_RUN_HASH_SUMMARY_EXE"), report_dir, "--index=index.txt" });
-    try expectExit(0, try world.spawnAndCaptureIn(arena, w.io, argv, .{ .dir = w.tmp.dir }, world.default_timeout_ms, &env));
-}
-
 /// Assert the counts the probe wrote into `report_dir`, its one report.
-fn expectProgramCounts(w: *World, report_dir: []const u8, skipped: u32, stale: u32, recorded: u32, refused: u32) !void {
+fn expectProgramCounts(w: *World, report_dir: []const u8, skipped: u32, stale: u32) !void {
     const arena = w.arena.allocator();
     var got: ?[]const u8 = null;
     for (try w.listFiles(report_dir)) |name| if (std.mem.endsWith(u8, name, ".txt")) {
         try testing.expectEqual(null, got);
         got = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ report_dir, name }));
     };
-    const want = try std.fmt.allocPrint(arena, "program_skipped {d}\nprogram_stale {d}\nprogram_recorded {d}\nprogram_refused {d}\n", .{ skipped, stale, recorded, refused });
+    const want = try std.fmt.allocPrint(arena, "program_skipped {d}\nprogram_stale {d}\n", .{ skipped, stale });
     try testing.expectEqualStrings(want, got orelse return error.NoProgramCounts);
 }
 
-/// Assert `index` is exactly the probe's line, with a SHA-256 digest.
-fn expectIndexOfProbe(index: []const u8) !void {
-    try testing.expect(std.mem.startsWith(u8, index, probe_id ++ " "));
-    const digest = index[probe_id.len + 1 ..];
-    try testing.expectEqual(64 + 1, digest.len);
-    for (digest[0..64]) |ch| try testing.expect(std.ascii.isDigit(ch) or (ch >= 'a' and ch <= 'f'));
-    try testing.expectEqual('\n', digest[64]);
-}
-
-test "a scenario program whose run hash is recorded is not run under Node" {
+test "a scenario program whose run hash is verified is not run under Node" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const recording = try probe(&w, .record, hello, "hello\n", "recorded", true);
-    try expectExit(0, recording);
-    try expectProgramCounts(&w, "recorded", 0, 0, 1, 0);
-    try merge(&w, "recorded");
-    const index = try w.read("index.txt");
+    const first = try probe(&w, hello, "hello\n", "first", true);
+    try expectExit(0, first);
+    try expectProgramCounts(&w, "first", 0, 1);
+    const recorded = try expectDigests(&w, 1);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     // No Node on `PATH`: a run that started it would fail.
-    const checking = try probe(&w, .check, hello, "hello\n", "checked", false);
+    const second = try probe(&w, hello, "hello\n", "second", false);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectExit(0, checking);
-    try expectIndexOfProbe(index);
-    try expectProgramCounts(&w, "checked", 1, 0, 0, 0);
+    try expectExit(0, second);
+    try expectProgramCounts(&w, "second", 1, 0);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // Checking never writes the index, nor a record for it.
-    try testing.expectEqualStrings(index, try w.read("index.txt"));
-    for (try w.listFiles("checked")) |name| try testing.expect(!std.mem.endsWith(u8, name, ".records"));
+    try testing.expectEqualDeep(recorded, try digests(&w));
 }
 
-test "a changed expectation in a scenario's code runs its recorded program under Node again" {
+test "a changed expectation in a scenario's code runs its verified program under Node again" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try expectExit(0, try probe(&w, .record, hello, "hello\n", "recorded", true));
-    try merge(&w, "recorded");
-    const index = try w.read("index.txt");
+    try expectExit(0, try probe(&w, hello, "hello\n", "first", true));
+    const recorded = try expectDigests(&w, 1);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     // The same program, so the same output tree, expected to print
     // something else.
-    const r = try probe(&w, .check, hello, "hullo\n", "checked", true);
+    const r = try probe(&w, hello, "hullo\n", "second", true);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    // The record did not stand for the new expectation: Node ran, printed
+    // The digest did not stand for the new expectation: Node ran, printed
     // `hello`, and the test failed.
     try expectExit(1, r);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "--- stdout ---\nhello\n") != null);
-    try expectProgramCounts(&w, "checked", 0, 1, 0, 0);
+    try expectProgramCounts(&w, "second", 0, 1);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(index, try w.read("index.txt"));
+    // A failed run writes nothing.
+    try testing.expectEqualDeep(recorded, try digests(&w));
 }
 
-test "recording writes no run hash for a scenario program that does not do what its test expects" {
+test "a scenario program that does not do what its test expects writes no digest" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const other = "other_test.test.another #0 1111111111111111111111111111111111111111111111111111111111111111\n";
-    // Another test's line, and a line from when this expectation held.
-    try w.write("index.txt", other ++ probe_id ++ " 0000000000000000000000000000000000000000000000000000000000000000\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try probe(&w, .record, hello, "goodbye\n", "recorded", true);
-    try expectProgramCounts(&w, "recorded", 0, 0, 0, 1);
-    try merge(&w, "recorded");
+    const r = try probe(&w, hello, "goodbye\n", "report", true);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExit(1, r);
     try testing.expect(std.mem.indexOf(u8, r.stderr, "--- stdout ---\nhello\n") != null);
+    try expectProgramCounts(&w, "report", 0, 1);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // The probe's line is gone and the other test's is kept.
-    try testing.expectEqualStrings(other, try w.read("index.txt"));
-    // The merge consumed the report.
-    try testing.expect(!w.exists("recorded"));
+    try testing.expect(!w.exists("cache"));
 }
 
 test "a scenario's run hash covers the emitted output and the expectation, not the build cache" {
@@ -428,9 +543,9 @@ test "a scenario's run hash covers the emitted output and the expectation, not t
     // └─────────────────────────────────────────┘
     // A script in the project directory used to make the digest cover every
     // file there, `.beni-cache` included. A cache entry names the compiler
-    // that wrote it, so any change under `src/` staled the line even when
+    // that wrote it, so any change under `src/` staled the digest even when
     // the emitted JavaScript was identical. The digest covers the output
-    // tree and the expectation, as a `run/` hash does.
+    // tree and the expectation, as a `run/` digest does.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Main.beni", hello);
@@ -473,8 +588,7 @@ test "a scenario's run hash covers the emitted output and the expectation, not t
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // Nothing here runs Node, and nothing writes a record.
-    try testing.expect(!w.exists("index.txt"));
+    // Nothing here runs Node.
     try testing.expect(w.exists(".beni-cache/noise.txt"));
 }
 
@@ -533,4 +647,9 @@ test "a beni manifest at the project root is refused" {
 
 fn requireDigest(w: *World, script: []const u8, expected: world.Expected) ![]const u8 {
     return try run_hash.programRunDigest(w, script, expected) orelse return error.NoDigest;
+}
+
+fn contains(list: []const []const u8, item: []const u8) bool {
+    for (list) |entry| if (std.mem.eql(u8, entry, item)) return true;
+    return false;
 }
