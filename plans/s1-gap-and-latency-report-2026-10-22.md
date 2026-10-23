@@ -287,6 +287,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #893 (`62fb8a1e9`; an in-place update is an expression again, `(b.f=v,b)`, and is inlined as the spread was, #889) | 232.1 | | 1 446 | 61 682 | 1.06 | 1.44 |
 | after #895 (`93249ae2b`; fix 7, #668: one closure per root, readers registered at mount, a loader for pushed state. +9.0, not −65: at N ≥ 16 the model is a cell and every handler stays at the program site; see #896) | 241.1 | | 1 702 | 64 252 | 1.25 | 1.50 |
 | after #899 (`ba2c5ef0c`; the generator's `replace` shape is a route, so every slice is held and every forwarding handler is in its root, #896 causes 1–2) | 208.0 | | 1 738 | 55 930 | 1.28 | 1.31 |
+| after #902 (`05019dcfa`; no store back of an unchanged model, slice or Tick answer, no dead `,c`, #896 cause 3) | 207.7 | | 1 732 | 55 859 | 1.27 | 1.30 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
