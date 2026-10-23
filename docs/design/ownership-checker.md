@@ -1801,6 +1801,19 @@ views and repeated reads. Casting a tuple `(xs, xs)` to a list of lists must
 not make destructive traversal exclusive; the twin with two independently
 allocated arrays remains accepted. Format 33 invalidates earlier blocks.
 
+*Amended 2026-10-23 (#748, value-scoped read guards):* the occurrence
+requirements above belong to the containing value. Preserve its existing
+list, spine and record annotations through casts; do not replace these with
+global restrictions on an allocation that may occur in another independent
+value. A root runtime-unknown placement (`⋆₁`) can name the selected array,
+so spine-condition and root-separation reads must include it, just as write
+root selection does. Ignoring its guard would make an owned-element
+requirement vacuously true after projection. A cast changes a view, not the
+physical object: a whole-value condition annotation at the root survives
+the cast, including uncertain and repeated views. Ordinary field projections
+continue to use their existing projected guards. Format 33 covers these
+read semantics.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
