@@ -404,14 +404,14 @@ project) against it, one step per line, `#` for a comment:
                                 One whose default a handler prevented logs
                                 `(pointerdown's default prevented)` (or its
                                 name's). happy-dom has no layout: there,
-                                only an element that its inline style
-                                places has a box away from 0 (*layout*,
-                                below). Name the point in the box of the
-                                element that has the handler, and both DOMs
-                                print the same transcript. For the gates
-                                to see a handler convert the point to its
-                                own box, place that element in its style
-                                and point at a child of it
+                                only an element that an allow list places
+                                has a box away from 0 (*layout*, below).
+                                Name the point in the box of the element
+                                that has the handler, and both DOMs print
+                                the same transcript. For the gates to see
+                                a handler convert the point to its own box,
+                                place that element as the list allows and
+                                point at a child of it
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -750,22 +750,23 @@ compares instead of `.expected`. The differences known today:
   frames (`frame`);
 - layout: happy-dom lays nothing out, so sizes and positions are zero,
   with one exception for `getBoundingClientRect`. An element is placed
-  when its inline style sets `position: absolute` or `fixed` and its
-  `left`, `top`, `width` and `height` are in pixels. A placed element gets
-  the box that Chrome gives it on a page that is not scrolled: from the
-  viewport for `fixed`, and for `absolute` from the box of the nearest
-  positioned ancestor, which must be placed too (or from the page's origin
-  when there is none). Any other element has the box at 0. So does a
-  placed element with a shape that the rule does not count:
-  - on the element: a margin at the top or left, a padding, a border, or
-    a `min-` or `max-` size;
-  - on the element or an ancestor: `display: none` or `contents`, a
-    transform (`transform`, `translate`, `rotate`, `scale`, `zoom`,
-    `perspective`), a `filter` or `backdrop-filter`, or a containment
-    (`contain`, `container-type`, `content-visibility`, `will-change`);
-  - an element that is not in the document, or is in a shadow tree.
+  when an allow list leaves nothing else that can move or size its box:
+  - the document has no style sheet, and no `style` or `link` element;
+  - the element is a `div` or a `span`. Its inline style sets
+    `position: absolute` or `fixed`, and `left`, `top`, `width` and
+    `height`, each written as `Npx` or `0`;
+  - the element and each ancestor are HTML elements whose inline style
+    sets no property but `position`, `left`, `top`, `width`, `height` and
+    `touch-action`. None has a `hidden` or `popover` attribute, or is a
+    `dialog` or a `details` that is not open;
+  - the element is in the document, not in a shadow tree.
 
-  So under the gates, `browser/tea/PointerInput` and
+  A placed element gets the box that Chrome gives it on a page that is
+  not scrolled: from the viewport for `fixed`, and for `absolute` from
+  the box of the nearest ancestor whose inline `position` is not
+  `static`. That ancestor must be placed too. When there is none, the box
+  is from the page's origin. Any other element has the box at 0. So under
+  the gates, `browser/tea/PointerInput` and
   `browser/dom/PointerEvents` see `Html.localX` subtract the box of the
   element that has the handler;
 - CSS values: a property the page sets through `style.setProperty`

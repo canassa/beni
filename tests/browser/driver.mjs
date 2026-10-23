@@ -776,48 +776,53 @@ function prelude() {
   // Boxes. happy-dom lays nothing out and puts every box at 0, so under it
   // a reader of a box that subtracts the wrong element's box, or none,
   // reads what a correct one reads (`Html.localX`, issue #558). So under
-  // happy-dom an element that its inline style places gets the box Chrome
-  // gives it on a page that is not scrolled. Placed means: the inline
-  // style sets `position: absolute` or `fixed`, and the computed `left`,
-  // `top`, `width` and `height` are in pixels. The box is from the
-  // containing block: the viewport for `fixed`; for `absolute`, the box of
-  // the nearest positioned ancestor, which must be placed too, or the
-  // page's origin when there is none. Any shape the rule does not count
-  // keeps the box at 0, as does every other element: a margin at the top
-  // or left, a padding, a border or a `min-` or `max-` size on the
-  // element, and a `display: none` or `contents`, a transform, a filter or
-  // a containment on it or on an ancestor (`moves` below lists them). An
-  // element that is not in the document, or is in a shadow tree, keeps it
-  // too. Installed once, as above.
+  // happy-dom an element gets the box Chrome gives it on a page that is
+  // not scrolled when an allow list leaves nothing else that can move or
+  // size its box:
+  // - the document has no style sheet, and no `style` or `link` element;
+  // - the element is a `div` or a `span`, which have no default margin,
+  //   border or padding. Its inline style sets `position: absolute` or
+  //   `fixed`, and `left`, `top`, `width` and `height` as `Npx` or `0`;
+  // - the element and each ancestor are HTML elements whose inline style
+  //   sets nothing but `position`, `left`, `top`, `width`, `height` and
+  //   `touch-action`. None has a `hidden` or `popover` attribute, or is a
+  //   `dialog` or a `details` that is not open;
+  // - the element is in the document, not in a shadow tree.
+  // The box is from the containing block: the viewport for `fixed`; for
+  // `absolute`, the box of the nearest ancestor whose inline `position` is
+  // not `static`, which the list must allow too, or the page's origin when
+  // there is none. Every other element keeps happy-dom's box at 0. The list
+  // reads no computed style: happy-dom computes CSS in part only, so a
+  // computed value can differ from Chrome's. Installed once, as above.
   if (globalThis.happyDOM !== undefined && !Object.hasOwn(Element.prototype, "__beniBox")) {
     const own = Element.prototype.getBoundingClientRect;
+    const html = "http://www.w3.org/1999/xhtml";
+    const allowed = new Set(["position", "left", "top", "width", "height", "touch-action"]);
     const pixels = (text) => {
+      if (text === "0") return 0;
       const match = /^(-?[0-9]+(?:\.[0-9]+)?)px$/.exec(text);
       return match === null ? null : Number(match[1]);
     };
-    // happy-dom's computed value of a property no rule sets is "".
-    const zero = (value) => value === "" || pixels(value) === 0;
-    const sides = ["Top", "Right", "Bottom", "Left"];
-    const lengths = ["marginTop", "marginLeft", ...sides.map((side) => `padding${side}`), ...sides.map((side) => `border${side}Width`)];
-    const limits = { minWidth: "auto", minHeight: "auto", maxWidth: "none", maxHeight: "none" };
-    // The properties that move a box, or make an element the containing
-    // block of a `fixed` or `absolute` descendant, with their initial value.
-    const moves = { transform: "none", translate: "none", rotate: "none", scale: "none", perspective: "none", filter: "none", backdropFilter: "none", zoom: "normal", willChange: "auto", contain: "none", containerType: "normal", contentVisibility: "visible" };
-    const initial = (computed, table) => Object.entries(table).every(([name, value]) => (computed[name] ?? "") === "" || computed[name] === value);
-    const flat = (computed) => computed.display !== "none" && computed.display !== "contents" && initial(computed, moves);
+    // An element whose markup and inline style the list allows.
+    const plain = (element) => {
+      if (element.namespaceURI !== html || element.hasAttribute("hidden") || element.hasAttribute("popover")) return false;
+      if (element.localName === "dialog" || (element.localName === "details" && !element.hasAttribute("open"))) return false;
+      const style = element.style;
+      for (let i = 0; i < style.length; i++) if (!allowed.has(style.item(i))) return false;
+      return true;
+    };
     const placed = (element) => {
-      const position = element.style?.position;
-      if (position !== "absolute" && position !== "fixed") return null;
-      if (element.getRootNode() !== document) return null;
-      const computed = getComputedStyle(element);
-      if (computed.position !== position || !flat(computed) || !lengths.every((name) => zero(computed[name])) || !initial(computed, limits)) return null;
-      const box = { x: pixels(computed.left), y: pixels(computed.top), width: pixels(computed.width), height: pixels(computed.height) };
+      const style = element.style;
+      if (style === undefined || (style.position !== "absolute" && style.position !== "fixed")) return null;
+      if (element.localName !== "div" && element.localName !== "span") return null;
+      if (element.getRootNode() !== document || !plain(element)) return null;
+      if (document.styleSheets.length !== 0 || document.adoptedStyleSheets?.length || document.querySelector("style, link") !== null) return null;
+      const box = { x: pixels(style.left), y: pixels(style.top), width: pixels(style.width), height: pixels(style.height) };
       if (box.x === null || box.y === null || box.width === null || box.height === null) return null;
       let block = null;
       for (let up = element.parentElement; up !== null; up = up.parentElement) {
-        const above = getComputedStyle(up);
-        if (!flat(above)) return null;
-        if (block === null && position === "absolute" && above.position !== "" && above.position !== "static") block = up;
+        if (!plain(up)) return null;
+        if (block === null && style.position === "absolute" && up.style.position !== "" && up.style.position !== "static") block = up;
       }
       if (block === null) return box;
       const origin = placed(block);
@@ -1304,8 +1309,8 @@ function step(s) {
     // A pointer event at a point of a box: `x` and `y` are CSS pixels from
     // the top-left corner of the `box:` element (by default the element the
     // event is dispatched on), so its `clientX` is that box's left plus `x`.
-    // happy-dom has no layout, so there only an element that its inline
-    // style places has a box away from 0 (the prelude's *Boxes*); Chrome
+    // happy-dom has no layout, so there only an element that the prelude's
+    // allow list places has a box away from 0 (*Boxes*); Chrome
     // lays out every element. `pointerenter` and
     // `pointerleave` neither bubble nor cancel, and nor does
     // `pointercancel`, as the Pointer Events standard fires them.
