@@ -764,12 +764,17 @@ compares instead of `.expected`. The differences known today:
   - the element is in the document, not in a shadow tree.
 
   happy-dom keeps a declaration only for a property that it knows, so the
-  names come from the text of the `style` attribute, and an unknown name
-  or a `-webkit-` alias there refuses the element. A later
-  `style.setProperty` writes that text again without the unknown name, so
-  the driver marks the element when it first reads its `style`, and a
-  `setProperty` with a name outside the list marks it too. A marked
-  element keeps the box at 0.
+  names come from the text of the `style` attribute, as written: an
+  unknown name, a `-webkit-` alias or a name in another case (`LEFT`)
+  there refuses the element. A later `style.setProperty` writes that text
+  again without the unknown name, so the driver marks the element each
+  time it reads its `style` and the text has such a name, and a
+  `setProperty` whose name, as given, is outside the list marks it too. A
+  marked element keeps the box at 0. The marks see the two writes that
+  the runtimes make: the `style` attribute and `setProperty`. They do not
+  see `cssText`, an assignment to a style property (`style.left = …`),
+  `attachShadow` or `element.animate`, so a platform that starts to use
+  one of these adds it to the driver's list.
 
   A placed element gets the box that Chrome gives it on a page that is
   not scrolled: from the viewport for `fixed`, and for `absolute` from

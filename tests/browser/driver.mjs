@@ -797,8 +797,12 @@ function prelude() {
   // happy-dom keeps as written until a write through `element.style`
   // writes it again. Every such write reads `element.style` first: its
   // getter marks the element when the text names a property outside the
-  // list, and `setProperty`, the one write the runtimes make, marks it when
-  // its name is outside the list. A marked element is never placed.
+  // list, and `setProperty` marks it when its name is outside the list. A
+  // marked element is never placed. The marks see the two writes that the
+  // runtimes make, the `style` attribute and `setProperty`, and not
+  // `cssText`, a style property's assignment (`style.left = …`),
+  // `attachShadow` or `element.animate`: a runtime that starts to use one
+  // of those must add it here.
   // The box is from the containing block: the viewport for `fixed`; for
   // `absolute`, the box of the nearest ancestor whose inline `position` is
   // not `static`, which the list must allow too, or the page's origin when
@@ -810,10 +814,12 @@ function prelude() {
     const html = "http://www.w3.org/1999/xhtml";
     const allowed = new Set(["position", "left", "top", "width", "height", "touch-action"]);
     const tags = new Set(["html", "body", "main", "div", "span"]);
+    // A name is tested as it is written. Chrome applies `LEFT` or `Left`,
+    // and happy-dom drops them, so another case is outside the list.
     const names = (text) =>
       text
         .split(";")
-        .map((d) => (d.includes(":") ? d.slice(0, d.indexOf(":")) : d).trim().toLowerCase())
+        .map((d) => (d.includes(":") ? d.slice(0, d.indexOf(":")) : d).trim())
         .filter((name) => name !== "");
     const listed = (text) => {
       const all = names(text);
@@ -846,7 +852,7 @@ function prelude() {
     const setProperty = declaration.setProperty;
     declaration.setProperty = function (name, value, priority) {
       const element = owner.get(this);
-      if (element !== undefined && !allowed.has(String(name).trim().toLowerCase())) marked.add(element);
+      if (element !== undefined && !allowed.has(String(name))) marked.add(element);
       return setProperty.call(this, name, value, priority);
     };
     const pixels = (text) => {
