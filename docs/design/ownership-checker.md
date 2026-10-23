@@ -1097,6 +1097,13 @@ numbering stays finite, since the result paths do. This is the instantiation a c
 so it is as sound as that one is. No verdict of the corpus or of core changed;
 `ownership/RecursiveTupleGuards` settles in 3 rounds.
 
+*Amended 2026-10-23 (issue #286, §16.7 (d)): a member's fresh numbers are the same in every round.* The rule
+above keeps one fresh cell per call inside the group. What a member's read-off numbers changed: a member's
+fresh number is now a function of the result paths it names, kept for all the group's rounds (`freshKey`), so the
+join of two rounds puts together only allocations at the same result paths. Before, each round numbered its cells
+in its own order, and the join merged a root's list with its subtrees' (`FoldLevels.pushRoot`). §16.7's dated
+amendment *what `lvl` is now* has the rule, its soundness and what it changed.
+
 ### 16.7 Limits, and no width cap
 
 *Amended 2026-10-16 (the owner, #220): the width cap of 64 paths and coarsening are deleted. The text they
@@ -2681,6 +2688,63 @@ and from 19.83M to 20.03M at N = 256. It now grows ×3.8 and then ×3.4. The own
 56.09M to 43.29M on `nowd`, and from 208.28M to 208.66M at N = 256. Every output hash is unchanged,
 `test-records-lost` shows no difference in 1 174 programs, and
 `-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694).
+
+*Amended 2026-10-23 (issue #286, decision (d), with the level marker as built): what `lvl` is now.* (d) above was
+written before the level marker `⟨T⟩` (#379). It asked for one fact, `lvl c`, made of three: (1) a level's lists
+are apart from the lists below it, (2) two regions' lists are apart from each other, and (3) the levels inside one
+region are apart from each other. With the marker, (1) and (2) are facts between two places neither of which
+holds or overlaps the other (`#Node.1` and `#Node.0⟨Tree⟩#Node.1`; `#Node.0⟨Tree⟩#Node.1` and
+`#Node.2⟨Tree⟩#Node.1`). So a value's deep condition states them as `sep` atoms (*Exclusivity, and what it does
+not say*, above). A construction makes them as §18.2 makes any `sep`. The call-site demand relies on them
+(`disjoint`), and at a parameter the demand records `xreq excl`, which every caller discharges. `ParamHole` is
+that case, and it passes since #379. (3) is the stated limit of the same bullet: a region is one cell per
+allocation. No new atom is needed for (1) and (2), and (3) is not built. (e) names it. So `lvl` is the deep
+condition at the places the marker keeps apart, and the condition atom of (d) as first written is withdrawn.
+
+One part of (d) was still missing: *a callee's fresh result has the `lvl` its summary publishes*. A recursive
+member's summary did not publish it, because its rounds numbered its allocations differently. The round join of
+§16.6 (`xᵢ₊₁ = xᵢ ⊔ F(xᵢ)`) unions entries by their fresh number. Each round numbered its new cells in the order of
+its own cells. So one number named one allocation in one round and another allocation in the next, and the join
+put them together. In `FoldLevels.build`, round 1 numbers `[ n ]`, at `#Node.1`, fresh1. Round 2 numbers the cell
+of the left recursive call, at `#Node.0⟨Tree⟩#Node.1`, fresh1, because it sorts first, and `[ n ]` fresh2. The
+joined fresh1 is then at `#Node.1` and at `#Node.0⟨Tree⟩#Node.1`: "one new list at the root and in the left
+subtree". `pushRoot` read that list as the root's list held by `l`, and refused the edit.
+
+- **The rule.** Inside a recursive group (§16.6), a member's fresh number is a function of the result paths it
+  names, with each path's approximation and the escape bit (`freshKey`). The number is given the first time the
+  member's rounds meet that set of result paths, and it is the same in every later round. The read-off's rule
+  is unchanged: cells at the same result paths share a number (*the fresh numbers* paragraph above). A set's
+  number no longer moves between rounds. A declaration that is not in a recursive group is walked once, and its
+  numbering is unchanged.
+- **Soundness.** A number names the new lists that are at exactly its result paths. In every round, each
+  allocation has one number at all of its places, so a list at two places is one number at both, as before. The
+  join keeps every entry of both rounds, so it removes no holder. Two allocations that different rounds put at
+  one set of paths share a number. That only adds aliasing. A number left from an earlier round, whose
+  allocation a later round met at more paths, names a cell that holds nothing the later number does not also
+  hold. That adds a holder and removes none. Distinct numbers are distinct allocations in every round, which is
+  what a caller outside the group instantiates (one cell per number).
+- **Finite.** The numbers are bounded by the sets of result paths the rounds meet. These are sets of the
+  summary's result paths, which are finite (§16.7's bound argument). So the summary lattice is still finite,
+  and the join settles as before. §16.6's rule that a call of a member inside the group makes one fresh cell
+  stays. A cell per number at the group's own calls was tried: core `Schema`'s recursive group, whose members
+  carry about 1 600 and 3 100 result entries, did not finish checking core in thirty minutes. It is not needed for (d)'s
+  verdicts, and it is not built.
+- **What it changes.** `FoldLevels.pushRoot` is accepted `call`. `ownership/LevelFresh` pins it beside `pushDup`,
+  whose builder `dup` puts one new list at the root and in its left child. That sharing is real, and `pushDup`
+  is still refused. Both were refused before. In `tests/corpus/ownership/`, thirty other goldens change in
+  summary lines only. They have other fresh numbers, fewer allocations under one number, and numbers left from
+  earlier rounds. No other verdict line changes.
+- **What it does not change.** A call of a member inside its own group still makes one cell for all of the
+  member's allocations. When a placement folds that cell's places onto one marked path, *What a fold hides*
+  lowers it as one list at two places: `build`'s `#Node.0⟨Tree⟩#Node.1 fresh2{shared}`, as on `master`. That is
+  a fact inside a region, where (3) refuses a write while another level is held anyway.
+
+*Tea.want.* (d) as first written predicted that `browser-direct`'s `Tea.want` (now `browser-tea`'s) needs
+`Dict.insert` and `Dict.update` to publish `lvl` of their result. Under the level marker, core `Dict`'s tree keeps
+the merged fold until #294 (*Scope*, above), and its places are representatives. So no level of a dictionary is
+told apart, and the question does not arise until #294. Measured with `bench/ownership-everywhere.mjs --no-cost`,
+before and after this amendment the tables are the same: none of 1 001 programs is rejected, core has 117
+demands and `browser-tea`'s own modules 54, none pending or rejected, `Tea`'s included.
 
 ### 16.8 The library
 

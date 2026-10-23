@@ -1,0 +1,11 @@
+module LevelFresh
+  46:23 List.push xs: accepted call
+  56:23 List.push xs: rejected call: l⟨Tree⟩#Node.1 may hold it through the call at 54:10, and is read at 56:15 (approx)
+  summary build: res #Node.0⟨Tree⟩#Node.1 fresh2{shared}r{shared}, #Node.1 fresh1, #Node.2⟨Tree⟩#Node.1 fresh3{shared}r{shared}
+  summary dup: res #Node.0⟨Tree⟩#Node.0 condition(fresh5){shared}, #Node.0⟨Tree⟩#Node.1 condition(fresh4) condition(fresh5){shared} fresh1 fresh4{shared}r{shared}, #Node.1 condition(fresh3) fresh1, condition(fresh2){shared}
+  summary size: π1 R, π1⟨Tree⟩#Node.0 R, π1⟨Tree⟩#Node.1 R, π1⟨Tree⟩#Node.2 R
+  summary pushRoot: res .0#Node.0⟨Tree⟩#Node.1 fresh3{shared}r{shared}, .0#Node.1 fresh1, .0#Node.1[*] ~fresh2, .0#Node.2⟨Tree⟩#Node.1 fresh4{shared}r{shared}
+  summary pushDup: res .0 condition(fresh7){lost}r{lost}, .0#Node.0⟨Tree⟩#Node.0 condition(fresh6){shared}, .0#Node.0⟨Tree⟩#Node.1 condition(fresh5) ~condition(fresh4) ~condition(fresh6){shared} ~fresh1 ~fresh4{shared}r{shared}, .0#Node.1 condition(fresh3) fresh1 ~condition(fresh8), .0#Node.1[*] ~condition(fresh2) ~fresh2
+  demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause call 1

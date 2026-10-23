@@ -1082,6 +1082,12 @@ places_of: std.ArrayList(u32) = .empty,
 canon_splits: std.ArrayList(CanonicalSplit) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
 concat_memo: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
+/// §16.6 as amended by §16.7 (d): a recursive member's fresh numbers, by
+/// the declaration and the result paths a number names (with its escape
+/// bit), so that a number names the same result paths in every round.
+fresh_keys: std.HashMapUnmanaged([]const u32, u32, U32SliceContext, std.hash_map.default_max_load_percentage) = .empty,
+/// Per declaration `(module, declaration)`: the fresh numbers it has.
+fresh_count: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 suffix_memo: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, type variable)`: whether a value of the type may hold a cell.
 tracked_memo: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
@@ -1171,6 +1177,8 @@ pub fn deinit(o: *Ownership) void {
     o.places_of.deinit(o.in.gpa);
     o.canon_splits.deinit(o.in.gpa);
     o.concat_memo.deinit(o.in.gpa);
+    o.fresh_keys.deinit(o.in.gpa);
+    o.fresh_count.deinit(o.in.gpa);
     o.suffix_memo.deinit(o.in.gpa);
     o.tracked_memo.deinit(o.in.gpa);
     o.tracked_inner_memo.deinit(o.in.gpa);
@@ -5714,6 +5722,28 @@ fn prepend(o: *Ownership, s: Step, p: u32) Allocator.Error!u32 {
     var at = try o.child(eps, s.kind, s.arg);
     for (rest) |r| at = try o.child(at, r.kind, r.arg);
     return at;
+}
+
+/// §16.7 (d): the fresh number of declaration `(m, d)` for the result paths
+/// `ps` (each `path * 2 + approx`, then the escape bit). Numbers are given in
+/// the order the rounds first meet a set of paths, so they are a function of
+/// the program, and one set has one number in every round.
+fn freshKey(o: *Ownership, m: u32, d: u32, ps: []const u32) Allocator.Error!u32 {
+    const keep = o.keep.allocator();
+    const key = try keep.alloc(u32, ps.len + 2);
+    key[0] = m;
+    key[1] = d;
+    @memcpy(key[2..], ps);
+    const gop = try o.fresh_keys.getOrPut(o.in.gpa, key);
+    if (gop.found_existing) {
+        keep.free(key);
+        return gop.value_ptr.*;
+    }
+    const count = try o.fresh_count.getOrPut(o.in.gpa, (@as(u64, m) << 32) | d);
+    if (!count.found_existing) count.value_ptr.* = 0;
+    count.value_ptr.* += 1;
+    gop.value_ptr.* = count.value_ptr.*;
+    return count.value_ptr.*;
 }
 
 /// `p`'s steps followed by `q`'s.
@@ -20990,6 +21020,14 @@ const Walker = struct {
             }
             const esc_bit: u32 = if (try w.isEscaped(r.cell)) 1 else 0;
             try ps.append(w.a, esc_bit);
+            if (frame == 0 and w.recursive) {
+                // §16.7 (d): a recursive member's number names its result
+                // paths in every round, so the rounds' join never puts two
+                // allocations that different rounds numbered alike at one
+                // number (a root's list and its subtrees').
+                num.* = try w.o.freshKey(w.m, w.decl_index, ps.items);
+                continue;
+            }
             const g = try groups.getOrPut(w.a, ps.items);
             if (!g.found_existing) g.value_ptr.* = @intCast(groups.count());
             num.* = g.value_ptr.*;
