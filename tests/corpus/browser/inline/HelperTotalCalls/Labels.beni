@@ -1,0 +1,2 @@
+pub bump : Int → Int
+bump n = n + 1

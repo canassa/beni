@@ -1,0 +1,105 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      ""
+      <output>"0"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=append]
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-role="choose">"4 4 3"</button>
+      </section>
+      <output>"0"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=choose]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-role="choose">"4 4 3"</button>
+      </section>
+      <output>"11"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=append]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-role="choose">"5 5 4"</button>
+      </section>
+      <output>"11"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=choose]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-role="choose">"5 5 4"</button>
+      </section>
+      <output>"14"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main>
+      ""
+      <output>"14"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=append]
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-role="choose">"6 6 5"</button>
+      </section>
+      <output>"14"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=choose]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-role="choose">"6 6 5"</button>
+      </section>
+      <output>"17"</output>
+      <button data-role="append">"Append"</button>
+      <button data-role="toggle">"Toggle"</button>
+    </main>
+  </div>
+</body>

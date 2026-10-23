@@ -1,5 +1,6 @@
 -- A potentially throwing helper argument stays unevaluated while its arm
 -- is hidden (#459). The preceding argument logs once, in source order.
+-- The following argument must not log after the preceding one throws.
 -- Revealing it throws before visibility or sibling text
 -- writes change the previous page.
 import Browser
@@ -31,8 +32,8 @@ boom : Int → Int
 boom n = if n > 0 then Debug.todo "selected helper boom" else n
 
 
-pair : Int, Int, Model → Html Msg
-pair first label model = <p data-role="helper">{first} {label} {model.cups}</p>
+pair : Int, Int, Int, Model → Html Msg
+pair first label last model = <p data-role="helper">{first} {label} {last} {model.cups}</p>
 
 
 view : Model → Html Msg
@@ -41,7 +42,12 @@ view model =
         {if model.shown then
             <section>
                 <p data-role="hole">{model.cups}</p>
-                {pair (Debug.log "before" model.cups) (boom model.cups) model}
+                {pair
+                    (Debug.log "before" model.cups)
+                    (boom model.cups)
+                    (Debug.log "after" model.cups)
+                    model
+                }
             </section>
          else
             <></>

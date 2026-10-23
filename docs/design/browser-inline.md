@@ -332,6 +332,11 @@ beni over `Js` in `Inline.beni`:
   An argument is evaluated once per call site, before that helper's body; sibling calls keep separate
   bindings. Only invocation-local temporaries cross the preparation and write phases. Functions whose
   work is all proven pure and total keep their existing eager code.
+  *Amended 2026-10-23 (#618):* "proven pure and total" (`Context.valuePureTotal`) includes a
+  saturated call, with no hidden evidence, of a declaration the checker proved total
+  (`checker-v2.md` §26) when every argument is pure and total too, so `bump (String.length s)` is
+  eager; the classification is an uncapped iterative walk, so an expression's size alone never
+  makes it guarded.
   *Corrected 2026-10-19 (the owner, #466):* a helper argument used by an event handler is part
   of the handler binding, as in the source: its message is built during view evaluation and lives
   on the node until the binding reruns. Bound arguments share that lifetime, are refreshed by a
