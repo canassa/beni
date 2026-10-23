@@ -7470,6 +7470,8 @@ pub type AskError
   is `Unreadable`, 204 with `x-beni-reply: none` is `NoReply`, 200 is parsed by the asker's schema.
   A `Reply` prints only for the ask that makes it: one parsed in this instance, printed for any
   stub, is `Unprintable` (`ObjectAsk`'s `/hello`: the post is dropped with one warning line).
+  *Amended 2026-10-23: the two paths and the origin mark are gone; the wire is (e.11)'s RPC
+  method, and the asker reads a tagged result instead of a status.*
 - **The holders of a `Reply`** ((e.10), #623): the platform cannot see which fiber holds one, so
   it counts **every fiber of the object**. `NoReply` is answered, after an event and before the
   consumer parks, for each ask whose `received` has returned when the object's scheduler runs no
@@ -7497,6 +7499,54 @@ pub type AskError
   core way to name the running fiber (#730): with it the platform refuses the handler alone, and
   R7-3's hazard — a handler joining a fiber that asks `self` — returns as the bounded hazard it
   was.
+
+**(e.11) The RPC transport between objects** (*added 2026-10-23; Cesar's answer to
+`cf-workers-q13` is A: RPC is the transport, the protocol stays the one surface*). The host
+offers RPC on a Durable Object stub: a method of the object's class called as
+`stub.method(args)`, arguments and results structured-cloned, one promise per call
+([RPC](https://developers.cloudflare.com/workers/runtime-apis/rpc/)). The platform uses it as the
+transport of (e.10)'s `post` and `ask`, in place of `stub.fetch` on `/__beni/post` and
+`/__beni/ask`:
+
+- **One method, `$beni(chain, kind, id, text)`**, on every object the platform defines: `chain` is
+  (e.3)'s call-chain id, `kind` is `"post"` or `"ask"`, `id` the ask's correlation id or `null`,
+  `text` the message printed by the protocol's schema. It answers a promise: for a post, resolved
+  with `null` once `received` ran; for an ask, resolved with a tagged result when `reply` answers
+  (`{ kind: "reply", text }`), when nothing can reply any more (`{ kind: "none" }`, (e.10)'s
+  `NoReply`), when the message did not parse, or the reply's value did not print (`{ kind:
+  "unparsed" }`, `Unreadable`), or when the chain already holds a handler parked here (`{ kind:
+  "cycle" }`, (e.3)'s `Cycle`). The host's failures of the call itself — overloaded, reset,
+  retryable — reach the caller as the stub's rejection and are sorted as (d) sorts them. Nothing
+  is caught (rule 9). A receiver that throws while it holds an ask is (f)'s defect: its abort
+  rejects the pending call with the host's reset, and the asker sees `Err Reset` (*measured*,
+  `workers/ObjectRpc`).
+- **The chain id is an argument**, not a header: an RPC call carries no headers. It travels the
+  same way through a Worker's `ask` (a fresh id) and an object's (the running handler's), so
+  (e.3)'s cycle refusal holds over RPC as it holds over `stub.fetch` (*measured*: `ObjectRefused`'s
+  Scorer asking the Lobby back, and `ObjectRpc`'s Pong asking the Ping back, are `Err Cycle` with
+  neither object hanging). A forwarded request still carries `x-beni-chain`, and an object still
+  refuses a request of a chain parked in it with 508.
+- **The forged-message path closes by construction**: an RPC method is not reachable through
+  `forward`, which forwards HTTP alone, so the origin mark `x-beni-origin: platform` of (e.10) and
+  the two paths are gone from the object. `forward`'s refusal of `/__beni/` paths stays: the test
+  hooks and (k)'s marks are the platform's own paths still, and a client reaches none of them
+  (`ObjectCounter`'s forged post and ask are answered 404 by `forward` as before).
+- **The host requires the class to extend `DurableObject`** from `cloudflare:workers` for RPC, and
+  the release compactor refuses a platform runtime file that holds the `class` keyword
+  (`backend.md` §9, `src/js/Minify.zig`). `runtime.js` keeps its function form and gains the
+  prototype chain: the instance is `Reflect.construct(DurableObject, [ctx, env], new.target)`,
+  `Instance.prototype` is set over `DurableObject.prototype`, and the methods stay on it (*measured
+  2026-10-22 under Miniflare 4.20260518.0: such an object answers `stub.$beni(…)` as a class would,
+  and its `fetch` still serves; without the base the host refuses the call, `TypeError: The
+  receiving Durable Object does not support RPC, because its class was not declared with extends
+  DurableObject`*). One compiler change goes with it: the release compactor's host-import rule
+  names `cloudflare:` beside `node:` (`backend.md` §9, *Host imports*, amended 2026-10-23), since
+  the runtime's `import` of `cloudflare:workers` would otherwise keep the file out of the one
+  scope; a host built-in's evaluation is not observable, which is the rule's reason.
+- **What a program sees**: nothing new — `post`, `ask`, `reply`, `received` and `Ref msg` are the
+  surface, and every existing fixture keeps its transcript. The second surface considered under
+  `cf-workers-q13` (declared methods with their own schemas, option B) is not taken.
+- **`WorkerEntrypoint`** (a Worker called by another Worker over RPC) stays in (j).
 
 **(e.8) The Elm Architecture is a framework layer.** `Object.element` — `update : Context msg,
 state, msg → state × Cmd msg` — sits over `post` and spawn, as §9.8.11 puts TEA over a direct
@@ -7834,8 +7884,8 @@ arenaOf path =
 
 **(j) Not in the first slices.** A request body read in a Worker's `fetch` (the stream is
 forwarded whole; an object reads its body through (e)); `Object.element`, The Elm Architecture over
-`post` and spawn ((e.8)); binary frames and `Bytes`; RPC methods on a stub and
-`WorkerEntrypoint`; the SQL and asynchronous storage APIs, transactions and point-in-time
+`post` and spawn ((e.8)); binary frames and `Bytes`; `WorkerEntrypoint` (RPC between objects
+is (e.11), *2026-10-23*); the SQL and asynchronous storage APIs, transactions and point-in-time
 recovery; a `waitUntil` for programs (the platform's own use is (d)'s); `request.cf`; streaming bodies; `passThroughOnException`; KV, R2, D1,
 Queues, cron triggers, Workflows, Containers; outgoing WebSockets (which do not hibernate);
 `setHibernatableWebSocketEventTimeout`; the `ssr` lowering for a Worker that renders markup; a

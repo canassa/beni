@@ -1561,7 +1561,9 @@ pub const Hoisted = struct {
         if (h.patterned) return "a top-level declaration destructures a pattern";
         if (h.located) return "it reads where it is, through `import.meta` or `import()`";
         for (h.imports) |imp| {
-            if (!std.mem.startsWith(u8, imp.specifier, "node:")) return "it imports a module other than a `node:` built-in";
+            // A host built-in's evaluation is not observable (backend.md §9,
+            // *Host imports*, amended 2026-10-23 for `cloudflare:`).
+            if (!std.mem.startsWith(u8, imp.specifier, "node:") and !std.mem.startsWith(u8, imp.specifier, "cloudflare:")) return "it imports a module other than a `node:` or `cloudflare:` built-in";
         }
         return null;
     }
@@ -2054,6 +2056,10 @@ test "hoisting: what cannot join one scope says why" {
         const h = (try hoistable(arena, source, &.{"f"})) orelse return error.Refused;
         try testing.expect(h.declines() != null);
     }
+    // A host built-in's evaluation is not observable: `cloudflare:` joins
+    // the one scope as `node:` does (backend.md §9, *Host imports*).
+    const host = (try hoistable(arena, "import { DurableObject } from \"cloudflare:workers\";\nexport const f = () => DurableObject;\n", &.{"f"})) orelse return error.Refused;
+    try testing.expect(host.declines() == null);
     // A top-level call is a unit this pass cannot delimit: not read at all.
     try testing.expect(try hoistable(arena, "f();\nexport const g = 1;\n", &.{"g"}) == null);
 }

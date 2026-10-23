@@ -1,0 +1,164 @@
+-- workers: `post` and `ask` travel over the host's RPC (boundary.md §9.12
+-- (e.11); #594's RPC half). The Worker asks the Ping, which asks the Pong;
+-- the Pong asking the Ping back while the Ping waits on it is the refused
+-- cycle; and a Pong that throws while it holds the Ping's ask gives the
+-- Ping `Err Reset`, after which the Pong's next event starts a new
+-- instance.
+import Schema exposing (Schema)
+import String
+import Worker exposing (Context, Request, Response)
+import Worker.Object as Object exposing (Reply)
+
+
+main : Worker.Program
+main = Worker.program { fetch = route, objects = [ ping, pong ] }
+
+
+-- Both objects speak one protocol: an operation and the reply channel.
+type alias Msg =
+    op : String
+    reply : Reply String
+
+
+toMsg ( ( ⊤, op ), reply ) = { op = op, reply = reply }
+
+
+fromMsg m = ( ( ⊤, m.op ), m.reply )
+
+
+protocol : Schema { op : String, reply : String } Msg
+protocol =
+    Schema.record
+        (Schema.fields
+            ▷ Schema.field "op" Schema.string
+            ▷ Schema.field "reply" (Object.replySchema Schema.string)
+        )
+        (Schema.mapping toMsg fromMsg)
+        (Schema.mapping toMsg fromMsg)
+
+
+-- ---- The Ping -----------------------------------------------------------------
+
+ping : Worker.Definition
+ping = Object.define "Ping" protocol (λ_ → ⊤) { Object.none | received = pinged }
+
+
+pinged : Object.Context Msg, ⊤, Msg → ⊤
+pinged ctx _ msg =
+    case Worker.objects (Object.env ctx) "PONGS" protocol of
+        Just pongs →
+            askPong op =
+                showAsk
+                    (Object.ask (Worker.byName pongs "p") Schema.string λr → { op = op, reply = r })
+            case msg.op of
+                "relay" →
+                    heard = askPong "echo"
+                    Object.reply msg.reply "ping heard ${heard}"
+
+                "cycle" →
+                    Object.reply msg.reply (askPong "back")
+
+                "crash" →
+                    Object.reply msg.reply (askPong "crash")
+
+                _ →
+                    -- "echo" from the Pong's "back": refused before it is received.
+                    Object.reply msg.reply "ping"
+
+        Nothing →
+            Object.reply msg.reply "no PONGS binding"
+
+
+-- ---- The Pong -----------------------------------------------------------------
+
+pong : Worker.Definition
+pong = Object.define "Pong" protocol (λ_ → 0) { Object.none | request = count, received = ponged }
+
+
+ponged : Object.Context Msg, Int, Msg → Int
+ponged ctx n msg =
+    case msg.op of
+        "echo" →
+            Object.reply msg.reply "pong"
+            n + 1
+
+        "back" →
+            -- The Ping waits on this call: asking it back is the cycle.
+            case Worker.objects (Object.env ctx) "PINGS" protocol of
+                Just pings →
+                    back =
+                        showAsk
+                            (Object.ask (Worker.byName pings "p") Schema.string λr →
+                                { op = "echo", reply = r }
+                            )
+                    Object.reply msg.reply "back: ${back}"
+                    n + 1
+
+                Nothing →
+                    Object.reply msg.reply "no PINGS binding"
+                    n + 1
+
+        _ →
+            Debug.todo "the pong threw"
+
+
+count : Object.Context Msg, Int, Request → Int × Response
+count _ n _ = ( n, Worker.text 200 "${String.fromInt n} received" )
+
+
+-- ---- The Worker ---------------------------------------------------------------
+
+route : Context, Request → Response
+route ctx request =
+    case
+        ( Worker.objects (Worker.env ctx) "PINGS" protocol
+        , Worker.objects (Worker.env ctx) "PONGS" protocol
+        , Worker.path request
+        )
+    of
+        ( Just _, Just pongs, "/count" ) →
+            case Worker.forward (Worker.byName pongs "p") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the pong is not available"
+
+        ( Just pings, Just _, path ) →
+            Worker.text 200
+                (showAsk
+                    (Object.ask (Worker.byName pings "p") Schema.string λr →
+                        { op = String.dropLeft path 1, reply = r }
+                    )
+                )
+
+        _ →
+            Worker.text 500 "a binding is missing"
+
+
+showAsk : Result Object.AskError String → String
+showAsk result =
+    case result of
+        Ok text →
+            "Ok ${text}"
+
+        Err Object.Overloaded →
+            "Err Overloaded"
+
+        Err Object.Reset →
+            "Err Reset"
+
+        Err Object.Transient →
+            "Err Transient"
+
+        Err Object.Cycle →
+            "Err Cycle"
+
+        Err Object.NoReply →
+            "Err NoReply"
+
+        Err (Object.Unprintable _) →
+            "Err Unprintable"
+
+        Err (Object.Unreadable issues) →
+            "Err Unreadable (${String.fromInt (List.length issues)} issue)"

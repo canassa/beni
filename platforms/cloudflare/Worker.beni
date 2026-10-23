@@ -739,10 +739,11 @@ refName ref =
 --| else is a defect.
 pub forward : Ref msg, Request → Result StubError Response
 forward ref request =
-    -- A client reaches no path of the platform's: `/__beni/post` and
-    -- `/__beni/ask` are the stubs' own, so a path that holds `/__beni/` is
-    -- answered 404 here and never sent — except the two test hooks of a
-    -- `--test-hooks` build, which a fixture drives through `forward`.
+    -- A client reaches no path of the platform's: `/__beni/` paths are the
+    -- platform's own — the test hooks, and the marks of (k) — so one is
+    -- answered 404 here and never sent, except the hooks of a
+    -- `--test-hooks` build, which a fixture drives through `forward`. The
+    -- messages between objects travel over RPC, not over a path ((e.11)).
     if reserved (path request) then
         Ok (text 404 "no such page")
     else

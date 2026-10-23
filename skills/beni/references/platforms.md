@@ -84,9 +84,9 @@ handle request =
   `Worker.unique` or `Worker.byId`. `Worker.forward ref request` sends a request. `Object.post
   ref message` sends a message and waits for nothing. `Object.ask ref schema (λreply → message)`
   sends a message with a `Reply` and waits for `Object.reply reply value`; a cycle between
-  objects is `Err Cycle`, a message that does not parse is `Err Unreadable`, and a `Reply` that
-  no one can answer is `Err NoReply`. `Object.self ctx` is the object's own ref; inside an
-  object, `Object.env ctx` holds the bindings.
+  objects is `Err Cycle`, a message that does not parse is `Err Unreadable`, a `Reply` that no
+  one can answer is `Err NoReply`, and a receiver that fails while it holds the ask is `Err
+  Reset`. `Object.self ctx` is the object's own ref; inside an object, `Object.env ctx` holds the bindings.
 - `Worker.Storage.get ctx schema key`, `put`, `delete` and `keys ctx prefix` are the store.
 - A defect in a handler stops the object: its fibers are cancelled, their `Task.bracket`
   releases run, the request in flight fails, and the next event starts a new instance.
