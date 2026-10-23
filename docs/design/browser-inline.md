@@ -564,8 +564,8 @@ tea-inline's output, as for every slice:
   Also decided then: what the lowering reads from #315 to know that a slice is stable, and how a
   reader's root finds the writer's table when the two mount in either order.
 
-*Design amendment 2026-10-22 (#668, proposed for owner review): the root piece and its mount
-contract.* This specifies the preceding owner's reversal; it is **not implemented**. It takes
+*Design amendment 2026-10-22 (#668, proposed for owner review; its six decisions taken 2026-10-23, below): the root piece
+and its mount contract.* This specifies the preceding owner's reversal; it is **not implemented**. It takes
 effect after #315 R6/R7, including enforcement, hoists, stores and the optimiser barrier. Until
 then the preceding *as built* rules describe the compiler. No section is renumbered. D-c now
 means **mount-time registration**, not static reader calls. The decisions explicitly left to
@@ -1011,6 +1011,32 @@ record errors. They never update a refusal golden to a spread or coarse pass.
 
 No measurement was made for this amendment. The later implementation still owes #668's S1
 byte bar and the owner's comparison; the earlier report's estimates are not a result of this PR.
+
+*Decided 2026-10-23 (the owner, #668's comment of that date): the six recommendations above are
+adopted as written.* They are no longer proposals, and this amendment is the implementation
+contract of #668:
+
+1. **Slice versus slice cell.** A root holds its slice directly when the root plan proves it a
+   stable record; a value the program can replace — a number, a union, a list, a record rebuilt
+   fresh — is reached through a cell. A valid replacement is never refused to force a direct
+   capture, and an ownership refusal is never answered with an automatic copy.
+2. **Movable handlers.** Only a key whose forwarding arms are proved pure — no model write, no
+   condition, no command and no effect of their own — has its handler written in its root. Work
+   that belongs to `Main` stays there and reaches the root as a handler parameter.
+3. **Retention and copy evidence.** A held slice and every generic-loader copy rest on the root
+   plan's explicit proof. Where R6/R7's interface cannot express that proof, it is extended
+   first. There is no unchecked model-holder exemption and no invented BIR demand.
+4. **Ordering.** D3 and document order hold: a tail hands its selected groups to one synchronous
+   runner, which runs the ordered union of their entries, each entry once. There is no microtask
+   and no run of independent bucket calls one after another.
+5. **Pushed state.** The generic loader serves only routes proved equivalent to the source arm,
+   validation kept; every other arm stays exact `Main` or arm-piece code. No route is recognised
+   by a helper's name.
+6. **The implementation boundary.** The whole shape lands at once, with the cold, warm and
+   disabled-cache differential and the page and emit evidence of this amendment. No release
+   output mixes the old per-writer reader calls with registration. Markup emit-cache misses stay
+   until the plan's dependencies can be replayed safely. Preparatory changes that move no emitted
+   byte may land before it.
 
 ### 8.5 Per-path passes
 
