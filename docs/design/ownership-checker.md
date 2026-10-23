@@ -2816,6 +2816,63 @@ marker are now `level`: `FoldLevels.sub` and `rose`, `MutualTypes`, and lines of
 `xs` at the level it then writes. The checker cannot tell that case from the safe one, and that is the limit. The
 fix the message names, a copy where the list is put into the value, removes both.
 
+*Amended 2026-10-23 (#825, the manager's decision under the owner's delegation): a join of updates over one
+split merges only what the updates do not share.* This is item (a) above. The research dashboard routes each
+message through `step` and through `replaced`. Each is a `case` of N arms `{ model | wᵢ = … }`. §31.3's closed
+split gives each arm's value the other N − 1 fields of `model`, so building the arms walked N² entries:
+
+- `spineValue` read each entry once per arm;
+- the join merged N values of N entries each.
+
+`step` cost 5.83M instructions at N = 64 and 36.26M at N = 256 (×6.2). `replaced` cost 3.72M and 27.51M (×7.4).
+
+The abstract domain does not change, and neither does any value. The split that #716 keeps per base cell and
+field (`SplitMemo`) also becomes a **run** once every field is known (`SplitRun`). A run holds:
+
+- the split's entries in `norm`'s order, for the base entry's `approx` and `grown`;
+- each field's position in the run;
+- the positions whose cells a list's facts read (`listFacing`).
+
+Three things change, and each gives the same answer as before:
+
+- **An update of a base entry whose split is known whole** (`splitUpdate`) makes its value from the run.
+  It leaves out the positions of the fields it writes, and merges in the few entries more: the base's other
+  entries, the new fields' values, and the guards. That merge does a binary search for each extra entry and
+  copies the run's stretches between them whole (`mergeSplit`).
+- **Its guards** (`splitSpineValue`) are `spineValue`'s guards. They are made in `spineValue`'s order, from the
+  run's entries that a list's facts read, merged with the other entries. Every other entry of the run is one
+  that `spineValue` skips before it does anything. So the guards' cells and conditions are interned in the
+  order they always were.
+- **A join of two or more such values over one run** (`unionSplit`, ahead of `unionOf`'s own way) is the run
+  without the positions that every one of them left out, merged with the rest of each value and with every
+  other part. That is `norm` of all of them, because entries of one run are equal in every value that keeps
+  them. The join's value is kept the same way, so a join of joins stays linear.
+
+Values are found by address and length (`split_values`). The walk never frees or rewrites a value, so an
+address names one value for the length of the walk.
+
+Under `-Downership-full-cross-check`, every closed update whose split is known whole takes the run, at every
+width (`split_memo_min` is 0 there), and two comparisons run at every update and every join:
+
+- each update's base part is compared with the entry-by-entry split;
+- each join is compared with `norm` of its parts.
+
+*What stays.* Each arm's value is still an array of its own, as every value is. So an arm still copies the run,
+which is N² bytes in all over N arms. Those bytes are copied in bulk, and no entry is examined. Item (b) above is
+unchanged: the spine conditions of a model whose every record holds a list need a result condition shared by
+its entries, which is a change to the summary's format. The research dashboard measured here holds no lists.
+
+*As built:* per-unit instructions on the research dashboard (ReleaseFast, `build --release --no-cache --jobs=1`,
+measured on `c79840a7c` with the step index): `step` went from 1.31M to 1.28M at N = 16, from 5.83M to 4.94M at
+N = 64 and from 36.26M to 20.58M at N = 256, and `replaced` from 0.74M to 0.70M, 3.72M to 2.81M and 27.51M to
+11.72M. Both now grow ×3.9–4.2 for ×4 the width. The ownership phase (callgrind, `Ownership.run`, on `ee53c404b`
+with the step index) went from 11.62M to 11.57M at N = 16, from 43.59M to 41.95M at N = 64, from 43.29M to
+41.65M on `nowd`, and from 208.66M to 179.44M at N = 256. `ownership/WideModelArms`'s shape at 512 parts (`dump
+--stage=ownership`, the whole process) went from 472.6M to 413.9M. Every output hash and dump is unchanged.
+`ownership/SplitArmsJoin` pins a join of one-field, two-field, repeated, list-making, unchanged and nested arms,
+its golden written by the entry-by-entry way. `test-records-lost` shows no difference in 1 175 programs, and
+`-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694).
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
