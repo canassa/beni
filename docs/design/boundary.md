@@ -7519,13 +7519,17 @@ transport of (e.10)'s `post` and `ask`, in place of `stub.fetch` on `/__beni/pos
   retryable — reach the caller as the stub's rejection and are sorted as (d) sorts them. Nothing
   is caught (rule 9). The host's fourth documented failure, **the 32 MiB limit on one serialized
   argument or result** ("The maximum serialized RPC limit is 32 MiB", the RPC page), is kept from
-  being reached: the printed text is measured in beni with `utf8Bytes` against 32 MiB less a
-  64 KiB margin for the other arguments and the clone's framing — an ask over it is
+  being reached: the printed text is measured in beni as two bytes per UTF-16 code unit of the
+  JavaScript string — V8 serializes a string that holds any character above U+00FF as two-byte,
+  so UTF-8 undercounts it (*R10-1*: 20 MiB of ASCII plus one `字` passed a UTF-8 count and the
+  host threw, 41 943 247 bytes), and an ASCII text therefore gets about 16 MiB — against 32 MiB
+  less a 64 KiB margin for the other arguments and the clone's framing — an ask over it is
   `Err (Unprintable …)` naming the limit, a reply over it is answered `{ kind: "large" }`, which
   is `Unreadable` at the asker, with one `Log.warn` line at the replier, and a post over it is
   dropped with the warning line an unprintable post gets (*R9-1*: on master the same ask over
   `stub.fetch` was answered 200, and over RPC without the check the host's 500 would have been a
-  defect; `ObjectRpc`'s `/big-ask` and `/big-reply`). Streams, which the page says the limit does
+  defect; `ObjectRpc`'s `/big-ask` and `/big-reply` send 17 MiB of ASCII plus one `字`, 34 MiB
+  serialized). Streams, which the page says the limit does
   not bind, are not used. A receiver that throws while it holds an ask is (f)'s defect: its abort
   rejects the pending call with the host's reset, and the asker sees `Err Reset` (*measured*,
   `workers/ObjectRpc`).
