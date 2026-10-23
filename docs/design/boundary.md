@@ -4786,9 +4786,8 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   restore of them into the fiber's list, under `update`'s finalisers. At the teardown, `update`'s
   finalisers run with `update`'s context, and then the caller's finalisers, such as the release of
   a body's `bracket`, run with the caller's, as an `onExit` finaliser would (proposal §17.5). When
-  `update` throws and leaves no finaliser, the old slots go back at once. (For a body with no
-  fiber, the teardown runs the finalisers in a fiber with no slots, so they have the default
-  context: #811.)
+  `update` throws and leaves no finaliser, the old slots go back at once. (A body with no fiber
+  gets the same: §9.8.14 (d) step 4, amended 2026-10-23, #811.)
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
   set, each message reads the slot, and a message sent inside a context copies the slot record
