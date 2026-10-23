@@ -271,7 +271,7 @@ one, by a template — and a page that calls it once has it written there by rel
 inlining (`backend.md` §9, *A body whose returns all end it*), not by a case of this lowering (S0's
 pinned 589 B for `PushAndTimer` holds: 583 B).
 
-**A binding** is one write guarded by a compare, through the runtime's four functions, which are
+**A binding** is one write guarded by a compare, through the runtime's functions, which are
 beni over `Js` in `Inline.beni`:
 
 | Function | What it writes |
@@ -279,7 +279,8 @@ beni over `Js` in `Inline.beni`:
 | `text(node, value)` | `node.textContent`, `String(value)`, when it differs |
 | `prop(node, value, key = "value")` | the DOM property `key` when it differs: a control's `value`, `checked`, `selected`, and the boolean attributes whose property has their name (`disabled`, `hidden`, `multiple`, `open`, `required`) |
 | `when(node, hidden)` | the node, or the empty text node it keeps in its place while `hidden` |
-| `on(node, f, type = "click", arms)` | a listener of `type` whose event enters the dispatch guard with `f`; while one of `arms` (an element, or an array of them outermost first) is hidden, the event does nothing |
+| `on(node, f, type = "click")` | a listener of `type` whose event enters the dispatch guard with `f` |
+| `onArm(node, f, type, arms)` | `on` for a handler inside eager arms: while one of `arms` (an element, or an array of them outermost first) is hidden, the event does nothing |
 
 - **A text hole** is `text` on its element. An element whose children are texts and text holes —
   *mixed text* — is one binding writing its whole text as a template. A hole of `String`, `Char` or
@@ -374,6 +375,11 @@ beni over `Js` in `Inline.beni`:
   guard, as the listener written in place did. A handler with a flag or a captured argument keeps
   its listener written in place (`browser/inline/ArmListenerHidden`,
   `emit/release/inline/ArmListener`).
+  *Amended 2026-10-23 (#874):* that wiring is `onArm`, a runtime function apart from `on`, and
+  `on` is the three-argument function it was before: a page with no handler inside an arm names
+  only `on`, so dead-export removal leaves out `onArm` and its arm walk, and its `on` is the one it
+  had before the step above, byte for byte (`emit/release/inline/CounterLocal`). A handler
+  inside an arm keeps the test above unchanged.
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as

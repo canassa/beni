@@ -285,20 +285,29 @@ pub part : V → V
 part node = Js.call node "querySelectorAll" [ Js.from "*" ]
 
 
---| `(node, f, kind, arms)`: a listener of event `kind`, `click` when not
---| given, whose event enters the dispatch guard with `f`. `arms`, when given,
---| are the elements of the eager arms around `node`, outermost first: while
---| one of them is hidden — its `when` anchor stands in the page in its place
---| — the event does nothing, not even enter the guard (`browser-inline.md`
---| §8.2, #466: an inactive arm has no active handler). The outermost is
---| asked first: an arm inside a hidden arm may never have been written.
-pub on : V, V, V, V → ⊤
-on node f kind arms =
+--| `(node, f, kind)`: a listener of event `kind`, `click` when not given,
+--| whose event enters the dispatch guard with `f`.
+pub on : V, V, V → ⊤
+on node f kind =
     _ =
         Js.call node "addEventListener"
-            [ if Js.isUndefined kind then Js.from "click" else kind
-            , Js.from λevent → if Js.isUndefined arms || armsShown arms then send f event
-            ]
+            [ if Js.isUndefined kind then Js.from "click" else kind, Js.from λevent → send f event ]
+    ⊤
+
+
+--| `(node, f, kind, arms)`: `on` for a handler inside eager arms, `kind`
+--| always given. `arms` are the elements of those arms, outermost first, one
+--| bare or an array: while one of them is hidden — its `when` anchor stands in
+--| the page in its place — the event does nothing, not even enter the guard
+--| (`browser-inline.md` §8.2, #466: an inactive arm has no active handler).
+--| The outermost is asked first: an arm inside a hidden arm may never have
+--| been written. It is apart from `on` so that a page with no handler in an
+--| arm ships neither it nor the arm walk (#874).
+pub onArm : V, V, V, V → ⊤
+onArm node f kind arms =
+    _ =
+        Js.call node "addEventListener"
+            [ kind, Js.from λevent → if armsShown arms then send f event ]
     ⊤
 
 
