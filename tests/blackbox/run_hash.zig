@@ -38,7 +38,10 @@
 //! with the golden it just wrote as always, are verified and recorded.
 //! There is no recording mode. And the cache is a cache: when its
 //! directory cannot be read or written, one warning is printed, every
-//! program runs and nothing is recorded (`verified`, `record`).
+//! program runs and nothing is recorded (`verified`, `record`). A record
+//! file that comes back into the corpus (`<fixture>.run-hash`,
+//! `.release-run-hash`, `.fuzz-run-hash`, or `tests/blackbox/run-hashes.txt`)
+//! fails the walk by name, with its fix (`corpus_test.zig`, `isRecordFile`).
 //!
 //! **What a digest covers.** For a corpus `run/` build (`digest`): the
 //! build's name (`dev`, `release`, …), the Node version (`process.version`
@@ -221,12 +224,16 @@ fn entryPath(buffer: []u8, dir: []const u8, digest_hex: []const u8) ![]const u8 
 /// Whether the cache holds `digest_hex`: a run with this digest ran and
 /// matched before. Always false without a cache, and false when the cache
 /// cannot be read (one warning per process): a cache that fails is no
-/// cache, never a verdict.
-pub fn verified(io: Io, digest_hex: []const u8) bool {
+/// cache, never a verdict. A malformed digest is the harness's own bug,
+/// not the cache's, and stays an error.
+pub fn verified(io: Io, digest_hex: []const u8) error{MalformedDigest}!bool {
     const dir = cacheDir(io) orelse return false;
-    return verifiedIn(io, dir, digest_hex) catch |err| {
-        warnOnce(dir, "read", err);
-        return false;
+    return verifiedIn(io, dir, digest_hex) catch |err| switch (err) {
+        error.MalformedDigest => return error.MalformedDigest,
+        else => {
+            warnOnce(dir, "read", err);
+            return false;
+        },
     };
 }
 
@@ -248,10 +255,14 @@ pub fn verifiedIn(io: Io, dir: []const u8, digest_hex: []const u8) !bool {
 /// nothing to half-write: the file is empty, its name is the record). The
 /// directory is created when it does not exist. Nothing without a cache,
 /// and a cache that cannot be written loses the entry with one warning per
-/// process: the program passed, and the cache is not the verdict.
-pub fn record(io: Io, digest_hex: []const u8) void {
+/// process: the program passed, and the cache is not the verdict. A
+/// malformed digest stays an error, as in `verified`.
+pub fn record(io: Io, digest_hex: []const u8) error{MalformedDigest}!void {
     const dir = cacheDir(io) orelse return;
-    recordIn(io, dir, digest_hex) catch |err| warnOnce(dir, "written", err);
+    recordIn(io, dir, digest_hex) catch |err| switch (err) {
+        error.MalformedDigest => return error.MalformedDigest,
+        else => warnOnce(dir, "written", err),
+    };
 }
 
 var warned = false;
@@ -316,14 +327,14 @@ pub fn checkProgram(w: *World, script: []const u8, expected: world.Expected) !?w
     const arena = w.arena.allocator();
     // Taken before Node runs, so nothing the program does can change it.
     const digest_hex = try programDigest(arena, w, script, expected);
-    if (digest_hex) |d| if (verified(w.io, d)) {
+    if (digest_hex) |d| if (try verified(w.io, d)) {
         report(w.io, .skipped);
         return null;
     };
     report(w.io, .stale);
     const got = try w.node(script);
     if (!matches(got, expected)) return got;
-    if (digest_hex) |d| record(w.io, d);
+    if (digest_hex) |d| try record(w.io, d);
     return null;
 }
 
@@ -335,13 +346,13 @@ pub fn checkProgram(w: *World, script: []const u8, expected: world.Expected) !?w
 /// result says whether the run did what was expected, and is recorded
 /// when it did.
 pub fn checkDigested(w: *World, digest_hex: []const u8, context: anytype, comptime run: fn (@TypeOf(context)) anyerror!bool) !?bool {
-    if (verified(w.io, digest_hex)) {
+    if (try verified(w.io, digest_hex)) {
         report(w.io, .skipped);
         return null;
     }
     report(w.io, .stale);
     const ok = try run(context);
-    if (ok) record(w.io, digest_hex);
+    if (ok) try record(w.io, digest_hex);
     return ok;
 }
 
