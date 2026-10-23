@@ -279,6 +279,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #610 (`202424b77`; +5.9: its handler-at-wiring and guards, pending #645) | 241.1 | | 1 461 | 64 017 | 1.08 | 1.49 |
 | `6e3d6abae` (2026-10-23, 53 commits later: ownership, checker speed, entry ownership, Dict keys; all 12 builds byte-identical) | 241.1 | | 1 461 | 64 017 | 1.08 | 1.49 |
 | after #645 + #840 (`0d3979a37`; declaration totality and its eager-arm consumer: −0.1, #610's guards not recovered, under study) | 241.0 | | 1 461 | 63 980 | 1.08 | 1.49 |
+| after #846 (`132300c51`; operator method_calls the checker proves total keep an arm eager, #844 cost 1) | 238.3 | | 1 461 | 63 269 | 1.08 | 1.47 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
