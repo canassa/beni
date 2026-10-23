@@ -1057,6 +1057,8 @@ recursive_types: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.defau
 /// step's own recursive type may sit below it (`levelOf`, §16.7's sound
 /// projection); `.unknown` until asked.
 level_of: std.ArrayList(Level) = .empty,
+/// Per constructor step argument: its anchors (`anchorsOf`, §16.7, #820).
+anchors_of: std.ArrayList(?Anchors) = .empty,
 /// §16.7's level marker `⟨T⟩`: per marker step argument, its type
 /// `(module, declaration)`, and back.
 cast_types: std.ArrayList([]const u8) = .empty,
@@ -1172,6 +1174,7 @@ pub fn deinit(o: *Ownership) void {
     o.in.gpa.free(o.schema_ctor_bases);
     o.recursive_types.deinit(o.in.gpa);
     o.level_of.deinit(o.in.gpa);
+    o.anchors_of.deinit(o.in.gpa);
     o.marker_types.deinit(o.in.gpa);
     o.marker_kind.deinit(o.in.gpa);
     o.marker_ids.deinit(o.in.gpa);
@@ -1453,6 +1456,7 @@ fn concreteAt(o: *Ownership, a: Allocator, ty: u64, prefix: []const Step, at: Ty
     if (prefix.len >= diff_depth) return;
     switch (at) {
         .nominal => |key| {
+            if (o.schemaKeyOf(key) != null) return;
             const nm: u32 = @intCast(key >> 32);
             const nd: u32 = @truncate(key);
             const bir = o.in.birs[nm];
@@ -3652,6 +3656,16 @@ fn memberPaths(o: *Ownership, d: CanonicalSplit, kind: MarkerKind, typed: bool, 
     if (kind == .at) try out.append(o.in.gpa, try o.concat(d.at, d.rest));
     for (try o.regionSteps(d.ty, typed)) |step| {
         const into = try o.child(d.at, .ctor, step);
+        // §16.7 (#820): a region whose first step leads to a `T` along a
+        // written path has its marker there, at the `T` (`anchorsOf`).
+        const a = try o.anchorsOf(step);
+        for (a.paths) |q| {
+            var at = into;
+            for (q) |s| at = try o.child(at, s.kind, s.arg);
+            const marker = try o.child(at, .level, try o.markerId(d.ty, .at));
+            try out.append(o.in.gpa, try o.concat(marker, d.rest));
+        }
+        if (a.paths.len != 0 and !a.other) continue;
         const marker = try o.child(into, .level, try o.markerId(d.ty, if (try o.levelOf(step) == .here) .at else .below));
         try out.append(o.in.gpa, try o.concat(marker, d.rest));
     }
@@ -3716,10 +3730,15 @@ fn canonicalSplitRaw(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
         i -= 1;
         const m = ns[i - 1];
         if (o.paths.kind.items[m] != .level) continue;
-        const s = ns[i - 2];
-        if (o.paths.kind.items[s] != .ctor) continue;
         const ty = o.markerType(o.paths.arg.items[m]);
+        // The region's first step: right before the marker, or before an
+        // anchor of it, a path of fields, tuple slots and elements (§16.7, #820).
+        var si = i - 2;
+        while (si > 0 and (o.paths.kind.items[ns[si]] == .field or o.paths.kind.items[ns[si]] == .tuple or o.paths.kind.items[ns[si]] == .elem)) si -= 1;
+        const s = ns[si];
+        if (o.paths.kind.items[s] != .ctor) continue;
         if (o.ctorType(o.stepCtor(o.paths.arg.items[s])) != ty) continue;
+        if (si != i - 2 and !try o.anchoredAt(s, o.paths.parent.items[m])) continue;
         const first = ns[i];
         if (o.paths.kind.items[first] != .ctor or o.ctorType(o.stepCtor(o.paths.arg.items[first])) != ty) continue;
         const at = o.paths.parent.items[s];
@@ -3739,6 +3758,20 @@ fn regionSteps(o: *Ownership, ty: u64, typed: bool) Allocator.Error![]const u32 
     const key: [2]u64 = .{ ty, @intFromBool(typed) };
     if (o.region_steps.get(key)) |r| return r;
     var out: std.ArrayList(u32) = .empty;
+    // §16.7 (#820): a schema endpoint's constructors take their payload as
+    // field 0, read off the plan.
+    if (o.schemaKeyOf(ty)) |sk| {
+        const bases = try o.schemaCtorBases(sk.m);
+        const count = (bases[sk.decl + 1] - bases[sk.decl]) / 2;
+        for (0..count) |v| {
+            const index = (try o.schemaCtorIndex(sk.m, sk.decl, sk.encoded, @intCast(v))) orelse continue;
+            const step = try o.ctorStep(try o.ctorId(sk.m, index), 0);
+            const level = if (typed) try o.schemaCtorLevel(sk.m, index, 0, ty, true) else try o.levelOf(step);
+            if (level != .none) try out.append(o.keep.allocator(), step);
+        }
+        try o.region_steps.put(o.in.gpa, key, out.items);
+        return out.items;
+    }
     const m: u32 = @intCast(ty >> 32);
     const d: u32 = @truncate(ty);
     const bir = o.in.birs[m];
@@ -5376,9 +5409,9 @@ fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Erro
                 .first => |f| o.paths.parent.items[f],
                 .marker => |m| m,
             }, kind, arg);
-            return o.rawChild(try o.markerOf(r, ty), kind, arg);
+            return o.rawChild(try o.markerAt(r, ty, parent), kind, arg);
         },
-        .level => if (try o.regionOf(parent, o.markerType(arg))) |r| return o.markerOf(r, o.markerType(arg)),
+        .level => if (try o.regionOf(parent, o.markerType(arg))) |r| return o.markerAt(r, o.markerType(arg), parent),
         // F1 (§16.7, as amended): a function type is a recursive type whose one
         // region step is `◇`, so a closure's environment inside another's
         // goes under the marker of the first: `◇p◇q` is `◇⟨◇⟩◇q`.
@@ -5447,6 +5480,17 @@ fn markerOf(o: *Ownership, r: Region, ty: u64) Allocator.Error!u32 {
         // where the value may be either.
         .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (ty == fn_type) .maybe else if (try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
     };
+}
+
+/// §16.7 (#820): the marker a region takes at `parent`: its own, or a new
+/// one at `parent` when `parent` is one of the first step's anchors, where
+/// the value is a `T`; else one under the first step (`markerOf`).
+fn markerAt(o: *Ownership, r: Region, ty: u64, parent: u32) Allocator.Error!u32 {
+    switch (r) {
+        .marker => |m| return m,
+        .first => |f| if (ty != fn_type and try o.anchoredAt(f, parent)) return o.rawChild(parent, .level, try o.markerId(ty, .at)),
+    }
+    return o.markerOf(r, ty);
 }
 
 /// F1's recursive type: every function type, whose one region step is `◇`.
@@ -5548,6 +5592,7 @@ fn typeRecursive(o: *Ownership, key: u64) Allocator.Error!bool {
 
 /// The types a type's definition names directly.
 fn typeHeads(o: *Ownership, key: u64, out: *std.ArrayList(u64)) Allocator.Error!void {
+    if (o.schemaKeyOf(key)) |sk| return o.schemaHeads(sk, out);
     const m: u32 = @intCast(key >> 32);
     const d: u32 = @truncate(key);
     if (m >= o.in.birs.len) return;
@@ -5584,8 +5629,216 @@ fn typeExprHeads(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, out: 
 
 fn pushHead(o: *Ownership, id: TypeId, out: *std.ArrayList(u64)) Allocator.Error!void {
     if (id == .none or id.int() >= o.in.types.entries.len) return;
+    try out.append(o.in.gpa, o.entryKey(id));
+}
+
+/// §16.7 (#820): a type key's endpoint bit. A native schema declares two
+/// types, its `Type` and its `Encoded` endpoint (`Types.zig`), each a type
+/// of its own: `(module, declaration)` is the first, and the declaration
+/// with this bit the second. No declaration index reaches the bit.
+pub const encoded_bit: u32 = 1 << 31;
+
+/// The type key of type `id`: its declaration, with the endpoint bit for a
+/// schema's `Encoded`.
+fn entryKey(o: *const Ownership, id: TypeId) u64 {
     const e = o.in.types.entries[id.int()];
-    try out.append(o.in.gpa, (@as(u64, e.module.int()) << 32) | e.decl.int());
+    var d: u32 = e.decl.int();
+    if (e.schema_endpoint and o.in.types.ofSchemaDecl(e.module, e.decl, .encoded) == id) d |= encoded_bit;
+    return (@as(u64, e.module.int()) << 32) | d;
+}
+
+/// A schema endpoint's type key, taken apart.
+pub const SchemaKey = struct { m: u32, decl: u32, encoded: bool };
+
+/// The schema endpoint a type key names, or null for any other type.
+pub fn schemaKeyOf(o: *const Ownership, key: u64) ?SchemaKey {
+    if (key == fn_type) return null;
+    const m: u32 = @intCast(key >> 32);
+    const raw: u32 = @truncate(key);
+    const d = raw & ~encoded_bit;
+    if (m >= o.in.birs.len or d >= o.in.birs[m].decls.len) return null;
+    if (o.in.birs[m].decls[d].kind != .schema) return null;
+    return .{ .m = m, .decl = d, .encoded = raw & encoded_bit != 0 };
+}
+
+fn schemaKey(m: u32, d: u32, encoded: bool) u64 {
+    return (@as(u64, m) << 32) | d | (if (encoded) encoded_bit else 0);
+}
+
+/// The schema declaration and endpoint a schema constructor index of module
+/// `m` (after the BIR's own constructors, `schemaCtorBases`) belongs to,
+/// and its variant.
+fn schemaCtorOwner(o: *Ownership, m: u32, index: u32) Allocator.Error!?struct { decl: u32, encoded: bool, variant: u32 } {
+    const bir = o.in.birs[m];
+    if (index < bir.ctors.len) return null;
+    const k = index - @as(u32, @intCast(bir.ctors.len));
+    const bases = try o.schemaCtorBases(m);
+    for (0..bir.decls.len) |di| {
+        if (k < bases[di] or k >= bases[di + 1]) continue;
+        const count = (bases[di + 1] - bases[di]) / 2;
+        const at = k - bases[di];
+        return .{ .decl = @intCast(di), .encoded = at >= count, .variant = at % count };
+    }
+    return null;
+}
+
+/// The plan node of a tagged schema's variants, below the annotations and
+/// checks its root may carry.
+fn taggedNode(plan: *const SchemaPlan, root: SchemaPlan.NodeIndex) ?SchemaPlan.NodeIndex {
+    var at = root;
+    var budget = plan.nodes.len + 1;
+    while (budget > 0 and @backingInt(at) < plan.nodes.len) : (budget -= 1) switch (SchemaGraph.tag(plan, at)) {
+        .tagged => return at,
+        .annotation, .check => at = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, at))),
+        else => return null,
+    };
+    return null;
+}
+
+/// §16.7 (#820): the types a schema endpoint's definition names: the same
+/// endpoint of every schema it references, the nominal types its derived
+/// codecs build, and the types a conversion's target names. A reference
+/// cycle stays inside one module and one endpoint (`SchemaGraph.inCycle`).
+fn schemaHeads(o: *Ownership, sk: SchemaKey, out: *std.ArrayList(u64)) Allocator.Error!void {
+    const sg = o.schemaGraph();
+    const gm: Graph.Index = @fromBackingInt(@intCast(sk.m));
+    const def = sg.definition(gm, sk.decl) orelse return;
+    const plan = sg.planOf(gm);
+    var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+    defer nodes.deinit(o.in.gpa);
+    try SchemaGraph.subtree(plan, o.in.gpa, def.root, &nodes);
+    // The derived codecs walked: a module has few.
+    var codecs: std.ArrayList(u32) = .empty;
+    defer codecs.deinit(o.in.gpa);
+    var i: usize = 0;
+    while (i < nodes.items.len) : (i += 1) {
+        const n = nodes.items[i];
+        switch (SchemaGraph.tag(plan, n)) {
+            .reference => if (sg.target(gm, @fromBackingInt(SchemaGraph.lhs(plan, n)))) |t| {
+                try out.append(o.in.gpa, schemaKey(t.module.int(), t.decl, sk.encoded));
+            },
+            .constructors => {
+                const ti = SchemaGraph.lhs(plan, n);
+                if (ti < plan.type_targets.len) {
+                    const tt = plan.type_targets[ti];
+                    const id = o.in.types.find(o.in.graph, tt.package, SchemaGraph.symbol(plan, tt.module), SchemaGraph.symbol(plan, tt.name));
+                    if (id != .none) try o.pushHead(id, out);
+                }
+            },
+            .conversion => {
+                const ci = SchemaGraph.rhs(plan, n);
+                if (ci < plan.conversions.len) try o.termHeads(plan, plan.conversions[ci].target_term, out, 0);
+            },
+            // A derived codec of this module: its nodes are this walk's too.
+            .codec_ref => {
+                const t = sg.codecTarget(gm, SchemaGraph.lhs(plan, n));
+                if (std.mem.indexOfScalar(u32, codecs.items, t.decl) != null) continue;
+                try codecs.append(o.in.gpa, t.decl);
+                const cd = sg.definition(gm, t.decl) orelse continue;
+                try SchemaGraph.subtree(plan, o.in.gpa, cd.root, &nodes);
+            },
+            else => {},
+        }
+    }
+}
+
+/// The nominal types a plan's type term names.
+fn termHeads(o: *Ownership, plan: *const SchemaPlan, ti: Interface.TermIndex, out: *std.ArrayList(u64), depth: u32) Allocator.Error!void {
+    if (depth > type_depth or ti == .none or ti.int() >= plan.terms.len) return;
+    var view = Interface.empty;
+    view.terms = plan.terms;
+    view.extra = plan.type_extra;
+    view.type_refs = plan.type_refs;
+    view.symbols = plan.symbols;
+    const t = view.term(ti);
+    switch (t.tag) {
+        .app, .alias => {
+            if (t.lhs >= view.type_refs.len) return;
+            const ref = view.type_refs[t.lhs];
+            for (view.range(t.rhs)) |word| try o.termHeads(plan, @fromBackingInt(word), out, depth + 1);
+            if (t.tag == .alias) return o.termHeads(plan, ref.body, out, depth + 1);
+            const id = o.in.types.find(o.in.graph, ref.package, view.symbol(ref.module), view.symbol(ref.name));
+            if (id != .none) try o.pushHead(id, out);
+        },
+        .tuple, .func => {
+            for (view.range(t.lhs)) |word| try o.termHeads(plan, @fromBackingInt(word), out, depth + 1);
+            if (t.tag == .func) try o.termHeads(plan, @fromBackingInt(t.rhs), out, depth + 1);
+        },
+        .record => {
+            const words = view.range(t.lhs);
+            var k: usize = 1;
+            while (k < words.len) : (k += 2) try o.termHeads(plan, @fromBackingInt(words[k]), out, depth + 1);
+            try o.termHeads(plan, @fromBackingInt(t.rhs), out, depth + 1);
+        },
+        else => {},
+    }
+}
+
+/// `levelOf` for a schema constructor: field 0, its payload, holds a value
+/// of the endpoint type `t` at the field itself when the payload is a
+/// reference to the schema, further down when its nodes reach it, and
+/// nowhere when they do not. `typed`: only through what the plan writes
+/// (records, lists, tuples, references), as `typedLevel` reads a type.
+fn schemaCtorLevel(o: *Ownership, m: u32, index: u32, field: u32, t: u64, typed: bool) Allocator.Error!Level {
+    const owner = (try o.schemaCtorOwner(m, index)) orelse return .below;
+    if (field != 0) return .none;
+    const sg = o.schemaGraph();
+    const gm: Graph.Index = @fromBackingInt(@intCast(m));
+    const def = sg.definition(gm, owner.decl) orelse return .below;
+    const plan = sg.planOf(gm);
+    const tagged = taggedNode(plan, def.root) orelse return .below;
+    const vs = SchemaGraph.variants(plan, tagged);
+    if (owner.variant >= vs.len or vs[owner.variant] >= plan.variants.len) return .below;
+    const payload = plan.variants[vs[owner.variant]].payload.unwrap() orelse return .none;
+    var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+    defer seen.deinit(o.in.gpa);
+    return o.planLevel(gm, payload, t, owner.encoded, typed, &seen);
+}
+
+/// `exprLevel` for a schema plan's node of module `gm`, the endpoint
+/// `encoded` read: a parameter is no level (folding never goes through
+/// one), and what the walk cannot read (a conversion, a derived codec, a
+/// module's `codec`) may hold `t` anywhere below, unless `typed`.
+fn planLevel(o: *Ownership, gm: Graph.Index, n: SchemaPlan.NodeIndex, t: u64, encoded: bool, typed: bool, seen: *std.AutoHashMapUnmanaged(u64, void)) Allocator.Error!Level {
+    const sg = o.schemaGraph();
+    const plan = sg.planOf(gm);
+    if (@backingInt(n) >= plan.nodes.len) return .below;
+    const below = struct {
+        fn f(oo: *Ownership, g: Graph.Index, kids: []const u32, tt: u64, enc: bool, ty: bool, s: *std.AutoHashMapUnmanaged(u64, void)) Allocator.Error!Level {
+            for (kids) |kid| if (try oo.planLevel(g, @fromBackingInt(kid), tt, enc, ty, s) != .none) return .below;
+            return .none;
+        }
+    }.f;
+    switch (SchemaGraph.tag(plan, n)) {
+        .parameter, .primitive => return .none,
+        .reference => {
+            const target = sg.target(gm, @fromBackingInt(SchemaGraph.lhs(plan, n))) orelse return if (typed) .none else .below;
+            const key = schemaKey(target.module.int(), target.decl, encoded);
+            if (key == t) return .here;
+            if (try below(o, gm, SchemaGraph.args(plan, n), t, encoded, typed, seen) != .none) return .below;
+            if ((try seen.getOrPut(o.in.gpa, key)).found_existing) return .none;
+            const def = sg.definition(target.module, target.decl) orelse return if (typed) .none else .below;
+            return if (try o.planLevel(target.module, def.root, t, encoded, typed, seen) != .none) .below else .none;
+        },
+        .record => {
+            for (SchemaGraph.fields(plan, n)) |f| if (try o.planLevel(gm, f.child, t, encoded, typed, seen) != .none) return .below;
+            return .none;
+        },
+        .tagged => {
+            for (SchemaGraph.variants(plan, n)) |vi| {
+                if (vi >= plan.variants.len) continue;
+                const p = plan.variants[vi].payload.unwrap() orelse continue;
+                if (try o.planLevel(gm, p, t, encoded, typed, seen) != .none) return .below;
+            }
+            return .none;
+        },
+        .list, .nullable, .maybe, .check, .annotation => {
+            const inner: SchemaPlan.NodeIndex = @fromBackingInt(SchemaGraph.lhs(plan, n));
+            return if (try o.planLevel(gm, inner, t, encoded, typed, seen) != .none) .below else .none;
+        },
+        .tuple => return below(o, gm, SchemaGraph.elements(plan, n), t, encoded, typed, seen),
+        .conversion, .constructors, .codec_ref, .codec_value => return if (typed) .none else .below,
+    }
 }
 
 /// Where, below a constructor step `#C.i` of a recursive type `T`, a value
@@ -5605,7 +5858,7 @@ fn levelOf(o: *Ownership, arg: u32) Allocator.Error!Level {
         if (!try o.typeRecursive(t)) break :blk .none;
         const key = o.ctorKey(c);
         const bir = o.in.birs[key.module];
-        if (key.index >= bir.ctors.len) break :blk .below;
+        if (key.index >= bir.ctors.len) break :blk try o.schemaCtorLevel(key.module, key.index, field, t, false);
         const ct = bir.ctors[key.index];
         const args = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index);
         if (field >= args.len) break :blk .below;
@@ -5648,7 +5901,7 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
             } else o.in.types.headId(graph_m, tag, data);
             if (id == .none or id.int() >= o.in.types.entries.len) return .below;
             const e = o.in.types.entries[id.int()];
-            const key = (@as(u64, e.module.int()) << 32) | e.decl.int();
+            const key = o.entryKey(id);
             if (key == t) return .here;
             // A `foreign type`'s arguments are not where a path goes, but
             // a `List`'s elements are.
@@ -5659,7 +5912,14 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
                 }
             }
             if (id == o.in.types.well_known.list or o.isPrimitive(id)) return .none;
-            if (e.schema_endpoint) return if (typed) .none else .below;
+            // §16.7 (#820): a schema endpoint is read off its plan.
+            if (e.schema_endpoint) {
+                const sk = o.schemaKeyOf(key) orelse return if (typed) .none else .below;
+                if ((try seen.getOrPut(o.in.gpa, key)).found_existing) return .none;
+                const gm: Graph.Index = @fromBackingInt(@intCast(sk.m));
+                const def = o.schemaGraph().definition(gm, sk.decl) orelse return if (typed) .none else .below;
+                return if (try o.planLevel(gm, def.root, t, sk.encoded, typed, seen) != .none) .below else .none;
+            }
             switch (e.kind) {
                 .foreign => return if (!typed and (try o.nominalFacts(id)).own) .below else .none,
                 .alias, .adt => {},
@@ -5680,6 +5940,196 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
         },
         else => return .below,
     }
+}
+
+/// §16.7 (#820, *a marker stands where its type is*): the positions below a
+/// constructor field step `arg` of a recursive type `T` where a value of `T`
+/// sits at the end of a written path of record fields and tuple slots:
+/// `.next` below `Link { next : Chain, tags : List Int }`'s payload. The
+/// region's marker stands there, at a `T`, so `tags` is not one of the
+/// places it stands for. `other`: the field may hold `T` some other way too
+/// (a list's elements, another type's constructor, a closure, a type
+/// argument), and a marker for those `T`s stands at the field, below it, as
+/// before. A field that is a `T` itself has no anchor: its marker stands at
+/// the field, which is a `T`.
+pub const Anchors = struct { paths: []const []const Step = &.{}, other: bool = false };
+
+fn anchorsOf(o: *Ownership, arg: u32) Allocator.Error!Anchors {
+    if (arg < o.anchors_of.items.len) if (o.anchors_of.items[arg]) |a| return a;
+    var out: std.ArrayList([]const Step) = .empty;
+    var other = false;
+    blk: {
+        const c = o.stepCtor(arg);
+        const t = o.ctorType(c) orelse break :blk;
+        if (try o.levelOf(arg) != .below) break :blk;
+        const key = o.ctorKey(c);
+        const bir = o.in.birs[key.module];
+        if (key.index >= bir.ctors.len) {
+            try o.schemaAnchors(key.module, key.index, o.stepField(arg), t, &out, &other);
+            break :blk;
+        }
+        const ct = bir.ctors[key.index];
+        const args = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index);
+        const field = o.stepField(arg);
+        if (field >= args.len) {
+            other = true;
+            break :blk;
+        }
+        try o.exprAnchors(key.module, bir, args[field], t, &.{}, &out, &other, 0);
+        if (out.items.len == 0) other = true;
+    }
+    const a: Anchors = .{ .paths = out.items, .other = other };
+    if (arg >= o.anchors_of.items.len) try o.anchors_of.appendNTimes(o.in.gpa, null, arg + 1 - o.anchors_of.items.len);
+    o.anchors_of.items[arg] = a;
+    return a;
+}
+
+/// `anchorsOf` for a type written in module `m`'s declarations, at `prefix`
+/// below the field.
+fn exprAnchors(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, prefix: []const Step, out: *std.ArrayList([]const Step), other: *bool, depth: u32) Allocator.Error!void {
+    if (depth > type_depth) {
+        other.* = true;
+        return;
+    }
+    const keep = o.keep.allocator();
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    switch (tag) {
+        .type_unit, .type_var => {},
+        .type_record => for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| {
+            const s: Step = .{ .kind = .field, .arg = @backingInt(bir.symbol(fl.name)) };
+            try o.exprAnchors(m, bir, fl.value, t, try std.mem.concat(keep, Step, &.{ prefix, &.{s} }), out, other, depth + 1);
+        },
+        .type_tuple => for (bir.extraSlice(Bir.inlineRange(data), Inst.Index), 0..) |el, i| {
+            const s: Step = .{ .kind = .tuple, .arg = @intCast(i) };
+            try o.exprAnchors(m, bir, el, t, try std.mem.concat(keep, Step, &.{ prefix, &.{s} }), out, other, depth + 1);
+        },
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type, .type_app => {
+            const id = if (tag == .type_app) blk: {
+                const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                break :blk o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
+            } else o.in.types.headId(graph_m, tag, data);
+            if (id != .none and id.int() < o.in.types.entries.len) {
+                const e = o.in.types.entries[id.int()];
+                if (o.entryKey(id) == t) {
+                    if (prefix.len > 0) try out.append(o.keep.allocator(), prefix) else other.* = true;
+                    return;
+                }
+                // A list's elements are written: `[*]`.
+                if (id == o.in.types.well_known.list and tag == .type_app) {
+                    const xs = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
+                    if (xs.len == 1) return o.exprAnchors(m, bir, xs[0], t, try std.mem.concat(keep, Step, &.{ prefix, &.{.{ .kind = .elem, .arg = 0 }} }), out, other, depth + 1);
+                }
+                // An alias with no parameters is its body, written elsewhere.
+                if (e.kind == .alias and !e.schema_endpoint and tag != .type_app) {
+                    const dbir = o.in.birs[e.module.int()];
+                    if (dbir.decl(e.decl).annotation.unwrap()) |body| return o.exprAnchors(e.module.int(), dbir, body, t, prefix, out, other, depth + 1);
+                }
+            }
+            var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+            defer seen.deinit(o.in.gpa);
+            if (try o.exprLevel(m, bir, inst, t, &seen, false) != .none) other.* = true;
+        },
+        else => {
+            var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+            defer seen.deinit(o.in.gpa);
+            if (try o.exprLevel(m, bir, inst, t, &seen, false) != .none) other.* = true;
+        },
+    }
+}
+
+/// `anchorsOf` for a native schema's constructor: its payload's record
+/// fields and tuple slots, read off the plan.
+fn schemaAnchors(o: *Ownership, m: u32, index: u32, field: u32, t: u64, out: *std.ArrayList([]const Step), other: *bool) Allocator.Error!void {
+    const owner = (try o.schemaCtorOwner(m, index)) orelse {
+        other.* = true;
+        return;
+    };
+    if (field != 0) return;
+    const sg = o.schemaGraph();
+    const gm: Graph.Index = @fromBackingInt(@intCast(m));
+    const def = sg.definition(gm, owner.decl) orelse {
+        other.* = true;
+        return;
+    };
+    const plan = sg.planOf(gm);
+    const tagged = taggedNode(plan, def.root) orelse {
+        other.* = true;
+        return;
+    };
+    const vs = SchemaGraph.variants(plan, tagged);
+    if (owner.variant >= vs.len or vs[owner.variant] >= plan.variants.len) {
+        other.* = true;
+        return;
+    }
+    const payload = plan.variants[vs[owner.variant]].payload.unwrap() orelse return;
+    try o.planAnchors(gm, payload, t, owner.encoded, &.{}, out, other, 0);
+    if (out.items.len == 0) other.* = true;
+}
+
+fn planAnchors(o: *Ownership, gm: Graph.Index, n: SchemaPlan.NodeIndex, t: u64, encoded: bool, prefix: []const Step, out: *std.ArrayList([]const Step), other: *bool, depth: u32) Allocator.Error!void {
+    const sg = o.schemaGraph();
+    const plan = sg.planOf(gm);
+    if (depth > type_depth or @backingInt(n) >= plan.nodes.len) {
+        other.* = true;
+        return;
+    }
+    const keep = o.keep.allocator();
+    switch (SchemaGraph.tag(plan, n)) {
+        .record => for (SchemaGraph.fields(plan, n)) |f| {
+            const s: Step = .{ .kind = .field, .arg = @backingInt(SchemaGraph.symbol(plan, f.name)) };
+            try o.planAnchors(gm, f.child, t, encoded, try std.mem.concat(keep, Step, &.{ prefix, &.{s} }), out, other, depth + 1);
+        },
+        .tuple => for (SchemaGraph.elements(plan, n), 0..) |el, i| {
+            const s: Step = .{ .kind = .tuple, .arg = @intCast(i) };
+            try o.planAnchors(gm, @fromBackingInt(el), t, encoded, try std.mem.concat(keep, Step, &.{ prefix, &.{s} }), out, other, depth + 1);
+        },
+        .list => try o.planAnchors(gm, @fromBackingInt(SchemaGraph.lhs(plan, n)), t, encoded, try std.mem.concat(keep, Step, &.{ prefix, &.{.{ .kind = .elem, .arg = 0 }} }), out, other, depth + 1),
+        // The same value, checked or annotated.
+        .check, .annotation => try o.planAnchors(gm, @fromBackingInt(SchemaGraph.lhs(plan, n)), t, encoded, prefix, out, other, depth + 1),
+        .reference => if (sg.target(gm, @fromBackingInt(SchemaGraph.lhs(plan, n)))) |target| {
+            if (schemaKey(target.module.int(), target.decl, encoded) == t) {
+                if (prefix.len > 0) try out.append(o.keep.allocator(), prefix) else other.* = true;
+                return;
+            }
+            var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+            defer seen.deinit(o.in.gpa);
+            if (try o.planLevel(gm, n, t, encoded, false, &seen) != .none) other.* = true;
+        } else {
+            other.* = true;
+        },
+        else => {
+            var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+            defer seen.deinit(o.in.gpa);
+            if (try o.planLevel(gm, n, t, encoded, false, &seen) != .none) other.* = true;
+        },
+    }
+}
+
+/// Whether `parent`, a position below the region's first step `f`, is one
+/// of `f`'s anchors: the marker of the region then stands at `parent`.
+fn anchoredAt(o: *Ownership, f: u32, parent: u32) Allocator.Error!bool {
+    if (parent == f or o.paths.kind.items[f] != .ctor) return false;
+    const fd = o.paths.depth.items[f];
+    const pd = o.paths.depth.items[parent];
+    if (pd <= fd) return false;
+    const a = try o.anchorsOf(o.paths.arg.items[f]);
+    if (a.paths.len == 0) return false;
+    var buf: [k_limit + 1]Step = undefined;
+    const st = o.steps(parent, &buf);
+    const q = st[fd..];
+    // `parent` is below `f` itself, not below another path of its depth.
+    var at = parent;
+    while (o.paths.depth.items[at] > fd) at = o.paths.parent.items[at];
+    if (at != f) return false;
+    for (a.paths) |p| {
+        if (p.len != q.len) continue;
+        for (p, q) |x, y| {
+            if (x.kind != y.kind or x.arg != y.arg) break;
+        } else return true;
+    }
+    return false;
 }
 
 fn ctorType(o: *const Ownership, c: u32) ?u64 {
@@ -6029,6 +6479,11 @@ fn writePath(o: *Ownership, w: *std.Io.Writer, p: u32) (Allocator.Error || std.I
                 try w.writeAll("⟨◇⟩");
                 continue;
             }
+            if (o.schemaKeyOf(t)) |sk| {
+                const sb = o.in.birs[sk.m];
+                try w.print("⟨{s}.{s}⟩{s}", .{ o.in.interner.slice(sb.symbol(sb.decls[sk.decl].name)), if (sk.encoded) "Encoded" else "Type", if (o.markerKind(s.arg) == .under) "⁺" else "" });
+                continue;
+            }
             const m: u32 = @intCast(t >> 32);
             const d: u32 = @truncate(t);
             const name = if (m < o.in.birs.len and d < o.in.birs[m].decls.len) o.in.interner.slice(o.in.birs[m].symbol(o.in.birs[m].decls[d].name)) else "";
@@ -6053,6 +6508,8 @@ pub fn ctorId(o: *Ownership, module: u32, index: u32) Allocator.Error!u32 {
         if (module < o.in.birs.len and index != none) {
             const bir = o.in.birs[module];
             if (index < bir.ctors.len) ty = (@as(u64, module) << 32) | bir.ctors[index].decl.int();
+            // §16.7 (#820): a native schema's constructor, its endpoint's.
+            if (try o.schemaCtorOwner(module, index)) |s| ty = schemaKey(module, s.decl, s.encoded);
         }
         try o.ctor_type.append(o.in.gpa, ty);
         try o.ctor_key.append(o.in.gpa, key);

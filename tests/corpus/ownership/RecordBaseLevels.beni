@@ -1,0 +1,37 @@
+-- ownership: a record update's base use under a level marker (issue #404,
+-- §16.7 as amended for #820). The marker of `Tree`'s levels stands at
+-- `kids[*]`, where the levels are, so the base use of `{ n | kids = … }`,
+-- which reads only `label`, cannot reach a level below: `deepest`'s call
+-- `deepest k` is accepted. `readsKids`'s base use of `{ n | label = "x" }`
+-- reads `kids`, which holds `k`, after `deepest k` wrote `k`: refused.
+type Tree
+    = Tree Node
+
+
+type alias Node =
+    label : String
+    kids : List Tree
+
+
+deepest : Tree → Tree
+deepest tree =
+    case tree of
+        Tree n →
+            case n.kids of
+                [ k ] →
+                    Tree { n | kids = [ deepest k ] }
+
+                _ →
+                    Tree { n | label = "leaf" }
+
+
+pub readsKids : Tree → Tree × Tree
+readsKids tree =
+    case tree of
+        Tree n →
+            case n.kids of
+                [ k ] →
+                    ( deepest k, Tree { n | label = "x" } )
+
+                _ →
+                    ( tree, tree )

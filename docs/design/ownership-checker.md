@@ -2873,6 +2873,70 @@ whole process) went from 653.0M to 638.0M at 256 parts and from 835.1M to 775.3M
 its golden written by the entry-by-entry way. `test-records-lost` shows no difference in 1 179 programs, and
 `-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694).
 
+*Amended 2026-10-23 (issue #820): a recursive native schema's constructors fold, and a marker stands where its type
+is.* (c) removes the path cut, so every source of unbounded paths must have a fold. A tagged schema that reaches
+itself (`schema Chain … Link as "link" next : Chain …`) was one that had none. Its constructors are the BIR's table
+extended by `schemaCtorBases`. They had no type in the ownership type graph (`ctorType`), and the cut alone held
+`π1#Link.0.next#Link.0.next…` at eight steps. Without the cut, `SchemaCtorCached.links` reached the `rounds` limit.
+
+- **Two types per schema.** A native schema declares two types, its `Type` and its `Encoded` endpoint (`Types.zig`).
+  Their ownership type keys are `(module, declaration)` and `(module, declaration | 2³¹)` (`entryKey`, `schemaKeyOf`).
+  No declaration index reaches bit 31, and no other declaration is a schema. A schema constructor belongs to its
+  endpoint's key. The heads of an endpoint key (`schemaHeads`) are the same endpoint of every schema the plan
+  references, the nominal types its derived codecs build, and the types a conversion's target term names. A
+  reference cycle stays inside one module (`SchemaGraph.inCycle`), and a `Type` key reaches only `Type` keys
+  through references. So `Chain.Type` and `Chain.Encoded` are each recursive, apart from each other, and a schema
+  that reaches no schema it is in a cycle with is not recursive, by (a).
+- **Levels.** A schema constructor has one field, its payload. Its level (`schemaCtorLevel`, over the plan's
+  nodes, `planLevel`) is `here` when the payload is a reference to the schema itself, `below` when the payload's
+  nodes reach it (a record field, a list's element, a tuple slot, another reference that reaches it), and `none`
+  otherwise. A parameter node is no level, as a type variable is not. A node that the walk cannot read as written (a
+  conversion, a derived codec, a module's `codec`) is `below`, unless typed. A nominal type's field of a schema
+  endpoint type is read off the same plan (`exprLevel`).
+- **A marker stands where its type is.** The level marker of #379 put a region's marker right after the region's
+  first step `s₀`. When `s₀`'s field holds the `T` below it (`below`), the marker stood at a value that is not a
+  `T`, and its expansion could begin with any step. A schema's payload is a record, so *every* recursive schema
+  is this case: `#Link.0.next#Link.0.x` folded to `#Link.0⟨Chain.Type⟩#Link.0.x`, which overlaps the root's own
+  `#Link.0.x`. With the cut, master kept the two apart. Folded so, a write of a root's list while a deeper level's
+  list was read was refused, and a list returned from the root was taken to hold the deeper levels' (`after` in
+  `ownership/SchemaLevels`, accepted by master). This is the conservative case that the *Overlap* bullet names
+  ("the path does not say which component the marker went through"), made precise. The **anchors** of a
+  constructor field `s₀` of `T` (`anchorsOf`) are the paths, made of record fields, tuple slots and list elements,
+  from the field to a value of `T` written in the field's type (`next` below `Link`'s payload, `kids[*]` below
+  `Tree { label, kids : List Tree }`'s). A ctor step of `T` added at a position `P s₀ q`, where `q` is one of
+  `s₀`'s anchors, takes the region's marker *there*: `P s₀ q ⟨T⟩ s`, a marker of kind `at`. The value there is a
+  `T`, so the marker's expansion begins only with a region step. Later steps fold onto that marker, as before:
+  `#Link.0.next⟨Chain.Type⟩#Link.0.x` is every deeper level's `x`, apart from the root's `#Link.0.x`. A field that
+  holds `T` in some other way (another type's constructor, a closure, a type argument), or that holds `T` itself, keeps
+  the marker after `s₀`, as before. A field with both kinds of route has both places, one per route. The canonical form
+  (`memberPaths`, `canonicalSplit`) writes and reads the anchored places. A region's places are `P r` and `P s q⟨T⟩r`
+  for each anchor, and `P s⟨T⟩r` where a field has the old route.
+- **Soundness.** An anchored marker stands at a `T` for every `T` at or below its position. That is the
+  amendment's own reading of a marker of kind `at`, so overlap, holding and projection need no new rule. The
+  places it no longer stands for are the payload's other components at level 1 (`x`, `label`). Those are exact
+  places of their own, `P s₀ x`, so every holder is still at a path that stands for it. A route that is not a written
+  path keeps the old marker, which stands for everything below `s₀`.
+- **Finite.** Anchors are paths of a finite type, written once per field. A path holds one marker per region, as
+  before. The schema reference graph is finite.
+- **The block.** A marker step names its type by module and declaration. The `Encoded` endpoint is the high bit of
+  its *where it stands* byte. The summary block is version 35.
+- **What changes.** `SchemaCtorCached.links` is `π1⟨Chain.Type⟩#Link.0.next`, `…#Link.0.x`,
+  `π1⟨Chain.Type⟩⁺#Link.0.next` in place of eight cut paths. `ownership/SchemaLevels` pins the following:
+  - the schema analogue of #286's hole. Five levels down, the cut made `x` and `y` one place, so master refuses
+    the safe `writeRead` and accepts `deep`, which hands it one list at both. Now `writeRead` is accepted, `deep` is
+    refused `exclusive` and `apart` is accepted;
+  - root against next level (`rootVsNext`, `sameList`, `after`);
+  - a schema that reaches itself through a list of children (`rootVsKid`, `kidShares`, `kidApart`);
+  - the `Encoded` endpoint's own marker (`⟨Chain.Encoded⟩`).
+
+  Anchoring through list elements also gives `Tree { label, kids : List Tree }` its marker at `kids[*]`. So
+  `RecordTree.deepest`'s call `deepest k`, refused `alias` through a base use that reads only `label`, is
+  accepted (#404). `ownership/RecordBaseLevels` keeps its twin refused: a base use that reads `kids`.
+  `FoldLevels.rose` and the `Rose` summaries of `LevelPlacesKinds` lose places that a projection of a below-marker
+  invented. In `tests/corpus/ownership/`, no other verdict changes. Under `-Downership-full-cross-check`, `RecordTree`
+  (#427) and `LevelPlacesKinds.demoRose` now pass. `LevelPlacesKinds.demoA` (`A (List Int) (Maybe A)`, a route
+  through `Maybe`'s constructor that is not anchored) fails as it does on `master` (#694).
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:

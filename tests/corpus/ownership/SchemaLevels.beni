@@ -1,0 +1,138 @@
+-- ownership: a recursive native schema's constructors fold (§16.7,
+-- issue #820), as a recursive type's do. Without the fold the path cut of
+-- §4.1 bounded `Chain`'s paths: five levels down, `x` and `y` were one
+-- place, so `writeRead`, which pushes `x` and reads `y`, was refused, and
+-- `deep`, which hands it one list at both, was accepted. Folded, a level's
+-- places stay apart: `writeRead` is accepted, `deep` is refused (real
+-- sharing) and `apart` is accepted. The region's marker stands at `next`,
+-- where the payload holds a `Chain`, so a level's own lists are apart from
+-- the levels below it: `rootVsNext` and `after` are accepted, `sameList`
+-- is refused. `Forest` reaches itself through a list of children, and
+-- `Chain.Encoded` is a type of its own, with its own marker.
+import Schema
+
+
+schema Chain tagged "t" of
+    Link as "link"
+        next : Chain
+        x : List Int
+        y : List Int
+    End as "end"
+
+
+schema Forest tagged "t" of
+    Node as "node"
+        label : List Int
+        kids : List Forest
+    Empty as "empty"
+
+
+down : Chain.Type → Chain.Type
+down c =
+    case c of
+        Chain.Link a →
+            a.next
+
+        Chain.End →
+            Chain.End
+
+
+pub writeRead : Chain.Type → List Int × List Int
+writeRead c =
+    case down (down (down (down c))) of
+        Chain.Link f →
+            ( List.push f.x 1, f.y )
+
+        Chain.End →
+            ( [], [] )
+
+
+link : Chain.Type, List Int, List Int → Chain.Type
+link c xs ys = Chain.Link { next = c, x = xs, y = ys }
+
+
+wrap : Chain.Type → Chain.Type
+wrap c = link c [] []
+
+
+pub deep : List Int → List Int × List Int
+deep xs = writeRead (wrap (wrap (wrap (wrap (link Chain.End xs xs)))))
+
+
+pub apart : List Int, List Int → List Int × List Int
+apart xs ys = writeRead (wrap (wrap (wrap (wrap (link Chain.End xs ys)))))
+
+
+pub rootVsNext : Chain.Type → List Int × Int
+rootVsNext c =
+    case c of
+        Chain.Link r →
+            case r.next of
+                Chain.Link s →
+                    ( List.push r.x 1, List.length s.x )
+
+                Chain.End →
+                    ( [], 0 )
+
+        Chain.End →
+            ( [], 0 )
+
+
+pub sameList : List Int → List Int × Int
+sameList xs = rootVsNext (link (link Chain.End xs []) xs [])
+
+
+twoLists : List Int, List Int → List Int × Int
+twoLists xs ys = rootVsNext (link (link Chain.End ys []) xs [])
+
+
+pub after : List Int, List Int → List Int × List Int
+after xs ys =
+    case twoLists xs ys of
+        ( pushed, _ ) →
+            ( List.push ys 2, pushed )
+
+
+pub rootVsKid : Forest.Type → List Int × Int
+rootVsKid t =
+    case t of
+        Forest.Node r →
+            case r.kids of
+                [ k, …_ ] →
+                    case k of
+                        Forest.Node s →
+                            ( List.push r.label 1, List.length s.label )
+
+                        Forest.Empty →
+                            ( [], 0 )
+
+                [] →
+                    ( [], 0 )
+
+        Forest.Empty →
+            ( [], 0 )
+
+
+pub kidShares : List Int → List Int × Int
+kidShares xs =
+    rootVsKid (Forest.Node { label = xs, kids = [ Forest.Node { label = xs, kids = [] } ] })
+
+
+pub kidApart : List Int, List Int → List Int × Int
+kidApart xs ys =
+    rootVsKid (Forest.Node { label = xs, kids = [ Forest.Node { label = ys, kids = [] } ] })
+
+
+pub encodedRoot : Chain.Encoded → List Int × Int
+encodedRoot c =
+    case c of
+        Chain.Encoded.Link r →
+            case r.next of
+                Chain.Encoded.Link s →
+                    ( List.push r.x 1, List.length s.x )
+
+                Chain.Encoded.End →
+                    ( [], 0 )
+
+        Chain.Encoded.End →
+            ( [], 0 )

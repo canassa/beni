@@ -1,0 +1,14 @@
+module RecordBaseLevels
+  22:26 update n: accepted param
+  22:41 update k#Tree.0: accepted param (RecordBaseLevels.deepest writes it)
+  22:41 update k⟨Tree⟩⁺#Tree.0: accepted param (RecordBaseLevels.deepest writes it)
+  25:26 update n: accepted param
+  34:23 update k#Tree.0: rejected alias: n.kids[*]⟨Tree⟩#Tree.0 holds it and is read at 34:39 (RecordBaseLevels.deepest writes it) [copy]
+  34:23 update k⟨Tree⟩⁺#Tree.0: rejected alias: n.kids[*]⟨Tree⟩#Tree.0 holds it and is read at 34:39 (RecordBaseLevels.deepest writes it) [copy]
+  34:39 update n: accepted param
+  summary deepest: π1 R, π1#Tree.0 W{kids, label}, π1⟨Tree⟩#Tree.0.kids RA, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}; res #Tree.0 π1#Tree.0◦, #Tree.0.kids fresh1{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} π1#Tree.0.kids, #Tree.0.kids[*]⟨Tree⟩#Tree.0 π1#Tree.0.kids[*]⟨Tree⟩#Tree.0◦r{excl π1#Tree.0.kids}, ⟨Tree⟩⁺#Tree.0.kids ~fresh2{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids}
+  summary readsKids: π1 RA, π1#Tree.0 W{label}, π1⟨Tree⟩#Tree.0.kids RA, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}; res .0 condition(fresh5) π1, .0#Tree.0 π1#Tree.0.kids[*]⟨Tree⟩#Tree.0◦r{excl π1#Tree.0.kids}, .0#Tree.0.kids ~condition(fresh1) ~fresh1{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids}, .0#Tree.0.kids[*]⟨Tree⟩#Tree.0 π1#Tree.0.kids[*]⟨Tree⟩#Tree.0◦r{excl π1#Tree.0.kids}, .0⟨Tree⟩⁺#Tree.0.kids ~condition(fresh2) ~fresh2{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}r{excl π1#Tree.0.kids}, .1 condition(fresh6) π1, .1#Tree.0 π1#Tree.0◦, .1#Tree.0.kids ~condition(fresh4) π1#Tree.0.kids, condition(fresh3){shared}r{shared}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 5, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 5, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

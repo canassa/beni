@@ -5,8 +5,8 @@
 -- write by `List.map` before it is accepted. `deepest` keeps the root apart
 -- from the levels below it. `keep` and `keepDeep` use the tree after the
 -- write: `later-use`; `fresh` writes a tree it built. `deepest`'s call
--- `deepest k` is refused `alias` through the base use of `n`, which reads
--- only `label`: the marker hides the field it reaches the levels by (#404).
+-- `deepest k` is accepted: the marker stands at `kids[*]`, where the levels
+-- are, so the base use of `n`, which reads only `label`, is apart (#820).
 type Tree
     = Tree Node
 

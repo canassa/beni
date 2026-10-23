@@ -113,7 +113,8 @@ pub const magic = "BENIOWN\x00";
 /// 32 separates single uncertain views from spatial repeated reads.
 /// 33 preserves occurrence conditions before cast read normalization.
 /// 34 adds the clean-report certificate and public rows, opaque slots and aliases.
-pub const version: u32 = 34;
+/// 35 marks a schema's `Encoded` endpoint in a level marker (§16.7, #820).
+pub const version: u32 = 35;
 
 /// A cache hit may skip enforcement only if its previous report was clean.
 /// Other platforms also compute reports, but can cache a rejected module.
@@ -509,9 +510,12 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
                 try appendInt(arena, &out, if (t == Ownership.fn_type) std.math.maxInt(u32) else w.module_index.get(@intCast(t >> 32)).?);
                 if (w.public_module != null and t != Ownership.fn_type) {
                     const bir = o.in.birs[@intCast(t >> 32)];
-                    try appendText(arena, &out, o.in.interner.slice(bir.symbol(bir.decls[@as(u32, @truncate(t))].name)));
-                } else try appendInt(arena, &out, @truncate(t));
-                try out.append(arena, @backingInt(o.markerKind(st.arg)));
+                    try appendText(arena, &out, o.in.interner.slice(bir.symbol(bir.decls[@as(u32, @truncate(t)) & ~Ownership.encoded_bit].name)));
+                } else try appendInt(arena, &out, if (t == Ownership.fn_type) @truncate(t) else @as(u32, @truncate(t)) & ~Ownership.encoded_bit);
+                // §16.7 (#820): a schema's `Encoded` endpoint is the high bit of
+                // where the marker stands.
+                const enc: u8 = if (t != Ownership.fn_type and @as(u32, @truncate(t)) & Ownership.encoded_bit != 0) 0x80 else 0;
+                try out.append(arena, @backingInt(o.markerKind(st.arg)) | enc);
             },
             .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
@@ -1347,12 +1351,19 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
             .level => blk: {
                 const mi = try r.int();
                 const td = if (b.public and mi != std.math.maxInt(u32)) (o.declNamed(b.modules[if (mi < b.modules.len) mi else return error.Bad], try r.text()) orelse return error.Bad) else try r.int();
-                const where = std.enums.fromInt(Ownership.MarkerKind, try r.byte()) orelse return error.Bad;
-                if (mi == std.math.maxInt(u32)) break :blk try o.markerId(Ownership.fn_type, where);
+                const wb = try r.byte();
+                const where = std.enums.fromInt(Ownership.MarkerKind, wb & 0x7f) orelse return error.Bad;
+                // §16.7 (#820): the high bit is a schema's `Encoded` endpoint.
+                const enc = wb & 0x80 != 0;
+                if (mi == std.math.maxInt(u32)) {
+                    if (enc) return error.Bad;
+                    break :blk try o.markerId(Ownership.fn_type, where);
+                }
                 if (mi >= b.modules.len) return error.Bad;
                 const tm = b.modules[mi];
                 if (td >= o.in.birs[tm].decls.len) return error.Bad;
-                break :blk try o.markerId((@as(u64, tm) << 32) | td, where);
+                if (enc and o.in.birs[tm].decls[td].kind != .schema) return error.Bad;
+                break :blk try o.markerId((@as(u64, tm) << 32) | td | (if (enc) Ownership.encoded_bit else 0), where);
             },
             .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
         };

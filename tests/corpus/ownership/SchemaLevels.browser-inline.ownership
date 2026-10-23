@@ -1,0 +1,31 @@
+module SchemaLevels
+  44:15 List.push f.x: accepted param
+  59:11 call SchemaLevels.writeRead <call SchemaLevels.wrap>⟨Chain.Type⟩⁺#Link.0.x: rejected exclusive: the callee needs the list's elements not to share, and they may (SchemaLevels.writeRead writes π1⟨Chain.Type⟩⁺#Link.0.x)
+  63:15 call SchemaLevels.writeRead <call SchemaLevels.wrap>⟨Chain.Type⟩⁺#Link.0.x: accepted param (SchemaLevels.writeRead writes π1⟨Chain.Type⟩⁺#Link.0.x)
+  72:23 List.push r.x: accepted param
+  82:15 call SchemaLevels.rootVsNext <call SchemaLevels.link>#Link.0.x: rejected disjoint: another operand of the same operation reaches it (SchemaLevels.rootVsNext writes π1#Link.0.x)
+  86:18 call SchemaLevels.rootVsNext <call SchemaLevels.link>#Link.0.x: accepted param (SchemaLevels.rootVsNext writes π1#Link.0.x)
+  91:10 call SchemaLevels.twoLists xs: accepted param (SchemaLevels.twoLists writes π1)
+  93:15 List.push ys: accepted param
+  104:31 List.push r.label: accepted param
+  118:5 call SchemaLevels.rootVsKid <call>#Node.0.label: rejected disjoint: another operand of the same operation reaches it (SchemaLevels.rootVsKid writes π1#Node.0.label)
+  123:5 call SchemaLevels.rootVsKid <call>#Node.0.label: accepted param (SchemaLevels.rootVsKid writes π1#Node.0.label)
+  132:23 List.push r.x: accepted param
+  summary down: π1 R, π1#Link.0.next RA; res π1#Link.0.next
+  summary writeRead: π1 R, π1#Link.0.next R, π1⟨Chain.Type⟩⁺#Link.0.x RAW[storage], π1⟨Chain.Type⟩⁺#Link.0.x[*] A, π1⟨Chain.Type⟩⁺#Link.0.y RA; res .0 condition(fresh2) fresh2 π1⟨Chain.Type⟩⁺#Link.0.x, .0[*] ~condition(fresh3) ~π1⟨Chain.Type⟩⁺#Link.0.x[*], .1 fresh5 ~condition(fresh4) π1⟨Chain.Type⟩⁺#Link.0.y, condition(fresh1){lost}
+  summary link: π1 RA, π2 RA, π3 RA; res #Link.0 condition(fresh1){sep π1 π2, sep π1 π3, sep π2 π3} fresh501◦, #Link.0.next condition(fresh2) π1, #Link.0.x condition(fresh3) π2, #Link.0.y condition(fresh4) π3
+  summary wrap: π1 RA; res #Link.0 condition(fresh3) fresh501◦, #Link.0.next condition(fresh4) π1, #Link.0.x condition(fresh1) fresh1, #Link.0.y condition(fresh2) fresh2
+  summary deep: π1 RAW[storage], π1[*] A; res .0 condition(fresh5) ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh3) ~fresh3 ~π1[*], .1 ~condition(fresh2) ~fresh2 ~π1, condition(fresh4){lost}
+  summary apart: π1 RAW[storage], π1[*] A, π2 RA; res .0 condition(fresh5) ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh3) ~fresh3 ~π1[*], .1 ~condition(fresh2) ~fresh2 ~π2, condition(fresh4){lost}; xreq excl π1, excl π2, sep π1 π2
+  summary rootVsNext: π1 R, π1#Link.0.next R, π1#Link.0.x RAW[storage], π1#Link.0.x[*] A, π1⟨Chain.Type⟩⁺#Link.0.x R; res .0 fresh1 π1#Link.0.x, .0[*] ~π1#Link.0.x[*]
+  summary sameList: π1 RAW[storage], π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary twoLists: π1 RAW[storage], π1[*] A, π2 R; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary after: π1 RAW[storage], π1[*] RA, π2 RAW[storage], π2[*] A; res .0 ~condition(fresh4) π2, .0[*] ~condition(fresh5) ~π2[*], .1 ~condition(fresh1) ~fresh1 ~π1, .1[*] ~condition(fresh2) ~π1[*], condition(fresh3){sep π1 π2, sep π1 π2[*], sep π1[*] π2, sep π1[*] π2[*]}r{sep π1[*] π2[*]}
+  summary rootVsKid: π1 R, π1#Node.0.kids R, π1#Node.0.kids[*] R, π1#Node.0.label RAW[storage], π1#Node.0.label[*] A, π1⟨Forest.Type⟩⁺#Node.0.label R; res .0 fresh1 π1#Node.0.label, .0[*] ~π1#Node.0.label[*]
+  summary kidShares: π1 RAW[storage], π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary kidApart: π1 RAW[storage], π1[*] A, π2 R; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary encodedRoot: π1 R, π1#Link.0.next R, π1#Link.0.x RAW[storage], π1#Link.0.x[*] A, π1⟨Chain.Encoded⟩⁺#Link.0.x R; res .0 fresh1 π1#Link.0.x, .0[*] ~π1#Link.0.x[*]
+  demands 12: accepted 9 (fresh 0, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 12: accepted 9 (fresh 0, call 0, param 9, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause disjoint 2
+cause exclusive 1
