@@ -782,12 +782,23 @@ function prelude() {
   // - the document has no style sheet, and no `style` or `link` element;
   // - the element is a `div` or a `span`, which have no default margin,
   //   border or padding. Its inline style sets `position: absolute` or
-  //   `fixed`, and `left`, `top`, `width` and `height` as `Npx` or `0`;
-  // - the element and each ancestor are HTML elements whose inline style
-  //   sets nothing but `position`, `left`, `top`, `width`, `height` and
-  //   `touch-action`. None has a `hidden` or `popover` attribute, or is a
-  //   `dialog` or a `details` that is not open;
+  //   `fixed`, `left` and `top` as `Npx` or `0`, and `width` and `height`
+  //   as `Npx` or `0` that is not negative;
+  // - each ancestor is an `html`, `body`, `main`, `div` or `span`, whose
+  //   children Chrome renders;
+  // - the element and each ancestor are HTML elements with no `hidden` or
+  //   `popover` attribute. Their inline style names no property but
+  //   `position`, `left`, `top`, `width`, `height` and `touch-action`, and
+  //   names each one once;
   // - the element is in the document, not in a shadow tree.
+  // happy-dom keeps a declaration only for a property that it knows, so a
+  // `-webkit-` alias or an unknown name leaves no trace in `element.style`.
+  // The names therefore come from the `style` attribute's text, which
+  // happy-dom keeps as written until a write through `element.style`
+  // writes it again. Every such write reads `element.style` first: its
+  // getter marks the element when the text names a property outside the
+  // list, and `setProperty`, the one write the runtimes make, marks it when
+  // its name is outside the list. A marked element is never placed.
   // The box is from the containing block: the viewport for `fixed`; for
   // `absolute`, the box of the nearest ancestor whose inline `position` is
   // not `static`, which the list must allow too, or the page's origin when
@@ -798,30 +809,74 @@ function prelude() {
     const own = Element.prototype.getBoundingClientRect;
     const html = "http://www.w3.org/1999/xhtml";
     const allowed = new Set(["position", "left", "top", "width", "height", "touch-action"]);
+    const tags = new Set(["html", "body", "main", "div", "span"]);
+    const names = (text) =>
+      text
+        .split(";")
+        .map((d) => (d.includes(":") ? d.slice(0, d.indexOf(":")) : d).trim().toLowerCase())
+        .filter((name) => name !== "");
+    const listed = (text) => {
+      const all = names(text);
+      return all.every((name) => allowed.has(name)) && new Set(all).size === all.length;
+    };
+    // The marks. `element.style` is a proxy of happy-dom's, and the `this`
+    // of `setProperty` is the declaration behind it, which `__beniSelf`
+    // returns: `owner` maps each declaration to its element.
+    const marked = new WeakSet();
+    const owner = new WeakMap();
+    const declaration = CSSStyleDeclaration.prototype;
+    Object.defineProperty(declaration, "__beniSelf", {
+      value() {
+        return this;
+      },
+    });
+    let holder = Object.getPrototypeOf(document.createElement("div"));
+    while (!Object.hasOwn(holder, "style")) holder = Object.getPrototypeOf(holder);
+    const style = Object.getOwnPropertyDescriptor(holder, "style");
+    Object.defineProperty(holder, "style", {
+      ...style,
+      get() {
+        const text = this.getAttribute("style");
+        if (text !== null && !listed(text)) marked.add(this);
+        const d = style.get.call(this);
+        owner.set(d.__beniSelf(), this);
+        return d;
+      },
+    });
+    const setProperty = declaration.setProperty;
+    declaration.setProperty = function (name, value, priority) {
+      const element = owner.get(this);
+      if (element !== undefined && !allowed.has(String(name).trim().toLowerCase())) marked.add(element);
+      return setProperty.call(this, name, value, priority);
+    };
     const pixels = (text) => {
       if (text === "0") return 0;
       const match = /^(-?[0-9]+(?:\.[0-9]+)?)px$/.exec(text);
       return match === null ? null : Number(match[1]);
     };
-    // An element whose markup and inline style the list allows.
-    const plain = (element) => {
-      if (element.namespaceURI !== html || element.hasAttribute("hidden") || element.hasAttribute("popover")) return false;
-      if (element.localName === "dialog" || (element.localName === "details" && !element.hasAttribute("open"))) return false;
-      const style = element.style;
-      for (let i = 0; i < style.length; i++) if (!allowed.has(style.item(i))) return false;
-      return true;
+    const size = (text) => {
+      const n = pixels(text);
+      return n === null || n < 0 ? null : n;
     };
+    // An element whose markup and inline style the list allows.
+    const plain = (element, kinds) => {
+      if (element.namespaceURI !== html || !kinds.has(element.localName)) return false;
+      if (element.hasAttribute("hidden") || element.hasAttribute("popover")) return false;
+      const text = element.getAttribute("style");
+      if (text !== null && !listed(text)) return false;
+      return !marked.has(element);
+    };
+    const boxes = new Set(["div", "span"]);
     const placed = (element) => {
       const style = element.style;
       if (style === undefined || (style.position !== "absolute" && style.position !== "fixed")) return null;
-      if (element.localName !== "div" && element.localName !== "span") return null;
-      if (element.getRootNode() !== document || !plain(element)) return null;
+      if (element.getRootNode() !== document || !plain(element, boxes)) return null;
       if (document.styleSheets.length !== 0 || document.adoptedStyleSheets?.length || document.querySelector("style, link") !== null) return null;
-      const box = { x: pixels(style.left), y: pixels(style.top), width: pixels(style.width), height: pixels(style.height) };
+      const box = { x: pixels(style.left), y: pixels(style.top), width: size(style.width), height: size(style.height) };
       if (box.x === null || box.y === null || box.width === null || box.height === null) return null;
       let block = null;
       for (let up = element.parentElement; up !== null; up = up.parentElement) {
-        if (!plain(up)) return null;
+        if (!plain(up, tags)) return null;
         if (block === null && style.position === "absolute" && up.style.position !== "" && up.style.position !== "static") block = up;
       }
       if (block === null) return box;
