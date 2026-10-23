@@ -7764,7 +7764,11 @@ fixture `workers/ObjectSocket`).*
   and answer the 101 through `Worker.fromHost`, with the chosen `sec-websocket-protocol` on it. A
   client that offered `v1, v2` and was answered `v1` opened (*measured*).
 - **`attach`** counts as (h) counts — two bytes per code unit of the id, the protocol, the tags and
-  the text, plus 64 — against 16 384. **`autoReply`** is `setWebSocketAutoResponse` with a
+  the text, plus 64 — against 16 384. *Amended 2026-10-23 (#858): the count was of code points
+  (`String.length`), which counts an emoji as one where V8 writes four bytes, so 5 000 emoji
+  passed in beni and the host refused the attachment inside the handler — a defect. The count is
+  of UTF-16 code units now, the JavaScript string's `length`, in `attach` and in `Worker.Storage`'s
+  `put` alike; `ObjectSocket`'s `attach-emoji` is `Err TooLarge`.* **`autoReply`** is `setWebSocketAutoResponse` with a
   `WebSocketRequestResponsePair`; the fixture's `ping?` is answered `pong!` with no `message` event.
 - **The events**: `webSocketMessage` with a string is a `message` event of the mailbox; a binary
   frame is closed with 1003 and one `console.warn` line, with no event, and `closed` follows;
@@ -7844,7 +7848,8 @@ pub type PutError
 - The asynchronous API, SQL and point-in-time recovery are (j)'s.
 - *As built (2026-10-22, `Worker/Storage.beni`, `workers/ObjectStorage`):* the four operations as
   above; `TooLarge` counts two bytes per code unit of key and text plus 64 before the host is
-  called (a 2 000 000-character value is refused); `Full` is `kvPut`'s one caught text; a read
+  called (a 2 000 000-character value is refused; *2026-10-23, #858: UTF-16 units, the JavaScript
+  string's `length`, not `String.length`'s code points — 600 000 emoji are refused too*); `Full` is `kvPut`'s one caught text; a read
   with another schema is `Err` with its issues; what one instance put, the instance after its
   abort reads in `restore`.
 

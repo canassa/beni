@@ -49,6 +49,13 @@ get ctx schema key =
                 Err issues
 
 
+-- The UTF-16 code units of a text, which is what V8 serialises two bytes
+-- each (§9.12 (h)): the JavaScript string's `length`, not `String.length`,
+-- which counts code points (#858).
+units : String → Int
+units text = Js.to (Js.get (Js.from text) "length")
+
+
 --| Write the value under the key, printed by the schema.
 pub put : Context msg, Schema e a, String, a → Result PutError ⊤
 put ctx schema key value =
@@ -57,7 +64,7 @@ put ctx schema key value =
             Err (Unprintable issues)
 
         Ok text →
-            if 2 * (String.length key + String.length text) + 64 > 2000000 then
+            if 2 * (units key + units text) + 64 > 2000000 then
                 Err TooLarge
             else if kvPut (kv ctx) key text then
                 Ok ⊤

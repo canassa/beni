@@ -9,6 +9,7 @@
 {"path": "/keys-n"}
 # A put over the limit is refused before the host is called.
 {"path": "/big"}
+{"path": "/big-emoji"}
 # What this instance wrote, the next reads.
 {"path": "/throw"}
 {"path": "/get-int"}
