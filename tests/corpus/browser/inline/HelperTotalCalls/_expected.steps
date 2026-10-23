@@ -1,0 +1,10 @@
+element "root"
+click [data-role=append]
+click [data-role=toggle]
+click [data-role=choose]
+click [data-role=append]
+click [data-role=choose]
+click [data-role=toggle]
+click [data-role=append]
+click [data-role=toggle]
+click [data-role=choose]

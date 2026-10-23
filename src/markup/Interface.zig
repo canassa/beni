@@ -1351,7 +1351,11 @@ pub const Context = struct {
     }
 
     /// Proven pure and total: safe to evaluate in an unselected eager arm.
-    /// Unknown calls, effects and partial operations return false.
+    /// Native operators other than writes and unchecked indexed reads, and a
+    /// saturated call with no hidden evidence of a declaration the checker
+    /// proved total (checker-v2.md §26), over pure-total arguments, are; any
+    /// other call, an effect or a partial operation returns false. The walk
+    /// is iterative and uncapped.
     pub fn valuePureTotal(cx: *Context, v: Value.Index) bool {
         return cx.vtable.value_pure_total(cx.impl, v);
     }

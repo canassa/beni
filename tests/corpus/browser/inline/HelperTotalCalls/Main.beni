@@ -1,0 +1,69 @@
+-- Local and imported total calls use the same fact as Js.pure-backed
+-- String.length. Astral characters count once; hidden updates stay current.
+import Browser
+import Html exposing (Html)
+import Labels
+import Tea
+
+
+type alias Model =
+    text : String
+    shown : Bool
+    picked : Int
+
+
+type Msg
+    = Append
+    | Toggle
+    | Pick Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Append →
+            { model | text = model.text ++ "😀" }
+        Toggle →
+            { model | shown = not model.shown }
+        Pick n →
+            { model | picked = n }
+
+
+bump : Int → Int
+bump n = n + 1
+
+
+helper : Int, Int, Int → Html Msg
+helper first second count =
+    <button data-role="choose" onClick={Pick (first + second + count)}>
+        {first} {second} {count}
+    </button>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {if model.shown then
+            <section>
+                {helper
+                    (bump (String.length model.text))
+                    (Labels.bump (String.length model.text))
+                    (String.length model.text)
+                }
+            </section>
+         else
+            <></>
+        }
+        <output>{model.picked}</output>
+        <button data-role="append" onClick={Append}>Append</button>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { text = "a😀", shown = False, picked = 0 }, update = update, view = view }
+        )
+        "root"

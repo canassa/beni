@@ -1523,3 +1523,141 @@ test "declaration totality does not discard a native name's hidden evidence" {
     // substituted merely because the core declaration is named add.
     try testing.expectEqualStrings(try hashOf(before.stdout, "app:Main"), try hashOf(after.stdout, "app:Main"));
 }
+
+// Eager-call classification is observable in emitted preparation guards.
+// Twins keep the view, writes and source conditional identical; replacing
+// one pure-total argument by another must not introduce another guard.
+const eager_prefix =
+    \\import Browser
+    \\import Html exposing (Html)
+    \\import Labels
+    \\import Tea
+    \\
+    \\
+    \\type alias Model =
+    \\    n : Int
+    \\    label : String
+    \\    shown : Bool
+    \\
+    \\
+    \\type Msg = Increment | Toggle
+    \\
+    \\
+    \\update : Msg, Model → Model
+    \\update msg model =
+    \\    case msg of
+    \\        Increment →
+    \\            { model | n = model.n + 1, label = model.label ++ "😀" }
+    \\        Toggle →
+    \\            { model | shown = not model.shown }
+    \\
+    \\
+    \\bump : Int → Int
+    \\bump n = n + 1
+    \\
+    \\
+    \\measure : String → Int
+    \\measure = String.length
+    \\
+    \\
+    \\piece : Int → Html Msg
+    \\piece n = <p>{n}</p>
+    \\
+    \\
+    \\view : Model → Html Msg
+    \\view model =
+    \\    <main>
+    \\        {if model.shown then
+    \\            <section>{piece (
+;
+
+const eager_suffix =
+    \\)}</section>
+    \\         else
+    \\            <></>
+    \\        }
+    \\        <button onClick={Increment}>Increment</button>
+    \\        <button onClick={Toggle}>Toggle</button>
+    \\    </main>
+    \\
+    \\
+    \\main : Tea.Program
+    \\main =
+    \\    Browser.mountAt
+    \\        (Tea.sandbox
+    \\            { init = λ⊤ → { n = 1, label = "a😀", shown = False }, update = update, view = view }
+    \\        )
+    \\        "root"
+    \\
+;
+
+fn eagerGuardCount(w: *World, argument: []const u8, release: bool, cached: bool) !usize {
+    const arena = w.arena.allocator();
+    try w.write("Main.beni", try std.mem.concat(arena, u8, &.{ eager_prefix, argument, eager_suffix }));
+    const cache_flag: []const u8 = if (cached) "--cache-dir=cache" else "--no-cache";
+    const common: []const []const u8 = &.{ "build", "--platform=browser-inline", cache_flag, "--out=out", "." };
+    const argv = if (release) try std.mem.concat(arena, []const u8, &.{ common, &.{"--release"} }) else common;
+    const result = try w.run(argv);
+    if (result.exit_code != 0) std.debug.print("{s}\n{s}\n", .{ result.stdout, result.stderr });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    const js = try w.read(if (release) "out/_main.mjs" else "out/Main.mjs");
+    return std.mem.count(u8, js, "if (") + std.mem.count(u8, js, "if(");
+}
+
+fn eagerTotalTwin(argument: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Labels.beni", "pub bump : Int → Int\nbump n = n + 1\n");
+    for ([_]bool{ false, true }) |release| {
+        const native = try eagerGuardCount(&w, "model.n + 1", release, false);
+        const ordinary = try eagerGuardCount(&w, argument, release, false);
+        try testing.expectEqual(native, ordinary);
+    }
+}
+
+test "eager totality: local declarations share native argument preparation" {
+    try eagerTotalTwin("bump model.n");
+}
+
+test "eager totality: imported declarations share native argument preparation" {
+    try eagerTotalTwin("Labels.bump model.n");
+}
+
+test "eager totality: foreign contracts share native argument preparation" {
+    try eagerTotalTwin("String.length model.label");
+}
+
+test "eager totality: callable aliases share native argument preparation" {
+    try eagerTotalTwin("measure model.label");
+}
+
+test "eager totality: a wide pure argument adds no preparation guard" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.write("Labels.beni", "pub bump : Int → Int\nbump n = n + 1\n");
+    // A balanced tree of native `Basics.add` calls, twelve deep: 4 095
+    // calls over 4 096 leaves, past the removed 4 096-node walk count. Calls
+    // are written prefix because the parser charges an operator chain's or
+    // an access chain's links to the whole declaration (language.md §10),
+    // so only the leftmost leaf reads the model.
+    var leaf: []const u8 = "1";
+    var expression: []const u8 = "model.n";
+    for (0..12) |_| {
+        expression = try std.fmt.allocPrint(arena, "(Basics.add {s} {s})", .{ expression, leaf });
+        leaf = try std.fmt.allocPrint(arena, "(Basics.add {s} {s})", .{ leaf, leaf });
+    }
+    const small = try eagerGuardCount(&w, "Basics.add model.n 1", false, false);
+    const wide = try eagerGuardCount(&w, expression, false, false);
+    try testing.expectEqual(small, wide);
+}
+
+test "eager totality: warm body drift restores the selected-arm guard" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Labels.beni", "pub bump : Int → Int\nbump n = n + 1\n");
+    const before = try eagerGuardCount(&w, "Labels.bump model.n", false, true);
+    try w.write("Labels.beni", "pub bump : Int → Int\nbump n = bump n\n");
+    const after = try eagerGuardCount(&w, "Labels.bump model.n", false, true);
+    try testing.expect(after > before);
+}
