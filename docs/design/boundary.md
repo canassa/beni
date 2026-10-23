@@ -3002,10 +3002,12 @@ error's message. Any other rejection is a defect, thrown in the waiting fiber (`
 means the document already left it, so it is not an error. Cancelling the fiber stops the wait;
 the request itself cannot be cancelled.
 
-**User activation.** A request needs transient activation, and research 26 §5.3 measured that it
-survives macrotask hops for about 5 s in Chrome and Firefox. So a command's body that asks from
-the `update` of a click's message is in time: it runs in the flush after the event, not 5 s
-later. `update` does not need a synchronous form, and none is given.
+**User activation.** A request needs transient activation. `update` runs in the click's handler,
+and a command's body starts in the scheduler's drain on a microtask queued there, in the same
+task as the click, so the activation is active. Only when that drain has run 64 resumptions does
+the rest move to a macrotask (`core/Task.beni`, `drainFrom`). Then research 26 §5.3 applies:
+activation survives macrotask hops for about 5 s in Chrome and Firefox, and Safari's duration is
+not measured. `update` does not need a synchronous form, and none is given.
 
 **Changes.** `onFullscreenChange` is a `Sub.on` listener (§9.8.5) on the document's
 `fullscreenchange`, which the host fires for every change, Escape and browser controls included. It

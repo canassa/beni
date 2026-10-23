@@ -12,3 +12,5 @@ click #enter
 fullscreen allow
 click #missing
 listeners document fullscreenchange
+click #stop
+listeners document fullscreenchange
