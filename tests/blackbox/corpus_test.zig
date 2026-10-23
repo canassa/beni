@@ -540,6 +540,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
     const kind_dir = try std.fs.path.join(arena, &.{ cfg.root, kind.sub() });
     const core_dir = try std.fs.path.join(arena, &.{ kind_dir, "core" });
     var fixtures: std.ArrayList(Fixture) = .empty;
+    try refuseIndex(arena, cfg.root);
     // Under a root that is not the default one, a kind that does not exist
     // there is simply not part of it: `tests/pending/` holds only the kinds
     // its red fixtures need (`plans/checker-rewrite.md` §2.1).
@@ -1279,9 +1280,11 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
         if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere") and !std.mem.eql(u8, entry.name, "workers")) {
+            try refuseRecordsIn(try std.fs.path.join(arena, &.{ dir_path, entry.name }));
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
+        if (entry.kind == .file and isRecordFile(entry.name)) return refuseRecord(dir_path, entry.name);
         if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
         try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core });
     }
@@ -1290,6 +1293,49 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
             return std.mem.lessThan(u8, a.name, b.name);
         }
     }.lessThan);
+}
+
+/// Whether `name` is a run-hash record file: `<fixture>.run-hash`,
+/// `.release-run-hash` or `.fuzz-run-hash` (`_expected.…` in a project).
+/// The records left git for the run-hash cache (#881, `run_hash.zig`); one
+/// that comes back — a pull request from before the change, a rebase that
+/// kept a modified record — would be ignored by every reader, and a
+/// `browser/tea` page's `.fuzz-run-hash` would silently stand where its
+/// `.value-fuzz` marker belongs. So the walk refuses it, by name, with
+/// the fix.
+fn isRecordFile(name: []const u8) bool {
+    return std.mem.endsWith(u8, name, ".run-hash") or std.mem.endsWith(u8, name, "-run-hash");
+}
+
+fn refuseRecord(dir_path: []const u8, name: []const u8) error{RecordFileInCorpus} {
+    const fuzz = std.mem.endsWith(u8, name, ".fuzz-run-hash");
+    std.debug.print(
+        "{s}/{s}: a run-hash record file; the records left git for the run-hash cache (#881): delete it{s}\n",
+        .{ dir_path, name, if (fuzz) ", and for a browser/tea page's value fuzz add an empty `<page>.value-fuzz` (`_expected.value-fuzz` in a project) beside the page" else "" },
+    );
+    return error.RecordFileInCorpus;
+}
+
+/// `refuseRecord` for the files directly under a project directory, where
+/// a project's records were.
+fn refuseRecordsIn(project_path: []const u8) !void {
+    const io = testing.io;
+    var dir = Io.Dir.cwd().openDir(io, project_path, .{ .iterate = true }) catch return;
+    defer dir.close(io);
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| if (entry.kind == .file and isRecordFile(entry.name)) return refuseRecord(project_path, entry.name);
+}
+
+/// Refuse the old run-hash index, `tests/blackbox/run-hashes.txt` beside
+/// the corpus root, for the same reason as `refuseRecord`.
+fn refuseIndex(arena: std.mem.Allocator, root: []const u8) !void {
+    const path = try std.fs.path.join(arena, &.{ root, "..", "blackbox", "run-hashes.txt" });
+    Io.Dir.cwd().access(testing.io, path, .{}) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    std.debug.print("{s}: the run-hash index; it left git for the run-hash cache (#881): delete it\n", .{path});
+    return error.RecordFileInCorpus;
 }
 
 /// The `BENI_BLESS_ONLY` substring, if set and non-empty.
@@ -2347,7 +2393,7 @@ const Case = struct {
         if (c.cfg.mode == .strict and !c.bless) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 const d = try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, bytes, try worker_harness.inputs(c.arena, h, steps, config));
-                if (run_hash.verified(testing.io, d)) {
+                if (try run_hash.verified(testing.io, d)) {
                     RunCounts.add(&run_counts.skipped);
                     return;
                 }
@@ -2375,7 +2421,7 @@ const Case = struct {
         // the run: a blessing run of another pass may rewrite the golden
         // between the two reads, and the cache must say what this run
         // showed.
-        if (digest != null) run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, program.stdout, try worker_harness.inputs(c.arena, h, steps, config)));
+        if (digest != null) try run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, program.stdout, try worker_harness.inputs(c.arena, h, steps, config)));
     }
 
     fn runPage(case: Case) !void {
@@ -2466,14 +2512,14 @@ const Case = struct {
             // blessing run writes the development page's golden first, and
             // the release page is compared with that one, so its digest must
             // cover the golden it showed, not the one the blessing replaced.
-            if (p.digest != null) run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, p.out, @tagName(p.pass), p.golden, (page orelse shown.run).stdout, try browser.page(c.arena, h, script.bytes)));
+            if (p.digest != null) try run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, p.out, @tagName(p.pass), p.golden, (page orelse shown.run).stdout, try browser.page(c.arena, h, script.bytes)));
         }
         if (release_error) |err| return err;
         if (fuzz_plan) |f| {
             if (f.checked) RunCounts.add(if (f.skip) &run_counts.skipped else &run_counts.stale);
             if (!f.skip) {
                 try c.fuzzVerdict(f, shown.run, shown.pages[next]);
-                if (f.checked) run_hash.record(testing.io, f.digest);
+                if (f.checked) try run_hash.record(testing.io, f.digest);
             }
         }
     }
@@ -2586,7 +2632,7 @@ const Case = struct {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(plan.golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 var checked = plan;
                 checked.digest = try run_hash.digestWith(c.arena, c.w, plan.out, @tagName(plan.pass), plan.golden, bytes, try browser.page(c.arena, h, script.bytes));
-                checked.skip = run_hash.verified(testing.io, checked.digest.?);
+                checked.skip = try run_hash.verified(testing.io, checked.digest.?);
                 return checked;
             } else |_| {
                 // No golden: the comparison below reports it.
@@ -2694,7 +2740,7 @@ const Case = struct {
             return err;
         };
         try c.fuzzVerdict(plan, shown.run, if (shown.pages.len != 0) shown.pages[0] else null);
-        if (plan.checked) run_hash.record(testing.io, plan.digest);
+        if (plan.checked) try run_hash.record(testing.io, plan.digest);
     }
 
     var fuzz_flag_mutex: Io.Mutex = .init;
@@ -2739,7 +2785,7 @@ const Case = struct {
         pair.replay = checking or sweep;
         try browser.writeFuzzSpec(c.arena, c.w, pair, FuzzPlan.spec);
         const digest = try browser.fuzzDigest(c.arena, c.w, h, pair);
-        return .{ .pair = pair, .digest = digest, .skip = checking and run_hash.verified(testing.io, digest), .checked = checking };
+        return .{ .pair = pair, .digest = digest, .skip = checking and try run_hash.verified(testing.io, digest), .checked = checking };
     }
 
     /// The fuzz's report (`report`, null when the driver's `run` stopped
@@ -2839,7 +2885,7 @@ const Case = struct {
         if (c.cfg.mode == .strict and !bless and !sweep) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 const d = try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash), requests);
-                if (run_hash.verified(testing.io, d)) {
+                if (try run_hash.verified(testing.io, d)) {
                     RunCounts.add(&run_counts.skipped);
                     return;
                 }
@@ -2893,7 +2939,7 @@ const Case = struct {
         // the run: the release pass runs in another process than the
         // development pass, and under `BENI_WRITE_EXPECTED=1` that one may
         // rewrite the golden between the two reads.
-        if (digest != null) run_hash.record(testing.io, try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash), requests));
+        if (digest != null) try run_hash.record(testing.io, try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash), requests));
     }
 
     /// A build's digest: a plain `run/` one's, or, for a server program,
