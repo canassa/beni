@@ -324,7 +324,7 @@ line, `#` for a comment:
                                 integer, a script whose idle steps sum over
                                 60 000 ms, or an idle step with another key
                                 is a script error, before anything runs
-    {…, "until": "closed p2"}   any step: wait for a console line of the
+    {…, "until": "closed p2"}   any step but `idle`: wait for a console line of the
                                 Worker that holds the text before the step
                                 ends, since a line an object writes from a
                                 socket event has no order with the mark;

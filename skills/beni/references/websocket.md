@@ -175,8 +175,8 @@ main = Tea.element { init = init, update = update, view = view, subscriptions = 
   stay open; its state is gone. The next event starts a new instance: `restore ctx` runs again,
   `Object.sockets ctx` holds the sockets the host kept, and each socket's id, tags, protocol and
   attachment are as they were. Keep what a socket needs in its attachment, not in the state. A
-  fiber that waits in the object (`Deferred.wait`, `Object.ask`) keeps the object in memory, so
-  it never hibernates under a fiber that waits.
+  fiber that waits in the object (`Deferred.wait`, `Object.ask`) keeps the object in memory while
+  it waits, up to the host's limit: 15 minutes on Cloudflare.
 - `Object.sockets ctx` lists the open sockets; `Object.autoReply ctx request response` makes the
   host answer one text with another, without an event; each text is at most 2 048 bytes, else
   `Err RequestTooLarge` or `Err ResponseTooLarge`. A tag is at most 256 bytes of UTF-8.

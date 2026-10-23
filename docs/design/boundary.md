@@ -7276,7 +7276,8 @@ inside a handler queues it behind the events already waiting ((e.10)).
   counting its requests in memory. After 16 s with no event, the object with no live fiber
   answered as a new instance: `restore` ran again with the two sockets the host kept, its count
   started at 1 again, one socket's attachment read back its seat and the other's its own id, the
-  same as `WebSocket.id` after the wake, and `/__beni/hold` said `free` before and after. The object whose handler had parked a fiber on a `Deferred` — a gate no host
+  same as `WebSocket.id` after the wake, and `/__beni/hold` said `free` before and after. The
+  object whose handler had parked a fiber on a `Deferred` — a gate no host
   timer backs, so the platform's live-fiber timer alone kept it — answered as the same instance,
   its count continued at 3, `held` before and after, and `free` once the gate opened and the
   fiber ended. A peer's close after the wake reached the new instance's `closed`. Both builds,
@@ -7833,7 +7834,11 @@ fixture `workers/ObjectSocket`).*
   `closed` with its code and reason. The done-when of #724 is complete: the upgrade with tags and
   a subprotocol, one refused, messages both ways, a close with a code and a reason from each
   side, the attachment read back after a restart, `autoReply` without an event, the sockets
-  closed by a defect, and the driver's client steps.
+  closed by a defect, and the client steps the platform's fixtures needed — `socket` with
+  protocols, `send` of text and binary, `close` with a code or a raw frame, `drop`, `receive`
+  one or a count, `idle`. Of §9.11 (l)'s list the raw frame for each fault of (f), stop reading,
+  ping and the flow-control steps drive workerd's own frame parser, not the platform, and are
+  not built: #917.
 
 **(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
 SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
