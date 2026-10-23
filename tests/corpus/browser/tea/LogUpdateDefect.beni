@@ -1,0 +1,52 @@
+-- A message's `update` has the program's log context, whoever sends it
+-- (boundary.md §9.8.16 (b), amended 2026-10-23; #818), and a defect stops
+-- the program (§9.8.14). A body in a fiber, made inside `annotate`, holds
+-- a `bracket` and sends `Boom`, whose `update` holds a `bracket` of its
+-- own inside `annotate` and throws. Each scoped change is put back as an
+-- `onExit` finaliser would (proposal §17.5), so at the teardown each
+-- release logs with the context it was opened in: `update`'s with
+-- `update`'s own annotation, the body's with the body's.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λsend →
+                    Time.sleep (Time.millis 5)
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "the body's release") λ_ → send Boom
+                )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
