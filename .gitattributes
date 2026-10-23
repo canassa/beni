@@ -8,8 +8,6 @@
 tests/corpus/**/*.js linguist-generated
 tests/corpus/**/*.mjs linguist-generated
 tests/corpus/**/*.expected linguist-generated
-tests/corpus/**/*.run-hash linguist-generated
-tests/blackbox/run-hashes.txt linguist-generated
 bench/**/results/** linguist-generated
 
 # Design documents and research are documentation, not code.
