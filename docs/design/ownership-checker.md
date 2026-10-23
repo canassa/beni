@@ -2865,12 +2865,12 @@ its entries, which is a change to the summary's format. The research dashboard m
 *As built:* per-unit instructions on the research dashboard (ReleaseFast, `build --release --no-cache --jobs=1`,
 measured on `c79840a7c` with the step index): `step` went from 1.31M to 1.28M at N = 16, from 5.83M to 4.94M at
 N = 64 and from 36.26M to 20.58M at N = 256, and `replaced` from 0.74M to 0.70M, 3.72M to 2.81M and 27.51M to
-11.72M. Both now grow ×3.9–4.2 for ×4 the width. The ownership phase (callgrind, `Ownership.run`, on `ee53c404b`
-with the step index) went from 11.62M to 11.57M at N = 16, from 43.59M to 41.95M at N = 64, from 43.29M to
-41.65M on `nowd`, and from 208.66M to 179.44M at N = 256. `ownership/WideModelArms`'s shape at 512 parts (`dump
---stage=ownership`, the whole process) went from 472.6M to 413.9M. Every output hash and dump is unchanged.
+11.72M. Both now grow ×3.9–4.2 for ×4 the width. The ownership phase (callgrind, `Enforce.checkModule`, on
+`919b45f11`) went from 16.34M to 16.29M at N = 16, from 64.93M to 63.22M at N = 64, from 60.48M to 58.77M on
+`nowd`, and from 331.06M to 301.12M at N = 256. `ownership/WideModelArms`'s shape (`dump --stage=ownership`, the
+whole process) went from 653.0M to 638.0M at 256 parts and from 835.1M to 775.3M at 512. Every output hash and dump is unchanged.
 `ownership/SplitArmsJoin` pins a join of one-field, two-field, repeated, list-making, unchanged and nested arms,
-its golden written by the entry-by-entry way. `test-records-lost` shows no difference in 1 175 programs, and
+its golden written by the entry-by-entry way. `test-records-lost` shows no difference in 1 179 programs, and
 `-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694).
 
 ### 16.8 The library
