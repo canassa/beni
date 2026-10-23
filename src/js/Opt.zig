@@ -610,6 +610,8 @@ const Opt = struct {
                 o.found = .none;
                 if (try o.ownUses(after, n) != 1) break :next;
                 const at = o.found.unwrap() orelse break :next;
+                // `cleanBefore` answers false for a statement kind it does not
+                // walk, so a new kind does not opt in unasked.
                 if (!o.cleanBefore(after, at)) break :next;
                 o.drop(stmt);
                 o.inlined[at.int()] = o.compress(value).toOptional();
@@ -780,17 +782,6 @@ const Opt = struct {
     /// The budget is a conservative one: a member chain deeper than it
     /// answers null, which declines the fold (and, in `isPureReadConst`,
     /// stops the scan). Output is then unoptimised, never wrong.
-    /// A value the next-statement rule takes: a member chain of a name
-    /// (`chainBase`), or one `pureValue` accepts with names written
-    /// through elsewhere let in — the licences the rules below give, less
-    /// the scan past statements, which the rule does not make.
-    fn nextStatementValue(o: *Opt, value: Index) bool {
-        if (o.chainBase(value) != null) return true;
-        o.next_statement = true;
-        defer o.next_statement = false;
-        return o.pureValue(value, 0) != null;
-    }
-
     fn chainBase(o: *Opt, node: Index) ?NameIndex {
         var n = node;
         var budget: u32 = 64;
@@ -955,6 +946,17 @@ const Opt = struct {
             else => false,
         };
         return if (dirty or writes) .dirty else .clean;
+    }
+
+    /// A value the next-statement rule takes: a member chain of a name
+    /// (`chainBase`), or one `pureValue` accepts with names written
+    /// through elsewhere let in — the licences the other rules give, less
+    /// the scan past statements, which this rule does not make.
+    fn nextStatementValue(o: *Opt, value: Index) bool {
+        if (o.chainBase(value) != null) return true;
+        o.next_statement = true;
+        defer o.next_statement = false;
+        return o.pureValue(value, 0) != null;
     }
 
     /// What `pureValue` knows of a value it accepts: whether it is surely a
@@ -1227,4 +1229,55 @@ test "a binding nothing reads is kept when it writes a record in place" {
     const plan = try run(arena_state.allocator(), &ir);
     try testing.expect(!plan.isDropped(keep_x));
     try testing.expect(plan.isDropped(drop_y));
+}
+
+/// `function f(c, g, k) { c.a = 1; const d = c.a; <after> }`, `c.a` written
+/// in the declaration, and whether `d`'s binding was folded away. `between`
+/// puts `g();` between the binding and `after`.
+fn nextStatementCase(gpa: std.mem.Allocator, call_first: bool, between: bool) !bool {
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const c = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const g = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const k = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const d = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(5))));
+    const call = struct {
+        fn of(bb: *JsIr.Builder, callee: JsIr.NameIndex, args: []const Index) !Index {
+            const record = try bb.addRecord(try bb.addRange(args));
+            return testNode(bb, .call, (try testNode(bb, .ident, callee.int(), 0)).int(), @backingInt(record));
+        }
+    }.of;
+    const write = try testNode(&b, .assign_stmt, (try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), a.int())).int(), (try testNode(&b, .number, 0, 0)).int());
+    const read = try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), a.int());
+    const bind = try testNode(&b, .const_decl, d.int(), read.int());
+    const d_use = try testNode(&b, .ident, d.int(), 0);
+    const args: []const Index = if (call_first) &.{ try call(&b, g, &.{}), d_use } else &.{d_use};
+    const ret = try testNode(&b, .return_stmt, (try call(&b, k, args)).int(), 0);
+    const g_stmt = try testNode(&b, .expr_stmt, (try call(&b, g, &.{})).int(), 0);
+    const body: []const Index = if (between) &.{ write, bind, g_stmt, ret } else &.{ write, bind, ret };
+    const params = try b.addNames(&.{ c, g, k });
+    const stmts = try b.addRange(body);
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try run(arena_state.allocator(), &ir);
+    return plan.isDropped(bind);
+}
+
+test "a read of a name written through folds into the next statement, and only before any write there" {
+    // `backend.md` §9 item 1, amended 2026-10-23 (#896): `c.a` is written in
+    // the declaration, so no rule moves `d = c.a` past a statement; read in
+    // the next statement before anything there may write, it is folded.
+    try testing.expect(try nextStatementCase(testing.allocator, false, false));
+    // `return k(g(), d)`: the call is evaluated before the read, and may
+    // write `c.a` — kept.
+    try testing.expect(!try nextStatementCase(testing.allocator, true, false));
+    // `g(); return k(d)`: the read is two statements away — kept.
+    try testing.expect(!try nextStatementCase(testing.allocator, false, true));
 }
