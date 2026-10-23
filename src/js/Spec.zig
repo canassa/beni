@@ -15898,8 +15898,11 @@ const Pts = struct {
         // Still this call's binding: the list may have been folded since.
         if (ir.data(decl).rhs != c.node) return;
         const x: NameIndex = @fromBackingInt(@intCast(ir.data(decl).lhs));
-        for (items[at.index + 1 ..]) |next| {
-            if (ir.tag(next) != .assign_stmt) return;
+        for (items[at.index + 1 ..]) |stmt| {
+            // A store of a record written in place stands as a statement of
+            // its own (`Lower.settleStores`): read like `x.k = v`.
+            const next: Index = if (ir.tag(stmt) == .expr_stmt and ir.tag(@fromBackingInt(@intCast(ir.data(stmt).lhs))) == .assign) @fromBackingInt(@intCast(ir.data(stmt).lhs)) else stmt;
+            if (ir.tag(next) != .assign_stmt and ir.tag(next) != .assign) return;
             const target: Index = @fromBackingInt(@intCast(ir.data(next).lhs));
             if (ir.tag(target) != .member) return;
             const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
