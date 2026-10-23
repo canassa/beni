@@ -1660,11 +1660,35 @@ teardown ⊤ =
         fiber = newFiber Js.null (Js.array [])
         Js.write live (Js.read live + 1)
         Js.set fiber "finalizers" (Js.get o "finalizers")
+        if Js.read slotted then withSlotsOf o fiber
         Js.set o "finalizers" Js.null
         Js.set o "masks" (Js.from 0)
         unwind fiber
         enqueue fiber Js.null Js.null
     if Js.read live == 0 then allEnded ⊤ else drain ⊤
+
+
+-- Make each of `fiber`'s finalisers, the ones a throw left on `holder`,
+-- the record outside any fiber, start with the slots that `holder` has
+-- then. A finaliser reads the slots of the fiber that runs it, and a
+-- restore among them puts back the record's, so each one has the slots it
+-- would have had in a fiber of its own (`boundary.md` §9.8.14 (d) step 4,
+-- amended 2026-10-23). The scheduler slot stays the program's: `fiber` is
+-- the teardown's. Called as a statement of its own, so that a build in
+-- which nothing sets a slot keeps none of it.
+withSlotsOf : V, V → ⊤
+withSlotsOf holder fiber =
+    Js.set fiber "finalizers"
+        (Js.call (Js.get fiber "finalizers") "map"
+            [ Js.from λfin →
+                λx →
+                    next =
+                        Js.call (Js.global "Object") "assign" [ Js.from {}, Js.get holder "slots" ]
+                    Js.set next "scheduler" Js.undefined
+                    Js.set fiber "slots" next
+                    Js.apply fin [ x ]
+            ]
+        )
 
 
 -- The deferred finalisers of the root scopes among `list`: each root's run
