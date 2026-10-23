@@ -1092,7 +1092,8 @@ code settled, which the amendment left to the build:
   recognises, amended the same day: a tail of `update` that gives a field `F x model.f`, `F` a
   function whose body is `Result.withDefault D old` with `D` not reading `old` — so its result is
   the old value itself, or a value made from `x` alone that holds nothing of it — reached with
-  nothing on the way reading the model, every declaration on the way called only there. Its site
+  nothing on the way reading the model, every declaration on the way called only there — by its
+  own module and by every other. Its site
   is lowered as the loader: a keyed `case` as `load(model, table, key, raw)`, `table` a constant
   of `[key, row]` pairs, looked up by an own-key scan, so `__proto__` and `constructor` are
   unknown keys; an update or a record of every field as `loadAll(model, rows, raws)`, which runs
@@ -1105,7 +1106,10 @@ code settled, which the amendment left to the build:
   holder but the model's slot — nothing on the way to the route reads the model, the model is
   exclusive at the entry (`ownership-checker.md` §31.8), a binding that retains an argument is
   in the push's pass and is evaluated again, and a program whose commands run keeps no route,
-  since a command's closure from an earlier dispatch may hold the old object. So the evidence is
+  since a command's closure from an earlier dispatch may hold the old object. A field the copy
+  writes by assignment — a list, a union, a number — takes the result's value itself, as the
+  source's replacement does, so it shares what the source would share and the ownership checker
+  judged that sharing; a record field is copied into, so it shares less. So the evidence is
   the route's own proof and ownership's entry exclusivity; R5's table needed no extension
   (decision 3). The write-set pass reads a route site as the copy it is (`write-sets.md`), so the
   model and its routed slices keep their objects in the plan.

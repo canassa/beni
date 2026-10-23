@@ -2291,7 +2291,7 @@ lowering alone; no dump passes it, so nothing printed moves.
   not reading `old`, is a **route site**: one `record_update` of the model, one record of every
   field of the model, or a `case` on a key whose string-literal branches are each such an update
   of one field with one `x` and whose default is the model. Every declaration the walk entered
-  must be called only where the walk called it. A route site is lowered as a copy of `F`'s result
+  must be called only where the walk called it, by its own module and by every other. A route site is lowered as a copy of `F`'s result
   into the field's old object (`browser-inline.md` §8.4, amended 2026-10-23, *as built*), so the
   pass reads it as that copy: the old object, `Rec` over its own path, with each field of its
   record type written `Fresh` of `F`'s result's dependencies — and each record-typed field the

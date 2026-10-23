@@ -334,7 +334,8 @@ allShown arms i =
 -- ---- Groups (`browser-inline.md` §8.4, amended 2026-10-22) -------------
 
 -- Every binding entry made at this mount, in the order made: an entry's
--- place here is its ordinal. Roots are set up in placement order and each
+-- place here is its ordinal. A page has one program (`browser-inline.md` §1),
+-- mounted once, inside one dispatch, so no two mounts share it. Roots are set up in placement order and each
 -- makes its entries in document order, so the order made is the order a
 -- pass runs them in, and every bucket, filled as entries are made, is in it.
 entries : Js.Ref V
@@ -350,7 +351,7 @@ stamp = Js.ref 0
 --| `(f, buckets)`: binding entry `f`, given its ordinal and added to the
 --| buckets of what it reads — one bucket, or an array of them. A bucket
 --| holds entries, functions, so an array whose first element is an array is
---| several. Returns `f`.
+--| several; an empty bucket has no first element, and is one. Returns `f`.
 pub entry : V, V → V
 entry f buckets =
     Js.set f "$o" (Js.get (Js.read entries) "length")
