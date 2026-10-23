@@ -82,9 +82,16 @@ version. Any change to one of them makes the build run under Node again,
 exactly as it would with no cache, and the gates say in one line how many
 did. A build that ran, exited as expected and matched its golden writes its
 digest into the cache: one empty file, `<dir>/<sha-256>`, written
-atomically, so two processes that verify the same program both succeed. A
-build that fails writes nothing, and a blessing run
-(`BENI_WRITE_EXPECTED=1`) neither looks nor writes. The cache is the
+atomically (a named temporary file in the directory, then a rename), so two
+processes that verify the same program both succeed; a writer killed in
+between leaves a 16-digit temporary file, which is never read as a digest.
+The digest written is of the bytes the compare used, not of a golden read
+before the run. A build that fails writes nothing. A blessing run
+(`BENI_WRITE_EXPECTED=1`) writes no digest for the build it blesses — a
+golden written from the output is no verdict — while the fixture's other
+passes, compared with the golden it just wrote as always, are verified and
+recorded. A cache that cannot be read or written prints one warning, and
+every build runs and nothing is recorded. The cache is the
 directory `BENI_RUN_HASH_DIR` names — the dev shells set
 `~/.cache/beni-run-hashes`, one directory for every worktree, which is safe
 because the digest covers every input of the verdict; empty means no cache.
