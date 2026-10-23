@@ -1,5 +1,5 @@
 module PolyRecBranch
-  23:26 List.push y1: rejected call: y2 may hold it through the call at 21:10, and is read at 23:45 (approx)
+  23:26 List.push y1: rejected level: y2 may hold it at another level, and is read at 23:45 (approx)
   33:26 List.push y1: rejected exclusive: the elements of the list it was taken from may share one list
   43:26 List.push y2: accepted call
   61:31 List.push ys: accepted fresh
@@ -13,5 +13,5 @@ module PolyRecBranch
   summary useWw: π1 R
   demands 5: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 5: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-cause call 1
 cause exclusive 2
+cause level 1

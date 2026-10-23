@@ -1101,6 +1101,32 @@ whatever it is built for. The table's last column, "After, on any other platform
 withdrawn, and so is the bullet above about a platform that does not edit in place. No platform
 copies a list behind the program's back.
 
+**The one limit: the levels of a recursive value** (*added 2026-10-23*, `ownership-checker.md` §16.7 (e)). The
+checker keeps one place for all the levels of one part of a recursive value: the left subtree's lists of a `Tree`
+are one place, its root's list included. So it cannot show that two levels of that part hold different lists. A
+write to a list of one level, while a list of another level of the same part is read later, is refused, even
+when the two lists are different. The error is `list_may_be_shared`, and its message says that the checker cannot
+tell the levels apart. This is the one place where the ownership rule refuses a program that is safe, and it does
+so on every platform. For example, `alternate` puts `a` at the root and two levels down, and `b` between them:
+
+    type Tree = Leaf | Node Tree (List Int) Tree
+
+    alternate a b = Node (Node (Node Leaf a Leaf) b Leaf) a Leaf
+
+    grown a b =
+        case alternate a b of
+            Node l xs _ →
+                case l of
+                    Node _ ys _ → List.length (List.push xs 1) + List.length ys
+                    Leaf → 0
+            Leaf → 0
+
+`grown` changes the root's list, `a`, and reads the left child's list, `b`. That is safe. But the left subtree
+holds `a` at its own next level, and the checker keeps one place for the left subtree's levels. So `ys` may be
+`a`, and the push is refused. The fix is a copy: copy the list where it is put into the value, so that no two
+levels hold the same list (`Node (Node (Node Leaf (List.copy a) Leaf) b Leaf) a Leaf`), or change a copy at the
+write (`List.push (List.copy xs) 1`). A record field is copied with `Record.copy` (§6.3).
+
 A persistent sequence may come back only as **a separate type the developer chooses**, such as a
 `Vector` with its own module and costs. It is never `List`'s representation (`backend.md` §4,
 *What is not done*).

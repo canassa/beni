@@ -1,0 +1,104 @@
+-- ownership: the one place the checker refuses safe code for good, the
+-- levels of a recursive value (§16.7 (e), issue #286). The level marker
+-- keeps one place for all the levels of one region, so a list taken out of
+-- one level may be any level's. `inline` puts `a` at the root and two levels
+-- down and `b` between: it writes the root's list and reads its left child's,
+-- which is safe, and is refused `level`. `two` writes one level of a tree it
+-- is handed while reading another: the same cell stands for both levels, so
+-- it is refused `level`, where it was refused `alias`, as if the checker had
+-- seen the sharing. `copied` copies the list where it is put into the tree,
+-- as the message says, and is accepted. `sameLevel` reads the same level
+-- twice, which the checker sees exactly (`alias`), and `pushLater` reads the
+-- list it wrote (`later-use`): neither is the limit. `operands` hands the
+-- two levels' lists to one call that writes the first: refused `level` at
+-- the call.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+pub inline : List Int, List Int → List Int × Int
+inline a b =
+    t = Node (Node (Node Leaf a Leaf) b Leaf) a Leaf
+    case t of
+        Node l xs _ →
+            case l of
+                Node _ ys _ →
+                    ( List.push xs 1, List.length ys )
+
+                Leaf →
+                    ( [], 0 )
+
+        Leaf →
+            ( [], 0 )
+
+
+pub copied : List Int, List Int → List Int × Int
+copied a b =
+    t = Node (Node (Node Leaf (List.copy a) Leaf) b Leaf) a Leaf
+    case t of
+        Node l xs _ →
+            case l of
+                Node _ ys _ →
+                    ( List.push xs 1, List.length ys )
+
+                Leaf →
+                    ( [], 0 )
+
+        Leaf →
+            ( [], 0 )
+
+
+pub two : Tree → List Int × List Int
+two t =
+    case t of
+        Node (Node _ a (Node _ b _)) _ _ →
+            ( List.push a 1, b )
+
+        _ →
+            ( [], [] )
+
+
+pub sameLevel : Tree → List Int × List Int
+sameLevel t =
+    case t of
+        Node _ a _ →
+            case t of
+                Node _ b _ →
+                    ( List.push a 1, b )
+
+                Leaf →
+                    ( [], [] )
+
+        Leaf →
+            ( [], [] )
+
+
+pub pushLater : Tree → List Int × List Int
+pushLater t =
+    case t of
+        Node (Node _ a _) _ _ →
+            ( List.push a 1, a )
+
+        _ →
+            ( [], [] )
+
+
+pushLen : List Int, List Int → List Int
+pushLen xs ys = List.push xs (List.length ys)
+
+
+pub operands : List Int, List Int → List Int
+operands a b =
+    t = Node (Node (Node Leaf a Leaf) b Leaf) a Leaf
+    case t of
+        Node l xs _ →
+            case l of
+                Node _ ys _ →
+                    pushLen xs ys
+
+                Leaf →
+                    []
+
+        Leaf →
+            []

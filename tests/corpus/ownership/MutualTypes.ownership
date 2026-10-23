@@ -1,6 +1,6 @@
 module MutualTypes
-  26:31 List.push zs: rejected element: xs holds it and is read at 26:29 (approx)
+  26:31 List.push zs: rejected level: xs may hold it at another level, and is read at 26:29 (approx)
   summary sub: π1 RAw[storage], π1[*] A; res .0 fresh7 ~condition(fresh2) ~π1, .0[*] ~condition(fresh4) ~π1[*], .0[*]⟨A⟩#A.1 ~condition(fresh5) ~π1, .0⟨A⟩#A.1 ~condition(fresh3) ~π1, .1 ~condition(fresh6) π1, condition(fresh1){lost}
   demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-cause element 1
+cause level 1

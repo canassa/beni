@@ -2746,6 +2746,76 @@ told apart, and the question does not arise until #294. Measured with `bench/own
 before and after this amendment the tables are the same: none of 1 001 programs is rejected, core has 117
 demands and `browser-tea`'s own modules 54, none pending or rejected, `Tea`'s included.
 
+*Amended 2026-10-23 (issue #286, decision (e), built): the cause `level`.* Under the level marker, (e)'s limit is
+the one the marker states (*Exclusivity, and what it does not say*): a region's levels are one place, so a list
+taken out of one level may be the list of any level of that region. A refusal that rests on that is a cause of its
+own, `level`, approximate. It is decided as follows:
+
+- **A holder found through a marker.** A projection that takes one level out of a recursive type's marker
+  (`underMarker`, `alongMarker`) makes its entries approximate with the derivation *another level*
+  (`approx_level`). This holds however the entry was approximate before, for example through a call that returns
+  one argument at two result paths: the marker is the cause that a copy can remove. A holder whose entry has that
+  derivation is `level`. F1's marker of closures keeps *a place that stands for several* (`element`).
+- **One cell for two levels.** A symbolic cell whose path goes through a recursive type's marker stands for the
+  lists of every level of the region. A holder that holds the written cell itself, and is not the written binding
+  read again (`later-use`), is `level`, not `alias`. Before, `case t of Node (Node _ a (Node _ b _)) _ _ →
+  ( List.push a 1, b )` was refused `alias`, exactly, as if the checker had seen the sharing.
+- **Another operand.** A call-site demand whose other operand reaches the written cell only with the derivation
+  *another level* is `level`. So is a callee's other place of the argument (`call_uses`) when the cell or the
+  callee's path goes through a recursive type's marker. Under `[*]` it stays `element`.
+
+A cause that the text shows exactly is still decided first. A call that holds the list with no marker on the way
+is still `call`.
+
+**The message.** Its code is `list_may_be_shared`. Its text replaces the draft above. The draft's fix line,
+`Node (alt (n - 1) b a) (List.copy a) Leaf`, needs the construction that put the list at two levels, which the
+report does not carry. So the message writes the copy at the edit, as every other message does, and names the
+construction in words:
+
+```
+-- LIST MAY BE SHARED ------------------------------------------ Main.beni:27:34
+
+`List.push` changes `xs` in place, and the checker cannot tell the levels of a
+recursive value apart: it keeps one place for all of them, so `ys` may hold the
+list at another level.
+
+26|                Node _ ys _ →
+                          ^^ `ys` keeps the list here
+27|                    List.length (List.push xs 1) + List.length ys
+                                    ^^^^^^^^^^^^^^ the list is changed in place here
+                                                                  ^^ and `ys` is read here, after the change
+
+To be safe, change a copy, or copy the list where it is put into the recursive
+value, so that no two of its levels hold the same list:
+
+27|                    List.length (List.push (List.copy xs) 1) + List.length ys
+
+A record field is copied the same way, with `Record.copy`.
+
+This is a limit of the checker, not proof of sharing: it keeps one place for all
+the levels of a recursive value, so it cannot show that two levels hold
+different lists (language.md §6.8).
+```
+
+`Record.copy` has landed (§31.15), so the draft's "which lands with #315" is gone. For another operand of a call,
+the holder is "another part of the same operation". The report line is `rejected level: <holder> may hold it at
+another level, and is read at <line>:<col> (approx)`. A call-site line is `rejected level: another operand may hold
+it at another level: the checker keeps one place for the levels of a recursive value`.
+
+**Fixtures.** The `browser-direct` platform was retired (#423), and with it `build/bad/direct/`. The project is
+`build/bad/everywhere/OwnershipLevel`, built for `browser-tea` with `--ownership-everywhere`. Its `alternate` puts
+`a` at the root and two levels down and `b` between. `grown` writes the root's list while it reads the left
+child's, which is safe and refused. `ownership/LevelLimit` pins the inline tree (`inline`), two levels of a
+parameter (`two`), the call operand (`operands`) and the copy that fixes the inline tree (`copied`, accepted). Two
+twins keep their causes: the same level read twice (`sameLevel`, `alias`, exact) and the written list read again
+(`pushLater`, `later-use`). `language.md` §6.8 states the limit.
+
+**What moved.** No verdict changes. Rejections that were `element` or `call` (approximate) and that rest on a
+marker are now `level`: `FoldLevels.sub` and `rose`, `MutualTypes`, and lines of `PolyRecBranch`, `PolyRecLevels`,
+`PolyRecMutual`, `PolyRecShared`, `PolyRecTuples` and `PolyRecTwice`. Some of them are real sharing: `sub` puts
+`xs` at the level it then writes. The checker cannot tell that case from the safe one, and that is the limit. The
+fix the message names, a copy where the list is put into the value, removes both.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:

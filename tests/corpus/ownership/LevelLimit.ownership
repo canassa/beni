@@ -1,0 +1,20 @@
+module LevelLimit
+  27:23 List.push xs: rejected level: ys may hold it at another level, and is read at 27:39 (approx)
+  43:23 List.push xs: accepted param
+  56:15 List.push a: rejected level: b may hold it at another level, and is read at 56:13 (approx)
+  68:23 List.push a: rejected alias: b holds it and is read at 68:21
+  81:15 List.push a: rejected later-use: a is read again at 81:13
+  88:17 List.push xs: accepted param
+  98:21 call LevelLimit.pushLen xs: rejected level: another operand may hold it at another level: the checker keeps one place for the levels of a recursive value (LevelLimit.pushLen writes π1) (approx)
+  summary inline: π1 RAW[storage], π1[*] A, π2 R; res .0 condition(fresh1) fresh1 π1{sep π1 π2}, .0[*] ~condition(fresh2) ~π1[*]
+  summary copied: π1 RAW[storage], π1[*] RA, π2 R; res .0 condition(fresh1) fresh1 π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary two: π1 R, π1#Node.0⟨Tree⟩#Node.1 RAW[storage], π1#Node.0⟨Tree⟩#Node.1[*] A; res .0 condition(fresh2) fresh2 π1#Node.0⟨Tree⟩#Node.1, .0[*] ~condition(fresh3) ~π1#Node.0⟨Tree⟩#Node.1[*], .1 fresh5 ~condition(fresh4) π1#Node.0⟨Tree⟩#Node.1, condition(fresh1){lost}
+  summary sameLevel: π1 R, π1#Node.1 RAW[storage], π1#Node.1[*] A; res .0 condition(fresh2) fresh2 π1#Node.1, .0[*] ~condition(fresh3) ~π1#Node.1[*], .1 fresh5 ~condition(fresh4) π1#Node.1, condition(fresh1){shared}
+  summary pushLater: π1 R, π1#Node.0⟨Tree⟩#Node.1 RAW[storage], π1#Node.0⟨Tree⟩#Node.1[*] A; res .0 condition(fresh2) fresh2 π1#Node.0⟨Tree⟩#Node.1, .0[*] ~condition(fresh3) ~π1#Node.0⟨Tree⟩#Node.1[*], .1 fresh5 ~condition(fresh4) π1#Node.0⟨Tree⟩#Node.1, condition(fresh1){lost}
+  summary pushLen: π1 RAW[storage], π1[*] A, π2 R; res [*] ~π1[*], π1
+  summary operands: π1 RAW[storage], π1[*] RA, π2 R; res [*] ~condition(fresh2) ~π1[*], condition(fresh1) fresh1 π1{sep π1 π2}
+  demands 7: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 7: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause later-use 1
+cause alias 1
+cause level 3

@@ -1,11 +1,11 @@
 module PolyRecShared
-  25:26 List.push a: rejected call: b⋆ may hold it through the call at 23:10, and is read at 25:43 (approx)
-  48:26 List.push r.u.u: rejected call: r.v may hold it through the call at 46:10, and is read at 48:47 (approx)
-  75:26 List.push a: rejected call: b⋆ may hold it through the call at 73:10, and is read at 75:43 (approx)
-  85:26 List.push a: rejected call: b⋆ may hold it through the call at 83:18, and is read at 85:43 (approx)
-  95:26 List.push a: rejected call: b⋆ may hold it through the call at 93:18, and is read at 95:43 (approx)
-  105:26 List.push a: rejected call: b⋆ may hold it through the call at 103:19, and is read at 105:43 (approx)
-  115:26 List.push r.u.u.u: rejected call: r.v may hold it through the call at 113:10, and is read at 115:49 (approx)
+  25:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 25:43 (approx)
+  48:26 List.push r.u.u: rejected level: r.v may hold it at another level, and is read at 48:47 (approx)
+  75:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 75:43 (approx)
+  85:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 85:43 (approx)
+  95:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 95:43 (approx)
+  105:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 105:43 (approx)
+  115:26 List.push r.u.u.u: rejected level: r.v may hold it at another level, and is read at 115:49 (approx)
   summary wrap: π2 RA; res #Leaf.0 π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0 condition(fresh1){shared}r{shared} condition(fresh11){shared}r{shared} condition(fresh4){shared}r{shared} ~condition(fresh12){shared}r{shared} ~condition(fresh17){shared}r{shared}, ⟨T⟩⁺#Leaf.0.0 condition(fresh2) condition(fresh4){shared}r{shared} condition(fresh5) ~condition(fresh11){shared}r{shared} ~condition(fresh12){shared}r{shared} ~condition(fresh17){shared}r{shared} π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.0.0 condition(fresh7), ⟨T⟩⁺#Leaf.0.0.1 condition(fresh8), ⟨T⟩⁺#Leaf.0.0⋆ condition(fresh13) ~condition(fresh11){shared}r{shared} ~condition(fresh14) ~condition(fresh17){shared}r{shared} ~condition(fresh5) ~condition(fresh6) ~π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.1 condition(fresh3) condition(fresh4){shared}r{shared} condition(fresh6) ~condition(fresh11){shared}r{shared} ~condition(fresh12){shared}r{shared} ~condition(fresh17){shared}r{shared} π2{lost}r{lost}, ⟨T⟩⁺#Leaf.0.1.0 condition(fresh9), ⟨T⟩⁺#Leaf.0.1.1 condition(fresh10), ⟨T⟩⁺#Leaf.0.1⋆ condition(fresh15) ~condition(fresh11){shared}r{shared} ~condition(fresh16) ~condition(fresh17){shared}r{shared} ~condition(fresh5) ~condition(fresh6) ~π2{lost}r{lost}
   summary tup: π1 Rw[storage], π1.0 Rw[storage], π1.1 R
   summary rwrap: π2 RA; res #RLeaf.0 π2{lost}r{lost}, #RWrap.0⟨R⟩#RLeaf.0 fresh501◦r{lost} fresh502◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.u fresh502◦r{lost} ~fresh501◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.u⋆ ~fresh501◦r{lost} ~fresh502◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.v fresh502◦r{lost} ~fresh501◦r{lost}, #RWrap.0⟨R⟩#RLeaf.0.v⋆ ~fresh501◦r{lost} ~fresh502◦r{lost}, ⟨R⟩⁺#RLeaf.0 condition(fresh1){shared}r{shared} condition(fresh11){shared}r{shared} condition(fresh4){shared}r{shared} ~condition(fresh12){shared}r{shared} ~condition(fresh17){shared}r{shared}, ⟨R⟩⁺#RLeaf.0.u condition(fresh2) condition(fresh4){shared}r{shared} condition(fresh5) ~condition(fresh11){shared}r{shared} ~condition(fresh12){shared}r{shared} ~condition(fresh17){shared}r{shared} π2{lost}r{lost}, ⟨R⟩⁺#RLeaf.0.u.u condition(fresh7), ⟨R⟩⁺#RLeaf.0.u.v condition(fresh8), ⟨R⟩⁺#RLeaf.0.u⋆ condition(fresh13) ~condition(fresh11){shared}r{shared} ~condition(fresh14) ~condition(fresh17){shared}r{shared} ~condition(fresh5) ~condition(fresh6) ~π2{lost}r{lost}, ⟨R⟩⁺#RLeaf.0.v condition(fresh3) condition(fresh4){shared}r{shared} condition(fresh6) ~condition(fresh11){shared}r{shared} ~condition(fresh12){shared}r{shared} ~condition(fresh17){shared}r{shared} π2{lost}r{lost}, ⟨R⟩⁺#RLeaf.0.v.u condition(fresh9), ⟨R⟩⁺#RLeaf.0.v.v condition(fresh10), ⟨R⟩⁺#RLeaf.0.v⋆ condition(fresh15) ~condition(fresh11){shared}r{shared} ~condition(fresh16) ~condition(fresh17){shared}r{shared} ~condition(fresh5) ~condition(fresh6) ~π2{lost}r{lost}
@@ -18,4 +18,4 @@ module PolyRecShared
   summary freshR: unused
   demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
 total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
-cause call 7
+cause level 7

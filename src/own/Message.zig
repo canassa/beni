@@ -236,6 +236,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         .later_use => try w(&out, a, ", but {s} is read again afterwards.", .{holder}),
         .alias => try w(&out, a, ", but {s} still holds the old list and is read afterwards.", .{holder}),
         .captured => try w(&out, a, ", but {s}, a function that holds the list, is used afterwards.", .{holder}),
+        .level => try w(&out, a, ", and the checker cannot tell the levels of a recursive value apart: it keeps one place for all of them, so {s} may hold the list at another level.", .{if (d.holder.len > 0) holder else "another part of the same operation"}),
         .held_operand => try w(&out, a, ", but a value computed earlier in the same expression still holds the list.", .{}),
         .top_level => if (entry)
             try w(&out, a, ", but when the program starts {s} `{s}`, a top-level value.", .{ if (lines.len > 1) "each is" else "it is", top })
@@ -268,7 +269,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     if (need and d.via_token != none and d.via_token != d.span[0])
         try places.append(a, .{ .m = m, .first = d.via_token, .last = d.via_token, .label = "the function here may return a list it does not own" });
     if (cause) |c| switch (c) {
-        .alias, .captured, .call => if (d.keep_token != none and d.holder.len > 0) {
+        .alias, .captured, .call, .level => if (d.keep_token != none and d.holder.len > 0) {
             const verb: []const u8 = if (c == .captured) "holds" else "keeps";
             try places.append(a, .{ .m = m, .first = d.keep_token, .last = d.keep_token, .label = try std.fmt.allocPrint(a, "{s} {s} the list here", .{ holder, verb }) });
         },
@@ -285,7 +286,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         try places.append(a, .{ .m = m, .first = d.via_token, .last = d.via_token, .label = label });
     }
     if (cause) |c| switch (c) {
-        .later_use, .alias, .call, .captured => if (d.read_span[0] != none) {
+        .later_use, .alias, .call, .captured, .level => if (d.read_span[0] != none) {
             const verb: []const u8 = if (c == .captured) "used" else "read";
             // A read written before the edit, as a tuple's first item, that
             // happens after it, when the tuple is built.
@@ -336,9 +337,12 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         if (fix_line) |line| {
             const lead = if (exact)
                 try std.fmt.allocPrint(a, "To change a copy and leave {s} as it was, copy it there:", .{if (isName(d.base)) try std.fmt.allocPrint(a, "`{s}`", .{d.base}) else "the list"})
+            else if (cause == .level)
+                "To be safe, change a copy, or copy the list where it is put into the recursive value, so that no two of its levels hold the same list:"
             else
                 "To be safe, change a copy:";
             try w(&out, a, "{s}\n\n{s}\n\n", .{ lead, line });
+            if (cause == .level) try w(&out, a, "A record field is copied the same way, with `Record.copy`.\n\n", .{});
             fixed = true;
         }
     }
@@ -386,6 +390,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
             try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list (ownership-checker.md §4.2).", .{}),
         .read_only => try w(&out, a, "This is the platform's rule for `{s}`, whether or not anything else reads the list.", .{entry_fn}),
         .platform => try w(&out, a, "This is the rule of the runtime this program is mounted by.", .{}),
+        .level => try w(&out, a, "This is a limit of the checker, not proof of sharing: it keeps one place for all the levels of a recursive value, so it cannot show that two levels hold different lists (language.md §6.8).", .{}),
         else => if (exact) switch (c) {
             .later_use, .alias, .captured => if (read_line != 0)
                 try w(&out, a, "This is sharing the checker can see: {s} is {s} on line {d}, after the change.", .{ holder, if (c == .captured) "used" else "read", read_line })
