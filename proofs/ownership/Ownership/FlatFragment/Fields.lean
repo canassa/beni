@@ -1497,7 +1497,7 @@ end Ownership.FlatFragment.Fields
 
 /-! allocation and write preservation for every flat binding (continued from
 `Runtime`): the shape of a typed binding and the typing of every binding after
-a flat heap change, now with records. -/
+an allocation or an integer write (`IntegerFrame`), now with records. -/
 
 namespace Ownership.FlatFragment.HeapPreservation
 
@@ -1540,45 +1540,6 @@ theorem bindingsTyped_after_flat_heap {nextHeap : Heap}
   exact ⟨type, declared, observedType,
     valueTyped_after_flat_heap (inv.types x type declared) actualType
       (inv.tags x type a observation actual declared abstractBinding present) frame⟩
-
-/-- A real counted write retains every binding's current runtime type,
-including every dead alias of the written root. Observer and live-value
-frames still require the separate permission facts from the actual demand.
--/
-theorem counted_write_preserves_binding_types {root : Nat}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (allocated : hs.heap[root]? = some previous) (integers : List Int) :
-    ∃ post,
-      (writeCounted root (heapInts integers)).run hs = .ok (.ref root, post) ∧
-      IntegerFrame hs.heap post.heap ∧
-      (∀ x observation actual, env.lookup x = some (observation, actual) →
-        ∃ type, tenv.lookup x = some type ∧
-          obsTyped declarations observation type = true ∧
-          ValueTyped declarations post.heap actual type) := by
-  let post := {hs with heap := hs.heap.set! root (heapInts integers), writes := if previous == heapInts integers then hs.writes else hs.writes + 1}
-  have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp allocated).1
-  have nextFrame := integerFrame_after_write hs.heap root valid integers
-  refine ⟨post, writeCounted_empty_run hs allocated inv.links, nextFrame, ?_⟩
-  exact bindingsTyped_after_flat_heap inv nextFrame
-
-/-- Real integer literal allocation also preserves every old binding's
-type. Its new result binding and constructed naming enter the expression
-preservation case separately. -/
-theorem literal_preserves_binding_types
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (integers : List Int) :
-    ∃ post,
-      (prim (.literal .int) (heapInts integers)).run hs =
-        .ok (.ref hs.heap.size, post) ∧
-      IntegerFrame hs.heap post.heap ∧
-      (∀ x observation actual, env.lookup x = some (observation, actual) →
-        ∃ type, tenv.lookup x = some type ∧
-          obsTyped declarations observation type = true ∧
-          ValueTyped declarations post.heap actual type) := by
-  let post := {hs with heap := hs.heap.push (heapInts integers)}
-  have nextFrame := integerFrame_after_allocation hs.heap integers
-  refine ⟨post, rfl, nextFrame, ?_⟩
-  exact bindingsTyped_after_flat_heap inv nextFrame
 
 end Ownership.FlatFragment.HeapPreservation
 

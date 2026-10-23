@@ -667,9 +667,10 @@ expansion of the current runtime value and therefore excludes dangling roots.
 
 The abstract and type environments have the exact runtime key sequence.
 Their descriptions have the flat shapes that real primitive inference needs
-(`FlatAbstract`, which admits the bottom of dead code). The relation says
-nothing about the arrays no binding holds: what a binding's arrays hold comes
-from its type, through `bindingsTyped` (an integer list holds integers). The permanent
+(`FlatAbstract`, which admits the bottom of dead code). The relation makes
+no claim about the contents of an array that no binding holds, except through
+the observer witness: what a binding's arrays hold comes from its type, through
+`bindingsTyped` (an integer list holds integers). The permanent
 observer witness covers the complete current observer list at the runtime's
 actual observation depth. Every binding's result tags agree with its
 abstract (`ResultTags`), which also excludes a bottom where a value is, its
