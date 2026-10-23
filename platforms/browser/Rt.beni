@@ -2189,8 +2189,11 @@ mountAbove n =
 -- handler and its extractor run, the event's `currentTarget` is the
 -- handler's node, as a listener of the node's own would see it: a pointer
 -- event's extractor reads that node's box (`boundary.md` §9.8.20 (d)). The
--- walk removes the definition when it ends, however it ends, so a listener
--- after it reads the host's `currentTarget`.
+-- walk's first handler defines it, once, as a getter over `at`, the node
+-- whose handler runs, as Solid's walk does. The walk removes it when it
+-- ends, however it ends, so a listener after it reads the host's
+-- `currentTarget`; a walk that met no handler defined nothing and removes
+-- nothing.
 --
 -- The three property names an event's handler is read by are built once
 -- per name, when its listener is registered, and handed to the listener:
@@ -2198,29 +2201,37 @@ mountAbove n =
 -- must first find in V8's string table.
 delegated : String, String, String, V → ⊤
 delegated key flagged payload event = turn (Js.to (Js.get event "isTrusted")) λ⊤ →
-    Js.finally (λ⊤ → bubble event key flagged payload (Js.get event "target")) λ⊤ →
-        Js.to (Js.call (Js.global "Reflect") "deleteProperty" [ event, Js.from "currentTarget" ])
+    at = Js.ref Js.null
+    Js.finally (λ⊤ → bubble event key flagged payload at (Js.get event "target")) λ⊤ →
+        if Js.isNull (Js.read at) then
+            ⊤
+        else
+            Js.to
+                (Js.call (Js.global "Reflect") "deleteProperty" [ event, Js.from "currentTarget" ])
 
 
-bubble : V, String, String, String, V → ⊤
-bubble event key flagged payload node =
+bubble : V, String, String, String, Js.Ref V, V → ⊤
+bubble event key flagged payload at node =
     if Js.isNull node then
         ⊤
     else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
         flags = Js.to (Js.get node flagged)
-        _ =
-            Js.call (Js.global "Object") "defineProperty"
-                [ event
-                , Js.from "currentTarget"
-                , Js.object [ ( "configurable", True ), ( "value", node ) ]
-                ]
+        if Js.isNull (Js.read at) then
+            Js.to
+                (Js.call (Js.global "Object") "defineProperty"
+                    [ event
+                    , Js.from "currentTarget"
+                    , Js.object [ ( "configurable", True ), ( "get", Js.from λ⊤ → Js.read at ) ]
+                    ]
+                )
+        Js.write at node
         fire node event key payload flags
         if Js.bitAnd flags 2 ≠ 0 then
             ⊤
         else
-            bubble event key flagged payload (Js.get node "parentNode")
+            bubble event key flagged payload at (Js.get node "parentNode")
     else
-        bubble event key flagged payload (Js.get node "parentNode")
+        bubble event key flagged payload at (Js.get node "parentNode")
 
 
 -- The delegated names listened for so far.
