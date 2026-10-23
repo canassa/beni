@@ -39,6 +39,11 @@ const { Miniflare } = await import(miniflarePath);
 // How long one step may take, in milliseconds: a bound a correct fixture
 // never reaches, since no fixture waits for real.
 const stepLimit = 5000;
+// The one step that waits for real: `idle` lets the host act on its own
+// clock — hibernate an object after its delay (§9.12 (e.5), #593) — and
+// may take longer than a step, up to this bound, under the case's
+// 120 s hang guard.
+const idleLimit = 60000;
 
 const out = path.resolve(outArg);
 const say = (line) => process.stdout.write(`${line}\n`);
@@ -375,6 +380,13 @@ for (const step of steps) {
     controller.abort();
     const outcome = await pending;
     say(outcome.error ? `< (aborted: ${outcome.error.name})` : outcome.late ? `< (no response in ${stepLimit} ms)` : `< ${outcome.value.status} (answered before the abort)`);
+  } else if (step.idle !== undefined) {
+    // No event for `idle` milliseconds: what hibernation needs.
+    if (!Number.isInteger(step.idle) || step.idle < 0 || step.idle > idleLimit) {
+      scriptError(`idle of ${JSON.stringify(step.idle)}: a count of milliseconds up to ${idleLimit} is wanted`);
+    }
+    say(`> (idle ${step.idle} ms)`);
+    await new Promise((resolve) => setTimeout(resolve, step.idle));
   } else if (step.socket !== undefined) {
     await openSocket(step);
   } else if (step.send !== undefined && step.binary !== undefined) {
