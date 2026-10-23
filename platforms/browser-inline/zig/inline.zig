@@ -73,6 +73,9 @@ pub const lowering: m.Lowering = .{
         .{ .name = "pass", .arity = 1 },
         .{ .name = "passes", .arity = 1 },
         .{ .name = "first", .arity = 1 },
+        // `(rows, elements, from, table, at)`: a run of roots mounted
+        // through one table (§8.4, amended 2026-10-24).
+        .{ .name = "roots", .arity = 5 },
         // The pushed-state loader (§8.4, amended 2026-10-22): `(model, table,
         // key, raw)` a keyed route, `(model, rows, raws)` routes in turn.
         .{ .name = "load", .arity = 4 },
@@ -512,6 +515,53 @@ const PieceUse = struct {
     data: *const PieceData,
     elements: m.Name = undefined,
 };
+
+/// Pieces `start .. start + len`, roots mounted through one table (§8.4,
+/// amended 2026-10-24): each has a factory that takes its elements, its
+/// holders, its own row — rows `row .. row + len`, in order — and, when it
+/// fills another root's row, the table, and no handler. `elements`: where
+/// each root's top element is — `len` element children of one element
+/// (null: the page's top node) in order, from its child `from` on — or
+/// anywhere, each then read by its place.
+const Run = struct {
+    start: u32,
+    len: u32,
+    row: u32,
+    elements: union(enum) { children: struct { parent: ?u32, from: u32 }, places },
+};
+
+fn runOf(runs: []const Run, piece_index: u32) ?Run {
+    for (runs) |r| if (piece_index >= r.start and piece_index < r.start + r.len) return r;
+    return null;
+}
+
+/// Where a piece's top element stands: its parent's place (null: the top
+/// node) and its place among the parent's element children.
+const Place = struct { parent: ?u32, at: u32 };
+
+/// The places of the pieces among `nodes`, numbered as `element` and
+/// `pieceHole` number them; false when a piece's number is not the one the
+/// walk counts, which then says nothing of where pieces stand.
+fn placesOf(nodes: []const Html, parent: ?u32, count: *u32, pieces: []const PieceUse, places: []?Place) bool {
+    var at: u32 = 0;
+    for (nodes) |n| switch (n.kind) {
+        .text => {},
+        .element => {
+            const t = count.*;
+            count.* += 1;
+            at += 1;
+            if (!placesOf(n.children, t, count, pieces, places)) return false;
+        },
+        .piece => {
+            const u = pieces[n.piece];
+            if (u.target != count.*) return false;
+            places[n.piece] = .{ .parent = parent, .at = at };
+            at += 1;
+            count.* += 1 + u.data.count;
+        },
+    };
+    return true;
+}
 
 /// One program's page, as the lowering builds it.
 const Page = struct {
@@ -997,8 +1047,19 @@ const Page = struct {
             try js.expression(undo, try js.call(try js.member(try js.name(pg.node.?), "remove"), &.{}));
             try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.arrow(&.{}, undo)}));
         }
+        // The runs of roots mounted through one table (§8.4, amended
+        // 2026-10-24), and whether a piece is reached other than as a child
+        // of its run's parent.
+        const root_runs = try pg.rootRuns();
+        const piece_placed = for (pg.pieces.items, 0..) |_, i| {
+            const r = runOf(root_runs, @intCast(i)) orelse break true;
+            switch (r.elements) {
+                .children => |c| if (c.parent != null) break true,
+                .places => break true,
+            }
+        } else false;
         // The elements code refers to, by place.
-        const placed = pg.pieces.items.len != 0 or for (pg.writes.items) |w| {
+        const placed = piece_placed or for (pg.writes.items) |w| {
             if (w.target != null) break true;
         } else for (pg.events.items) |ev| {
             if (ev.target != null) break true;
@@ -1021,8 +1082,10 @@ const Page = struct {
             }
         }
 
-        // Each piece's elements, below its top element.
-        for (pg.pieces.items) |*u| {
+        // Each piece's elements, below its top element; a run's are found
+        // as each of its roots is mounted.
+        for (pg.pieces.items, 0..) |*u, i| {
+            if (runOf(root_runs, @intCast(i)) != null) continue;
             u.elements = try cx.fresh("elements");
             try js.constant(body, u.elements, try js.call(try js.name(try cx.runtime("part")), &.{try pg.ref(u.target)}));
         }
@@ -1209,7 +1272,40 @@ const Page = struct {
         // order: its elements, what it holds of the model, the buckets it
         // fills, and a handler per constructor its events send.
         if (pg.pieces.items.len != 0) try cx.programViewEnter(body, try pg.modelRef());
-        for (pg.pieces.items, piece_keys) |u, ks| {
+        var next_run: usize = 0;
+        for (pg.pieces.items, piece_keys, 0..) |u, ks, i| {
+            // A run is mounted where its first root stands: one row per
+            // root, `[factory, holder…]`, and one call of the runtime's
+            // `roots`, which calls each factory in turn with the root's
+            // elements, its holders, its own row and the table.
+            if (next_run < root_runs.len and root_runs[next_run].start <= i) {
+                const r = root_runs[next_run];
+                if (i + 1 == r.start + r.len) next_run += 1;
+                if (i != r.start) continue;
+                const run_rows = try pg.a().alloc(m.Expr, r.len);
+                const tops = try pg.a().alloc(m.Expr, r.len);
+                for (run_rows, tops, pg.pieces.items[r.start..][0..r.len]) |*rr, *top, w| {
+                    const hs = try cx.programRootArgs(body, w.node, pg.model, pg.cell);
+                    std.debug.assert(hs.len == w.data.arity);
+                    const row_items = try pg.a().alloc(m.Expr, 1 + hs.len);
+                    row_items[0] = try js.name(try cx.programPieceName(w.node, w.data.root.?));
+                    @memcpy(row_items[1..], hs);
+                    rr.* = try js.array(row_items);
+                    if (r.elements == .places) top.* = try pg.ref(w.target);
+                }
+                const elements, const from = switch (r.elements) {
+                    .children => |c| .{ try js.member(try pg.ref(c.parent), "children"), c.from },
+                    .places => .{ try js.array(tops), 0 },
+                };
+                try js.expression(body, try js.call(try js.name(try cx.runtime("roots")), &.{
+                    try js.array(run_rows),
+                    elements,
+                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{from})),
+                    try js.name(pg.table.?),
+                    try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{r.row})),
+                }));
+                continue;
+            }
             const factory = u.data.root orelse continue;
             const blk = body;
             const holders = try cx.programRootArgs(blk, u.node, pg.model, pg.cell);
@@ -1410,6 +1506,59 @@ const Page = struct {
                 \\class 4). Write the command where `update` returns it, with those three.
             ),
         }
+    }
+
+    /// The runs of two roots or more mounted through one table (§8.4,
+    /// amended 2026-10-24): pieces next to each other in placement order,
+    /// each with a factory that takes no handler and fills its own row, the
+    /// rows next to each other in the same order. Any other root is called
+    /// as it is.
+    fn rootRuns(pg: *Page) m.Error![]const Run {
+        const pieces = pg.pieces.items;
+        if (pieces.len < 2) return &.{};
+        const places = try pg.a().alloc(?Place, pieces.len);
+        @memset(places, null);
+        var count: u32 = 0;
+        const top = pg.top_nodes[0];
+        if (top.kind != .element or !placesOf(top.children, null, &count, pieces, places)) @memset(places, null);
+        var runs: std.ArrayList(Run) = .empty;
+        var i: u32 = 0;
+        while (i < pieces.len) {
+            const row = pg.runRow(i) orelse {
+                i += 1;
+                continue;
+            };
+            var len: u32 = 1;
+            while (i + len < pieces.len) : (len += 1) {
+                const next = pg.runRow(i + len) orelse break;
+                if (next != row + len) break;
+            }
+            if (len >= 2) {
+                // The roots' top elements are element children of one
+                // element, next to each other in order, or each is read by
+                // its place.
+                const first = places[i];
+                const children = first != null and for (0..len) |k| {
+                    const p = places[i + k] orelse break false;
+                    if (p.parent != first.?.parent or p.at != first.?.at + k) break false;
+                } else true;
+                try runs.append(pg.a(), .{
+                    .start = i,
+                    .len = len,
+                    .row = row,
+                    .elements = if (children) .{ .children = .{ .parent = first.?.parent, .from = first.?.at } } else .places,
+                });
+            }
+            i += len;
+        }
+        return runs.items;
+    }
+
+    /// Piece `i`'s own row, when its root can be one of a run's.
+    fn runRow(pg: *Page, i: u32) ?u32 {
+        const u = pg.pieces.items[i];
+        if (u.data.root == null or !u.data.own_row or u.data.handlers.len != 0) return null;
+        return pg.cx.programRootRow(u.node);
     }
 
     /// The one descendant the page's code refers to, when it is one.

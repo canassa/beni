@@ -1195,6 +1195,27 @@ as before:
   selects every bucket of every row passes `table.flat()`. So the push of a program whose key writes
   every widget is `passes(t.flat())`, not a list of every bucket, which grew with N.
 
+*Amended 2026-10-24 (#916): a run of roots is mounted through one table.* The mount called each
+root's factory by name, after it had found the root's elements with `part(E[n])`: about 8 B per
+widget on S1 for the lookup, the call and its arguments. Now roots next to each other in placement
+order whose factories take no handler and fill their own rows, the rows next to each other in the
+same order, are one **run**, and a run of two or more is one call of the runtime's
+`roots(rows, elements, from, table, at)`. Row `i` is `[factory, holder…]`, the holders as the
+plan hands them; `roots` calls each factory in turn with `part(elements[from + i])`, the row's
+holders, `table[at + i]` and the table. A factory takes only what it uses, so the table is ignored
+by one that fills no other root's row. `elements` is the `children` of the roots' parent when the
+roots are its element children `from` to `from + len - 1` in order — `E` is then not looked up
+for them, and not at all when nothing else refers to an element by its place — or else an array of
+each root's top element, `[E[n], …]`, with `from` 0. A root that takes a handler (decision 2), or
+fills no row, is called by name as before, where it stands, and ends the run.
+
+Nothing a program does changes. Each factory is still called once, in placement order, so the
+entries are made, and given their ordinals, in the same order. The holders are reads of the model,
+which no factory writes, so reading them all before the first factory runs reads the same objects;
+and `part` reads a root's own subtree, which no factory changes before the first pass
+(`browser/inline/RootRuns`, `emit/release/inline/RootRuns`). A page with one root ships no
+`roots`.
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host
