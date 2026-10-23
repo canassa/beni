@@ -67,6 +67,15 @@ fn walker(w: *World) !world.Result {
 /// `walker` from `root` instead of the repository root: where the walker
 /// finds the driver, the DOM and the `page` platform.
 fn walkerIn(w: *World, root: std.process.Child.Cwd) !world.Result {
+    return walkerWith(w, root, false);
+}
+
+/// `walker` with `BENI_WRITE_EXPECTED=1`: the goldens are blessed.
+fn walkerBless(w: *World) !world.Result {
+    return walkerWith(w, .inherit, true);
+}
+
+fn walkerWith(w: *World, root: std.process.Child.Cwd, bless: bool) !world.Result {
     const arena = w.arena.allocator();
     const project = try w.projectPath();
     var env = std.process.Environ.Map.init(arena);
@@ -77,6 +86,7 @@ fn walkerIn(w: *World, root: std.process.Child.Cwd) !world.Result {
     try env.put("BENI_CORPUS_PART", "browser");
     try env.put("BENI_RUN_HASH_DIR", try std.fmt.allocPrint(arena, "{s}/cache", .{project}));
     try env.put("BENI_RUN_HASH_REPORT", try std.fmt.allocPrint(arena, "{s}/counts", .{project}));
+    if (bless) try env.put("BENI_WRITE_EXPECTED", "1");
     const argv = try arena.dupe([]const u8, &.{try testing.environ.getAlloc(arena, "BENI_CORPUS_TEST_EXE")});
     return world.spawnAndCaptureIn(arena, w.io, argv, root, world.default_timeout_ms, &env);
 }
@@ -412,6 +422,48 @@ test "a page verified in one checkout is not loaded again in a checkout at anoth
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualDeep(verified, try digests(&w));
+}
+
+test "a page that does not show its golden writes no digest" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/Button.beni", button);
+    try w.write("corpus/browser/Button.steps", "# Nothing is clicked.\n");
+    try w.write("corpus/browser/Button.expected", "-- load\n<body>\n  <p>not what the page shows</p>\n</body>\n");
+    try expectExit(1, try walker(&w));
+    // No digest: the cache is empty or was never made.
+    const found: []const []const u8 = if (w.exists("cache")) try digests(&w) else &.{};
+    try testing.expectEqual(0, found.len);
+}
+
+test "a blessing run records the release page's digest against the golden it showed" {
+    // The page twin of run_hash_test's "a blessed build looks nothing up
+    // and writes no digest; the pass compared with its golden is
+    // recorded". The golden is wrong. A blessing run writes the development
+    // page's transcript over it, and the release page is compared with the
+    // golden the development page just wrote; so its digest must cover
+    // that golden, not the wrong one the walker read before the pages ran.
+    // Then an ordinary walk, with the same builds and the same golden, must
+    // skip the release page and leave two digests. A digest of the wrong
+    // golden would be a verdict no page gave: with that golden restored,
+    // the release page would skip Node and pass.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/Button.beni", button);
+    try w.write("corpus/browser/Button.steps", "# Nothing is clicked.\n");
+    try w.write("corpus/browser/Button.expected", "-- load\n<body>\n  <p>not what the page shows</p>\n</body>\n");
+    try expectExit(0, try walkerBless(&w));
+    try testing.expectEqualStrings(loaded, try w.read("corpus/browser/Button.expected"));
+    // Only the release page was looked up, and it ran.
+    try expectCounts(&w, 0, 1);
+    try testing.expectEqual(1, (try digests(&w)).len);
+
+    const r = try walker(&w);
+
+    try expectExit(0, r);
+    // The development page runs; the release page was verified already.
+    try expectCounts(&w, 1, 1);
+    try testing.expectEqual(2, (try digests(&w)).len);
 }
 
 test "a changed step script loads a verified page again though its golden still matches" {
