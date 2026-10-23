@@ -6316,3 +6316,13 @@ Known nonwriters discharge it; writers and unknown callback behaviour retain it.
 The red fixture is promoted to `tests/corpus/ownership/ScalarCallbackSlots.beni`.
 `ConditionalCallbackKeep` preserves the real-sharing refusal and unseen-writer
 control. No host-allocation assertion or platform copy is added.
+
+## CK-269 — a value that fills a deep tuple has an exponential summary (2026-10-23)
+
+**Issue:** #856. **Fixture:** `tests/pending/ownership/DeepTupleDag.beni`.
+`w5 x = w4 (w4 x)` over `w1 x = ( x, x )` returns a tuple 16 levels deep
+that holds `x` at 2¹⁶ places. With the path cut removed (§16.7 (c), #286)
+the summary states each place, and `--ownership-everywhere` needs 1 276 786
+entries, past the `entries` limit; master accepted it only because the cut
+merged every place past eight steps. The fix is a summary form that shares
+identical sub-summaries, not a cap. It blocks O4 (#320, #681).

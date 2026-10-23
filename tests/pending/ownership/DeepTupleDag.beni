@@ -1,0 +1,20 @@
+-- CK-269: a value that fills a deep tuple has a summary as large as the program (#856).
+-- `w5`'s result is a tuple 16 levels deep that holds `x` at 2^16 places.
+-- Without the path cut (§16.7 (c)) its summary lists every place, so
+-- `--ownership-everywhere` stops at the `entries` limit: 1 276 786 entries.
+-- The fix is a summary form that shares identical sub-summaries, not a cap.
+-- Golden: no limit line and no demand; the slice that turns it green
+-- blesses the summary lines it then prints.
+w1 x = ( x, x )
+
+
+w2 x = w1 (w1 x)
+
+
+w3 x = w2 (w2 x)
+
+
+w4 x = w3 (w3 x)
+
+
+pub w5 x = w4 (w4 x)
