@@ -2185,7 +2185,12 @@ mountAbove n =
 -- a program mounted in another's markup goes on into the outer one, as
 -- the DOM's own bubbling does, and each handler's message goes to the
 -- program that rendered it. An event the browser dispatched is a turn:
--- every handler of the walk is one render, when the walk ends.
+-- every handler of the walk is one render, when the walk ends. While a
+-- handler and its extractor run, the event's `currentTarget` is the
+-- handler's node, as a listener of the node's own would see it: a pointer
+-- event's extractor reads that node's box (`boundary.md` §9.8.20 (d)). The
+-- walk removes the definition when it ends, however it ends, so a listener
+-- after it reads the host's `currentTarget`.
 --
 -- The three property names an event's handler is read by are built once
 -- per name, when its listener is registered, and handed to the listener:
@@ -2193,7 +2198,8 @@ mountAbove n =
 -- must first find in V8's string table.
 delegated : String, String, String, V → ⊤
 delegated key flagged payload event = turn (Js.to (Js.get event "isTrusted")) λ⊤ →
-    bubble event key flagged payload (Js.get event "target")
+    Js.finally (λ⊤ → bubble event key flagged payload (Js.get event "target")) λ⊤ →
+        Js.to (Js.call (Js.global "Reflect") "deleteProperty" [ event, Js.from "currentTarget" ])
 
 
 bubble : V, String, String, String, V → ⊤
@@ -2202,6 +2208,12 @@ bubble event key flagged payload node =
         ⊤
     else if not (Js.isUndefined (Js.get node key)) && not (Js.to (Js.get node "disabled")) then
         flags = Js.to (Js.get node flagged)
+        _ =
+            Js.call (Js.global "Object") "defineProperty"
+                [ event
+                , Js.from "currentTarget"
+                , Js.object [ ( "configurable", True ), ( "value", node ) ]
+                ]
         fire node event key payload flags
         if Js.bitAnd flags 2 ≠ 0 then
             ⊤

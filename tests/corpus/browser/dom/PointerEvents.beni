@@ -1,9 +1,10 @@
 -- Pointer events in a page built by the `dom` lowering (boundary.md
--- §9.8.20). They are not delegated: each element with a pointer handler
--- listens itself, so the extractor reads the box of that element, and a
--- point is in the handler's box whichever element is the target. Each row
--- of the list listens for its own `pointerdown`, and a row added later
--- listens as well. The move handler captures only the scalar `track` flag,
+-- §9.8.20). The four that bubble are delegated (amended 2026-10-23,
+-- #557): the walk defines `currentTarget` as the element whose handler
+-- runs, so the extractor reads the box of that element, and a point is in
+-- the handler's box whichever element is the target. Each row of the list
+-- has its own `pointerdown` handler, and a row added later has one as
+-- well. The move handler captures only the scalar `track` flag,
 -- and the render replaces that handler: after `#track` the
 -- moves are logged again.
 import Browser

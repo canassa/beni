@@ -5327,6 +5327,46 @@ specified, with these findings:
   `pointercancel`, the mouse events a prevented `pointerdown` stops, Safari's `user-select`, and
   iOS's double-tap zoom.
 
+*As built, 2026-10-23* (#557; `platforms/html/Html.beni`, `platforms/browser/Rt.beni`,
+`tests/browser/driver.mjs`), as amended in (d), with these findings:
+
+- **`currentTarget`.** For each node whose handler it calls, `bubble` defines `currentTarget` on
+  the event with `Object.defineProperty` (configurable, the node as its value). A `Js.finally`
+  around the walk removes it with `Reflect.deleteProperty`. Chrome and happy-dom 20.14.5 both keep
+  `currentTarget` as an accessor on `Event.prototype`, so the event's own property hides it, and
+  the removal shows it again: a listener on the window after the walk reads the window.
+- **Before and after.** `browser/dom/PointerNested` fails without the change, in both DOMs, with
+  the same lines: the outer handler of a `press` or of a trusted move reads the count that the
+  inner handler made (`the handler saw n=1, the model has n=1`), and the handler on the disabled
+  button runs. With the change, the outer handler reads the count of before the event
+  (`n=0`, `n=1`), and the disabled button's handler does not run. The untrusted steps give the
+  same lines before and after.
+- **The trusted move.** Chrome dispatches a mouse move at a frame, not when
+  `Input.dispatchMouseEvent` returns, so the step waits for the move's `mousemove` on the window,
+  for at most 5 s of the page's real clock.
+- **Measured** (headless Chrome 153, one page built before and after the change, 7 fresh pages for
+  each build in alternate order; µs per event, the median of 7 × 5 samples of 2 000 untrusted
+  `pointermove`s, and ms to the end of the render, the median of 7):
+
+  | | before (a listener for each element) | after (the walk) |
+  |---|---|---|
+  | a move on a target 8 elements below the handler's element | 5.98 | 7.53 |
+  | a move on a target 8 elements deep, no handler above it | 3.36 | 4.71 |
+  | a click that renders 1 000 rows, each with `onPointerDown` | 4.32 ms | 3.05 ms |
+
+  A move costs about 1.4 µs more: the document's listener, the walk to the document and the
+  definition of `currentTarget`. Chrome sends `pointermove` at most once a frame for each pointer,
+  so at 60 frames a second that is less than 0.01 % of a frame. A page that renders many rows with
+  a pointer handler mounts faster, because no row adds a listener: 1.3 ms less for 1 000 rows. The
+  untrusted events are no turn in either build, so the table compares the listeners, not the turn.
+  The page is `bench/ui/apps/pointer/Main.beni`, and the script is `bench/ui/pointer.mjs`.
+- **Size** (`bench/size.mjs --pages-only`, the compiler before and after the change). A page that
+  delegates an event carries the longer walk: 131 bytes raw more under `--release`, and 22 to 46
+  bytes brotli (TodoMVC 8 966 → 9 008, Conduit 27 910 → 27 949, `ApiAndRoutes` 14 484 → 14 506,
+  `sternhalma` 7 428 → 7 474). `examples/steer` delegated no event before, so its build had
+  `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
+  brotli. A page that delegates no event is the same bytes.
+
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
 *Specified and built 2026-10-12.* The language could mark an element `svg` (`language.md` §11.14) and the
