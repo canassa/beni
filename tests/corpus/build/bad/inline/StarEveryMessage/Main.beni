@@ -45,7 +45,11 @@ main =
     Browser.mountAt
         (Tea.sandbox
             { init =
-                λ⊤ → { count = 0, label = "start", step = Step λm → { m | count = m.count + 1 } }
+                λ⊤ →
+                    { count = 0
+                    , label = "start"
+                    , step = Step λm → { Record.copy m | count = m.count + 1 }
+                    }
             , update = update
             , view = view
             }

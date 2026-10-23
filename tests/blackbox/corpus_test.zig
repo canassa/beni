@@ -1886,17 +1886,12 @@ const Case = struct {
         }
     }
 
-    /// Whether an ownership report has a rejected or pending line for a
-    /// list. A record update's line (`L:C update …`, `ownership-checker.md`
-    /// §31.12) is reported and not yet enforced, so it never makes `check`
-    /// fail.
-    fn listRefusal(report: []const u8) bool {
+    /// Whether an ownership report has a rejected or pending line, for a
+    /// list or, since §31.9's codes, for a record update.
+    fn ownershipRefusal(report: []const u8) bool {
         var lines = std.mem.splitScalar(u8, report, '\n');
         while (lines.next()) |line| {
             if (std.mem.indexOf(u8, line, ": rejected ") == null and std.mem.indexOf(u8, line, ": pending") == null) continue;
-            const t = std.mem.trimStart(u8, line, " ");
-            const sp = std.mem.indexOfScalar(u8, t, ' ') orelse continue;
-            if (std.mem.startsWith(u8, t[sp + 1 ..], "update ")) continue;
             return true;
         }
         return false;
@@ -1905,7 +1900,7 @@ const Case = struct {
     /// Whether a JSON diagnostic list names the ownership checker's codes
     /// and no others (`ownership-checker.md` §28.6).
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "ownership_limit" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "record_still_used", "top_level_record_changed", "record_may_be_shared", "ownership_limit" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();
@@ -3198,7 +3193,7 @@ const Case = struct {
                 // elsewhere it is silent whatever the report says.
                 const enforces = everywhere or try chainInPlace(c.arena, platform);
                 // A limit the checker reached is an error too (§16.7).
-                const refused = enforces and (listRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
+                const refused = enforces and (ownershipRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
                 if (refused) {
                     try expectExit(1, checked);
                     if (!ownershipOnly(checked.stderr)) {

@@ -31,7 +31,9 @@ view model =
     <div>
         <output>{model.count}</output>
         <p>{model.label}</p>
-        <button data-role="run" onClick={Run λm → { m | count = m.count + 1 }}>+1</button>
+        <button data-role="run" onClick={Run λm → { Record.copy m | count = m.count + 1 }}>
+            +1
+        </button>
     </div>
 
 

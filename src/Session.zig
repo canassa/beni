@@ -3164,7 +3164,7 @@ fn lookupSource(context: *const anyopaque, d: *const diagnostic.Diagnostic) ?[]c
     }
     // An ownership message holds its own places (`ownership-checker.md` §28.6).
     switch (d.code) {
-        .list_still_used, .top_level_list_changed, .view_changes_model, .list_may_be_shared => return null,
+        .list_still_used, .top_level_list_changed, .view_changes_model, .list_may_be_shared, .record_still_used, .top_level_record_changed, .record_may_be_shared => return null,
         else => {},
     }
     const index = session.store.find(d.span.file) orelse return null;

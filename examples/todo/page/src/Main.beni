@@ -200,18 +200,19 @@ update msg model =
             ( { model | error = Just (failed error) }, Cmd.none )
 
         Toggle todo →
-            ( model, save { todo | done = not todo.done } )
+            ( model, save { Record.copy todo | done = not todo.done } )
 
         ToggleAll done →
             ( model
             , Cmd.batch
-                (List.map (List.filter model.todos λt → t.done ≠ done) λt → save { t | done = done }
+                (List.map (List.filter model.todos λt → t.done ≠ done) λt →
+                    save { Record.copy t | done = done }
                 )
             )
 
         Changed (Ok todo) →
             ( { model
-                | todos = List.map model.todos λt → if t.id == todo.id then todo else t
+                | todos = List.map model.todos λt → if t.id == todo.id then Record.copy todo else t
                 , error = Nothing
               }
             , Cmd.none
@@ -294,7 +295,7 @@ commit model =
             else
                 case List.filter model.todos λt → t.id == ed.id of
                     [ todo, …_ ] →
-                        ( closed, save { todo | title = title } )
+                        ( closed, save { Record.copy todo | title = title } )
 
                     [] →
                         ( closed, Cmd.none )

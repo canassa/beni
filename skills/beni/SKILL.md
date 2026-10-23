@@ -40,8 +40,10 @@ you wrote, and `beni fmt <path>` before you show it.
     gone. `Debug.log "label" value` keeps Elm's order, and a `--release` build refuses `Debug`.
 12. **A write edits a list in place where the compiler can prove it safe.** On the `browser-inline`
     platform a write to a list that is read again later is the error `list_still_used`, and
-    `List.copy` is the fix. On the other platforms such a write copies. An untouched record field
-    keeps its identity across `{ r | a = 1 }`.
+    `List.copy` is the fix. On the other platforms such a write copies. A record update
+    `{ r | a = 1 }` follows the same rule: a later use of the old `r` whole there is the error
+    `record_still_used`, and `{ Record.copy r | a = 1 }` is the fix. An untouched record field
+    keeps its identity across the update.
 
 ## The smallest programs
 

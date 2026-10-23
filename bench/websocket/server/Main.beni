@@ -78,7 +78,7 @@ inputs arena id socket =
     case WebSocket.read socket of
         Ok input →
             Ref.update arena.players λplayers →
-                List.map players λp → if p.id == id then { p | input = input } else p
+                List.map players λp → if p.id == id then { Record.copy p | input = input } else p
             inputs arena id socket
 
         Err _ →

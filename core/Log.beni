@@ -202,7 +202,10 @@ context ⊤ =
     if Js.isUndefined slot then initial else Js.to slot
 
 
--- Run `work` with the calling fiber's log context set to `next`.
+-- Run `work` with the calling fiber's log context set to `next`. Each
+-- caller below builds `next` from a copy of the context in force
+-- (`Record.copy here`): that context is the outer fiber's, or `initial`,
+-- and it must read as it was once `work` returns.
 within : Context, (⊤ → a) → a
 within next work = Task.withLogContext (Js.from next) work
 
@@ -217,7 +220,7 @@ within next work = Task.withLogContext (Js.from next) work
 pub annotate : String, String, (⊤ → a) → a
 annotate key value work =
     here = context ⊤
-    within { here | annotations = annotated here.annotations key value } work
+    within { Record.copy here | annotations = annotated here.annotations key value } work
 
 
 -- `annotations` with `key` set to `value`: in its place when the key is
@@ -238,7 +241,7 @@ annotated annotations key value =
 pub span : String, (⊤ → a) → a
 span label work =
     here = context ⊤
-    within { here | spans = [ ( label, Clock.now ⊤ ), …here.spans ] } work
+    within { Record.copy here | spans = [ ( label, Clock.now ⊤ ), …here.spans ] } work
 
 
 --| Run `work` with `level` as the minimum: a line below it, from `work` or
@@ -250,7 +253,7 @@ span label work =
 pub minimum : Level, (⊤ → a) → a
 minimum level work =
     here = context ⊤
-    within { here | minimum = Js.from level } work
+    within { Record.copy here | minimum = Js.from level } work
 
 
 --| Run `work` with `f` as the sink of every line it writes, and of every
@@ -260,7 +263,7 @@ minimum level work =
 pub withSink : sync (Entry → ⊤), (⊤ → a) → a
 withSink f work =
     here = context ⊤
-    within { here | sink = Js.from f } work
+    within { Record.copy here | sink = Js.from f } work
 
 
 -- The default sink: the console method for the level, given the message

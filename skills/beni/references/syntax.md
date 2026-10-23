@@ -179,9 +179,16 @@ that still has the ASCII forms. A type `Int × String` is one pair; `a × b × c
 ## Records
 
 - A literal: `{ x = 1, y = 2 }`. Access: `p.x`. An accessor function: `.x`.
-- An update: `{ p | x = 1 }`. Today the compiler accepts a later use of the old `p`. A rule that
-  makes the update consume its base is specified and not built. `{ Record.copy p | x = 1 }` keeps
-  a copy of `p` on purpose and compiles today. See `lists.md`, *Ownership*.
+- An update: `{ p | x = 1 }`. The update consumes `p`: where list writes are checked (see
+  `lists.md`, *Ownership*), a later use of the old `p` whole is an error. A later read of a field,
+  `p.x` or `p.y`, is not an error: the compiler reads the old value first.
+- `{ Record.copy p | x = 1 }` changes a copy and keeps `p`. Use it where the old record must stay,
+  for example in a history. The base of an update can be a name, a call, or an expression in
+  parentheses.
+- The errors are `record_still_used` (title RECORD CHANGED WHILE STILL IN USE),
+  `top_level_record_changed` (an update of a top-level record; make the value a function,
+  `defaults ⊤`), `record_may_be_shared` (the checker cannot prove the update safe), and
+  `view_changes_model`.
 - A record alias is written in layout: one field per line, no braces. The formatter writes this
   form. A record type inside another type keeps braces: `List { x : Int, y : Int }`.
 - An untouched field keeps its identity across an update, which is what makes a view cheap.
@@ -267,4 +274,5 @@ pub doubled : List Int → List Int
 doubled xs = List.map xs (\x → x * 2)
 ```
 
-Sources: `docs/design/language.md` §0, §2, §4, §5, §6.3, §6.4, §6.6, §12, Appendix A.
+Sources: `docs/design/language.md` §0, §2, §4, §5, §6.3, §6.4, §6.6, §12, Appendix A;
+`docs/design/ownership-checker.md` §31.

@@ -456,6 +456,16 @@ pub const Code = enum {
     exports_ignored,
     /// A core Dict or Set key has a non-scalar head (language.md §6.8).
     invalid_dict_key,
+    /// Appended on 2026-10-23 with the enforcement of record updates in
+    /// place (ownership-checker.md §31.9): a record changed in place while
+    /// something the text shows still uses it whole; a top-level record
+    /// changed; an update the checker could not prove safe, or a function
+    /// that changes a record it is handed and goes out of sight. `view`
+    /// changing its model is `view_changes_model`, shared with lists. The
+    /// checker's, all errors, where list enforcement applies.
+    record_still_used,
+    top_level_record_changed,
+    record_may_be_shared,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -638,6 +648,9 @@ pub fn title(code: Code) []const u8 {
         .top_level_list_changed => "TOP-LEVEL LIST CHANGED",
         .view_changes_model => "VIEW CHANGES THE MODEL",
         .list_may_be_shared => "LIST MAY BE SHARED",
+        .record_still_used => "RECORD CHANGED WHILE STILL IN USE",
+        .top_level_record_changed => "TOP-LEVEL RECORD CHANGED",
+        .record_may_be_shared => "RECORD MAY BE SHARED",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",

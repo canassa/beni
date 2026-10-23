@@ -1,0 +1,27 @@
+-- `top_level_record_changed` under `--ownership-everywhere`
+-- (`ownership-checker.md` §31.9, §31.4 item 2): `origin` is a top-level
+-- record, which every part of the program shares, and `moved` changes it.
+-- The fix is a function that builds it, `origin ⊤`.
+import Html exposing (Html)
+import Tea
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+origin : Point
+origin = { x = 0, y = 0 }
+
+
+moved : Int → Point
+moved n = { origin | x = n }
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → (moved 3).x + origin.x, update = λ_ m → m, view = view }

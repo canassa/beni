@@ -25,7 +25,9 @@ update : Msg, Model → Model
 update msg model =
     case msg of
         Inc →
-            { model | count = model.count + 1 }
+            -- A new record, not `{ model | … }`: after `Restore` the model is a
+            -- record the view's handler may keep (ownership-checker.md §31.6).
+            { count = model.count + 1, label = model.label }
 
         Restore saved →
             saved

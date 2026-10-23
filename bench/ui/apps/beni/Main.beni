@@ -143,18 +143,12 @@ replace model count =
     { model | rows = rows, nextId = model.nextId + count, seed = seed }
 
 
-at : List Row, Int → Maybe Row
-at rows index = List.get rows index
-
-
+-- Rows 1 and 998 exchanged in place, or the rows as they are when either
+-- is missing. `List.swap` moves the two records; an `indexedMap` that put
+-- one at the other's index would leave the checker unable to show that no
+-- record is at two positions (ownership-checker.md §31.4 item 6).
 swapRows : List Row → List Row
-swapRows rows =
-    case ( at rows 1, at rows 998 ) of
-        ( Just a, Just b ) →
-            List.indexedMap rows λi row → if i == 1 then b else if i == 998 then a else row
-
-        _ →
-            rows
+swapRows rows = List.swap rows 1 998
 
 
 update : Msg, Model → Model

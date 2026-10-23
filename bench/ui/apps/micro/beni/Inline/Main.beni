@@ -223,8 +223,10 @@ bump model =
             { model | tick = model.tick + 1, v49 = model.v49 + 1 }
 
 
-init : Model
-init =
+-- A function, not a top-level record: `update` changes the model in place
+-- (ownership-checker.md §31.8).
+init : ⊤ → Model
+init ⊤ =
     { tick = 0
     , v0 = 0
     , v1 = 0
@@ -280,7 +282,7 @@ init =
 
 
 main : Browser.Program
-main = Tea.sandbox { init = λ⊤ → init, update = update, view = view }
+main = Tea.sandbox { init = init, update = update, view = view }
 
 
 view : Model → Html Msg
