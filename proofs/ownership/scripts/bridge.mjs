@@ -233,11 +233,17 @@ function parseDump(text, programs) {
       // A record update (`{ r | F = … }`) is a demand line since #391, with
       // the operation `update` (`List.update` prints as `List.update`, so the
       // bare word is the record one). The Lean oracle has no record field
-      // assignment (#316), so it has no verdict for the site. Since §31.9's
-      // codes landed (69abd4568) the compiler enforces the line, and
-      // `checkBatch` keeps its diagnostics out of the site comparison the
-      // same way (#887). Skipped until #316 lands.
-      if (m[3].startsWith('update ')) { current.skippedUpdates = (current.skippedUpdates ?? 0) + 1; continue; }
+      // assignment (#316), so it has no verdict for the site, and the line
+      // stays out of the demands the oracle is compared with. Since §31.9's
+      // codes landed (69abd4568) the compiler enforces the line: its
+      // non-accepted ones are kept in `records`, where `checkBatch` matches
+      // the record diagnostics against them and counts them in the Zig
+      // verdict (#887).
+      if (m[3].startsWith('update ')) {
+        current.skippedUpdates = (current.skippedUpdates ?? 0) + 1;
+        if (m[4] !== 'accepted') (current.rejectedUpdates ??= []).push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' });
+        continue;
+      }
       current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue;
     }
     m = line.match(/^  (demands|records) (\d+):/);
@@ -271,14 +277,22 @@ async function checkBatch(programs, n) {
   const allErrors = diagnostics.filter(d => d.severity === 'error');
   // A record update (`{ r | F = … }`) is enforced since §31.9's codes landed
   // (69abd4568, R4 of #315). Its demand is an `update` line, which `parseDump`
-  // skips until #316 gives the oracle a record field assignment; so its
-  // diagnostics stay out of the site comparison too, and count only in the
-  // exit-code parity below (#887). A record's `view_changes_model` shares the
-  // lists' code; no translated program has a `view`, so one would be an
-  // unmatched site, and a finding.
+  // keeps apart from the list demands until #316 gives the oracle a record
+  // field assignment: the oracle has no verdict for such a site. The two
+  // outputs of the compiler still have to agree there, so its diagnostics are
+  // matched against the dump's non-accepted `update` lines by position, and
+  // a record refusal refuses the program for the Zig side (#887). A record's
+  // `view_changes_model` shares the lists' code; no translated program has a
+  // `view`, so one would be an unmatched list site, and a finding.
   const recordCodes = ['record_still_used','top_level_record_changed','record_may_be_shared'];
   const recordErrors = allErrors.filter(d => recordCodes.includes(d.code));
   const errors = allErrors.filter(d => !recordCodes.includes(d.code));
+  const predictedRecord = new Set(programs.flatMap(p=>(reports.get(p.module).rejectedUpdates ?? []).map(d=>`${p.module}:${d.row}:${d.col}`)));
+  const actualRecord = new Set(recordErrors.map(d=>`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`));
+  if (predictedRecord.size !== actualRecord.size || [...predictedRecord].some(k => !actualRecord.has(k))) {
+    await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
+    throw Error(`dump/enforcement record mismatch: ${dir}`);
+  }
   const permitted = ['list_still_used','list_may_be_shared','top_level_list_changed','view_changes_model','ownership_limit'];
   if (errors.some(d => !permitted.includes(d.code))) {
     await writeFile(resolve(dir,'enforce-error.json'), JSON.stringify(enforced,null,2));
@@ -313,13 +327,13 @@ async function checkBatch(programs, n) {
         (spans.get(a).end.col - spans.get(a).start.col) - (spans.get(b).end.col - spans.get(b).start.col));
     if (covering.length) unmatched.delete(covering[0]); else uncovered++;
   }
-  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0 && recordErrors.length === 0) !== (enforced.status === 0)) {
+  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0 && predictedRecord.size === 0) !== (enforced.status === 0)) {
     await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
     throw Error(`dump/enforcement mismatch: ${dir}`);
   }
   await checkValues(programs,dir);
   for (const p of programs) {
-    const demands = reports.get(p.module), limits = demands.limits ?? [], visited = new Set(p.record[6]), failed = p.record[7];
+    const demands = reports.get(p.module), limits = demands.limits ?? [], records = demands.rejectedUpdates ?? [], visited = new Set(p.record[6]), failed = p.record[7];
     const multiplicity=new Map();
     for(const m of p.translation.markers) multiplicity.set(m.key,(multiplicity.get(m.key)??0)+1);
     const groups=new Map();
@@ -347,15 +361,19 @@ async function checkBatch(programs, n) {
       else if(lean)total.sites.precision++;
       else {total.sites.lead++;siteLeads.push(site);}
     }
-    const zig = demands.every(d=>d.verdict === 'accepted') && limits.length === 0, lean = p.record[5];
+    // A non-accepted record line refuses the program (§31.9); the oracle has
+    // no site verdict for it (#316), so it enters no site comparison.
+    const zig = demands.every(d=>d.verdict === 'accepted') && limits.length === 0 && records.length === 0, lean = p.record[5];
     const category = zig === lean ? 'agreements' : lean ? 'precision' : 'leads';
     total[category]++; bump(total.families[p.record[1]], category); bump(p.stream,category);
     if (category === 'precision') {
       const refused = demands.filter(d=>d.verdict !== 'accepted');
       for (const d of refused) bump(total.precisionPatterns, `${d.operation.split(' ')[0]}: ${d.detail.split(':')[0]}`);
       for (const l of limits) bump(total.precisionPatterns, `limit: ${l.kind}`);
-      // One pattern per program: its first refused demand's, or its first limit's.
-      const first = refused.length ? `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}` : `limit: ${limits[0].kind}`;
+      for (const r of records) bump(total.precisionPatterns, `update: ${r.detail.split(':')[0]}`);
+      // One pattern per program: its first refused demand's, its first limit's, or its first record refusal's.
+      const first = refused.length ? `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}` :
+        limits.length ? `limit: ${limits[0].kind}` : `update: ${records[0].detail.split(':')[0]}`;
       bump(total.precisionPrograms, first);
       (total.precisionExamples[first] ??= []).length < 5 && total.precisionExamples[first].push(p.record[2]);
     }

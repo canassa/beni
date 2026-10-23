@@ -147,15 +147,24 @@ fail during a long tail of explicitly skipped programs.
 
 The dump parser rejects unfamiliar lines. The in-place platform's `check`
 diagnostics must match exactly the dump's deduplicated rejected/pending source
-spans, with no unexpected diagnostic code or abnormal exit. The parser skips the
-record update demands (the `update` lines of #391) until #316 lands: the Lean
-oracle has no record field assignment, so it has no verdict for such a site.
-Since 2026-10-23 the compiler enforces a record line (§31.9's codes, `69abd4568`),
-so the batch check keeps the record codes' diagnostics (`record_still_used`,
-`top_level_record_changed`, `record_may_be_shared`) out of the site comparison
-the same way; they count only in the exit-code parity (#887). The parser checks
-that the skipped lines of a module equal its `records` count and the kept demand
-lines its `demands` count.
+spans, with no unexpected diagnostic code or abnormal exit. The parser keeps the
+record update demands (the `update` lines of #391) apart from the demands the
+oracle is compared with, until #316 lands: the Lean oracle has no record field
+assignment, so it has no verdict for such a site. Since 2026-10-23 the compiler
+enforces a record line (§31.9's codes, `69abd4568`), and the two outputs of the
+compiler must agree there: the batch check matches the record codes' diagnostics
+(`record_still_used`, `top_level_record_changed`, `record_may_be_shared`) against
+the dump's non-accepted `update` lines by position, and a non-accepted record
+line refuses the program for the Zig side, so a program refused for its record
+update alone is a precision difference, not an agreement (#887, #900). Until #316
+the bridge checks no record *verdict* in either direction: a compiler that
+accepts every record update, or refuses every one, passes the same way, as long
+as its dump and its enforcement agree. Record soundness rests on the corpus, the
+record mutation controls (`tests/record-mutations.mjs`) and the differential test
+that #316 names; #913 adds an in-place run of each accepted program that holds a
+record update, since a too-weak record rule gives a wrong in-place value that the
+`browser-tea` value check cannot see (the review of #900, job D). The parser checks that the skipped lines of a module equal its
+`records` count and the kept demand lines its `demands` count.
 
 ## Runtime boundary and historical minimization
 
