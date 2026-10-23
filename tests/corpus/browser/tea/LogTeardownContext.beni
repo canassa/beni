@@ -1,0 +1,58 @@
+-- A defect closes the program's scope (boundary.md §9.8.14), and the
+-- finalisers that a throw leaves outside any fiber run in a fiber that the
+-- teardown starts for them, step 4 of (d). Each one has the log context
+-- that it would have had in a fiber of its own (amended 2026-10-23, #811),
+-- as `LogContextDefect` shows for a body in a fiber. The command is made
+-- inside `Log.annotate`, so its body keeps that context (§9.8.16 (b),
+-- #597). The body does not wait, so it runs with no fiber (§9.8.11). It
+-- opens a `bracket`, then `Log.annotate`, then another `bracket`, and
+-- throws. The inner release logs with both annotations, and the outer
+-- release with the arm's only: the inner annotation's restore runs
+-- between them.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Go
+
+
+guarded : String, (⊤ → a) → a
+guarded name body = Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "${name} released") λ_ → body ⊤
+
+
+update : Msg, String → String × Cmd Msg
+update msg shown =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( "going"
+                , Cmd.perform λ_ →
+                    guarded "outer" λ⊤ →
+                        Log.annotate "step" "s2" λ⊤ →
+                            guarded "inner" λ⊤ →
+                                Log.info "the body"
+                                Debug.todo "body threw"
+                )
+
+
+view : String → Html Msg
+view shown =
+    <main>
+        <p id="shown">{shown}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( "idle", Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
