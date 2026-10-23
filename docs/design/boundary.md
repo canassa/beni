@@ -4291,6 +4291,18 @@ after it; each is deterministic, ordered by creation and by the scheduler's FIFO
 4. **Leftovers outside any fiber.** Finalisers a throw left on the outside-any-fiber record — a
    `bracket` whose use threw in `soon` work or in `init` — run last first, in one fiber the teardown
    starts for them after the sweep, under the same rules.
+   *(Amended 2026-10-23, #811: each of them starts with the slots that the outside-any-fiber record
+   has at that moment, in the fiber that runs them. The exception is the scheduler slot, which stays
+   the program's, because the fiber is the teardown's. A finaliser reads the slots of the fiber
+   that runs it. A scoped change's restore among the leftovers puts back the record's slots, so the
+   next finaliser reads the slots from before that change. So each one has the log context and the
+   clock that it would have had in a fiber of its own: a body with no fiber runs "exactly where its
+   fiber would have started" (§9.8.11), and a scoped change is put back "as an `onExit` finaliser
+   would" (proposal §17.5). Before, the fiber had no slots, and the release of a `bracket` in a
+   command body with no fiber logged with the default context. Cost: the teardown makes the change
+   only when `slotted` is set, in a statement of its own, so a release build in which nothing sets a
+   slot keeps none of it. Measured on 632 builds: in release only the 7 pages that set a slot change,
+   by +120 raw (−18 to +47 brotli); development +345 raw.)*
 5. **Nothing new runs.** A fiber spawned while *stopping* — by a finaliser, `spawnIn` a closed root,
    `start` — is cancelled before it runs, as a fiber spawned into a closed root scope is today
    (§9.8.7). `Task.soon` queues nothing. A `send` does nothing (`dead`); `Browser.flush` does nothing;
@@ -4774,9 +4786,8 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   restore of them into the fiber's list, under `update`'s finalisers. At the teardown, `update`'s
   finalisers run with `update`'s context, and then the caller's finalisers, such as the release of
   a body's `bracket`, run with the caller's, as an `onExit` finaliser would (proposal §17.5). When
-  `update` throws and leaves no finaliser, the old slots go back at once. (For a body with no
-  fiber, the teardown runs the finalisers in a fiber with no slots, so they have the default
-  context: #811.)
+  `update` throws and leaves no finaliser, the old slots go back at once. (A body with no fiber
+  gets the same: §9.8.14 (d) step 4, amended 2026-10-23, #811.)
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
   set, each message reads the slot, and a message sent inside a context copies the slot record
