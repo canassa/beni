@@ -754,12 +754,22 @@ compares instead of `.expected`. The differences known today:
   - the document has no style sheet, and no `style` or `link` element;
   - the element is a `div` or a `span`. Its inline style sets
     `position: absolute` or `fixed`, and `left`, `top`, `width` and
-    `height`, each written as `Npx` or `0`;
-  - the element and each ancestor are HTML elements whose inline style
-    sets no property but `position`, `left`, `top`, `width`, `height` and
-    `touch-action`. None has a `hidden` or `popover` attribute, or is a
-    `dialog` or a `details` that is not open;
+    `height`, each written as `Npx` or `0`. `width` and `height` are not
+    negative;
+  - each ancestor is an `html`, `body`, `main`, `div` or `span`;
+  - the element and each ancestor are HTML elements with no `hidden` or
+    `popover` attribute. Their inline style names no property but
+    `position`, `left`, `top`, `width`, `height` and `touch-action`, and
+    names each one once;
   - the element is in the document, not in a shadow tree.
+
+  happy-dom keeps a declaration only for a property that it knows, so the
+  names come from the text of the `style` attribute, and an unknown name
+  or a `-webkit-` alias there refuses the element. A later
+  `style.setProperty` writes that text again without the unknown name, so
+  the driver marks the element when it first reads its `style`, and a
+  `setProperty` with a name outside the list marks it too. A marked
+  element keeps the box at 0.
 
   A placed element gets the box that Chrome gives it on a page that is
   not scrolled: from the viewport for `fixed`, and for `absolute` from
