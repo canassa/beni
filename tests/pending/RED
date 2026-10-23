@@ -136,3 +136,7 @@ tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
 
 # CK-267 (#663): two fresh dictionary values, deferred to #294.
 tests/pending/ownership/DictFocusGrow.beni exit=0 ownership-differs
+
+# CK-269 (#856): a deep tuple's summary lists 2^16 places; building them to the
+# `entries` limit (1 276 786) takes past the 20 s case timeout.
+tests/pending/ownership/DeepTupleDag.beni timeout
