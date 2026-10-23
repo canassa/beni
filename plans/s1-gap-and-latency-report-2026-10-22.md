@@ -319,6 +319,8 @@ the mean of three seeds.
 
 ### Status, 2026-10-23 (end of day)
 
+The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
+
 `227b61fb6`: slope **204.4** B/widget, N = 1 **1 667** (1.23× the bar), N = 256 **54 917** (1.28×). The day
 went 241.0 → 204.4, with the steps in the table above.
 
