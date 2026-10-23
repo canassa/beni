@@ -1805,6 +1805,29 @@ const Page = struct {
         return js.index(row, b);
     }
 
+    /// `refs`, sorted and each once, as one expression when they are every
+    /// bucket of one row — the row itself — or every bucket of every row of
+    /// the program's table — `table.flat()`; null otherwise.
+    fn wholeRows(pg: *Page, refs: []const m.Program.BucketRef) m.Error!?m.Expr {
+        const js = pg.cx.js;
+        const rows = pg.cx.programRows();
+        const first = refs[0].row;
+        if (refs[refs.len - 1].row == first and refs.len == rows[first]) {
+            if (pg.piece and pg.row != null and pg.row.? == first) {
+                pg.used_own = true;
+                return try js.name(pg.own.?);
+            }
+            if (pg.table == null) return null;
+            pg.used_table = true;
+            return try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{first})));
+        }
+        var total: usize = 0;
+        for (rows) |n| total += n;
+        if (refs.len != total or pg.table == null) return null;
+        pg.used_table = true;
+        return try js.call(try js.member(try js.name(pg.table.?), "flat"), &.{});
+    }
+
     /// The buckets binding function `f` reads: those of each read set it is
     /// in, sorted, each once.
     fn functionBuckets(pg: *Page, f: *const Function) m.Error![]const m.Program.BucketRef {
@@ -1840,6 +1863,10 @@ const Page = struct {
         const js = cx.js;
         if (refs.len == 0) return;
         if (refs.len == 1) return js.expression(blk, try js.call(try js.name(try cx.runtime("pass")), &.{try pg.bucketExpr(refs[0])}));
+        // Every bucket of one row is that row, an array of buckets, and every
+        // bucket of every row is the table's rows flattened (§8.4, amended
+        // 2026-10-23, #896): the same buckets, without a list of them all.
+        if (try pg.wholeRows(refs)) |whole| return js.expression(blk, try js.call(try js.name(try cx.runtime("passes")), &.{whole}));
         const list = try pg.a().alloc(m.Expr, refs.len);
         for (list, refs) |*x, b| x.* = try pg.bucketExpr(b);
         try js.expression(blk, try js.call(try js.name(try cx.runtime("passes")), &.{try js.array(list)}));
