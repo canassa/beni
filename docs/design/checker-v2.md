@@ -5095,7 +5095,8 @@ none of these, and a module that writes markup is then `no_markup_vocabulary`.
 
 **In the vocabulary module itself**, each declaration of `language.md` §11.14 is checked once, as a
 declaration, and **all of them before any of the module's value groups**, since none depends on a
-value but a `via` extractor, whose annotation is all it needs (a `foreign` has one). That is what lets
+value but a `via` extractor, whose annotation is all it needs (a `foreign` has one; a beni extractor
+must, §25.8's amendment of 2026-10-23). That is what lets
 the vocabulary module write markup against its own declarations (`frontend.md` §9.8): its markup
 resolves against rows this module has already checked, read from the module's own record rather than
 an interface.
@@ -5104,7 +5105,7 @@ an interface.
 |---|---|
 | `pub element` | its facts are a set with no repeats, and at most one namespace |
 | `pub attribute` | its annotation reads (the ordinary annotation reader, §6.6), and is one of `String`, `Int`, `Float`, `Bool`, `Maybe String` after aliases; its `on` names are distinct; `classes` and `styles` each require the type `String`, and at most one of the two is present |
-| `pub event` | as `attribute` for `on`; with `via f`, `f` is a `foreign` value of this module whose type is `E -> P` with `E` a `foreign type` and `P` the declared payload type (unified, so an alias is fine); without `via`, the payload type is a `foreign type` |
+| `pub event` | as `attribute` for `on`; with `via f`, `f` is a `foreign` value of this module — *or, since 2026-10-23 (#883), an annotated beni declaration of it* — whose type is `E -> P` with `E` a `foreign type` and `P` the declared payload type (unified, so an alias is fine); without `via`, the payload type is a `foreign type` |
 | `pub markup` | its annotation reads and is a function type that mentions the markup type. That its name does not collide with one of a lowering's own runtime exports is the runtime check's, in `build` and `check --platform` (`boundary.md` §9.4.5) |
 | all four | two declarations of one form whose names tie under the precedence rule (exact, then the longer literal part of a pattern), and whose `on` sets overlap, are `duplicate_declaration`; an event and an attribute of the same name are too; a primitive's name is a value name and meets the module's ordinary `duplicate_declaration` |
 
@@ -5294,6 +5295,13 @@ published; typing markup against them is the next slice. Where the text left a c
   attribute both `classes` and `styles`, an element named twice after `on`, and two declarations
   that tie are `duplicate_declaration`; a value, payload or primitive type the form does not admit
   is `type_mismatch`; a `via` naming no `foreign` value of the module is `unbound_variable`.
+  *Amended 2026-10-23 (#883):* the extractor may be a `foreign` or an annotated beni declaration of
+  the module — `targetValue e = Js.to (Js.get (Js.get (Js.from e) "target") "value")` — and the
+  scheme read is the annotation's in both cases, which P2 has read before the vocabulary is
+  checked. A `via` naming a declaration with no annotation, or no declaration at all, is
+  `unbound_variable`, the message saying which. Nothing else moves: `extractorFits` reads the
+  same `E -> P`, and a non-`pub` beni extractor is kept, exported and imported as a non-`pub`
+  `foreign` one is (`boundary.md` §9.3).
 - **A tie** is two exact names of one text, or two patterns whose literal parts have one length and
   are prefix- and suffix-compatible (some name matches both); attributes and events share a
   namespace. It is reported at the later declaration, naming the earlier.
