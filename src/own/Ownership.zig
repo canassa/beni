@@ -886,6 +886,8 @@ pub const Carried = struct {
 pub const Summary = struct {
     params: u32,
     cast_signature: u32 = none,
+    /// The full signature has crossed a growing call; transient like entry marks.
+    cast_grown: Grown = 0,
     uses: []const UseEntry = &.{},
     res: []const ResEntry = &.{},
     /// §31.7: what the result holds of records — a record's object (`◦`),
@@ -2032,7 +2034,7 @@ pub fn normalizeRead(o: *Ownership, s: Summary) Allocator.Error!Summary {
 fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!bool {
     const x = try o.normalizeRaw(x_in);
     const y = try o.normalizeRaw(y_in);
-    if (x.cast_signature != y.cast_signature) return false;
+    if (x.cast_signature != y.cast_signature or x.cast_grown != y.cast_grown) return false;
     if (x.params != y.params or x.limit != y.limit or x.limit_at != y.limit_at or x.asserted != y.asserted or
         x.once != y.once or x.words != y.words) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or
@@ -2219,6 +2221,7 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
 /// the marks end with it, and a summary made here equals one read back
 /// from the summary block, which does not carry them.
 fn summaryHasMarks(s: Summary) bool {
+    if (s.cast_grown != 0) return true;
     for (s.uses) |u| if (u.grown != 0) return true;
     for ([_][]const ResEntry{ s.res, s.objs }) |entries| for (entries) |r| if (r.grown != 0) return true;
     for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| if (e.grown != 0) return true;
@@ -2233,6 +2236,7 @@ fn clearMarks(o: *Ownership, s: Summary) Allocator.Error!Summary {
     if (!summaryHasMarks(s)) return s;
     const keep = o.keep.allocator();
     var t = s;
+    t.cast_grown = 0;
     const uses = try keep.dupe(UseEntry, s.uses);
     for (uses) |*u| u.grown = 0;
     t.uses = uses;
@@ -2383,7 +2387,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
 }
 
 fn summaryEql(x: Summary, y: Summary) bool {
-    if (x.cast_signature != y.cast_signature) return false;
+    if (x.cast_signature != y.cast_signature or x.cast_grown != y.cast_grown) return false;
     if (x.limit != y.limit or x.limit_at != y.limit_at or x.params != y.params or x.once != y.once) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or x.funs.len != y.funs.len) return false;
     for (x.uses, y.uses) |a, b| if (!useEql(a, b)) return false;
@@ -2652,6 +2656,7 @@ fn join(o: *Ownership, x: Summary, y: Summary) Allocator.Error!Summary {
     return o.normalize(.{
         .params = @max(x.params, y.params),
         .cast_signature = if (y.cast_signature != none) y.cast_signature else x.cast_signature,
+        .cast_grown = gJoin(x.cast_grown, y.cast_grown),
         .uses = uses.items,
         .res = res.items,
         .objs = objs.items,
@@ -3019,6 +3024,7 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
     const out: Summary = .{
         .params = s.params,
         .cast_signature = s.cast_signature,
+        .cast_grown = s.cast_grown,
         .uses = uses[0..nu],
         .res = res,
         .objs = objs,
@@ -4771,7 +4777,7 @@ fn validateCastKeyRefs(gpa: Allocator, key: []const u8, refs: ?usize) (Allocator
             if (id >= refs.?) return error.Bad;
             continue;
         }
-        if (std.mem.eql(u8, term, "⋆") or std.mem.eql(u8, term, "unit") or std.mem.eql(u8, term, "{}") or std.mem.eql(u8, term, "error")) continue;
+        if (std.mem.eql(u8, term, "⋆") or std.mem.eql(u8, term, "unit") or std.mem.eql(u8, term, "{}")) continue;
         if (std.mem.startsWith(u8, term, "var(")) {
             if (term.len < 6 or term[term.len - 1] != ')') return error.Bad;
             var parts = std.mem.splitScalar(u8, term[4 .. term.len - 1], ':');
@@ -4934,9 +4940,9 @@ pub fn castId(o: *Ownership, key: []const u8) Allocator.Error!u32 {
 }
 
 fn child(o: *Ownership, parent: u32, kind_in: StepKind, arg: u32) Allocator.Error!u32 {
-    // A wildcard describes a set of types, never an exact cancellable view.
-    // Canonicalize here so freshly built and decoded paths agree.
-    const kind = if (kind_in == .cast and o.cast_wild.items[arg]) StepKind.cast_level else kind_in;
+    // Type uncertainty does not re-enter a physical level. Reads of a type
+    // hole stay conservative, but only a repeated boundary is cast_level.
+    const kind = kind_in;
     std.debug.assert(o.paths.parent.items.len != 0);
     const key: [3]u32 = .{ parent, @backingInt(kind), arg };
     if (o.child_memo.get(key)) |c| return c;
@@ -5304,11 +5310,12 @@ pub fn rawChild(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.
     try o.paths.depth.append(o.in.gpa, o.paths.depth.items[parent] + 1);
     try o.paths.rest.append(o.in.gpa, none);
     // A marker is compared step by step (§16.7, *Overlap*).
-    try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any or kind == .level or kind == .cast_level);
+    const uncertain = kind == .cast and o.cast_wild.items[arg];
+    try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any or kind == .level or kind == .cast_level or uncertain);
     try o.paths.casts.append(o.in.gpa, o.paths.casts.items[parent] or kind == .cast or kind == .cast_level);
     try o.paths.holds.append(o.in.gpa, kind == .ctor and try o.levelOf(arg) != .none);
     const dict = if (kind == .ctor) if (o.ctorType(o.stepCtor(arg))) |t| try o.dictTree(t) else false else false;
-    try o.paths.representative.append(o.in.gpa, o.paths.representative.items[parent] or kind == .elem or kind == .level or kind == .cast_level or dict);
+    try o.paths.representative.append(o.in.gpa, o.paths.representative.items[parent] or kind == .elem or kind == .level or kind == .cast_level or uncertain or dict);
     return id;
 }
 
@@ -6975,7 +6982,8 @@ const Walker = struct {
     // call. Nested evaluations save and restore the call's alternatives.
     // A nested call has its own sparse set of paths. Share the table across
     // calls, keyed by both the call scope and the session path identity.
-    cast_fold_paths: std.AutoHashMapUnmanaged(CastFoldPath, u32) = .empty,
+    cast_fold_paths: std.AutoHashMapUnmanaged(CastFoldKey, u32) = .empty,
+    cast_fold_types: std.AutoHashMapUnmanaged(CastFoldKey, u32) = .empty,
     cast_fold_scope: u32 = 0,
     cast_fold_next: u32 = 0,
 
@@ -6983,6 +6991,7 @@ const Walker = struct {
     cast_growing: []const u32 = &.{},
     cast_fold_mode: bool = false,
     cast_defs: std.AutoHashMapUnmanaged([4]usize, u32) = .empty,
+    cast_plan_types: std.AutoHashMapUnmanaged([4]usize, u32) = .empty,
     cast_envs: std.HashMapUnmanaged([]const u32, []const TyRef, U32SliceContext, std.hash_map.default_max_load_percentage) = .empty,
 
     cast_subst_types: std.ArrayList(u32) = .empty,
@@ -10848,6 +10857,8 @@ const Walker = struct {
     }
 
     fn castNominal(w: *Walker, id: u32) Allocator.Error!?TypeId {
+        const key = w.o.cast_types.items[id];
+        const end = std.mem.indexOfScalar(u8, key, '(') orelse return null;
         if (!w.o.cast_heads_ready) {
             for (w.o.in.types.entries, 0..) |entry, i| {
                 var b: std.Io.Writer.Allocating = .init(w.a);
@@ -10857,8 +10868,6 @@ const Walker = struct {
             }
             w.o.cast_heads_ready = true;
         }
-        const key = w.o.cast_types.items[id];
-        const end = std.mem.indexOfScalar(u8, key, '(') orelse return null;
         return w.o.cast_heads.get(key[0..end]);
     }
 
@@ -10913,6 +10922,81 @@ const Walker = struct {
         return env;
     }
 
+    /// The same immutable endpoint term the checker uses when expanding a
+    /// native record schema. Tagged endpoints retain their nominal key.
+    fn castSchemaEndpoint(w: *Walker, id: TypeId, args: []const TyRef) Allocator.Error!u32 {
+        const e = w.o.in.types.entries[id.int()];
+        if (e.module.int() >= w.o.in.types.plans.len) return w.o.castId("⋆");
+        const plan = &w.o.in.types.plans[e.module.int()];
+        const Ctx = struct {
+            fn order(want: Bir.DeclIndex, def: SchemaPlan.Definition) std.math.Order {
+                return std.math.order(want.int(), def.decl.int());
+            }
+        };
+        const at = std.sort.lowerBound(SchemaPlan.Definition, plan.definitions, e.decl, Ctx.order);
+        if (at >= plan.definitions.len or plan.definitions[at].decl != e.decl) return w.o.castId("⋆");
+        const def = plan.definitions[at];
+        const root = if (w.o.in.types.ofSchemaDecl(e.module, e.decl, .type) == id) def.program_term else def.encoded_term;
+        return w.castPlanType(e.module.int(), root, try w.castEnv(args));
+    }
+
+    fn castPlanType(w: *Walker, m: u32, ti: Interface.TermIndex, env: []const TyRef) Allocator.Error!u32 {
+        const plan = &w.o.in.types.plans[m];
+        if (ti == .none or ti.int() >= plan.terms.len) return w.o.castId("⋆");
+        const memo: [4]usize = .{ m, ti.int(), @intFromPtr(env.ptr), env.len };
+        if (w.cast_plan_types.get(memo)) |id| return id;
+        var view = Interface.empty;
+        view.terms = plan.terms;
+        view.extra = plan.type_extra;
+        view.type_refs = plan.type_refs;
+        view.symbols = plan.symbols;
+        const t = view.term(ti);
+        var b: std.Io.Writer.Allocating = .init(w.a);
+        const writer = &b.writer;
+        const id = switch (t.tag) {
+            .err => try w.o.castId("⋆"),
+            .@"var" => if (t.lhs < env.len) try w.castTypeRef(env[t.lhs]) else try w.o.castId("⋆"),
+            .unit => try w.o.castId("unit"),
+            .empty_record => try w.o.castId("{}"),
+            .app, .alias => blk: {
+                if (t.lhs >= view.type_refs.len) break :blk try w.o.castId("⋆");
+                const ref = view.type_refs[t.lhs];
+                const words = view.range(t.rhs);
+                const args = try w.a.alloc(TyRef, words.len);
+                for (words, args) |word, *arg| arg.* = .{ .cast = try w.castPlanType(m, @fromBackingInt(word), env) };
+                if (t.tag == .alias) break :blk try w.castPlanType(m, ref.body, try w.castEnv(args));
+                const nominal = w.o.in.types.find(w.o.in.graph, ref.package, view.symbol(ref.module), view.symbol(ref.name));
+                if (nominal == .none) break :blk try w.o.castId("⋆");
+                const e = w.o.in.types.entries[nominal.int()];
+                writer.print("{d}:{s}::{s}(", .{ @backingInt(e.package), try w.castNamespace(e.module.int(), w.o.in.interner.slice(e.module_name)), w.o.in.interner.slice(e.name) }) catch return error.OutOfMemory;
+                for (args) |arg| writeCastRef(writer, arg.cast) catch return error.OutOfMemory;
+                writer.writeByte(')') catch return error.OutOfMemory;
+                break :blk try w.o.castId(b.written());
+            },
+            .tuple, .func => blk: {
+                writer.writeAll(if (t.tag == .func) "fn(" else "tuple(") catch return error.OutOfMemory;
+                for (view.range(t.lhs)) |word| writeCastRef(writer, try w.castPlanType(m, @fromBackingInt(word), env)) catch return error.OutOfMemory;
+                if (t.tag == .func) {
+                    writer.writeAll("→") catch return error.OutOfMemory;
+                    writeCastRef(writer, try w.castPlanType(m, @fromBackingInt(t.rhs), env)) catch return error.OutOfMemory;
+                }
+                writer.writeByte(')') catch return error.OutOfMemory;
+                break :blk try w.o.castId(b.written());
+            },
+            .record => blk: {
+                const words = view.range(t.lhs);
+                const fields = try w.a.alloc(CastField, words.len / 2);
+                for (fields, 0..) |*field, i| field.* = .{
+                    .name = w.o.in.interner.slice(view.symbol(@fromBackingInt(words[i * 2]))),
+                    .key = try w.castPlanType(m, @fromBackingInt(words[i * 2 + 1]), env),
+                };
+                break :blk try w.castRecord(fields, try w.castPlanType(m, @fromBackingInt(t.rhs), env));
+            },
+        };
+        try w.cast_plan_types.put(w.a, memo, id);
+        return id;
+    }
+
     fn castTypeRef(w: *Walker, ref: TyRef) Allocator.Error!u32 {
         if (ref == .store) return w.castType(ref.store);
         if (ref == .cast) return ref.cast;
@@ -10922,7 +11006,7 @@ const Walker = struct {
         if (tag == .type_var) {
             const info: Bir.TypeVarInfo = @bitCast(bir.instData(d.inst).rhs);
             if (info.param != Bir.TypeVarInfo.param_none and info.param < d.env.len) return w.castTypeRef(d.env[info.param]);
-            return w.o.castId("error");
+            return w.o.castId("⋆");
         }
         const memo: [4]usize = .{ d.m, d.inst.int(), @intFromPtr(d.env.ptr), d.env.len };
         if (w.cast_defs.get(memo)) |id| return id;
@@ -10933,7 +11017,7 @@ const Walker = struct {
             .app => |ap| blk: {
                 const entry = w.o.in.types.entries[ap.id.int()];
                 if (entry.kind == .alias) {
-                    const body = w.o.in.birs[entry.module.int()].decl(entry.decl).annotation.unwrap() orelse break :blk try w.o.castId("error");
+                    const body = w.o.in.birs[entry.module.int()].decl(entry.decl).annotation.unwrap() orelse break :blk try w.o.castId("⋆");
                     break :blk try w.castTypeRef(.{ .def = .{ .m = entry.module.int(), .inst = body, .env = try w.castEnv(ap.args) } });
                 }
                 writer.print("{d}:{s}::{s}(", .{ @backingInt(entry.package), try w.castNamespace(entry.module.int(), w.o.in.interner.slice(entry.module_name)), w.o.in.interner.slice(entry.name) }) catch return error.OutOfMemory;
@@ -10956,7 +11040,7 @@ const Walker = struct {
                 for (rec.names, rec.types, fields) |name, ty, *field| field.* = .{ .name = w.o.in.interner.slice(@fromBackingInt(name)), .key = try w.castTypeRef(ty) };
                 break :blk try w.castRecord(fields, if (rec.ext) |ext| try w.castTypeRef(ext) else try w.o.castId("{}"));
             },
-            .other, .variable => try w.o.castId(if (tag == .type_unit) "unit" else "error"),
+            .other, .variable => try w.o.castId(if (tag == .type_unit) "unit" else "⋆"),
         };
         try w.cast_defs.put(w.a, memo, id);
         return id;
@@ -11038,7 +11122,7 @@ const Walker = struct {
                         all[ps.len] = .{ .def = .{ .m = d.m, .inst = @fromBackingInt(@intCast(data.rhs)), .env = d.env } };
                         return .{ .func = all };
                     },
-                    .type_top, .ext_type, .type_app => {
+                    .type_top, .ext_type, .schema_type_top, .ext_schema_type, .type_app => {
                         const id = if (tag == .type_app) blk: {
                             const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
                             break :blk w.o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
@@ -11047,6 +11131,12 @@ const Walker = struct {
                         const xs: []const Inst.Index = if (tag == .type_app) bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index) else &.{};
                         const args = try w.a.alloc(TyRef, xs.len);
                         for (xs, args) |x, *y| y.* = .{ .def = .{ .m = d.m, .inst = x, .env = d.env } };
+                        const e = w.o.in.types.entries[id.int()];
+                        if (e.kind == .alias) {
+                            if (e.schema_endpoint) return w.castShape(try w.castSchemaEndpoint(id, args));
+                            const body = w.o.in.birs[e.module.int()].decl(e.decl).annotation.unwrap() orelse return .variable;
+                            return w.tyShape(.{ .def = .{ .m = e.module.int(), .inst = body, .env = try w.castEnv(args) } });
+                        }
                         return .{ .app = .{ .id = id, .args = args } };
                     },
                     else => return .other,
@@ -14777,10 +14867,10 @@ const Walker = struct {
     /// dense memo avoids walking a shared type term once per occurrence.
     const CastBindings = std.ArrayList([2]u32);
     const CastCross = struct { path: u32, prov: Prov };
-    const CastFoldPath = struct { scope: u32, path: u32 };
+    const CastFoldKey = struct { scope: u32, id: u32 };
 
     fn castFoldPath(w: *Walker, path: u32) ?u32 {
-        return w.cast_fold_paths.get(.{ .scope = w.cast_fold_scope, .path = path });
+        return w.cast_fold_paths.get(.{ .scope = w.cast_fold_scope, .id = path });
     }
 
     /// Fold every type coordinate belonging to an already crossed entry,
@@ -14846,11 +14936,19 @@ const Walker = struct {
             .@"struct" => |s| {
                 var out = value;
                 inline for (s.field_names, s.field_types) |name, FT| @field(out, name) = try w.foldCastRows(FT, @field(value, name), deferred or T == Carried);
-                if (T == Summary) for ([_][]const ResEntry{ out.res, out.objs }) |entries| std.mem.sort(ResEntry, @constCast(entries), {}, struct {
-                    fn less(_: void, x: ResEntry, y: ResEntry) bool {
-                        return x.path < y.path;
+                if (T == Summary) {
+                    if (deferred) {
+                        if (w.cast_fold_types.get(.{ .scope = w.cast_fold_scope, .id = value.cast_signature })) |ty| {
+                            out.cast_grown |= 1;
+                            if (gMarked(value.cast_grown)) out.cast_signature = ty;
+                        }
                     }
-                }.less);
+                    for ([_][]const ResEntry{ out.res, out.objs }) |entries| std.mem.sort(ResEntry, @constCast(entries), {}, struct {
+                        fn less(_: void, x: ResEntry, y: ResEntry) bool {
+                            return x.path < y.path;
+                        }
+                    }.less);
+                }
                 return out;
             },
             .pointer => |p| {
@@ -14939,7 +15037,9 @@ const Walker = struct {
         const key = w.o.cast_types.items[pattern];
         if (std.mem.startsWith(u8, key, "var(")) {
             for (bindings.items) |*binding| if (binding[0] == pattern) {
-                if (binding[1] != actual) binding[1] = pattern;
+                // A merged view may disagree with another occurrence. It
+                // cannot regain the caller's exact variable at recursion.
+                if (binding[1] != actual) binding[1] = try w.o.castId("⋆");
                 return;
             };
             try bindings.append(w.a, .{ pattern, actual });
@@ -15080,7 +15180,7 @@ const Walker = struct {
         var growing: std.ArrayList(u32) = .empty;
         if (group) for (bindings.items) |binding| {
             const key = w.o.cast_types.items[binding[1]];
-            if (!std.mem.startsWith(u8, key, "var(") and !std.mem.eql(u8, key, "⋆")) try growing.append(w.a, binding[0]);
+            if (w.o.cast_open.items[binding[1]] and !std.mem.startsWith(u8, key, "var(")) try growing.append(w.a, binding[0]);
         };
         defer {
             for (w.cast_subst_touched_types.items) |id| w.cast_subst_types.items[id] = none;
@@ -15091,7 +15191,11 @@ const Walker = struct {
         const out = try w.a.create(Summary);
         out.* = try w.substCastValue(Summary, s.*, bindings);
         if (growing.items.len != 0) {
+            const old_types = try w.a.dupe(u32, w.cast_subst_touched_types.items);
+            const exact_types = try w.a.alloc(u32, old_types.len);
+            for (old_types, exact_types) |ty, *x| x.* = w.cast_subst_types.items[ty];
             const old_paths = try w.a.dupe(u32, w.cast_subst_touched_paths.items);
+
             const exact = try w.a.alloc(u32, old_paths.len);
             for (old_paths, exact) |path, *x| x.* = w.cast_subst_paths.items[path];
             for (w.cast_subst_touched_types.items) |id| w.cast_subst_types.items[id] = none;
@@ -15102,10 +15206,16 @@ const Walker = struct {
             w.cast_growing = growing.items;
             defer w.cast_fold_mode = false;
             defer w.cast_growing = &.{};
+            for (old_types, exact_types) |ty, et| {
+                const ft = try w.substCast(ty, bindings);
+                if (et == ft) continue;
+                const gop = try w.cast_fold_types.getOrPut(w.a, .{ .scope = w.cast_fold_scope, .id = et });
+                if (!gop.found_existing) gop.value_ptr.* = ft else if (gop.value_ptr.* != ft) gop.value_ptr.* = try w.o.castId("⋆");
+            }
             for (old_paths, exact) |path, ep| {
                 const fp = try w.substCastPath(path, bindings);
                 if (ep == fp) continue;
-                const gop = try w.cast_fold_paths.getOrPut(w.a, .{ .scope = w.cast_fold_scope, .path = ep });
+                const gop = try w.cast_fold_paths.getOrPut(w.a, .{ .scope = w.cast_fold_scope, .id = ep });
                 if (!gop.found_existing) gop.value_ptr.* = fp else if (gop.value_ptr.* != fp) gop.value_ptr.* = try w.o.child(eps, .any, 1);
             }
             out.* = try w.foldCastRows(Summary, out.*, false);
@@ -15282,10 +15392,14 @@ const Walker = struct {
         const c = w.store.resolvedContent(root);
         switch (c) {
             .flex, .rigid => {
+                // All store references come from this declaration's display,
+                // instruction or local types. The solved store is read-only;
+                // definition views substitute through env without fresh vars.
+                // Cached scopes therefore keep the same roots on every walk.
                 try w.seedCastVars();
                 writer.print("var({d}:{s}:{d}:{d})", .{ @backingInt(w.o.in.packages[w.m]), try w.castNamespace(w.m, w.o.in.module_names[w.m]), w.decl_index, std.mem.indexOfScalar(u32, w.cast_ordinals, root.int()).? }) catch return error.OutOfMemory;
             },
-            .err => writer.writeAll("error") catch return error.OutOfMemory,
+            .err => writer.writeAll("⋆") catch return error.OutOfMemory,
             .alias => unreachable,
             .structure => |s| switch (s) {
                 .unit => writer.writeAll("unit") catch return error.OutOfMemory,
@@ -15360,7 +15474,7 @@ const Walker = struct {
 
     fn analysisStep(kind: StepKind) bool {
         return switch (kind) {
-            .markup_render, .markup_event, .schema_decoded, .schema_encoded => true,
+            .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => true,
             else => false,
         };
     }
@@ -15411,7 +15525,65 @@ const Walker = struct {
     /// A repeated full type denotes every deeper entry at that type. Keep
     /// symbolic reads folded and scan concrete paths for every matching
     /// boundary, never dropping a holder merely because projection moved it.
+    const FixedCastPath = struct { path: u32, unknown: bool };
+
+    /// A type hole is not another physical level. Keep the path through
+    /// the common fixed context; only its unresolved remainder is unknown.
+    fn fixedCastPath(w: *Walker, path: u32, from: u32, to: u32) Allocator.Error!?FixedCastPath {
+        var x: TyRef = .{ .cast = from };
+        var y: TyRef = .{ .cast = to };
+        var prefix: u32 = eps;
+        var buf: [k_limit + 1]Step = undefined;
+        const steps_ = w.o.steps(path, &buf);
+        for (steps_, 0..) |step, i| {
+            const sx = try w.tyShape(x);
+            const sy = try w.tyShape(y);
+            if (step.kind == .env and sx == .func and sy == .func) {
+                for (steps_[i..]) |rest| prefix = try w.o.child(prefix, rest.kind, rest.arg);
+                return .{ .path = prefix, .unknown = false };
+            }
+            const next: ?[2]TyRef = switch (step.kind) {
+                .elem => if (sx == .app and sy == .app and sx.app.id == w.o.in.types.well_known.list and sy.app.id == sx.app.id and sx.app.args.len == 1 and sy.app.args.len == 1) .{ sx.app.args[0], sy.app.args[0] } else null,
+                .tuple => if (sx == .tuple and sy == .tuple and sx.tuple.len == sy.tuple.len and step.arg < sx.tuple.len) .{ sx.tuple[step.arg], sy.tuple[step.arg] } else null,
+                .field => blk: {
+                    var fields: [2]?TyRef = .{ null, null };
+                    for ([_]TyShape{ sx, sy }, &fields) |shape, *field| {
+                        var rec = shape;
+                        while (rec == .record) {
+                            for (rec.record.names, rec.record.types) |name, ty| if (name == step.arg) {
+                                field.* = ty;
+                                break;
+                            };
+                            if (field.* != null) break;
+                            rec = if (rec.record.ext) |ext| try w.tyShape(ext) else break;
+                        }
+                    }
+                    break :blk if (fields[0] != null and fields[1] != null) .{ fields[0].?, fields[1].? } else null;
+                },
+                .ctor => blk: {
+                    if (sx != .app or sy != .app or sx.app.id != sy.app.id) break :blk null;
+                    const c = w.o.stepCtor(step.arg);
+                    const f = w.o.stepField(step.arg);
+                    const a = (try w.ctorFieldTy(sx.app.id, sx.app.args, c, f)) orelse break :blk null;
+                    const b = (try w.ctorFieldTy(sy.app.id, sy.app.args, c, f)) orelse break :blk null;
+                    break :blk .{ a, b };
+                },
+                else => null,
+            };
+            if (next) |refs| {
+                prefix = try w.o.child(prefix, step.kind, step.arg);
+                x = refs[0];
+                y = refs[1];
+            } else return if (prefix == eps) null else .{ .path = try w.o.child(prefix, .any, 1), .unknown = true };
+        }
+        return .{ .path = prefix, .unknown = false };
+    }
+
     fn readCastLevel(w: *Walker, av: AV, id: u32) Allocator.Error!AV {
+        return w.readCastView(av, id, true);
+    }
+
+    fn readCastView(w: *Walker, av: AV, id: u32, repeated: bool) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             if (w.analysisSlot(e.path)) {
@@ -15420,9 +15592,15 @@ const Walker = struct {
             }
             const ap = if (e.approx != 0) e.approx else approx_place;
             if (e.path == eps) {
-                if (try w.projCell(e.cell, .{ .kind = .cast_level, .arg = id }, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = ap, .grown = e.grown });
+                const kind: StepKind = if (repeated) .cast_level else .cast;
+                if (try w.projCell(e.cell, .{ .kind = kind, .arg = id }, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = ap, .grown = e.grown });
                 continue;
             }
+            const first = w.o.firstStep(e.path).?;
+            if (!repeated and first.kind == .cast) if (try w.fixedCastPath(try w.o.dropFirst(e.path), first.arg, id)) |fixed| {
+                try out.append(w.a, .{ .path = fixed.path, .cell = e.cell, .approx = if (fixed.unknown) ap else e.approx, .grown = e.grown });
+                continue;
+            };
             const before = out.items.len;
             var nodes: [k_limit + 1]u32 = undefined;
             for (w.o.pathNodes(e.path, &nodes)) |node| {
@@ -15446,7 +15624,7 @@ const Walker = struct {
     }
 
     fn readCast(w: *Walker, av: AV, id: u32) Allocator.Error!AV {
-        if (w.o.cast_wild.items[id]) return w.readCastLevel(av, id);
+        if (w.o.cast_wild.items[id]) return w.readCastView(av, id, false);
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             var x = e;
@@ -15466,6 +15644,14 @@ const Walker = struct {
                 const first = w.o.firstStep(e.path).?;
                 if (first.kind == .cast and first.arg == id) {
                     x.path = try w.o.dropFirst(e.path);
+                } else if (first.kind == .cast) {
+                    if (try w.fixedCastPath(try w.o.dropFirst(e.path), first.arg, id)) |fixed| {
+                        x.path = fixed.path;
+                        if (fixed.unknown and x.approx == 0) x.approx = approx_place;
+                    } else {
+                        x.path = try w.o.child(eps, .any, 1);
+                        if (x.approx == 0) x.approx = approx_place;
+                    }
                 } else {
                     x.path = try w.o.child(eps, .any, 1);
                     if (x.approx == 0) x.approx = approx_place;
@@ -20551,6 +20737,7 @@ test "full cast type keys validate complete child terms" {
         "tuple(999999999999999999999999999999:unit)", "tuple(4:nope)",      "var(9:Main:2:0)",
         "var(0:Main:2)",                              "record(1:x=4:unit)", "fn(4:unit)",
         "fn(→4:unit4:unit)",
+        "error",
     }) |key| try std.testing.expectError(error.Bad, validateCastKey(a, key));
 }
 
@@ -20584,6 +20771,36 @@ test "full cast DAG keys preserve portable variables and shared type structure" 
     try std.testing.expectError(error.Bad, o.readCastId("tuple(3:@-1)", &.{v}));
     try std.testing.expectError(error.Bad, o.readCastId("tuple(4:unit)", &.{}));
     try std.testing.expectError(error.Bad, o.readCastId("@0", &.{v}));
+    // Uncertain substitutions cannot become the caller's exact variable,
+    // including when that variable is also the callee's at recursion.
+    var w: Walker = undefined;
+    w.o = &o;
+    w.a = o.keep.allocator();
+    const closed = try o.castId("0:Basics::Int()");
+    const wild = try o.castId("⋆");
+    var bindings: Walker.CastBindings = .empty;
+    try w.bindCast(v, wild, &bindings);
+    try w.bindCast(v, closed, &bindings);
+    try std.testing.expectEqual(wild, bindings.items[0][1]);
+    try w.bindCast(v, v, &bindings);
+    try std.testing.expectEqual(wild, bindings.items[0][1]);
+    bindings.clearRetainingCapacity();
+    try w.bindCast(v, closed, &bindings);
+    try w.bindCast(v, wild, &bindings);
+    try std.testing.expectEqual(wild, bindings.items[0][1]);
+    const unit = try o.castId("unit");
+    const sig = try o.readCastId("fn(2:@0→2:@1)", &.{ v, unit });
+    const folded_sig = try o.readCastId("fn(2:@0→2:@1)", &.{ wild, unit });
+    w.cast_fold_scope = 1;
+    w.cast_fold_paths = .empty;
+    w.cast_fold_types = .empty;
+    try w.cast_fold_types.put(w.a, .{ .scope = 1, .id = sig }, folded_sig);
+    const prototype: Summary = .{ .params = 1, .cast_signature = sig, .res = &.{.{ .path = eps, .prov = .{ .kind = .param }, .grown = 1 }} };
+    const first = try w.foldCastRows(Summary, prototype, true);
+    try std.testing.expectEqual(sig, first.cast_signature);
+    try std.testing.expect(gMarked(first.cast_grown));
+    const later = try w.foldCastRows(Summary, first, true);
+    try std.testing.expectEqual(folded_sig, later.cast_signature);
     // A linear DAG describes an exponentially expanded tree. Interning it
     // never needs that expansion; both children retain their complete type.
     var last = v;
@@ -20655,4 +20872,40 @@ test "repeated wide projections retain every cast holder" {
     const second = try w.projFirst(entries, step);
     try std.testing.expectEqual(wide_index, first.len);
     try std.testing.expectEqualDeep(first, second);
+}
+test "a repeated cast read includes a nested boundary behind another full type" {
+    const gpa = std.testing.allocator;
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    var o = Ownership.init(.{
+        .gpa = gpa,
+        .graph = undefined,
+        .birs = &.{},
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &.{},
+        .packages = &.{},
+        .spans = &.{},
+        .positions = undefined,
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    var w: Walker = .{ .o = &o, .m = 0, .bir = undefined, .decl = std.mem.zeroes(Bir.Decl), .decl_index = 0, .store = undefined, .inst_type = &.{}, .local_type = &.{}, .a = arena.allocator(), .mode = .summary };
+    try w.cells.append(w.a, .{ .kind = .site, .a = 0 });
+    const unit = try o.castId("unit");
+    const empty = try o.castId("{}");
+    const outer_type = try o.readCastId("tuple(2:@02:@0)", &.{unit});
+    const target = try o.readCastId("tuple(2:@02:@1)", &.{ unit, empty });
+    const outer = try o.child(eps, .cast, outer_type);
+    const path = try o.child(try o.child(outer, .tuple, 0), .cast, target);
+    const result = try w.readCastLevel(&.{.{ .path = path, .cell = 0 }}, target);
+    const nested = eps;
+    for (result) |entry| {
+        try std.testing.expect(entry.approx != 0);
+        if (entry.path == nested) return;
+    }
+    return error.MissingNestedCastHolder;
 }

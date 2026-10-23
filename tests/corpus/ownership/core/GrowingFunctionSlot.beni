@@ -1,0 +1,20 @@
+import Js
+
+
+pub loop : Int, a, Js.Value → Js.Value
+loop n value host =
+    reader : { f : a → Js.Value }
+    reader = Js.to host
+    if n == 0 then
+        reader.f value
+    else
+        loop (n - 1) [ value ] host
+
+
+-- A closed substitution cannot grow the type vocabulary.
+pub constant : Int, a → Js.Value
+constant n value =
+    if n == 0 then
+        Js.from [ value ]
+    else
+        constant (n - 1) [ 0 ]

@@ -106,10 +106,13 @@ pub const magic = "BENIOWN\x00";
 /// 24 invalidates rows before declaration-selected hosted entry protocols (#750).
 /// 25 preserves conditional container facts for folded Dict tree positions.
 /// 26 preserves each callback owned-result requirement's possible writers.
-/// 27 writes each summary's length before it, so a reader reads only the
-/// summaries the run asks for, and the paths they name (§28.4, #814).
+/// 27 writes summary lengths for lazy summary and path reads (§28.4, #814).
 /// 28 records full structural type keys and cast signatures (§16.7, #712).
-pub const version: u32 = 28;
+/// 29 makes unknown keys conservative and schema callback endpoints exact.
+/// 30 preserves callable environments and fixed cast type contexts.
+/// 31 integrates those keys with the lazy summary directory.
+/// 32 separates single uncertain views from spatial repeated reads.
+pub const version: u32 = 32;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -577,6 +580,7 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
 }
 
 fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error!void {
+    std.debug.assert(s.cast_grown == 0);
     try w.int(s.params);
     try w.int(if (s.cast_signature == Ownership.none) 0 else w.cast_index[s.cast_signature] + 1);
     try w.byte(@backingInt(s.limit));
@@ -811,10 +815,10 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         const n_steps = try r.byte();
         if (n_steps > Ownership.k_limit) return error.Bad;
         for (0..n_steps) |_| try r.skip(switch (try r.enumOf(StepKind)) {
-            .field, .tuple, .cast, .cast_level => 4,
+            .field, .tuple, .cast, .cast_level, .any => 4,
             .ctor => 12,
             .level => 9,
-            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
+            .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
         });
     }
 
@@ -876,6 +880,11 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
                 break :blk b.strings[i];
             },
             .tuple => try r.int(),
+            .any => blk: {
+                const scope = try r.int();
+                if (scope > 1) return error.Bad;
+                break :blk scope;
+            },
             .cast, .cast_level => blk: {
                 const i = try r.int();
                 if (i >= b.casts.len) return error.Bad;
@@ -899,7 +908,7 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
                 if (td >= o.in.birs[tm].decls.len) return error.Bad;
                 break :blk try o.markerId((@as(u64, tm) << 32) | td, where);
             },
-            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
+            .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
         };
         id = try o.rawChild(id, kind, arg);
     }

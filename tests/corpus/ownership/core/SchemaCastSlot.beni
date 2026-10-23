@@ -1,0 +1,100 @@
+-- A callback slot's declared schema endpoints retain their complete type.
+import Js
+import Schema
+
+
+decimal : Schema.Conversion String Int
+decimal = Schema.conversion (λ_ → Ok 0) λ_ → Ok ""
+
+
+schema Payload item =
+    count : String via decimal
+    values : List item as "items"
+    other : List item
+
+
+type alias Input =
+    Payload.Type Int
+
+
+type Reader
+    = Reader (Input → Js.Value)
+
+
+read : Reader, Input → Js.Value
+read reader value =
+    case reader of
+        Reader f →
+            f value
+
+
+pub outer : List Int → List Input × List Int
+outer xs =
+    pack : a → Js.Value
+    pack value = Js.from [ value ]
+    decoded : List Input
+    decoded = Js.to (read (Reader pack) { count = 0, values = xs, other = [] })
+    ( List.push decoded { count = 0, values = [], other = [] }, xs )
+
+
+pub separate : List Int → List Int × List Int
+separate xs =
+    pack : a → Js.Value
+    pack value = Js.from [ value ]
+    decoded : List Input
+    decoded = Js.to (read (Reader pack) { count = 0, values = [], other = xs })
+    case decoded of
+        [ row ] →
+            ( List.push row.values 1, xs )
+        _ →
+            ( [], xs )
+
+
+pub shared : List Int → List Int × List Int
+shared xs =
+    pack : a → Js.Value
+    pack value = Js.from [ value ]
+    decoded : List Input
+    decoded = Js.to (read (Reader pack) { count = 0, values = xs, other = [] })
+    case decoded of
+        [ row ] →
+            ( List.push row.values 1, xs )
+        _ →
+            ( [], xs )
+
+
+type EncodedReader
+    = EncodedReader (Payload.Encoded Int → Js.Value)
+
+
+readEncoded : EncodedReader, Payload.Encoded Int → Js.Value
+readEncoded reader value =
+    case reader of
+        EncodedReader f →
+            f value
+
+
+pub encodedSeparate : List Int → List Int × List Int
+encodedSeparate xs =
+    pack : a → Js.Value
+    pack value = Js.from [ value ]
+    decoded : List (Payload.Encoded Int)
+    decoded = Js.to (readEncoded (EncodedReader pack) { count = "", values = [], other = xs })
+    case decoded of
+        [ row ] →
+            ( List.push row.values 1, xs )
+        _ →
+            ( [], xs )
+
+
+pub encodedShared : List Int → List Int × List Int
+encodedShared xs =
+    pack : a → Js.Value
+    pack value = Js.from [ value ]
+    decoded : List (Payload.Encoded Int)
+    decoded = Js.to (readEncoded (EncodedReader pack) { count = "", values = xs, other = [] })
+    case decoded of
+        [ row ] →
+            ( List.push row.values 1, xs )
+        _ →
+            ( [], xs )
