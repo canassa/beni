@@ -20,7 +20,7 @@ module EntryInit
   summary initialModelOf: res .todos fresh1, fresh501◦
   summary initTop: res .todos shared(EntryInit.initialModel).todos, shared(EntryInit.initialModel)
   summary resetTo: π1 RA, π3 W{todos}, π3.todos RAW[storage], π3.todos[*] A; res .todos π3.todos, .todos[*] ~π3.todos[*], π1 π3◦
-  summary updateTop: π2 RW{todos}, π2.todos RAW[storage], π2.todos[*] RA; res .todos shared(EntryInit.initialModel).todos π2.todos, .todos[*] ~π2.todos[*], shared(EntryInit.initialModel) π2◦
+  summary updateTop: π2 W{todos}, π2.todos RAW[storage], π2.todos[*] RA; res .todos shared(EntryInit.initialModel).todos π2.todos, .todos[*] ~π2.todos[*], shared(EntryInit.initialModel) π2◦
   summary updateFresh: π2 W{todos}, π2.todos RAW[storage], π2.todos[*] A; res .todos fresh1 π2.todos, .todos[*] ~π2.todos[*], fresh501◦ π2◦
   summary updateAdd: π2 RAW{todos}, π2.todos RAW[storage], π2.todos[*] A; res .todos π2.todos, .todos[*] ~π2.todos[*], π2 π2◦
   summary view: π1.todos R; res ⟨render⟩ fresh1{lost}r{lost}

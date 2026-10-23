@@ -15675,8 +15675,29 @@ const Walker = struct {
                     w.use_grown = u.grown;
                     // §31.4 item 5: a record the callee reads, for the record
                     // demand alone.
+                    // A write alone (`W{F}` with no `R` or `E`) replaces the
+                    // fields it names and reads none of them, as an update's
+                    // base use does (#405): a holder below a written field
+                    // is not used by it, and one below another field is
+                    // untouched. Its own demand is the call-site `update`
+                    // below (§31.7).
                     if (u.bits & (bit_q | bit_k | bit_f) != 0) {
-                        try w.uses.append(w.a, .{ .local = r.local, .path = try w.o.concat(r.path, u.path), .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .call = 1, .call_at = r.path, .record_read = true, .grown = u.grown });
+                        // `W{}` (every field, or fields a block could not
+                        // name) stays a use whole.
+                        const write_only = u.bits & (bit_q | bit_k) == 0 and u.fields.len != 0;
+                        try w.uses.append(w.a, .{
+                            .local = r.local,
+                            .path = try w.o.concat(r.path, u.path),
+                            .except = if (write_only) u.fields else &.{},
+                            .point = w.point,
+                            .frame = w.frame,
+                            .ctx = w.ctx,
+                            .token = tok,
+                            .call = 1,
+                            .call_at = r.path,
+                            .record_read = true,
+                            .grown = u.grown,
+                        });
                     }
                     if (noUse(u.bits)) continue;
                     try w.useAt(r.local, try w.o.concat(r.path, u.path), tok, &.{});

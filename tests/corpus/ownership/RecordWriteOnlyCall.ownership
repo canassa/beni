@@ -1,0 +1,24 @@
+module RecordWriteOnlyCall
+  21:23 update model: accepted param
+  25:16 update model: accepted param (RecordWriteOnlyCall.changed writes it)
+  25:31 update model.todos[*]: accepted param (List.map writes it)
+  25:57 update t: accepted callback-param (List.map supplies it owned)
+  29:20 update model: accepted param
+  33:20 update model: accepted param (RecordWriteOnlyCall.both writes it)
+  33:32 update model.todos[*]: rejected later-use: model.todos[*] is read again at 33:20 (List.map writes it) [copy]
+  33:58 update t: accepted callback-param (List.map supplies it owned)
+  40:13 update model: accepted param
+  42:13 update model: accepted param
+  46:21 update model: accepted param (RecordWriteOnlyCall.firstDone writes it)
+  46:38 update model.todos[*]: rejected later-use: model.todos[*] is read again at 46:21 (List.map writes it) [copy]
+  46:64 update t: accepted callback-param (List.map supplies it owned)
+  summary changed: π1 W{todos}, π2 RA; res .todos π2, π1◦
+  summary toggle: π1 W{todos}, π1.todos R, π1.todos[*] W{done}; res .todos fresh1r{excl π1.todos}, .todos[*] ~condition(fresh2) ~fresh2r{excl π1.todos} ~π1.todos[*]◦, π1◦; rxreq excl π1.todos
+  summary both: π1 W{count, todos}, π1.todos R, π2 RA; res .todos π2, π1◦
+  summary toggleBoth: π1 W{count, todos}, π1.todos R, π1.todos[*] W{done}; res .todos fresh1r{excl π1.todos}, .todos[*] ~condition(fresh2) ~fresh2r{excl π1.todos} ~π1.todos[*]◦, π1◦; rxreq excl π1.todos
+  summary firstDone: π1 W{count, todos}, π1.todos R, π1.todos[*].done R, π2 RA; res .todos π2, π1◦
+  summary toggleFirst: π1 W{count, todos}, π1.todos R, π1.todos[*] W{done}, π1.todos[*].done R; res .todos fresh1r{excl π1.todos}, .todos[*] ~condition(fresh2) ~fresh2r{excl π1.todos} ~π1.todos[*]◦, π1◦; rxreq excl π1.todos
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 13: accepted 11, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 13: accepted 11, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

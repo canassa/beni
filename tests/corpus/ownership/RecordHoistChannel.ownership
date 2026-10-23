@@ -18,7 +18,7 @@ module RecordHoistChannel
   summary old: π1 W{x}, π1.x R
   summary joined: π1 W{x}, π1.x R
   summary shift: π1 W{x}; res π1◦
-  summary called: π1 RW{x}, π1.x R
+  summary called: π1 W{x}, π1.x R
   summary aliased: π1 RW{x}, π1.x R
   summary captured: π1 W{x}, π1.x R
   summary twice: π1 W{x}, π1.x R
