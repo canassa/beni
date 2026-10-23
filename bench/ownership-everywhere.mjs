@@ -127,7 +127,15 @@ function run(argv) {
   });
 }
 
-const ownershipCodes = new Set(["list_still_used", "top_level_list_changed", "list_may_be_shared", "view_changes_model"]);
+const ownershipCodes = new Set([
+  "list_still_used",
+  "top_level_list_changed",
+  "list_may_be_shared",
+  "view_changes_model",
+  "record_still_used",
+  "top_level_record_changed",
+  "record_may_be_shared",
+]);
 let next = 0;
 
 async function measure(p, i) {

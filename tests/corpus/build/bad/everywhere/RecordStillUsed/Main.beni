@@ -1,0 +1,27 @@
+-- `record_still_used` under `--ownership-everywhere` (`ownership-checker.md`
+-- §31.9): `{ p | x = 1 }` changes `p` itself, and the pair then holds `p`
+-- whole beside the changed record. Without the flag the program builds,
+-- which the harness checks too.
+import Html exposing (Html)
+import Tea
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+both : Point → Point × Point
+both p = ( { p | x = 1 }, p )
+
+
+total : Point × Point → Int
+total ( a, b ) = a.x + b.x
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → total (both { x = 0, y = 0 }), update = λ_ m → m, view = view }

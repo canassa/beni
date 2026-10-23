@@ -19,9 +19,9 @@ type alias Model =
 updates : Bool → (Msg, Model → Model)
 updates byOne =
     if byOne then
-        λ_ model → { model | count = model.count + 1 }
+        λ_ model → { Record.copy model | count = model.count + 1 }
     else
-        λ_ model → { model | count = model.count + 2 }
+        λ_ model → { Record.copy model | count = model.count + 2 }
 
 
 view : Model → Html Msg

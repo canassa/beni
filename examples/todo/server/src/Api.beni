@@ -91,7 +91,9 @@ change store id body =
             found = Ref.modify store λs →
                 if List.any s.todos λt → t.id == id then
                     ( True
-                    , { s | todos = List.map s.todos λt → if t.id == id then changed else t }
+                    , { Record.copy s
+                        | todos = List.map s.todos λt → if t.id == id then changed else t
+                      }
                     )
                 else
                     ( False, s )
@@ -105,7 +107,7 @@ remove : Ref Store, Int → Response
 remove store id =
     found = Ref.modify store λs →
         if List.any s.todos λt → t.id == id then
-            ( True, { s | todos = List.filter s.todos λt → t.id ≠ id } )
+            ( True, { Record.copy s | todos = List.filter s.todos λt → t.id ≠ id } )
         else
             ( False, s )
     if found then

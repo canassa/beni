@@ -241,7 +241,11 @@ shifted : Schedule i, Int, Duration → Schedule i
 shifted schedule attempts elapsed = fromStep λm →
     since = Duration.millis (Duration.toMillis m.elapsed - Duration.toMillis elapsed)
 
-    case step schedule { m | attempt = m.attempt - attempts, elapsed = since } of
+    -- A new record, not `{ m | … }`: `m` is the runner's, which a step does
+    -- not own (`ownership-checker.md` §31.16).
+    here = { input = m.input, attempt = m.attempt - attempts, elapsed = since, random = m.random }
+
+    case step schedule here of
         Stop →
             Stop
 

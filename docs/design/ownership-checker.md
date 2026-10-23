@@ -7194,6 +7194,51 @@ A read of a field after the change is never in such a message: the lowering read
 version of this section showed TodoMVC's `model.nextId` here. That program is correct under value semantics, and
 it is accepted by the revised rule.
 
+*As built (2026-10-23, slice R4 of #315): enforcement.* A record line is enforced exactly where a list's is
+(the owner's answer 2): on a chain that edits lists in place (`browser-inline`), under `--ownership-everywhere`,
+and for `core/` and the in-place platforms when the checked core is made (§28.7). `Enforce` no longer skips a
+record line, and `Message.code` maps it to the codes above; `Message.buildRecord` writes §28.6's shape with the
+record as its subject, the holder used **whole**, and the fix with `Record.copy` — `{ Record.copy r | … }` at an
+update's own base, `(Record.copy r)` at an argument a callee changes, `defaults ⊤` for a top-level record. An entry
+line underlines the program constructor, as a list's does. The corpus harness counts a record line as a refusal
+(`ownershipRefusal`), so an enforcing `check` fails exactly when a record or list line is rejected or pending.
+`build/bad/everywhere/Record{StillUsed,TopLevel,MayBeShared,ViewChanges}` pin the four codes; each built on the
+compiler before this slice.
+
+Core and the platforms hold no rejected or pending record line (§31.16). Two core sites changed, each real sharing
+the report named: `core/Log`'s `annotate`, `span`, `minimum` and `withSink` build the inner context from
+`Record.copy here`, because `here` is the outer fiber's context (or `initial`, a top-level record) and must read as
+it was once `work` returns; `core/Schedule.shifted` hands its step a new `Metadata` literal, because `m` is the
+runner's.
+
+**The inventory of #315 (326 record lines on 2026-10-22), decided.** After #405 (§31.8) and #420 (§31.4 item 6)
+made the checker precise, and the fixes below, 271 lines remain over the 1 593 programs and module sets of the
+comparison, none of them on a platform or in a mode that enforces in the gates:
+
+- *Fixed in the program, real sharing:* `examples/todo/page` (`TodoPage`) saves a copy of the todo it changes
+  (`save { Record.copy t | … }`, three sites) and puts a copy of an answered todo into the list; the `Ref`
+  callbacks of `examples/todo/server` (`TodoServer`), `run/WebSocketArena` and `bench/websocket` change a copy of
+  the record the `Ref` hands them borrowed; `bench/ui`'s micro pages build their model with `init ⊤`
+  (`gen-micro.mjs`); `bench/ui`'s keyed table (and `writes/TableApp`, `bench/jfb`'s `beni-tea`) swaps rows with
+  `List.swap`, whose write set is now `⟨swap 1 998⟩`. Four `build/bad/inline` fixtures that test another refusal
+  copy or rebuild the record so that refusal stays theirs.
+- *Controls, refused on purpose:* the 148 lines of `tests/corpus/ownership/`, and `run/SpecializeEscapeThenSpread`
+  (§31.16's *As built*).
+- *Real sharing, refused with its fix class, in fixtures that test something else:* top-level models and records
+  (`writes/TagCut`, `TagHeader`, `C2SeventeenMessages`, `ListRows`; `check/good/AliasAcrossModules`;
+  `restructure`), `writes/CapW` and `emit/release/app/SpecRecordLambdaUpdate` (`copy`), and point-free top-level
+  lambdas that write their argument (`typekeys/Records`, `repkeys/TopLevel`, `Unboxed`: `pending`, as a list's
+  write in such a lambda is). `workers/`' `Worker.Object.none` is a top-level record a program updates, and its
+  handlers live in a record: the platform's API is the fix (#867).
+- *Limits of the checker, each with its issue:* Conduit's Editor `status` at two variants of one field (#410, 20
+  lines), its `ChangedUrl` address (#412, 5), view-event payloads (P6, §23.6: Conduit 20 and
+  `StoredBranchPlacement`), the schema decoders' issues (`run/SchemaDepth`, `SchemaDeclDepth`; #413, #420), a
+  callback answered through a lambda over a function parameter (`KeyedInPlace`, `KeyedInPlaceMap`: #868), an
+  `indexedMap` that exchanges rows by index (`ExchangeRows`, `writes/IndexGuard`) and `KeyedEnds`' `swapAt` and
+  `List.drop` (#869), a base no provenance names (`writes/A1Fallthrough`, `ConstructorAsValue`, `SameVariant`,
+  `TagHeader`, `B3HelperRecord`, `run/JsonDerivedValues`, `repkeys/HostParam`: #870), and `Record.copy` of an open
+  record type, which keeps the original's object (`run/FieldColouring`: #871).
+
 ### 31.10 What the lowering consumes, and what it emits
 
 **The fact.** A module reaches lowering only if its check, the ownership pass included, reported no error

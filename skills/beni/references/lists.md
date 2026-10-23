@@ -122,6 +122,44 @@ snapshot xs =
     ( xs, after )
 ```
 
+A record update `{ p | x = 1 }` is checked where list writes are. A later read of a field of the
+old `p` is accepted: the compiler reads the old value first. A later use of the old `p` whole is
+the error `record_still_used`. An update of a top-level record is `top_level_record_changed`. An
+update the checker cannot prove safe is `record_may_be_shared`. The fix is
+`{ Record.copy p | x = 1 }`.
+
+```beni platform=browser-inline
+type alias Point =
+    x : Int
+    y : Int
+
+
+pub moved : Point → Int
+moved p =
+    q = { p | x = 1 }
+    q.x + p.x
+```
+
+```beni platform=browser-inline refused=record_still_used
+type alias Point =
+    x : Int
+    y : Int
+
+
+pub both : Point → Point × Point
+both p = ( { p | x = 1 }, p )
+```
+
+```beni platform=browser-inline
+type alias Point =
+    x : Int
+    y : Int
+
+
+pub both : Point → Point × Point
+both p = ( { Record.copy p | x = 1 }, p )
+```
+
 ## Recursive values
 
 The checker keeps one place for all the levels of one part of a recursive value. For a `Tree`,
@@ -188,7 +226,7 @@ grown a b =
             0
 ```
 
-Sources: `docs/design/language.md` §6.8; `docs/design/ownership-checker.md` §16.7.
+Sources: `docs/design/language.md` §6.8; `docs/design/ownership-checker.md` §16.7, §31.
 
 ## Identity
 

@@ -1,0 +1,28 @@
+-- `record_may_be_shared` under `--ownership-everywhere`
+-- (`ownership-checker.md` §31.9, §31.7): a function that changes the record
+-- it is handed is stored in a record, where the checker cannot see every
+-- call of it, so the update is a limit of the checker and an error.
+import Html exposing (Html)
+import Tea
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+type alias Mover =
+    step : Point → Point
+
+
+mover : ⊤ → Mover
+mover ⊤ = { step = λp → { p | x = p.x + 1 } }
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox { init = λ⊤ → ((mover ⊤).step { x = 0, y = 0 }).x, update = λ_ m → m, view = view }

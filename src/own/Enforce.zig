@@ -224,8 +224,8 @@ fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest:
             var j = i + 1;
             while (j < r.demands.len and sameCause(d, r.demands[j])) j += 1;
             defer i = j;
-            // A record demand is reported, not enforced, until §31.9's codes land.
-            if (d.verdict == .accepted or d.record) continue;
+            // A record demand is enforced as a list's, with §31.9's codes.
+            if (d.verdict == .accepted) continue;
             if (any_limit and d.verdict == .rejected and d.verdict.rejected == .limit) continue;
             var group: std.ArrayList(Ownership.Demand) = .empty;
             for (r.demands[i..j]) |x| {
@@ -273,7 +273,7 @@ fn editSpan(session: *const Session, module: u32, d: Ownership.Demand) [2]u32 {
     var lo = d.span[0];
     var hi = d.span[1];
     // An entry line is about the program constructor's call: its name.
-    if (std.mem.startsWith(u8, d.op, "entry ")) return .{ d.token, d.token };
+    if (std.mem.startsWith(u8, d.op, "entry ") or std.mem.startsWith(u8, d.op, "update entry ")) return .{ d.token, d.token };
     if (lo == none or hi == none or hi < lo) return .{ d.token, d.token };
     const f = session.graph.moduleFile(@fromBackingInt(@intCast(module)));
     const tags = session.artifacts.spans(f).tags;

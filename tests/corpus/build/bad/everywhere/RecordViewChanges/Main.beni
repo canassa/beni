@@ -1,0 +1,22 @@
+-- `view_changes_model` for a record under `--ownership-everywhere`
+-- (`ownership-checker.md` §31.8): the runtime hands `view` the model to read
+-- only, and `label` changes the record it is handed in place.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+label : Model → String
+label model = { model | count = 0 }.label
+
+
+view : Model → Html Int
+view model = <p>{label model}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { count = 0, label = "a" }, update = λ_ m → m, view = view }
