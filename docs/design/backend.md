@@ -2816,6 +2816,17 @@ receiver an arrow reads), `run/JsMethod` (a method writing its receiver, one rea
 arrow, a method making an object with a method of its own, one caching on its receiver; both
 builds), `check/bad/core/MethodSuspends` (`sync_boundary`).
 
+### The comparisons are operators
+
+*Added 2026-10-23 (#882; `boundary.md` §4.2).* `Js.lt`, `Js.gt`, `Js.le` and `Js.ge` are JsIr's
+`lt`, `gt`, `le` and `ge` binary operators, written in place where `Js.same` is `strict_eq` and
+`Js.bitAnd` `bit_and` (`Lower`'s intrinsic switch): `a < b`, its operands parenthesised by the
+printer's precedence table like any other binary's. No pass treats them specially; each is a binary
+as `&` is. Passed as a value, each is `core/Js.js`'s function of two parameters, and `Reach` drops
+the edge a written-in-place use would add, as for every intrinsic. Fixtures: `run/JsOperators` (each
+on two numbers and on two strings, in place and as a value, both builds) and
+`emit/release/core/JsCompare` (the four shapes under the release optimiser).
+
 ## 5. Module output and linking
 
 Dev: one `.mjs` per module, ESM `import`/`export` between them, names as `Module$name` so a stack
