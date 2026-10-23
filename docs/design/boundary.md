@@ -2979,6 +2979,40 @@ next drain, before paint.
 phase (2). Called during a dispatch or a flush it does nothing more than the flush already queued,
 so no render sees a half-handled message.
 
+*Amended 2026-10-23 (issue #903): full screen.* `Dom` also shows a node in full screen, by id:
+
+```elm
+pub type FullscreenError = NoElement String | Unsupported | NotActivated | Refused String
+pub requestFullscreen : String -> Result FullscreenError ()     -- suspends
+pub exitFullscreen : () -> ()                                   -- suspends
+pub fullscreenElement : () -> Maybe String                      -- impure
+pub onFullscreenChange : (Maybe String -> msg) -> Sub msg
+pub eachFullscreenChange : (Maybe String -> ()) -> ()
+```
+
+`requestFullscreen` and `exitFullscreen` **suspend**, unlike the other capabilities: the host
+answers with a promise, and the refusal is known only when it settles. The checks run in this
+order, each a value: no node with the id is `NoElement id`; no `Element.requestFullscreen`, or a
+`document.fullscreenEnabled` that is not `true` (Safari on an iPhone, an `iframe` without
+`allowfullscreen`), is `Unsupported`; a `navigator.userActivation.isActive` that is `false` is
+`NotActivated` (a host with no `navigator.userActivation` skips this check and lets the request
+answer); a rejection with a `TypeError`, the Fullscreen standard's refusal, is `Refused` with the
+error's message. Any other rejection is a defect, thrown in the waiting fiber (`CLAUDE.md` rule 9).
+`exitFullscreen` returns at once when no element is in full screen, and a `TypeError` rejection
+means the document already left it, so it is not an error. Cancelling the fiber stops the wait;
+the request itself cannot be cancelled.
+
+**User activation.** A request needs transient activation, and research 26 §5.3 measured that it
+survives macrotask hops for about 5 s in Chrome and Firefox. So a command's body that asks from
+the `update` of a click's message is in time: it runs in the flush after the event, not 5 s
+later. `update` does not need a synchronous form, and none is given.
+
+**Changes.** `onFullscreenChange` is a `Sub.on` listener (§9.8.5) on the document's
+`fullscreenchange`, which the host fires for every change, Escape and browser controls included. It
+sends `fullscreenElement ⊤`: the id of the element in full screen (`Just ""` for one with no id),
+or `Nothing`. Only the unprefixed API is used; a host that has only `webkitRequestFullscreen` is
+`Unsupported`.
+
 #### 9.8.7 The low-level form: `Browser.hosted` and `Hosted`
 
 ```elm

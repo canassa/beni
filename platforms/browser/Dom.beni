@@ -13,14 +13,44 @@
 --!         case Dom.focus "edit-${id}" of
 --!             Ok ⊤ → ⊤
 --!             Err why → send (FocusFailed why)
+--!
+--! Full screen (§9.8.6, *amended 2026-10-23*): `requestFullscreen` shows a
+--! node in full screen and `exitFullscreen` leaves it; both wait for the
+--! browser's answer. `onFullscreenChange` reports every change, also the
+--! ones the user makes with Escape or a browser control. A request needs
+--! the user activation of the click that asks for it, so ask from that
+--! click's message: a command's body runs well inside the few seconds the
+--! activation lasts.
+--!
+--!     GoFullscreen →
+--!         ( model, Cmd.perform λsend → send (Entered (Dom.requestFullscreen "arena")) )
 
 import Browser
+import Js
+import Listen
+import Sub exposing (Sub)
 import Task
 
 
 --| Why a node could not be used.
 pub type Error
     = NotFound String
+
+
+--| Why the browser did not show a node in full screen.
+--|
+--|   - `NoElement id`: no node in the page has this id.
+--|   - `Unsupported`: the browser cannot show a node in full screen, as
+--|     Safari on an iPhone cannot, or the page may not (an `iframe`
+--|     without `allowfullscreen`).
+--|   - `NotActivated`: no user activation is active; ask from the message
+--|     of a click or a key.
+--|   - `Refused reason`: the browser refused the request, with its reason.
+pub type FullscreenError
+    = NoElement String
+    | Unsupported
+    | NotActivated
+    | Refused String
 
 
 --| A node's box in the viewport, in CSS pixels.
@@ -61,6 +91,130 @@ pub foreign impure scrollIntoView : String → Result Error ⊤
 
 --| The viewport now.
 pub foreign impure viewport : ⊤ → Viewport
+
+
+--| Show the element with this id in full screen, and wait until the
+--| browser has done it or refused. Call it inside the user activation of
+--| the click or the key that asks for it.
+--|
+--|     case Dom.requestFullscreen "arena" of
+--|         Ok ⊤ → send Entered
+--|         Err why → send (FullscreenFailed why)
+pub requestFullscreen : String → Result FullscreenError ⊤
+requestFullscreen id =
+    document = Js.global "document"
+    node = Js.call document "getElementById" [ Js.from id ]
+    if Js.isNull node then
+        Err (NoElement id)
+    else if not (Js.typeIs (Js.get node "requestFullscreen") "function") then
+        Err Unsupported
+    else if not (Js.same (Js.get document "fullscreenEnabled") (Js.from True)) then
+        Err Unsupported
+    else if not (activated ⊤) then
+        Err NotActivated
+    else
+        case settle λ⊤ → Js.call node "requestFullscreen" [] of
+            Done →
+                Ok ⊤
+
+            Denied reason →
+                Err (Refused reason)
+
+            Defect error →
+                Js.throw error
+
+
+--| Leave full screen, and wait until the browser has done it. When no
+--| element is in full screen, return at once.
+pub exitFullscreen : ⊤ → ⊤
+exitFullscreen ⊤ =
+    document = Js.global "document"
+    if Js.isNullish (Js.get document "fullscreenElement") then
+        ⊤
+    else
+        -- A refusal is the browser's `TypeError`: the document left full
+        -- screen while this call waited, so there is nothing to leave.
+        case settle λ⊤ → Js.call document "exitFullscreen" [] of
+            Defect error →
+                Js.throw error
+
+            _ →
+                ⊤
+
+
+--| The id of the element in full screen now, `Just ""` for one with no
+--| id, or `Nothing` when no element is in full screen.
+pub fullscreenElement : ⊤ → Maybe String
+fullscreenElement ⊤ =
+    node = Js.get (Js.global "document") "fullscreenElement"
+    if Js.isNullish node then
+        Nothing
+    else
+        Just (Js.to (Js.get node "id"))
+
+
+--| The element in full screen, as `fullscreenElement` gives it, each time
+--| that changes: by a request, by `exitFullscreen`, by Escape or by a
+--| control of the browser.
+--|
+--|     subscriptions model = Dom.onFullscreenChange FullscreenChanged
+pub onFullscreenChange : (Maybe String → msg) → Sub msg
+onFullscreenChange tag = Sub.on FullscreenChange fullscreenChanges tag
+
+
+--| Call `f` with the element in full screen each time that changes, for
+--| as long as the calling fiber runs.
+pub eachFullscreenChange : (Maybe String → ⊤) → ⊤
+eachFullscreenChange f = Listen.each fullscreenChanges f
+
+
+type Key
+    = FullscreenChange
+
+
+fullscreenChanges : sync (Maybe String → ⊤) → (⊤ → ⊤)
+fullscreenChanges send = Listen.on "document" "fullscreenchange" (λ_ → fullscreenElement ⊤) send
+
+
+-- Whether the page has the user activation a request needs. A browser
+-- with no `navigator.userActivation` says nothing here; it refuses the
+-- request itself.
+activated : ⊤ → Bool
+activated ⊤ =
+    state = Js.get (Js.global "navigator") "userActivation"
+    if Js.isNullish state then
+        True
+    else
+        Js.same (Js.get state "isActive") (Js.from True)
+
+
+-- How one promise of the Fullscreen API settled.
+type Settled
+    = Done
+    | Denied String
+    | Defect Js.Value
+
+
+-- Wait for the promise `start` returns. The Fullscreen standard rejects
+-- every refusal with a `TypeError`; any other reason is a defect, thrown in
+-- the waiting fiber (`CLAUDE.md` rule 9). The request cannot be cancelled,
+-- so a cancelled fiber only stops waiting.
+settle : sync (⊤ → Js.Value) → Settled
+settle start = Task.callback λresume →
+    _ =
+        Js.call (start ⊤) "then"
+            [ Js.from λ_ → Task.resume resume Done
+            , Js.from λerror → Task.resume resume (rejected error)
+            ]
+    λ⊤ → ⊤
+
+
+rejected : Js.Value → Settled
+rejected error =
+    if Js.instanceOf error (Js.global "TypeError") then
+        Denied (Js.to (Js.get error "message"))
+    else
+        Defect error
 
 
 --| Wait until what has been sent is on the page: at once when no render is

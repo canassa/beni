@@ -490,6 +490,14 @@ project) against it, one step per line, `#` for a comment:
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key
+    fullscreen <allow|refuse|unsupported|inactive>
+                                how the page's scripted Fullscreen API
+                                answers the next requests (default
+                                `allow`): show the element, reject with a
+                                `TypeError`, `fullscreenEnabled` false, or
+                                no user activation
+    fullscreen escape           leave full screen, as the user's Escape
+                                key does
     timers                      log `(timers: <n>)`, the virtual clock's
                                 timers that have neither fired nor been
                                 cleared
@@ -552,6 +560,15 @@ project) against it, one step per line, `#` for a comment:
 listener and its capture flag — so adding one twice is one; a `once`
 listener stops counting when it fires and one with a `signal` when the
 signal aborts. The driver's own `error` listeners are not counted.
+
+**Full screen is scripted**, in both DOMs: happy-dom has no Fullscreen
+API, and headless Chrome refuses every request, because a page's click is
+untrusted. The driver gives the page `requestFullscreen`,
+`document.exitFullscreen`, `document.fullscreenElement`,
+`document.fullscreenEnabled` and `navigator.userActivation`. Each change is
+logged `(fullscreen: #<id>)` or `(fullscreen: none)` and fires a bubbling
+`fullscreenchange` at the element before the promise settles; a refused
+request is logged `(fullscreen refused: #<id>)` (`browser/tea/Fullscreen`).
 
 **Steps before the program loads.** The `url` and `store` steps a script
 begins with run before the program's modules are imported, each a heading

@@ -183,10 +183,8 @@ once per task, after the messages of that task, and patches only the holes whose
 The Elm Architecture over `browser`, in beni.
 
 - `Tea.sandbox { init : ⊤ → model, update : msg, model → model, view : model → Html msg }`.
-- `Tea.element { init : ⊤ → model × Cmd msg, update : msg, model → model × Cmd msg,
-  view : model → Html msg, subscriptions : model → Sub msg }`.
-- `Tea.document` adds a page title; `Tea.application` adds the URL (`Url`, `Key`, `onUrlChange`,
-  `onUrlRequest`).
+- `Tea.element { init : ⊤ → model × Cmd msg, update : msg, model → model × Cmd msg, view : model → Html msg, subscriptions : model → Sub msg }`.
+- `Tea.document` adds a page title; `Tea.application` adds the URL (`Url`, `Key`, `onUrlChange`, `onUrlRequest`).
 
 **Commands.** A `Cmd msg` is data: it names work and does none. The work is a **body**, a function
 given `send : msg → ⊤`. A body can wait; it runs in a fiber of the program's scope. It has the log
@@ -209,11 +207,13 @@ Tick`, `Browser.Events.onKeyDown`, `onKeyUp`, `onResize`, `onAnimationFrame`, `S
 
 **Host modules.** Each failure is a value, never a crash.
 
-- `Http.get { url, expect = Http.expectString }` waits and returns `Result Http.Error String`;
-  `Http.post`, `Http.request`; `Http.expectJson` for a type with a `codec`. Call them inside a
-  command's body.
+- `Http.get { url, expect = Http.expectString }` waits and returns `Result Http.Error String`; `Http.post`,
+  `Http.request`; `Http.expectJson` for a type with a `codec`. Call them inside a command's body.
 - `Dom.focus id`, `Dom.blur id`: `Result Dom.Error ⊤`, at once; after a render, inside
   `Cmd.afterRender`.
+- `Dom.requestFullscreen id : Result Dom.FullscreenError ⊤` waits. Call it in a body from a click's message: it needs
+  that user activation. A refusal is `NoElement id`, `Unsupported` (an iPhone), `NotActivated` or `Refused reason`.
+  `Dom.exitFullscreen ⊤` leaves; the subscription `Dom.onFullscreenChange Changed` sends each change, Escape too.
 - `Storage.get Storage.Local key : Maybe String`; `Storage.set area key value : Result Storage.Error ⊤`
   (`QuotaExceeded`, `Unavailable`); `Storage.remove`.
 - `Time.now ⊤ : Posix`; `Time.sleep duration` waits; `Time.every`.
