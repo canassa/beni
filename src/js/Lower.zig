@@ -15109,7 +15109,10 @@ pub const Lowerer = struct {
 
     /// `cx.valueSafe`: whether evaluating `inst` cannot throw — literals,
     /// locals, field and tuple reads, `if`s and `case`s, interpolation and
-    /// calls of the basic operators (`Operator.of`) of such.
+    /// calls of the basic operators (`Operator.of`) of such, and every
+    /// value proven pure and total (`callsTotal`, `methodCallTotal`): it
+    /// throws nothing and does nothing, so where it is evaluated against a
+    /// DOM write cannot be seen.
     fn instSafe(l: *Lowerer, inst: Inst.Index) bool {
         return l.instSafeMode(inst, false);
     }
@@ -15133,13 +15136,13 @@ pub const Lowerer = struct {
                             if (!l.callsOperator(at)) return false;
                             if (!op.pureTotal()) return false;
                         }
-                    } else if (!total or !l.callsTotal(at)) return false;
+                    } else if (!l.callsTotal(at)) return false;
                     stack.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) catch return false;
                 },
                 // `==`, `<` and a dot-call: pure and total when the checker
                 // proves its callee so (`methodCallTotal`).
                 .method_call => {
-                    if (!total or !l.methodCallTotal(at)) return false;
+                    if (!l.methodCallTotal(at)) return false;
                     l.instChildren(at, &stack) catch return false;
                 },
                 else => return false,
@@ -18012,6 +18015,9 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn valueSafe(impl: *anyopaque, v: M.Value.Index) bool {
         const l = lowerer(impl);
+        // A pure, total value cannot throw (`browser-inline.md` §8.2,
+        // amended 2026-10-23, #844).
+        if (l.markupValuePureTotal(v)) return true;
         const st = l.mk orelse return false;
         const i: Inst.Index = switch (st.built.values[@backingInt(v)]) {
             .inst => |x| x,

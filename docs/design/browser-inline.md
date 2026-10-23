@@ -347,6 +347,13 @@ beni over `Js` in `Inline.beni`:
   function and a field call stay unknown, and a type's own `compare` that logs keeps its arm guarded
   (`browser/inline/SelectedOperators`, `browser/inline/ArmOperators`,
   `emit/release/inline/ArmOperators`).
+  *Amended 2026-10-23 (#844, step 3):* every value proven pure and total is safe too
+  (`Context.valueSafe`): it throws nothing and does nothing, so where it is evaluated against a
+  DOM write cannot be seen, and it is evaluated just before its write like the other safe values.
+  Before, a total call or a comparison was hoisted with the values that may throw. A value that may
+  throw is still evaluated before any write of its function, so `ThrowBeforeWrite` and
+  `SelectedThrows` are unchanged (`emit/release/inline/ArmOperators`, `CounterLocal`,
+  `SingleValueModel`).
   *Corrected 2026-10-19 (the owner, #466):* a helper argument used by an event handler is part
   of the handler binding, as in the source: its message is built during view evaluation and lives
   on the node until the binding reruns. Bound arguments share that lifetime, are refreshed by a
