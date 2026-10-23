@@ -6,11 +6,11 @@ module NominalHolds
   75:5 call NominalHolds.andMap <Invalid …>#Invalid.0: rejected disjoint: another operand of the same operation reaches it (NominalHolds.andMap writes π1#Invalid.0)
   82:7 List.push validators: accepted fresh
   90:15 List.push xs: accepted param
-  summary andMap: π1 R, π1#Invalid.0 RAW, π1#Valid.0 R, π2 R, π2#Invalid.0 RA, π2#Invalid.0[*] A, π2#Valid.0 R; res #Invalid.0 condition(fresh1){lost}r{lost} π1#Invalid.0{lost}r{lost} π2#Invalid.0, #Invalid.0[*] condition(fresh2) π2#Invalid.0[*], #Valid.0 cb(π1#Valid.0){excl cb(π1#Valid.0)}r{excl cb(π1#Valid.0)}; π1#Valid.0 calls ≤1, supply 1 condition(fresh) owned, supply 1 π2#Valid.0 owned{excl π2#Valid.0}r{excl π2#Valid.0}
+  summary andMap: π1 R, π1#Invalid.0 RAW, π1#Valid.0 R, π2 R, π2#Invalid.0 RA, π2#Invalid.0[*] A, π2#Valid.0 R; res #Invalid.0 condition(fresh1){lost}r{excl π2#Invalid.0[*], sep π1#Invalid.0[*] π2#Invalid.0[*]} π1#Invalid.0{lost}r{excl π2#Invalid.0[*], sep π1#Invalid.0[*] π2#Invalid.0[*]} π2#Invalid.0, #Invalid.0[*] condition(fresh2) π2#Invalid.0[*], #Valid.0 cb(π1#Valid.0){excl cb(π1#Valid.0)}r{excl cb(π1#Valid.0)}; π1#Valid.0 calls ≤1, supply 1 condition(fresh) owned, supply 1 π2#Valid.0 owned{excl π2#Valid.0}r{excl π2#Valid.0}
   summary required: res #Invalid.0 fresh1
   summary firstOf: π1 RA; res λr{lost}, ◇ π1; π1[*] calls 0, unseen
   summary check: res #Invalid.0 ~condition(fresh1){lost}r{lost} ~fresh1{lost}r{lost}, #Invalid.0[*] condition(fresh4) fresh4{lost}r{lost} ~condition(fresh2) ~fresh2{lost}r{lost}, #Valid.0 ⊤call{lost}r{lost}, #Valid.0⋆ ~condition(fresh3){lost}r{lost} ~⊤call{lost}r{lost}
-  summary twice: res #Invalid.0 ~condition(fresh1){lost}r{lost} ~fresh1{lost}, #Invalid.0[*] condition(fresh2), #Valid.0 ⊤call{lost}r{lost}, #Valid.0⋆ ~condition(fresh3){lost}r{lost}
+  summary twice: res #Invalid.0 ~condition(fresh1){lost} ~fresh1{lost}, #Invalid.0[*] condition(fresh2), #Valid.0 ⊤call{lost}r{lost}, #Valid.0⋆ ~condition(fresh3){lost}r{lost}
   summary held: res .0 fresh1, .0[*] λ?r{lost}, .1#Invalid.0 fresh2{lost}r{lost}
   summary heldLists: π1 R, π1[*] R, π2 RAW[storage], π2[*] A; res .0 condition(fresh2) π2, .0[*] ~condition(fresh4) ~π2[*], .1 cb(π1[*]){excl cb(π1[*])} condition(fresh5) ~condition(fresh3) π2, condition(fresh1){shared}; π1[*] calls ≤1, supply 1 π2 borrowed{excl π2}
   demands 7: accepted 6 (fresh 2, call 2, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

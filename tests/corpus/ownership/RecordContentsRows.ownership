@@ -1,0 +1,23 @@
+module RecordContentsRows
+  15:13 update rows[*]: accepted param (List.map writes it)
+  15:32 update r: accepted callback-param (List.map supplies it owned)
+  19:18 update <call List.filter>[*]: accepted param (RecordContentsRows.flip writes it)
+  23:19 update <call List.reverse>[*]: accepted param (RecordContentsRows.flip writes it)
+  27:16 update <call List.take>[*]: accepted param (RecordContentsRows.flip writes it)
+  31:16 update <call List.copy>[*]: accepted param (RecordContentsRows.flip writes it)
+  35:23 update <++>[*]: accepted param (RecordContentsRows.flip writes it)
+  35:34 ++ rows: accepted param
+  39:22 update <++>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsRows.flip writes it) (approx) [copy]
+  39:33 ++ rows: rejected disjoint: another operand of the same operation reaches it
+  summary flip: π1 R, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary viaFilter: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦r{excl π1}, fresh1r{excl π1}; rxreq excl π1
+  summary viaReverse: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦r{excl π1}, fresh1r{excl π1}; rxreq excl π1
+  summary viaTake: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary viaCopy: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary viaAppend: π1 RW, π1[*] W{done}, π2 R, π2[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1, excl π2, sep π1[*] π2[*]} ~π1[*]◦ ~π2[*]◦, fresh1r{excl π1, excl π2, sep π1[*] π2[*]}; rxreq excl π1, excl π2, sep π1[*] π2[*]
+  summary viaAppendSelf: π1 RW, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1[*]◦, fresh1r{lost}
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 8: accepted 7, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 8: accepted 7, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+cause disjoint 1

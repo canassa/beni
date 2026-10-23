@@ -16,7 +16,7 @@ module Callbacks
   summary t46: π1 R; res ~fresh1 ~shared(Callbacks.defaults)
   summary t15: π1 R, π1[*] Rw
   summary consumes: π1 R, π1[*] AW; res [*] ~condition(fresh2) ~fresh2{excl π1} ~π1[*], fresh1{excl π1}; xreq excl π1
-  summary reads: π1 R, π1[*][*] A; res [*] ~condition(fresh2) ~fresh2{lost}r{lost}, [*][*] ~condition(fresh3) ~π1[*][*], fresh1{lost}
+  summary reads: π1 R, π1[*][*] A; res [*] ~condition(fresh2) ~fresh2{lost}r{excl π1[*][*]}, [*][*] ~condition(fresh3) ~π1[*][*], fresh1{lost}
   summary applied: res fresh1
   summary appliedRead: π1 RW
   demands 12: accepted 9 (fresh 4, call 0, param 1, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 3
