@@ -18,8 +18,13 @@
 -- #818): `Done`, which the bodies of `Task` and `TaskWait` send, runs its
 -- `update` with the program's context, so its lines carry no annotation,
 -- its debug line is below the program's minimum, and its command has the
--- program's context too.
+-- program's context too. So does every other sender: an after-render
+-- body, a `Cmd.map` child's body, a keyed body after a wait, an input
+-- that a body focuses (its handler goes through `Html.map`), and an input
+-- of the other program of `Browser.programs` that a body focuses.
+import Browser
 import Cmd exposing (Cmd)
+import Dom
 import Html exposing (Html)
 import Log exposing (Entry)
 import Ref exposing (Ref)
@@ -47,6 +52,21 @@ type Msg
     | MapAfter
     | Listen
     | Heard Int
+    | AfterSend
+    | MapSend
+    | KeyedSend
+    | FocusOwn
+    | FocusOther
+    | Got String
+    | Focused
+
+
+type ChildMsg
+    = ChildDone
+
+
+type OtherMsg
+    = OtherFocused
 
 
 type alias Model =
@@ -166,6 +186,58 @@ update msg model =
         Heard _ →
             ( { next | listening = False }, Cmd.none )
 
+        AfterSend →
+            Log.annotate "request" r λ⊤ →
+                ( next, Cmd.afterRender λsend → send (Got "an after-render body") )
+
+        MapSend →
+            Log.annotate "parent" "x" λ⊤ →
+                ( next, Cmd.map (childSends ⊤) ⊤ λ_ → Got "a child's body, through Cmd.map" )
+
+        KeyedSend →
+            Log.annotate "request" r λ⊤ →
+                ( next
+                , Cmd.keyed "send" Cmd.Restart λsend →
+                    Time.sleep (Time.millis 5)
+                    send (Got "a keyed body after a wait")
+                )
+
+        FocusOwn →
+            Log.annotate "request" r λ⊤ → ( next, Cmd.perform λ_ → focus "own" )
+
+        FocusOther →
+            Log.annotate "request" r λ⊤ → ( next, Cmd.perform λ_ → focus "other" )
+
+        Got from →
+            Log.info "Got's update, sent by ${from}: the program's context"
+            ( next, Cmd.log Log.Info "a command of Got's update, sent by ${from}" )
+
+        Focused →
+            Log.info "Focused's update, from a focus that a body made, through Html.map"
+            ( next, Cmd.none )
+
+
+-- A body that focuses an input: the input's handler sends its message
+-- inside the body.
+focus : String → ⊤
+focus id =
+    case Dom.focus id of
+        Ok ⊤ →
+            ⊤
+
+        Err _ →
+            Log.warn "no ${id}"
+
+
+-- A child's `update` whose command's body sends the child's message.
+childSends : ⊤ → Cmd ChildMsg
+childSends ⊤ = Log.annotate "child" "y" λ⊤ → Cmd.perform λsend → send ChildDone
+
+
+-- An input of a child's view, which its parent maps.
+ownInput : ⊤ → Html ChildMsg
+ownInput ⊤ = <input id="own" onFocus={ChildDone} />
+
 
 -- A keyed body that waits 5 ms, then writes its name.
 waits : String, Cmd.Send Msg → ⊤
@@ -223,15 +295,48 @@ view model =
         <button id="taskwait" onClick={TaskWait}>taskwait</button>
         <button id="mapafter" onClick={MapAfter}>mapafter</button>
         <button id="listen" onClick={Listen}>listen</button>
+        <button id="aftersend" onClick={AfterSend}>aftersend</button>
+        <button id="mapsend" onClick={MapSend}>mapsend</button>
+        <button id="keyedsend" onClick={KeyedSend}>keyedsend</button>
+        <button id="focus-own" onClick={FocusOwn}>focus-own</button>
+        <button id="focus-other" onClick={FocusOther}>focus-other</button>
+        {Html.map (ownInput ⊤) λ_ → Focused}
         <p>{String.fromInt model.n}</p>
+        <div id="slot" />
     </main>
 
 
-main : Tea.Program
-main =
+-- The other program of the page, mounted in `slot`: a body of the first
+-- program focuses its input.
+otherUpdate : OtherMsg, Int → Int × Cmd OtherMsg
+otherUpdate _ n =
+    Log.info "the other program's update: the program's context"
+    ( n + 1, Cmd.none )
+
+
+otherView : Int → Html OtherMsg
+otherView n = <input id="other" onFocus={OtherFocused} />
+
+
+page : Tea.Program
+page =
     Tea.element
         { init = λ⊤ → ( { n = 0, kept = Ref.make [], listening = False }, Cmd.none )
         , update = update
         , view = view
         , subscriptions = subscriptions
         }
+
+
+other : Tea.Program
+other =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = otherUpdate
+        , view = otherView
+        , subscriptions = λ_ → Sub.none
+        }
+
+
+main : Tea.Program
+main = Browser.programs [ page, Browser.mountAt other "slot" ]

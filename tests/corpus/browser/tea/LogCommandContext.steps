@@ -28,3 +28,9 @@ advance 5
 click #mapafter
 click #listen
 advance 1
+click #aftersend
+click #mapsend
+click #keyedsend
+advance 5
+click #focus-own
+click #focus-other
