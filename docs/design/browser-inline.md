@@ -261,6 +261,23 @@ The run of end tags at the very end of a string parsed alone is left out too, wh
 closes at the end of its input. A string that is concatenated with another keeps its own closing
 run.
 
+*Amended 2026-10-24 (#916): an end tag that pops closes what its parent's last child leaves
+open.* The end tag of `address`, `article`, `aside`, `blockquote`, `button`, `center`, `details`,
+`dialog`, `dir`, `div`, `dl`, `fieldset`, `figcaption`, `figure`, `footer`, `header`, `hgroup`,
+`main`, `menu`, `nav`, `ol`, `search`, `section`, `summary` and `ul` generates implied end tags
+and then pops every element open above its own (§13.2.6.4.7). So the last child of such a parent
+needs no end tag, nor does any element that child's end leaves open, when each of them is one a
+pop closes exactly as its own end tag would, and none has the parent's name, whose end tag would
+match it first: `<section><header><aside><p>x</section>`. The elements a pop closes exactly are
+the elements of that list but `center` and `dir`, and `li`, `dd`, `dt`, `h1`–`h6`, `p`, `span`, `label` and `output`.
+Not a formatting element, which the list of active formatting elements opens again after the
+pop; not a `form`, whose end tag also clears the form element pointer; not a table or its parts,
+a scope's boundary, a `select` or a `template`, which change the insertion mode. A piece's
+string keeps its top element's end tag. On S1 this is each widget's
+`</aside></header></section>` closing run: N = 1 −11 B, and −1.9 B per widget from 16 to 64 (seed
+1). `browser/inline/PoppedEndTags`, whose transcript is the one the full string gave, in parse5;
+`emit/release/inline/PoppedEndTags`.
+
 **Elements by document order.** An element some code refers to is `E[n]`, the `n`-th descendant of
 the unit's top element in document order (`top.querySelectorAll("*")`, read once at the mount, and
 only when some code refers to a descendant); the top element is the unit's node itself. There is
