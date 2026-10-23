@@ -119,8 +119,8 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         have allocated := allocated_of_typed flatType typed2 tags2
         have describedJoin : Describes gamma2 hs2.heap result actual := by
           rcases joined with rfl | rfl
-          · exact describes_join allocated inv2.heapInts shapeArm shapeOther (Or.inl ⟨described2, tags2⟩)
-          · exact describes_join allocated inv2.heapInts shapeOther shapeArm (Or.inr ⟨described2, tags2⟩)
+          · exact describes_join allocated shapeArm shapeOther (Or.inl ⟨described2, tags2⟩)
+          · exact describes_join allocated shapeOther shapeArm (Or.inr ⟨described2, tags2⟩)
         have tagsJoin : ResultTags type result actual := by
           rcases joined with rfl | rfl
           · exact resultTags_join tags2 shapeArm shapeOther
