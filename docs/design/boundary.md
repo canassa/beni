@@ -6862,7 +6862,12 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   promise in the same `waitUntil`; a finaliser therefore runs if it finishes within that
   deadline, and a fiber the platform
   cancels there has its finalisers run before the host's cap (*wording, 2026-10-21, R7-6*). That the host honours the held teardown is a fact to
-  establish (#600, (k)).
+  establish (#600, (k)). ***Measured 2026-10-23 at the edge (#600's first half):*** the probe
+  Worker of the bullet below answered at once and held two promises in `ctx.waitUntil`, one of
+  26 s and one of 35 s, each ending in a fetch to a Durable Object; after 45 s the first had landed
+  and the second had not. So a hold lands past 25 s and is cut by the host's 30 s cap, and the
+  platform's deadline of 25 s plus its 1 s teardown is inside it. With the next bullet's result,
+  #600 closes.
 - **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
   to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
   starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
@@ -7838,7 +7843,9 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   (e.5) and (e.3) are to establish the same way, each with its issue: the live-fiber timer
   prevents hibernation (#593), the call-chain id travels through `stub.fetch` and an RPC stub
   (#594), two objects in one isolate stay isolated (#595), and a request's scope teardown runs
-  under `waitUntil` at the platform's deadline and after a client disconnect (#600).
+  under `waitUntil` at the platform's deadline and after a client disconnect (#600). *2026-10-23:
+  #593 and #600 are measured by the deployed probe ((e.5), (d)); #594's fetch half by
+  `ObjectRefused` and its RPC half by `ObjectRpc` ((e.11)); #595 stays.*
 
 **(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
 the part of the section it settles keeps its text.
