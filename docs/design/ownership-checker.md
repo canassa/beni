@@ -1789,6 +1789,18 @@ and never take the single-view shortcut. A reduced path through two distinct
 full tuple types must retain the inner boundary at the root. Format 32
 invalidates blocks produced before this read distinction.
 
+*Amended 2026-10-23 (#748, occurrence conditions at cast reads):* a cast
+read can merge distinct physical placements at one uncertain path. Before
+normalization merges those rows, preserve their occurrence conditions by
+the same pair rule used at composed-path folds. In a read that emits several
+rows for one source, keep an aligned source row for every emitted row; copies
+of one source placement are not two independent occurrences. Distinct source
+placements that merge retain their list, spine and record separation
+requirements. This applies to single uncertain views, incompatible exact
+views and repeated reads. Casting a tuple `(xs, xs)` to a list of lists must
+not make destructive traversal exclusive; the twin with two independently
+allocated arrays remains accepted. Format 33 invalidates earlier blocks.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
