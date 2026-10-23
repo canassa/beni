@@ -1,0 +1,15 @@
+--! Halves, when there is one: core's `Nothing` built here.
+
+--| Half of an even number.
+pub half : Int → Maybe Int
+half n = if n // 2 * 2 == n then Just (n // 2) else Nothing
+
+
+pub show : Maybe Int → String
+show m =
+    case m of
+        Just n →
+            String.fromInt n
+
+        Nothing →
+            "none"
