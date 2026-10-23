@@ -32,7 +32,6 @@ pub const Inputs = struct {
     spans: []Token.Spans,
     sources: [][]const u8,
     platform_names: [][]const u8,
-    in_place: []bool,
     blocks: []?[]const u8,
 
     pub fn deinit(i: *Inputs, gpa: Allocator) void {
@@ -42,7 +41,6 @@ pub const Inputs = struct {
         gpa.free(i.spans);
         gpa.free(i.sources);
         gpa.free(i.platform_names);
-        gpa.free(i.in_place);
         gpa.free(i.blocks);
     }
 
@@ -63,9 +61,7 @@ pub const Inputs = struct {
             .sources = i.sources,
             .positions = .{ .ctx = session, .get = position },
             .platform_names = i.platform_names,
-            .in_place = i.in_place,
             .blocks = i.blocks,
-            .entry_everywhere = session.options.ownership_everywhere,
             .records_lost = session.options.ownership_records_lost,
             .profile = &session.profile,
         };
@@ -83,7 +79,6 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         .spans = try gpa.alloc(Token.Spans, n),
         .sources = try gpa.alloc([]const u8, n),
         .platform_names = try gpa.alloc([]const u8, n),
-        .in_place = try gpa.alloc(bool, n),
         .blocks = try gpa.alloc(?[]const u8, n),
     };
     for (0..n) |i| {
@@ -95,7 +90,6 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         out.spans[i] = session.artifacts.spans(f);
         out.sources[i] = session.store.bytes(f);
         out.platform_names[i] = "";
-        out.in_place[i] = false;
         out.blocks[i] = null;
         if (i < cached.len) if (cached[i]) |l| if (l.ownership.len != 0) {
             out.blocks[i] = l.ownership;
@@ -103,13 +97,12 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         if (out.packages[i] != .platform) continue;
         const chain = session.options.chain orelse continue;
         // Every platform file has a layer once the store is numbered; a
-        // missing one would quietly drop a constructor's entry row.
+        // missing one would lose a platform-qualified report name.
         if (std.debug.runtime_safety) std.debug.assert(f.int() < session.file_layers.len and session.file_layers[f.int()] < chain.layers.len);
         if (f.int() >= session.file_layers.len) continue;
         const layer = session.file_layers[f.int()];
         if (layer >= chain.layers.len) continue;
         out.platform_names[i] = chain.layers[layer].name;
-        out.in_place[i] = session.options.ownership_everywhere or chain.layers[layer].manifest.lists == .@"in-place";
     }
     return out;
 }

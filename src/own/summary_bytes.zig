@@ -114,7 +114,8 @@ pub const magic = "BENIOWN\x00";
 /// 33 preserves occurrence conditions before cast read normalization.
 /// 34 adds the clean-report certificate and public rows, opaque slots and aliases.
 /// 35 marks a schema's `Encoded` endpoint in a level marker (§16.7, #820).
-pub const version: u32 = 35;
+/// 36 invalidates template-row reports: every entry word uses the direct protocol.
+pub const version: u32 = 36;
 
 /// A cache hit may skip enforcement only if its previous report was clean.
 /// Other platforms also compute reports, but can cache a rejected module.

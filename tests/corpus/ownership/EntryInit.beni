@@ -7,8 +7,8 @@
 -- function of `⊤` that returns the same top-level value (T53 through
 -- `init ⊤ = initialModel`). `fromFunction` names `initialModelOf`, which
 -- builds the list anew at each mount and each `Reset` (T14), and
--- `fromLambda` writes the literal in the record: accepted on browser-direct,
--- `platform` on browser-tea. `seeded` builds its model in `init` from a
+-- `fromLambda` writes the literal in the record: accepted on every platform
+-- by the entry row. `seeded` builds its model in `init` from a
 -- top-level list (T21): rejected `top-level` on both.
 import Browser
 import Html exposing (Html)

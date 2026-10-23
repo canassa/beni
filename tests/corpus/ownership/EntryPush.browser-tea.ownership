@@ -1,12 +1,11 @@
 module EntryPush
   27:13 update model: accepted param
   27:31 List.push model.items: accepted param
-  42:8 entry EntryPush.update model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
-  42:8 update entry EntryPush.update model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  42:8 entry EntryPush.update model.items: accepted entry
+  42:8 update entry EntryPush.update model: accepted entry
   summary update: π2 W{count, items}, π2.count R, π2.items RAW[storage], π2.items[*] A; res .items fresh1 π2.items, .items[*] ~π2.items[*], fresh501◦ π2◦
   summary view: π1.count R, π1.items R; res ⟨render⟩ fresh1{lost}r{lost}
-  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-  records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 0); hoisted 0, eager reads 0
-total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 0); hoisted 0, eager reads 0
-cause platform 1
+  demands 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
+  records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 2: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 0
+records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

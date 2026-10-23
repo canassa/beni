@@ -1330,7 +1330,7 @@ test "ownership everywhere: the browser-tea platform holds no rejected or pendin
     try expectTeaClean();
 }
 
-test "ownership everywhere: Page.sandbox gets the direct entry row" {
+test "ownership entry: Page.sandbox reports its row without the enforcement flag" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     // `update` writes its model in place. With no row that is a function
@@ -1352,7 +1352,7 @@ test "ownership everywhere: Page.sandbox gets the direct entry row" {
     const page = "--platform=tests/platforms/page";
     const checked = try w.runWith(&.{ "check", page, "--ownership-everywhere", "--no-cache", main }, .{ .cwd = .inherit });
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
-    const report = try w.runWith(&.{ "dump", "--stage=ownership", page, "--ownership-everywhere", main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    const report = try w.runWith(&.{ "dump", "--stage=ownership", page, main }, .{ .raw_diagnostics = true, .cwd = .inherit });
     try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }
 
@@ -1362,6 +1362,32 @@ test "ownership everywhere: tuple DAG keeps every path without repeated comparis
     const checked = try w.runWith(&.{ "check", "--ownership-everywhere", "--no-cache", "tests/corpus/check/good/OwnershipAnnotationDag.beni" }, .{ .cwd = .inherit });
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
     try testing.expectEqual(@as(usize, 0), checked.diagnostics.len);
+}
+
+fn expectRendererIndependentEntry(platform: []const u8, path: []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const ordinary = try w.runWith(&.{ "dump", "--stage=ownership", platform, path }, .{ .cwd = .inherit, .raw_diagnostics = true });
+    const universal = try w.runWith(&.{ "dump", "--stage=ownership", platform, "--ownership-everywhere", path }, .{ .cwd = .inherit, .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), ordinary.exit_code);
+    try testing.expectEqual(@as(u8, 0), universal.exit_code);
+    try testing.expectEqualStrings("", ordinary.stderr);
+    try testing.expectEqualStrings("", universal.stderr);
+    try testing.expect(std.mem.indexOf(u8, universal.stdout, "accepted entry") != null);
+    try testing.expectEqualStrings(universal.stdout, ordinary.stdout);
+}
+
+test "ownership entry: renderer mode does not change Tea's row" {
+    try expectRendererIndependentEntry("--platform=browser-tea", "tests/corpus/ownership/EntryPush.beni");
+}
+
+test "ownership entry: renderer mode does not change Browser's row" {
+    // A fresh init is owned; the top-level init remains refused in both modes.
+    try expectRendererIndependentEntry("--platform=browser", "tests/corpus/ownership/EntryInitProgram.beni");
+}
+
+test "ownership entry: renderer mode does not change hosted rows" {
+    try expectRendererIndependentEntry("--platform=browser", "tests/corpus/ownership/HostedEntry.beni");
 }
 
 test "ownership entry: hosted update and settle own their state" {

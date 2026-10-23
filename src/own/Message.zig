@@ -30,7 +30,6 @@ pub fn code(d: Demand) diagnostic.Code {
         .rejected => |c| switch (c) {
             .top_level => .top_level_list_changed,
             .read_only => .view_changes_model,
-            .platform => .list_still_used,
             else => if (d.approx) .list_may_be_shared else .list_still_used,
         },
     };
@@ -243,7 +242,6 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         else
             try w(&out, a, ", but it is `{s}`, a top-level value.", .{top}),
         .read_only => try w(&out, a, ", but the runtime hands `{s}` the model to read only.", .{entry_fn}),
-        .platform => try w(&out, a, ", but this program's runtime keeps the model it hands `update`.", .{}),
         .disjoint => if (exact)
             try w(&out, a, ", but another part of the same operation reads the same list.", .{})
         else
@@ -389,7 +387,6 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         else
             try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list (ownership-checker.md §4.2).", .{}),
         .read_only => try w(&out, a, "This is the platform's rule for `{s}`, whether or not anything else reads the list.", .{entry_fn}),
-        .platform => try w(&out, a, "This is the rule of the runtime this program is mounted by.", .{}),
         .level => try w(&out, a, "This is a limit of the checker, not proof of sharing: it keeps one place for all the levels of a recursive value, so it cannot show that two levels hold different lists (language.md §6.8).", .{}),
         else => if (exact) switch (c) {
             .later_use, .alias, .captured => if (read_line != 0)

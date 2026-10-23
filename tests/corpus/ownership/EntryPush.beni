@@ -1,10 +1,10 @@
 -- ownership: the entry protocol's hand-over (thesis §7, P1, Table 7.1;
 -- `ownership-checker.md` §20.2–§20.6). `update` pushes onto `model.items`,
 -- a list `init` builds, and the program constructor's entry row decides
--- whether the runtime hands it the model owned. On browser-direct it does:
--- `model.items` is accepted `entry`. On browser-tea the runtime keeps the
--- model it hands `update` and skips by identity, so the same edit is
--- rejected `platform` there (Change 8). No `value … pending` line is left:
+-- that the runtime hands it the model owned. The entry word selects the
+-- same protocol on every platform: `model.items` is accepted `entry`.
+-- The renderer no longer keeps a List/record identity shortcut (§20.2).
+-- No `value … pending` line is left at the constructor:
 -- the record's functions are in sight at the constructor.
 import Html exposing (Html)
 import Tea

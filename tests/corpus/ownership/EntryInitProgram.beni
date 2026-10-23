@@ -1,9 +1,9 @@
 -- ownership: the `browser` platform's own constructor takes `init` as a
 -- function of `⊤` too (boundary.md §9.8.16; `ownership-checker.md` §22.2),
--- and its row is the template one (§20.2). `fromTop`'s `init` returns a
--- top-level list, rejected `top-level` as on every platform; `fresh`'s
--- builds one, which the direct row would accept and the template row
--- rejects `platform`.
+-- with the direct row selected by its entry word (§20.2). `fromTop`'s init
+-- returns a top-level list, rejected `top-level` as on every platform.
+-- `fresh` builds its list per mount, so the entry row accepts its update
+-- on browser as it does on every other platform.
 import Browser
 import Html exposing (Html)
 

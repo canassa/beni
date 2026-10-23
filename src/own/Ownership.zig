@@ -208,22 +208,12 @@ pub const Input = struct {
     positions: Positions,
     /// Per module index: the name of the platform package it belongs to
     /// (the chain layer's manifest `"name"`), empty for any other; what
-    /// the entry rows are keyed by (§20.2). Shorter when no chain is known.
+    /// platform-qualified report names use. Shorter when no chain is known.
     platform_names: []const []const u8 = &.{},
-    /// Per module index: whether its platform package's own manifest says
-    /// `"lists": "in-place"` (§28.2) — what the direct entry row is keyed by
-    /// (§20.2 as amended). Shorter when no chain is known.
-    in_place: []const bool = &.{},
     /// Per module index: the summary block (§28.4) of a module the run did
     /// not check, which the pass reads in place of a walk. Shorter, or null,
     /// for a module with none.
     blocks: []const ?[]const u8 = &.{},
-    /// `--ownership-everywhere` (§30.7 O0, hidden and test-only): the name
-    /// table of §20.2 also gives the direct row to `browser`'s
-    /// `Browser.program` and the test platform `page`'s `Page.sandbox`.
-    /// With `in_place` true for every platform module, as that flag makes
-    /// it, `browser-tea`'s `Tea.*` get the direct row already.
-    entry_everywhere: bool = false,
     /// `--ownership-records-lost` (§31.4 item 6, hidden and test-only): every
     /// cell's record condition fails approximately, which no list's verdict
     /// may notice.
@@ -314,8 +304,6 @@ pub const Cause = enum {
     payload,
     /// §20.3: `view` and `subscriptions` receive the model to read only.
     read_only,
-    /// §20.2: a template platform keeps the model it hands `update`.
-    platform,
     /// §16.7 (e): a holder another level of the same region may be; the
     /// checker keeps one place for the levels of a recursive value.
     level,
@@ -340,7 +328,6 @@ pub const Cause = enum {
             .once => "once",
             .payload => "payload",
             .read_only => "read-only",
-            .platform => "platform",
             .level => "level",
         };
     }
@@ -7697,7 +7684,7 @@ const DemandRec = struct {
     /// captured are no later use.
     creation_ci: u32 = none,
     /// §20.6: a demand at a program constructor's entry, by its row.
-    entry: ?EntryRow = null,
+    entry: bool = false,
     /// §23.2: a send's demand, on every cell of its base; read off as `S`.
     deep: bool = false,
     extent: WriteExtent = .deep,
@@ -7713,14 +7700,6 @@ const DemandRec = struct {
     /// `uses.items.len` when the demand was made: every use at or after
     /// it was recorded later (`resolveRaw`). The largest value claims none.
     use_mark: u32 = std.math.maxInt(u32),
-};
-
-/// §20.2: what a platform's runtime does with the model it hands `update`.
-const EntryRow = enum {
-    /// browser-direct: hands it owned and keeps nothing (P1).
-    direct,
-    /// browser-tea, browser: keeps it, and skips by identity (Change 8).
-    template,
 };
 
 /// Where a call-site demand's W came from: a summary's exact write, one
@@ -14027,7 +14006,7 @@ const Walker = struct {
         if (w.valueTarget(callee)) |t| {
             try w.evidenceSight(callee);
             try w.evidenceSight(inst);
-            if (args.len == 1) if (try w.entryRow(t, 0)) |row| return w.entryCall(inst, t, args[0], row);
+            if (args.len == 1 and try w.hasEntry(t, 0)) return w.entryCall(inst, t, args[0]);
             // §30.11: a top-level value with no parameters that names no
             // function (§30.9 rule 9) is called as the function value it
             // is: the class its definition carries (§30.9 rule 8), else
@@ -14509,17 +14488,16 @@ const Walker = struct {
 
     // ---- the entry protocol (§20) -----------------------------------------
 
-    /// The entry row of a program constructor (§20.2), or null.
-    fn entryRow(w: *const Walker, t: Target, param: u32) Allocator.Error!?EntryRow {
+    /// Whether the constructor parameter declares the entry protocol (§20.2).
+    fn hasEntry(w: *const Walker, t: Target, param: u32) Allocator.Error!bool {
         const bir = w.o.in.birs[t.m];
         const entry_word = @import("../parse/Ast.zig").OwnWord.entry.bit();
         for (try w.o.flipped(t.m, t.d, bir.ownSlots(bir.decls[t.d]))) |slot| {
             if (slot[0] == param and slot[1] & entry_word != 0) {
-                const in_place = t.m < w.o.in.in_place.len and w.o.in.in_place[t.m];
-                return if (in_place or w.o.in.entry_everywhere) .direct else .template;
+                return true;
             }
         }
-        return null;
+        return false;
     }
 
     /// A record value's field, by name.
@@ -14718,7 +14696,7 @@ const Walker = struct {
     /// A call of a program constructor with an entry row (§20.2–§20.6): the
     /// model at entry as the fixpoint of `init` and `update`, what the
     /// runtime's calls escape, and a demand for each path `update` writes.
-    fn entryCall(w: *Walker, inst: Inst.Index, t: Target, arg: Inst.Index, row: EntryRow) Allocator.Error!AV {
+    fn entryCall(w: *Walker, inst: Inst.Index, t: Target, arg: Inst.Index) Allocator.Error!AV {
         const saved = w.entry_arg;
         w.entry_arg = arg.int();
         const app = try w.eval(arg);
@@ -14933,7 +14911,7 @@ const Walker = struct {
                     // §20.5, §23.6: update writes its message in place — what a
                     // send gave up, or what a view event built from the model.
                     const at = try w.projPath(msg, x.path, null);
-                    try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, row, x.origin, x.xfail, x.deep, x.extent, null, none, lists_idx);
+                    try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_lists, x.origin, x.xfail, x.deep, x.extent, null, none, lists_idx);
                     continue;
                 }
                 var rest: std.ArrayList(Entry) = .empty;
@@ -14941,7 +14919,7 @@ const Walker = struct {
                 const at = try w.projPathVia(&model_steps, x.path);
                 // Not Disjoint against this message: what a send put in the
                 // model was another send's, given up there (§23.6).
-                try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, if (model_idx != null) &.{retained} else &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep, x.extent, model_idx, x.path, lists_idx);
+                try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, if (model_idx != null) &.{retained} else &.{ rest.items, retained }, view_lists, x.origin, x.xfail, x.deep, x.extent, model_idx, x.path, lists_idx);
             }
             // §31.8: each record update writes is an `update` demand at the entry,
             // with the fields written; reported, not enforced (R4).
@@ -14993,7 +14971,7 @@ const Walker = struct {
                         .rest_except = x.path,
                         .payload_index = msgs_idx,
                         .origin = x.origin,
-                        .entry = row,
+                        .entry = true,
                         .payload_from = view_msgs,
                         .fields = if (x.fields.len != 0) x.fields else try w.allFields(base),
                         .xfail = x.xfail,
@@ -15140,7 +15118,7 @@ const Walker = struct {
 
     /// A demand at the entry (§20.6): a call-site demand on the entry model
     /// at one path, or on the message.
-    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, row: EntryRow, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent, rest_index: ?*const ReachIndex, rest_except: u32, payload_index: ?*const ReachIndex) Allocator.Error!void {
+    fn entryDemandDeep(w: *Walker, tok: u32, op: []const u8, text: []const u8, base: AV, others: []const AV, payload_from: AV, origin: Origin, xfail: ?Rely, deep: bool, extent: WriteExtent, rest_index: ?*const ReachIndex, rest_except: u32, payload_index: ?*const ReachIndex) Allocator.Error!void {
         try w.demandOn(.{
             .rest_index = rest_index,
             .rest_except = rest_except,
@@ -15155,7 +15133,7 @@ const Walker = struct {
             .others = others,
             .origin = origin,
             .xfail = xfail,
-            .entry = row,
+            .entry = true,
             .payload_from = payload_from,
             .deep = deep,
             .extent = extent,
@@ -15670,8 +15648,8 @@ const Walker = struct {
             // them must move its evaluation out of the arm.
             if (w.joinArm(inst, i)) |arm| w.ctx = arm;
             if (callee.entry_target) |target| {
-                if (try w.entryRow(target, @intCast(i))) |row| {
-                    _ = try w.entryCall(inst, target, arg, row);
+                if (try w.hasEntry(target, @intCast(i))) {
+                    _ = try w.entryCall(inst, target, arg);
                     v.* = &.{};
                 } else v.* = try w.eval(arg);
             } else v.* = try w.eval(arg);
@@ -15861,7 +15839,7 @@ const Walker = struct {
         }
         // 5. The result.
         if (callee.entry_target) |target| {
-            for (args, 0..) |_, i| if (try w.entryRow(target, @intCast(i)) != null) return w.entryResult(inst);
+            for (args, 0..) |_, i| if (try w.hasEntry(target, @intCast(i))) return w.entryResult(inst);
         }
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
@@ -20486,7 +20464,7 @@ const Walker = struct {
         closures: bool = false,
         creation_ci: u32 = none,
         /// §20.6: an entry demand, by its row.
-        entry: ?EntryRow = null,
+        entry: bool = false,
         /// §20.5: the messages a view builds, which may hold the cell: a
         /// payload, not an operand.
         payload_from: AV = &.{},
@@ -20660,9 +20638,9 @@ const Walker = struct {
             }
             if (esc.gen < w.point or esc.js < w.point) if (cause == null or @backingInt(Cause.escaped) < @backingInt(cause.?)) {
                 cause = .escaped;
-                detail = if (spec.entry != null and esc.gen >= w.point)
+                detail = if (spec.entry and esc.gen >= w.point)
                     "a function the runtime calls hands a function value that captured it to JavaScript, which is taken to keep it (§18.6, §20.4)"
-                else if (spec.entry != null)
+                else if (spec.entry)
                     "at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4)"
                 else if (esc.gen < w.point)
                     "it was given to JavaScript, or kept by a callee"
@@ -20717,7 +20695,7 @@ const Walker = struct {
             try w.demands.append(w.a, rec);
             return;
         }
-        if (approx_hit != 0 and spec.entry != null) {
+        if (approx_hit != 0 and spec.entry) {
             // At an entry the other operands are the model's other paths,
             // as update's joined arms leave them (§20.4, §16.4 item 7).
             rec.prelim = .{ .cause = .disjoint, .detail = "another path of the model may hold it after some message: update's arms are joined, so the entry cannot tell them apart (§20.4)", .approx = true };
@@ -21213,16 +21191,8 @@ const Walker = struct {
             },
         };
         // §20.6: the entry's acceptance is its row's.
-        if (rec.entry != null and d.verdict == .accepted) {
-            if (rec.entry.? == .template) {
-                d.verdict = .{ .rejected = .platform };
-                d.detail = "the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)";
-                d.approx = false;
-                d.assumed = false;
-                d.note = "";
-            } else if (rec.accept != .param) {
-                d.verdict = .{ .accepted = .entry };
-            }
+        if (rec.entry and d.verdict == .accepted and rec.accept != .param) {
+            d.verdict = .{ .accepted = .entry };
         }
         return d;
     }

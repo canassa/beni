@@ -6,8 +6,8 @@
 --
 -- `loads`: a command's work builds the list (`Cmd.task`'s work returns a
 -- literal), `Loaded rows` stores it at `model.rows`, and `Add` extends
--- `model.rows` in place: the entry accepts the push on browser-direct
--- (`platform` on browser-tea), where slice 3c rejected it `payload` (T38's
+-- `model.rows` in place: the entry accepts the push on every platform,
+-- where slice 3c rejected it `payload` (T38's
 -- shape, owned at its send). `Grow` extends its message's list itself
 -- (T50): accepted. `fresh` sends from a body: `send (Loaded rows)` of a
 -- list the body made (`List.range`'s result), accepted at the send.

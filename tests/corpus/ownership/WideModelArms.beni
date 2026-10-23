@@ -4,7 +4,7 @@
 -- the entry asks of each part's write whether the model's other parts reach
 -- it (§20.6). Each is the model's width once, not its square: the report costs
 -- 2 517M instructions on the safe build where it cost 4 438M. Every update is
--- accepted, and every entry line is `platform`.
+-- accepted, and every entry line is accepted by its direct row.
 import Browser
 import Html exposing (Html)
 import Tea

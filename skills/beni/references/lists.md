@@ -226,6 +226,9 @@ are `init`, `update`, `settle`, `view`, `subscriptions`, `onUrlRequest`, and
 `onUrlChange`. A different field or a record alias causes
 `misplaced_ownership_word`.
 
+Every entry record uses the same ownership row on every platform. The
+renderer and the list setting do not change the row.
+
 `Browser.hosted` gives the current state to `update` and `settle` with ownership.
 It installs each result. It calls `settle` before `view`. A list kept by a view
 handler, a command, or a Host callback cannot be written through the state.
