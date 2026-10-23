@@ -5828,8 +5828,8 @@ rows of (e):
 `socket:<code>`, or with `socket:errno=<name>` for an error that carries only the number;
 §9.11, *As built, the server*.)*
 
-Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
-page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
+Each build's verdict goes to the run-hash cache (`run_hash.digestWith`, as a `browser/` page's
+does): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
 — and the driver's bytes, the preload's bytes and the script, so a verified build runs no Node. Every case stays under the
 budget of 4 300 million instructions: a case costs two builds, two driver processes and two
 program processes, and no fixture sleeps for real.
@@ -8012,8 +8012,8 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   `wrangler.jsonc` as (i) writes it, `_expected.steps` — and two cases, the development build and
   the `--release --allow-debug` build, each one Miniflare start (the shape *The budget* set;
   #744 removed the per-test budgets on 2026-10-22, and the split stays as the kind's shape), each with a
-  record file of its own (`_expected.run-hash`, `_expected.release-run-hash`), so neither case
-  writes the other's. The driver takes Miniflare's entry file as `--miniflare=`, from
+  digest of its own in the run-hash cache (the record files `_expected.run-hash` and
+  `_expected.release-run-hash` left git on 2026-10-23, #881). The driver takes Miniflare's entry file as `--miniflare=`, from
   `BENI_MINIFLARE` (`nix develop .#workers`, #698) or `-Dminiflare=`, because a program the harness
   spawns gets an empty environment; it maps `compatibility_date`, `compatibility_flags`, `vars`
   and `durable_objects` with `migrations` to Miniflare's options, passes `cf: false`, listens on

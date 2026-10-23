@@ -7,9 +7,9 @@
 #
 # The only step here that needs the network. Run it by hand to move the
 # pin, then update `dom_id` and `dom_sha256` in
-# tests/blackbox/browser.zig with what it prints, run
-# `zig build test-run-hashes` (every browser record changes) and commit the
-# three together. The same versions give the same bytes, so running it
+# tests/blackbox/browser.zig with what it prints and commit the two
+# together; every browser page then runs under Node once, since its digest
+# covers the DOM. The same versions give the same bytes, so running it
 # without changing them must reproduce the checked-in file exactly.
 set -euo pipefail
 
