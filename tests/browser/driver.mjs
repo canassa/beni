@@ -1426,8 +1426,10 @@ function drain() {
 // text control's selection. With `{offer: true}`, `offer` is what the page
 // offers the next action, null otherwise: the elements an event may go to,
 // in document order, each with a selector the driver accepts (no spaces:
-// `*` for a name that is not plain HTML), whether it takes text and whether
-// it is a control; and the strings and ints the page shows — its text and
+// `*` for a name that is not plain HTML), whether it takes text, whether
+// it is a control, and whether it holds a pointer handler (the `dom`
+// runtime's `$$pointerdown` and the rest, which its walk and its own
+// listeners read alike); and the strings and ints the page shows — its text and
 // its `id`, `value`, `href` and `data-` attributes, forty of each at most,
 // for messages to name. Neither looks inside a `<template>`.
 let comments = true;
@@ -1442,6 +1444,7 @@ function serialise(also) {
   const offering = fuzzing && also.offer === true;
   const props = [];
   const targets = [];
+  const pointerKeys = ["$$pointerdown", "$$pointermove", "$$pointerup", "$$pointercancel", "$$pointerenter", "$$pointerleave"];
   const strings = new Set();
   const ints = new Set();
   const take = (text) => {
@@ -1474,6 +1477,7 @@ function serialise(also) {
       selector: target,
       text: tag === "textarea" || (tag === "input" && !["checkbox", "radio", "button", "submit", "reset", "file"].includes(node.type)),
       control: ["input", "textarea", "select", "button", "a"].includes(tag) || node.tabIndex >= 0,
+      pointer: pointerKeys.some((key) => node[key] !== undefined),
     });
   };
   // `node` at `depth`; `state` and `target` its selectors when the fuzzer

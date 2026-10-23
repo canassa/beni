@@ -26,7 +26,9 @@
 // with it, so a seed names its sequence on every machine:
 //
 //   - **a view event** on a random element of the page — `click`,
-//     `dblclick`, `input` of a random text, `key`, `focus`, `blur` — or on
+//     `dblclick`, `input` of a random text, `key`, `focus`, `blur`, and on
+//     a page with a pointer handler, a `pointer` event on an element that
+//     has one, at a random point, with a random pointer id and type — or on
 //     the window or the document (`event window resize`, …);
 //   - **the host**: `advance` of the page's virtual clock, `respond` to or
 //     `fail` a request the page made — with a body of the fixture's own
@@ -496,6 +498,10 @@ function scriptAnswers(text) {
 // ---------------------------------------------------------------------------
 
 const keys = ["Enter", "Escape", "a", "ArrowUp", "ArrowDown", "Tab", "Backspace"];
+// A move is the pointer event a page sees most; `none` is a `pointerType`
+// of "", a device the browser cannot name.
+const pointerNames = ["pointermove", "pointermove", "pointermove", "pointerdown", "pointerup", "pointercancel", "pointerenter", "pointerleave"];
+const pointerTypes = ["mouse", "mouse", "touch", "pen", "none"];
 const windowEvents = [["window", "resize"], ["window", "focus"], ["window", "blur"], ["document", "visibilitychange"]];
 const fragments = ["#/", "#/active", "#/completed", "#/x", "#"];
 const bodies = ['""', '"ok"', '"[]"', '"{}"', '"{\\"a\\":1}"', '"[1,2]"'];
@@ -557,7 +563,29 @@ function actions(rng, types, answers, bursts) {
     }
     const targets = offer.targets;
     if (targets.length === 0) return { line: "advance 16", s: { command: "advance", ms: 16, tasks: false } };
-    const kind = rng.next();
+    let kind = rng.next();
+    // A pointer event takes three in ten view events, on a page that has a
+    // pointer handler only: the rest of the roll is stretched over the
+    // other kinds, and a page with none draws what it drew before.
+    const pointed = targets.filter((t) => t.pointer);
+    if (pointed.length !== 0) {
+      if (kind < 0.3) {
+        const t = rng.pick(pointed);
+        const name = rng.pick(pointerNames);
+        const x = rng.int(121) - 10;
+        const y = rng.int(121) - 10;
+        const id = 1 + rng.int(3);
+        const type = rng.pick(pointerTypes);
+        const primary = rng.next() >= 0.15;
+        const words = [`pointer ${t.selector} ${name} ${x} ${y}`];
+        if (id !== 1) words.push(`id:${id}`);
+        if (type !== "mouse") words.push(`type:${type}`);
+        if (!primary) words.push("secondary");
+        const s = { command: "pointer", selector: t.selector, name, x, y, id, type: type === "none" ? "" : type, primary };
+        return { line: words.join(" "), s };
+      }
+      kind = (kind - 0.3) / 0.7;
+    }
     const typed = targets.filter((t) => t.text);
     if (typed.length !== 0 && kind < 0.25) {
       const t = rng.pick(typed);
