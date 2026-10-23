@@ -7595,6 +7595,17 @@ Since the passes also run before the first solve (*Where it runs*, amended 2026-
 whose later passes find nothing is solved before such a read exists, so the copy does it itself.
 `emit/release/app/ProjectLiteralField` pins it. There, `{ step: z => z + 1 }.step(1)` is `2`.
 
+*Amended 2026-10-23 (#889): a record written in place* (`ownership-checker.md` §31.10, *The form*).
+An update written in place is `(o.f = v, …, o)`, and slice 8 writes it in as any `e`. A body
+whose statements are its stores and then a `return R` (`Lower.settleStores`) is `(o.f = v, …, R)`,
+and a binding `const x = (o.f = v, …, o)` is its stores as statements before `const x = o` in
+the tidy pass, which item 1's copy of a name then folds. A store is a write wherever it stands: its
+target is no read (no fact folds it, no projection writes a value in its place, `patchStmt`
+reaches only its object and its value), facts 4 and 5 join what it writes as for `o.p = v`, its
+value is never a literal (`Op.effect`), and an object written in place is no scalar replacement's.
+Item 1 folds a binding of a name past a write of a property of it (only a rebinding, `rebound`,
+keeps it where it is), and never drops a binding that holds a store.
+
 *Amended 2026-10-03.* Once the passes are done, **`x = x`** â a name read and written back, the
 model the render loop's `update` leaves as `d = d` â goes from every list (the printer wrote it
 as nothing, but it still counted as a use and an assignment, so the binding it named stayed); and
