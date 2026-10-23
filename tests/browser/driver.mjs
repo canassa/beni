@@ -777,37 +777,53 @@ function prelude() {
   // a reader of a box that subtracts the wrong element's box, or none,
   // reads what a correct one reads (`Html.localX`, issue #558). So under
   // happy-dom an element that its inline style places gets the box Chrome
-  // gives it on a page that is not scrolled: `position: absolute` or
-  // `fixed`, with `left` and `top` in pixels, from its containing block —
-  // the viewport for `fixed`; for `absolute`, the box of the nearest
-  // positioned ancestor, or the page's origin when there is none — and
-  // `width` and `height` from the style, or 0. Borders are not counted.
-  // Every other element keeps happy-dom's box at 0, and so does one whose
-  // nearest positioned ancestor has no such box. Installed once, as above.
+  // gives it on a page that is not scrolled. Placed means: the inline
+  // style sets `position: absolute` or `fixed`, and the computed `left`,
+  // `top`, `width` and `height` are in pixels. The box is from the
+  // containing block: the viewport for `fixed`; for `absolute`, the box of
+  // the nearest positioned ancestor, which must be placed too, or the
+  // page's origin when there is none. Any shape the rule does not count
+  // keeps the box at 0, as does every other element: a margin at the top
+  // or left, a padding, a border or a `min-` or `max-` size on the
+  // element, and a `display: none` or `contents`, a transform, a filter or
+  // a containment on it or on an ancestor (`moves` below lists them). An
+  // element that is not in the document, or is in a shadow tree, keeps it
+  // too. Installed once, as above.
   if (globalThis.happyDOM !== undefined && !Object.hasOwn(Element.prototype, "__beniBox")) {
     const own = Element.prototype.getBoundingClientRect;
     const pixels = (text) => {
-      if (text === "0") return 0;
       const match = /^(-?[0-9]+(?:\.[0-9]+)?)px$/.exec(text);
       return match === null ? null : Number(match[1]);
     };
+    // happy-dom's computed value of a property no rule sets is "".
+    const zero = (value) => value === "" || pixels(value) === 0;
+    const sides = ["Top", "Right", "Bottom", "Left"];
+    const lengths = ["marginTop", "marginLeft", ...sides.map((side) => `padding${side}`), ...sides.map((side) => `border${side}Width`)];
+    const limits = { minWidth: "auto", minHeight: "auto", maxWidth: "none", maxHeight: "none" };
+    // The properties that move a box, or make an element the containing
+    // block of a `fixed` or `absolute` descendant, with their initial value.
+    const moves = { transform: "none", translate: "none", rotate: "none", scale: "none", perspective: "none", filter: "none", backdropFilter: "none", zoom: "normal", willChange: "auto", contain: "none", containerType: "normal", contentVisibility: "visible" };
+    const initial = (computed, table) => Object.entries(table).every(([name, value]) => (computed[name] ?? "") === "" || computed[name] === value);
+    const flat = (computed) => computed.display !== "none" && computed.display !== "contents" && initial(computed, moves);
     const placed = (element) => {
-      const style = element.style;
-      if (style === undefined || (style.position !== "absolute" && style.position !== "fixed")) return null;
-      const left = pixels(style.left);
-      const top = pixels(style.top);
-      if (left === null || top === null) return null;
-      const box = { x: left, y: top, width: pixels(style.width) ?? 0, height: pixels(style.height) ?? 0 };
-      if (style.position === "fixed") return box;
+      const position = element.style?.position;
+      if (position !== "absolute" && position !== "fixed") return null;
+      if (element.getRootNode() !== document) return null;
+      const computed = getComputedStyle(element);
+      if (computed.position !== position || !flat(computed) || !lengths.every((name) => zero(computed[name])) || !initial(computed, limits)) return null;
+      const box = { x: pixels(computed.left), y: pixels(computed.top), width: pixels(computed.width), height: pixels(computed.height) };
+      if (box.x === null || box.y === null || box.width === null || box.height === null) return null;
+      let block = null;
       for (let up = element.parentElement; up !== null; up = up.parentElement) {
-        const position = up.style?.position ?? "";
-        if (position === "" || position === "static") continue;
-        const block = placed(up);
-        if (block === null) return null;
-        box.x += block.x;
-        box.y += block.y;
-        break;
+        const above = getComputedStyle(up);
+        if (!flat(above)) return null;
+        if (block === null && position === "absolute" && above.position !== "" && above.position !== "static") block = up;
       }
+      if (block === null) return box;
+      const origin = placed(block);
+      if (origin === null) return null;
+      box.x += origin.x;
+      box.y += origin.y;
       return box;
     };
     Object.defineProperty(Element.prototype, "__beniBox", { value: true });
