@@ -627,6 +627,18 @@ and `v instanceof C`. Each is written in place as its operator. `rem` answers `N
 divisor and `shiftRightZero` an unsigned number, both of which an `Int` may not hold: the caller
 guards, as `Int32.rem` does.
 
+**The comparisons, `lt`, `gt`, `le` and `ge`** (pure, specified 2026-10-23, #882; the owner's
+decision of 2026-10-02, `plans/runtime-in-beni.md` step 7) are `a < b`, `a > b`, `a <= b` and
+`a >= b`, each written in place as its operator, as `same` is `===`: `lt : unused a, unused a →
+fresh bool`, both arguments one type variable and the answer a `bool` variable, since this module
+names no core type. Unchecked, as every `Js` declaration is: JavaScript orders two numbers by value
+and two strings by their UTF-16 code units, and coerces anything else, so a caller hands them two
+values of one kind. They exist for `Hosted`'s keys, which order two keys of different types by the
+text of their type identities (§9.8.3): the identities are ASCII, where `<` and `String.compare`
+agree, and beni's `<` on two `String`s would ship `String.compare`'s code-point walk to a page that
+compares no other string. Passed as a value, each is the sibling's function (`backend.md` §4, *The
+comparisons are operators*).
+
 **`fingerprint : k, order → name where k.compare : k, k → order`** (pure, 2026-10-02, the owner's
 decision on keys, §9.8.3) is **the identity of `k`'s type**: a string the compiler writes at the
 call, naming the type with its module, its package and every argument, equal at two calls exactly
