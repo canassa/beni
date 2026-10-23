@@ -107,10 +107,11 @@ tags socket =
 --| it survives hibernation, and the host drops it when either side closes.
 --| The limit is 16 384 bytes as the host serialises them, counted here as
 --| two bytes per UTF-16 code unit of every string kept, plus 64: so about
---| 8 100 characters of ASCII. One byte per unit would be wrong for a
---| string sliced from a two-byte one, which V8 keeps two-byte (the host
---| call measured in §9.12 (h); `attach` prints through the schema first,
---| so the slice may never reach the host), so the count stays two.
+--| 8 100 characters of ASCII, and about 4 000 emoji, each two units. One
+--| byte per unit would be wrong for a string sliced from a two-byte one,
+--| which V8 keeps two-byte (the host call measured in §9.12 (h); `attach`
+--| prints through the schema first, so the slice may never reach the
+--| host), so the count stays two.
 pub attach : Socket, Schema e a, a → Result AttachError ⊤
 attach socket schema value =
     case Schema.print schema value of
@@ -119,13 +120,13 @@ attach socket schema value =
 
         Ok text →
             env = envelope socket
-            -- Counted as `Worker.Storage` counts: two bytes per code unit of
-            -- every string serialised, plus 64 of envelope.
+            -- Counted as `Worker.Storage` counts: two bytes per UTF-16 code
+            -- unit of every string serialised, plus 64 of envelope.
             fixed =
-                String.length (Js.to (Js.get env "id"))
-                    + String.length (Js.to (Js.get env "protocol"))
-                    + List.foldl (tags socket) 0 λtag n → n + String.length tag
-            if 2 * (fixed + String.length text) + 64 > 16384 then
+                units (Js.to (Js.get env "id"))
+                    + units (Js.to (Js.get env "protocol"))
+                    + List.foldl (tags socket) 0 λtag n → n + units tag
+            if 2 * (fixed + units text) + 64 > 16384 then
                 Err TooLarge
             else
                 _ =
@@ -175,6 +176,14 @@ sendable code =
         || (code ≥ 1007 && code ≤ 1009)
         || (code ≥ 1011 && code ≤ 1014)
         || (code ≥ 3000 && code ≤ 4999)
+
+
+-- The UTF-16 code units of a text, which is what V8 serialises two bytes
+-- each: the JavaScript string's `length`, not `String.length`, which
+-- counts code points and so counts an emoji as one where the host writes
+-- four bytes (#858).
+units : String → Int
+units text = Js.to (Js.get (Js.from text) "length")
 
 
 utf8Length : String → Int

@@ -38,6 +38,11 @@
 < content-type: text/plain; charset=utf-8
 <
 < Err TooLarge
+> GET /big-emoji
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err TooLarge
 > GET /throw
 < 500
 < content-length: 192

@@ -55,6 +55,8 @@
 < (socket a) "attachment seat 4"
 > (socket a) "attach-big"
 < (socket a) "Err TooLarge"
+> (socket a) "attach-emoji"
+< (socket a) "Err TooLarge"
 > (socket a) "ping?"
 < (socket a) "pong!"
 > (socket a) "close-bad"

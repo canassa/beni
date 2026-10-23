@@ -81,6 +81,11 @@ serve ctx _ request =
             [ "big", …rest ] →
                 showPut (Storage.put ctx Schema.string "big" (String.repeat "ab" 1000000))
 
+            [ "big-emoji", …rest ] →
+                -- 600 000 emoji: under the limit by a count of code points,
+                -- 2 400 000 bytes as the host writes them (#858).
+                showPut (Storage.put ctx Schema.string "emoji" (String.repeat "😀" 600000))
+
             [ "throw", …rest ] →
                 Debug.todo "the store threw"
 

@@ -32,6 +32,10 @@
 {"receive": "a"}
 {"send": "a", "text": "attach-big"}
 {"receive": "a"}
+# Emoji are two UTF-16 units each: 5 000 of them are under the limit by a
+# count of code points and over it as the host writes them.
+{"send": "a", "text": "attach-emoji"}
+{"receive": "a"}
 # The autoReply pair is answered by the host, with no event.
 {"send": "a", "text": "ping?"}
 {"receive": "a"}
