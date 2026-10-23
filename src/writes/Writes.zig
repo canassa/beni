@@ -735,6 +735,9 @@ inst_depth: u32 = 0,
 active: std.ArrayList(u64) = .empty,
 split_ctors: std.ArrayList(u32) = .empty,
 diff_memo: std.HashMapUnmanaged(DiffKey, u32, std.hash_map.AutoContext(DiffKey), std.hash_map.default_max_load_percentage) = .empty,
+/// `gammaAdd`'s and `gammaJoin`'s scratch, kept across their calls.
+gamma_list: std.ArrayList(Fact) = .empty,
+gamma_join_list: std.ArrayList(Fact) = .empty,
 subst_memo: std.HashMapUnmanaged(SubstKey, u32, std.hash_map.AutoContext(SubstKey), std.hash_map.default_max_load_percentage) = .empty,
 cut_memo: std.HashMapUnmanaged(SubstKey, u32, std.hash_map.AutoContext(SubstKey), std.hash_map.default_max_load_percentage) = .empty,
 next_inst_id: u32 = 0,
@@ -875,6 +878,8 @@ pub fn deinit(a: *Writes) void {
     a.split_ctors.deinit(gpa);
     a.diff_memo.deinit(gpa);
     a.subst_memo.deinit(gpa);
+    a.gamma_list.deinit(gpa);
+    a.gamma_join_list.deinit(gpa);
     a.cut_memo.deinit(gpa);
     for (a.holes.items) |*h| {
         h.reads.deinit(gpa);
@@ -1267,8 +1272,11 @@ fn gammaFact(a: *const Writes, g: u32, i: usize) Fact {
 /// `g ∪ facts`, or null on a contradiction.
 fn gammaAdd(a: *Writes, g: u32, facts: []const Fact) Allocator.Error!?u32 {
     if (facts.len == 0) return g;
-    var list: std.ArrayList(Fact) = .empty;
-    defer list.deinit(a.gpa);
+    // The pass's own buffer, kept across calls: a gamma is rebuilt here
+    // tens of thousands of times a build, each list a few facts long.
+    var list = a.gamma_list;
+    list.clearRetainingCapacity();
+    defer a.gamma_list = list;
     for (0..a.gammaLen(g)) |i| try list.append(a.gpa, a.gammaFact(g, i));
     for (facts) |f| {
         if (!try a.addFact(&list, f)) return null;
@@ -1283,8 +1291,9 @@ fn gammaAdd(a: *Writes, g: u32, facts: []const Fact) Allocator.Error!?u32 {
 fn gammaJoin(a: *Writes, g: u32, h: u32) Allocator.Error!?u32 {
     if (h == 0) return g;
     if (g == 0) return h;
-    var facts: std.ArrayList(Fact) = .empty;
-    defer facts.deinit(a.gpa);
+    var facts = a.gamma_join_list;
+    facts.clearRetainingCapacity();
+    defer a.gamma_join_list = facts;
     for (0..a.gammaLen(h)) |i| try facts.append(a.gpa, a.gammaFact(h, i));
     return a.gammaAdd(g, facts.items);
 }
