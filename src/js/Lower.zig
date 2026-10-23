@@ -1707,8 +1707,12 @@ pub const Lowerer = struct {
         return l.add(.property, p, @backingInt(try l.fieldName(key)), value.int());
     }
 
+    /// `const n = value;`, a record written in place bound as its stores and
+    /// then its object (`settleStores`): the declaration is still `out`'s
+    /// last statement.
     pub fn constDecl(l: *Lowerer, out: *StmtList, n: JsIr.NameIndex, value: Node.Index, p: u32) !void {
-        try out.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), value.int()));
+        const v = try l.settleStores(out, value, p);
+        try out.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), v.int()));
     }
 
     pub fn returnStmt(l: *Lowerer, value: Node.Index, p: u32) !Node.Index {
@@ -6215,9 +6219,13 @@ pub const Lowerer = struct {
     /// `{ r | f₁ = v₁, … }` written in place (§31.10): the base, then each
     /// value in written order, every one evaluated before any store; then
     /// the reads hoisted after the operands; then the stores; the value is
-    /// the base's object. Under the hidden sanitiser the stores go into a
-    /// copy, and each written field of the old object becomes a read that
-    /// throws: a holder older than the write traps there.
+    /// the base's object. Written as the expression `(b.f₁ = v₁, …, b)`
+    /// wherever the spread was one (§31.10, *The form*): a value is bound to
+    /// a temporary first only when a store would come between it and a later
+    /// value that could see that store (`storeBlind`), or when reads are
+    /// hoisted after the operands. Under the hidden sanitiser the stores go
+    /// into a copy, and each written field of the old object becomes a read
+    /// that throws: a holder older than the write traps there.
     fn recordUpdateInPlace(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) Allocator.Error!Node.Index {
         const d = l.bir.instData(inst);
         const fields = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field);
@@ -6235,16 +6243,39 @@ pub const Lowerer = struct {
         }
         // Every value before any store: a later value may read a field an
         // earlier store writes (`{ r | a = r.b, b = r.a }` swaps), and the
-        // hoisted reads come after the operands.
-        if (fields.len > 1 or phased or l.in.sanitize_records) for (values[1..]) |*v| {
-            if (l.isAtom(v.*)) continue;
+        // hoisted reads come after the operands. Written in the stores'
+        // sequence, the first value is still evaluated before every store,
+        // and a value that reads nothing a store can change answers the same
+        // wherever it is evaluated; so the others take a temporary only when
+        // some value after the first is not such a value. The fields are
+        // distinct and nothing runs between two stores, so their order is
+        // not observable: a literal's store comes after the others, which
+        // leaves the first value that is evaluated first in the sequence
+        // (§31.10, *The form*).
+        const sanitize = l.in.sanitize_records;
+        const order = try l.scratch.alloc(usize, fields.len);
+        var placed: usize = 0;
+        for (values[1..], 0..) |v, i| if (!l.isLiteral(v)) {
+            order[placed] = i;
+            placed += 1;
+        };
+        for (values[1..], 0..) |v, i| if (l.isLiteral(v)) {
+            order[placed] = i;
+            placed += 1;
+        };
+        const late_read = for (order[@min(order.len, 1)..]) |i| {
+            if (!l.storeBlind(values[1 + i], 0)) break true;
+        } else false;
+        if (late_read or phased or sanitize) for (values[1..]) |*v| {
+            v.* = try l.settleStores(out, v.*, p);
+            if (l.isAtom(v.*) or (!sanitize and l.storeBlind(v.*, 0))) continue;
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, v.*, p);
             v.* = try l.ident(n, p);
         };
         try l.placeHoists(out, inst, 1);
         const base_name: JsIr.NameIndex = @fromBackingInt(@intCast(l.b.dataOf(base).lhs));
-        if (l.in.sanitize_records) {
+        if (sanitize) {
             const copy = try l.fresh(l.well.temp);
             try l.constDecl(out, copy, try l.object(&.{try l.add(.spread_property, p, (try l.ident(base_name, p)).int(), Node.Data.unused)}, p), p);
             for (fields, values[1..]) |f, value| {
@@ -6253,15 +6284,77 @@ pub const Lowerer = struct {
             for (fields) |f| try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.staleField(try l.ident(base_name, p), l.bir.symbol(f.name), p)).int(), Node.Data.unused));
             return l.ident(copy, p);
         }
-        for (fields, values[1..]) |f, value| {
+        var parts: std.ArrayList(Node.Index) = .empty;
+        for (order) |i| {
+            const f = fields[i];
+            const value = values[1 + i];
             // `{ model | c = { c | t = 4 } }`, `c` being `model.c`: the inner
             // update wrote the object the field already holds, so storing it
             // back changes nothing (§31.3, *Nested updates*). Not under the
-            // sanitiser, whose inner update answers a new object.
-            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) continue;
-            try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.fieldMember(try l.ident(base_name, p), l.bir.symbol(f.name), p)).int(), value.int()));
+            // sanitiser, whose inner update answers a new object. The inner
+            // update's own stores are its value's, so they stay.
+            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) {
+                if (l.b.tagOf(value) == .sequence) {
+                    const inner = l.b.extra.items[l.b.dataOf(value).lhs..l.b.dataOf(value).rhs];
+                    for (inner[0 .. inner.len - 1]) |e| try parts.append(l.scratch, @fromBackingInt(@intCast(e)));
+                } else if (!l.isAtom(value)) try parts.append(l.scratch, value);
+                continue;
+            }
+            try parts.append(l.scratch, try l.add(.assign, p, (try l.fieldMember(try l.ident(base_name, p), l.bir.symbol(f.name), p)).int(), value.int()));
         }
-        return l.ident(base_name, p);
+        if (parts.items.len == 0) return l.ident(base_name, p);
+        try parts.append(l.scratch, try l.ident(base_name, p));
+        const range = try l.b.addRange(parts.items);
+        return l.add(.sequence, p, @backingInt(range.start), @backingInt(range.end));
+    }
+
+    /// `value` where a statement may stand before it: a record written in
+    /// place (`(o.f = v, …, o)`, §31.10, *The form*) is its stores as
+    /// statements of `out`, in order, and then its object. Anything else
+    /// as it is.
+    fn settleStores(l: *Lowerer, out: *StmtList, value: Node.Index, p: u32) Allocator.Error!Node.Index {
+        var v = value;
+        while (l.b.tagOf(v) == .sequence) {
+            const parts = l.b.extra.items[l.b.dataOf(v).lhs..l.b.dataOf(v).rhs];
+            for (parts[0 .. parts.len - 1]) |e| try out.append(l.scratch, try l.add(.expr_stmt, p, e, Node.Data.unused));
+            v = @fromBackingInt(@intCast(parts[parts.len - 1]));
+        }
+        return v;
+    }
+
+    /// Whether `value` is a literal: evaluating it does nothing.
+    fn isLiteral(l: *const Lowerer, value: Node.Index) bool {
+        return l.b.tagOf(value) != .ident and atom_literals[@backingInt(l.b.tagOf(value))];
+    }
+
+    /// Whether evaluating `node` reads nothing a store into a record could
+    /// change, and runs no code that could: a name, a literal, a function
+    /// made here, and an operator, a conditional, an object or an array of
+    /// such. Evaluated before a store or after it, it answers the same.
+    fn storeBlind(l: *const Lowerer, node: Node.Index, depth: u32) bool {
+        if (depth > 32) return false;
+        const d = l.b.dataOf(node);
+        return switch (l.b.tagOf(node)) {
+            .ident, .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .global_this, .arrow => true,
+            .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs))) != .yield and l.storeBlind(@fromBackingInt(@intCast(d.lhs)), depth + 1),
+            .binary => blk: {
+                const b = l.b.record(d.lhs, JsIr.Binary);
+                if (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs))) == .instance_of) break :blk false;
+                break :blk l.storeBlind(b.left, depth + 1) and l.storeBlind(b.right, depth + 1);
+            },
+            .cond => blk: {
+                const c = l.b.record(d.rhs, JsIr.Cond);
+                break :blk l.storeBlind(@fromBackingInt(@intCast(d.lhs)), depth + 1) and l.storeBlind(c.consequent, depth + 1) and l.storeBlind(c.alternate, depth + 1);
+            },
+            .array => for (l.b.extra.items[d.lhs..d.rhs]) |e| {
+                if (!l.storeBlind(@fromBackingInt(@intCast(e)), depth + 1)) break false;
+            } else true,
+            .object => for (l.b.extra.items[d.lhs..d.rhs]) |e| {
+                const prop: Node.Index = @fromBackingInt(@intCast(e));
+                if (l.b.tagOf(prop) != .property or !l.storeBlind(@fromBackingInt(@intCast(l.b.dataOf(prop).rhs)), depth + 1)) break false;
+            } else true,
+            else => false,
+        };
     }
 
     /// Whether `value`, stored into field `field` of the object `base`
@@ -11043,7 +11136,9 @@ pub const Lowerer = struct {
                         // the binding itself, declared a `let`, rather than
                         // a temporary the binding then copies.
                         if (l.in.unit_results and l.bir.instTag(value_inst) == .case) l.case_into = .{ .name = n, .declare = true };
-                        const value = try l.expr(out, value_inst);
+                        // A record written in place, bound: its stores, then the
+                        // binding of its object (`settleStores`).
+                        const value = try l.settleStores(out, try l.expr(out, value_inst), p);
                         l.case_into = .{};
                         if (l.isIdentOf(value, n)) continue;
                         // `--release`: a binding of a name nothing
@@ -14999,7 +15094,7 @@ pub const Lowerer = struct {
         const was = l.msg_track;
         l.msg_track = &mt;
         defer l.msg_track = was;
-        const value = try l.expr(&stmts, function.body);
+        const value_ = try l.expr(&stmts, function.body);
         if (mt.failed) |why| {
             // Every key whose arm reaches the expression stops there: one
             // diagnostic for it.
@@ -15009,6 +15104,10 @@ pub const Lowerer = struct {
             try l.report(.not_implemented, mt.failed_at, "{s}", .{why});
             return null;
         }
+        // An arm written in place is the sequence of its stores and the
+        // object (§31.10, *The form*): its stores are statements of the
+        // handler, in order, and its value the object.
+        const value = try l.settleStores(&stmts, value_, p);
         try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
         // An arm that answers the object `model` names — written in place
         // (`ownership-checker.md` §31.10), or the model unchanged — answers
@@ -18569,7 +18668,12 @@ const markup_vtable: beni_markup.VTable = struct {
         const st = l.mk.?;
         const p = pos(l);
         const stmt: Node.Index = switch (s) {
-            .constant => |c| try l.add(.const_decl, p, @backingInt(nameOf(c.name)), node(c.value).int()),
+            .constant => |c| blk: {
+                var stores: StmtList = .empty;
+                const v = try l.settleStores(&stores, node(c.value), p);
+                try st.blocks.items[@backingInt(into)].appendSlice(l.scratch, stores.items);
+                break :blk try l.add(.const_decl, p, @backingInt(nameOf(c.name)), v.int());
+            },
             .let => |c| try l.add(.let_decl, p, @backingInt(nameOf(c.name)), if (c.value) |v| node(v).int() else @backingInt(Node.OptionalIndex.none)),
             .assign => |a| try l.add(.assign_stmt, p, node(a.target).int(), node(a.value).int()),
             .@"if" => |i| blk: {

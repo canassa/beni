@@ -180,7 +180,10 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.repeated, 0);
     @memset(o.dropped, 0);
     @memset(o.inlined, .none);
-    for (discarded) |node| if (node.int() < ir.nodes.len) o.drop(node);
+    // A statement that runs a store of a record update written in place
+    // is the update, never an unused pure value (`ownership-checker.md`
+    // §31.10, *The optimiser barrier*).
+    for (discarded) |node| if (node.int() < ir.nodes.len and !try ir.holdsStore(arena, &o.stack, node)) o.drop(node);
 
     for (ir.extraSlice(ir.body, Index)) |top| {
         o.current += 1;
@@ -464,6 +467,13 @@ const Opt = struct {
                     };
                 },
                 .arrow => try o.countFunc(@fromBackingInt(@intCast(o.ir.data(node).lhs))),
+                // A store of an in-place update (`JsIr.Node.Tag.assign`): its
+                // target's root is marked as an `assign_stmt`'s is, so no
+                // chain rooted there moves.
+                .assign => {
+                    o.markAssigned(@fromBackingInt(@intCast(o.ir.data(node).lhs)));
+                    try o.ir.pushOperands(o.arena, &o.stack, node);
+                },
                 else => try o.ir.pushOperands(o.arena, &o.stack, node),
             }
         }
@@ -558,7 +568,7 @@ const Opt = struct {
 
             if (o.readOf(idx, "uses") == 0) {
                 const at = stmt.int();
-                if (o.kept[at / 32] & (@as(u32, 1) << @intCast(at % 32)) == 0) o.drop(stmt);
+                if (o.kept[at / 32] & (@as(u32, 1) << @intCast(at % 32)) == 0 and !try o.ir.holdsStore(o.arena, &o.stack, stmt)) o.drop(stmt);
                 continue;
             }
             if (try o.copy(stmts[i + 1 ..], stmt, n, idx)) continue;
@@ -591,6 +601,24 @@ const Opt = struct {
             // can write nothing (`findUseAcross`). One that reads no field
             // — a literal, a name nothing reassigns — answers the same
             // anywhere, and moves past any statement.
+            // A name: the object it holds is the same object wherever it is
+            // read, whatever writes a property of it (a record written in
+            // place, `ownership-checker.md` §31.10), so only a rebinding of
+            // the name — `rebound`, not `assigned` — keeps it where it is.
+            // A name an earlier fold wrote a value at is that value, which the
+            // rules below judge.
+            if (!listed and o.ir.tag(value) == .ident and o.inlined[value.int()] == .none) bare: {
+                const vn: NameIndex = @fromBackingInt(@intCast(o.ir.data(value).lhs));
+                const vi = vn.unwrap() orelse break :bare;
+                if (vi >= o.rebound.len or (o.stamp[vi] == o.current and o.rebound[vi])) break :bare;
+                if (o.ir.name(vn).module != .none or o.readOf(vi, "binds") != 1) break :bare;
+                if (std.mem.indexOfScalar(NameIndex, o.mutable, vn) != null) break :bare;
+                if (o.findAnyUse(range, i, n)) |at| {
+                    o.drop(stmt);
+                    o.inlined[at.int()] = o.compress(value).toOptional();
+                }
+                continue;
+            }
             if (!listed) {
                 o.reads_field = false;
                 if (o.pureValue(value, 0) != null) {
@@ -890,7 +918,7 @@ const Opt = struct {
             }
         }
         const writes = switch (tag) {
-            .call, .new_call => true,
+            .call, .new_call, .assign => true,
             .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(o.ir.data(node).rhs))) == .yield,
             else => false,
         };
@@ -1127,4 +1155,43 @@ fn planDeepChain() !void {
 
 fn testNode(b: *JsIr.Builder, tag: Node.Tag, lhs: u32, rhs: u32) !Index {
     return b.addNode(.{ .tag = tag, .pos = Node.no_pos, .data = .{ .lhs = lhs, .rhs = rhs } });
+}
+
+test "a binding nothing reads is kept when it writes a record in place" {
+    // `function f(r) { const x = (r.a = true, r); const y = r; return 0; }`:
+    // `y` goes, `x` stays — its store is the update (`ownership-checker.md`
+    // §31.10, *The optimiser barrier*).
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const r = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const x = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const y = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const target = try testNode(&b, .member, (try testNode(&b, .ident, r.int(), 0)).int(), a.int());
+    const store = try testNode(&b, .assign, target.int(), (try testNode(&b, .true_lit, 0, 0)).int());
+    const parts = try b.addRange(&.{ store, try testNode(&b, .ident, r.int(), 0) });
+    const seq = try testNode(&b, .sequence, @backingInt(parts.start), @backingInt(parts.end));
+    const keep_x = try testNode(&b, .const_decl, x.int(), seq.int());
+    const drop_y = try testNode(&b, .const_decl, y.int(), (try testNode(&b, .ident, r.int(), 0)).int());
+    const ret = try testNode(&b, .return_stmt, (try testNode(&b, .null_lit, 0, 0)).int(), 0);
+    const params = try b.addNames(&.{r});
+    const stmts = try b.addRange(&.{ drop_y, keep_x, ret });
+    const func = try b.addRecord(JsIr.Func{
+        .params_start = params.start,
+        .params_end = params.end,
+        .body_start = stmts.start,
+        .body_end = stmts.end,
+    });
+    const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try run(arena_state.allocator(), &ir);
+    try testing.expect(!plan.isDropped(keep_x));
+    try testing.expect(plan.isDropped(drop_y));
 }

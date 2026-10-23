@@ -417,6 +417,10 @@ const prec_call: u8 = 18;
 const prec_unary: u8 = 15;
 const prec_cond: u8 = 3;
 const prec_arrow: u8 = 2;
+/// `a, b`: below every other expression, so a `sequence` is bracketed
+/// everywhere but where a whole expression stands (a statement, a
+/// template's hole, an index).
+const prec_seq: u8 = 1;
 
 /// The precedence a prefix operator's operand must have: `yield` takes an
 /// assignment expression, every other prefix operator a unary one.
@@ -1071,6 +1075,25 @@ const Printer = struct {
         try p.assignmentValue(node, level);
     }
 
+    /// The parts of `value` when it is a `sequence` assigned to `target`, a
+    /// name or a property of a name (by a literal key), so that the
+    /// statement may lead with them; null otherwise.
+    fn leadingStores(p: *Printer, target: Index, value: Index) ?[]const Index {
+        const v = p.resolve(value);
+        if (p.ir.tag(v) != .sequence) return null;
+        var t = p.resolve(target);
+        switch (p.ir.tag(t)) {
+            .member => t = p.resolve(@fromBackingInt(@intCast(p.ir.data(t).lhs))),
+            .index_get => switch (p.ir.tag(p.resolve(@fromBackingInt(@intCast(p.ir.data(t).rhs))))) {
+                .string, .number => t = p.resolve(@fromBackingInt(@intCast(p.ir.data(t).lhs))),
+                else => return null,
+            },
+            else => {},
+        }
+        if (p.ir.tag(t) != .ident) return null;
+        return p.ir.extraSlice(JsIr.inlineRange(p.ir.data(v)), Index);
+    }
+
     /// What follows an assignment's target: `=value`, `op=e`, `++` or `--`.
     fn assignmentValue(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         const d = p.ir.data(node);
@@ -1085,10 +1108,10 @@ const Printer = struct {
             if (one and (op == .add or op == .sub)) return p.push(if (op == .add) "++" else "--");
             try p.push(op.text());
             try p.push("=");
-            return p.expression(b.right, 0, level);
+            return p.expression(b.right, prec_arrow, level);
         }
         try p.tok(" = ", "=");
-        try p.expression(@fromBackingInt(@intCast(d.rhs)), 0, level);
+        try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
     }
 
     /// A declaration whose value is a literal, or nothing: evaluating it
@@ -1178,7 +1201,7 @@ const Printer = struct {
         const v = value.unwrap() orelse return;
         try p.push("=");
         if (p.ir.tag(v) == .arrow) try p.nameFunction(@fromBackingInt(@intCast(d.lhs)));
-        try p.expression(v, 0, level);
+        try p.expression(v, prec_arrow, level);
         p.function_name = SourceMap.Mapping.no_name;
     }
 
@@ -1284,7 +1307,7 @@ const Printer = struct {
                 try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                 try p.tok(" = ", "=");
                 if (p.ir.tag(@fromBackingInt(@intCast(d.rhs))) == .arrow) try p.nameFunction(@fromBackingInt(@intCast(d.lhs)));
-                try p.expression(@fromBackingInt(@intCast(d.rhs)), 0, level);
+                try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
                 p.function_name = SourceMap.Mapping.no_name;
                 try p.terminate();
                 try p.endLine(level);
@@ -1294,7 +1317,7 @@ const Printer = struct {
                 try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |value| {
                     try p.tok(" = ", "=");
-                    try p.expression(value, 0, level);
+                    try p.expression(value, prec_arrow, level);
                 }
                 try p.terminate();
                 try p.endLine(level);
@@ -1320,6 +1343,11 @@ const Printer = struct {
                 try p.endLine(level);
             },
             .assign_stmt => {
+                if (try p.leadingAssignment(@fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)), level)) {
+                    try p.terminate();
+                    try p.endLine(level);
+                    return;
+                }
                 try p.statementExpression(@fromBackingInt(@intCast(d.lhs)), level);
                 try p.assignmentValue(node, level);
                 try p.terminate();
@@ -1424,7 +1452,7 @@ const Printer = struct {
                 try p.tok("for (const ", "for(let");
                 try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
                 try p.tok(" of ", "of");
-                try p.expression(f.iterable, 0, level);
+                try p.expression(f.iterable, prec_arrow, level);
                 try p.push(")");
                 if (p.compact) return p.armBody(f.body(), false, level);
                 try p.push(" {\n");
@@ -2091,6 +2119,8 @@ const Printer = struct {
             dotted_rest,
             call_rest,
             cond_rest,
+            /// ` = ` and an `assign`'s value.
+            assign_rest,
         };
 
         fn expr(node: Index, min_prec: u8) Work {
@@ -2256,6 +2286,10 @@ const Printer = struct {
                     try p.later(.piece(.colon));
                     next = .expr(c.consequent, prec_arrow);
                 },
+                .assign_rest => {
+                    try p.tok(" = ", "=");
+                    next = .expr(@fromBackingInt(@intCast(p.ir.data(@fromBackingInt(@intCast(w.value))).rhs)), prec_arrow);
+                },
             }
         }
     }
@@ -2303,7 +2337,8 @@ const Printer = struct {
             .binary => JsIr.BinaryOp.precedence(@fromBackingInt(@intCast(p.ir.data(node).rhs))),
             .unary => if (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(p.ir.data(node).rhs))) == .yield) prec_arrow else prec_unary,
             .cond => prec_cond,
-            .arrow => prec_arrow,
+            .arrow, .assign => prec_arrow,
+            .sequence => prec_seq,
             .call, .new_call, .member, .index_get => prec_call,
             // A numeric literal is not a primary expression for the purpose
             // of what may follow it: `1.a` is a syntax error, because the dot
@@ -2485,6 +2520,15 @@ const Printer = struct {
                 try p.tok(op.text(), op.compactText());
                 try p.expression(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op), level);
             },
+            .assign => {
+                try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
+                try p.tok(" = ", "=");
+                try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
+            },
+            .sequence => for (p.ir.extraSlice(JsIr.inlineRange(d), Index), 0..) |e, i| {
+                if (i != 0) try p.tok(", ", ",");
+                try p.expression(e, prec_arrow, level);
+            },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
             // `JsIr.pushOperands`, so a new one does not compile until all
@@ -2645,6 +2689,21 @@ const Printer = struct {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(d.rhs));
                 try p.tok(op.text(), op.compactText());
                 return .expr(@fromBackingInt(@intCast(d.lhs)), unaryOperand(op));
+            },
+            .assign => {
+                // target ` = ` value
+                try p.later(.rest(.assign_rest, node));
+                return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
+            },
+            .sequence => {
+                // element `, ` element …
+                const elements = p.ir.extraSlice(JsIr.inlineRange(d), Index);
+                var i = elements.len;
+                while (i > 1) {
+                    i -= 1;
+                    try p.later(.listed(elements[i], prec_arrow, true));
+                }
+                return .expr(elements[0], prec_arrow);
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
@@ -2823,6 +2882,14 @@ const Printer = struct {
                     n = p.resolve(@fromBackingInt(@intCast(d.lhs)));
                     prec = prec_cond + 1;
                 },
+                .assign => {
+                    n = p.resolve(@fromBackingInt(@intCast(d.lhs)));
+                    prec = prec_call;
+                },
+                .sequence => {
+                    n = p.resolve(p.ir.extraSlice(JsIr.inlineRange(d), Index)[0]);
+                    prec = prec_arrow;
+                },
                 else => return false,
             }
         }
@@ -2940,7 +3007,25 @@ const Printer = struct {
         return true;
     }
 
+    /// `t = (s, …, v)`, `t` a name or a property of one, in statement
+    /// position: `s, …, t = v`, one statement still, in the same order —
+    /// evaluating `t`'s name reads nothing a store can change
+    /// (`JsIr.Node.Tag.sequence`). False, printing nothing, for any other.
+    fn leadingAssignment(p: *Printer, target: Index, value: Index, level: u32) Allocator.Error!bool {
+        const parts = p.leadingStores(target, value) orelse return false;
+        for (parts[0 .. parts.len - 1], 0..) |e, i| {
+            if (i == 0) try p.statementExpression(e, level) else try p.expression(e, prec_arrow, level);
+            try p.tok(", ", ",");
+        }
+        try p.expression(target, prec_call, level);
+        try p.tok(" = ", "=");
+        try p.expression(parts[parts.len - 1], prec_arrow, level);
+        return true;
+    }
+
     fn statementExpression(p: *Printer, node: Index, level: u32) Allocator.Error!void {
+        const n = p.resolve(node);
+        if (p.ir.tag(n) == .assign and try p.leadingAssignment(@fromBackingInt(@intCast(p.ir.data(n).lhs)), @fromBackingInt(@intCast(p.ir.data(n).rhs)), level)) return;
         if (p.startsWithBrace(node, 0)) {
             try p.push("(");
             try p.expression(node, 0, level);
@@ -3530,6 +3615,40 @@ test "`**` is right-associative, takes no unary left operand, and is no unary op
     }.go);
 }
 
+test "a record written in place is a bracketed sequence, and a statement that assigns one leads with its stores" {
+    // `ownership-checker.md` §31.10, *The form*: `(r.a = 1, r)` where it is
+    // a value — a binding, an argument, a concise body — and `r.a = 1,
+    // m.w = r` where a name's property is assigned it.
+    try expectPrinted(
+        \\const s = (r.a = 1, r);
+        \\const u = (a) => (r.a = 1, r);
+        \\const v = f((r.a = 1, r), (r.b = r.a = 2, r));
+        \\r.a = 1, m.w = r;
+        \\r.a = 1, m.w = r;
+        \\
+    , struct {
+        fn store(f: *Fixture, field: []const u8, value: Index) !Index {
+            const target = try f.node(.member, (try f.ident("r")).int(), @backingInt(try f.name(field)));
+            return f.node(.assign, target.int(), value.int());
+        }
+        fn seq(f: *Fixture, first: Index) !Index {
+            const parts = try f.b.addRange(&.{ first, try f.ident("r") });
+            return f.node(.sequence, @backingInt(parts.start), @backingInt(parts.end));
+        }
+        fn go(f: *Fixture, out: *std.ArrayList(Index)) !void {
+            const one = try seq(f, try store(f, "a", try f.number("1")));
+            try f.constDecl(out, "s", one);
+            const ret = try f.node(.return_stmt, @backingInt(one.toOptional()), 0);
+            try f.constDecl(out, "u", try f.func(&.{try f.name("a")}, &.{ret}));
+            const chained = try seq(f, try store(f, "b", try store(f, "a", try f.number("2"))));
+            try f.constDecl(out, "v", try f.node(.call, (try f.ident("f")).int(), @backingInt(try f.b.addRecord(try f.b.addRange(&.{ one, chained })))));
+            const w = try f.node(.member, (try f.ident("m")).int(), @backingInt(try f.name("w")));
+            try out.append(f.gpa, try f.node(.assign_stmt, w.int(), one.int()));
+            try out.append(f.gpa, try f.node(.expr_stmt, (try f.node(.assign, w.int(), one.int())).int(), 0));
+        }
+    }.go);
+}
+
 test "an arrow with one return prints concisely; an object body is bracketed" {
     try expectPrinted(
         \\const f = (a) => a;
@@ -4050,6 +4169,14 @@ test "the recursive and the iterative printer write the same bytes" {
     const if_stmt = try f.node(.if_stmt, (try f.ident("a")).int(), @backingInt(branches));
     const inner = try f.func(&.{a}, &.{ if_stmt, try f.node(.return_stmt, @backingInt((try f.node(.undefined_lit, 0, 0)).toOptional()), 0) });
     try f.constDecl(&out, "h", try f.node(.call, inner.int(), @backingInt(try f.b.addRecord(try f.b.addRange(&.{ try f.node(.true_lit, 0, 0), try f.node(.null_lit, 0, 0) })))));
+    // A record written in place: `(r.a = 1, r)` bound, returned concisely,
+    // and assigned, where the statement leads with the store.
+    const store = try f.node(.assign, (try f.node(.member, (try f.ident("r")).int(), @backingInt(try f.name("a")))).int(), (try f.number("1")).int());
+    const seq_parts = try f.b.addRange(&.{ store, try f.ident("r") });
+    const seq = try f.node(.sequence, @backingInt(seq_parts.start), @backingInt(seq_parts.end));
+    try f.constDecl(&out, "s", seq);
+    try f.constDecl(&out, "u", try f.func(&.{a}, &.{try f.node(.return_stmt, @backingInt(seq.toOptional()), 0)}));
+    try out.append(gpa, try f.node(.assign_stmt, (try f.node(.member, (try f.ident("m")).int(), @backingInt(try f.name("w")))).int(), seq.int()));
 
     const body = try f.b.addRange(out.items);
     var ir = try f.b.toOwned(body);
@@ -4069,7 +4196,7 @@ test "the recursive and the iterative printer write the same bytes" {
 fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
     const names = [_][]const u8{ "a", "b", "new", "$x" };
     const leaf = budget == 0 or random.uintLessThan(u8, 5) == 0;
-    const choice = if (leaf) random.uintLessThan(u8, 6) else 6 + random.uintLessThan(u8, 13);
+    const choice = if (leaf) random.uintLessThan(u8, 6) else 6 + random.uintLessThan(u8, 15);
     const sub = budget -| 1;
     switch (choice) {
         0 => return f.ident(names[random.uintLessThan(usize, names.len)]),
@@ -4152,6 +4279,18 @@ fn randomExpr(f: *Fixture, random: std.Random, budget: u32) !Index {
             return f.node(.template, @backingInt(parts.start), @backingInt(parts.end));
         },
         17 => return f.node(.false_lit, 0, 0),
+        // A store of a record written in place, and a sequence.
+        18 => {
+            const target = try f.node(.member, (try randomExpr(f, random, sub)).int(), @backingInt(try f.name(names[random.uintLessThan(usize, names.len)])));
+            return f.node(.assign, target.int(), (try randomExpr(f, random, sub)).int());
+        },
+        19 => {
+            const count = 2 + random.uintLessThan(usize, 2);
+            var elements: [3]Index = undefined;
+            for (elements[0..count]) |*e| e.* = try randomExpr(f, random, sub);
+            const range = try f.b.addRange(elements[0..count]);
+            return f.node(.sequence, @backingInt(range.start), @backingInt(range.end));
+        },
         else => {
             // A long left-nested chain, the deep shape.
             var chain = try randomExpr(f, random, 0);

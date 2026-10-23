@@ -1,0 +1,62 @@
+-- run: a record written in place where its spread was an expression
+-- (`ownership-checker.md` §31.10, *The form*): as an argument, in both
+-- arms of an `if`, returned by a function another one calls, with a
+-- literal's store after a value that reads the record, two values that
+-- read each other's field, and nested in a field. Its answers are the
+-- spreads'; `.in-place` builds it again with its records written in
+-- place, development and release.
+import Node exposing (Program)
+
+
+type alias P =
+    x : Int
+    y : Int
+    tag : String
+
+
+type alias Box =
+    p : P
+    n : Int
+
+
+total : P → Int
+total p = p.x * 100 + p.y
+
+
+label : P → String
+label p = "${p.tag}:${String.fromInt (total p)}"
+
+
+bump : P → P
+bump p = { p | tag = "bumped", x = p.x + p.y }
+
+
+swap : P → P
+swap p = { p | x = p.y, y = p.x }
+
+
+pick : P, Bool → P
+pick p yes = if yes then { p | x = 1 } else { p | y = 2 }
+
+
+grow : P → Int
+grow p = total { p | x = p.x + 1 }
+
+
+inner : Box → Box
+inner b =
+    p = b.p
+    { b | p = { p | y = p.y + b.n }, n = b.n + 1 }
+
+
+main : Program
+main =
+    Node.printLines
+        [ label (bump { x = 3, y = 4, tag = "a" })
+        , label (swap { x = 5, y = 6, tag = "s" })
+        , label (pick { x = 7, y = 8, tag = "t" } True)
+        , label (pick { x = 7, y = 8, tag = "f" } False)
+        , String.fromInt (grow { x = 9, y = 1, tag = "g" })
+        , label (inner { p = { x = 1, y = 2, tag = "i" }, n = 10 }).p
+        , String.fromInt (inner { p = { x = 1, y = 2, tag = "i" }, n = 10 }).n
+        ]

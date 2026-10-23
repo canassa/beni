@@ -2078,7 +2078,7 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [6]?[]const u8 = .{ null, null, null, null, null, null };
+        var verified: [7]?[]const u8 = .{ null, null, null, null, null, null, null };
         // Recording runs both builds whatever the first did, so one failing
         // build does not cost the other its line.
         var first_error: ?anyerror = null;
@@ -2100,8 +2100,9 @@ const Case = struct {
             if (first_error == null) try c.checkCompiledSchemas("out");
             // A fixture of the records' differential corpus (`.in-place`,
             // its reason; `ownership-checker.md` §31.12 slice 3) is built
-            // twice more with its records written in place — under the hidden
-            // stale-read sanitiser, then the stores as they ship — and
+            // three times more with its records written in place — under the
+            // hidden stale-read sanitiser, then the stores as they ship, then
+            // as a release ships them (§31.10, *The form*) — and
             // each must print the same golden, which was recorded under
             // spreads. Their run hashes are the fixture's, as its other
             // passes' are; `BENI_IN_PLACE=all` records none and runs every one.
@@ -2132,6 +2133,19 @@ const Case = struct {
                     break :blk null;
                 };
                 verified[4] = c.runOnce("out-stores", .dev, stores.items, "expected", false, in_place_record) catch |err| blk: {
+                    if (!recording) return err;
+                    RunCounts.add(&run_counts.refused);
+                    if (first_error == null) first_error = err;
+                    break :blk null;
+                };
+                // And the stores as a release ships them: the specialiser and the
+                // optimiser over records written in place (`backend.md` §9;
+                // `ownership-checker.md` §31.10, *The optimiser barrier*).
+                var release_stores: std.ArrayList([]const u8) = .empty;
+                try release_stores.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--release", "--allow-debug", "--check-call-graph", "--out=release-stores" });
+                if (c.cfg.mode == .pending) try release_stores.append(c.arena, "--diagnostics=json");
+                try release_stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                verified[6] = c.runOnce("release-stores", .release, release_stores.items, if (c.goldenExists("release-expected")) "release-expected" else "expected", false, in_place_record) catch |err| blk: {
                     if (!recording) return err;
                     RunCounts.add(&run_counts.refused);
                     if (first_error == null) first_error = err;
@@ -3773,6 +3787,7 @@ fn expectExit(expected: u8, r: world.Result) !void {
 fn passName(out_dir: []const u8) []const u8 {
     if (std.mem.eql(u8, out_dir, "out-in-place")) return "dev-in-place";
     if (std.mem.eql(u8, out_dir, "out-stores")) return "dev-stores";
+    if (std.mem.eql(u8, out_dir, "release-stores")) return "release-stores";
     if (std.mem.eql(u8, out_dir, "release-library")) return "release-library";
     if (std.mem.eql(u8, out_dir, "out-library")) return "dev-library";
     return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";

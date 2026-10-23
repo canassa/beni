@@ -517,7 +517,7 @@ pub const Pass = struct {
             const d = p.data(x);
             switch (p.tag(x)) {
                 .ident => if (d.lhs < into.bit_length) into.set(d.lhs),
-                .const_decl, .assign_stmt, .index_get => {
+                .const_decl, .assign_stmt, .index_get, .assign => {
                     if (p.tag(x) != .const_decl) try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.append(p.scratch, @fromBackingInt(@intCast(d.rhs)));
                 },
@@ -559,7 +559,7 @@ pub const Pass = struct {
                     try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.appendSlice(p.scratch, try p.nodesOf(p.rangeAt(d.rhs)));
                 },
-                .object, .array, .template => try stack.appendSlice(p.scratch, try p.nodesOf(JsIr.inlineRange(d))),
+                .object, .array, .template, .sequence => try stack.appendSlice(p.scratch, try p.nodesOf(JsIr.inlineRange(d))),
                 .cond => {
                     try stack.append(p.scratch, @fromBackingInt(@intCast(d.lhs)));
                     try stack.append(p.scratch, @fromBackingInt(@intCast(p.word(d.rhs))));
@@ -622,7 +622,7 @@ pub const Pass = struct {
             .property => return p.add(t, at, d.lhs, (try p.clone(@fromBackingInt(@intCast(d.rhs)))).int()),
             .let_decl => return p.add(t, at, d.lhs, try p.opt(d.rhs)),
             .return_stmt => return p.add(t, at, try p.opt(d.lhs), d.rhs),
-            .assign_stmt, .index_get => {
+            .assign_stmt, .index_get, .assign => {
                 const lhs = try p.clone(@fromBackingInt(@intCast(d.lhs)));
                 const rhs = try p.clone(@fromBackingInt(@intCast(d.rhs)));
                 return p.add(t, at, lhs.int(), rhs.int());
@@ -684,7 +684,7 @@ pub const Pass = struct {
                 const args = try p.cloneRange(p.rangeAt(d.rhs));
                 return p.add(t, at, callee.int(), @backingInt(try p.b.addRecord(args)));
             },
-            .object, .array, .template => {
+            .object, .array, .template, .sequence => {
                 const r = try p.cloneRange(JsIr.inlineRange(d));
                 return p.add(t, at, @backingInt(r.start), @backingInt(r.end));
             },
