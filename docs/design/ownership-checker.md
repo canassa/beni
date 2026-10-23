@@ -1771,6 +1771,13 @@ It proves no equality between the types, makes no primitive a list, and grants
 no ownership to a captured value. A returned function whose recursive captures
 grow tests the fresh outer write alongside captured-write and unknown-call twins.
 
+*Amended 2026-10-23 (#748, integration with lazy summary blocks #814):*
+The merged block format is 31. It includes the upstream length-prefixed lazy
+summary directory and the full cast DAG table; every lazily read path and
+carried signature resolves its keys against that block table. Formats from
+either separate branch are invalidated. The earlier format numbers above
+record the amendments before integration.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
