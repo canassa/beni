@@ -6193,16 +6193,21 @@ pub const Lowerer = struct {
     }
 
     /// The temporary that stands for the read `key` names, or null when
-    /// another row of the same read was bound first (its own target, inside
-    /// or around this one, stands for it). A read whose temporary was never
-    /// placed is a miscompile, never emitted as the old access.
+    /// another row of the same read was bound first at a shorter prefix: its
+    /// target is inside this one, and lowering this node's operand reaches
+    /// it. Anything else — a read whose temporary was never placed, or one
+    /// bound at a target this node's lowering would not reach — is a
+    /// miscompile and panics; it is never emitted as the old access.
     fn hoistedRead(l: *Lowerer, key: u64, p: u32) Allocator.Error!?Node.Index {
         if (!try l.hoistsReady()) return null;
         const rows = l.hoist_prefix.get(key) orelse return null;
+        const t = l.in.ownership;
         for (rows.items) |ri| {
             const live = l.hoist_live[l.hoist_groups[ri]];
             if (live.gen != l.hoist_gen) std.debug.panic("ownership: a hoisted record read is lowered before its placement (read row {d})", .{ri});
             if (live.row == ri) return try l.ident(live.name, p);
+            if (t.reads[live.row].prefix_len >= t.reads[ri].prefix_len)
+                std.debug.panic("ownership: a hoisted record read was bound at a target its lowering does not reach (read rows {d} and {d})", .{ ri, live.row });
         }
         return null;
     }

@@ -4940,7 +4940,13 @@ const Emitter = struct {
                 .graph = e.graph(),
                 .interfaces = e.session.resolution.interfaces,
                 .dispatch = e.dispatchOf(m),
-                .ownership = e.session.checked.hoists[m.int()],
+                // The table says its demands were all accepted; the records are
+                // written in place only when this build enforces (§31.10).
+                .ownership = own: {
+                    var table = e.session.checked.hoists[m.int()];
+                    table.clean = table.clean and e.session.enforce_ownership;
+                    break :own table;
+                },
                 .types = &e.session.checked.types,
                 .specifiers = slot.specifiers,
                 .sibling = slot.sibling,

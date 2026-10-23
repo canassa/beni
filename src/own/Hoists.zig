@@ -43,8 +43,9 @@ pub const Read = struct {
 };
 
 pub const Table = struct {
-    /// Report facts alone never authorise mutation. The module must have
-    /// been checked under enforcement and all record demands accepted.
+    /// An application module whose every demand was accepted. Cached as
+    /// that fact alone: `Emit` adds whether the build enforces, and only
+    /// then may its records be written in place (§31.10).
     clean: bool = false,
     demands: []const Demand = &.{},
     reads: []const Read = &.{},

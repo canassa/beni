@@ -7458,9 +7458,11 @@ keeps nothing across renders.
    amended). `browser-inline` then emits an in-place field write for a single-module program, pinned by an
    `emit/release/inline/` golden and a page that behaves as the spread version did (#315, *Done when*).
 
-   *As built (2026-10-23, slice R6 of #315): the lowering.* A module's table is **clean** when it was checked
-   under enforcement, is an application module, and every one of its demands was accepted (`Enforce.allAccepted`);
-   core and the platforms keep their spreads until O4 (the owner's answer 3). In a clean module,
+   *As built (2026-10-23, slice R6 of #315): the lowering.* A module's table is **clean** when it is an application
+   module's and every one of its demands was accepted (`Enforce.allAccepted`); core and the platforms keep their
+   spreads until O4 (the owner's answer 3). Its records are written in place only in a build that enforces:
+   the cache entry holds the checker's fact alone and serves builds of both kinds, and `Emit` adds the build's
+   mode (`cache_test`, *whether records are written in place follows the build's mode*). In a clean module,
    `Lower.recordUpdateInPlace` writes every `record_update`: the base and the values in written order
    (`orderedExprs`), the base bound to a name, every value bound before any store when the update writes more
    than one field or has reads hoisted after its operands, then those reads (phase 1), then

@@ -5625,6 +5625,59 @@ test "a cached hoist table with a placement outside its BIR is a miss" {
     try hoistCache(.placement);
 }
 
+test "whether records are written in place follows the build's mode, not the cache's" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // An entry is shared by builds that enforce ownership and builds that do
+    // not. A module is written in place only in a build that enforces
+    // (ownership-checker.md §31.10), so the entry must not carry that
+    // decision: each warm build emits what a build of its own mode with no
+    // cache emits, in either order.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const a = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Old.beni", hoist_source);
+    const plain = [_][]const u8{ "build", "--library", "--platform=browser-tea", "--jobs=1" };
+    // `--ownership-everywhere` keeps a cache directory of its own; a chain
+    // that edits in place shares the entries of one that does not.
+    const everywhere = [_][]const u8{ "build", "--library", "--platform=browser-inline", "--jobs=1" };
+    const Build = struct {
+        /// The module's JavaScript; with `checked`, how many modules the
+        /// build checked rather than took from the cache.
+        fn js(wd: *World, arena: std.mem.Allocator, mode: []const []const u8, cache: []const u8, checked: ?u64) ![]const u8 {
+            var args: std.ArrayList([]const u8) = .empty;
+            try args.appendSlice(arena, mode);
+            try args.appendSlice(arena, &.{ cache, "--out=out", "src" });
+            const r = try runCounted(wd, arena, args.items, "trace.json");
+            try testing.expectEqual(@as(u8, 0), r.result.exit_code);
+            if (checked) |n| try testing.expectEqual(n, r.counters.checked);
+            return arena.dupe(u8, try wd.read("out/Old.mjs"));
+        }
+    };
+    const spread = try Build.js(&w, a, &plain, "--no-cache", null);
+    const in_place = try Build.js(&w, a, &everywhere, "--no-cache", null);
+    // The two modes do differ here: one spreads `p`, the other stores.
+    try testing.expect(std.mem.indexOf(u8, spread, "...") != null);
+    try testing.expect(std.mem.indexOf(u8, in_place, "...") == null);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    _ = try Build.js(&w, a, &plain, "--cache-dir=first", 1);
+    const enforcing_warm = try Build.js(&w, a, &everywhere, "--cache-dir=first", 0);
+    _ = try Build.js(&w, a, &everywhere, "--cache-dir=second", 1);
+    const plain_warm = try Build.js(&w, a, &plain, "--cache-dir=second", 0);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(in_place, enforcing_warm);
+    try testing.expectEqualStrings(spread, plain_warm);
+}
+
 test "cached full-type casts specialize in a freshly checked consumer" {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
