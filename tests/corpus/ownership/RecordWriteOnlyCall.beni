@@ -1,0 +1,46 @@
+-- ownership: a callee that only writes a field of its record argument reads
+-- none of the record (#405, `ownership-checker.md` §31.4 item 5). `changed`
+-- replaces `model.todos` and reads no field of it, so the todos the map's
+-- callback wrote in place are not used again: TodoMVC's
+-- `changed model (List.map model.todos …)` is accepted. A callee that also
+-- reads the old list, `both` with `List.length model.todos` and `firstDone`
+-- with a pattern on it, still uses the written todos after the write, and
+-- the caller's demand is rejected.
+type alias Todo =
+    id : Int
+    done : Bool
+
+
+type alias Model =
+    todos : List Todo
+    draft : String
+    count : Int
+
+
+changed : Model, List Todo → Model
+changed model todos = { model | todos = todos }
+
+
+pub toggle : Model → Model
+toggle model = changed model (List.map model.todos λt → { t | done = True })
+
+
+both : Model, List Todo → Model
+both model todos = { model | todos = todos, count = List.length model.todos }
+
+
+pub toggleBoth : Model → Model
+toggleBoth model = both model (List.map model.todos λt → { t | done = True })
+
+
+firstDone : Model, List Todo → Model
+firstDone model todos =
+    case model.todos of
+        [ t, …_ ] →
+            { model | todos = todos, count = if t.done then 1 else 0 }
+        [] →
+            { model | todos = todos }
+
+
+pub toggleFirst : Model → Model
+toggleFirst model = firstDone model (List.map model.todos λt → { t | done = True })

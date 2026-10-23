@@ -7109,6 +7109,17 @@ path or above it, and at no other path of the answer. A record held below the on
 what the host keeps of a driver's state (its fibers, its scope) does not refuse the state's update, while
 `( r, List.push hist r )` refuses the next step's write of `r` (`ownership/RecordFoldBelow`).
 
+*Revised 2026-10-23 (#405, R4 of #315).* A summary entry that only writes a record, `W{F}` with no `R` and
+no `E`, is no use of the fields it names at the call: the callee replaces them and reads none of them, as an
+update's base use does (§7.1). So a caller's holder below a written field is not used by the call, and one
+below another field is untouched, while the call's own `update` demand on the argument (§31.7) is checked as
+before. `changed model todos = ( { model | todos = todos }, … )` therefore no longer refuses the TodoMVCs'
+`changed model (List.map model.todos λt → { t | … })`, nor `commit`'s `changed closed (…)`: 27 rejected
+lines go, none appears, and no list line moves. A callee that also reads the written field (`π1.todos R`,
+`List.length model.todos`, a pattern on it) still uses it whole (`ownership/RecordWriteOnlyCall`). `W{}`, a
+write whose fields a block could not name, stays a use of the record whole. Summaries print `W{F}` where
+they printed `RW{F}` for such a parameter.
+
 ### 31.9 The errors
 
 Lines with the same position, verdict, cause and detail are one diagnostic (§28.5). The codes follow §28.6's
