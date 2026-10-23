@@ -312,7 +312,10 @@ line, `#` for a comment:
                                 (the code's two bytes, then the reason's), for
                                 what the client library refuses to send: a
                                 code outside 1000-4999, a reason that is not
-                                UTF-8; `> (socket a) close frame 03e7`
+                                UTF-8; `> (socket a) close frame 03e7`. A
+                                payload over 125 bytes, or one that is not an
+                                even count of hex digits, is a script error:
+                                the driver stops with exit 2 and names the step
     {"drop": "a"}               end the connection with no close frame
     {…, "until": "closed p2"}   any step: wait for a console line of the
                                 Worker that holds the text before the step
