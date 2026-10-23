@@ -579,7 +579,7 @@ pub fn build(b: *std.Build) void {
     b.graph.poisonCache();
     const counts_dir = installPath(b, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
     const gate_counts_dir = b.fmt("{s}-all", .{counts_dir});
-    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir);
+    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, bb.run_hash_dir);
     blackbox_step.dependOn(&gate_summary.step);
     // The suites, with their process counts.
     const suites = blackbox_suites;
@@ -603,7 +603,7 @@ pub fn build(b: *std.Build) void {
     // parts report into the same directory.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
-    const corpus_summary = runHashSummary(b, summary_exe, counts_dir);
+    const corpus_summary = runHashSummary(b, summary_exe, counts_dir, bb.run_hash_dir);
     for (std.enums.values(corpus_parts.Part)) |part| {
         // `workers/` needs Miniflare, which only `nix develop .#workers`
         // has: `test-workers` runs it, below, and the gates do not.
@@ -1167,9 +1167,11 @@ pub fn build(b: *std.Build) void {
 }
 
 /// `run-hash-summary <dir>` in the repo root, printing to the terminal.
-fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8) *std.Build.Step.Run {
+fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, cache_dir: []const u8) *std.Build.Step.Run {
     const run = b.addRunArtifact(exe);
     run.addArg(dir);
+    // Empty for no cache: the line then says that nothing was recorded.
+    run.addArg(cache_dir);
     run.setCwd(b.path("."));
     run.stdio = .inherit;
     run.has_side_effects = true;

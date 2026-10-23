@@ -2,7 +2,7 @@
 //! (`tests/blackbox/run_hash.zig`), as one line, and deletes the reports
 //! it read.
 //!
-//!   run-hash-summary <dir>
+//!   run-hash-summary <dir> <cache-dir>
 //!   run-hash-summary node-version
 //!
 //! Every test process given `BENI_RUN_HASH_REPORT=<dir>` writes its counts
@@ -14,7 +14,9 @@
 //! It says how many programs ran under Node because the cache held no
 //! verified digest for them — nothing when none did, and never a failure:
 //! the programs were verified by running them, and each that passed is in
-//! the cache now, so the next run is cheaper by itself.
+//! the cache now, so the next run is cheaper by itself. `<cache-dir>` is
+//! the cache's directory (`BENI_RUN_HASH_DIR`), empty for no cache: the
+//! line then says that nothing was recorded.
 //!
 //! `node-version` prints what `node --version` prints, or nothing when
 //! there is no `node` on `PATH`: the build runs it once and hands the text
@@ -28,7 +30,8 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const args = try init.minimal.args.toSlice(arena);
     if (args.len == 2 and std.mem.eql(u8, args[1], "node-version")) return nodeVersion(arena, io);
-    if (args.len != 2) return usage();
+    if (args.len != 3) return usage();
+    const cached = args[2].len != 0;
     var dir = Io.Dir.cwd().openDir(io, args[1], .{ .iterate = true }) catch |err| switch (err) {
         error.FileNotFound => return 0,
         else => return err,
@@ -62,7 +65,7 @@ pub fn main(init: std.process.Init) !u8 {
     const out = &writer.interface;
     const stale = counts.stale + counts.program_stale;
     if (stale != 0) try out.print(
-        "{d} of {d} program runs had no verified digest in the run-hash cache and ran under Node (corpus run/, browser/ and workers/ {d} of {d}, scenarios {d} of {d}); each that passed is cached now\n",
+        "{d} of {d} program runs had no verified digest in the run-hash cache and ran under Node (corpus run/, browser/ and workers/ {d} of {d}, scenarios {d} of {d}); {s}\n",
         .{
             stale,
             stale + counts.skipped + counts.program_skipped,
@@ -70,6 +73,7 @@ pub fn main(init: std.process.Init) !u8 {
             counts.stale + counts.skipped,
             counts.program_stale,
             counts.program_stale + counts.program_skipped,
+            if (cached) "each that passed is cached now" else "there is no cache (BENI_RUN_HASH_DIR is empty), so nothing was recorded",
         },
     );
     try out.flush();
@@ -86,7 +90,7 @@ const Counts = struct {
 };
 
 fn usage() u8 {
-    std.debug.print("usage: run-hash-summary <dir> | run-hash-summary node-version\n", .{});
+    std.debug.print("usage: run-hash-summary <dir> <cache-dir> | run-hash-summary node-version\n", .{});
     return 2;
 }
 
