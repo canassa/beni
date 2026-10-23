@@ -70,6 +70,7 @@ dispatch: []Dispatch,
 /// One per module, beside `dispatch` (checker-v2.md §36).
 type_keys: []TypeKeys.Artifact,
 plans: []SchemaPlan,
+hoists: []@import("../own/Hoists.zig").Table,
 /// Per module, written by the worker that checked it before `finish`
 /// releases its dependents: whether an error reached it — its own (an
 /// earlier phase's, which quiets it, or its check's), or any dependency's,
@@ -422,6 +423,10 @@ fn finish(d: *Driver, m: Graph.Index, result: Error!void) void {
 }
 
 fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32, recorder: *reads.Recorder, retained: *Retained) Error!void {
+    defer if (!d.options.keep_stores and d.kept.len != 0) {
+        d.kept[m.int()].release(d.gpa);
+        d.kept[m.int()] = .{ .store = .init(std.heap.page_allocator), .decl_scheme = &.{}, .decl_display = &.{}, .local_type = &.{} };
+    };
     // The key and the entry load, before the check: whichever of the two
     // paths runs, it runs with the key already finished.
     try d.claim(m, scratch, tid);
@@ -431,6 +436,12 @@ fn check(d: *Driver, m: Graph.Index, scratch: *Arena, patterns: *Arena, tid: u32
         // published would attribute the NEXT module's reads to this one.
         defer reads.end();
         try d.checkInner(m, scratch, patterns, tid, retained);
+        const hit = m.int() < d.options.cached.len and d.options.cached[m.int()] != null;
+        // Ownership errors do not poison solved types or suppress a caller's
+        // independent verdict. Taint was settled by checkInner, before this.
+        if (!hit and !d.tainted[m.int()]) {
+            if (d.options.ownership) |ctx| try @import("../own/Enforce.zig").checkModule(ctx, d, m, tid);
+        }
         try d.verifyReads(m, recorder);
     }
     // **Published before `finish(m)` releases the dependents.** `finish`

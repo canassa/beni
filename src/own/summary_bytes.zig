@@ -29,15 +29,8 @@
 //!        u32, where it stands u8 · cast, cast_level: type-table index u32;
 //!        any: scope u32 (0 all, 1 runtime); elem, env: nothing
 //! decls: u32, then per declaration: index u32, flags u8 (1: a summary
-//!        follows; 2: a value whose type may hold a list), and when a
-//!        summary follows, its length in bytes u32, the summary
+//!        follows; 2: a value whose type may hold a list), length and summary
 //! ```
-//!
-//! `open` reads the head, the module and string tables, and the offsets of
-//! the paths and the summaries; a summary is read the first time the run
-//! asks for it (`summary`), and a path the first time a summary it reads
-//! names it. A build that calls three functions of a large module reads
-//! three summaries, not the module's every one.
 //!
 //! A summary is its scalars, then each component's entries. Sets — `uses`,
 //! `res`, `supply`, `funs`, `xreq` and a condition's atoms — are written in
@@ -48,13 +41,19 @@
 //! carried lambdas, which a provenance names by index, and a carried
 //! lambda's bindings — keep theirs.
 //!
-//! Little-endian, read with bounds checks: a block whose head, tables or
-//! directory do not read is `error.Bad`, which the pass treats as no block —
-//! the module is then walked if it can be, and is otherwise a callee with no
-//! summary, never a wrong one (§16.4's last paragraph). A summary that does
-//! not read, or names a path that does not, is no summary for its
-//! declaration, by the same rule.
-
+//! Little-endian, read with bounds checks: a block that does not read is
+//! `error.Bad`, which the pass treats as no block — the module is then
+//! walked if it can be, and is otherwise a callee with no summary, never a
+//! wrong one (§16.4's last paragraph).
+//! The interface's public variant has magic `BENIOWP\x00`. Its rows name
+//! public values and schema namespaces by name, shared provenances name the
+//! module and value, constructors name their type and index within it, and
+//! carried classes number their captures locally. An opaque path uses wire
+//! step 255: module, type name, slot number. The final table lists every
+//! exported opaque type's slots in definition order, with its container bits.
+//! The cache-only variant also carries an ownership-clean certificate byte
+//! after the version; it is not part of the public interface hash.
+//!
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 const Ownership = @import("Ownership.zig");
@@ -113,7 +112,21 @@ pub const magic = "BENIOWN\x00";
 /// 31 integrates those keys with the lazy summary directory.
 /// 32 separates single uncertain views from spatial repeated reads.
 /// 33 preserves occurrence conditions before cast read normalization.
-pub const version: u32 = 33;
+/// 34 adds the clean-report certificate and public rows, opaque slots and aliases.
+pub const version: u32 = 34;
+
+/// A cache hit may skip enforcement only if its previous report was clean.
+/// Other platforms also compute reports, but can cache a rejected module.
+pub fn clean(bytes: []const u8) bool {
+    return bytes.len > 12 and std.mem.eql(u8, bytes[0..8], magic) and
+        std.mem.readInt(u32, bytes[8..12], .little) == version and bytes[12] == 1;
+}
+
+pub fn certify(bytes: []u8, report: Ownership.ModuleReport) void {
+    if (report.limits.len != 0) return;
+    for (report.demands) |d| if (!d.record and d.verdict != .accepted) return;
+    bytes[12] = 1;
+}
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -125,6 +138,12 @@ pub const Row = struct {
     holds_list: bool = false,
 };
 
+/// What `read` gives: per declaration of the module, its summary, and
+/// whether it is a value that may hold a list.
+pub const AliasRow = struct { decl: u32, target: Ownership.Alias, sum: *const Summary };
+
+pub const AliasValue = struct { target: Ownership.Alias, sum: *const Summary };
+
 // ---------------------------------------------------------------------------
 // Writing
 // ---------------------------------------------------------------------------
@@ -133,6 +152,12 @@ const Writer = struct {
     o: *Ownership,
     gpa: Allocator,
     out: std.ArrayList(u8) = .empty,
+    public_module: ?u32 = null,
+    env: []const Carried.Bind = &.{},
+    fresh_index: std.ArrayList(u32) = .empty,
+    fresh_next: [2]u32 = .{ 1, 500 },
+    class_index: []const u32 = &.{},
+    neutral_fresh: bool = false,
     /// Path id → index in the sorted table.
     path_index: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     /// Module index → index in the sorted table.
@@ -140,6 +165,16 @@ const Writer = struct {
     /// Field symbol → index in the sorted table.
     string_index: std.AutoHashMapUnmanaged(u32, u32) = .empty,
     cast_index: []u32 = &.{},
+
+    fn freshName(w: *const Writer, raw: u32) u32 {
+        if (raw < w.fresh_index.items.len and w.fresh_index.items[raw] != Ownership.none) return w.fresh_index.items[raw];
+        return raw;
+    }
+
+    fn setFresh(w: *Writer, arena: Allocator, raw: u32, name: u32) Allocator.Error!void {
+        if (raw >= w.fresh_index.items.len) try w.fresh_index.appendNTimes(arena, Ownership.none, raw + 1 - w.fresh_index.items.len);
+        w.fresh_index.items[raw] = name;
+    }
 
     fn int(w: *Writer, v: u32) Allocator.Error!void {
         var b: [4]u8 = undefined;
@@ -160,10 +195,19 @@ const Writer = struct {
 /// The block of module `m`: `rows` in declaration order. The caller owns
 /// the bytes.
 pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![]u8 {
+    return writeRows(o, gpa, rows, null, &.{});
+}
+
+/// The public rows are in interface name order, never BIR declaration order.
+pub fn writePublic(o: *Ownership, gpa: Allocator, m: u32, rows: []const Row, aliases: []const AliasRow) Allocator.Error![]u8 {
+    return writeRows(o, gpa, rows, m, aliases);
+}
+
+fn writeRows(o: *Ownership, gpa: Allocator, rows: []const Row, public_module: ?u32, aliases: []const AliasRow) Allocator.Error![]u8 {
     var arena_state: std.heap.ArenaAllocator = .init(gpa);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
-    var w: Writer = .{ .o = o, .gpa = gpa };
+    var w: Writer = .{ .o = o, .gpa = gpa, .public_module = public_module };
     errdefer w.out.deinit(gpa);
 
     // Everything the summaries name, first: paths, and through them and the
@@ -188,18 +232,30 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         seen_path: *std.AutoHashMapUnmanaged(u32, void),
         seen_module: *std.AutoHashMapUnmanaged(u32, void),
         seen_string: *std.AutoHashMapUnmanaged(u32, void),
+        public: bool,
 
         fn path(c: *@This(), p: u32) Allocator.Error!void {
             if ((try c.seen_path.getOrPut(c.arena, p)).found_existing) return;
             try c.paths.append(c.arena, p);
             var buf: [Ownership.k_limit + 1]Ownership.Step = undefined;
-            for (c.o.steps(p, &buf)) |s| switch (s.kind) {
-                .field => if (!(try c.seen_string.getOrPut(c.arena, s.arg)).found_existing) try c.strings.append(c.arena, s.arg),
-                .ctor => try c.module(c.o.ctorKey(c.o.stepCtor(s.arg)).module),
-                .level => if (c.o.markerType(s.arg) != Ownership.fn_type) try c.module(@intCast(c.o.markerType(s.arg) >> 32)),
-                .cast, .cast_level => try c.cast(s.arg),
-                else => {},
-            };
+            const ss = c.o.steps(p, &buf);
+            var si: usize = 0;
+            while (si < ss.len) {
+                if (c.public) if (try c.o.opaquePrefix(ss[si..])) |slot| {
+                    try c.module(slot.module);
+                    si += slot.len;
+                    continue;
+                };
+                const s = ss[si];
+                si += 1;
+                switch (s.kind) {
+                    .field => if (!(try c.seen_string.getOrPut(c.arena, s.arg)).found_existing) try c.strings.append(c.arena, s.arg),
+                    .ctor => try c.module(c.o.ctorKey(c.o.stepCtor(s.arg)).module),
+                    .level => if (c.o.markerType(s.arg) != Ownership.fn_type) try c.module(@intCast(c.o.markerType(s.arg) >> 32)),
+                    .cast, .cast_level => try c.cast(s.arg),
+                    else => {},
+                }
+            }
         }
 
         fn cast(c: *@This(), id: u32) Allocator.Error!void {
@@ -244,7 +300,8 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             if (s.cast_signature != Ownership.none) try c.cast(s.cast_signature);
             for (s.uses) |u| {
                 try c.path(u.path);
-                for (u.fields) |f| if (!(try c.seen_string.getOrPut(c.arena, f)).found_existing) try c.strings.append(c.arena, f);
+                if (!(c.public and (try c.o.hiddenFields(u.path, u.fields)) != null))
+                    for (u.fields) |f| if (!(try c.seen_string.getOrPut(c.arena, f)).found_existing) try c.strings.append(c.arena, f);
             }
             for (s.res) |r| try c.res(r);
             for (s.objs) |r| try c.res(r);
@@ -277,9 +334,14 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         .seen_path = &seen_path,
         .seen_module = &seen_module,
         .seen_string = &seen_string,
+        .public = public_module != null,
     };
     try collect.path(Ownership.eps);
     for (rows) |r| if (r.sum) |s| try collect.summary(s);
+    for (aliases) |alias| {
+        try collect.module(alias.target.module);
+        try collect.summary(alias.sum);
+    }
 
     // The tables, sorted by content.
     const SortModules = struct {
@@ -340,8 +402,9 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
     std.mem.sort(u32, paths.items, SortPaths{ .key_of = &key_of }, SortPaths.less);
     for (paths.items, 0..) |p, i| try w.path_index.put(arena, p, @intCast(i));
 
-    try w.out.appendSlice(gpa, magic);
+    try w.out.appendSlice(gpa, if (public_module != null) "BENIOWP\x00" else magic);
     try w.int(version);
+    if (public_module == null) try w.byte(0);
     try w.int(@intCast(modules.items.len));
     for (modules.items) |m| {
         try w.byte(@backingInt(o.in.packages[m]));
@@ -361,15 +424,37 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
     try w.int(count);
     for (rows) |r| {
         if (r.sum == null and !r.holds_list) continue;
-        try w.int(r.decl);
+        if (public_module) |m| try w.text(o.in.interner.slice(o.in.birs[m].symbol(o.in.birs[m].decls[r.decl].name))) else try w.int(r.decl);
         try w.byte(@as(u8, if (r.sum != null) 1 else 0) | @as(u8, if (r.holds_list) 2 else 0));
-        if (r.sum) |s| {
-            // Its length, so a reader can find the summary it wants
-            // without reading the ones before it.
-            const at = w.out.items.len;
-            try w.int(0);
-            try writeSummary(&w, arena, s);
-            std.mem.writeInt(u32, w.out.items[at..][0..4], @intCast(w.out.items.len - at - 4), .little);
+        if (r.sum) |sum| try writeSizedSummary(&w, arena, sum);
+    }
+    if (public_module) |m| {
+        const iface = &o.in.interfaces[m];
+        var n: u32 = 0;
+        for (iface.types) |t| if (t.is_opaque) {
+            n += 1;
+        };
+        try w.int(n);
+        for (iface.types, 0..) |t, ti| {
+            if (!t.is_opaque) continue;
+            try w.text(o.in.interner.slice(iface.symbol(t.name)));
+            const d = o.in.provenance[m].typeDecl(ti).?;
+            const slots = try o.opaqueSlots(m, d.int());
+            try w.int(@intCast(slots.len));
+            for (slots) |slot| try w.byte(@intFromBool(slot.container));
+        }
+    }
+    if (public_module) |m| {
+        try w.int(@intCast(aliases.len));
+        for (aliases) |alias| {
+            const bir = o.in.birs[m];
+            try w.text(o.in.interner.slice(bir.symbol(bir.decls[alias.decl].name)));
+            try w.int(w.module_index.get(alias.target.module).?);
+            const target_bir = o.in.birs[alias.target.module];
+            try w.text(o.in.interner.slice(target_bir.symbol(target_bir.decls[alias.target.decl].name)));
+            try w.int(alias.target.hops);
+            try w.byte(@intFromBool(alias.target.callable != null));
+            try writeSizedSummary(&w, arena, alias.sum);
         }
     }
     return w.out.toOwnedSlice(gpa);
@@ -381,7 +466,21 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
     const s = o.steps(p, &buf);
     var out: std.ArrayList(u8) = .empty;
     try out.append(arena, @intCast(s.len));
-    for (s) |st| {
+    var si: usize = 0;
+    var count: u8 = 0;
+    while (si < s.len) {
+        count += 1;
+        if (w.public_module != null) if (try o.opaquePrefix(s[si..])) |slot| {
+            try out.append(arena, 255);
+            try appendInt(arena, &out, w.module_index.get(slot.module).?);
+            const bir = o.in.birs[slot.module];
+            try appendText(arena, &out, o.in.interner.slice(bir.symbol(bir.decls[slot.decl].name)));
+            try appendInt(arena, &out, slot.slot);
+            si += slot.len;
+            continue;
+        };
+        const st = s[si];
+        si += 1;
         try out.append(arena, @backingInt(st.kind));
         switch (st.kind) {
             .field => try appendInt(arena, &out, w.string_index.get(st.arg).?),
@@ -391,20 +490,39 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
             .ctor => {
                 const key = o.ctorKey(o.stepCtor(st.arg));
                 try appendInt(arena, &out, w.module_index.get(key.module).?);
-                try appendInt(arena, &out, key.index);
+                if (w.public_module != null and key.index < o.in.birs[key.module].ctors.len) {
+                    const bir = o.in.birs[key.module];
+                    const c = bir.ctors[key.index];
+                    const d = bir.decl(c.decl);
+                    try appendText(arena, &out, o.in.interner.slice(bir.symbol(d.name)));
+                    try appendInt(arena, &out, key.index - d.ctors_start);
+                } else if (w.public_module != null) {
+                    const key_name = try o.publicSchemaCtor(key.module, key.index);
+                    try appendText(arena, &out, key_name.name);
+                    try appendInt(arena, &out, key_name.index);
+                } else try appendInt(arena, &out, key.index);
                 try appendInt(arena, &out, o.stepField(st.arg));
             },
             .level => {
                 const t = o.markerType(st.arg);
                 // F1's marker of every function type names no module.
                 try appendInt(arena, &out, if (t == Ownership.fn_type) std.math.maxInt(u32) else w.module_index.get(@intCast(t >> 32)).?);
-                try appendInt(arena, &out, @truncate(t));
+                if (w.public_module != null and t != Ownership.fn_type) {
+                    const bir = o.in.birs[@intCast(t >> 32)];
+                    try appendText(arena, &out, o.in.interner.slice(bir.symbol(bir.decls[@as(u32, @truncate(t))].name)));
+                } else try appendInt(arena, &out, @truncate(t));
                 try out.append(arena, @backingInt(o.markerKind(st.arg)));
             },
             .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
     }
+    out.items[0] = count;
     return out.items;
+}
+
+fn appendText(a: Allocator, out: *std.ArrayList(u8), text: []const u8) Allocator.Error!void {
+    try appendInt(a, out, @intCast(text.len));
+    try out.appendSlice(a, text);
 }
 
 fn appendInt(a: Allocator, out: *std.ArrayList(u8), v: u32) Allocator.Error!void {
@@ -437,7 +555,7 @@ const ProvKey = struct {
 fn provKey(w: *const Writer, p: Prov) ProvKey {
     return .{
         .kind = @backingInt(p.kind),
-        .a = if (p.kind == .shared) w.module_index.get(p.a).? else p.a,
+        .a = if (p.kind == .klass and p.a < w.class_index.len) w.class_index[p.a] else if (p.kind == .shared) w.module_index.get(p.a).? else if (w.public_module != null and (p.kind == .fresh or p.kind == .esc)) if (w.neutral_fresh) @as(u32, if (p.a >= 500 and p.a < 1000) 500 else 0) else w.freshName(p.a) else p.a,
         .b = p.b,
         .path = w.path_index.get(p.path).?,
         .taken = p.taken,
@@ -449,14 +567,28 @@ fn provKey(w: *const Writer, p: Prov) ProvKey {
 fn writeProv(w: *Writer, p: Prov) Allocator.Error!void {
     const k = provKey(w, p);
     try w.byte(k.kind);
-    try w.int(k.a);
-    try w.int(k.b);
+    var a = k.a;
+    if (w.public_module != null and p.kind == .env) {
+        for (w.env, 0..) |b, i| if (b.local == p.a) {
+            a = @intCast(i);
+            break;
+        };
+    }
+    try w.int(a);
+    if (w.public_module != null and p.kind == .shared) {
+        const bir = w.o.in.birs[p.a];
+        try w.text(w.o.in.interner.slice(bir.symbol(bir.decls[p.b].name)));
+    } else try w.int(k.b);
     try w.int(k.path);
     // Bit 1: record object alone; bit 2: containing-value condition.
     try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1 | @as(u8, @intFromBool(k.condition_only)) << 2);
 }
 
 fn provLess(w: *const Writer, p: Prov, q: Prov) bool {
+    if (w.public_module != null and p.kind == .shared and q.kind == .shared and p.a == q.a and p.b != q.b) {
+        const bir = w.o.in.birs[p.a];
+        return std.mem.lessThan(u8, w.o.in.interner.slice(bir.symbol(bir.decls[p.b].name)), w.o.in.interner.slice(bir.symbol(bir.decls[q.b].name)));
+    }
     return provKey(w, p).less(provKey(w, q));
 }
 
@@ -494,17 +626,25 @@ fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
         }
         return x.groups.len < y.groups.len;
     }
-    const xa = provKey(w, x.a);
-    const ya = provKey(w, y.a);
-    if (xa.less(ya) or ya.less(xa)) return xa.less(ya);
-    return provKey(w, x.b).less(provKey(w, y.b));
+    if (provLess(w, x.a, y.a) or provLess(w, y.a, x.a)) return provLess(w, x.a, y.a);
+    return provLess(w, x.b, y.b);
+}
+
+fn canonicalPair(w: *const Writer, x: XAtom) XAtom {
+    if ((x.kind == .sep or x.kind == .sep_spine) and provLess(w, x.b, x.a)) {
+        var out = x;
+        out.a = x.b;
+        out.b = x.a;
+        return out;
+    }
+    return x;
 }
 
 fn writeAtoms(w: *Writer, arena: Allocator, atoms: []const XAtom) Allocator.Error!void {
     const sorted = try arena.dupe(XAtom, atoms);
-    for (sorted) |*a| if (a.isApart()) {
-        a.* = try canonicalApart(w, arena, a.*);
-    };
+    for (sorted) |*a| {
+        a.* = if (a.isApart()) try canonicalApart(w, arena, a.*) else canonicalPair(w, a.*);
+    }
     std.mem.sort(XAtom, sorted, w, atomLess);
     try w.int(@intCast(sorted.len));
     for (sorted) |a| {
@@ -538,7 +678,7 @@ fn writeSupply(w: *Writer, arena: Allocator, items: []const SupplyEntry) Allocat
             const px = cx.w.path_index.get(x.path).?;
             const py = cx.w.path_index.get(y.path).?;
             if (px != py) return px < py;
-            return provKey(cx.w, x.prov).less(provKey(cx.w, y.prov));
+            return provLess(cx.w, x.prov, y.prov);
         }
     };
     std.mem.sort(SupplyEntry, supply, SupCx{ .w = w }, SupCx.less);
@@ -564,7 +704,7 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
                 const px = cx.w.path_index.get(x.path).?;
                 const py = cx.w.path_index.get(y.path).?;
                 if (px != py) return px < py;
-                return provKey(cx.w, x.prov).less(provKey(cx.w, y.prov));
+                return provLess(cx.w, x.prov, y.prov);
             }
         };
         std.mem.sort(ResEntry, list, Cx{ .w = w }, Cx.less);
@@ -580,8 +720,197 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
     }
 }
 
+/// Allocation numbers are alpha names. Read-off orders paths by local ids;
+/// a worker and the serial dump can therefore number the same conditions
+/// differently. Number them by the public paths before writing any set.
+fn numberFresh(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error!void {
+    const Label = struct { raw: u32, occurrences: std.ArrayList([]const u8) = .empty, key: []const u8 = &.{} };
+    const N = struct {
+        w: *Writer,
+        a: Allocator,
+        labels: std.ArrayList(Label) = .empty,
+        by_raw: std.ArrayList(u32) = .empty,
+        saw_zero: bool = false,
+
+        fn named(p: Prov) bool {
+            return p.kind == .fresh or p.kind == .esc;
+        }
+        fn names(xs: []const XAtom) bool {
+            for (xs) |x| {
+                if (x.isApart()) {
+                    for (x.groups) |group| for (group) |p| if (named(p)) return true;
+                } else if (named(x.a) or named(x.b)) return true;
+            }
+            return false;
+        }
+        fn entryNames(p: Prov, xc: XSum, sc: XSum, rxc: XSum) bool {
+            return named(p) or names(xc.atoms) or names(sc.atoms) or names(rxc.atoms);
+        }
+
+        fn descriptor(n: *@This(), context: []const u8, role: u32) Allocator.Error!Writer {
+            var d = n.w.*;
+            d.out = .empty;
+            d.gpa = n.a;
+            d.neutral_fresh = true;
+            try d.int(role);
+            try d.int(@intCast(context.len));
+            try d.out.appendSlice(n.a, context);
+            return d;
+        }
+        fn note(n: *@This(), p: Prov, context: []const u8) Allocator.Error!void {
+            if (p.kind != .fresh and p.kind != .esc) return;
+            if (p.a == 0) {
+                n.saw_zero = true;
+                return;
+            }
+            if (p.a >= n.by_raw.items.len) try n.by_raw.appendNTimes(n.a, Ownership.none, p.a + 1 - n.by_raw.items.len);
+            if (n.by_raw.items[p.a] == Ownership.none) {
+                n.by_raw.items[p.a] = @intCast(n.labels.items.len);
+                try n.labels.append(n.a, .{ .raw = p.a });
+            }
+            try n.labels.items[n.by_raw.items[p.a]].occurrences.append(n.a, context);
+        }
+        fn atoms(n: *@This(), xs: []const XAtom, context: []const u8, role: u32) Allocator.Error!void {
+            for (xs) |x| {
+                // Parameter-only atoms contribute no allocation occurrence.
+                // In particular, do not copy their containing entry's full
+                // condition for every member of a large conjunction.
+                if (!names(&.{x})) continue;
+                var d = try n.descriptor(context, role);
+                try writeAtoms(&d, n.a, &.{x});
+                if (x.isApart()) {
+                    for (x.groups) |group| {
+                        var gd = try n.descriptor(d.out.items, 0);
+                        // An apart's groups and members are sets.
+                        const ps = try n.a.dupe(Prov, group);
+                        std.mem.sort(Prov, ps, &gd, provLess);
+                        for (ps) |p| try writeProv(&gd, p);
+                        for (group) |p| try n.note(p, gd.out.items);
+                    }
+                } else {
+                    const symmetric = x.kind == .sep or x.kind == .sep_spine;
+                    var left = try n.descriptor(d.out.items, 0);
+                    var right = try n.descriptor(d.out.items, if (symmetric) 0 else 1);
+                    try writeProv(&left, x.a);
+                    try writeProv(&right, x.b);
+                    try n.note(x.a, left.out.items);
+                    try n.note(x.b, right.out.items);
+                }
+            }
+        }
+        fn entry(n: *@This(), p: Prov, xc: XSum, sc: XSum, rxc: XSum, context: []const u8) Allocator.Error!void {
+            if (named(p)) {
+                const d = try n.descriptor(context, 0);
+                try n.note(p, d.out.items);
+            }
+            try n.atoms(xc.atoms, context, 1);
+            try n.atoms(sc.atoms, context, 2);
+            try n.atoms(rxc.atoms, context, 3);
+        }
+        fn res(n: *@This(), items: []const ResEntry, context: []const u8, role: u32) Allocator.Error!void {
+            for (items) |r| {
+                if (!entryNames(r.prov, r.xc, r.sc, r.rxc)) continue;
+                var d = try n.descriptor(context, role);
+                try writeRes(&d, n.a, &.{r}, false);
+                try n.entry(r.prov, r.xc, r.sc, r.rxc, d.out.items);
+            }
+        }
+    };
+    var n: N = .{ .w = w, .a = arena };
+    try n.res(s.res, &.{}, 0);
+    try n.res(s.objs, &.{}, 1);
+    for ([_][]const SupplyEntry{ s.supply, s.rsupply }, 0..) |items, role| for (items) |e| {
+        if (!N.entryNames(e.prov, e.xc, e.sc, e.rxc)) continue;
+        var d = try n.descriptor(&.{}, @intCast(2 + role));
+        try writeSupply(&d, arena, &.{e});
+        try n.entry(e.prov, e.xc, e.sc, e.rxc, d.out.items);
+    };
+    try n.atoms(s.xreq, &.{}, 4);
+    try n.atoms(s.rxreq, &.{}, 5);
+    for (s.klasses, 0..) |k, ki| for (k.binds, 0..) |bind, bi| {
+        var d = try n.descriptor(&.{}, 6);
+        try d.int(w.class_index[ki]);
+        try d.int(@intCast(bi));
+        try d.int(w.path_index.get(bind.path).?);
+        try n.res(bind.provs, d.out.items, 0);
+    };
+    const Less = struct {
+        fn bytes(_: void, x: []const u8, y: []const u8) bool {
+            return std.mem.lessThan(u8, x, y);
+        }
+        fn label(_: void, x: Label, y: Label) bool {
+            return std.mem.lessThan(u8, x.key, y.key);
+        }
+    };
+    for (n.labels.items) |*label| {
+        std.mem.sort([]const u8, label.occurrences.items, {}, Less.bytes);
+        var d = try n.descriptor(&.{}, 0);
+        for (label.occurrences.items) |occurrence| {
+            try d.int(@intCast(occurrence.len));
+            try d.out.appendSlice(arena, occurrence);
+        }
+        label.key = d.out.items;
+    }
+    std.mem.sort(Label, n.labels.items, {}, Less.label);
+    // Instantiation maps the unnumbered fresh zero to cell one. Keep that
+    // existing anchor while alpha-renaming the remaining allocation names.
+    w.fresh_next[0] = if (n.saw_zero) 2 else 1;
+    for (n.labels.items) |label| {
+        if (n.saw_zero and label.raw == 1) {
+            try w.setFresh(arena, 1, 1);
+            continue;
+        }
+        const space: usize = @intFromBool(label.raw >= 500 and label.raw < 1000);
+        try w.setFresh(arena, label.raw, w.fresh_next[space]);
+        w.fresh_next[space] += 1;
+        if (space == 0 and w.fresh_next[0] == 500) w.fresh_next[0] = 1000;
+    }
+}
+
+fn writeSizedSummary(w: *Writer, arena: Allocator, sum: *const Summary) Allocator.Error!void {
+    const at = w.out.items.len;
+    try w.int(0);
+    try writeSummary(w, arena, sum);
+    std.mem.writeInt(u32, w.out.items[at..][0..4], @intCast(w.out.items.len - at - 4), .little);
+}
+
 fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error!void {
     std.debug.assert(s.cast_grown == 0);
+    const saved_index = w.fresh_index;
+    const saved_next = w.fresh_next;
+    const saved_classes = w.class_index;
+    var class_order: []u32 = &.{};
+    defer {
+        w.fresh_index = saved_index;
+        w.fresh_next = saved_next;
+        w.class_index = saved_classes;
+    }
+    if (w.public_module != null) {
+        const indices = try arena.alloc(u32, s.klasses.len);
+        @memset(indices, Ownership.none);
+        class_order = try arena.alloc(u32, s.klasses.len);
+        const ordered = try arena.dupe(ResEntry, s.res);
+        std.mem.sort(ResEntry, ordered, w, struct {
+            fn less(writer: *const Writer, x: ResEntry, y: ResEntry) bool {
+                return writer.path_index.get(x.path).? < writer.path_index.get(y.path).?;
+            }
+        }.less);
+        var next: u32 = 0;
+        for (ordered) |r| if (r.prov.kind == .klass and r.prov.a < indices.len and indices[r.prov.a] == Ownership.none) {
+            indices[r.prov.a] = next;
+            class_order[next] = r.prov.a;
+            next += 1;
+        };
+        for (indices, 0..) |*index, i| if (index.* == Ownership.none) {
+            index.* = next;
+            class_order[next] = @intCast(i);
+            next += 1;
+        };
+        w.class_index = indices;
+        w.fresh_index = .empty;
+        w.fresh_next = .{ 1, 500 };
+        try numberFresh(w, arena, s);
+    }
     try w.int(s.params);
     try w.int(if (s.cast_signature == Ownership.none) 0 else w.cast_index[s.cast_signature] + 1);
     try w.byte(@backingInt(s.limit));
@@ -605,9 +934,11 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
         try w.byte(@truncate(u.bits));
         try w.byte(@truncate(u.bits >> 8));
         try w.byte(@backingInt(u.extent));
+        const hidden = if (w.public_module != null) try w.o.hiddenFields(u.path, u.fields) else null;
+        if (w.public_module != null) try w.byte(@intFromBool(hidden != null));
         try w.int(@intCast(u.fields.len));
         const fields = try arena.alloc(u32, u.fields.len);
-        for (u.fields, fields) |f, *x| x.* = w.string_index.get(f).?;
+        for (u.fields, fields) |f, *x| x.* = if (hidden) |names| @intCast(std.mem.indexOfScalar(u32, names, f).?) else w.string_index.get(f).?;
         std.mem.sort(u32, fields, {}, std.sort.asc(u32));
         for (fields) |f| try w.int(f);
     }
@@ -646,11 +977,20 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     }
 
     try w.int(@intCast(s.klasses.len));
-    for (s.klasses) |k| {
+    for (0..s.klasses.len) |ki| {
+        const k = s.klasses[if (w.public_module != null) class_order[ki] else ki];
+        const env = w.env;
+        w.env = k.binds;
         try writeSummary(w, arena, k.sum);
+        w.env = env;
         try w.int(@intCast(k.binds.len));
-        for (k.binds) |b| {
-            try w.int(b.local);
+        for (k.binds, 0..) |b, bi| {
+            var local: u32 = b.local;
+            if (w.public_module != null) for (k.binds[0 .. bi + 1], 0..) |other, oi| if (other.local == b.local) {
+                local = @intCast(oi);
+                break;
+            };
+            try w.int(local);
             try w.int(w.path_index.get(b.path).?);
             try writeRes(w, arena, b.provs, false);
         }
@@ -739,7 +1079,18 @@ const unread = std.math.maxInt(u32);
 /// summaries are read one declaration at a time, the first time the run
 /// asks for one (`summary`), and kept. Per declaration, whether it is a
 /// value that may hold a list is read at once.
+const AliasEntry = struct {
+    target: Ownership.Alias,
+    callable: bool,
+    at: u32,
+    end: u32,
+    state: u8 = 0,
+    sum: ?*const Summary = null,
+};
+
 pub const Block = struct {
+    public: bool = false,
+    aliases: []?AliasEntry,
     bytes: []const u8,
     modules: []u32,
     strings: []u32,
@@ -767,6 +1118,7 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
     const decls = o.in.birs[m].decls.len;
     var block: Block = .{
         .bytes = bytes,
+        .aliases = try arena.alloc(?AliasEntry, decls),
         .modules = &.{},
         .strings = &.{},
         .casts = &.{},
@@ -778,15 +1130,19 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         .state = try arena.alloc(u8, decls),
         .holds_list = try arena.alloc(bool, decls),
     };
+    @memset(block.aliases, null);
     @memset(block.sum_at, unread);
     @memset(block.sum_end, 0);
     @memset(block.sums, null);
     @memset(block.state, 0);
     @memset(block.holds_list, false);
     var r: Reader = .{ .o = o, .arena = arena, .bytes = bytes, .block = &block };
-    if (bytes.len < magic.len or !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Bad;
+    if (bytes.len < magic.len) return error.Bad;
+    block.public = std.mem.eql(u8, bytes[0..magic.len], "BENIOWP\x00");
+    if (!block.public and !std.mem.eql(u8, bytes[0..magic.len], magic)) return error.Bad;
     r.at = magic.len;
     if (try r.int() != version) return error.Bad;
+    if (!block.public and try r.byte() > 1) return error.Bad;
 
     const n_modules = try r.count(5);
     block.modules = try arena.alloc(u32, n_modules);
@@ -815,17 +1171,34 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
         slot.* = @intCast(r.at);
         const n_steps = try r.byte();
         if (n_steps > Ownership.k_limit) return error.Bad;
-        for (0..n_steps) |_| try r.skip(switch (try r.enumOf(StepKind)) {
-            .field, .tuple, .cast, .cast_level, .any => 4,
-            .ctor => 12,
-            .level => 9,
-            .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
-        });
+        for (0..n_steps) |_| {
+            const tag = try r.byte();
+            if (block.public and tag == 255) {
+                try r.skip(4);
+                _ = try r.text();
+                try r.skip(4);
+                continue;
+            }
+            switch (std.enums.fromInt(StepKind, tag) orelse return error.Bad) {
+                .field, .tuple, .cast, .cast_level, .any => try r.skip(4),
+                .ctor => {
+                    try r.skip(4);
+                    if (block.public) _ = try r.text();
+                    try r.skip(8);
+                },
+                .level => {
+                    const module = try r.int();
+                    if (block.public and module != std.math.maxInt(u32)) _ = try r.text() else try r.skip(4);
+                    try r.skip(1);
+                },
+                .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
+            }
+        }
     }
 
     const n_rows = try r.count(5);
     for (0..n_rows) |_| {
-        const d = try r.int();
+        const d = if (block.public) o.declNamed(m, try r.text()) orelse return error.Bad else try r.int();
         if (d >= decls) return error.Bad;
         const flags = try r.byte();
         if (flags > 3) return error.Bad;
@@ -838,6 +1211,36 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
             block.sum_end[d] = @intCast(r.at);
         } else {
             block.sum_at[d] = unread;
+        }
+    }
+    if (block.public) {
+        const n = try r.count(8);
+        for (0..n) |_| {
+            const d = o.declNamed(m, try r.text()) orelse return error.Bad;
+            const slots = try o.opaqueSlots(m, d);
+            if (try r.count(1) != slots.len) return error.Bad;
+            for (slots) |slot| if (try r.bool_() != slot.container) return error.Bad;
+        }
+    }
+    if (block.public) {
+        const n = try r.count(16);
+        for (0..n) |_| {
+            const d = o.declNamed(m, try r.text()) orelse return error.Bad;
+            const tm = try r.module();
+            const td = o.declNamed(tm, try r.text()) orelse return error.Bad;
+            const hops = try r.int();
+            if (hops == 0 or hops >= 8) return error.Bad;
+            const callable = try r.bool_();
+            if (block.aliases[d] != null) return error.Bad;
+            const len = try r.int();
+            const at = r.at;
+            try r.skip(len);
+            block.aliases[d] = .{
+                .target = .{ .module = tm, .decl = td, .hops = hops },
+                .callable = callable,
+                .at = @intCast(at),
+                .end = @intCast(r.at),
+            };
         }
     }
     if (r.at != bytes.len) return error.Bad;
@@ -867,13 +1270,46 @@ pub fn summary(o: *Ownership, arena: Allocator, b: *Block, d: u32) Allocator.Err
     return &b.sums[d].?;
 }
 
+pub fn aliasSummary(o: *Ownership, arena: Allocator, b: *Block, d: u32) Allocator.Error!?AliasValue {
+    if (d >= b.aliases.len) return null;
+    const entry = if (b.aliases[d]) |*e| e else return null;
+    if (entry.state == 2) return null;
+    if (entry.state == 0) {
+        entry.state = 2;
+        var r: Reader = .{ .o = o, .arena = arena, .bytes = b.bytes[0..entry.end], .at = entry.at, .block = b };
+        const value = readSummary(&r, 0) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            error.Bad => return null,
+        };
+        if (r.at != r.bytes.len) return null;
+        const sum = try arena.create(Summary);
+        sum.* = value;
+        entry.sum = sum;
+        if (entry.callable) entry.target.callable = sum;
+        try o.installAlias(entry.target, sum);
+        entry.state = 1;
+    }
+    return .{ .target = entry.target, .sum = entry.sum.? };
+}
+
 /// The path at offset `at` of `b`'s table, interned into `o`'s table.
 fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
     var r: Reader = .{ .o = o, .arena = undefined, .bytes = b.bytes, .at = at, .block = b };
     const n_steps = try r.byte();
     var id: u32 = Ownership.eps;
     for (0..n_steps) |_| {
-        const kind = try r.enumOf(StepKind);
+        const tag = try r.byte();
+        if (b.public and tag == 255) {
+            const sm = try r.module();
+            const sd = o.declNamed(sm, try r.text()) orelse return error.Bad;
+            const slots = try o.opaqueSlots(sm, sd);
+            const k = try r.int();
+            if (k >= slots.len) return error.Bad;
+            var buf: [Ownership.k_limit + 1]Ownership.Step = undefined;
+            for (o.steps(slots[k].path, &buf)) |step| id = try o.rawChild(id, step.kind, step.arg);
+            continue;
+        }
+        const kind = std.enums.fromInt(StepKind, tag) orelse return error.Bad;
         const arg: u32 = switch (kind) {
             .field => blk: {
                 const i = try r.int();
@@ -893,7 +1329,16 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
             },
             .ctor => blk: {
                 const cm = try r.module();
-                const ci = try r.int();
+                const ci = if (b.public) named: {
+                    const name = try r.text();
+                    const relative = try r.int();
+                    const decl = o.declNamed(cm, name) orelse return error.Bad;
+                    const bir = o.in.birs[cm];
+                    const d = bir.decls[decl];
+                    if (d.kind == .schema) break :named (try o.publicSchemaCtorIndex(cm, decl, relative)) orelse return error.Bad;
+                    if (relative >= d.ctors_end - d.ctors_start) return error.Bad;
+                    break :named d.ctors_start + relative;
+                } else try r.int();
                 const k = try r.int();
                 const arity = (try o.ctorArity(cm, ci)) orelse return error.Bad;
                 if (k >= arity) return error.Bad;
@@ -901,7 +1346,7 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
             },
             .level => blk: {
                 const mi = try r.int();
-                const td = try r.int();
+                const td = if (b.public and mi != std.math.maxInt(u32)) (o.declNamed(b.modules[if (mi < b.modules.len) mi else return error.Bad], try r.text()) orelse return error.Bad) else try r.int();
                 const where = std.enums.fromInt(Ownership.MarkerKind, try r.byte()) orelse return error.Bad;
                 if (mi == std.math.maxInt(u32)) break :blk try o.markerId(Ownership.fn_type, where);
                 if (mi >= b.modules.len) return error.Bad;
@@ -919,7 +1364,10 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
 fn readProv(r: *Reader) Error!Prov {
     const kind = try r.enumOf(Ownership.ProvKind);
     const a_raw = try r.int();
-    const b = try r.int();
+    const b = if (r.block.public and kind == .shared) blk: {
+        if (a_raw >= r.block.modules.len) return error.Bad;
+        break :blk r.o.declNamed(r.block.modules[a_raw], try r.text()) orelse return error.Bad;
+    } else try r.int();
     const path = try r.path();
     const flags = try r.byte();
     if (flags > 7) return error.Bad;
@@ -952,7 +1400,9 @@ fn readAtoms(r: *Reader) Error![]const XAtom {
         }
         const x = try readProv(r);
         const y = try readProv(r);
-        try atoms.append(r.arena, if (kind == .sep) Ownership.sepAtom(x, y) else .{ .kind = kind, .a = x, .b = y });
+        var atom = if (kind == .sep or kind == .sep_spine) Ownership.sepAtom(x, y) else XAtom{ .kind = kind, .a = x, .b = y };
+        atom.kind = kind;
+        try atoms.append(r.arena, atom);
     }
     return Ownership.sortAtoms(atoms.items);
 }
@@ -1010,11 +1460,13 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         const lo = try r.byte();
         const hi = try r.byte();
         const extent = try r.enumOf(Ownership.WriteExtent);
+        const hidden = r.block.public and try r.bool_();
+        const names = if (hidden) (try r.o.opaqueRecordFields(path)) orelse return error.Bad else r.block.strings;
         const fields = try r.arena.alloc(u32, try r.count(4));
         for (fields) |*f| {
             const i = try r.int();
-            if (i >= r.block.strings.len) return error.Bad;
-            f.* = r.block.strings[i];
+            if (i >= names.len) return error.Bad;
+            f.* = names[i];
         }
         // Interned in this session's order, as the summary's own are.
         std.mem.sort(u32, fields, {}, std.sort.asc(u32));
@@ -1134,6 +1586,7 @@ test "a block naming a constructor field past the constructor's arity is refused
             }.f;
             try out.appendSlice(a, magic);
             try int(a, &out, version);
+            try out.append(a, 0); // No clean-report certificate.
             try int(a, &out, 1);
             try out.append(a, @backingInt(SourceStore.Package.app));
             try int(a, &out, 1);

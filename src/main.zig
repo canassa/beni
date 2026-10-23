@@ -581,12 +581,17 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
     if (targets.items.len == 0) return fail(stderr, "beni: dump needs at least one module", .{});
     var input: Ownership.Input = ins.input(gpa, session);
     input.format_hoists = true;
+    input.expected_sites = session.ownership_sites;
     // A totals-only report prints no summary line (#684); a flip compares
     // whole reports.
     input.format_summaries = !dump.ownership_totals or dump.ownership_flips != null;
     const Run = struct {
         fn go(own: *Ownership, ts: []const u32) std.mem.Allocator.Error![]const Ownership.ModuleReport {
-            return own.run(ts);
+            const reports = try own.run(ts);
+            if (std.debug.runtime_safety and own.in.flip == null) {
+                for (reports) |report| try own.checkVerdicts(report);
+            }
+            return reports;
         }
     };
     // `--ownership-flips` (ownership-checker.md §24.6): the report as written,

@@ -157,12 +157,12 @@ pub const Phase = enum {
     /// for a lowering that compiles programs whole runs it inside `emit`.
     writes,
     /// The ownership report (`ownership-checker.md` §9), once per run of
-    /// `dump --stage=ownership`, after checking; and the enforcing pass of
-    /// `check` and `build` on an in-place platform (§28.3).
+    /// `dump --stage=ownership`, after checking; in `check` and `build`,
+    /// once per checked module on its worker before publication (§16.9).
     ownership,
     /// Inside `ownership`: one reported module's walk (§28.3), and the
-    /// summary blocks read for the modules the run did not check, summed
-    /// (§28.4).
+    /// summary blocks read for its imports, summed (§28.4). A build names
+    /// the checked module's file; the serial dump sums reads for its run.
     ownership_module,
     ownership_blocks,
 };

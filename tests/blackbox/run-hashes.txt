@@ -94,8 +94,8 @@ build_test.test.the hidden --test-hooks flag: an if on Js.testHooks keeps the ho
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 080f4865249b5953a840ccc2ef9fde6d6908791fe3193c6a74c8941047e70a4a
 cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 006647c8d4d2a6faaf0b053f031a5c1692379935d5a2e32f8828b0a389659735
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 2bb3ea3e47d018ec58b1aed8794cdb0b5171984380823b5a74ded129742c9114
-cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 6e2baaa9ce2ae3c54150af3db2ecd39eefc610006014a37adc860544847c49d2
-cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 9e6c0745ce9bd710af7e2f55afb17f46bb7dcfeb96848077b65c29a91dc8c262
+cache_test.test.a constrained function constant rewritten as a lambda invalidates its importer through ownership #0 6e2baaa9ce2ae3c54150af3db2ecd39eefc610006014a37adc860544847c49d2
+cache_test.test.a constrained function constant rewritten with parameters invalidates its importer through ownership #0 9e6c0745ce9bd710af7e2f55afb17f46bb7dcfeb96848077b65c29a91dc8c262
 cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 bc24c0955dde779ab2d8434c59e7eff2ca6edcedecac59c949539b3760f15040
 cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #0 1f2b61d380d330b07f0ea0e23f55858a93b1d4220071ba3dac4ca3a3ab8cd7dc
 cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #1 4c2a99f6aa41521cf5df2bab0705387e9d56f99dd240160fb2a8e502d42cbbff

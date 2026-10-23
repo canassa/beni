@@ -1,14 +1,14 @@
 //! The ownership checker in `check` and `build` (`docs/design/
 //! ownership-checker.md` §28): on a platform that edits lists in place, the
-//! pass runs after the module check, and every rejected or pending line of a
-//! module the run reports on is an error; in every run that summarises, each
-//! module the run checked gets its summary block, which its cache entry —
-//! and the checked core — carries.
+//! module's worker computes its summaries immediately after its type check,
+//! before publishing the interface and releasing its dependents. Each
+//! worker owns its path and constructor tables and its local recursion.
+//! Rejected or pending application demands are errors when the platform
+//! enforces; every platform publishes the same summary facts.
 //!
 //! It also builds the pass's `Input` from a session, for the dump as well.
 
 const std = @import("std");
-const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const Session = @import("../Session.zig");
@@ -125,51 +125,70 @@ fn position(ctx: *const anyopaque, module: u32, tok: u32) Ownership.Position {
     return .{ .line = pos.line, .col = pos.col };
 }
 
-/// The pass, after the module check (§28.3). `cached` holds every module
-/// the run installed; the others it checked, keeping their type stores.
-pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Error!void {
-    const gpa = session.gpa;
-    const n = session.graph.count();
-    var ins = try inputs(gpa, session, cached);
-    defer ins.deinit(gpa);
-    var o = Ownership.init(ins.input(gpa, session));
-    defer o.deinit();
+/// Read-only session metadata prepared before the DAG starts. Every mutable
+/// result is written only by its module's checking worker.
+pub const Context = struct {
+    session: *Session,
+    ins: *Inputs,
+};
 
+pub fn checkModule(ctx: *const Context, d: *@import("../check/Driver.zig"), m: Graph.Index, tid: u32) Allocator.Error!void {
+    const session = ctx.session;
+    const gpa = d.gpa;
+    const token = session.profile.begin();
+    defer session.profile.end(tid, token, .ownership, @backingInt(d.graph.moduleFile(m)), 0);
+    var in = ctx.ins.input(gpa, session);
+    in.single_module = m.int();
+    in.tid = tid;
+    in.interfaces = d.interfaces;
+    in.dispatch = d.dispatch;
+    in.modules = d.kept;
+    in.types = d.types;
+    in.blocks = ctx.ins.blocks;
     const chain_in_place = if (session.options.chain) |c| session.options.ownership_everywhere or c.inPlace() else false;
     const making_pack = session.options.pack_out != null;
-    var targets: std.ArrayList(u32) = .empty;
-    defer targets.deinit(gpa);
-    for (0..n) |i| {
-        if (i < cached.len and cached[i] != null) continue;
-        const report = switch (ins.packages[i]) {
-            .app => session.enforce_ownership,
-            // §28.7: core must have no rejected or pending line, and an
-            // in-place chain's platforms neither.
-            .core => making_pack,
-            .platform => making_pack and chain_in_place,
+    const report = switch (ctx.ins.packages[m.int()]) {
+        .app => session.enforce_ownership,
+        .core => making_pack,
+        .platform => making_pack and chain_in_place,
+    };
+    var o = Ownership.init(in);
+    defer o.deinit();
+    // With no public value there is no callable summary to compute. On a
+    // platform that does not enforce, private bodies cannot affect an
+    // importer. Keep this cache report uncertified so enforcement rechecks it.
+    const private_only = !report and session.ownership_sites.len == 0 and d.interfaces[m.int()].values.len == 0;
+    const private_token = if (private_only) session.profile.begin() else null;
+    defer if (private_token) |t| session.profile.end(tid, t, .ownership_module, @backingInt(d.graph.moduleFile(m)), 0);
+    const reports = try o.run(if (private_only) &.{} else &.{m.int()});
+    if (m.int() < session.ownership_sites.len) session.ownership_sites[m.int()] = try Ownership.observations(gpa, reports[0]);
+    const block_wire = @import("summary_bytes.zig");
+    const block = if (private_only) try block_wire.write(&o, gpa, &.{}) else try o.writeBlock(m.int());
+    if (!private_only) {
+        d.hoists[m.int()] = try reports[0].hoist_table.clone(gpa);
+        block_wire.certify(block, reports[0]);
+    }
+    session.ownership_blocks[m.int()] = block;
+    try o.publish(m.int(), &d.interfaces[m.int()]);
+    if (d.options.roundtrip_interfaces) {
+        const iface = &d.interfaces[m.int()];
+        const wire = @import("../resolve/iface_bytes.zig");
+        const bytes = try wire.write(gpa, iface, d.interner);
+        defer gpa.free(bytes);
+        const back = wire.read(gpa, bytes, d.interner) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => @panic("ownership: published interface does not roundtrip"),
         };
-        if (report) try targets.append(gpa, @intCast(i));
+        iface.deinit(gpa);
+        iface.* = back;
     }
-    const reports = try onBigStack(&o, targets.items);
-    for (reports) |r| {
-        session.checked.hoists[r.module].deinit(gpa);
-        session.checked.hoists[r.module] = try r.hoist_table.clone(gpa);
-        // Records still report only. Enforcement must establish module
-        // cleanliness before this channel can authorise any stores (§31.10).
-    }
+    ctx.ins.blocks[m.int()] = d.interfaces[m.int()].ownership;
 
-    // The blocks the run's entries carry (§28.4).
-    if (session.options.cache != null or making_pack) {
-        session.freeOwnershipBlocks();
-        session.ownership_blocks = try gpa.alloc(?[]u8, n);
-        @memset(session.ownership_blocks, null);
-        for (0..n) |i| {
-            if (i < cached.len and cached[i] != null) continue;
-            if (i >= session.checked.modules.len) continue;
-            session.ownership_blocks[i] = try o.writeBlock(@intCast(i));
-        }
-    }
+    if (report) try diagnostics(session, reports, &d.per_module[m.int()]);
+}
 
+fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest: *std.ArrayList(CheckDiagnostics.Item)) Allocator.Error!void {
+    const gpa = session.gpa;
     // The errors (§28.5), one per root cause.
     var items: std.ArrayList(CheckDiagnostics.Item) = .empty;
     defer items.deinit(gpa);
@@ -191,6 +210,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
             try items.ensureUnusedCapacity(gpa, 1);
             const message = try gpa.dupe(u8, text);
             items.appendAssumeCapacity(.{
+                .ownership = true,
                 .code = .ownership_limit,
                 .module = @fromBackingInt(r.module),
                 .region = @fromBackingInt(0),
@@ -225,6 +245,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
             const message = try gpa.dupe(u8, text);
             const span = group.items[0].span;
             items.appendAssumeCapacity(.{
+                .ownership = true,
+                .ownership_consequence = d.verdict == .rejected and d.verdict.rejected == .limit,
                 .code = Message.code(d),
                 .module = @fromBackingInt(r.module),
                 // No instruction: the span is `token` to `last_token`, the
@@ -238,13 +260,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
         }
     }
     if (items.items.len == 0) return;
-    const old = session.checked.diagnostics;
-    const all = try gpa.alloc(CheckDiagnostics.Item, old.len + items.items.len);
-    @memcpy(all[0..old.len], old);
-    @memcpy(all[old.len..], items.items);
+    try dest.appendSlice(gpa, items.items);
     items.clearRetainingCapacity();
-    gpa.free(old);
-    session.checked.diagnostics = all;
 }
 
 /// Two lines of one root cause (§28.5): the same place, verdict, cause and
@@ -254,38 +271,6 @@ fn sameCause(a: Ownership.Demand, b: Ownership.Demand) bool {
     return a.record == b.record and a.position.line == b.position.line and a.position.col == b.position.col and
         std.mem.eql(u8, a.op, b.op) and std.meta.eql(a.verdict, b.verdict) and a.approx == b.approx and
         std.mem.eql(u8, a.detail, b.detail);
-}
-
-fn onBigStack(o: *Ownership, targets: []const u32) Allocator.Error![]const Ownership.ModuleReport {
-    const Runner = struct {
-        o: *Ownership,
-        targets: []const u32,
-        result: Allocator.Error![]const Ownership.ModuleReport = undefined,
-
-        fn go(r: *@This()) void {
-            r.result = r.o.run(r.targets);
-        }
-    };
-    var runner: Runner = .{ .o = o, .targets = targets };
-    // A build with no threads runs it here: its main stack is sized for it
-    // (fast-compiler.md §10, *A build with no threads*).
-    if (builtin.single_threaded) {
-        Runner.go(&runner);
-        return runner.result;
-    }
-    // The pass walks expression trees by recursion, as the checker does. With
-    // no thread to be had it runs here, as `main.onBigStack` does: the stack
-    // is then the caller's, which every supported target makes large enough
-    // for ordinary programs — only the pathological depths need the room.
-    const thread = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, Runner.go, .{&runner}) catch |err| switch (err) {
-        error.OutOfMemory => return error.OutOfMemory,
-        else => {
-            Runner.go(&runner);
-            return runner.result;
-        },
-    };
-    thread.join();
-    return runner.result;
 }
 
 /// The tokens a message underlines for an edit (§28.6): the walk's span,

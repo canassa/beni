@@ -2724,6 +2724,27 @@ publishing would change every interface and every `check/good` golden for nothin
   already covers its own source and its imports' interfaces, and a summary is a function of exactly those.
   The interface version moves when the block is first written.
 
+**As built, 2026-10-23.** Each module's checking worker now runs the ownership pass before publishing
+its interface or releasing its dependents. Its path table, constructor table and on-demand recursion
+belong to that module. Other modules supply their public summary blocks; solved types are released
+after publication unless a dump needs them. On a platform that does not enforce, a module
+with no public value publishes its type slots without expanding private callable rows; its cache
+report remains uncertified, so an enforcing build checks those bodies. The serial dump remains independent and, under runtime
+safety, compares its demand verdicts with the worker reports.
+
+Interface format 16 carries the public ownership block, versioned with the rule set (summary format
+34), and hashes it with the rest of the interface. Public rows use names, parameter indices and path
+steps; opaque definitions contribute their numbered slots. Allocation and returned-class numbers are
+canonical within each summary. Callable summaries of exported aliases and schema analysis slots
+travel in the same block. Private cache rows and the certificate that a previous ownership report
+was clean stay outside the interface hash. An enforcing build can reuse a clean report from another
+platform; it rechecks a cached rejected report before issuing diagnostics.
+
+The source-key fold described in §28.4 is retired. The cache tests pin both sides of the firewall on
+an in-place platform: a body edit that changes the published summary rechecks its importer, and an
+edit that preserves the summary checks only the edited module. They also pin opaque-slot changes,
+interface round trips and identical hashes at `--jobs=1` and `--jobs=8`.
+
 ### 16.11 The report
 
 Each module's demand lines (§9.1) gain:
@@ -4888,6 +4909,8 @@ from the shipped manifests under `platforms/` or a test platform's own, or the h
    thread, because the pass's state — its path table, its constructor ids, its on-demand recursion — is the whole
    program's, and making it per module is a refactor of the pass rather than of the build. The cost of not doing it
    is the firewall on in-place builds (§28.4) and a serial pass; research 89 measures the second.
+   *Completed 2026-10-23:* the module worker and interface publication are described in §16.10's
+   *As built* note. The remaining items below are independent.
 2. **Stability** (thesis §8.5): every later release runs the previous release's accepted corpus. Not started: the
    corpus is this repository's, whose goldens already pin every verdict.
 3. **Machine-applicable fixes.** The `List.copy` line is written for a person; a `--fix` that inserts it is the

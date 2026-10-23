@@ -758,7 +758,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     // because what they measure is a graph and a constraint tree, not a
     // span of source. Per module and not per run, because "this module was
     // not re-checked" is what the incrementality tests have to see.
-    var per_module_seen: [files.len][12]bool = @splat(@splat(false));
+    var per_module_seen: [files.len][15]bool = @splat(@splat(false));
     var serial: [6]bool = @splat(false);
     const per_file = [_][]const u8{ "read", "lex", "parse", "lower" };
     // `cache_load` and `dep_digest` are per MODULE, not serial
@@ -771,7 +771,7 @@ test "--self-profile records every phase of every file and every counter, exactl
     // (`checker-v2.md` §5), and `effects` the effect solve between P5 and P6
     // (§26), all nested in `check`, and the scenario below pins their
     // nesting.
-    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "derived", "effects", "elaborate", "publish", "finish", "cache_load", "dep_digest" };
+    const per_module = [_][]const u8{ "resolve", "check", "constrain", "solve", "exhaustive", "derived", "effects", "elaborate", "publish", "finish", "cache_load", "dep_digest", "ownership", "ownership_module", "ownership_blocks" };
     // `types` is serial and once per run (checker.md §5): numbering every
     // declared type and settling equatability. It is in the trace because
     // it can DOMINATE a build — a project of long alias chains spent 1.3 s
@@ -831,7 +831,7 @@ test "--self-profile records every phase of every file and every counter, exactl
         }
     }
     try testing.expectEqual([files.len][4]bool{ @splat(true), @splat(true), @splat(true) }, seen);
-    try testing.expectEqual([files.len][12]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
+    try testing.expectEqual([files.len][15]bool{ @splat(true), @splat(true), @splat(true) }, per_module_seen);
     try testing.expectEqual([6]bool{ true, true, true, true, true, true }, serial);
 
     // `files`, `bytes` and `tokens` are computed above; `nodes` and
