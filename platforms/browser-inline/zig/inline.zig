@@ -2177,14 +2177,17 @@ const Page = struct {
         const element_ = pg.p.constructor == 1;
         const incoming = try cx.fresh("before");
         try js.constant(blk, incoming, try js.name(pg.model));
-        const next = try cx.programArmFields(k, blk, params, try js.name(incoming), update);
+        const before = try js.name(incoming);
+        const next = try cx.programArmFields(k, blk, params, before, update);
         var result = next;
         if (element_) {
             const pair = try cx.fresh("result");
             try js.constant(blk, pair, next);
             result = try js.name(pair);
         }
-        try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
+        // An arm that wrote the model in place answers the object the model
+        // already holds (`programArmFields`): no store.
+        if (element_ or next != before) try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
         for (pass) |fi| try pg.callFunction(blk, fi);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),

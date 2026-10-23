@@ -1,9 +1,10 @@
 -- emit/release/inline: `update` reads `model.n`, writes `n` by a record
 -- update, then keeps the value it read (`backend.md` §9 item 1, amended
 -- 2026-10-18, *the ordering rule*). A field read is effect-free but not
--- invariant: it is never moved across a write of its record. Records are
--- spread today, so this pins the shape #315's in-place writes start from;
--- the page is `browser/inline/OldValueAfterWrite`.
+-- invariant: it is never moved across a write of its record. The write is
+-- in place (#315), so the read is hoisted above the store
+-- (`ownership-checker.md` §31.14): `let b=e.a;e.a=e.a+1;e.b=b`. The page
+-- is `browser/inline/OldValueAfterWrite`.
 import Browser
 import Html exposing (Html)
 import Tea

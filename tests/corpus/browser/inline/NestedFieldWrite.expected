@@ -1,0 +1,49 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="cup">
+      <output data-role="tea">"0"</output>
+      <output data-role="milk">"0"</output>
+      <p>"Sips: 0"</p>
+      <button data-role="pour">"Pour"</button>
+      <button data-role="sip">"Sip"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=pour]
+<body>
+  <div id="root">
+    <div data-role="cup">
+      <output data-role="tea">"4"</output>
+      <output data-role="milk">"0"</output>
+      <p>"Sips: 0"</p>
+      <button data-role="pour">"Pour"</button>
+      <button data-role="sip">"Sip"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=sip]
+<body>
+  <div id="root">
+    <div data-role="cup">
+      <output data-role="tea">"4"</output>
+      <output data-role="milk">"1"</output>
+      <p>"Sips: 1"</p>
+      <button data-role="pour">"Pour"</button>
+      <button data-role="sip">"Sip"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=sip]
+<body>
+  <div id="root">
+    <div data-role="cup">
+      <output data-role="tea">"4"</output>
+      <output data-role="milk">"2"</output>
+      <p>"Sips: 2"</p>
+      <button data-role="pour">"Pour"</button>
+      <button data-role="sip">"Sip"</button>
+    </div>
+  </div>
+</body>

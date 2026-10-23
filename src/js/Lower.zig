@@ -6254,9 +6254,30 @@ pub const Lowerer = struct {
             return l.ident(copy, p);
         }
         for (fields, values[1..]) |f, value| {
+            // `{ model | c = { c | t = 4 } }`, `c` being `model.c`: the inner
+            // update wrote the object the field already holds, so storing it
+            // back changes nothing (§31.3, *Nested updates*). Not under the
+            // sanitiser, whose inner update answers a new object.
+            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) continue;
             try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.fieldMember(try l.ident(base_name, p), l.bir.symbol(f.name), p)).int(), value.int()));
         }
         return l.ident(base_name, p);
+    }
+
+    /// Whether `value`, stored into field `field` of the object `base`
+    /// names, is that field's own object written in place: an update whose
+    /// base is `base.field`, read directly or through a `let` of it, with
+    /// `base` a local. Only of a clean module, where the inner update
+    /// answers its base's object.
+    fn sameFieldObject(l: *Lowerer, base: Inst.Index, field: Symbol, value: Inst.Index) bool {
+        if (l.bir.instTag(base) != .local or l.bir.instTag(value) != .record_update) return false;
+        var inner: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(value).lhs));
+        if (l.bir.instTag(inner) == .local) inner = l.letValueOf(inner) orelse return false;
+        if (l.bir.instTag(inner) != .field_access) return false;
+        const d = l.bir.instData(inner);
+        if (l.bir.symbols[d.rhs] != field) return false;
+        const owner: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        return l.bir.instTag(owner) == .local and l.bir.instData(owner).lhs == l.bir.instData(base).lhs;
     }
 
     /// The sanitiser's trap (`Input.sanitize_records`):
@@ -14988,6 +15009,10 @@ pub const Lowerer = struct {
             return null;
         }
         try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        // An arm that answers the object `model` names — written in place
+        // (`ownership-checker.md` §31.10), or the model unchanged — answers
+        // `model` itself, so the handler knows its store would change nothing.
+        if (l.b.tagOf(value) == .ident and l.b.tagOf(model) == .ident and l.b.dataOf(value).lhs == l.b.dataOf(model).lhs) return model;
         return value;
     }
 

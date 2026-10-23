@@ -417,6 +417,12 @@ compiler in every build mode, never a handler without its pass: a program it did
 (its keys, at `refuseKey`, and its pass, at `passOf`), and a hole it did not reach (`known`). The
 safe-build asserts that remain hold by construction, each with its argument at the assert.
 
+*Amended 2026-10-23 (#315 R7):* an arm that writes its model in place (`ownership-checker.md`
+§31.10) answers the object the model already holds, and `programArmFields` then answers the
+`model` handle itself; the handler writes no `model = next`. In a sandbox program whose arms all
+write in place the model is never reassigned, so release folds the handler to its stores:
+`e.a.b=4` for `{ model | cup = { cup | tea = 4 } }` (`emit/release/inline/NestedFieldWrite`).
+
 **Controlled inputs.** A binding of a `stateful` attribute (a control's `value`, `checked`,
 `selected`) is called by the handler of every key one of its own element's events reaches, whatever
 the key writes, so the control shows the model after the user's edit even when the arm leaves the

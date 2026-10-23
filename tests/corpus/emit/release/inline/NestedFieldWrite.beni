@@ -1,0 +1,56 @@
+-- emit/release/inline: an accepted nested write (`ownership-checker.md`
+-- §31.10, #315 R7). `update` writes `model.cup.tea` through two record
+-- updates; the checker accepts it, so the handler stores the one field
+-- in place — `K.c.t=4`'s shape — and stores nothing back into `model`,
+-- whose `cup` already holds the object written. The page is
+-- `browser/inline/NestedFieldWrite`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Cup =
+    tea : Int
+    milk : Int
+
+
+type alias Model =
+    cup : Cup
+    sips : Int
+
+
+type Msg
+    = Pour
+    | Sip
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pour →
+            cup = model.cup
+            { model | cup = { cup | tea = 4 } }
+
+        Sip →
+            cup = model.cup
+            { model | cup = { cup | milk = cup.milk + 1 }, sips = model.sips + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="cup">
+        <output data-role="tea">{model.cup.tea}</output>
+        <output data-role="milk">{model.cup.milk}</output>
+        <p>Sips: {model.sips}</p>
+        <button data-role="pour" onClick={Pour}>Pour</button>
+        <button data-role="sip" onClick={Sip}>Sip</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { cup = { tea = 0, milk = 0 }, sips = 0 }, update = update, view = view }
+        )
+        "root"

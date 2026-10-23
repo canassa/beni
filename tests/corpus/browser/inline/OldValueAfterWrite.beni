@@ -2,10 +2,11 @@
 -- amended 2026-10-18, *the ordering rule*): `update` reads `model.n`, then
 -- writes `n` by a record update, then keeps the value it read in `was`.
 -- A field read may not move across a write of its record, so `was` shows
--- the count before the click. Records are spread today, so the write is a
--- new object and the page is right either way; it pins the shape for the
--- in-place record writes of #315. The bindings read the model after the
--- handler's writes are done, so the rule costs them nothing.
+-- the count before the click. The write is in place (#315), so the read
+-- of `model.n` is hoisted above the store (`ownership-checker.md`
+-- §31.14): a page that read it after would show the new count. The
+-- bindings read the model after the handler's writes are done, so the
+-- rule costs them nothing.
 import Browser
 import Html exposing (Html)
 import Tea
