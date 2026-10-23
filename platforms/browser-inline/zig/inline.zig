@@ -2722,7 +2722,8 @@ fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const H
                 const select = in_select or std.mem.eql(u8, n.name, "select");
                 const last = next == null and at_end and !select;
                 const child_open = try serialiseOpen(a, out, n.children, n.name, last, select);
-                if (!select and (last or (optionalEnd(n.name, next, parent) and (next == null or !child_open)))) {
+                const popped = next == null and !select and if (parent) |p| poppedAtEnd(n, p) else false;
+                if (!select and (last or popped or (optionalEnd(n.name, next, parent) and (next == null or !child_open)))) {
                     open = !std.mem.eql(u8, n.name, "p");
                     continue;
                 }
@@ -2788,6 +2789,54 @@ fn optionalEnd(name: []const u8, next: ?Html, parent: ?[]const u8) bool {
     if (eql(u8, name, "thead")) return nextIs(next, &.{ "tbody", "tfoot" });
     if (eql(u8, name, "tbody")) return ends or nextIs(next, &.{ "tbody", "tfoot" });
     if (eql(u8, name, "p")) return ends or nextIs(next, &.{ "address", "article", "aside", "blockquote", "details", "dialog", "div", "dl", "fieldset", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol", "p", "pre", "search", "section", "ul" });
+    return false;
+}
+
+/// Whether element `n`, the last node of a `parent`, needs no end tag of
+/// its own (#916): `parent`'s end tag is one that pops every element open
+/// above it (§13.2.6.4.7, *An end tag whose tag name is one of: "address",
+/// …*), and `n` and every element its end tag leaves open below it —
+/// its last child, when that one's end tag is left out too — is one that
+/// pop closes exactly as its own end tag would (`poppable`), of another
+/// name than `parent`'s, whose end tag would otherwise be the one the
+/// parser matches. `<section><header><aside><p>x</section>`.
+fn poppedAtEnd(n: Html, parent: []const u8) bool {
+    if (!popsToSelf(parent)) return false;
+    return openChainPoppable(n, parent);
+}
+
+/// Whether element `n` and the elements left open at its end are each
+/// poppable and none is named `parent`.
+fn openChainPoppable(n: Html, parent: []const u8) bool {
+    if (n.kind != .element or n.void) return true;
+    if (!poppable(n.name) or std.mem.eql(u8, n.name, parent)) return false;
+    const last = if (n.children.len == 0) return true else n.children[n.children.len - 1];
+    if (last.kind != .element or last.void) return true;
+    // The last child's end tag is left out when `n`'s end pops it, or
+    // where `optionalEnd` says `n`'s end closes it.
+    const left_open = poppedAtEnd(last, n.name) or optionalEnd(last.name, null, n.name);
+    return !left_open or openChainPoppable(last, parent);
+}
+
+/// The end tags that pop every element above their own: the list of
+/// §13.2.6.4.7 but `listing` and `pre`, which nothing here writes open.
+fn popsToSelf(name: []const u8) bool {
+    for ([_][]const u8{
+        "address", "article", "aside", "blockquote", "button", "center", "details", "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol", "search", "section", "summary", "ul",
+    }) |x| if (std.mem.eql(u8, x, name)) return true;
+    return false;
+}
+
+/// The elements a pop closes exactly as their end tags would: none is a
+/// formatting element, which the list of active formatting elements would
+/// open again after the pop; nor a `form`, whose end tag also clears the
+/// form element pointer; nor a scope's boundary, a table's part, a
+/// `select` or a `template`, which change the insertion mode.
+fn poppable(name: []const u8) bool {
+    for ([_][]const u8{
+        "address", "article", "aside", "blockquote", "button", "details", "dialog", "div", "dl", "dd", "dt", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol", "ul", "li", "search", "section", "summary",
+        "h1",      "h2",      "h3",    "h4",         "h5",     "h6",      "p",      "span", "label", "output",
+    }) |x| if (std.mem.eql(u8, x, name)) return true;
     return false;
 }
 
@@ -2903,9 +2952,20 @@ test "an end tag is left out only where the parser closes the element there" {
         .{ .tree = el("a", &.{el("p", &.{x})}), .html = "<a><p>x</p></a>" },
         .{ .tree = el("ul", &.{ el("li", &.{x}), el("li", &.{x}) }), .html = "<ul><li>x<li>x</ul>" },
         .{ .tree = el("dl", &.{ el("dt", &.{x}), el("dd", &.{x}) }), .html = "<dl><dt>x<dd>x</dl>" },
-        .{ .tree = el("section", &.{ el("p", &.{x}), el("div", &.{}) }), .html = "<section><p>x<div></div></section>" },
-        .{ .tree = el("div", &.{ el("p", &.{x}), el("span", &.{}) }), .html = "<div><p>x</p><span></span></div>" },
+        .{ .tree = el("section", &.{ el("p", &.{x}), el("div", &.{}) }), .html = "<section><p>x<div></section>" },
+        .{ .tree = el("div", &.{ el("p", &.{x}), el("span", &.{}) }), .html = "<div><p>x</p><span></div>" },
         .{ .tree = el("div", &.{ el("p", &.{x}), el("table", &.{}) }), .html = "<div><p>x</p><table></table></div>" },
+        // An end tag that pops every element open above it closes the last
+        // child's open elements (#916), unless one is a formatting element,
+        // which the parser opens again, a `form`, a table, or of its name.
+        .{ .tree = el("section", &.{el("header", &.{el("aside", &.{el("p", &.{x})})})}), .html = "<section><header><aside><p>x</section>" },
+        .{ .tree = el("div", &.{el("b", &.{x})}), .html = "<div><b>x</b></div>" },
+        .{ .tree = el("div", &.{el("form", &.{})}), .html = "<div><form></form></div>" },
+        .{ .tree = el("div", &.{el("table", &.{})}), .html = "<div><table></table></div>" },
+        .{ .tree = el("div", &.{el("div", &.{x})}), .html = "<div><div>x</div></div>" },
+        .{ .tree = el("span", &.{el("div", &.{x})}), .html = "<span><div>x</div></span>" },
+        .{ .tree = el("section", &.{el("div", &.{el("section", &.{x})})}), .html = "<section><div><section>x</div></section>" },
+        .{ .tree = el("div", &.{el("span", &.{el("em", &.{x})})}), .html = "<div><span><em>x</em></div>" },
         // Inside a `<select>` every end tag is written.
         .{ .tree = el("select", &.{ el("option", &.{x}), el("option", &.{x}) }), .html = "<select><option>x</option><option>x</option></select>" },
         .{ .tree = el("li", &.{el("p", &.{x})}), .html = "<li><p>x</li>" },
@@ -2913,7 +2973,7 @@ test "an end tag is left out only where the parser closes the element there" {
         // An `<li>` or a `<dt>` stops its search for an open one at a `<dd>`
         // or an `<li>` still open: the parent keeps its end tag there.
         .{ .tree = el("ul", &.{ el("li", &.{el("dd", &.{x})}), el("li", &.{x}) }), .html = "<ul><li><dd>x</li><li>x</ul>" },
-        .{ .tree = el("dl", &.{ el("dd", &.{el("li", &.{x})}), el("dt", &.{x}) }), .html = "<dl><dd><li>x</dd><dt>x</dt></dl>" },
+        .{ .tree = el("dl", &.{ el("dd", &.{el("li", &.{x})}), el("dt", &.{x}) }), .html = "<dl><dd><li>x</dd><dt>x</dl>" },
     };
     for (cases) |c| {
         var out: std.ArrayList(u8) = .empty;
