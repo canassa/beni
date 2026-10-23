@@ -1,0 +1,42 @@
+--! Payload extractors written in beni over `Js`, one `pub` and one not
+--! (boundary.md §9.3, amended 2026-10-23; checker-v2.md §25.8). The events
+--! name them with `via`, as they would name a `foreign`. Each reads the
+--! event's `detail`; `tagged` writes the event's type in front, so the page
+--! shows which extractor ran.
+
+import Html exposing (Html)
+import Js
+
+
+--| The event object the extractors are handed.
+pub foreign type Event
+
+
+--| The text, as a text hole shows it.
+pub markup text : String → Html msg
+
+
+--| The same markup, its messages passed through the function.
+pub markup map : Html a, (a → b) → Html b
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onProbe" name "probe" via detail : String
+
+
+pub event "onTagged" name "tagged" via tagged : String
+
+
+--| The event's `detail`, a `pub` extractor a program may call too.
+pub detail : Event → String
+detail ev = Js.to (Js.get (Js.from ev) "detail")
+
+
+-- Not `pub`: only the event names it.
+tagged : Event → String
+tagged ev = Js.to (Js.get (Js.from ev) "type") ++ ":" ++ detail ev

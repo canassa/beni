@@ -481,18 +481,19 @@ pub fn mainOf(bir: *const Bir) ?u32 {
     return null;
 }
 
-/// The declaration of the `foreign` that event `row` of the vocabulary
-/// module's record names as its `via`, when that `foreign` is not `pub` and
-/// so is no interface value (`checker-v2.md` §25.8, amended 2026-10-21);
-/// null for an event with no `via`, or a `pub` one. `bir` is the vocabulary
-/// module's. The edge to it (`Builder`), its export (`Lower.exports`) and
-/// its import where the event is lowered all find it here.
+/// The declaration — a `foreign`, or a beni declaration since 2026-10-23
+/// (#883) — that event `row` of the vocabulary module's record names as its
+/// `via`, when it is not `pub` and so is no interface value (`checker-v2.md`
+/// §25.8, amended 2026-10-21); null for an event with no `via`, or a `pub`
+/// one. `bir` is the vocabulary module's. The edge to it (`Builder`), its
+/// export (`Lower.exports`) and its import where the event is lowered all
+/// find it here.
 pub fn privateExtractor(vocabulary: *const Interface, bir: *const Bir, row: u32) ?u32 {
     if (row >= vocabulary.events.len) return null;
     const via = vocabulary.events[row].via.unwrap() orelse return null;
     const symbol = vocabulary.symbols[@backingInt(via)];
     for (bir.decls, 0..) |d, i| {
-        if (d.kind == .foreign_value and !d.is_pub and bir.symbol(d.name) == symbol) return @intCast(i);
+        if ((d.kind == .foreign_value or d.kind == .value) and !d.is_pub and bir.symbol(d.name) == symbol) return @intCast(i);
     }
     return null;
 }
