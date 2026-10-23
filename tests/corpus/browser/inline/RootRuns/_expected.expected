@@ -1,0 +1,397 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"10"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"20"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"30"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"40"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"50"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"80"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"0"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc1]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"20"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"30"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"40"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"50"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"80"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"0"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc2]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"30"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"40"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"50"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"80"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"0"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc3]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"31"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"40"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"50"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"80"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"1"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc4]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"31"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"41"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"50"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"80"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"1"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc5]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"31"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"41"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"51"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"80"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"1"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc8]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"31"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"41"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"51"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"81"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"60"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"2"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc6]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"31"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"41"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"51"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"81"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"61"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"70"</p>
+        </section>
+      </aside>
+      <output>"2"</output>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc7]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section>
+        <button data-role="inc1">"+"</button>
+        <p>"11"</p>
+      </section>
+      <section>
+        <button data-role="inc2">"+"</button>
+        <p>"21"</p>
+      </section>
+      <section>
+        <button data-role="inc3">"+"</button>
+        <p>"31"</p>
+      </section>
+      <section>
+        <button data-role="inc4">"+"</button>
+        <p>"41"</p>
+      </section>
+      <section>
+        <button data-role="inc5">"+"</button>
+        <p>"51"</p>
+      </section>
+      <section>
+        <button data-role="inc8">"+"</button>
+        <p>"81"</p>
+      </section>
+      <aside>
+        <section>
+          <button data-role="inc6">"+"</button>
+          <p>"61"</p>
+        </section>
+      </aside>
+      <aside>
+        <section>
+          <button data-role="inc7">"+"</button>
+          <p>"71"</p>
+        </section>
+      </aside>
+      <output>"2"</output>
+    </div>
+  </div>
+</body>

@@ -1,0 +1,119 @@
+-- Roots mounted through one table (`docs/design/browser-inline.md` §8.4,
+-- amended 2026-10-24). `a` and `b` (modules `W1` and `W2`) stand first among the app's element
+-- children: one run, read as its children from the first. `c`'s key is the
+-- program's work — its arm counts the click too — so its root takes a
+-- handler and is called as it is, which ends the run. `d` and `e` are the
+-- next run, the app's children from the fourth on, with rows after `c`'s.
+-- `h` is the program's again, and `f` and `g` stand in two `aside`s: a run
+-- whose roots are each read by their place. A click on each counter changes
+-- only its own `p`, and `c`'s and `h`'s change the count too.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import W1
+import W2
+import W3
+import W4
+import W5
+import W6
+import W7
+import W8
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
+
+
+type alias Model =
+    a : W1.Model
+    b : W2.Model
+    c : W3.Model
+    d : W4.Model
+    e : W5.Model
+    f : W6.Model
+    g : W7.Model
+    h : W8.Model
+    clicks : Int
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ =
+    ( { a = W1.init ⊤
+      , b = W2.init ⊤
+      , c = W3.init ⊤
+      , d = W4.init ⊤
+      , e = W5.init ⊤
+      , f = W6.init ⊤
+      , g = W7.init ⊤
+      , h = W8.init ⊤
+      , clicks = 0
+      }
+    , Cmd.none
+    )
+
+
+type Msg
+    = A W1.Msg
+    | B W2.Msg
+    | C W3.Msg
+    | D W4.Msg
+    | E W5.Msg
+    | F W6.Msg
+    | G W7.Msg
+    | H W8.Msg
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model = ( step msg model, Cmd.none )
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        A sub →
+            { model | a = W1.update sub model.a }
+
+        B sub →
+            { model | b = W2.update sub model.b }
+
+        C sub →
+            { model | c = W3.update sub model.c, clicks = model.clicks + 1 }
+
+        D sub →
+            { model | d = W4.update sub model.d }
+
+        E sub →
+            { model | e = W5.update sub model.e }
+
+        F sub →
+            { model | f = W6.update sub model.f }
+
+        G sub →
+            { model | g = W7.update sub model.g }
+
+        H sub →
+            { model | h = W8.update sub model.h, clicks = model.clicks + 1 }
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Sub.none
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.a) A}
+        {Html.map (W2.view model.b) B}
+        {Html.map (W3.view model.c) C}
+        {Html.map (W4.view model.d) D}
+        {Html.map (W5.view model.e) E}
+        {Html.map (W8.view model.h) H}
+        <aside>{Html.map (W6.view model.f) F}</aside>
+        <aside>{Html.map (W7.view model.g) G}</aside>
+        <output>{model.clicks}</output>
+    </div>

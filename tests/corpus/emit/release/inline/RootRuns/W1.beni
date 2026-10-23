@@ -1,0 +1,31 @@
+--! Counter 1 of the program's eight: each module is a root of its own,
+--! with its own factory and its own slice.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { n = 10 }
+
+
+pub type Msg
+    = Inc
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button data-role="inc1" onClick={Inc}>+</button>
+        <p>{model.n}</p>
+    </section>
