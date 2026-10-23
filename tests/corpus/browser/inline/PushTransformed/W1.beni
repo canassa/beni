@@ -1,0 +1,40 @@
+--! The first widget: a number of cups, which it writes in place.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    cups : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = -1 }
+
+
+pub type Msg
+    = MakeFour
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        MakeFour →
+            { model | cups = 4 }
+
+
+--| One more cup.
+pub bump : Model → Model
+bump model = { model | cups = model.cups + 1 }
+
+
+--| The cups the host sent.
+pub setCups : Int, Model → Model
+setCups n model = { model | cups = n }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="four" onClick={MakeFour}>Make it 4</button>
+        <p>{model.cups}</p>
+    </section>

@@ -1,0 +1,40 @@
+--! The second widget: a venue the user types, and what it shows of the
+--! first widget's cups, which it reads and never writes.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+import W1
+
+
+pub type alias Model =
+    venue : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { venue = "" }
+
+
+pub type Msg
+    = Write String
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Write typed →
+            { model | venue = typed }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model = Result.withDefault (Json.decodeValue state) model
+
+
+pub view : Model, W1.Model → Html Msg
+view model first =
+    <section data-role="w2">
+        <input data-role="venue" value={model.venue} onInput={Write} />
+        <p>{model.venue}</p>
+        <output>{first.form.cups}</output>
+    </section>

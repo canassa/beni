@@ -11,19 +11,23 @@
 //!       const n = root.lastChild;
 //!       own(() => { n.remove(); });
 //!       const E = n.querySelectorAll("*");
-//!       const g0 = () => { text(E[0], model.count); };
-//!       g0();
-//!       const onInc = () => { model = { ...model, count: model.count + 1 }; g0(); };
-//!       on(E[1], onInc);
+//!       const table = [[[]]];
+//!       entry(() => { text(E[0], `${model.count}`); }, table[0][0]);
+//!       on(E[1], () => { model.count = model.count + 1; pass(table[0][0]); });
+//!       first();
 //!     }
 //!
 //! The view's static markup is one HTML string, written once after the
 //! mount node's children, with the end tags HTML makes optional left out
 //! (§8.2); each element code refers to is `E[n]` by document order. A
 //! binding is one write guarded by a compare (`text`, `prop`, `when`),
-//! grouped into one function per set of read sets; a key's handler is its
-//! arm of `update`, then a write pass of the functions its writes reach,
-//! each once (§8.3). What the mount added is undone by the function it
+//! grouped into one binding entry per set of read sets, which the runtime's
+//! `entry` adds to the bucket of each model path it reads in the program's
+//! table (§8.4, amended 2026-10-22). Another module's markup is that
+//! module's root factory, which makes its own entries — into another root's
+//! buckets too — and wires its events. A key's handler is its arm of
+//! `update`, then one synchronous pass of the buckets its writes reach, each
+//! entry once (§8.3). What the mount added is undone by the function it
 //! registers with `own`, which `stop` runs (`boundary.md` §9.4.5, amended
 //! 2026-10-17). Everything this lowering cannot compile exactly is a build
 //! error that names its class and what to write instead
@@ -35,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 15 },
+    .targets = .{ .major = 1, .minor = 17 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard, which every entry into program code
         // goes through.
@@ -62,6 +66,17 @@ pub const lowering: m.Lowering = .{
         .{ .name = "onArm", .arity = 4 },
         // `(node)`: a piece root's table of elements (§8.4).
         .{ .name = "part", .arity = 1 },
+        // The group runner (§8.4, amended 2026-10-22): `(f, bucket)` makes a
+        // binding entry, `(bucket)` and `(buckets)` run a write pass, and
+        // `(⊤)` the first pass.
+        .{ .name = "entry", .arity = 2 },
+        .{ .name = "pass", .arity = 1 },
+        .{ .name = "passes", .arity = 1 },
+        .{ .name = "first", .arity = 1 },
+        // The pushed-state loader (§8.4, amended 2026-10-22): `(model, table,
+        // key, raw)` a keyed route, `(model, rows, raws)` routes in turn.
+        .{ .name = "load", .arity = 4 },
+        .{ .name = "loadAll", .arity = 3 },
     },
     .module = module,
     .root = root,
@@ -170,32 +185,38 @@ const PieceData = struct {
     top: []const u8,
     /// The elements numbered below the top element.
     count: u32,
-    binds: []const PieceBind,
-    /// The event-wiring piece's name, when the root has events.
-    wire: ?[]const u8,
-    handlers: []const PieceHandler,
-    /// The root's function's parameter count.
+    /// The root factory's name (`browser-inline.md` §8.4, amended
+    /// 2026-10-22), null when the root has no binding and no event: then
+    /// nothing is called for it.
+    root: ?[]const u8,
+    /// What the factory takes after the elements: one holder per argument of
+    /// the root's function (`arity`), the root's own row when it fills it,
+    /// the program's table when it fills another root's, then one handler
+    /// per constructor of `handlers`.
     arity: u32,
+    own_row: bool,
+    table: bool,
+    handlers: []const PieceHandler,
     /// The static markup as a tree, which the program site checks again in
     /// the scope it places the piece in: the parser rebuilds markup by
     /// what is open around it, across the boundary of the piece (#373).
     nodes: []const Html,
 };
 
-const PieceBind = struct { name: []const u8, groups: []const u32 };
-
-/// A constructor the root's events send, and the binding functions writing
-/// a control one of its events is on.
-const PieceHandler = struct { ctor: m.Ctor, fields: u32, controls: []const u32 };
+/// A constructor the root's events send, its fields, and the buckets of the
+/// controls one of its events is on: what that event's handler runs
+/// whatever it writes (§8.3, *Controlled inputs*).
+const PieceHandler = struct { ctor: m.Ctor, fields: u32, controls: []const m.Program.BucketRef };
 
 const no_program: m.Program = .{ .constructor = 0, .record = true, .view = .markup, .view_root = null, .update = .computed };
 
 /// The piece hook: another module's program shows this root, the body of a
-/// function its `view` calls. Each binding function is a piece
-/// `(elements, argument)`, the events one piece `(elements, handler…)`
-/// that wires each to the handler of the constructor it sends, and the
-/// static markup and the read sets are the facts the program site writes
-/// the rest from.
+/// function its `view` calls. The root is one factory
+/// (`<Module>$<declaration>$$root$<n>`, §8.4, amended 2026-10-22), called at
+/// mount with the root's elements, one holder per argument of its function,
+/// the buckets it fills and one handler per constructor its events send: it
+/// makes each binding entry of the root, adds it to the buckets of what it
+/// reads, and wires each event. Its static markup is a piece of its own.
 fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Error!void {
     const js = cx.js;
     var page: Page = .{ .cx = cx, .tree = tree, .p = &no_program, .index = req.root, .piece = true };
@@ -210,58 +231,93 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     // several read is a memo node, S3's (§8.2).
     for (0..r.lets.len) |k| if (cx.rootLetReaders(req.root, @intCast(k)) > 1) return limit(cx, r.node, "a `let` of this `view` is read by several holes, and `browser-inline` computes a `let` in the binding of the one hole that reads it (D-d); one several holes read is a memo node, which slice S3 brings");
     pg.elements = try cx.fresh("elements");
-    // The root's function's parameters, each a parameter of every binding
-    // function after the elements.
-    const params_all = try cx.arena.alloc(m.Name, cx.pieceArity() + 1);
-    params_all[0] = pg.elements.?;
-    for (params_all[1..]) |*x| x.* = try cx.fresh("model");
-    pg.piece_args = params_all[1..];
+    const plan = cx.pieceRoot();
+    pg.row = plan.row;
+    // One holder per argument of the root's function: what the program
+    // hands the factory for it, read through as the plan says.
+    const holders = try cx.arena.alloc(m.Name, plan.args.len);
+    for (holders) |*x| x.* = try cx.fresh("model");
+    pg.holders = holders;
+    pg.own = try cx.fresh("row");
+    pg.table = try cx.fresh("table");
     try pg.guardGroups();
     try pg.group();
     try pg.letsOnce();
     try pg.argsOnce();
     const a = req.arena;
-    const binds = try a.alloc(PieceBind, pg.functions.items.len);
-    for (pg.functions.items, binds, 0..) |*f, *b, j| {
-        const blk = try js.block();
-        try pg.writeFunction(blk, f);
-        const base = try std.fmt.allocPrint(a, "{s}$$bind${d}${d}", .{ req.decl, req.ordinal, j });
-        try cx.pieceExport(base, try js.arrow(params_all, blk));
-        b.* = .{ .name = base, .groups = try a.dupe(u32, f.groups) };
-    }
-    // The events: one handler parameter per constructor, in the order of
-    // its first event.
+    const body = try js.block();
+    pg.body = body;
+    // Each binding entry, made in document order and added to its buckets.
+    for (pg.functions.items) |*f| try pg.writeEntry(body, f);
+    // The events: one handler per constructor, in the order of its first
+    // event — the root's own when the plan moved its key here (§8.4,
+    // amended 2026-10-22), else a parameter the program hands.
     var handlers: std.ArrayList(PieceHandler) = .empty;
     var params: std.ArrayList(m.Name) = .empty;
-    var controls: std.ArrayList(std.ArrayList(u32)) = .empty;
-    const wire = try js.block();
-    for (pg.events.items) |ev| {
-        const facts = tree.eventFacts(ev.item.event);
-        const dom = tree.string(facts.dom_name);
-        const kind: ?[]const u8 = if (std.mem.eql(u8, dom, "click")) null else dom;
+    var controls: std.ArrayList(std.ArrayList(m.Program.BucketRef)) = .empty;
+    var locals: std.ArrayList(Local) = .empty;
+    const names = try cx.arena.alloc(m.Name, pg.events.items.len);
+    for (pg.events.items, names) |ev, *name| {
         const v = switch (ev.item.value.kind) {
             .dynamic => ev.item.value.dynamic.?,
             else => return limit(cx, ev.node, "this event's handler is a message written as a literal, which `browser-inline` cannot route to a key"),
         };
         const payload_form = ev.item.form == .payload;
         const sent = cx.pieceEventCtor(v, payload_form) orelse return limit(cx, ev.node, "`browser-inline` wires an event of another module's markup by the constructor alone, which takes the event's payload or nothing, and this event's handler value is a constructor applied to values, or not a constructor");
-        const hi = for (handlers.items, 0..) |h, i| {
-            if (std.meta.eql(h.ctor, sent.ctor)) break i;
-        } else blk: {
-            try handlers.append(cx.arena, .{ .ctor = sent.ctor, .fields = sent.fields, .controls = &.{} });
-            try params.append(cx.arena, try cx.fresh("on"));
-            try controls.append(cx.arena, .empty);
-            break :blk handlers.items.len - 1;
-        };
-        // The binding functions of a control this event is on (§8.3).
-        for (pg.functions.items, 0..) |f, fi| for (f.writes.items) |wi| {
+        const moved_key: ?u32 = for (plan.moved) |mv| {
+            if (mv.ctor.module == sent.ctor.module and mv.ctor.index == sent.ctor.index) break mv.key;
+        } else null;
+        // The buckets of a control this event is on (§8.3).
+        var own_controls: std.ArrayList(m.Program.BucketRef) = .empty;
+        for (pg.functions.items) |f| for (f.writes.items) |wi| {
             const w = pg.writes.items[wi];
             if (!w.stateful or w.target != ev.target) continue;
-            if (std.mem.indexOfScalar(u32, controls.items[hi].items, @intCast(fi)) == null) try controls.items[hi].append(cx.arena, @intCast(fi));
+            try addRefs(cx.arena, &own_controls, try pg.functionBuckets(&f));
         };
-        const h = try js.name(params.items[hi]);
+        if (moved_key) |key| {
+            const li = for (locals.items, 0..) |x, k| {
+                if (x.key == key) break k;
+            } else blk: {
+                try locals.append(cx.arena, .{ .key = key, .fields = sent.fields, .name = try cx.fresh("on") });
+                break :blk locals.items.len - 1;
+            };
+            name.* = locals.items[li].name;
+            try addRefs(cx.arena, &locals.items[li].controls, own_controls.items);
+        } else {
+            const hi = for (handlers.items, 0..) |h, k| {
+                if (std.meta.eql(h.ctor, sent.ctor)) break k;
+            } else blk: {
+                try handlers.append(cx.arena, .{ .ctor = sent.ctor, .fields = sent.fields, .controls = &.{} });
+                try params.append(cx.arena, try cx.fresh("on"));
+                try controls.append(cx.arena, .empty);
+                break :blk handlers.items.len - 1;
+            };
+            name.* = params.items[hi];
+            try addRefs(cx.arena, &controls.items[hi], own_controls.items);
+        }
+    }
+    // Each moved key's handler: its arm piece writes the slice the root
+    // holds, in place, then its write pass.
+    for (locals.items) |x| {
+        const hblk = try js.block();
+        const fields = try cx.arena.alloc(m.Name, x.fields);
+        for (fields) |*f| f.* = try cx.fresh("value");
+        try cx.pieceArm(hblk, x.key, fields, try js.name(holders[0]));
+        var refs: std.ArrayList(m.Program.BucketRef) = .empty;
+        try addRefs(cx.arena, &refs, cx.keyBuckets(x.key));
+        try addRefs(cx.arena, &refs, x.controls.items);
+        std.mem.sort(m.Program.BucketRef, refs.items, {}, refLess);
+        try pg.writePass(hblk, refs.items);
+        try js.constant(body, x.name, try js.arrow(fields, hblk));
+    }
+    // Each event wired to its handler.
+    for (pg.events.items, names) |ev, name| {
+        const facts = tree.eventFacts(ev.item.event);
+        const dom = tree.string(facts.dom_name);
+        const kind: ?[]const u8 = if (std.mem.eql(u8, dom, "click")) null else dom;
+        const h = try js.name(name);
         var listener = h;
-        if (payload_form) {
+        if (ev.item.form == .payload) {
             const e = try cx.fresh("event");
             const blk = try js.block();
             const payload = if (try cx.extractor(ev.index)) |extract| try js.call(extract, &.{try js.name(e)}) else try js.name(e);
@@ -270,7 +326,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         const node = try pg.ref(ev.target);
         if (!facts.prevent_default and !facts.stop_propagation) {
-            try js.expression(wire, try pg.onCall(node, listener, kind, ev.ctx));
+            try js.expression(body, try pg.onCall(node, listener, kind, ev.ctx));
             continue;
         }
         const active = try pg.armActivity(ev.ctx);
@@ -289,19 +345,23 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
         try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), &.{ listener, try js.name(evn) }));
-        try js.expression(wire, try js.call(try js.member(node, "addEventListener"), &.{ try js.string(kind orelse "click"), try js.arrow(&.{evn}, dom_blk) }));
-    }
-    var wire_name: ?[]const u8 = null;
-    if (handlers.items.len != 0) {
-        const base = try std.fmt.allocPrint(a, "{s}$$on${d}", .{ req.decl, req.ordinal });
-        const all = try cx.arena.alloc(m.Name, params.items.len + 1);
-        all[0] = pg.elements.?;
-        @memcpy(all[1..], params.items);
-        try cx.pieceExport(base, try js.arrow(all, wire));
-        wire_name = base;
+        try js.expression(body, try js.call(try js.member(node, "addEventListener"), &.{ try js.string(kind orelse "click"), try js.arrow(&.{evn}, dom_blk) }));
     }
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
-    for (out_handlers, handlers.items, controls.items) |*o, h, c| o.* = .{ .ctor = h.ctor, .fields = h.fields, .controls = try a.dupe(u32, c.items) };
+    for (out_handlers, handlers.items, controls.items) |*o, h, c| o.* = .{ .ctor = h.ctor, .fields = h.fields, .controls = try a.dupe(m.Program.BucketRef, c.items) };
+    // The factory, when the root has anything to do at mount.
+    var root_name: ?[]const u8 = null;
+    if (pg.functions.items.len != 0 or pg.events.items.len != 0) {
+        var all: std.ArrayList(m.Name) = .empty;
+        try all.append(cx.arena, pg.elements.?);
+        try all.appendSlice(cx.arena, holders);
+        if (pg.used_own) try all.append(cx.arena, pg.own.?);
+        if (pg.used_table) try all.append(cx.arena, pg.table.?);
+        try all.appendSlice(cx.arena, params.items);
+        const base = try std.fmt.allocPrint(a, "{s}$$root${d}", .{ req.decl, req.ordinal });
+        try cx.pieceExport(base, try js.arrow(all.items, body));
+        root_name = base;
+    }
     const data = try a.create(PieceData);
     // The static markup, a piece of its own: every end tag of the top
     // element written, since the program site writes more after it.
@@ -309,8 +369,32 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     try serialise(cx.arena, &html, pg.top_nodes, null, false);
     const html_base = try std.fmt.allocPrint(a, "{s}$$html${d}", .{ req.decl, req.ordinal });
     try cx.pieceExport(html_base, try js.string(html.items));
-    data.* = .{ .html = html_base, .top = try a.dupe(u8, pg.top_nodes[0].name), .nodes = try copyHtml(a, pg.top_nodes), .count = pg.count, .arity = cx.pieceArity(), .binds = binds, .wire = wire_name, .handlers = out_handlers };
+    data.* = .{
+        .html = html_base,
+        .top = try a.dupe(u8, pg.top_nodes[0].name),
+        .nodes = try copyHtml(a, pg.top_nodes),
+        .count = pg.count,
+        .root = root_name,
+        .arity = @intCast(holders.len),
+        .own_row = pg.used_own,
+        .table = pg.used_table,
+        .handlers = out_handlers,
+    };
     req.facts.* = .{ .written = true, .data = data };
+}
+
+/// A handler a piece's factory writes itself: a moved key's (§8.4, amended
+/// 2026-10-22), its fields, its name, and the buckets of the controls its
+/// events are on.
+const Local = struct { key: u32, fields: u32, name: m.Name, controls: std.ArrayList(m.Program.BucketRef) = .empty };
+
+/// `refs` added to `into`, each once.
+fn addRefs(a: std.mem.Allocator, into: *std.ArrayList(m.Program.BucketRef), refs: []const m.Program.BucketRef) !void {
+    for (refs) |ref| {
+        for (into.items) |x| {
+            if (x.row == ref.row and x.bucket == ref.bucket) break;
+        } else try into.append(a, ref);
+    }
 }
 
 /// A deep copy of `nodes` into `a`, which outlives the lowering that made
@@ -413,24 +497,20 @@ const Event = struct {
     captures: []const u32 = &.{},
 };
 
-/// One binding function: the writes of one set of read sets, or a piece's
-/// binding function called with its elements and argument.
+/// One binding function — a binding entry (§8.4, amended 2026-10-22): the
+/// writes of one set of read sets.
 const Function = struct {
     groups: []const u32,
     writes: std.ArrayList(u32) = .empty,
-    name: m.Name = undefined,
-    piece: ?struct { use: u32, bind: u32 } = null,
 };
 
 /// Another module's root the page shows as pieces: its hole, its top
-/// element's place, its facts, the name of its elements, and the index of
-/// the first of its binding functions among the page's.
+/// element's place, its facts, and the name of its elements.
 const PieceUse = struct {
     node: m.Node.Index,
     target: u32,
     data: *const PieceData,
     elements: m.Name = undefined,
-    first: u32 = 0,
 };
 
 /// One program's page, as the lowering builds it.
@@ -459,18 +539,23 @@ const Page = struct {
     single: bool = false,
     /// The handlers by key, named when something first calls one.
     handlers: []?m.Name = &.{},
-    /// Per key, the functions of the stateful controls its events are on.
-    controls: []std.ArrayList(u32) = &.{},
-    /// Per group, the functions that hold one of its writes; per function,
-    /// the last key `passOf` took it for.
-    by_group: std.AutoHashMapUnmanaged(u32, std.ArrayList(u32)) = .empty,
-    stamp: []u32 = &.{},
+    /// Per key, the buckets of the stateful controls its events are on.
+    controls: []std.ArrayList(m.Program.BucketRef) = &.{},
     dispatch: ?m.Name = null,
     /// The page is another module's root, written as pieces (`piece`).
     piece: bool = false,
-    /// A piece's binding functions' parameters after the elements.
-    piece_args: []const m.Name = &.{},
     pieces: std.ArrayList(PieceUse) = .empty,
+    /// The root plan (§8.4, amended 2026-10-22): this unit's row of the
+    /// program's table; a piece's holders, one per argument of its
+    /// function; the names of its own row and of the program's table, and
+    /// whether its code reads them; the program's model cell.
+    row: ?u32 = null,
+    holders: []const m.Name = &.{},
+    own: ?m.Name = null,
+    table: ?m.Name = null,
+    used_own: bool = false,
+    used_table: bool = false,
+    cell: ?m.Name = null,
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
@@ -807,8 +892,9 @@ const Page = struct {
     /// The mount (`browser-inline.md` §3–§4, §8): the element found, `init`
     /// evaluated (a release build drops it when nothing reads it and it has
     /// no effect), the markup written once after the element's children,
-    /// the elements found, each binding function written and called once,
-    /// each key's handler, each event wired, each subscription started,
+    /// the elements found, the program's table made, the program's own
+    /// binding entries made, each key's handler, each event wired, each
+    /// root's factory called, the first pass, each subscription started,
     /// `init`'s command queued, and what undoes the mount registered.
     fn mount(pg: *Page, view_node: m.Node.Index) m.Error!m.Expr {
         const cx = pg.cx;
@@ -886,7 +972,16 @@ const Page = struct {
         // The model, kept only when something reads it.
         pg.model = try cx.fresh("model");
         const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or pg.pieces.items.len != 0 or subs.len != 0 or runs;
-        if (reads_model) try js.let(body, pg.model, if (element_) try js.member(init, "a") else init);
+        if (reads_model) {
+            const first_model = if (element_) try js.member(init, "a") else init;
+            // A root reaches the model through the program's cell when no
+            // object of it is one every key keeps (§8.4, amended 2026-10-22):
+            // the model is then held in the cell's one slot.
+            if (cx.programModelCell()) {
+                pg.cell = try cx.fresh("cell");
+                try js.constant(body, pg.cell.?, try js.array(&.{first_model}));
+            } else try js.let(body, pg.model, first_model);
+        }
         if (pg.top_nodes.len == 1) {
             cx.at(view_node);
             var html: std.ArrayList(u8) = .empty;
@@ -942,54 +1037,45 @@ const Page = struct {
         };
         if (retains) try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.arrow(&.{}, release_bindings)}));
 
-        // The binding functions, each written once and called once now.
+        // The program's table (§8.4, amended 2026-10-22): a row per root
+        // that has buckets, each bucket made before any root fills one, so a
+        // root may add to another's in either order.
+        const rows = cx.programRows();
+        pg.table = try cx.fresh("table");
+        if (rows.len != 0) {
+            const row_exprs = try pg.a().alloc(m.Expr, rows.len);
+            for (rows, row_exprs) |n, *re| {
+                const buckets = try pg.a().alloc(m.Expr, n);
+                for (buckets) |*b| b.* = try js.array(&.{});
+                re.* = try js.array(buckets);
+            }
+            try js.constant(body, pg.table.?, try js.array(row_exprs));
+        }
+        pg.row = cx.programRootRow(null);
+
+        // The program's own binding entries, in document order.
         try pg.guardGroups();
         try pg.group();
         try pg.letsOnce();
         try pg.argsOnce();
-        for (pg.pieces.items, 0..) |*u, ui| {
-            u.first = @intCast(pg.functions.items.len);
-            for (u.data.binds, 0..) |b, bi| try pg.functions.append(pg.a(), .{ .groups = b.groups, .piece = .{ .use = @intCast(ui), .bind = @intCast(bi) } });
-        }
-        for (pg.functions.items) |*f| {
-            const blk = try js.block();
-            f.name = try cx.fresh("bind");
-            if (f.piece) |pat| {
-                // A piece's binding: the table and the root's function's
-                // arguments are its wrapper's parameters, which release names
-                // alike in every piece's wrapper, as tea-inline's widget
-                // functions' `(E, s)`; the piece is written into it.
-                const u = pg.pieces.items[pat.use];
-                const params = try pg.a().alloc(m.Name, u.data.arity + 1);
-                for (params) |*x| x.* = try cx.fresh("p");
-                const callee = try cx.programPieceName(u.node, u.data.binds[pat.bind].name);
-                const args = try pg.a().alloc(m.Expr, params.len);
-                for (args, params) |*x, n| x.* = try js.name(n);
-                try js.expression(blk, try js.call(try js.name(callee), args));
-                try js.constant(body, f.name, try js.arrow(params, blk));
-                continue;
-            }
-            try pg.writeFunction(blk, f);
-            try js.constant(body, f.name, try js.arrow(&.{}, blk));
-        }
-        for (0..pg.functions.items.len) |fi| try pg.callFunction(body, @intCast(fi));
+        for (pg.functions.items) |*f| try pg.writeEntry(body, f);
 
         // Plan events before writing handlers: each key determines which
         // stateful controls its arm writes back. Each DOM listener carries
         // its own arm.
         var plans: std.ArrayList(Plan) = .empty;
         for (pg.events.items) |ev| try plans.append(pg.a(), try pg.plan(ev));
-        // Per key, the functions writing a stateful control one of its events
-        // is on: its handler calls them whatever it writes (§8.3).
-        pg.controls = try pg.a().alloc(std.ArrayList(u32), keys.len);
+        // Per key, the buckets of a stateful control one of its events is
+        // on: its handler runs them whatever it writes (§8.3).
+        pg.controls = try pg.a().alloc(std.ArrayList(m.Program.BucketRef), keys.len);
         @memset(pg.controls, .empty);
-        var stateful_at: std.AutoHashMapUnmanaged(?u32, std.ArrayList(u32)) = .empty;
-        for (pg.functions.items, 0..) |f, fi| for (f.writes.items) |wi| {
+        var stateful_at: std.AutoHashMapUnmanaged(?u32, std.ArrayList(m.Program.BucketRef)) = .empty;
+        for (pg.functions.items) |*f| for (f.writes.items) |wi| {
             const w = pg.writes.items[wi];
             if (!w.stateful) continue;
             const slot = try stateful_at.getOrPut(pg.a(), w.target);
             if (!slot.found_existing) slot.value_ptr.* = .empty;
-            try slot.value_ptr.append(pg.a(), @intCast(fi));
+            try addRefs(pg.a(), slot.value_ptr, try pg.functionBuckets(f));
         };
         // DOM sites get their arm at wiring. Only non-DOM consumers need
         // a named handler; all sites still contribute to key-wide controls.
@@ -1003,7 +1089,7 @@ const Page = struct {
         }
         for (plans.items, 0..) |pl, i| {
             refs[pl.key] += 1;
-            if (stateful_at.get(pg.events.items[i].target)) |fs| try pg.controls[pl.key].appendSlice(pg.a(), fs.items);
+            if (stateful_at.get(pg.events.items[i].target)) |fs| try addRefs(pg.a(), &pg.controls[pl.key], fs.items);
         }
         // Each piece's handlers, by the key the constructor reaches through
         // the hole's maps.
@@ -1020,7 +1106,7 @@ const Page = struct {
                 const k = pk.key;
                 if (keys[k].fields != (if (pk.whole) 1 else h.fields)) return limit(cx, u.node, "an event of this other module's markup sends a message whose key's handler takes another number of fields");
                 refs[k] += 1;
-                for (h.controls) |c| try pg.controls[k].append(pg.a(), u.first + c);
+                try addRefs(pg.a(), &pg.controls[k], h.controls);
             }
         }
         for (refs, 0..) |r, k| if (r != 0 and element_) {
@@ -1043,21 +1129,18 @@ const Page = struct {
             pg.dispatch = try cx.fresh("dispatch");
         }
 
-        // Each handler body writes the model, then the
-        // write pass calls each binding function the key's writes reach,
-        // once, then its command is queued.
+        // Each handler body writes the model, then its write pass runs the
+        // buckets the key's writes reach, each entry once, then its command
+        // is queued.
         const any = for (refs) |r| {
             if (r != 0) break true;
         } else false;
         const update = if (any) try cx.programUpdate(body) else null;
         const listeners = try pg.a().alloc(m.Expr, plans.items.len);
-        // Compute once after every control has contributed. passOf's stamps
-        // deduplicate each key's pass; every generated body reuses that same
-        // immutable, document-ordered slice.
         // Initialized exactly for refs[k] != 0: every plan and piece key
         // contributes a reference before its body reads passes[k], as do
         // subscription and dispatcher consumers before a named body.
-        const passes = try pg.a().alloc([]const u32, keys.len);
+        const passes = try pg.a().alloc([]const m.Program.BucketRef, keys.len);
         for (keys, 0..) |key, k| {
             if (refs[k] == 0) continue;
             try pg.refuseKey(key);
@@ -1122,15 +1205,25 @@ const Page = struct {
             }));
         }
 
-        // Each piece's events, wired to the handlers of their keys.
+        // Each piece's root factory (§8.4, amended 2026-10-22), in placement
+        // order: its elements, what it holds of the model, the buckets it
+        // fills, and a handler per constructor its events send.
+        if (pg.pieces.items.len != 0) try cx.programViewEnter(body, try pg.modelRef());
         for (pg.pieces.items, piece_keys) |u, ks| {
-            const wire = u.data.wire orelse continue;
-            const args = try pg.a().alloc(m.Expr, ks.len + 1);
-            args[0] = try js.name(u.elements);
-            for (args[1..], ks, u.data.handlers) |*x, pk, h| {
-                // Each piece wiring receives its own body. A whole-message
-                // leaf still receives the same reconstructed message below.
-                const blk = try js.block();
+            const factory = u.data.root orelse continue;
+            const blk = body;
+            const holders = try cx.programRootArgs(blk, u.node, pg.model, pg.cell);
+            std.debug.assert(holders.len == u.data.arity);
+            var args: std.ArrayList(m.Expr) = .empty;
+            try args.append(pg.a(), try js.name(u.elements));
+            try args.appendSlice(pg.a(), holders);
+            const row = cx.programRootRow(u.node);
+            if (u.data.own_row) try args.append(pg.a(), try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{row.?}))));
+            if (u.data.table) try args.append(pg.a(), try js.name(pg.table.?));
+            for (ks, u.data.handlers) |pk, h| {
+                // Each handler its own body. A whole-message leaf receives the
+                // message its constructor's fields make.
+                const hblk = try js.block();
                 const fields = try pg.a().alloc(m.Name, h.fields);
                 const field_exprs = try pg.a().alloc(m.Expr, h.fields);
                 for (fields, field_exprs) |*f, *fe| {
@@ -1139,14 +1232,18 @@ const Page = struct {
                 }
                 const params = if (pk.whole) p: {
                     const value = try cx.fresh("value");
-                    try js.constant(blk, value, try cx.programPieceMessage(u.node, h.ctor, pk.key, field_exprs));
+                    try js.constant(hblk, value, try cx.programPieceMessage(u.node, h.ctor, pk.key, field_exprs));
                     break :p try pg.a().dupe(m.Name, &.{value});
                 } else fields;
-                try pg.handlerBody(blk, pk.key, params, update, passes[pk.key]);
-                x.* = try js.arrow(fields, blk);
+                try pg.handlerBody(hblk, pk.key, params, update, passes[pk.key]);
+                try args.append(pg.a(), try js.arrow(fields, hblk));
             }
-            try js.expression(body, try js.call(try js.name(try cx.programPieceName(u.node, wire)), args));
+            try js.expression(blk, try js.call(try js.name(try cx.programPieceName(u.node, factory)), args.items));
         }
+        if (pg.pieces.items.len != 0) cx.programViewLeave();
+        // Every root has made its entries: the first pass, before the
+        // subscriptions start and `init`'s command runs.
+        if (pg.functions.items.len != 0 or pg.pieces.items.len != 0) try js.expression(body, try js.call(try js.name(try cx.runtime("first")), &.{}));
 
         // Each subscription started: the first declaration of each key
         // starts it, and each value goes through every declaration of that
@@ -1611,10 +1708,8 @@ const Page = struct {
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) try chain.insert(pg.a(), 0, c);
         if (pg.piece) {
-            const args = try pg.a().alloc(m.Expr, pg.piece_args.len);
-            for (args, pg.piece_args) |*x, n| x.* = try pg.cx.js.name(n);
-            try pg.cx.pieceViewEnter(blk, args);
-        } else try pg.cx.programViewEnter(blk, try pg.cx.js.name(pg.model));
+            try pg.cx.pieceViewEnter(blk, try pg.viewArgs());
+        } else try pg.cx.programViewEnter(blk, try pg.modelRef());
         for (chain.items[1..]) |c| {
             const x = pg.ctxs.items[c];
             switch (x.kind) {
@@ -1673,26 +1768,74 @@ const Page = struct {
         pg.cx.programViewLeave();
     }
 
-    /// A call of binding function `fi` into `blk`: of no arguments, or for a
-    /// piece's, its table and the root's function's arguments, evaluated in
-    /// the `view` as the model is now.
-    fn callFunction(pg: *Page, blk: m.Block, fi: u32) m.Error!void {
+    /// The arguments of a piece's function, each read from its holder
+    /// (`cx.pieceRootArg`): what `pieceViewEnter` binds its parameters to.
+    fn viewArgs(pg: *Page) m.Error![]const m.Expr {
+        const args = try pg.a().alloc(m.Expr, pg.holders.len);
+        for (args, pg.holders, 0..) |*x, h, k| x.* = try pg.cx.pieceRootArg(@intCast(k), try pg.cx.js.name(h));
+        return args;
+    }
+
+    /// The program's model: its cell's one slot when it has one
+    /// (`cx.programModelCell`), else its local.
+    fn modelRef(pg: *Page) m.Error!m.Expr {
+        const js = pg.cx.js;
+        if (pg.cell) |c| return js.index(try js.name(c), try js.number("0"));
+        return js.name(pg.model);
+    }
+
+    /// Bucket `ref` of the program's table: this piece's own row's, or the
+    /// table's, written `row[b]` or `table[r][b]`.
+    fn bucketExpr(pg: *Page, at: m.Program.BucketRef) m.Error!m.Expr {
+        const js = pg.cx.js;
+        const b = try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{at.bucket}));
+        if (pg.piece and pg.row != null and pg.row.? == at.row) {
+            pg.used_own = true;
+            return js.index(try js.name(pg.own.?), b);
+        }
+        pg.used_table = true;
+        const row = try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{at.row})));
+        return js.index(row, b);
+    }
+
+    /// The buckets binding function `f` reads: those of each read set it is
+    /// in, sorted, each once.
+    fn functionBuckets(pg: *Page, f: *const Function) m.Error![]const m.Program.BucketRef {
+        var out: std.ArrayList(m.Program.BucketRef) = .empty;
+        for (f.groups) |g| try addRefs(pg.a(), &out, pg.cx.groupBuckets(g));
+        std.mem.sort(m.Program.BucketRef, out.items, {}, refLess);
+        return out.items;
+    }
+
+    /// Binding function `f` made a binding entry into `blk` (§8.4, amended
+    /// 2026-10-22): the runtime's `entry` gives it its ordinal and adds it to
+    /// each bucket of what it reads. One that reads no bucket runs in the
+    /// first pass alone.
+    fn writeEntry(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
-        const f = pg.functions.items[fi];
-        const at = f.piece orelse return js.expression(blk, try js.call(try js.name(f.name), &.{}));
-        const u = pg.pieces.items[at.use];
-        const inner = try js.block();
-        const arms = try pg.enter(inner, 0, null);
-        const args = try cx.programPieceArgs(inner, u.node);
-        // The wrapper takes the table and the root's function's parameters.
-        std.debug.assert(args.len == u.data.arity);
-        const all = try pg.a().alloc(m.Expr, args.len + 1);
-        all[0] = try js.name(u.elements);
-        @memcpy(all[1..], args);
-        try js.expression(inner, try js.call(try js.name(f.name), all));
-        pg.leave(arms);
-        try js.nested(blk, inner);
+        const fbody = try js.block();
+        try pg.writeFunction(fbody, f);
+        const refs = try pg.functionBuckets(f);
+        // One bucket, or an array of the buckets: `entry` adds `f` to each.
+        const buckets = if (refs.len == 0) try js.array(&.{}) else if (refs.len == 1) try pg.bucketExpr(refs[0]) else array: {
+            const list = try pg.a().alloc(m.Expr, refs.len);
+            for (list, refs) |*x, b| x.* = try pg.bucketExpr(b);
+            break :array try js.array(list);
+        };
+        try js.expression(blk, try js.call(try js.name(try cx.runtime("entry")), &.{ try js.arrow(&.{}, fbody), buckets }));
+    }
+
+    /// A write pass of `refs` into `blk`: the runtime's `pass` of one
+    /// bucket, `passes` of several, nothing for none.
+    fn writePass(pg: *Page, blk: m.Block, refs: []const m.Program.BucketRef) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        if (refs.len == 0) return;
+        if (refs.len == 1) return js.expression(blk, try js.call(try js.name(try cx.runtime("pass")), &.{try pg.bucketExpr(refs[0])}));
+        const list = try pg.a().alloc(m.Expr, refs.len);
+        for (list, refs) |*x, b| x.* = try pg.bucketExpr(b);
+        try js.expression(blk, try js.call(try js.name(try cx.runtime("passes")), &.{try js.array(list)}));
     }
 
     /// Root `r`'s `let`s that `values` read, directly or through a later
@@ -1776,7 +1919,6 @@ const Page = struct {
             if (safe) continue;
             var entering: u32 = 0;
             for (pg.functions.items) |*f| {
-                if (f.piece != null) continue;
                 var enters = false;
                 for (f.writes.items) |wi| {
                     var at: ?u32 = pg.writes.items[wi].ctx;
@@ -1793,7 +1935,6 @@ const Page = struct {
     fn letsOnce(pg: *Page) m.Error!void {
         var seen: std.AutoHashMapUnmanaged(u64, u32) = .empty;
         for (pg.functions.items, 0..) |*f, fi| {
-            if (f.piece != null) continue;
             var done: std.ArrayList(u32) = .empty;
             for (f.writes.items) |first| {
                 const ctx = pg.writes.items[first].ctx;
@@ -1955,10 +2096,8 @@ const Page = struct {
         }
         const body = try js.block();
         if (pg.piece) {
-            const args = try pg.a().alloc(m.Expr, pg.piece_args.len);
-            for (args, pg.piece_args) |*x, n| x.* = try js.name(n);
-            try cx.pieceViewEnter(body, args);
-        } else try cx.programViewEnter(body, try js.name(pg.model));
+            try cx.pieceViewEnter(body, try pg.viewArgs());
+        } else try cx.programViewEnter(body, try pg.modelRef());
         try p.context(0, body, null);
         cx.programViewLeave();
         try js.nested(blk, body);
@@ -1999,8 +2138,6 @@ const Page = struct {
     fn writeFunction(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
-        // A piece's binding is the program site's wrapper's call (`page`).
-        std.debug.assert(f.piece == null);
         if (pg.prepares(f)) return pg.writePrepared(blk, f);
         var done: std.ArrayList(u32) = .empty;
         var call_args: std.ArrayList(CallArgs) = .empty;
@@ -2168,15 +2305,15 @@ const Page = struct {
     }
 
     /// Key `k`'s handler body into `blk`, its fields `params`: the arm
-    /// writes the model, then the write pass calls each binding function the
-    /// key's writes reach — and each a control of the key's events shows —
-    /// once, in document order, then the key's command is queued.
-    fn handlerBody(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr, pass: []const u32) m.Error!void {
+    /// writes the model, then the write pass runs the buckets the key's
+    /// writes reach — and those of a control the key's events show — each
+    /// entry once, in document order, then the key's command is queued.
+    fn handlerBody(pg: *Page, blk: m.Block, k: u32, params: []const m.Name, update: ?m.Expr, pass: []const m.Program.BucketRef) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
         const element_ = pg.p.constructor == 1;
         const incoming = try cx.fresh("before");
-        try js.constant(blk, incoming, try js.name(pg.model));
+        try js.constant(blk, incoming, try pg.modelRef());
         const before = try js.name(incoming);
         const next = try cx.programArmFields(k, blk, params, before, update);
         var result = next;
@@ -2189,63 +2326,46 @@ const Page = struct {
         // already holds, as `before` itself (`programArmFields`; the compiler
         // side is `Lower.directArmFields`): no store. A handle that is not
         // `before` stores, which is never wrong.
-        if (element_ or next != before) try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
-        for (pass) |fi| try pg.callFunction(blk, fi);
+        if (element_ or next != before) try js.assign(blk, try pg.modelRef(), if (element_) try js.member(result, "a") else result);
+        try pg.writePass(blk, pass);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
         };
     }
 
-    /// Key `k`'s write pass (§8.3): the binding functions the key's writes
-    /// reach — from the groups the pass says they conflict with, each
-    /// function found by its groups — and those of the controls its events
-    /// are on, each once, in document order. There is no coarse pass: a `*`
-    /// key reaches here only for a model of one value (`refuseKey`), whose
-    /// whole write is that value, and the groups it reaches are the ones the
-    /// pass found for it like any other key's (`programGroupsOf`).
-    fn passOf(pg: *Page, k: u32, the: m.Program.Key) m.Error![]const u32 {
+    /// Key `k`'s write pass (§8.3, §8.4 amended 2026-10-22): the buckets
+    /// the key's writes conflict with, by the root plan, and those of the
+    /// controls its events are on, sorted, each once; the runner runs each
+    /// entry once, in document order. There is no coarse pass: a `*` key
+    /// reaches here only for a model of one value (`refuseKey`), whose whole
+    /// write is that value, and the buckets it reaches are the ones its
+    /// writes conflict with like any other key's.
+    fn passOf(pg: *Page, k: u32, the: m.Program.Key) m.Error![]const m.Program.BucketRef {
         // By construction: `refuseKey` ran for this key before its handler,
         // and refuses every `*` key but one of a model of one value.
         if (the.star) std.debug.assert(the.star_kind == .single_value);
         // Null only for a program the pass did not analyse, whose keys
         // `refuseKey` refused (`.none`); refused here too, so no build mode
         // writes a handler without its pass.
-        const groups = pg.cx.programGroupsOf(k) orelse return pg.cx.programReport(.update, .not_implemented,
+        _ = pg.cx.programGroupsOf(k) orelse return pg.cx.programReport(.update, .not_implemented,
             \\A limit of the compiler: the write-set pass did not analyse this program, so
             \\`browser-inline` cannot say which bindings a message reaches
             \\(`docs/design/browser-inline.md` §8.3; §5, class 4). The program is valid: it builds
             \\with `--platform=browser-tea`.
         );
-        if (pg.by_group.count() == 0 and pg.functions.items.len != 0) {
-            pg.stamp = try pg.a().alloc(u32, pg.functions.items.len);
-            @memset(pg.stamp, std.math.maxInt(u32));
-            for (pg.functions.items, 0..) |f, fi| for (f.groups) |g| {
-                const slot = try pg.by_group.getOrPut(pg.a(), g);
-                if (!slot.found_existing) slot.value_ptr.* = .empty;
-                try slot.value_ptr.append(pg.a(), @intCast(fi));
-            };
-        }
-        var out: std.ArrayList(u32) = .empty;
-        const add = struct {
-            fn f(p: *Page, list: []const u32, key: u32, into: *std.ArrayList(u32)) !void {
-                for (list) |fi| {
-                    if (p.stamp[fi] == key) continue;
-                    p.stamp[fi] = key;
-                    try into.append(p.a(), fi);
-                }
-            }
-        }.f;
-        for (groups) |g| if (pg.by_group.get(g)) |fs| try add(pg, fs.items, k, &out);
-        // By construction: every write's group passed `known`, and a
-        // piece's binds were made by its owner's lowering, which refused the
-        // same way, so no function is in the unknown bucket.
-        std.debug.assert(pg.by_group.get(std.math.maxInt(u32)) == null);
-        if (pg.controls.len != 0) try add(pg, pg.controls[k].items, k, &out);
-        std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
+        var out: std.ArrayList(m.Program.BucketRef) = .empty;
+        try addRefs(pg.a(), &out, pg.cx.keyBuckets(k));
+        if (pg.controls.len != 0) try addRefs(pg.a(), &out, pg.controls[k].items);
+        std.mem.sort(m.Program.BucketRef, out.items, {}, refLess);
         return out.items;
     }
 };
+
+fn refLess(_: void, x: m.Program.BucketRef, y: m.Program.BucketRef) bool {
+    if (x.row != y.row) return x.row < y.row;
+    return x.bucket < y.bucket;
+}
 
 /// An event's listener, planned (`Page.plan`).
 const Plan = struct {

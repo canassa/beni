@@ -2394,6 +2394,21 @@ publishes these facts for instructions and local read paths in the dispatch
 sidecar and carries the nominal mutable-cell fact in the cache digest. No
 renderer examines a runtime value to guess its type.
 
+**Version 1.17** (*amended 2026-10-23*, additive, gated on nothing; `browser-inline.md` §8.4,
+amended 2026-10-22, #668): the root plan, made before any module is lowered. At the program site,
+`programRows()` is the program's table — a row per root that has buckets, in placement order, and
+each row's bucket count; `programRootRow(node)` the row of the program's own `view` (`null`) or
+of the root at hole `node`; `programModelCell()` whether a root reads the model through the
+program's cell; `groupBuckets(group)` the buckets a read set selects and `keyBuckets(key)` those a
+key's writes conflict with, each a `Program.BucketRef` of row and bucket; and
+`programRootArgs(block, node, model, cell)` what the program hands a root's factory for each
+argument of its function. Inside `Lowering.piece`, `pieceRoot()` is the root's row, how it reads
+each argument (`Program.RootArg`: `held`, `through`, `cell`, `constant`) and the keys whose
+handlers it writes itself, each by the constructor its events send (`Context.MovedKey`);
+`pieceRootArg(k, holder)` reads argument `k` from what the program handed for it; and
+`pieceArm(block, key, fields, slice)` writes a moved key's arm piece, called with the key's fields
+and the root's slice. A lowering that targets 1.16 sees what it saw.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

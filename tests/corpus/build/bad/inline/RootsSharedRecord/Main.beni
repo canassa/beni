@@ -1,0 +1,58 @@
+-- One record at two paths of the model (`docs/design/browser-inline.md`
+-- §8.4, amended 2026-10-22; `ownership-checker.md` §31.9): `Keep` stores
+-- `w1`'s record at `kept` too, and `W1`'s click then writes it in place, so
+-- the kept copy would change with it. The ownership checker refuses the
+-- program with its record error, before any root is written; no root plan
+-- makes the alias legitimate.
+import Browser
+import Html exposing (Html)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { w1 = W1.init ⊤, w2 = W2.init ⊤, kept = W1.init ⊤ }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+    kept : W1.Model
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Keep
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+        Keep →
+            { model | kept = model.w1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+        <button data-role="keep" onClick={Keep}>Keep</button>
+        <small>{model.kept.cups}</small>
+    </div>

@@ -1,0 +1,53 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "set", "cups": 2}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"3"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"3"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "set", "cups": -5}
+(the DOM did not change)
+-- detail window rr-push {"type": "set", "cups": "x"}
+(the DOM did not change)
+-- click [data-role=four]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"4"</output>
+      </section>
+    </div>
+  </div>
+</body>

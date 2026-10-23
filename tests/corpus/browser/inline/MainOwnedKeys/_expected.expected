@@ -1,0 +1,82 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue] "West"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="West">
+        <p>"West"</p>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=four]
+console.log: forwarded: ⊤
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="Hall">
+        <p>"Hall"</p>
+        <output>"4"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue] "East"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="East">
+        <p>"East"</p>
+        <output>"4"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- advance 1000
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"5"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="Hall">
+        <p>"Hall"</p>
+        <output>"5"</output>
+      </section>
+    </div>
+  </div>
+</body>

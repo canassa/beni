@@ -1,0 +1,55 @@
+-- A record slice the program rebuilds (`docs/design/browser-inline.md` §8.4,
+-- amended 2026-10-22): `Reset` gives `w1` a new record, so no root holds
+-- `w1`'s object: both read it through the model's object, which every key
+-- keeps. A click raises the current record in place, `Reset` makes a new
+-- one, and the next click raises that new one.
+import Browser
+import Html exposing (Html)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { w1 = W1.init ⊤, w2 = W2.init ⊤ }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+        Reset →
+            { model | w1 = { cups = 0 } }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>

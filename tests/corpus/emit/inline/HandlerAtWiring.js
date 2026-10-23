@@ -1,4 +1,4 @@
-import { Inline$root, Inline$own, Inline$text, Inline$on } from "./_platform/Inline.mjs";
+import { Inline$root, Inline$own, Inline$text, Inline$entry, Inline$pass, Inline$on, Inline$first } from "./_platform/Inline.mjs";
 const HandlerAtWiring$main = ($id$1) => {
   const $root$2 = Inline$root("root");
   const $init$3 = 0;
@@ -9,22 +9,23 @@ const HandlerAtWiring$main = ($id$1) => {
     $node$5.remove();
   });
   const $elements$6 = $node$5.querySelectorAll("*");
-  const $bind$7 = () => {
+  const $table$7 = [[[]]];
+  Inline$entry(() => {
     Inline$text($elements$6[0], `${$model$4}`);
-  };
-  $bind$7();
+  }, $table$7[0][0]);
   Inline$on($elements$6[1], () => {
     const $value$8 = 1;
     const $before$9 = $model$4;
     $model$4 = $before$9 + $value$8;
-    $bind$7();
+    Inline$pass($table$7[0][0]);
   });
   Inline$on($elements$6[2], () => {
     const $value$10 = 2;
     const $before$11 = $model$4;
     $model$4 = $before$11 + $value$10;
-    $bind$7();
+    Inline$pass($table$7[0][0]);
   });
+  Inline$first();
 };
 export { HandlerAtWiring$main };
 //# sourceMappingURL=HandlerAtWiring.mjs.map

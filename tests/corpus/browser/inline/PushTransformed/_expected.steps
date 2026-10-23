@@ -1,0 +1,5 @@
+element "root"
+detail window rr-push {"type": "set", "cups": 2}
+detail window rr-push {"type": "set", "cups": -5}
+detail window rr-push {"type": "set", "cups": "x"}
+click [data-role=four]

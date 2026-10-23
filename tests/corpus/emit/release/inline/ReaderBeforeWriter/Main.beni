@@ -1,0 +1,50 @@
+-- The reader is placed before the writer (`docs/design/browser-inline.md`
+-- §8.4, amended 2026-10-22): `W2`'s root, which reads `w1.cups`, is set up
+-- first and adds its entry to `W1`'s `cups` bucket, which the table made
+-- before either root; `W1`'s own entry is added after it, and the bucket
+-- runs both in document order. The same values as `RootClosures`.
+import Browser
+import Html exposing (Html)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { w1 = W1.init ⊤, w2 = W2.init ⊤ }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+        {Html.map (W1.view model.w1) W1Msg}
+    </div>

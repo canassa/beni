@@ -1,0 +1,52 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+        <small></small>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=four]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+        <small></small>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"4"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue] "Hall"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+        <small>"Hall"</small>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="Hall">
+        <p>"Hall"</p>
+        <output>"4"</output>
+      </section>
+    </div>
+  </div>
+</body>

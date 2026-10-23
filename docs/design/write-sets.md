@@ -2263,3 +2263,37 @@ every term joined (`Write.lost_set`, interned, sorted by id), the first in sourc
 it, a lower term id first among terms one instruction made, and the "N more" counts the other
 places the set's terms were made at, each once (`Writes.lostMore`). A write set being built finds a
 path's write by a map, not a scan.
+
+### *Amended 2026-10-23 (`browser-inline`'s root closures, #668):* what a root plan reads
+
+Four outputs, for a lowering that holds a root's slice (`browser-inline.md` §8.4, amended
+2026-10-22). They are made only when the build passes `Input.in_place`, which it does for such a
+lowering alone; no dump passes it, so nothing printed moves.
+
+- **Which objects a key keeps** (`Key.replaced`). Each key's result, before `diff`, is walked from ρ:
+  a path keeps its object where the result is `Same` of it, or `Rec` whose base is that path — a
+  record update, which is written into the object it updates (`ownership-checker.md` §31.10) — and
+  every field of such a `Rec` is walked in turn; an `Alt` is each of its alternatives; any other
+  term may be a new object at that path, and so may everything below it. The minimal such paths
+  are `Key.replaced`. A record update is written in place only in a module whose updates are
+  (`Input.in_place`: a clean module of a build that enforces); when the pass walked an update of
+  any other module, `Key.replaced_strict`, which trusts no `Rec`, holds instead (`spreads`).
+- **The view's parameters** (`Program.view_params`). For each parameter of a function the view
+  walk entered, per call path: the one exact model path it was handed every time, with no choice
+  controlling it, or a value closed over nothing the model holds, or neither.
+- **The maps** (`Program.map_ctors`). Each `Html.map` of a constructor the view walk evaluated,
+  with its call path.
+- **Routes** (`Program.routes`, `findRoutes`). Before any key is read, `update`'s body is walked to
+  its tails through `case`s, `let`s and calls of the program module's functions that hand the
+  model on — and, for `Tea.element`, the model of each pair whose command is `Cmd.none` — none of
+  them reading the model on the way. A tail that gives fields of the model `F x model.f`, `x` a
+  path of locals and `F` another module's function whose body is `Result.withDefault D old`, `D`
+  not reading `old`, is a **route site**: one `record_update` of the model, one record of every
+  field of the model, or a `case` on a key whose string-literal branches are each such an update
+  of one field with one `x` and whose default is the model. Every declaration the walk entered
+  must be called only where the walk called it. A route site is lowered as a copy of `F`'s result
+  into the field's old object (`browser-inline.md` §8.4, amended 2026-10-23, *as built*), so the
+  pass reads it as that copy: the old object, `Rec` over its own path, with each field of its
+  record type written `Fresh` of `F`'s result's dependencies — and each record-typed field the
+  same copy one level down. Its writes are the fields', which every read under the field conflicts
+  with, as it would with the field's `value` write.

@@ -1,0 +1,4 @@
+element "root"
+click [data-role=four]
+input [data-role=venue] "Hall"
+advance 1000

@@ -1,0 +1,42 @@
+--! The first widget: its cups in a form, a record inside its model.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Form =
+    cups : Int
+
+
+pub type alias Model =
+    form : Form
+
+
+pub init : ⊤ → Model
+init ⊤ = { form = { cups = -1 } }
+
+
+pub type Msg
+    = MakeFour
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        MakeFour →
+            form = model.form
+            { model | form = { form | cups = 4 } }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model = Result.withDefault (Json.decodeValue state) model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="four" onClick={MakeFour}>Make it 4</button>
+        <p>{model.form.cups}</p>
+    </section>

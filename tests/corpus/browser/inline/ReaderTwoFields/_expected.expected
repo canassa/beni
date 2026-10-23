@@ -1,0 +1,69 @@
+-- element "root"
+-- load
+console.log: shown: "-1:"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p>"-1:"</p>
+      </section>
+      <button data-role="both">"Both"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=four]
+console.log: shown: "4:"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p>"4:"</p>
+      </section>
+      <button data-role="both">"Both"</button>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue] "West"
+console.log: shown: "4:West"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="West">
+        <p>"4:West"</p>
+      </section>
+      <button data-role="both">"Both"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=both]
+console.log: shown: "5:Hall"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"5"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="Hall">
+        <p>"5:Hall"</p>
+      </section>
+      <button data-role="both">"Both"</button>
+    </div>
+  </div>
+</body>

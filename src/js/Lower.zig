@@ -501,6 +501,71 @@ pub const Direct = struct {
         facts: *beni_markup.PieceFacts,
         arena: std.mem.Allocator,
         arena_state: *std.heap.ArenaAllocator,
+        /// The root plan (`browser-inline.md` §8.4, amended 2026-10-22):
+        /// the root's row of the program's table, `none` when it has no
+        /// bucket, and how it reaches each argument of its function.
+        row: u32 = std.math.maxInt(u32),
+        args: []const RootArg = &.{},
+        /// The keys whose handlers the root writes itself: a key whose
+        /// forwarding arms are proved pure (§8.4, amended 2026-10-22).
+        moved: []const Moved = &.{},
+    };
+
+    /// A key the root's factory handles: the constructor its events send,
+    /// and the arm piece (`lifts`) that writes the root's slice.
+    pub const Moved = struct { key: u32, ctor: Ctor, lift: u32 };
+
+    /// How a root reaches one argument of its function (§8.4, amended
+    /// 2026-10-22): `held`, an object every key keeps, handed to the root
+    /// once; `through`, read below a held object, `holder` its path; `cell`,
+    /// read below the program's model cell, for a model no object of which
+    /// every key keeps; `constant`, a value the same on every evaluation,
+    /// handed once. `steps` are the fields from the holder to the argument.
+    pub const RootArg = struct {
+        kind: beni_markup.Program.RootArg,
+        holder: []const Symbol = &.{},
+        steps: []const Symbol = &.{},
+    };
+
+    /// The routes (`Writes.Routes`): rows of a field of the model, the
+    /// function that gives it, and what a copy into its object writes; sites,
+    /// each an instruction of the program's module.
+    pub const Routes = struct {
+        rows: []const RouteRow = &.{},
+        sites: []const RouteSite = &.{},
+    };
+
+    pub const RouteRow = struct { field: Symbol, fn_module: u32, fn_decl: u32, plan: []const PlanItem };
+    pub const PlanItem = struct { field: Symbol, sub: ?[]const PlanItem = null };
+    pub const RouteSite = struct {
+        module: u32,
+        inst: u32,
+        kind: enum { update, record, keyed },
+        rows: []const u32,
+        raws: []const u32,
+        keys: []const []const u8 = &.{},
+        model: u32,
+    };
+
+    /// A bucket of the program's table: a row, and a bucket of it.
+    pub const BucketRef = beni_markup.Program.BucketRef;
+
+    /// The root plan of one program (§8.4, amended 2026-10-22), made before
+    /// any module is lowered: its table's rows, each a root that has
+    /// buckets, in placement order, and each row's bucket count; which
+    /// buckets each read set and each key selects.
+    pub const Plan = struct {
+        /// Per row, its number of buckets.
+        rows: []const u32 = &.{},
+        /// The program's own `view`'s row, `none` when it has no bucket.
+        local_row: u32 = std.math.maxInt(u32),
+        /// Per group (`Program.groups`), the buckets of its read set,
+        /// sorted, each once.
+        group_buckets: []const []const BucketRef = &.{},
+        /// Per key, the buckets its writes conflict with, sorted.
+        key_buckets: []const []const BucketRef = &.{},
+        /// Some root reaches the model through a cell (`RootArg.cell`).
+        model_cell: bool = false,
     };
 
     pub const Program = struct {
@@ -546,6 +611,11 @@ pub const Direct = struct {
         /// Version 1.15: the places a key's precision was lost
         /// (`Program.Key.Lost.site`), each a module and an instruction of it.
         lost_sites: []const LostSite = &.{},
+        /// Version 1.17: the root plan (`browser-inline.md` §8.4).
+        plan: Plan = .{},
+        /// The pushed-state routes (§8.4, amended 2026-10-22), each site
+        /// lowered as the loader's copy into the model's objects.
+        routes: Routes = .{},
 
         /// Whether key `k`'s write set conflicts with read set `g`.
         pub fn calls(p: *const Program, g: u32, k: u32) bool {
@@ -1278,6 +1348,9 @@ pub const Lowerer = struct {
     piece_pc: ProgramCall = undefined,
     /// The pieces' names, exported.
     piece_exports: std.ArrayList(JsIr.NameIndex) = .empty,
+    /// The route rows' and tables' constants this module hoisted, by
+    /// `program << 32 | row` (§8.4, amended 2026-10-22).
+    route_consts: std.AutoHashMapUnmanaged(u64, JsIr.NameIndex) = .empty,
     /// Inside `cx.programInlineEnter` (version 1.9): the calls entered,
     /// innermost last, and their call path (`Direct.Hole.path`).
     inline_frames: std.ArrayList(InlineFrame) = .empty,
@@ -5052,6 +5125,7 @@ pub const Lowerer = struct {
             const nothing = try l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
             return l.tailReturn(out, nothing, loop, l.pos(inst));
         }
+        if (try l.routeSiteValue(out, inst)) |value| return l.tailReturn(out, value, loop, l.pos(inst));
         switch (l.bir.instTag(inst)) {
             .let => {
                 try l.letBindings(out, l.bir.subRange(@fromBackingInt(@intCast(d.lhs))));
@@ -6399,6 +6473,7 @@ pub const Lowerer = struct {
         if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         if (l.arm_override) |ov| if (try l.overriddenArm(out, ov, inst)) |node_| return node_;
         if (l.msg_track) |mt| if (try l.trackedExpr(out, mt, inst)) |node_| return node_;
+        if (try l.routeSiteValue(out, inst)) |node_| return node_;
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -14934,6 +15009,184 @@ pub const Lowerer = struct {
         return out;
     }
 
+    /// A route site (§8.4, amended 2026-10-22, *Program-owned keys and
+    /// pushed state*): the loader's copy of what each route's function gives
+    /// into the model's object at its field, which keeps its identity, then
+    /// the model itself; null for any other instruction.
+    fn routeSiteValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!?Node.Index {
+        const d = l.in.direct orelse return null;
+        if (l.mk == null) return null;
+        const module = l.in.module.int();
+        const site, const pi = found: for (d.programs, 0..) |*prog, i| {
+            for (prog.routes.sites) |s| if (s.module == module and s.inst == inst.int()) break :found .{ s, i };
+        } else return null;
+        const prog = &d.programs[pi];
+        const p = l.pos(inst);
+        const model = try l.localName(site.model);
+        switch (site.kind) {
+            .keyed => {
+                const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+                const key = try l.expr(out, scrutinee);
+                const raw = try l.expr(out, @fromBackingInt(site.raws[0]));
+                const table = try l.routeTable(prog, @intCast(pi), site);
+                const load = try l.ident(try l.routeRuntime("load"), p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(load, &.{ try l.ident(model, p), try l.ident(table, p), key, raw }, p)).int(), Node.Data.unused));
+            },
+            .update, .record => {
+                const rows = try l.scratch.alloc(Node.Index, site.rows.len);
+                const raws = try l.scratch.alloc(Node.Index, site.rows.len);
+                for (rows, raws, site.rows, site.raws) |*r, *x, row, raw| {
+                    r.* = try l.ident(try l.routeRowConst(prog, @intCast(pi), row), p);
+                    x.* = try l.expr(out, @fromBackingInt(raw));
+                }
+                const all = try l.ident(try l.routeRuntime("loadAll"), p);
+                const rr = try l.b.addRange(rows);
+                const xr = try l.b.addRange(raws);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, &.{ try l.ident(model, p), try l.add(.array, p, @backingInt(rr.start), @backingInt(rr.end)), try l.add(.array, p, @backingInt(xr.start), @backingInt(xr.end)) }, p)).int(), Node.Data.unused));
+            },
+        }
+        return try l.ident(model, p);
+    }
+
+    /// A module-level name for a route constant, `Main$route$1`: taken as a
+    /// markup hoist's is, so no two hoists and no declaration share it.
+    fn routeName(l: *Lowerer, hint: []const u8) Allocator.Error!JsIr.NameIndex {
+        const st = l.mk.?;
+        const base = try l.interner.getOrPut(l.gpa, hint);
+        var tag: u32 = 1;
+        while (true) : (tag += 1) {
+            const n = try l.name(.{ .module = l.module_name.toOptional(), .base = base, .tag = tag });
+            if (n.int() < st.taken.bit_length and st.taken.isSet(n.int())) continue;
+            if (n.int() >= st.taken.bit_length) try st.taken.resize(l.scratch, @max(n.int() + 1, st.taken.bit_length * 2), false);
+            st.taken.set(n.int());
+            return n;
+        }
+    }
+
+    /// The loader's runtime function `name` (§8.4, amended 2026-10-22).
+    fn routeRuntime(l: *Lowerer, export_name: []const u8) Allocator.Error!JsIr.NameIndex {
+        return l.markupRuntime(export_name) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            // The lowering declares the loader's functions (`inline`'s
+            // runtime list): a route is found only for a lowering that holds
+            // slices, which is that one.
+            error.Reported => unreachable,
+        };
+    }
+
+    /// The constant of route row `row` of program `pi`: `[F, field, plan]`,
+    /// hoisted once.
+    fn routeRowConst(l: *Lowerer, prog: *const Direct.Program, pi: u32, row: u32) Allocator.Error!JsIr.NameIndex {
+        const r = prog.routes.rows[row];
+        // One constant per field and function: two sites that route a field
+        // through one function share its row.
+        const first: u32 = for (prog.routes.rows, 0..) |x, i| {
+            if (x.field == r.field and x.fn_module == r.fn_module and x.fn_decl == r.fn_decl) break @intCast(i);
+        } else row;
+        const key = (@as(u64, pi) << 32) | first;
+        if (l.route_consts.get(key)) |n| return n;
+        const st = l.mk.?;
+        const p = st.pos;
+        const fm: Graph.Index = @fromBackingInt(@intCast(r.fn_module));
+        const fb = l.in.birs[r.fn_module];
+        const base = fb.symbol(fb.decls[r.fn_decl].name);
+        try l.needName(.{ .module = fm, .base = base.toOptional() });
+        const f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(fm).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+        const parts = [_]Node.Index{ f, try l.fieldString(r.field, p), try l.planArray(r.plan, p) };
+        const range = try l.b.addRange(&parts);
+        const n = try l.routeName("route");
+        try st.hoisted.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), (try l.add(.array, p, @backingInt(range.start), @backingInt(range.end))).int()));
+        try l.route_consts.put(l.scratch, key, n);
+        return n;
+    }
+
+    /// A copy plan as data: each field's name, or `[name, plan]` for a
+    /// record field whose object the copy keeps.
+    fn planArray(l: *Lowerer, plan: []const Direct.PlanItem, p: u32) Allocator.Error!Node.Index {
+        const items = try l.scratch.alloc(Node.Index, plan.len);
+        for (items, plan) |*x, item| {
+            if (item.sub) |sub| {
+                const pair = [_]Node.Index{ try l.fieldString(item.field, p), try l.planArray(sub, p) };
+                const range = try l.b.addRange(&pair);
+                x.* = try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+            } else x.* = try l.fieldString(item.field, p);
+        }
+        const range = try l.b.addRange(items);
+        return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+    }
+
+    /// A keyed site's table: `[[key, row], …]`, hoisted once.
+    fn routeTable(l: *Lowerer, prog: *const Direct.Program, pi: u32, site: Direct.RouteSite) Allocator.Error!JsIr.NameIndex {
+        const key = (@as(u64, pi) << 32) | (@as(u64, 1) << 31) | site.inst;
+        if (l.route_consts.get(key)) |n| return n;
+        const st = l.mk.?;
+        const p = st.pos;
+        const pairs = try l.scratch.alloc(Node.Index, site.rows.len);
+        for (pairs, site.rows, site.keys) |*x, row, k| {
+            const pair = [_]Node.Index{ try l.stringNode(k, p), try l.ident(try l.routeRowConst(prog, pi, row), p) };
+            const range = try l.b.addRange(&pair);
+            x.* = try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+        }
+        const range = try l.b.addRange(pairs);
+        const n = try l.routeName("routes");
+        try st.hoisted.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), (try l.add(.array, p, @backingInt(range.start), @backingInt(range.end))).int()));
+        try l.route_consts.put(l.scratch, key, n);
+        return n;
+    }
+
+    /// `cx.programRootArgs` (`browser-inline.md` §8.4, amended 2026-10-22):
+    /// per argument of the root's function, what the program hands the
+    /// root's factory — the object at the argument's path, or at its
+    /// holder's, read from `model`; the cell; or a constant evaluated here.
+    fn rootArgs(l: *Lowerer, block: beni_markup.Block, n: beni_markup.Node.Index, model: JsIr.NameIndex, cell: ?JsIr.NameIndex) Allocator.Error![]const beni_markup.Expr {
+        const st = l.mk.?;
+        const found = l.holePiece(n).?;
+        const p = st.pos;
+        var stmts: StmtList = .empty;
+        const out = try l.scratch.alloc(beni_markup.Expr, found.vp.args.len);
+        for (out, found.vp.args, 0..) |*o, arg, k| {
+            const value: Node.Index = switch (arg.kind) {
+                .held, .through => v: {
+                    var at = if (cell) |c| try l.add(.index_get, p, (try l.ident(c, p)).int(), (try l.numberNode("0", p)).int()) else try l.ident(model, p);
+                    for (arg.holder) |f| at = try l.fieldMember(at, f, p);
+                    break :v at;
+                },
+                .cell => try l.ident(cell.?, p),
+                else => try l.expr(&stmts, found.chain.args[k]),
+            };
+            o.* = @fromBackingInt(@intCast(value.int()));
+        }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return out;
+    }
+
+    /// `cx.pieceArm`: moved key `key`'s arm piece, called with the fields
+    /// it takes and the root's slice (§8.4, amended 2026-10-22), as a
+    /// statement: the piece writes the slice in place, and the plan proved
+    /// it answers the slice's own object.
+    fn pieceArmCall(l: *Lowerer, block: beni_markup.Block, key: u32, fields: []const JsIr.NameIndex, slice: Node.Index) Allocator.Error!void {
+        const st = l.mk.?;
+        const vp = l.piece_now.?;
+        const mv = for (vp.moved) |x| {
+            if (x.key == key) break x;
+        } else unreachable;
+        const piece = l.in.direct.?.lifts[mv.lift];
+        const arm = piece.arm.?;
+        const p = st.pos;
+        // The branch's variables, then the function's one other parameter:
+        // the slice (`buildPlans`).
+        std.debug.assert(piece.captures.len == arm.fields.len + 1);
+        const args = try l.scratch.alloc(Node.Index, piece.captures.len);
+        for (arm.fields, 0..) |f, i| args[i] = try l.ident(fields[f], p);
+        args[arm.fields.len] = slice;
+        const m: Graph.Index = @fromBackingInt(@intCast(piece.module));
+        const base = try l.liftBase(m, piece);
+        // The root's own module's piece: no import.
+        if (m != l.in.module) try l.needName(.{ .module = m, .base = base.toOptional() });
+        const f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(m).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+        try st.blocks.items[@backingInt(block)].append(l.scratch, try l.add(.expr_stmt, p, (try l.call(f, args, p)).int(), Node.Data.unused));
+    }
+
     /// `cx.programPieceKey`: the key whose leaf is constructor `ctor` under
     /// the hole's maps, each a constructor of one field.
     fn programPieceKey(l: *Lowerer, node: beni_markup.Node.Index, ctor: beni_markup.Ctor) ?beni_markup.Context.PieceKey {
@@ -18561,6 +18814,72 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directCommand(key);
     }
 
+    fn directPlan(l: *Lowerer) ?*const Direct.Plan {
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        return &d.plan;
+    }
+
+    fn programRows(impl: *anyopaque) []const u32 {
+        const plan = directPlan(lowerer(impl)) orelse return &.{};
+        return plan.rows;
+    }
+
+    fn programRootRow(impl: *anyopaque, n: ?M.Node.Index) ?u32 {
+        const l = lowerer(impl);
+        const plan = directPlan(l) orelse return null;
+        const row = if (n) |hole| (l.holePiece(hole) orelse return null).vp.row else plan.local_row;
+        return if (row == std.math.maxInt(u32)) null else row;
+    }
+
+    fn programModelCell(impl: *anyopaque) bool {
+        const plan = directPlan(lowerer(impl)) orelse return false;
+        return plan.model_cell;
+    }
+
+    fn groupBuckets(impl: *anyopaque, group: u32) []const M.Program.BucketRef {
+        const plan = directPlan(lowerer(impl)) orelse return &.{};
+        return if (group < plan.group_buckets.len) plan.group_buckets[group] else &.{};
+    }
+
+    fn keyBuckets(impl: *anyopaque, key: u32) []const M.Program.BucketRef {
+        const plan = directPlan(lowerer(impl)) orelse return &.{};
+        return if (key < plan.key_buckets.len) plan.key_buckets[key] else &.{};
+    }
+
+    fn programRootArgs(impl: *anyopaque, into: M.Block, n: M.Node.Index, model: M.Name, cell: ?M.Name) E![]const M.Expr {
+        return lowerer(impl).rootArgs(into, n, nameOf(model), if (cell) |c| nameOf(c) else null);
+    }
+
+    fn pieceRoot(impl: *anyopaque) M.Context.PieceRoot {
+        const l = lowerer(impl);
+        const vp = l.piece_now orelse return .{ .row = null, .args = &.{} };
+        const kinds = l.scratch.alloc(M.Program.RootArg, vp.args.len) catch return .{ .row = null, .args = &.{} };
+        for (kinds, vp.args) |*k, arg| k.* = arg.kind;
+        const moved = l.scratch.alloc(M.Context.MovedKey, vp.moved.len) catch return .{ .row = null, .args = &.{} };
+        for (moved, vp.moved) |*o, mv| o.* = .{ .key = mv.key, .ctor = .{ .module = mv.ctor.module, .index = mv.ctor.index, .iface = mv.ctor.iface } };
+        return .{ .row = if (vp.row == std.math.maxInt(u32)) null else vp.row, .args = kinds, .moved = moved };
+    }
+
+    fn pieceArm(impl: *anyopaque, into: M.Block, key: u32, fields: []const M.Name, slice: M.Expr) E!void {
+        return lowerer(impl).pieceArmCall(into, key, @ptrCast(fields), node(slice));
+    }
+
+    fn pieceRootArg(impl: *anyopaque, k: u32, holder: M.Expr) E!M.Expr {
+        const l = lowerer(impl);
+        const vp = l.piece_now.?;
+        const arg = vp.args[k];
+        const p = pos(l);
+        var read = node(holder);
+        switch (arg.kind) {
+            .held, .constant => return holder,
+            .cell => read = try l.add(.index_get, p, read.int(), (try l.numberNode("0", p)).int()),
+            else => {},
+        }
+        for (arg.steps) |f| read = try l.fieldMember(read, f, p);
+        return expr(read);
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -18782,6 +19101,15 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_subscriptions = programSubscriptions,
         .program_subscription_start = programSubscriptionStart,
         .program_command = programCommand,
+        .program_rows = programRows,
+        .program_root_row = programRootRow,
+        .program_model_cell = programModelCell,
+        .group_buckets = groupBuckets,
+        .key_buckets = keyBuckets,
+        .program_root_args = programRootArgs,
+        .piece_root = pieceRoot,
+        .piece_root_arg = pieceRootArg,
+        .piece_arm = pieceArm,
         .literal = literal,
         .template = template,
         .name = name,
