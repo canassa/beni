@@ -159,11 +159,12 @@ pub fn checkModule(ctx: *const Context, d: *@import("../check/Driver.zig"), m: G
     const block = if (private_only) try block_wire.write(&o, gpa, &.{}) else try o.writeBlock(m.int());
     if (!private_only) {
         d.hoists[m.int()] = try reports[0].hoist_table.clone(gpa);
-        // §31.10, R6: a module checked under enforcement whose every demand
-        // was accepted lowers its record updates in place. Core and the
-        // platforms keep their spreads until O4 (the owner's answer 3),
-        // and a report-only module never authorises a store.
-        d.hoists[m.int()].clean = ctx.ins.packages[m.int()] == .app and report and allAccepted(reports[0]);
+        // §31.10, R6: an application module whose every demand was accepted.
+        // Core and the platforms keep their spreads until O4 (the owner's
+        // answer 3). Whether the build enforces is not cached with it: an
+        // entry serves builds that do and builds that do not, and `Emit`
+        // adds the build's own mode.
+        d.hoists[m.int()].clean = ctx.ins.packages[m.int()] == .app and allAccepted(reports[0]);
         block_wire.certify(block, reports[0]);
     }
     session.ownership_blocks[m.int()] = block;

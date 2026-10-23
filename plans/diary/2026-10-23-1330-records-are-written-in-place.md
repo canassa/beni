@@ -17,3 +17,14 @@ lowered before its placement is the bug to watch for, so it panics instead of em
 access; the panic found the `For` row on the first sweep of every program under
 `--ownership-everywhere`. Stores as `assign_stmt`s made §9's optimiser barrier free: its
 ordering rule already treats an assignment as a write.
+
+**After the review.** The review asked whether a cached table could tell a
+build that does not enforce to write in place. It could: the cache entry is
+shared between `browser-tea` and `browser-inline`, and it cached `clean`
+together with the build's mode. So a warm build emitted what a build of the
+other mode had decided. Now the entry holds only "every demand accepted", and
+`Emit` adds the build's mode. A `cache_test` case builds both ways against one
+cache. It was red before the fix. `--ownership-everywhere` keeps a cache
+directory of its own, so that flag could not leak. `hoistedRead` now panics
+when the read is bound at a target its lowering would not reach. It returned
+null there before.
