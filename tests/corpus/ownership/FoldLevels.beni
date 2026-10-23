@@ -9,9 +9,9 @@
 -- is the type itself (`sub`), anywhere below when the type is further down
 -- (`rose`, through `List Rose`). `fresh` holds only lists it made, and is
 -- accepted. `pushRoot` builds a fresh list at every level and edits the
--- root's while reading the subtree: safe, and refused, since the levels are
--- one place; telling them apart is the representatives' exclusivity the
--- thesis names (§3.1), not built.
+-- root's while reading the subtree: safe, and accepted since §16.7 (d):
+-- `build`'s fixpoint numbers its root's list apart from its subtrees' in
+-- every round (`ownership/LevelFresh`).
 type Tree
     = Leaf
     | Node Tree (List Int) Tree

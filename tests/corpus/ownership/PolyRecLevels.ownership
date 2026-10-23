@@ -2,7 +2,7 @@ module PolyRecLevels
   28:42 List.push r: rejected call: p[*] may hold it through the call at 22:10, and is read at 28:60 (approx)
   46:34 List.push q: rejected call: p may hold it through the call at 42:10, and is read at 46:52 (approx)
   66:50 List.push s: rejected call: t#Leaf.0 may hold it through the call at 57:9, and is read at 66:67 (approx)
-  summary wrap: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2}r{excl π2} ~fresh2{excl π2}r{excl π2} ~π2
+  summary wrap: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2}r{excl π2} fresh2{excl π2}r{excl π2} fresh3{excl π2}r{excl π2} ~fresh4{excl π2}r{excl π2} ~fresh5{excl π2}r{excl π2}, ⟨T⟩⁺#Leaf.0[*] fresh2{excl π2}r{excl π2} ~fresh3{excl π2}r{excl π2} ~fresh4{excl π2}r{excl π2} ~fresh5{excl π2}r{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh3{excl π2}r{excl π2} ~fresh5{excl π2}r{excl π2} ~π2
   summary innerLive: π1 R, π1[*] Rw[storage]; xreq excl π1
   summary innerLive2: π1 Rw[storage]; xreq excl π1
   summary deepParam: π1 Rw[storage], π1[*] R, π1[*][*] Rw[storage]; xreq excl π1

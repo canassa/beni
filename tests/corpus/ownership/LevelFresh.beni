@@ -1,0 +1,59 @@
+-- ownership: a recursive member's fresh lists keep their levels apart
+-- (§16.7 (d), issue #286). `build` makes a new list at every level. Its
+-- fixpoint's rounds numbered their allocations each in its own order, and
+-- the join put the root's list and the left subtree's under one number, so
+-- `pushRoot`, which edits the root's list while it reads the left subtree,
+-- was refused. A number now names the same result paths in every round:
+-- `build`'s root list is apart from its subtrees', and `pushRoot` is
+-- accepted. `dup` puts one new list at the root and in its left child, so
+-- `pushDup` is still refused: that sharing is real.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+build : Int → Tree
+build n =
+    if n == 0 then
+        Leaf
+    else
+        Node (build (n - 1)) [ n ] (build (n - 1))
+
+
+dup : Int → Tree
+dup n =
+    if n == 0 then
+        Leaf
+    else
+        ys = [ n ]
+        Node (Node (dup (n - 1)) ys Leaf) ys Leaf
+
+
+size : Tree → Int
+size t =
+    case t of
+        Leaf →
+            0
+
+        Node l xs r →
+            size l + List.length xs + size r
+
+
+pub pushRoot : Int → Tree × Int
+pushRoot n =
+    case build n of
+        Node l xs r →
+            ( Node l (List.push xs 0) r, size l )
+
+        Leaf →
+            ( Leaf, 0 )
+
+
+pub pushDup : Int → Tree × Int
+pushDup n =
+    case dup n of
+        Node l xs r →
+            ( Node l (List.push xs 0) r, size l )
+
+        Leaf →
+            ( Leaf, 0 )

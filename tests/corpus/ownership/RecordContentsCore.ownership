@@ -36,7 +36,7 @@ module RecordContentsCore
   summary c8: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary c9: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦r{lost}, fresh1r{lost}
   summary c10: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1◦, fresh1r{lost}
-  summary c11: π1 R; res #Dict.0#Node.1 ~condition(fresh1)r{lost} ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh2){lost}r{lost} ~condition(fresh3){lost}r{lost} ~condition(fresh5){lost}r{lost} ~π1r{lost} ~π1◦r{lost}, #Dict.0#Node.3 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost} ~condition(fresh6){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost} ~condition(fresh6){lost}r{lost}
+  summary c11: π1 R; res #Dict.0#Node.1 ~condition(fresh1){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh2){lost}r{lost} ~condition(fresh4){lost}r{lost} ~π1r{lost} ~π1◦r{lost}, #Dict.0#Node.3 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}
   summary c12: π1 R; res [*] ~π1◦ π1, fresh1{shared}r{shared}
   summary c13: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary c14: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~fresh502◦r{shared} ~π1◦, fresh1r{shared}
