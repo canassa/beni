@@ -2640,6 +2640,47 @@ summary has N list entries in its result, each with a spine condition naming the
 256-record model with a list in each record, the ownership work grows ×4.0 from 128 to 256 records.
 A linear form needs a result condition shared by its entries, a change to the summary's format.
 
+*Amended 2026-10-23 (#825, the manager's decision under the owner's delegation): a value that its holder
+projects again and again is indexed by first step at every width.* A value is indexed by its entries' first
+steps only when it is at least `wide_index` (256) entries wide (#716). The research dashboard's model is about
+200 entries at N = 64, so it is below that width and is not indexed. The entry projects it along every path that
+`update` writes or that `view` reads, and each instantiation of `update`'s summary projects it along each
+provenance's path. Each projection scans the whole model, so there are N scans of N entries. The entry protocol
+(`Main.main`) cost 2.2M instructions at N = 16, 18.1M at N = 64 and 19.8M at N = 256: it grew ×8.2 below the
+width and then flattened above it.
+
+The rule is that **a holder that keeps a value unchanged while it projects it indexes the value** (`StepIndex`).
+There are two holders:
+
+- the entry, for the settled model (`entryCall`);
+- an instantiation of a summary, for its arguments (`InstCtx.args`, kept by `applySummary` and by
+  `entryResMode`).
+
+The index is built the first time it is asked for. It is checked against the arguments it was built for, so a
+context made for other arguments never reads it.
+
+The index keeps positions in the value, in the value's order:
+
+- those that every step acts on: ε, and `⋆`, a marker or a cast first;
+- those of each first step.
+
+A projection through the index merges the two runs and does, at each position, what the scan does there
+(`projEntry`). It skips only the positions where the scan does nothing, so it interns the cells and paths
+that the scan interns, in the same order. Every answer is the scan's answer.
+
+A marker step, a cast step, an analysis slot's step and a constructor step of a type that folds (§16.7,
+#341) act on every entry, so they still scan. A value narrower than `step_index_min` (32) also scans: the index
+costs more than the scan does at that width. A value at least `wide_index` wide keeps #716's memo.
+`-Downership-full-cross-check` indexes every holder's value, and it asserts at each projection that every
+skipped position is one the scan does nothing with.
+
+*As built:* per-unit instructions on the research dashboard (ReleaseFast, `build --release --no-cache --jobs=1`):
+the entry protocol went from 2.20M to 1.55M at N = 16, from 18.05M to 5.91M at N = 64, and from 19.83M to 20.03M
+at N = 256. It now grows ×3.8 and then ×3.4. The ownership phase (callgrind, `Ownership.run`) went from 11.40M to
+10.77M at N = 16, from 53.74M to 41.64M at N = 64, from 53.41M to 41.31M on `nowd`, and from 186.86M to 187.19M
+at N = 256. Every output hash is unchanged, `test-records-lost` shows no difference in 1 168 programs, and
+`-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694).
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
