@@ -1090,7 +1090,8 @@ code settled, which the amendment left to the build:
   (`browser/inline/MainOwnedKeys`).
 - **Pushed state** (the owner's decision 5). A route is what `write-sets.md`'s `findRoutes`
   recognises, amended the same day: a tail of `update` that gives a field `F x model.f`, `F` a
-  function whose body is `Result.withDefault D old` with `D` not reading `old` — so its result is
+  function whose body is `Result.withDefault D old` with `D` not reading `old` (or, amended
+  2026-10-23 below, any function that reads `old` only as a whole tail) — so its result is
   the old value itself, or a value made from `x` alone that holds nothing of it — reached with
   nothing on the way reading the model, every declaration on the way called only there — by its
   own module and by every other. Its site
@@ -1137,6 +1138,26 @@ code settled, which the amendment left to the build:
   bad builds `RootComputedArg` (class 4), `RootsSharedRecord` and `RootsPayloadRecord` (the
   ownership checker's record errors), beside the existing class 1, 2 and 3 fixtures; every
   existing `browser/inline/` transcript unchanged.
+
+*Amended 2026-10-23 (#896): a route's function is any function whose result is `old` or holds
+nothing of it.* On S1's own programs the root plan's proof failed at N ≥ 16: the generator writes a
+widget's `replace` in two shapes, `Result.withDefault (Json.decodeValue state) model` and `case
+Json.decodeValue state of Ok new → { … from new … }; Err _ → model`, and only the first was a
+route. One widget of the second shape left the `Snapshot` tail a record literal of the model, so
+the model, and every slice under it, could be another object after a push: the model was a cell,
+every reader read through it, and no handler could move into its root, which needs its slice
+`held`. At N = 1 every widget had the first shape. The copy needs only what the first shape gives:
+`F`'s result is `old` itself or a value that holds nothing of it. So a route's `F` is any function
+that reads `old` only as a whole tail — through `let`s and `case`s that do not read it — or as the
+default of a tail `Result.withDefault D old`, every other tail reading nothing of `old`
+(`write-sets.md`, amended the same day). The second shape is one: its `Ok` tail is a record made
+from the decoded value alone, which the loader copies into the old object as it copies `D`'s
+value. A function that reads `old` anywhere else — `Ok new → { model | f = new.f }` — stays a call,
+written as the source says. With it, every slice of S1's `unique-components` at N = 1, 16, 64 and
+256, seeds 1–3, is held, and each widget's keys move into its root (decision 2): the forwarding
+`update msg model = ( step msg model, Cmd.none )` → `step` → `{ model | wN = WN.update m
+model.wN }` was already proved pure; only the cell stopped it (`browser/inline/CaseLoader`,
+`emit/release/inline/CaseLoader`).
 
 ### 8.5 Per-path passes
 

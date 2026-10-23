@@ -5666,9 +5666,11 @@ fn routeRow(a: *Writes, w: *RouteWalk, m: u32, model: u32, field: u32, given: In
     return .{ .row = @intCast(w.rows.items.len - 1), .raw = args[0].int() };
 }
 
-/// Whether `(m, d)` is `λx old → Result.withDefault D old`, `D` not
-/// reading `old`: its result is `old` itself or `D`'s value, which holds
-/// nothing of `old`.
+/// Whether `(m, d)` is `λx old → e` whose result is `old` itself or a value
+/// that holds nothing of `old`: `old` is read only as a whole tail of `e` —
+/// through `let`s and `case`s none of whose definitions or scrutinees read
+/// it — or as the default of a tail `Result.withDefault D old`; every other
+/// tail reads nothing of `old` (§8.4, amended 2026-10-23, #896).
 fn routeFunction(a: *Writes, m: u32, d: u32) Error!bool {
     const b = a.bir(m);
     const decl = b.decls[d];
@@ -5677,14 +5679,42 @@ fn routeFunction(a: *Writes, m: u32, d: u32) Error!bool {
     if (params.len != 2 or b.instTag(params[1]) != .pat_var) return false;
     const old = b.instData(params[1]).lhs;
     const body = decl.body.unwrap() orelse return false;
-    if (b.instTag(body) != .call) return false;
-    const bd = b.instData(body);
-    const t = a.valueTarget(m, @fromBackingInt(bd.lhs)) orelse return false;
-    if (a.in.packages[t.m] != .core or !std.mem.eql(u8, a.in.module_names[t.m], "Result") or !std.mem.eql(u8, a.declName(t.m, t.d), "withDefault")) return false;
-    const args = b.extraSlice(b.subRange(@fromBackingInt(bd.rhs)), Inst.Index);
-    if (args.len != 2) return false;
-    if (b.instTag(args[1]) != .local or b.instData(args[1]).lhs != old) return false;
-    return !try a.readsModel(m, args[0], old);
+    return a.oldAtTails(m, body, old, 0);
+}
+
+fn oldAtTails(a: *Writes, m: u32, e: Inst.Index, old: u32, depth: u32) Error!bool {
+    if (depth > 16) return false;
+    const b = a.bir(m);
+    const data = b.instData(e);
+    switch (b.instTag(e)) {
+        // `old` itself, or another local, which no definition or scrutinee
+        // on the way bound from `old`.
+        .local => return true,
+        .let => {
+            for (b.extraSlice(b.subRange(@fromBackingInt(data.lhs)), Inst.Index)) |item| switch (b.instTag(item)) {
+                .let_def, .let_pattern, .let_stmt => if (try a.readsModel(m, @fromBackingInt(b.instData(item).rhs), old)) return false,
+                else => {},
+            };
+            return a.oldAtTails(m, @fromBackingInt(data.rhs), old, depth + 1);
+        },
+        .case => {
+            if (try a.readsModel(m, @fromBackingInt(data.lhs), old)) return false;
+            for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |br| {
+                if (b.instTag(br) != .branch) continue;
+                if (!try a.oldAtTails(m, @fromBackingInt(b.instData(br).rhs), old, depth + 1)) return false;
+            }
+            return true;
+        },
+        .call => if (a.valueTarget(m, @fromBackingInt(data.lhs))) |t| {
+            if (a.in.packages[t.m] == .core and std.mem.eql(u8, a.in.module_names[t.m], "Result") and std.mem.eql(u8, a.declName(t.m, t.d), "withDefault")) {
+                const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index);
+                if (args.len == 2 and b.instTag(args[1]) == .local and b.instData(args[1]).lhs == old)
+                    return !try a.readsModel(m, args[0], old);
+            }
+        },
+        else => {},
+    }
+    return !try a.readsModel(m, e, old);
 }
 
 /// What a copy into the record at `p` writes: its fields, each record field
