@@ -49,6 +49,21 @@
 {"receive": "f"}
 {"close": "f", "until": "closed p7"}
 {"receive": "f"}
+# A frame the host would refuse to echo — code 999, code 5000, a reason of
+# 42 bytes that are not UTF-8 (decoded as U+FFFD, three bytes each) — is
+# answered with a bare close, and `closed` still sees the peer's values.
+{"socket": "g", "path": "/arena/x/p8"}
+{"receive": "g"}
+{"close": "g", "frame": "03e7", "until": "closed p8"}
+{"receive": "g"}
+{"socket": "h", "path": "/arena/x/p9"}
+{"receive": "h"}
+{"close": "h", "frame": "1388", "until": "closed p9"}
+{"receive": "h"}
+{"socket": "i", "path": "/arena/x/p10"}
+{"receive": "i"}
+{"close": "i", "frame": "03e8ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", "until": "closed p10"}
+{"receive": "i"}
 {"path": "/arena/x/count"}
 # A binary frame is closed with 1003; a client that leaves with no close
 # frame is seen as 1006 with no reason.

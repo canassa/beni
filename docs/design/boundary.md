@@ -7540,11 +7540,18 @@ pub type AttachError
   default flag refuses to start the runtime), so a client that closed with 1000 saw 1006 after
   its own timeout, and a `close` from `closed` did nothing, since the socket was not open. The
   platform answers in `webSocketClose`, before `closed` is delivered: `ws.close(code, reason)`
-  with the peer's code and reason, or a bare `ws.close()` when the code is one the host refuses
-  to send — 1004, 1005 (a frame with no code), 1006 and 1015 (`web-socket.c++:636-643`;
-  *measured*: 1005 and 1006 throw `InvalidAccessError`, a bare close answers 1005 to the client,
-  and is harmless on a dropped socket, which is CLOSING too). The client sees its own code within
-  a millisecond (*measured* for 1000, 1001, 1010, 3000, 4999, a 123-byte reason and no code). In
+  with the peer's code and reason when the host's own `close` accepts them under the default
+  flags — a code from 1000 to 4999 but 1004, 1005 (a frame with no code), 1006 and 1015, and a
+  reason of at most 123 UTF-8 bytes (`web-socket.c++:633-652`; `websocket_close_reason_byte_limit`
+  is on by date since 2026-03-03) — and a bare `ws.close()` for every other frame, which the host
+  has nothing to validate. Both are tested in beni, since a peer's frame can carry any code, and a
+  reason the host decoded with U+FFFD is longer than it was on the wire (*review R7-1*: 999, 5000
+  and 42 bytes of 0xFF echoed made the host throw inside `webSocketClose`, and `closed` was lost
+  with no trace; `ObjectSocket` sends the three as hand-made frames). *Measured*: 1005 and 1006
+  throw `InvalidAccessError`, a bare close answers 1005 to the client, and is harmless on a dropped
+  socket, which is CLOSING too. The client sees its own code within a millisecond (*measured* for
+  1000, 1001, 1010, 3000, 4999, a 123-byte reason and no code). Under `pedantic_wpt` the host's
+  set is 1000 and 3000 to 4999 alone, which `WebSocket.close` does not follow either: #833. In
   `closed` the socket is CLOSED: `close` does nothing and answers `Ok ⊤`, `write` is
   `Err NotOpen`; after the object's own close the peer's answer finds the socket CLOSED already
   (*measured*), and the platform sends nothing. No compatibility flag is set or needed: the
@@ -7595,8 +7602,16 @@ fixture `workers/ObjectSocket`).*
 - **A defect closes every socket**: after (f)'s abort the client sees 1006 and `""` (*measured*).
 - **A peer's close is answered** (2026-10-23, #724, above): in the fixture the client's close
   4002 and an idle socket's close with no code are followed by the client's `close 4002` and
-  `close 1005 ""`, and `closed` calls `close` again and gets `Ok ⊤`. Before the fix the receive
-  steps printed `(nothing arrived)`.
+  `close 1005 ""`, three hand-made frames the host would refuse to echo (999, 5000, a reason of 42
+  bytes of 0xFF) by `close 1005 ""` with `closed` seeing the peer's values, and `closed` calls
+  `close` again and gets `Ok ⊤`. Before the fix the receive steps printed `(nothing arrived)`.
+  **The cause** is the hibernation path, not the date or the flag: at workerd 1.20260518.1 the
+  automatic reply lives in `api::WebSocket::readLoop` alone (`web-socket.c++:1085-1099`), and the
+  hibernation path (`hibernation-manager.c++:364-368`, then `global-scope.c++:758-788`) sets
+  `closedIncoming` and sends nothing; workerd `main` of 2026-10 is the same (the review of #819,
+  with a plain-JavaScript probe: `accept()` gets the reply from the date, `acceptWebSocket` never).
+  When workerd adds the reply there, `readyState` is CLOSED in `webSocketClose` and `answerClose`
+  sends nothing, so the fix stays correct.
 - **The driver** (`tests/workers/driver.mjs`, (k)) opens a client through Miniflare's own:
   `dispatchFetch` with `upgrade: websocket` answers a `Response` whose `webSocket` is the client's
   end, accepted and listened to; the steps are `socket`, `send`, `close` and `receive`

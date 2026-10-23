@@ -268,8 +268,11 @@ the release build — is run by `node tests/workers/driver.mjs
 Miniflare (the `workerd` nixpkgs' `wrangler` carries; `nix develop .#workers`
 sets `BENI_MINIFLARE`), with `cf: false`, on 127.0.0.1, disposed at the end.
 Nothing is deployed and no account is used. The transcript is the golden,
-`_expected.expected`; the port never appears in it. The script is one JSON
-object per line, `#` for a comment:
+`_expected.expected`; the port never appears in it. The two run-hash
+records of a project are written by `zig build test-run-hashes
+-Dcorpus=workers` in the same shell; `zig build test-workers` only checks
+them and does not read `BENI_RUN_HASHES`. The script is one JSON object per
+line, `#` for a comment:
 
     {"method": "GET", "path": "/items?limit=3", "headers": {"accept": "text/plain"}, "body": "…"}
                                 a request, printed as `> GET /items?limit=3`,
@@ -301,6 +304,12 @@ object per line, `#` for a comment:
     {"send": "a", "binary": 3}  a binary frame of 3 bytes
     {"close": "a", "code": 4000, "reason": "bye"}
                                 a close frame (no code when `code` is left out)
+    {"close": "a", "frame": "03e7"}
+                                a hand-made close frame, its payload in hex
+                                (the code's two bytes, then the reason's), for
+                                what the client library refuses to send: a
+                                code outside 1000-4999, a reason that is not
+                                UTF-8; `> (socket a) close frame 03e7`
     {"drop": "a"}               end the connection with no close frame
     {…, "until": "closed p2"}   any step: wait for a console line of the
                                 Worker that holds the text before the step
