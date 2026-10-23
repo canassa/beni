@@ -56,7 +56,10 @@ pub const lowering: m.Lowering = .{
         .{ .name = "text", .arity = 2 },
         .{ .name = "prop", .arity = 3 },
         .{ .name = "when", .arity = 2 },
-        .{ .name = "on", .arity = 4 },
+        .{ .name = "on", .arity = 3 },
+        // `on` for a handler inside eager arms, apart so that a page with
+        // none ships neither it nor its arm walk (#874).
+        .{ .name = "onArm", .arity = 4 },
         // `(node)`: a piece root's table of elements (§8.4).
         .{ .name = "part", .arity = 1 },
     },
@@ -1361,20 +1364,22 @@ const Page = struct {
     }
 
     /// The runtime's `on` for a listener with neither flag and no captured
-    /// arguments: `on(node, f)`, the event's name left out for a click, and,
-    /// inside eager arms, the arms' elements outermost first, which `on`
-    /// asks before the event enters the guard (§8.2, #466; the same test
-    /// `armActivity` writes in place).
+    /// arguments: `on(node, f)`, the event's name left out for a click; or,
+    /// inside eager arms, `onArm(node, f, kind, arms)` with the arms'
+    /// elements outermost first, which `onArm` asks before the event enters
+    /// the guard (§8.2, #466; the same test `armActivity` writes in place).
+    /// A page with no handler in an arm never names `onArm` (#874).
     fn onCall(pg: *Page, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32) m.Error!m.Expr {
         const js = pg.cx.js;
-        const on = try js.name(try pg.cx.runtime("on"));
         const arms = try pg.armElements(ctx);
         if (arms.len == 0) {
+            const on = try js.name(try pg.cx.runtime("on"));
             if (kind) |k| return js.call(on, &.{ node, f, try js.string(k) });
             return js.call(on, &.{ node, f });
         }
+        const on_arm = try js.name(try pg.cx.runtime("onArm"));
         const which = if (arms.len == 1) arms[0] else try js.array(arms);
-        return js.call(on, &.{ node, f, try js.string(kind orelse "click"), which });
+        return js.call(on_arm, &.{ node, f, try js.string(kind orelse "click"), which });
     }
 
     /// The element of each eager arm around context `ctx`, outermost first:

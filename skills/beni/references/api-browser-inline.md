@@ -25,7 +25,8 @@ module Cmd
 module Inline
   value busy : ⊤ → Bool  -- impure
   value commands : (Cmd V), V → ⊤  -- impure
-  value on : V, V, V, V → ⊤  -- impure
+  value on : V, V, V → ⊤  -- impure
+  value onArm : V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure
   value part : V → V  -- impure
   value prop : V, V, V → ⊤  -- impure
