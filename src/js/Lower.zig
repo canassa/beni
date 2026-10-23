@@ -345,6 +345,11 @@ pub const Input = struct {
     /// before it. Test-only, development builds only, and only in a module
     /// whose records are written in place.
     sanitize_records: bool = false,
+    /// Per module, whether its record updates are written in place: its
+    /// hoist table is clean and the build enforces (§31.10). Read where a
+    /// call into another module answers its argument's object
+    /// (`answersParam`). Empty: no module's are.
+    clean_modules: []const bool = &.{},
     /// The build's schema plans and what reads them (`schema.md` §6), when
     /// a module declares or uses a schema. Null: the module emits none.
     schemas: ?*const SchemaGraph = null,
@@ -566,6 +571,10 @@ pub const Direct = struct {
         key_buckets: []const []const BucketRef = &.{},
         /// Some root reaches the model through a cell (`RootArg.cell`).
         model_cell: bool = false,
+        /// No key gives the model another object (`Key.replaced` holds no
+        /// prefix of ρ): a handler's `model = next` stores what the model
+        /// already holds (`browser-inline.md` §8.4, amended 2026-10-23, #896).
+        model_kept: bool = false,
     };
 
     pub const Program = struct {
@@ -6346,11 +6355,15 @@ pub const Lowerer = struct {
         const late_read = for (order[@min(order.len, 1)..]) |i| {
             if (!l.storeBlind(values[1 + i], 0)) break true;
         } else false;
-        if (late_read or phased or sanitize) for (values[1..]) |*v| {
+        // The statement that binds each value to a temporary, when one does.
+        const temps = try l.scratch.alloc(?struct { at: usize, value: Node.Index }, fields.len);
+        @memset(temps, null);
+        if (late_read or phased or sanitize) for (values[1..], temps) |*v, *t| {
             v.* = try l.settleStores(out, v.*, p);
             if (l.isAtom(v.*) or (!sanitize and l.storeBlind(v.*, 0))) continue;
             const n = try l.fresh(l.well.temp);
             try l.constDecl(out, n, v.*, p);
+            t.* = .{ .at = out.items.len - 1, .value = v.* };
             v.* = try l.ident(n, p);
         };
         try l.placeHoists(out, inst, 1);
@@ -6373,7 +6386,17 @@ pub const Lowerer = struct {
             // back changes nothing (§31.3, *Nested updates*). Not under the
             // sanitiser, whose inner update answers a new object. The inner
             // update's own stores are its value's, so they stay.
-            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) {
+            if (l.sameFieldObject(insts[0], l.bir.symbol(f.name), f.value)) skip: {
+                // A call that answers the field's object (`answersFieldObject`)
+                // still runs: its writes are the update. Bound to a temporary
+                // here, the binding becomes the call as a statement, since
+                // nothing reads it now; bound anywhere else, the store stays,
+                // which is never wrong.
+                if (l.bir.instTag(f.value) == .call and l.isAtom(value)) {
+                    const t = temps[i] orelse break :skip;
+                    out.items[t.at] = try l.add(.expr_stmt, p, t.value.int(), Node.Data.unused);
+                    continue;
+                }
                 if (l.b.tagOf(value) == .sequence) {
                     const inner = l.b.extra.items[l.b.dataOf(value).lhs..l.b.dataOf(value).rhs];
                     for (inner[0 .. inner.len - 1]) |e| try parts.append(l.scratch, @fromBackingInt(@intCast(e)));
@@ -6444,7 +6467,9 @@ pub const Lowerer = struct {
     /// answers its base's object.
     fn sameFieldObject(l: *Lowerer, base: Inst.Index, field: Symbol, value: Inst.Index) bool {
         if (std.debug.runtime_safety) std.debug.assert(l.in.ownership.clean and !l.in.sanitize_records);
-        if (l.bir.instTag(base) != .local or l.bir.instTag(value) != .record_update) return false;
+        if (l.bir.instTag(base) != .local) return false;
+        if (l.bir.instTag(value) == .call) return l.answersFieldObject(base, field, value);
+        if (l.bir.instTag(value) != .record_update) return false;
         var inner: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(value).lhs));
         if (l.bir.instTag(inner) == .local) inner = l.letValueOf(inner) orelse return false;
         if (l.bir.instTag(inner) != .field_access) return false;
@@ -6452,6 +6477,92 @@ pub const Lowerer = struct {
         if (l.bir.symbols[d.rhs] != field) return false;
         const owner: Inst.Index = @fromBackingInt(@intCast(d.lhs));
         return l.bir.instTag(owner) == .local and l.bir.instData(owner).lhs == l.bir.instData(base).lhs;
+    }
+
+    /// Whether the call `value` answers the object `base.field` holds:
+    /// `G(…, base.field, …)`, read directly or through a `let` of it, `G`
+    /// a function that answers its parameter's object at that position
+    /// (`answersParam`) — `{ model | w = W.tick model.w }`, `W.tick`
+    /// answering `model` or `{ model | … }` written in place (§31.3,
+    /// *Nested updates*, amended 2026-10-23, #896).
+    fn answersFieldObject(l: *Lowerer, base: Inst.Index, field: Symbol, value: Inst.Index) bool {
+        const d = l.bir.instData(value);
+        const target = l.declTarget(l.in.module.int(), @fromBackingInt(@intCast(d.lhs))) orelse return false;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        for (args, 0..) |arg, i| {
+            var inner = arg;
+            if (l.bir.instTag(inner) == .local) inner = l.letValueOf(inner) orelse continue;
+            if (l.bir.instTag(inner) != .field_access) continue;
+            const fd = l.bir.instData(inner);
+            if (l.bir.symbols[fd.rhs] != field) continue;
+            const owner: Inst.Index = @fromBackingInt(@intCast(fd.lhs));
+            if (l.bir.instTag(owner) != .local or l.bir.instData(owner).lhs != l.bir.instData(base).lhs) continue;
+            if (l.answersParam(target[0], target[1], i, 0)) return true;
+        }
+        return false;
+    }
+
+    /// The declaration `(module, decl)` a callee of module `m` names, a
+    /// `top` of its own module or another module's `ext_value`.
+    fn declTarget(l: *const Lowerer, m: u32, callee: Inst.Index) ?[2]u32 {
+        const b = l.in.birs[m];
+        const cd = b.instData(callee);
+        switch (b.instTag(callee)) {
+            .top => return if (cd.lhs < b.decls.len) .{ m, @intCast(cd.lhs) } else null,
+            .ext_value => {
+                if (cd.lhs >= l.in.provenance.len or cd.lhs >= l.in.birs.len) return null;
+                const decl = l.in.provenance[cd.lhs].valueDecl(@intCast(cd.rhs)) orelse return null;
+                return .{ @intCast(cd.lhs), decl.int() };
+            },
+            else => return null,
+        }
+    }
+
+    /// Whether declaration `d` of module `m` answers the object of its
+    /// parameter `i`: every tail of its body, through `let`s and `case`s,
+    /// is that parameter, an update of it — written in place, so only in a
+    /// module whose records are (`Input.clean_modules`) — or a call of such
+    /// a function handing it on. Bounded: past depth 8, no.
+    fn answersParam(l: *const Lowerer, m: u32, d: u32, i: usize, depth: u32) bool {
+        if (depth > 8 or m >= l.in.birs.len) return false;
+        const b = l.in.birs[m];
+        if (d >= b.decls.len) return false;
+        const decl = b.decls[d];
+        if (decl.kind != .value) return false;
+        const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
+        if (i >= params.len or b.instTag(params[i]) != .pat_var) return false;
+        const body = decl.body.unwrap() orelse return false;
+        return l.tailsAnswer(m, body, b.instData(params[i]).lhs, depth);
+    }
+
+    fn tailsAnswer(l: *const Lowerer, m: u32, e: Inst.Index, local: u32, depth: u32) bool {
+        const b = l.in.birs[m];
+        const data = b.instData(e);
+        switch (b.instTag(e)) {
+            .local => return data.lhs == local,
+            .record_update => {
+                if (m >= l.in.clean_modules.len or !l.in.clean_modules[m]) return false;
+                const ub: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                return b.instTag(ub) == .local and b.instData(ub).lhs == local;
+            },
+            .let => return l.tailsAnswer(m, @fromBackingInt(@intCast(data.rhs)), local, depth),
+            .case => {
+                for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |br| {
+                    if (b.instTag(br) != .branch) continue;
+                    if (!l.tailsAnswer(m, @fromBackingInt(@intCast(b.instData(br).rhs)), local, depth)) return false;
+                }
+                return true;
+            },
+            .call => {
+                const target = l.declTarget(m, @fromBackingInt(@intCast(data.lhs))) orelse return false;
+                for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index), 0..) |arg, j| {
+                    if (b.instTag(arg) == .local and b.instData(arg).lhs == local)
+                        return l.answersParam(target[0], target[1], j, depth + 1);
+                }
+                return false;
+            },
+            else => return false,
+        }
     }
 
     /// The sanitiser's trap (`Input.sanitize_records`):
@@ -18843,6 +18954,11 @@ const markup_vtable: beni_markup.VTable = struct {
         return plan.model_cell;
     }
 
+    fn programModelKept(impl: *anyopaque) bool {
+        const plan = directPlan(lowerer(impl)) orelse return false;
+        return plan.model_kept;
+    }
+
     fn groupBuckets(impl: *anyopaque, group: u32) []const M.Program.BucketRef {
         const plan = directPlan(lowerer(impl)) orelse return &.{};
         return if (group < plan.group_buckets.len) plan.group_buckets[group] else &.{};
@@ -19110,6 +19226,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_rows = programRows,
         .program_root_row = programRootRow,
         .program_model_cell = programModelCell,
+        .program_model_kept = programModelKept,
         .group_buckets = groupBuckets,
         .key_buckets = keyBuckets,
         .program_root_args = programRootArgs,

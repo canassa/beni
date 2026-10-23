@@ -1159,6 +1159,24 @@ written as the source says. With it, every slice of S1's `unique-components` at 
 model.wN }` was already proved pure; only the cell stopped it (`browser/inline/CaseLoader`,
 `emit/release/inline/CaseLoader`).
 
+*Amended 2026-10-23 (#896): no store of what the model already holds.* #888 left out two stores
+that change nothing (`ownership-checker.md` §31.12, *As built — R7*); the root closures brought
+three shapes back. Each is now left out, exactly where the store would change nothing:
+- **The handler's `model = next`.** When no key gives the model another object — the plan's proof
+  that no key's `Key.replaced` holds a prefix of ρ (`programModelKept`, interface 1.18) — the arm
+  wrote the object the model holds, and the handler stores nothing, for an element's pair too. The
+  arm still runs, as a statement (`Opt` drops a binding nothing reads, and with it the arm's
+  writes), and an element's pair is kept only when its command runs: `l=a=>{K(a,f);t([…])}`, not
+  `let b=f,c=K(a,b);f=c`.
+- **A field stored back from a call that answers it.** `{ model | w7 = W7.tick model.w7 }`,
+  `W7.tick` answering its model or an update of it written in place, writes `W7$tick(m.w7)` and no
+  `m.w7 = …` (`ownership-checker.md` §31.12, amended the same day; `emit/release/inline/TickInPlace`,
+  `browser/inline/TickInPlace`).
+- **The value of a record written in place, discarded.** `c.a=4,c;` — an arm piece's value where
+  the handler holds the slice — is `c.a=4;` (`backend.md` §9, *Compact statements*, item 10).
+  The residue a `case` arm of the program leaves, `let c; … c=b`, the result's temporary nothing
+  reads once the handler stores nothing, is not removed by this amendment.
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host

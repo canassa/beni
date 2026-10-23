@@ -1,0 +1,9 @@
+element "root"
+detail window rr-push {"type": "tick"}
+detail window rr-push {"type": "tick"}
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": 5}}
+detail window rr-push {"type": "tick"}
+detail window rr-push {"type": "tick"}
+click [data-role=four]
+detail window rr-push {"type": "tick"}
+input [data-role=venue] "Hall"

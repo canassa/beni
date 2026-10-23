@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 17 },
+    .targets = .{ .major = 1, .minor = 18 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard, which every entry into program code
         // goes through.
@@ -2323,6 +2323,19 @@ const Page = struct {
         try js.constant(blk, incoming, try pg.modelRef());
         const before = try js.name(incoming);
         const next = try cx.programArmFields(k, blk, params, before, update);
+        // The root plan proved that no key gives the model another object
+        // (`programModelKept`, §8.4 amended 2026-10-23): the arm wrote the
+        // object the model holds, and the handler stores nothing back. The
+        // arm still runs, as a statement — a binding nothing reads is
+        // dropped whole by release (`Opt`), and its writes with it — and an
+        // element's pair is kept only for its command.
+        const kept = cx.programModelKept();
+        const commands = element_ and cx.programCommand(k) == .runs;
+        if (kept and !commands) {
+            if (next != before) try js.expression(blk, next);
+            try pg.writePass(blk, pass);
+            return;
+        }
         var result = next;
         if (element_) {
             const pair = try cx.fresh("result");
@@ -2332,8 +2345,11 @@ const Page = struct {
         // An arm that wrote the model in place answers the object the model
         // already holds, as `before` itself (`programArmFields`; the compiler
         // side is `Lower.directArmFields`): no store. A handle that is not
-        // `before` stores, which is never wrong.
-        if (element_ or next != before) try js.assign(blk, try pg.modelRef(), if (element_) try js.member(result, "a") else result);
+        // `before` stores, which is never wrong — unless the root plan proved
+        // that no key gives the model another object (`programModelKept`,
+        // §8.4 amended 2026-10-23): then the arm's model is the one the model
+        // holds, for an element's pair too, and there is nothing to store.
+        if (!kept and (element_ or next != before)) try js.assign(blk, try pg.modelRef(), if (element_) try js.member(result, "a") else result);
         try pg.writePass(blk, pass);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),

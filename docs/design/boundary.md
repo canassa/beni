@@ -2409,6 +2409,12 @@ handlers it writes itself, each by the constructor its events send (`Context.Mov
 `pieceArm(block, key, fields, slice)` writes a moved key's arm piece, called with the key's fields
 and the root's slice. A lowering that targets 1.16 sees what it saw.
 
+**Version 1.18** (*added 2026-10-23*, additive, gated on nothing; `browser-inline.md` §8.4,
+amended 2026-10-23, #896): `programModelKept()`, whether no key of the program gives its model
+another object — no key's `Key.replaced` holds a prefix of the model, the proof that lets a root
+hold its slice — so a handler need not store the arm's model back. A lowering that targets 1.17
+sees what it saw.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

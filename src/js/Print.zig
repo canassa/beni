@@ -2525,9 +2525,17 @@ const Printer = struct {
                 try p.tok(" = ", "=");
                 try p.expression(@fromBackingInt(@intCast(d.rhs)), prec_arrow, level);
             },
-            .sequence => for (p.ir.extraSlice(JsIr.inlineRange(d), Index), 0..) |e, i| {
-                if (i != 0) try p.tok(", ", ",");
-                try p.expression(e, prec_arrow, level);
+            .sequence => {
+                // A name or a literal before the last operand does nothing,
+                // and release leaves it out (*Compact statements*, item 10).
+                const es = try p.flatOperands(p.ir.extraSlice(JsIr.inlineRange(d), Index), false);
+                var first = true;
+                for (es, 0..) |e, i| {
+                    if (p.skippedOperand(es, i)) continue;
+                    if (!first) try p.tok(", ", ",");
+                    first = false;
+                    try p.expression(e, prec_arrow, level);
+                }
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
@@ -2696,14 +2704,18 @@ const Printer = struct {
                 return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
             },
             .sequence => {
-                // element `, ` element …
-                const elements = p.ir.extraSlice(JsIr.inlineRange(d), Index);
+                // element `, ` element …, each that does nothing before the
+                // last left out under release (`skippedOperand`).
+                const elements = try p.flatOperands(p.ir.extraSlice(JsIr.inlineRange(d), Index), false);
+                var first: usize = 0;
+                while (p.skippedOperand(elements, first)) first += 1;
                 var i = elements.len;
-                while (i > 1) {
+                while (i > first + 1) {
                     i -= 1;
+                    if (p.skippedOperand(elements, i)) continue;
                     try p.later(.listed(elements[i], prec_arrow, true));
                 }
-                return .expr(elements[0], prec_arrow);
+                return .expr(elements[first], prec_arrow);
             },
             // A statement in expression position: see `statement`'s `else`.
             // Every tag is listed, here and in the other printer and in
@@ -2908,6 +2920,12 @@ const Printer = struct {
     fn discardedValue(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         if (p.compact) {
             const n = p.resolve(node);
+            // A sequence or an object literal nothing reads is the parts of
+            // it that do something, in order (*Compact statements*, item
+            // 10): `c.a=4,c` is `c.a=4`, a record written in place whose
+            // value is discarded, and `({a:K(a,f)})` is `K(a,f)`, an
+            // element's pair whose model the handler does not store.
+            if (try p.discardedParts(n, level)) return;
             if (p.ir.tag(n) == .cond) {
                 if (try p.optionalCall(n, level, true)) return;
                 const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(n).rhs)), JsIr.Cond);
@@ -2927,6 +2945,51 @@ const Printer = struct {
             }
         }
         return p.statementExpression(node, level);
+    }
+
+    /// `n`, a value nothing reads, as the parts of it that do something
+    /// (`discardedValue`): a sequence's operands, or an object literal's
+    /// values when every property has a fixed key, in order, leaving out
+    /// each that is a name or a literal. False, printing nothing, when `n`
+    /// is neither, when every part does something (a sequence then prints
+    /// as it is), or when none does.
+    fn discardedParts(p: *Printer, n: Index, level: u32) Allocator.Error!bool {
+        const object = switch (p.ir.tag(n)) {
+            .sequence => false,
+            .object => true,
+            else => return false,
+        };
+        const parts = if (object) p.ir.extraSlice(JsIr.inlineRange(p.ir.data(n)), Index) else try p.flatOperands(p.ir.extraSlice(JsIr.inlineRange(p.ir.data(n)), Index), true);
+        if (object) for (parts) |prop| if (p.ir.tag(prop) != .property) return false;
+        const valueOf = struct {
+            fn of(pr: *Printer, part: Index, obj: bool) Index {
+                return if (obj) @fromBackingInt(@intCast(pr.ir.data(part).rhs)) else part;
+            }
+        }.of;
+        var live: usize = 0;
+        for (parts) |part| {
+            if (!p.inertValue(valueOf(p, part, object))) live += 1;
+        }
+        if (live == 0 or (!object and live == parts.len)) return false;
+        var i: usize = 0;
+        for (parts) |part| {
+            const v = valueOf(p, part, object);
+            if (p.inertValue(v)) continue;
+            if (live == 1) {
+                // Not as a conditional's `if`: `printsAsIf` does not foresee
+                // one here, and a dangling `else` would change owner.
+                if (p.ir.tag(p.resolve(v)) == .cond) try p.statementExpression(v, level) else try p.discardedValue(v, level);
+                return true;
+            }
+            if (i != 0) try p.push(",");
+            if (i == 0 and p.startsWithBrace(v, 0)) {
+                try p.push("(");
+                try p.expression(v, prec_arrow, level);
+                try p.push(")");
+            } else try p.expression(v, prec_arrow, level);
+            i += 1;
+        }
+        return true;
     }
 
     /// Whether the statement `node` prints as an `if` with no `else`: an
@@ -2949,6 +3012,37 @@ const Printer = struct {
         if (p.optionalCall(n, 0, false) catch false) return false;
         const c = p.ir.extraData(@fromBackingInt(@intCast(p.ir.data(n).rhs)), JsIr.Cond);
         return p.inertValue(c.alternate) or p.inertValue(c.consequent);
+    }
+
+    /// Whether operand `i` of a sequence's `parts` is left out: under
+    /// release, a name or a literal that is not the last operand, whose
+    /// value nothing reads and whose evaluation does nothing
+    /// (*Compact statements*, item 10). Never the last, so a sequence keeps
+    /// at least one operand.
+    fn skippedOperand(p: *Printer, parts: []const Index, i: usize) bool {
+        return p.compact and i + 1 < parts.len and p.inertValue(parts[i]);
+    }
+
+    /// Under release, a sequence's operands with each operand that is itself
+    /// a sequence written in its place — every one before the last, and the
+    /// last too when `all` (the sequence's value is discarded): `((s, o), r)`
+    /// is `(s, o, r)`, so `skippedOperand` sees `o` before the last. What a
+    /// function called once leaves where it is written (`Spec`, *a function
+    /// called once*). `parts` as they are otherwise.
+    fn flatOperands(p: *Printer, parts: []const Index, all: bool) Allocator.Error![]const Index {
+        if (!p.compact) return parts;
+        const nested = for (parts, 0..) |x, i| {
+            if ((all or i + 1 < parts.len) and p.ir.tag(p.resolve(x)) == .sequence) break true;
+        } else false;
+        if (!nested) return parts;
+        var out: std.ArrayList(Index) = .empty;
+        for (parts, 0..) |x, i| {
+            const r = p.resolve(x);
+            if ((all or i + 1 < parts.len) and p.ir.tag(r) == .sequence) {
+                try out.appendSlice(p.spelled, try p.flatOperands(p.ir.extraSlice(JsIr.inlineRange(p.ir.data(r)), Index), true));
+            } else try out.append(p.spelled, x);
+        }
+        return out.items;
     }
 
     /// Whether evaluating `node` does nothing at all: a literal or a name.
@@ -3012,9 +3106,12 @@ const Printer = struct {
     /// evaluating `t`'s name reads nothing a store can change
     /// (`JsIr.Node.Tag.sequence`). False, printing nothing, for any other.
     fn leadingAssignment(p: *Printer, target: Index, value: Index, level: u32) Allocator.Error!bool {
-        const parts = p.leadingStores(target, value) orelse return false;
+        const parts = try p.flatOperands(p.leadingStores(target, value) orelse return false, false);
+        var first = true;
         for (parts[0 .. parts.len - 1], 0..) |e, i| {
-            if (i == 0) try p.statementExpression(e, level) else try p.expression(e, prec_arrow, level);
+            if (p.skippedOperand(parts, i)) continue;
+            if (first) try p.statementExpression(e, level) else try p.expression(e, prec_arrow, level);
+            first = false;
             try p.tok(", ", ",");
         }
         try p.expression(target, prec_call, level);
@@ -3097,6 +3194,9 @@ const Printer = struct {
         if (p.skip_update) |u| if (u == node) return true;
         switch (p.ir.tag(node)) {
             .continue_stmt => return std.mem.indexOfScalar(Index, p.elided.items, node) != null,
+            // A name or a literal as a statement does nothing: under
+            // `--release`, nothing (*Compact statements*, item 10).
+            .expr_stmt => return p.compact and p.inertValue(@fromBackingInt(@intCast(p.ir.data(node).lhs))),
             // `x = x`, which a loop writes for a variable an iteration passes
             // unchanged: under `--release`, nothing.
             .assign_stmt => {
@@ -3820,8 +3920,9 @@ test "the joiner allocates once and blits, borrowed and owned pieces alike" {
 // ---------------------------------------------------------------------------
 
 test "compact: a mark goes past the guard's space, and with the `;` a block's end takes back" {
-    // `backend.md` §11.2, *What the marks survive*, item 3. `g` is a
-    // statement at source byte 50, `t` a declaration at 60, and the `if`
+    // `backend.md` §11.2, *What the marks survive*, item 3. `g()` is a
+    // statement at source byte 50 (a call: a lone name as a statement prints
+    // nothing under `--release`, §9 *Compact statements* item 10), `t` a declaration at 60, and the `if`
     // at 70 has empty arms and a test that only compares, so under
     // `--release` it prints nothing (§9, *Compact statements*, item 9). Its
     // mark lands after `g`'s `;`, which `closeBlock` then takes back: the
@@ -3831,7 +3932,9 @@ test "compact: a mark goes past the guard's space, and with the `;` a block's en
     const gpa = testing.allocator;
     var f = try Fixture.init(gpa);
     defer f.deinit();
-    const call = try f.b.addNode(.{ .tag = .expr_stmt, .pos = 50, .data = .{ .lhs = (try f.ident("g")).int(), .rhs = 0 } });
+    const no_args = try f.b.addRecord(try f.b.addRange(&.{}));
+    const g_call = try f.b.addNode(.{ .tag = .call, .pos = 50, .data = .{ .lhs = (try f.ident("g")).int(), .rhs = @backingInt(no_args) } });
+    const call = try f.b.addNode(.{ .tag = .expr_stmt, .pos = 50, .data = .{ .lhs = g_call.int(), .rhs = 0 } });
     const empty = try f.b.addRange(&.{});
     const branches = try f.b.addRecord(JsIr.If{ .then_start = empty.start, .then_end = empty.end, .else_start = empty.start, .else_end = empty.end });
     const same = try f.binary(.strict_eq, try f.ident("a"), try f.ident("b"));
@@ -3850,13 +3953,13 @@ test "compact: a mark goes past the guard's space, and with the `;` a block's en
     var marks: SourceMap.Marks = .init(scratch.allocator());
     const text = try print(gpa, scratch.allocator(), &ir, .fromLocal(&f.interner), .{ .compact = true, .marks = &marks });
     defer gpa.free(text);
-    try testing.expectEqualStrings("const f=(a,b)=>{let t=1;g};\n", text);
+    try testing.expectEqualStrings("const f=(a,b)=>{let t=1;g()};\n", text);
     // The run's keyword maps where its first member does (item 4).
     try testing.expectEqual(@as(usize, 3), marks.list.items.len);
     try testing.expectEqual(SourceMap.Mapping{ .generated = @intCast(std.mem.indexOf(u8, text, "let").?), .source = 60 }, marks.list.items[0]);
     try testing.expectEqual(@as(u32, @intCast(std.mem.indexOf(u8, text, "t=").?)), marks.list.items[1].generated);
     try testing.expectEqual(@as(u32, 60), marks.list.items[1].source);
-    try testing.expectEqual(SourceMap.Mapping{ .generated = @intCast(std.mem.indexOf(u8, text, "g}").?), .source = 50 }, marks.list.items[2]);
+    try testing.expectEqual(SourceMap.Mapping{ .generated = @intCast(std.mem.indexOf(u8, text, "g()}").?), .source = 50 }, marks.list.items[2]);
 }
 
 test "compact: a binary minus before a negation keeps one space and nothing else does" {
