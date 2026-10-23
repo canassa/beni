@@ -141,7 +141,7 @@ since; across seeds the fit went from 264 to 257, almost all from #625.
 
 | edit | B/widget saved | owner |
 |---|---:|---|
-| record writes in place | 2.8 | #315 R6–R7, blocked on #286 |
+| record writes in place | 2.8 | #315 R6–R7, **done** 2026-10-23 (#885, #888, then #893) |
 | each pass as one nullary call per group | 15.7 | the 19 October "~27 B" item; #614 tried it and grew |
 | `init` inlined | 2.1 | none — a defect, below |
 | record field names shortened at N ≥ 29 | 4.8 | none — a defect, below |
@@ -264,7 +264,7 @@ Each fix was priced by editing the actual N = 16 and N = 64 output into the shap
 | 4 | An enum cycle is a chain of conditionals, fused into its handler | `Lower.zig` `condChainPossible` refused every `switch` tree | −1.4 | **+0.2** (−0.8 from 16 to 64) | merged, #656 (#652): the shape is right, the bytes did not move |
 | 5 | A view `let` read once is written at its use | evaluation-order rule | −2.3 | — | in #618 |
 | 6 | Short field names in shape-read records (from 29 shape runs on): `["cups",A,0,"z"]` | `SchemaValid.zig`, `Emit.zig` `pinShapeFields`, `assignFields`; the owner's decision of 2026-10-22 supersedes 2026-10-19's | −10.4 | **+3.3** (draft); **+2.0** as merged | merged, #659 (#653), 2026-10-22, by the owner, ahead of the field-name colouring. The draft measured worse: the names come out as two letters (`cups`→`oa`) and each entry grows by `,0,"oa"`. Raw −6 %, brotli up. Not yet explained; source names that are English words may be cheap for brotli's static dictionary |
-| 7 | The structural rewrite: a closure per widget, writes in place, bindings grouped by field, handlers that schedule a group, one generic loader for pushed state | `inline.zig` program site; reverses `browser-inline.md` §8.4 "handlers live at the program site" and D-c | ≈ −65 as a whole; each step alone 0–3 | — | #668. The owner reversed §8.4 and D-c on 2026-10-22; the spec can be written now. The build is blocked on #286 → #315 R4–R7 |
+| 7 | The structural rewrite: a closure per widget, writes in place, bindings grouped by field, handlers that schedule a group, one generic loader for pushed state | `inline.zig` program site; reverses `browser-inline.md` §8.4 "handlers live at the program site" and D-c | ≈ −65 as a whole; each step alone 0–3 | — | **merged** #895 (2026-10-23), +9.0 as first built (the proofs failed on S1: model as cell, handlers in Main); after #899 and #902 the whole change is **−24.4** (232.1 → 207.7), not −65. Fixed cost at N = 1 +286 B. Follow-ups #896 |
 
 Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 
@@ -304,6 +304,10 @@ the mean of three seeds.
 | release field names coloured by co-occurrence: names unique only among fields that can meet in one record | #662 | **done**: #667 (2026-10-22). **Measured −0.7**; with #659, +1.3 B per widget: short names do not pay under brotli on this app |
 | re-measure the shape threshold T with short names | #655 | after #659 |
 | the emit cache must key a caller's output on the callee's parameter patterns (since #654), not only its interface | #631 | to tell #631 |
+| ownership path cut (#286), then #315 R4–R7 | #286, #315 | **done** 2026-10-23: §16.7 (a)–(e) and the cut removed (#837, #843, #847, #852, #855); R4 #872, R6 #885, R7 #888; R6's block-bodied updates fixed by #893 (#889) |
+| #610's +5.9 | #844 | **done** 2026-10-23: #846, #866, #873, #876 (#874); cost 3 has no smaller shape (#880) |
+| fix 7, per-root closures | #668, #895 | **merged** 2026-10-23 with the owner's six decisions (§8.4) |
+| fix 7 on S1's own programs | #896 | in progress: #898 (dev builds), #899 (routes: every slice held, handlers in roots, −33.1), #902 (store-backs, −0.3); #909 (smaller runtime, for N = 1) open; then a per-widget comparison with tea-inline for the next plan |
 
 ### What the measurements say
 
@@ -311,3 +315,16 @@ the mean of three seeds.
   compiler before the next fix is ranked on its estimate.
 - The local fixes together (#1–#6) are worth single digits per widget as built. The bar needs about
   60 B per widget more. Only #7 reaches it, and only as a whole.
+
+### Status, 2026-10-23 (end of day)
+
+`05019dcfa`: slope **207.7** B/widget, N = 1 **1 732** (1.27× the bar), N = 256 **55 859** (1.30×). The day
+went 241.0 → 207.7, with the steps in the table above.
+
+- **Fix 7 delivered −24, not −65.** The estimate came from hand-editing the output into tea-inline's
+  shape, and the built shape still differs from tea-inline's. #896 will list where the remaining bytes
+  are, per widget, against tea-inline's output for the same seed.
+- **N = 1 got worse: 1 446 → 1 732 B.** Fix 7 added a fixed runtime (group runner, ordinal sort,
+  copy-plan walker, loader) that a one-widget page pays in full. It is about +290 B once against −24 B
+  per widget, so it breaks even at about 12 widgets. #909 makes these pieces smaller.
+- **Still needed for the bar:** about 48 B/widget on the slope, and about 380 B on the N = 1 page.
