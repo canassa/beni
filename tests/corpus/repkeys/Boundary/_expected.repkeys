@@ -4,7 +4,7 @@ key #2 { label : #0, tag : #1 } wild
 key #3 Basics.Int
 key #4 { label : #0, size : #3 }
 key #5 { name : #0 } wild
-key #6 List.List #0 wild
+key #6 List.List #0
 key #7 #2 → #0
 key #8 #4 → #0
 module Boundary

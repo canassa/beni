@@ -5,7 +5,7 @@ key #3 List.List #2
 key #4 { items : #3, total : #0 }
 key #5 Schemas.Event.Type wild
 key #6 { count : #0 }
-key #7 List.List #1 wild
+key #7 List.List #1
 key #8 #4 → #0
 key #9 #2 → #0
 key #10 #5 → #0
