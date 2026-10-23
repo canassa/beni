@@ -12643,7 +12643,15 @@ pub const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         const scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
-        const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        const written = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        // The arms of tags no run tells from a failure, which no run reaches
+        // (`schema.md` §6, amended 2026-10-24): the run reads such a tag as
+        // unknown, and the `Err _` arm gives what each would have.
+        const branches = if (l.valid_sites.dead_branches.len == 0) written else live: {
+            var kept: std.ArrayList(Inst.Index) = .empty;
+            for (written) |b| if (!SchemaValid.has(l.valid_sites.dead_branches, b.int())) try kept.append(l.scratch, b);
+            break :live kept.items;
+        };
         if (branches.len == 0) return null;
         // A pattern with items after its spread reads the scrutinee's end
         // through `List.length` and `List.drop` (§7, *List patterns with

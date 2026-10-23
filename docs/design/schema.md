@@ -1353,6 +1353,22 @@ and nothing of `core/Schema`'s issue makers ships for it.
   because nothing reads it. A validator stops at the first failure, because no issue is kept that
   a later one could join (`Schema.all` reports every issue, so a validator reports none and gains
   nothing by going on).
+- **A tag no run tells from a failure** *(amended 2026-10-24, #916)*. A `case` on a validator run
+  whose `Ok (S.V …)` arm gives exactly what its `Err _` arm gives — the same reference to the same
+  local or top-level value, with nothing but names and `_` inside the variant's pattern — cannot
+  tell a `V` from a failure. When every run of `S` is such a `case` and every one of them has
+  that arm for `V`, `S`'s validator worker and its shape read `V`'s tag as an unknown one, which
+  fails, and the `case`s have no arm for `V`: the program gives the same value for every input,
+  and `V`'s payload is not tested. `S` must be a declaration of the module that the module does
+  not expose, that no other schema of the module and no derived codec refers to, that does not
+  refer to itself, and whose root is a tagged union; any other reference to one of its members —
+  a run whose result is not a `case`'s scrutinee, a `Result.toMaybe`, a `parse` with issues, a
+  value — keeps every tag. So the decision reads the module alone, and a module's interface does
+  not change with it. A host value read through getters is read less for such a tag; getters
+  are not a beni value (§5, *Traversal and failure rules*). The case: `unique-components`' push
+  decoder, whose `Notify` arm, and at N = 1 its `Tick` arm, give `model` as a failure does — about
+  60 B of the N = 1 page. `run/SchemaDeadTags`, `run/SchemaDeadTagsShapes` (the shapes),
+  `emit/release/app/SchemaDeadTags` and `emit/release/app/SchemaDeadTagsShapes`.
 - **Where it is not taken.** A dynamic schema runs the library interpreter as before. The forced
   library path (`--schema-library`) runs every schema through the interpreter, which makes issues.
   The differential corpus is unchanged: a program that reads its `Err` keeps the issues, and the

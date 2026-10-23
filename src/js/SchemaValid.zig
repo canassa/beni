@@ -31,6 +31,7 @@ const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaCtor = @import("SchemaCtor.zig");
 
 const Inst = Bir.Inst;
 
@@ -78,6 +79,21 @@ pub const Sites = struct {
     /// A `Json` shape run's call and its codec.
     shape_json: []const u32 = &.{},
     shape_codecs: []const u32 = &.{},
+
+    /// The tags no run tells from a failure (`schema.md` §6, *A tag no
+    /// run tells from a failure*, amended 2026-10-24): per declaration of
+    /// this module in `dead_refs`, the orders of the variants of its root
+    /// union that its validator worker and its shape read as unknown tags,
+    /// ascending; and the `case` branches of those variants, which no run
+    /// then reaches, ascending.
+    dead_refs: []const SchemaGraph.Ref = &.{},
+    dead_variants: []const []const u32 = &.{},
+    dead_branches: []const u32 = &.{},
+
+    pub fn deadVariants(s: Sites, r: SchemaGraph.Ref) []const u32 {
+        for (s.dead_refs, s.dead_variants) |x, v| if (x.module == r.module and x.decl == r.decl) return v;
+        return &.{};
+    }
 
     pub fn shapeOfArg(s: Sites, inst: u32) ?SchemaGraph.Ref {
         for (s.shape_args, s.shape_refs) |a, r| if (a == inst) return r;
@@ -128,7 +144,7 @@ pub const Sites = struct {
             eq(u32, a.shape_parses, b.shape_parses) and eq(u32, a.shape_args, b.shape_args) and
             eq(u32, a.shape_json, b.shape_json) and eq(u32, a.shape_codecs, b.shape_codecs) and
             eq(u32, a.defaults, b.defaults) and eq(u32, a.maybes, b.maybes) and
-            eq(u32, a.consumer_callees, b.consumer_callees);
+            eq(u32, a.consumer_callees, b.consumer_callees) and eq(u32, a.dead_branches, b.dead_branches);
     }
 };
 
@@ -181,6 +197,7 @@ pub fn sites(
     var defaults: std.ArrayList(u32) = .empty;
     var maybes: std.ArrayList(u32) = .empty;
     var consumer_callees: std.ArrayList(u32) = .empty;
+    var candidates: std.ArrayList(Candidate) = .empty;
     for (0..bir.insts.len) |i| {
         const inst: Inst.Index = @fromBackingInt(@intCast(i));
         const call = unreadRun(graph, interfaces, interner, bir, inst) orelse continue;
@@ -233,6 +250,7 @@ pub fn sites(
                     if (def.params_end != def.params_start) break :blk null;
                     break :blk .{ arg.int(), member.int(), ref };
                 };
+                if (direct_ref) |r| try candidates.append(scratch, .{ .unread = inst.int(), .member = r[1], .ref = r[2] });
                 if (direct_ref) |r| if (shapes and try sg.?.shapeable(scratch, r[2])) {
                     try shape_callees.append(scratch, callee.int());
                     if (run == .schema_parse) try shape_parses.append(scratch, callee.int());
@@ -263,7 +281,11 @@ pub fn sites(
     std.mem.sort(u32, shape_callees.items, {}, std.sort.asc(u32));
     std.mem.sort(u32, shape_parses.items, {}, std.sort.asc(u32));
     std.mem.sort(u32, consumer_callees.items, {}, std.sort.asc(u32));
+    const dead = if (sg) |g| try deadTags(scratch, graph, interner, interfaces, provenance, bir, g, module, candidates.items) else Dead{};
     return .{
+        .dead_refs = dead.refs,
+        .dead_variants = dead.variants,
+        .dead_branches = dead.branches,
         .defaults = defaults.items,
         .maybes = maybes.items,
         .consumer_callees = consumer_callees.items,
@@ -285,6 +307,201 @@ pub fn sites(
         .shape_json = shape_json.items,
         .shape_codecs = shape_codecs.items,
     };
+}
+
+/// A direct run of a declaration's schema and the instruction its result
+/// goes to unread: a \`case\`, or a call of \`Result.withDefault\` or
+/// \`Result.toMaybe\`.
+const Candidate = struct { unread: u32, member: u32, ref: SchemaGraph.Ref };
+
+const Dead = struct {
+    refs: []const SchemaGraph.Ref = &.{},
+    variants: []const []const u32 = &.{},
+    branches: []const u32 = &.{},
+};
+
+/// The tags no run tells from a failure (`schema.md` §6, amended
+/// 2026-10-24). A declaration of this module qualifies when the module
+/// does not expose it, no other schema of the module and no derived codec
+/// refers to it, it does not refer to itself, its root is a tagged union,
+/// and every instruction that names one of its members is the schema
+/// argument of a direct run whose result is a `case`'s scrutinee. A
+/// variant is dead when, at every one of those `case`s, its first and only
+/// arm is `Ok (S.V …)` with no pattern but names and `_` inside, ahead of
+/// any arm that could match it otherwise, and that arm's body is the very
+/// reference the `Err _` arm's body is — the same local or top-level value.
+/// Reading such a tag as unknown makes the run fail, and the failure's arm
+/// gives the same value the variant's arm would have: nothing the program
+/// does changes.
+fn deadTags(
+    scratch: Allocator,
+    graph: *const Graph,
+    interner: *const InternPool.Global,
+    interfaces: []const Interface,
+    provenance: []const Interface.Provenance,
+    bir: *const Bir,
+    g: *const SchemaGraph,
+    module: Graph.Index,
+    candidates: []const Candidate,
+) Allocator.Error!Dead {
+    const cx: Cx = .{ .graph = graph, .interfaces = interfaces, .interner = interner, .bir = bir, .module = module };
+    var refs: std.ArrayList(SchemaGraph.Ref) = .empty;
+    var variants: std.ArrayList([]const u32) = .empty;
+    var branches: std.ArrayList(u32) = .empty;
+    for (candidates, 0..) |c, ci| {
+        const r = c.ref;
+        if (r.module != module) continue;
+        // Each declaration once, at its first run.
+        const first = for (candidates[0..ci]) |e| {
+            if (e.ref.module == r.module and e.ref.decl == r.decl) break false;
+        } else true;
+        if (!first) continue;
+        if (exposed(interfaces, provenance, module, r.decl)) continue;
+        if (g.codecIndex(module, r.decl) != null) continue;
+        if (try g.recursive(scratch, module, r.decl)) continue;
+        const plan = g.planOf(module);
+        const def = g.definition(module, r.decl) orelse continue;
+        if (SchemaGraph.tag(plan, def.root) != .tagged) continue;
+        const referred = for (plan.definitions) |other| {
+            const od = @backingInt(other.decl);
+            if (od != r.decl and try g.reaches(scratch, module, od, r.decl)) break true;
+        } else false;
+        if (referred) continue;
+        // Every member reference is one of the runs, and each run's result
+        // goes to a `case`.
+        const only_runs = for (0..bir.insts.len) |i| {
+            if (bir.instTag(@fromBackingInt(@intCast(i))) != .schema_member_top) continue;
+            if (bir.instData(@fromBackingInt(@intCast(i))).lhs != r.decl) continue;
+            const run = for (candidates) |e| {
+                if (e.member == i) break e;
+            } else break false;
+            if (bir.instTag(@fromBackingInt(@intCast(run.unread))) != .case) break false;
+        } else true;
+        if (!only_runs) continue;
+        const count = SchemaGraph.variants(plan, def.root).len;
+        // The variants dead at every `case`, by order.
+        const alive = try scratch.alloc(bool, count);
+        @memset(alive, false);
+        const arms = try scratch.alloc(?u32, count);
+        var site_branches: std.ArrayList(u32) = .empty;
+        for (candidates) |e| {
+            if (e.ref.module != r.module or e.ref.decl != r.decl) continue;
+            @memset(arms, null);
+            siteArms(cx, r.decl, @fromBackingInt(@intCast(e.unread)), arms);
+            for (arms, alive) |a, *live| {
+                if (a) |b| try site_branches.append(scratch, b) else live.* = true;
+            }
+        }
+        var dead: std.ArrayList(u32) = .empty;
+        for (alive, 0..) |live, order| if (!live) try dead.append(scratch, @intCast(order));
+        if (dead.items.len == 0) continue;
+        // The branches of the dead variants, at every site.
+        for (candidates) |e| {
+            if (e.ref.module != r.module or e.ref.decl != r.decl) continue;
+            @memset(arms, null);
+            siteArms(cx, r.decl, @fromBackingInt(@intCast(e.unread)), arms);
+            for (dead.items) |order| try branches.append(scratch, arms[order].?);
+        }
+        try refs.append(scratch, r);
+        try variants.append(scratch, dead.items);
+    }
+    std.mem.sort(u32, branches.items, {}, std.sort.asc(u32));
+    return .{ .refs = refs.items, .variants = variants.items, .branches = branches.items };
+}
+
+/// At `case` instruction `case_inst` on a run of schema declaration
+/// `decl`, the branch of each variant, by order, whose arm gives what the
+/// `Err _` arm gives (`deadTags`); the others stay null.
+fn siteArms(cx: Cx, decl: u32, case_inst: Inst.Index, arms: []?u32) void {
+    const bir = cx.bir;
+    const d = bir.instData(case_inst);
+    const list = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+    // The `Err _` arm's body: the first arm that matches an `Err`.
+    const err_body: Inst.Index = for (list) |branch| {
+        const pattern: Inst.Index = @fromBackingInt(@intCast(bir.instData(branch).lhs));
+        switch (bir.instTag(pattern)) {
+            .pat_wild => break @fromBackingInt(@intCast(bir.instData(branch).rhs)),
+            .pat_ctor => {
+                const arm = resultArm(cx, pattern) orelse return;
+                if (!arm.ok) break @fromBackingInt(@intCast(bir.instData(branch).rhs));
+            },
+            else => return,
+        }
+    } else return;
+    if (!sameReference(bir, err_body, err_body)) return;
+    // Each `Ok (S.V …)` arm, in order, until an arm that could match more.
+    var twice: u64 = 0;
+    for (list) |branch| {
+        const pattern: Inst.Index = @fromBackingInt(@intCast(bir.instData(branch).lhs));
+        if (bir.instTag(pattern) != .pat_ctor) break;
+        const arm = resultArm(cx, pattern) orelse break;
+        if (!arm.ok) continue;
+        const inner = arm.inner;
+        if (bir.instTag(inner) != .pat_ctor) break;
+        const ctor: Inst.Index = @fromBackingInt(@intCast(bir.instData(inner).lhs));
+        if (bir.instTag(ctor) != .schema_ctor_top or bir.instData(ctor).lhs != decl) break;
+        const info = SchemaCtor.of(bir, cx.module, cx.interfaces, ctor) orelse break;
+        if (Bir.SchemaCtorRef.unpack(bir.instData(ctor).rhs).encoded) break;
+        if (info.order >= arms.len) break;
+        const subs = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(inner).rhs))), Inst.Index);
+        const plain = for (subs) |sub| switch (bir.instTag(sub)) {
+            .pat_wild, .pat_var => {},
+            else => break false,
+        } else true;
+        const body: Inst.Index = @fromBackingInt(@intCast(bir.instData(branch).rhs));
+        // A variant with a second arm keeps both.
+        if (info.order < 64) {
+            const bit = @as(u64, 1) << @intCast(info.order);
+            if (twice & bit != 0) {
+                arms[info.order] = null;
+                continue;
+            }
+            twice |= bit;
+        } else continue;
+        if (plain and sameReference(bir, body, err_body)) arms[info.order] = branch.int();
+    }
+}
+
+/// Which of core `Result`'s constructors `pattern` matches, and the
+/// pattern inside it.
+const ResultArm = struct { ok: bool, inner: Inst.Index };
+
+fn resultArm(cx: Cx, pattern: Inst.Index) ?ResultArm {
+    const pd = cx.bir.instData(pattern);
+    const subs = cx.bir.extraSlice(cx.bir.subRange(@fromBackingInt(@intCast(pd.rhs))), Inst.Index);
+    if (subs.len != 1) return null;
+    const name = ctorName(cx.graph, cx.interfaces, cx.interner, cx.bir, @fromBackingInt(@intCast(pd.lhs))) orelse return null;
+    if (std.mem.eql(u8, name, "Ok")) return .{ .ok = true, .inner = subs[0] };
+    if (std.mem.eql(u8, name, "Err")) return .{ .ok = false, .inner = subs[0] };
+    return null;
+}
+
+/// What `deadTags` reads the module's instructions with.
+const Cx = struct {
+    graph: *const Graph,
+    interfaces: []const Interface,
+    interner: *const InternPool.Global,
+    bir: *const Bir,
+    module: Graph.Index,
+};
+
+/// Whether `a` and `b` are one reference to one binding: the same local,
+/// or the same top-level value.
+fn sameReference(bir: *const Bir, a: Inst.Index, b: Inst.Index) bool {
+    const t = bir.instTag(a);
+    if (t != bir.instTag(b)) return false;
+    if (t != .local and t != .top) return false;
+    return bir.instData(a).lhs == bir.instData(b).lhs;
+}
+
+/// Whether module `module` exposes schema declaration `decl`.
+fn exposed(interfaces: []const Interface, provenance: []const Interface.Provenance, module: Graph.Index, decl: u32) bool {
+    if (module.int() >= interfaces.len or module.int() >= provenance.len) return true;
+    for (0..interfaces[module.int()].schemas.len) |i| {
+        const at = provenance[module.int()].schemaDecl(i) orelse return true;
+        if (at.int() == decl) return true;
+    }
+    return false;
 }
 
 /// Records `inst`, the instruction whose run is unread, when it is a call
