@@ -1778,6 +1778,17 @@ carried signature resolves its keys against that block table. Formats from
 either separate branch are invalidated. The earlier format numbers above
 record the amendments before integration.
 
+*Amended 2026-10-23 (#748, repeated reads scan every boundary):* the
+fixed-prefix projection above is for a single cast view, including a type hole.
+A spatial cast-level read has a different denotation: every matching boundary
+at every depth. It must scan all those boundaries even when the first cast
+has a different full type with a common fixed prefix. Otherwise an inner
+boundary can name a holder at the read root that retaining the outer prefix
+would leave below it. Repeated reads stay approximate, keep unmatched contents,
+and never take the single-view shortcut. A reduced path through two distinct
+full tuple types must retain the inner boundary at the root. Format 32
+invalidates blocks produced before this read distinction.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
