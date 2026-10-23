@@ -289,6 +289,20 @@ pub const Node = struct {
         /// A prefix operator. `lhs` operand, `rhs` is the `@intFromEnum`
         /// of a `UnaryOp`.
         unary,
+        /// `obj.f = value` as an expression, whose value is `value`: the
+        /// store of a record update written in place, inside the
+        /// `sequence` that update is (`ownership-checker.md` §31.10, *The
+        /// form*). `lhs` is the target, always a `member` — an expression
+        /// never rebinds a name, so every rule about names an
+        /// `assign_stmt` targets stays a rule about statements — and `rhs`
+        /// the value. The target's object is evaluated, then the value,
+        /// then the store.
+        assign,
+        /// `(a, b, …, z)`: each evaluated in order, the value `z`'s. Inline
+        /// range of at least two expressions. What a record update written
+        /// in place is wherever its spread was an expression:
+        /// `(r.f = v, r)` (§31.10, *The form*).
+        sequence,
 
         /// Whether the tag is a statement (the leading run of this enum).
         pub fn isStatement(t: Tag) bool {
@@ -812,6 +826,11 @@ pub inline fn pushOperands(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayLis
             const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), Binary);
             try pushAll(gpa, stack, &.{ b.right, b.left });
         },
+        // The target is pushed whole, a `member`: a walker that counts
+        // reads sees its object read, and one that asks what may write
+        // meets the `assign` itself after both operands.
+        .assign => try pushAll(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
+        .sequence => try pushReversed(gpa, stack, ir.extraSlice(inlineRange(d), Node.Index)),
         // Leaves; an `arrow`, whose body each caller walks itself; and the
         // statements, which are no expression's operand. Listed, not `else`,
         // so a new tag is a compile error here and in both printers.
@@ -876,6 +895,64 @@ pub const VerifyError = error{
     /// A statement appeared where an expression belongs, or the reverse.
     WrongPosition,
 };
+
+/// Whether evaluating `root` — a statement or an expression — runs a store
+/// of a record update written in place (`assign`), outside any function it
+/// makes. Such a statement is never dropped as an unused pure one
+/// (`ownership-checker.md` §31.10, *The optimiser barrier*): the store is
+/// the update. Iterative, over `stack`, which it leaves as it found it.
+pub fn holdsStore(ir: *const JsIr, gpa: Allocator, stack: *std.ArrayList(Node.Index), root: Node.Index) Allocator.Error!bool {
+    const base = stack.items.len;
+    defer stack.shrinkRetainingCapacity(base);
+    try pushOperand(gpa, stack, root);
+    while (stack.items.len > base) {
+        const node = popOperand(stack).?;
+        const d = ir.data(node);
+        const at = struct {
+            fn idx(x: u32) Node.Index {
+                return @fromBackingInt(@intCast(x));
+            }
+        }.idx;
+        switch (ir.tag(node)) {
+            .assign => return true,
+            // A function made here runs elsewhere.
+            .arrow, .func_decl, .gen_decl, .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+            .const_decl => try pushOperand(gpa, stack, at(d.rhs)),
+            .let_decl => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try pushOperand(gpa, stack, v),
+            .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try pushOperand(gpa, stack, v),
+            .assign_stmt => try pushOperandSlice(gpa, stack, &.{ at(d.lhs), at(d.rhs) }),
+            .expr_stmt, .throw_stmt => try pushOperand(gpa, stack, at(d.lhs)),
+            .if_stmt => {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), If);
+                try pushOperand(gpa, stack, at(d.lhs));
+                try pushOperandSlice(gpa, stack, ir.extraSlice(b.thenBody(), Node.Index));
+                try pushOperandSlice(gpa, stack, ir.extraSlice(b.elseBody(), Node.Index));
+            },
+            .while_true, .block_stmt => try pushOperandSlice(gpa, stack, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Node.Index)),
+            .for_of => {
+                const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), ForOf);
+                try pushOperand(gpa, stack, f.iterable);
+                try pushOperandSlice(gpa, stack, ir.extraSlice(f.body(), Node.Index));
+            },
+            .switch_stmt => {
+                try pushOperand(gpa, stack, at(d.lhs));
+                try pushOperandSlice(gpa, stack, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Node.Index));
+            },
+            .switch_case => {
+                if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |t| try pushOperand(gpa, stack, t);
+                try pushOperandSlice(gpa, stack, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Node.Index));
+            },
+            .try_stmt => {
+                const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), Try);
+                try pushOperandSlice(gpa, stack, ir.extraSlice(t.body(), Node.Index));
+                try pushOperandSlice(gpa, stack, ir.extraSlice(t.finalBody(), Node.Index));
+                try pushOperandSlice(gpa, stack, ir.extraSlice(t.catchBody(), Node.Index));
+            },
+            else => try ir.pushOperands(gpa, stack, node),
+        }
+    }
+    return false;
+}
 
 /// Walk every node and check that each index it holds is in bounds and that
 /// statements and expressions are not mixed up.
@@ -1083,6 +1160,19 @@ fn verifyNode(ir: *const JsIr, node: Node.Index) VerifyError!void {
         .unary => {
             try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
             if (d.rhs >= @typeInfo(UnaryOp).@"enum".field_names.len) return error.OutOfBounds;
+        },
+        .assign => {
+            try ir.verifyChild(@fromBackingInt(@intCast(d.lhs)), .expression);
+            try ir.verifyChild(@fromBackingInt(@intCast(d.rhs)), .expression);
+            if (ir.tag(@fromBackingInt(@intCast(d.lhs))) != .member) return error.WrongPosition;
+        },
+        .sequence => {
+            const parts = inlineRange(d);
+            if (@backingInt(parts.start) > @backingInt(parts.end) or @backingInt(parts.end) > ir.extra.len) {
+                return error.OutOfBounds;
+            }
+            if (parts.len() < 2) return error.WrongPosition;
+            for (ir.extraSlice(parts, Node.Index)) |e| try ir.verifyChild(e, .expression);
         },
     }
 }
@@ -1501,6 +1591,13 @@ pub const Builder = struct {
                     try Push.one(&stack, gpa, at, left, if (flat) w.flat else w.operand, 0);
                     try Push.one(&stack, gpa, at, pair.right.int(), w.operand, 0);
                 },
+                // Not measured: an in-place update's store and its sequence nest
+                // no deeper than the update in the source, priced as operands.
+                .assign => {
+                    try Push.one(&stack, gpa, at, d.lhs, w.member, 0);
+                    try Push.one(&stack, gpa, at, d.rhs, w.operand, 0);
+                },
+                .sequence => try Push.all(&stack, gpa, at, b.rangeWords(inlineRange(d)), w.operand, 0),
             }
         }
         return most;
@@ -1601,6 +1698,12 @@ pub const Builder = struct {
                     const pair = b.record(d.lhs, Binary);
                     try stack.appendSlice(gpa, &.{ pair.left.int(), pair.right.int() });
                 },
+                // A store is an effect, as a call may be: what `call` asks.
+                .assign => {
+                    out.call = true;
+                    try stack.appendSlice(gpa, &.{ d.lhs, d.rhs });
+                },
+                .sequence => try stack.appendSlice(gpa, b.rangeWords(inlineRange(d))),
             }
         }
         return out;
@@ -1631,7 +1734,7 @@ pub const Builder = struct {
         return b.extra.items[start..end];
     }
 
-    fn record(b: *const Builder, index: u32, comptime T: type) T {
+    pub fn record(b: *const Builder, index: u32, comptime T: type) T {
         var result: T = undefined;
         var i: usize = index;
         inline for (@typeInfo(T).@"struct".field_names, @typeInfo(T).@"struct".field_types) |field_name, field_type| {

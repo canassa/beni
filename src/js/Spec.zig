@@ -705,6 +705,11 @@ const Op = enum(u7) {
     /// A `return` of the function that is its node, `a` the value's cell
     /// (`none` for what may run off its end: `undefined`).
     ret,
+    /// A store's value, or a sequence's (`JsIr.Node.Tag.assign`,
+    /// `sequence`): the value of cell `a`, never as a literal
+    /// (`Spec.demote`), since making it writes a record and no fold may
+    /// take it for its value.
+    effect,
 };
 
 /// A constraint's kind and its one flag (`Op`).
@@ -1601,7 +1606,7 @@ const Spec = struct {
             const vals = s.pts.vals[mi];
             for (ir.extraSlice(ir.body, Index)) |top| {
                 const nodes = try s.preorder(m, top);
-                for (nodes) |node| if (ir.tag(node) == .assign_stmt) {
+                for (nodes) |node| if (ir.tag(node) == .assign_stmt or ir.tag(node) == .assign) {
                     const t: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
                     if (ir.tag(t) == .member and t.int() < m.objects.bit_length) m.objects.set(t.int());
                 };
@@ -3007,6 +3012,23 @@ const Spec = struct {
                 break :blk .object;
             },
             .member => try s.memberValue(m, node),
+            // A store of a record update written in place: what `evalStmt`
+            // joins for `o.p = v` (facts 4 and 5), and its value is `v`.
+            .assign => blk: {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                const value = m.memo[d.rhs];
+                if (s.pts.ok) {
+                    const td = ir.data(target);
+                    const obj = s.pts.vals[m.index][td.lhs];
+                    const id = s.pts.propId(m.index, @fromBackingInt(@intCast(td.rhs)));
+                    for (obj.sites) |site| try s.joinProp(site, id, value);
+                }
+                break :blk s.demote(value);
+            },
+            .sequence => blk: {
+                const parts = ir.extraSlice(JsIr.inlineRange(d), Index);
+                break :blk s.demote(m.memo[parts[parts.len - 1].int()]);
+            },
             else => .top,
         };
     }
@@ -4256,6 +4278,15 @@ const Spec = struct {
             // Tested with a table and `==`, not a `switch` with an `else`
             // prong (`TagSet`).
             if (patch_leaves[@backingInt(tag)]) continue;
+            // A store's target is no read: its object and its value are
+            // patched, never the property it writes (`pushStmtExprs`'s
+            // rule for an `assign_stmt`).
+            if (tag == .assign) {
+                const d = ir.data(node);
+                try JsIr.pushOperand(s.arena, &stack, @fromBackingInt(@intCast(d.rhs)));
+                try ir.pushOperands(s.arena, &stack, @fromBackingInt(@intCast(d.lhs)));
+                continue;
+            }
             if (tag == .arrow) {
                 const f = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Func);
                 for (ir.extraSlice(f.body(), Index)) |b| try JsIr.pushOperand(s.arena, &stack, b);
@@ -5643,6 +5674,17 @@ const Spec = struct {
             // (`betaReduce`).
             .tidy => for (items) |raw| {
                 const st: Index = @fromBackingInt(@intCast(raw));
+                // A binding of a record written in place, `const x = (s, …, v)`:
+                // its stores as statements before it, then `const x = v`
+                // (`Lower.settleStores`), which a copy of a name folds.
+                if (storesBound(m.ir, st)) |parts| {
+                    const kept = try s.arena.dupe(u32, parts);
+                    for (kept[0 .. kept.len - 1]) |e| try out.append(s.arena, (try m.addNode(s.gpa, .expr_stmt, m.ir.pos(st), e, 0)).int());
+                    m.setData(st, m.ir.data(st).lhs, kept[kept.len - 1]);
+                    try out.append(s.arena, raw);
+                    changed = true;
+                    continue;
+                }
                 if (m.ir.tag(st) == .assign_stmt) {
                     const target: Index = @fromBackingInt(@intCast(m.ir.data(st).lhs));
                     if (m.ir.tag(target) == .ident and sameChain(m.ir, target, @fromBackingInt(@intCast(m.ir.data(st).rhs)))) {
@@ -5911,7 +5953,7 @@ const Spec = struct {
                     },
                     else => {},
                 },
-                .tidy => if (ir.tag(st) == .assign_stmt or iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
+                .tidy => if (ir.tag(st) == .assign_stmt or storesBound(ir, st) != null or iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
                 // A `switch`, or an arrow an eta step may take.
                 .switches => if (ir.tag(st) == .switch_stmt or try s.holdsArrow(m, st)) return true,
             }
@@ -6090,6 +6132,9 @@ const Spec = struct {
         const use = findUse(scan, x.int()) orelse return false;
         if (scan.nodes - use.members.items.len > 1 << 16) return false;
         if (use.bare() != 0) return false;
+        // A record written in place stays one object: its store's target is
+        // a property, never a name (`JsIr.Node.Tag.assign`).
+        if (use.in_place != 0) return false;
         for (use.members.items) |node| {
             const id = s.pts.propId(m.index, @fromBackingInt(@intCast(ir.data(node).rhs)));
             const k = std.mem.indexOfScalar(u32, ids, id) orelse return false;
@@ -6583,6 +6628,21 @@ const Spec = struct {
             c.subst[v.int()] = (@as(Index, @fromBackingInt(@intCast(ir.data(first).rhs)))).toOptional();
             return try c.expr(r, 0);
         }
+        // `o.f = v; …return R`, a store of a record written in place as a
+        // statement (`Lower.settleStores`): `(o.f = v, R)`, evaluated in the
+        // same order.
+        if (ir.tag(first) == .expr_stmt) {
+            const e: Index = @fromBackingInt(@intCast(ir.data(first).lhs));
+            if (ir.tag(e) != .assign) return null;
+            const r = try s.returnExpr(module, body[1..], depth + 1) orelse return null;
+            var parts: std.ArrayList(u32) = .empty;
+            try parts.append(s.arena, e.int());
+            if (ir.tag(r) == .sequence) {
+                try parts.appendSlice(s.arena, ir.extraSlice(JsIr.inlineRange(ir.data(r)), u32));
+            } else try parts.append(s.arena, r.int());
+            const start = try fm.append(s.gpa, parts.items);
+            return try fm.addNode(s.gpa, .sequence, ir.pos(first), start, start + @as(u32, @intCast(parts.items.len)));
+        }
         if (ir.tag(first) != .if_stmt) return null;
         const b = ir.extraData(@fromBackingInt(@intCast(ir.data(first).rhs)), JsIr.If);
         const then = try s.arena.dupe(Index, ir.extraSlice(b.thenBody(), Index));
@@ -6967,7 +7027,7 @@ const Spec = struct {
                 const d = ir.data(node);
                 for (children.items) |c| {
                     var below = here and !repeats;
-                    if (t == .assign_stmt and c.int() == d.lhs) below = false;
+                    if ((t == .assign_stmt or t == .assign) and c.int() == d.lhs) below = false;
                     if (t == .expr_stmt and ir.tag(c) == .ident) below = false;
                     if ((t == .call or t == .new_call) and c.int() == d.lhs) below = false;
                     try stack.append(s.arena, c);
@@ -7269,6 +7329,9 @@ const Spec = struct {
         idents: u32 = 0,
         /// Assignments to it.
         assigns: u32 = 0,
+        /// Stores of a record written in place into a property of it
+        /// (`JsIr.Node.Tag.assign`), whose target must stay a property.
+        in_place: u32 = 0,
         /// In `NameScan.globals`.
         listed: bool = false,
         /// `x.k`, `x` an `ident` of it: the member node.
@@ -7442,12 +7505,16 @@ const Spec = struct {
                         try s.countNode(&(try s.useOf(scan, x, how)).deep, node, take);
                     };
                 },
-                .assign_stmt => {
+                .assign_stmt, .assign => {
                     const target: Index = @fromBackingInt(@intCast(d.lhs));
                     if (opaqueChild(ir, target)) try s.countNode(&scan.sensitive, target, take);
                     switch (ir.tag(target)) {
                         .member => if (objectName(ir, @fromBackingInt(@intCast(ir.data(target).lhs)))) |x| {
                             try s.countNode(&(try s.useOf(scan, x, how)).written, target, take);
+                            if (ir.tag(node) == .assign) {
+                                const u = try s.useOf(scan, x, how);
+                                if (take) u.in_place -= 1 else u.in_place += 1;
+                            }
                         },
                         .ident => {
                             const u = try s.useOf(scan, ir.data(target).lhs, how);
@@ -7519,7 +7586,7 @@ const Spec = struct {
         h = mixNode(ir, h, node);
         const d = ir.data(node);
         switch (ir.tag(node)) {
-            .member, .assign_stmt, .call => h = h *% 0x100000001B3 +% reachOf(ir, @fromBackingInt(@intCast(d.lhs))),
+            .member, .assign_stmt, .assign, .call => h = h *% 0x100000001B3 +% reachOf(ir, @fromBackingInt(@intCast(d.lhs))),
             .func_decl, .gen_decl, .arrow => {
                 const record: ExtraIndex = @fromBackingInt(@intCast(if (ir.tag(node) == .arrow) d.lhs else d.rhs));
                 for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| h = h *% 0x100000001B3 +% p.int();
@@ -7632,7 +7699,7 @@ const Spec = struct {
         for ([_][2]*NameScan{ .{ kept, fresh }, .{ fresh, kept } }) |pair| {
             for (pair[0].uses.items) |*x| {
                 const y: *const NameUse = findUse(pair[1], x.name) orelse &empty;
-                if (x.decls != y.decls or x.idents != y.idents or x.assigns != y.assigns) return false;
+                if (x.decls != y.decls or x.idents != y.idents or x.assigns != y.assigns or x.in_place != y.in_place) return false;
                 for ([_][2][]const Index{ .{ x.members.items, y.members.items }, .{ x.written.items, y.written.items }, .{ x.called.items, y.called.items }, .{ x.calls.items, y.calls.items }, .{ x.deep.items, y.deep.items } }) |lists_| {
                     if (lists_[0].len != lists_[1].len) return false;
                     const p = try s.arena.dupe(Index, lists_[0]);
@@ -9185,7 +9252,7 @@ const Spec = struct {
                     const obj: Index = @fromBackingInt(@intCast(d.lhs));
                     if (ir.tag(obj) == .ident and ir.data(obj).lhs == p.int()) continue;
                 },
-                .assign_stmt => {
+                .assign_stmt, .assign => {
                     const target: Index = @fromBackingInt(@intCast(d.lhs));
                     if (ir.tag(target) == .member) {
                         const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
@@ -9226,7 +9293,7 @@ const Spec = struct {
                         continue;
                     }
                 },
-                .assign_stmt => {
+                .assign_stmt, .assign => {
                     const target: Index = @fromBackingInt(@intCast(d.lhs));
                     if (ir.tag(target) == .member) {
                         const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
@@ -9409,7 +9476,7 @@ const Spec = struct {
                         if (ir.tag(a) == .ident and ir.data(a).lhs == y.int() and !insp) return false;
                     }
                 },
-                .assign_stmt => {
+                .assign_stmt, .assign => {
                     const target: Index = @fromBackingInt(@intCast(d.lhs));
                     if (ir.tag(target) == .ident and ir.data(target).lhs == y.int()) return false;
                     if (ir.tag(target) == .member) if (memberBase(ir, target)) |b| if (ir.data(b).lhs == y.int()) return false;
@@ -9875,6 +9942,20 @@ const Spec = struct {
                     return c.node(from, .binary, try c.dst.append(c.gpa(), &.{ l.int(), r.int() }), d.rhs);
                 },
                 .unary => return c.node(from, .unary, (try c.expr(@fromBackingInt(@intCast(d.lhs)), depth + 1)).int(), d.rhs),
+                // A store: its target copied as the read it names, never as a
+                // value a fact gives the read (`projected`, `knownExpr`).
+                .assign => {
+                    const target: Index = @fromBackingInt(@intCast(d.lhs));
+                    const key = try c.property(@fromBackingInt(@intCast(ir.data(target).rhs)));
+                    const obj = try c.expr(@fromBackingInt(@intCast(ir.data(target).lhs)), depth + 1);
+                    const t = try c.node(target, .member, obj.int(), key.int());
+                    const v = try c.expr(@fromBackingInt(@intCast(d.rhs)), depth + 1);
+                    return c.node(from, .assign, t.int(), v.int());
+                },
+                .sequence => {
+                    const r = try c.exprs(ir.extraSlice(JsIr.inlineRange(d), Index), depth);
+                    return c.node(from, tag, @backingInt(r.start), @backingInt(r.end));
+                },
                 else => return c.stmt(from, depth),
             }
         }
@@ -10068,6 +10149,18 @@ fn firstUse(ir: *const JsIr, node: Index, p: NameIndex, depth: u32) Use {
         },
         .property => return firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1),
         .spread_property => return seq(&.{firstUse(ir, @fromBackingInt(@intCast(d.lhs)), p, depth + 1)}, true),
+        // The target's object, the value, then the store, which acts.
+        .assign => {
+            const target: Index = @fromBackingInt(@intCast(d.lhs));
+            return seq(&.{ firstUse(ir, @fromBackingInt(@intCast(ir.data(target).lhs)), p, depth + 1), firstUse(ir, @fromBackingInt(@intCast(d.rhs)), p, depth + 1) }, true);
+        },
+        .sequence => {
+            var parts: [16]Use = undefined;
+            const items = ir.extraSlice(JsIr.inlineRange(d), Index);
+            if (items.len > 16) return .fail;
+            for (items, 0..) |item, i| parts[i] = firstUse(ir, item, p, depth + 1);
+            return seq(parts[0..items.len], false);
+        },
         else => return .fail,
     }
 }
@@ -10106,7 +10199,7 @@ fn nodeCount(ir: *const JsIr, root: Index, pts: *Pts, mi: u32) u32 {
                 const id = pts.propId(mi, @fromBackingInt(@intCast(d.rhs)));
                 break :blk 1 + if (id < pts.s.in.prop_len.len) @as(u32, pts.s.in.prop_len[id]) else 5;
             },
-            .index_get, .call, .new_call, .object, .array, .template => blk: {
+            .index_get, .call, .new_call, .object, .array, .template, .sequence => blk: {
                 const items: usize = switch (ir.tag(node)) {
                     .call, .new_call => ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index).len,
                     .index_get => 1,
@@ -10118,6 +10211,7 @@ fn nodeCount(ir: *const JsIr, root: Index, pts: *Pts, mi: u32) u32 {
             .unary => 1,
             .cond => 2,
             .property => 6,
+            .assign => 1,
             else => 4,
         };
         if (count > 4096) return count;
@@ -10157,7 +10251,12 @@ fn nodeCount(ir: *const JsIr, root: Index, pts: *Pts, mi: u32) u32 {
                 for (args, 1..) |a, i| children[i] = a;
                 n = args.len + 1;
             },
-            .object, .array, .template => {
+            .assign => {
+                children[0] = @fromBackingInt(@intCast(d.lhs));
+                children[1] = @fromBackingInt(@intCast(d.rhs));
+                n = 2;
+            },
+            .object, .array, .template, .sequence => {
                 const items = ir.extraSlice(JsIr.inlineRange(d), Index);
                 if (items.len > 16) return 4096;
                 for (items, 0..) |a, i| children[i] = a;
@@ -10571,6 +10670,7 @@ const Extractor = struct {
             .constant, .literal, .global, .param => {},
             .member => if (a != none) f.see(a),
             .local, .ret => if (a != none) f.see(a),
+            .effect => f.see(a),
             .unary, .store => f.see(a),
             .binary => {
                 f.see(x.pool[a]);
@@ -11144,6 +11244,16 @@ const Extractor = struct {
                 try x.emit(.object, c, at, spread == 1);
             },
             .member => try x.emit(.member, c, x.cell[d.lhs], false),
+            // `Spec.combine`: the store `stmtOf` emits for `o.p = v`, and
+            // the value `v`, never as a literal (`Op.effect`).
+            .assign => {
+                try x.emit(.store, d.lhs, x.cell[d.rhs], false);
+                try x.emit(.effect, c, x.cell[d.rhs], false);
+            },
+            .sequence => {
+                const parts = ir.extraSlice(JsIr.inlineRange(d), Index);
+                try x.emit(.effect, c, x.cell[parts[parts.len - 1].int()], false);
+            },
             else => try x.emit(.constant, c, fixed_top, false),
         }
     }
@@ -11433,6 +11543,7 @@ const Solver = struct {
                 if (got.state == .top and code.flag) break :read .{ .state = .nonnull, .truth = got.truth };
                 break :read got;
             },
+            .effect => s.demote(sv.lat[sv.cellOf(mi, a)]),
             .unary => un: {
                 const op: JsIr.UnaryOp = @fromBackingInt(@intCast(ir.data(node).rhs));
                 const u = try s.unary(op, sv.lat[sv.cellOf(mi, a)]);
@@ -12080,7 +12191,7 @@ const PtsExtractor = struct {
                 try x.killRead(@fromBackingInt(@intCast(d.lhs)));
             },
             .index_get => try x.killRead(@fromBackingInt(@intCast(d.lhs))),
-            .call, .new_call => x.kill(),
+            .call, .new_call, .assign => x.kill(),
             else => {},
         }
     }
@@ -16022,6 +16133,18 @@ const Pts = struct {
                 for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |a| try p.escape(vals[a.int()]);
                 break :blk Val.top_val;
             },
+            // A store of a record update written in place: what `effectNow`
+            // does for `o.p = v`, and its value is `v`.
+            .assign => blk: {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                const td = ir.data(target);
+                try p.write(vals[td.lhs], p.propId(mi, @fromBackingInt(@intCast(td.rhs))), vals[d.rhs]);
+                break :blk vals[d.rhs];
+            },
+            .sequence => blk: {
+                const parts = ir.extraSlice(JsIr.inlineRange(d), Index);
+                break :blk vals[parts[parts.len - 1].int()];
+            },
             else => Val.top_val,
         };
     }
@@ -16367,6 +16490,8 @@ pub fn pushChildren(gpa: Allocator, ir: *const JsIr, node: Index, stack: *std.Ar
             const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
             try JsIr.pushOperandSlice(gpa, stack, &.{ b.right, b.left });
         },
+        .assign => try JsIr.pushOperandSlice(gpa, stack, &.{ @fromBackingInt(@intCast(d.rhs)), @fromBackingInt(@intCast(d.lhs)) }),
+        .sequence => try JsIr.pushReversed(gpa, stack, ir.extraSlice(JsIr.inlineRange(d), Index)),
     }
 }
 
@@ -16453,6 +16578,17 @@ fn inputsOf(ir: *const JsIr, node: Index, buf: *[3]Index) []const Index {
             if (ir.tag(buf[0]) != .member) return buf[0..1];
             buf[1] = at(ir.data(buf[0]).lhs);
             return buf[0..2];
+        },
+        // A store's value, and the object it writes (`Pts.combineNow`).
+        .assign => {
+            buf[0] = at(d.rhs);
+            buf[1] = at(ir.data(at(d.lhs)).lhs);
+            return buf[0..2];
+        },
+        .sequence => {
+            const parts = ir.extraSlice(JsIr.inlineRange(d), Index);
+            buf[0] = parts[parts.len - 1];
+            return buf[0..1];
         },
         .new_call => {
             buf[0] = at(d.lhs);
@@ -17250,6 +17386,20 @@ fn decidedTest(ir: *const JsIr, node: Index) ?bool {
         },
         else => return null,
     }
+}
+
+/// The parts of `const x = (s, …, v)` (or a `let`) whose `s` are stores of a
+/// record written in place (`JsIr.Node.Tag.sequence`), or null.
+fn storesBound(ir: *const JsIr, stmt: Index) ?[]const u32 {
+    switch (ir.tag(stmt)) {
+        .const_decl, .let_decl => {},
+        else => return null,
+    }
+    const v = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(stmt).rhs)))).unwrap() orelse return null;
+    if (ir.tag(v) != .sequence) return null;
+    const parts = ir.extraSlice(JsIr.inlineRange(ir.data(v)), u32);
+    for (parts[0 .. parts.len - 1]) |e| if (ir.tag(@fromBackingInt(@intCast(e))) != .assign) return null;
+    return parts;
 }
 
 /// A name, a literal, or a member chain on a name: reading it does

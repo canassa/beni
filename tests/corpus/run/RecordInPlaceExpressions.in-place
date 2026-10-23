@@ -1,0 +1,3 @@
+The records differential corpus (ownership-checker.md §31.10, *The form*): each record written in place
+where its spread was an expression, built again in place under the stale-read sanitiser, as shipped,
+and as a release ships it, against the answers recorded under spreads.
