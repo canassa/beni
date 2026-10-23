@@ -29,7 +29,7 @@ pub const Input = struct {
 pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
     const a = in.scratch;
     const count = in.bir.decls.len;
-    const string_compare = stringCompareTarget(in);
+    var reads: Reads = .{ .in = in };
     e.total = try e.gpa.alloc(bool, count);
     @memset(e.total, false);
     const starts = try a.alloc(u32, count + 1);
@@ -63,7 +63,7 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
             // A callable alias invokes the referenced function, rather than
             // merely evaluating its initializer. Complex callable-producing
             // expressions have no invocation proof in this declaration graph.
-            if (!try target(in, d, body, &edges)) eligible[d] = false;
+            if (!try target(&reads, d, body, &edges)) eligible[d] = false;
         }
         stack.clearRetainingCapacity();
         try stack.append(a, body);
@@ -89,7 +89,7 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
                         try stack.appendSlice(a, args);
                         continue;
                     }
-                    if (!try target(in, d, callee, &edges)) {
+                    if (!try target(&reads, d, callee, &edges)) {
                         eligible[d] = false;
                         continue;
                     }
@@ -108,17 +108,17 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
                         eligible[d] = false;
                         continue;
                     };
-                    if (!try termTarget(in, d, string_compare, in.dispatch.term(callee), &edges)) eligible[d] = false;
+                    if (!try termTarget(&reads, d, in.dispatch.term(callee), &edges)) eligible[d] = false;
                 },
                 // Reading an ordinary constant can evaluate an evidence thunk.
                 .top => {
                     if (!callableDecl(e, in, data.lhs)) try edges.append(a, data.lhs);
                 },
                 .ext_value => {
-                    if (!importTotal(in, data.lhs, data.rhs)) {
+                    if (!try importTotal(&reads, data.lhs, data.rhs)) {
                         // A function reference only creates a value. Its call
                         // was checked above; constant reads must be total.
-                        const iface = &in.interfaces[data.lhs];
+                        const iface = try reads.iface(data.lhs);
                         const index = iface.values[data.rhs].scheme;
                         if (index == .none) {
                             eligible[d] = false;
@@ -184,13 +184,52 @@ pub fn run(e: *Effects, in: Input) std.mem.Allocator.Error!void {
     in.dispatch.effect_decls = answers;
 }
 
-fn importTotal(in: Input, module: u32, value: u32) bool {
-    const iface = &in.interfaces[module];
+/// What this check may read of other modules' interfaces. A module starts
+/// only once every dependency has finished (`Graph.zig`'s header), so the
+/// interfaces of its transitive dependencies are final; any other module's
+/// may be being published by another thread at this moment. Reading one
+/// would be a data race, and its answer would depend on the schedule
+/// (`fast-compiler.md` §10). Every read goes through `iface`.
+const Reads = struct {
+    in: Input,
+    /// The transitive dependencies of `in.module`, computed on first use.
+    deps: ?std.DynamicBitSetUnmanaged = null,
+    /// `String.compare`, resolved on the first comparison primitive.
+    string_compare: ?StringCompare = null,
+
+    fn finished(r: *Reads, module: Graph.Index) std.mem.Allocator.Error!bool {
+        if (r.deps == null) {
+            const a = r.in.scratch;
+            var set = try std.DynamicBitSetUnmanaged.initEmpty(a, r.in.graph.count());
+            var stack: std.ArrayList(Graph.Index) = .empty;
+            try stack.appendSlice(a, r.in.graph.dependencies(r.in.module));
+            while (stack.pop()) |m| {
+                if (set.isSet(m.int())) continue;
+                set.set(m.int());
+                try stack.appendSlice(a, r.in.graph.dependencies(m));
+            }
+            r.deps = set;
+        }
+        return r.deps.?.isSet(module.int());
+    }
+
+    /// Another module's interface, which must be a finished dependency's.
+    fn iface(r: *Reads, module: u32) std.mem.Allocator.Error!*const Interface {
+        if (std.debug.runtime_safety and !try r.finished(@fromBackingInt(module))) {
+            std.debug.panic("totality read the interface of module {d}, which module {d} does not depend on", .{ module, r.in.module.int() });
+        }
+        return &r.in.interfaces[module];
+    }
+};
+
+fn importTotal(r: *Reads, module: u32, value: u32) std.mem.Allocator.Error!bool {
+    const iface = try r.iface(module);
     const scheme = iface.values[value].scheme;
     return scheme != .none and iface.schemes[@backingInt(scheme)].total;
 }
 
-fn target(in: Input, owner: u32, callee: Inst, edges: *std.ArrayList(u32)) std.mem.Allocator.Error!bool {
+fn target(r: *Reads, owner: u32, callee: Inst, edges: *std.ArrayList(u32)) std.mem.Allocator.Error!bool {
+    const in = r.in;
     const data = in.bir.instData(callee);
     return switch (in.bir.instTag(callee)) {
         .top => blk: {
@@ -200,28 +239,31 @@ fn target(in: Input, owner: u32, callee: Inst, edges: *std.ArrayList(u32)) std.m
             try edges.append(in.scratch, data.lhs);
             break :blk true;
         },
-        .ext_value => importTotal(in, data.lhs, data.rhs),
+        .ext_value => try importTotal(r, data.lhs, data.rhs),
         .ctor, .ext_ctor => true,
         else => false,
     };
 }
 
-fn termTarget(in: Input, owner: u32, string_compare: StringCompare, term: Dispatch.Term, edges: *std.ArrayList(u32)) std.mem.Allocator.Error!bool {
+fn termTarget(r: *Reads, owner: u32, term: Dispatch.Term, edges: *std.ArrayList(u32)) std.mem.Allocator.Error!bool {
     return switch (term) {
         .top => |t| blk: {
             if (t.decl.int() == owner) break :blk false;
-            try edges.append(in.scratch, t.decl.int());
+            try edges.append(r.in.scratch, t.decl.int());
             break :blk true;
         },
-        .ext => |t| importTotal(in, t.module.int(), @backingInt(t.value)),
+        .ext => |t| try importTotal(r, t.module.int(), @backingInt(t.value)),
         .primitive => |primitive| switch (primitive) {
             .strict_eq, .num_compare, .char_compare => true,
-            .string_compare => switch (string_compare) {
+            // `compare$key` is `String.compare` on a string key and native
+            // order otherwise (`Lower.compareKeyDecl`), so it is total exactly
+            // when that declaration is.
+            .string_compare, .key_compare => switch (try stringCompare(r)) {
                 .unknown => false,
                 .imported => |total| total,
                 .own => |decl| blk: {
                     if (decl == owner) break :blk false;
-                    try edges.append(in.scratch, decl);
+                    try edges.append(r.in.scratch, decl);
                     break :blk true;
                 },
             },
@@ -232,10 +274,9 @@ fn termTarget(in: Input, owner: u32, string_compare: StringCompare, term: Dispat
     };
 }
 
+/// Whether `decl`'s solved scheme is a function: the one source of that
+/// fact here, read from the store P4 solved.
 fn callableDecl(e: *Effects, in: Input, decl: u32) bool {
-    // P6 already resolved this solved scheme for its calling convention.
-    // A positive arity proves a function; zero retains the full shape check.
-    if (decl < in.dispatch.decls.len and in.dispatch.decls[decl].value_arity != 0) return true;
     const scheme = in.decl_scheme[decl].unwrap() orelse return false;
     const root, _ = e.store.resolved(scheme);
     return switch (e.store.content(root)) {
@@ -247,9 +288,22 @@ fn callableDecl(e: *Effects, in: Input, decl: u32) bool {
 const StringCompare = union(enum) { unknown, own: u32, imported: bool };
 
 /// The existing string comparison primitive calls core String.compare.
-/// Resolve that actual target once, including its not-yet-published own
-/// declaration when checking core String itself.
-fn stringCompareTarget(in: Input) StringCompare {
+/// Resolve that actual target on first use, including its not-yet-published
+/// own declaration when checking core String itself. A module that does not
+/// depend on `String` cannot read its interface (`Reads`): a `string_compare`
+/// there is unproven. That happens only for `key_compare` over a key type
+/// variable — a module that sees the `String` type depends on its module
+/// (`Graph.mintedModules`) — and keeps the answer independent of the order
+/// modules finish in.
+fn stringCompare(r: *Reads) std.mem.Allocator.Error!StringCompare {
+    if (r.string_compare) |s| return s;
+    const s = try stringCompareTarget(r);
+    r.string_compare = s;
+    return s;
+}
+
+fn stringCompareTarget(r: *Reads) std.mem.Allocator.Error!StringCompare {
+    const in = r.in;
     const module = in.graph.lookup(.core, InternPool.WellKnown.String.symbol()) orelse return .unknown;
     if (module == in.module) {
         for (in.bir.decls, 0..) |decl, i| {
@@ -257,7 +311,8 @@ fn stringCompareTarget(in: Input) StringCompare {
         }
         return .unknown;
     }
-    const iface = &in.interfaces[module.int()];
+    if (!try r.finished(module)) return .unknown;
+    const iface = try r.iface(module.int());
     const value = iface.findValue(in.interner, InternPool.WellKnown.compare.symbol()) orelse return .unknown;
-    return .{ .imported = importTotal(in, module.int(), @backingInt(value)) };
+    return .{ .imported = try importTotal(r, module.int(), @backingInt(value)) };
 }
