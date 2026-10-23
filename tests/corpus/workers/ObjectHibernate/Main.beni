@@ -49,7 +49,15 @@ serve ctx state request =
     served = state.served + 1
     case List.reverse (String.split (Worker.path request) "/") of
         [ "ws", …rest ] →
-            case Object.accept ctx request [ who ctx ] of
+            -- With the offered subprotocol when there is one.
+            accepted =
+                case Worker.header request "sec-websocket-protocol" of
+                    Just _ →
+                        Object.acceptWith ctx request { protocol = Just "v1", tags = [ who ctx ] }
+
+                    Nothing →
+                        Object.accept ctx request [ who ctx ]
+            case accepted of
                 Ok ( _, response ) →
                     ( { state | served = served }, response )
 
@@ -89,6 +97,26 @@ input ctx state socket text =
 
                     Err _ →
                         WebSocket.write socket "not attached"
+
+            [ "attach-id" ] →
+                -- The socket's own id, kept to compare after the wake.
+                case WebSocket.attach socket Schema.string (WebSocket.id socket) of
+                    Ok ⊤ →
+                        WebSocket.write socket "attached the id"
+
+                    Err _ →
+                        WebSocket.write socket "not attached"
+
+            [ "id?" ] →
+                -- The id is the platform's uuid: compared, not printed.
+                kept =
+                    case WebSocket.attachment socket Schema.string of
+                        Ok (Just before) →
+                            if before == WebSocket.id socket then "id kept" else "id changed"
+
+                        _ →
+                            "no id attached"
+                WebSocket.write socket "${kept}, protocol ${WebSocket.protocol socket}"
 
             _ →
                 WebSocket.write socket
