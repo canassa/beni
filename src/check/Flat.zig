@@ -16,11 +16,13 @@ const max_depth = Exhaustive.max_depth;
 /// A `case` whose every branch is a **key** — a lookup table, which is the
 /// shape a program written by a person actually reaches the budget with.
 ///
-/// The general relation answers "is row k useful?" by specialising the whole
-/// matrix above k and recursing, which is O(k) per row and therefore
+/// The general relation answered "is row k useful?" by specialising the whole
+/// matrix above k and recursing, which was O(k) per row and therefore
 /// **quadratic in the branch count with no nesting at all**: ~1.05·n² for a
 /// single-column table, and 2·n² once the key is a pair, because each row's
-/// specialisation then runs twice over the rows above it. A key has no
+/// specialisation then ran twice over the rows above it. (`Useful` has made
+/// it linear on these shapes since 2026-10-23, at a larger constant than a
+/// set probe; this path still takes them first.) A key has no
 /// alternatives to explore, so the same question collapses to set membership,
 /// and `isExhaustive`'s answer collapses with it. That is Maranget §4's
 /// observation for the one shape it is worth taking, and it is what OCaml and

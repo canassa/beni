@@ -1,0 +1,2 @@
+module NestedLiteralTable
+  value f : List (Maybe (Int × Int)) → Int

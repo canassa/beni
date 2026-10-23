@@ -4202,6 +4202,42 @@ such a call is never an operator's desugaring (`Reporter.operatorCallee`).
   2026-10-01:* its list union is replaced by the length split of `checker.md` §6.6's amendment of
   that date, for `language.md` §6.8's list syntax; the pattern checks of §6 give a `pat_spread`'s
   operand the list's own type.
+- **Usefulness walks a tree of specialised matrices** (*amended 2026-10-23, #812*). `Exhaustive.one`
+  reads a `case` branch by branch and asks of each whether it is useful against the branches above
+  it (`checker.md` §6.6). The relation specialised those branches afresh for every branch, so each
+  branch read every row above it, three times over for `[ Just ( k, y ), …rest ] →`, before the
+  literal `k` dropped nearly all of them: O(*n*²) for *n* branches, 128.3M instructions at 500 and
+  448.2M at 1 000, and 2 000 ran out of the default pattern budget. `Useful.zig` now keeps every
+  matrix the relation specialises for the rest of the `case`. The root holds the branches admitted
+  so far. A node's child by a key holds that node's matrix specialised by the key. The key is a
+  constructor, a literal, a wildcard, or an `exact ℓ` or `at least` alternative of a list column;
+  `at least` is keyed by the leading and trailing counts it pads to. Specialisation keeps rows in
+  order and treats each row on its own. So a child made for an earlier branch is brought up to date
+  by specialising only the rows its parent gained since. A node's first child by a head reads the
+  node's rows in order. From the second, the node indexes its rows: a chain per head (constructor,
+  literal id, exact length), and lists of its wildcard rows and its lists with a spread. A later
+  child therefore reads only the rows its specialisation keeps. A node also keeps, as rows arrive,
+  what the relation asks of its first column: the kinds of head, the union and alternatives seen
+  (`ColumnIndex.collect`), the three maxima of `lenSplit`, and the heads that make a
+  specialisation `error.Malformed`. Literals get a dense id when they are simplified, from the key
+  `Flat` already uses, so `Useful` never hashes a literal's bytes.
+  - **The answers do not move.** The recursion is the matrix relation's, step for step, over the
+    same rows in the same order. Every branch gets the same answer, the search stops at the same
+    first useful alternative, and `max_depth` is reached at the same depth. `isExhaustive` runs
+    once per `case` and stays on matrices. Measured: the 3 190 `.beni` files of `tests/corpus` and
+    `tests/pending` give byte-identical `check`, `check --platform=node` and `dump` output at
+    every stage. 9 000 random `case`s over lists, `Maybe`, tuples, literals and a recursive type
+    give byte-identical diagnostics, and the safety-checked build agrees on all of them.
+  - **The budget** is charged 1 per step, 1 per child looked up, 1 per row a node reads or catches
+    up on and 1 per row an index is built over. It still bounds the work: a `case` that spends
+    all 5 000 000 takes 0.09 s in ReleaseFast. The nested-literal `case` costs 23 steps a branch,
+    and the table with a per-row default, `( k, _ ) →`, 14: 22 144 at 1 580 rows, where it was
+    5 087 257. In instructions the nested-literal `case` is 27.2M / 42.4M / 72.9M / 133.8M /
+    255.6M at 500 / 1 000 / 2 000 / 4 000 / 8 000 branches, and `test-perf` holds it linear.
+  - **What still squares** is a wildcard row under many distinct heads, because each child that a
+    head names takes every wildcard row above it. An example is `( k, 1 )` rows interleaved with
+    `( _, k )` rows. It is no worse than before: 790 pairs check in 112.1M instructions, where the
+    matrix relation was refused by the budget at 253.3M (#831).
 - **`Cycles.zig`** is adapted to `Convention` and the tree walk. Its algorithm and messages are
   unchanged.
 - **The schema plan** is built in P9 after `Cycles`, gated on "no error in the module", and reads

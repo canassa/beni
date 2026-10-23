@@ -6434,7 +6434,7 @@ test "a pair row with a wildcard column falls back to the general relation" {
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     // The general relation's budget, not the key path's: falling back is the
-    // point, and it is quadratic again from row 100 down.
+    // point. (It was quadratic from row 100 down until `Useful`, #812.)
     const open = try w.run(&.{ "check", "--pattern-budget=100000", "Open.beni" });
 
     // ┌─────────────────────────────────────────┐

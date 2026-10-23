@@ -23,7 +23,9 @@ pub const PatIndex = enum(u32) {
 pub const Tag = enum(u8) {
     /// `_`, a variable, a record pattern: matches everything.
     anything,
-    /// One of infinitely many values; `lhs` indexes `literals`.
+    /// One of infinitely many values; `lhs` indexes `literals`, and `rhs`
+    /// is its literal id, which two literal nodes share exactly when
+    /// `Literal.eql` says they are the same literal.
     literal,
     /// One alternative of a finite union. `lhs` indexes `unions`, `rhs` is
     /// an `extra` offset holding `[alt, arg_count, args…]`.
@@ -124,6 +126,11 @@ pub const Patterns = struct {
 
     pub fn literal(p: *const Patterns, i: PatIndex) Literal {
         return p.literals.items[p.nodes.items(.lhs)[i.int()]];
+    }
+
+    /// A `literal` node's id (`Tag.literal`).
+    pub fn literalId(p: *const Patterns, i: PatIndex) u32 {
+        return p.nodes.items(.rhs)[i.int()];
     }
 
     /// The union, absolute alternative index and argument RANGE of a `ctor`

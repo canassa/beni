@@ -735,6 +735,16 @@ it is written:
   next one to take is the cut itself: deciding slices against points needs a different structure
   than a hash set.
 
+*Amended 2026-10-23 (#812).* **The cut no longer squares, and nor does a nested branch.** Both
+were quadratic for one reason: the rows above a branch were specialised afresh for every branch.
+That made the cut 2*n*², and it made *n* branches `[ Just ( k, y ), …rest ] →` O(*n*²) too, because
+every branch read all the rows above it three times before the literal dropped them. Usefulness now
+walks a tree of the specialised matrices. The tree is kept for the whole `case`, and each matrix is
+caught up with only the rows it gained since (`checker-v2.md` §16, amended the same day). 1 580 rows
+of `( k, _ )` cost 22 144 steps, not 5 087 257, and the nested branches cost 23 steps each. Every
+answer, witness and message is the one the matrix relation gave. What still squares is a wildcard
+row under many distinct heads. The default stays 5 000 000.
+
 ### 6.7 Top-level value cycles
 
 > **Checker v2 (2026-09-24).** The "what defers" paragraph below was corrected on 2026-09-24:
