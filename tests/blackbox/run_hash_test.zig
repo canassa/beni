@@ -288,7 +288,7 @@ test "a run that fails writes no digest, and the runs beside it that passed writ
     _ = try expectDigests(&w, 2);
 }
 
-test "a blessed build looks nothing up and writes no digest" {
+test "a blessed build looks nothing up and writes no digest; the pass compared with its golden is recorded" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
