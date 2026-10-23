@@ -2297,3 +2297,10 @@ lowering alone; no dump passes it, so nothing printed moves.
   record type written `Fresh` of `F`'s result's dependencies — and each record-typed field the
   same copy one level down. Its writes are the fields', which every read under the field conflicts
   with, as it would with the field's `value` write.
+  *Amended 2026-10-23 (#896):* `F` is any function of another module, `λx old → e`, that reads
+  `old` only as a whole tail of `e` — through `let`s and `case`s, none of whose definitions or
+  scrutinees reads it — or as the default of a tail `Result.withDefault D old`, `D` not reading
+  `old`; every other tail reads nothing of `old`. So `F`'s result is `old` itself or a value that
+  holds nothing of it, which is what the copy needs; `Result.withDefault D old` is the one-tail
+  case. S1's second shape, `case Json.decodeValue state of Ok new → { … from new … }; Err _ →
+  model`, is a route; `Ok new → { model | f = new.f }` reads `old` and is not.
