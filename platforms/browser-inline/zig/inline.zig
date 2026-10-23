@@ -2834,7 +2834,7 @@ fn popsToSelf(name: []const u8) bool {
 /// `select` or a `template`, which change the insertion mode.
 fn poppable(name: []const u8) bool {
     for ([_][]const u8{
-        "address", "article", "aside", "blockquote", "button", "details", "dialog", "div", "dl", "dd", "dt", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol", "ul", "li", "search", "section", "summary",
+        "address", "article", "aside", "blockquote", "button", "details", "dialog", "div",  "dl",    "dd",     "dt", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "main", "menu", "nav", "ol", "ul", "li", "search", "section", "summary",
         "h1",      "h2",      "h3",    "h4",         "h5",     "h6",      "p",      "span", "label", "output",
     }) |x| if (std.mem.eql(u8, x, name)) return true;
     return false;
