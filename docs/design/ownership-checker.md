@@ -1741,6 +1741,25 @@ remain unknown, and retained captures remain holders for all writes. Full functi
 types still qualify physical cast steps and symbolic reads. Summary block 29
 invalidates the older environment placement, retaining the existing wire layout.
 
+*Amended 2026-10-23 (#748, type uncertainty is not spatial repetition):* folding
+a term inside a type to `⋆` does not itself re-enter that type at another place.
+Keep the first such boundary as a cast step with an uncertain full key; only a
+repeated boundary introduces the spatial cast-level step. An uncertain boundary
+still participates in merged-occurrence checks and never establishes exact type
+cancellation. Its type key retains every fixed constructor, argument and field.
+
+On reading that view, retain the physical prefix justified by both complete type
+contexts: matching list elements, tuple slots, named constructor fields and record
+labels. A known function's environment is independent of its argument/result type.
+A cell at the end of that justified prefix stays there; if its remaining placement
+enters an unknown or incompatible term, retain it approximately under `⋆₁` at the
+prefix, not at the whole value's root. Every holder remains represented, including
+unmatched contents. A genuine spatial cast-level step keeps its existing conservative
+read. Closed incompatible full types are unchanged. This is projection through the
+fixed context, not type equality or a fold by a type head. Construction conditions
+are lowered before type-coincident paths normalize, as before. Summary block 30
+invalidates the older conflation of type uncertainty with spatial repetition.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
