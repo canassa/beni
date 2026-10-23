@@ -1,0 +1,150 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      ""
+      ""
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=grow]
+(the DOM did not change)
+-- click [data-role=grow]
+(the DOM did not change)
+-- click [data-role=flip]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <span>"same"</span>
+        <em>"short"</em>
+        <strong>"other"</strong>
+      </section>
+      ""
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=grow]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <span>"changed"</span>
+        <em>"long"</em>
+        <strong>"other"</strong>
+      </section>
+      ""
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=flip]
+<body>
+  <div id="root">
+    <div>
+      ""
+      ""
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+(the DOM did not change)
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      ""
+      <aside>
+        <p>"low"</p>
+        <b>"2"</b>
+      </aside>
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      ""
+      <aside>
+        <p>"low"</p>
+        <b>"3"</b>
+      </aside>
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=flip]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <span>"changed"</span>
+        <em>"long"</em>
+        <strong>"three"</strong>
+      </section>
+      <aside>
+        <p>"low"</p>
+        <b>"3"</b>
+      </aside>
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <span>"changed"</span>
+        <em>"long"</em>
+        <strong>"other"</strong>
+      </section>
+      <aside>
+        ""
+        <b>"4"</b>
+      </aside>
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <span>"changed"</span>
+        <em>"long"</em>
+        <strong>"other"</strong>
+      </section>
+      <aside>
+        ""
+        <b>"5"</b>
+      </aside>
+      <button data-role="grow">"Grow"</button>
+      <button data-role="flip">"Flip"</button>
+      <button data-role="bump">"Bump"</button>
+    </div>
+  </div>
+</body>

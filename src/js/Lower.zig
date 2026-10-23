@@ -10468,6 +10468,51 @@ pub const Lowerer = struct {
         return use.evidence == 0 and use.arity != 0 and use.arity == l.bir.subRange(@fromBackingInt(@intCast(d.rhs))).len();
     }
 
+    /// Whether `site`, a `method_call` (`==`, `≠`, `<`, `x.m y`), runs a
+    /// callee that terminates, throws nothing and has no effect once its
+    /// operands are evaluated, with no hidden evidence: the checker's own
+    /// answer for a method call (checker-v2.md §26, `Totality.termTarget`).
+    /// A primitive comparison is `===` or a native order; `String`'s and a
+    /// key's order are `String.compare`, total when the checker proved it;
+    /// a declaration's method is total when the checker proved it. An
+    /// evidence parameter, a derived function and a field call are unknown.
+    fn methodCallTotal(l: *Lowerer, site: Inst.Index) bool {
+        const s = l.in.dispatch.siteOf(site) orelse return false;
+        const callee = s.callee.unwrap() orelse return false;
+        if (l.in.dispatch.argsAt(s.evidence).len != 0) return false;
+        return switch (l.in.dispatch.term(callee)) {
+            .primitive => |prim| switch (prim) {
+                .strict_eq, .num_compare, .char_compare => true,
+                .string_compare, .key_compare => l.coreTotal(.String, .compare),
+            },
+            .undetermined => true,
+            .top => |t| l.in.dispatch.effectDecl(@backingInt(t.decl)).total,
+            .ext => |t| blk: {
+                const iface = &l.in.interfaces[t.module.int()];
+                const scheme = iface.values[@backingInt(t.value)].scheme;
+                break :blk scheme != .none and iface.schemes[@backingInt(scheme)].total;
+            },
+            else => false,
+        };
+    }
+
+    /// Whether core's `owner.function` is a declaration the checker proved
+    /// total (checker-v2.md §26), however this module reaches it.
+    fn coreTotal(l: *Lowerer, comptime owner: InternPool.WellKnown, function: InternPool.WellKnown) bool {
+        const module = l.in.graph.lookup(.core, owner.symbol()) orelse return false;
+        if (module == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (l.bir.symbol(d.name) == function.symbol()) return l.in.dispatch.effectDecl(@intCast(i)).total;
+            }
+            return false;
+        }
+        if (module.int() >= l.in.interfaces.len) return false;
+        const iface = &l.in.interfaces[module.int()];
+        const index = iface.findValue(l.interner.global, function.symbol()) orelse return false;
+        const scheme = iface.values[@backingInt(index)].scheme;
+        return scheme != .none and iface.schemes[@backingInt(scheme)].total;
+    }
+
     /// A saturated call of an `Operator` as the JavaScript it computes. The
     /// operands are evaluated once each, in written order (`orderedExprs`),
     /// which is the order the call evaluated them in.
@@ -15091,6 +15136,12 @@ pub const Lowerer = struct {
                     } else if (!total or !l.callsTotal(at)) return false;
                     stack.appendSlice(l.scratch, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) catch return false;
                 },
+                // `==`, `<` and a dot-call: pure and total when the checker
+                // proves its callee so (`methodCallTotal`).
+                .method_call => {
+                    if (!total or !l.methodCallTotal(at)) return false;
+                    l.instChildren(at, &stack) catch return false;
+                },
                 else => return false,
             }
         }
@@ -17973,8 +18024,9 @@ const markup_vtable: beni_markup.VTable = struct {
     /// An eager arm may evaluate only a proven pure, total expression: a
     /// saturated call of a declaration the checker proved total
     /// (`callsTotal`) whose arguments are pure-total too, or a native
-    /// operator other than a write or an unchecked indexed read. Any other
-    /// call is unknown.
+    /// operator other than a write or an unchecked indexed read, or a
+    /// well-known method call the checker proves total (`methodCallTotal`).
+    /// Any other call is unknown.
     fn valuePureTotal(impl: *anyopaque, v: M.Value.Index) bool {
         return lowerer(impl).markupValuePureTotal(v);
     }

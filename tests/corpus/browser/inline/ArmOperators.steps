@@ -1,0 +1,12 @@
+element "root"
+click [data-role=grow]
+click [data-role=grow]
+click [data-role=flip]
+click [data-role=grow]
+click [data-role=flip]
+click [data-role=bump]
+click [data-role=bump]
+click [data-role=bump]
+click [data-role=flip]
+click [data-role=bump]
+click [data-role=bump]
