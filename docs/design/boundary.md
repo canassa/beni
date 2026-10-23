@@ -7268,7 +7268,17 @@ inside a handler queues it behind the events already waiting ((e.10)).
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
   this fact once the driver has a step that idles 15 s, past (k)'s 5 s step limit — that fixture
-  is what #593 stays open for.
+  is what #593 stays open for. ***Measured in the corpus 2026-10-23 (#593 closed):***
+  `workers/ObjectHibernate`, with the driver's `idle` step (16 s, past the 5 s step limit; (k)).
+  Two objects of one class, one hibernatable socket each with a seat in its attachment, each
+  counting its requests in memory. After 16 s with no event, the object with no live fiber
+  answered as a new instance: `restore` ran again with the one socket the host kept, its count
+  started at 1 again, the socket's attachment read back its seat, and `/__beni/hold` said `free`
+  before and after. The object whose handler had parked a fiber on a `Deferred` — a gate no host
+  timer backs, so the platform's live-fiber timer alone kept it — answered as the same instance,
+  its count continued at 3, `held` before and after, and `free` once the gate opened and the
+  fiber ended. A peer's close after the wake reached the new instance's `closed`. Both builds,
+  under the pinned Miniflare (workerd 1.20260518.1).
 - **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
   `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
   marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
@@ -7999,7 +8009,9 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   hibernation needs more than the 10 s delay, and a step is limited to 5 s. *2026-10-23: the fact
   is measured by a deployed probe, (e.5), and local workerd hibernates an idle object too (the
   review of #860: a new instance after 15 s and 25 s under Miniflare), so the corpus can hold it
-  once the driver has a step that idles 15 s; #593 stays open for that fixture. `wrangler dev
+  once the driver has a step that idles 15 s; #593 stays open for that fixture. 2026-10-23: the
+  driver has it, `{"idle": <ms>}`, no event for up to 60 000 ms under the case's 120 s hang guard,
+  and `workers/ObjectHibernate` holds the fact ((e.5), #593 closed). `wrangler dev
   --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of the edge is
   measured by a deployed probe Worker on the owner's account, deleted after the measurement, where
   the local host differs — the client's disconnect, (d) — and by the corpus where it does not.*
