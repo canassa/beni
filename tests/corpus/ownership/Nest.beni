@@ -1,0 +1,35 @@
+-- ownership: a type that does not reach itself has no levels (§16.7 (a),
+-- issue #286). `Maybe (List Int × Maybe (List Int))` names `Maybe` twice,
+-- but `Maybe` is not recursive, so `#Just.0.1#Just.0` (the inner list) and
+-- `#Just.0.0` (the outer one) are two places. The fold of every type a path
+-- had entered once put the inner list at `#Just.0`, a prefix of the outer
+-- one's path, so `caller`, which hands `pushInner` one list at both places,
+-- was accepted while `local`, the same body inline, was refused `alias`.
+-- Both are refused now: the call `disjoint`, the inline push `alias`.
+pub pushInner : Maybe (List Int × Maybe (List Int)) → List Int × List Int
+pushInner m =
+    case m of
+        Just ( a, Just ys ) →
+            ( List.push ys 1, a )
+
+        _ →
+            ( [], [] )
+
+
+pub caller : List Int → List Int × List Int
+caller xs = pushInner (Just ( xs, Just xs ))
+
+
+pub local : List Int → List Int × List Int
+local xs =
+    m = Just ( xs, Just xs )
+    case m of
+        Just ( a, Just ys ) →
+            ( List.push ys 1, a )
+
+        _ →
+            ( [], [] )
+
+
+pub apart : List Int, List Int → List Int × List Int
+apart xs ys = pushInner (Just ( xs, Just ys ))

@@ -1,0 +1,13 @@
+module Nest
+  13:15 List.push ys: accepted param
+  20:13 call Nest.pushInner <Just …>#Just.0.1#Just.0: rejected disjoint: another operand of the same operation reaches it (Nest.pushInner writes π1#Just.0.1#Just.0)
+  28:15 List.push ys: rejected alias: a holds it and is read at 28:13
+  35:15 call Nest.pushInner <Just …>#Just.0.1#Just.0: accepted param (Nest.pushInner writes π1#Just.0.1#Just.0)
+  summary pushInner: π1 R, π1#Just.0.0 RA, π1#Just.0.1#Just.0 RAW[storage], π1#Just.0.1#Just.0[*] A; res .0 condition(fresh2) fresh2 π1#Just.0.1#Just.0, .0[*] ~condition(fresh3) ~π1#Just.0.1#Just.0[*], .1 fresh5 ~condition(fresh4) π1#Just.0.0, condition(fresh1){sep π1#Just.0.0 π1#Just.0.1#Just.0, sep π1#Just.0.0 π1#Just.0.1#Just.0[*]}
+  summary caller: π1 RAW[storage], π1[*] A; res .0 condition(fresh4) ~condition(fresh2) ~fresh2 ~π1, .0[*] ~condition(fresh5) ~π1[*], .1 ~condition(fresh1) ~fresh1 ~π1, condition(fresh3){shared}
+  summary local: π1 RAW[storage], π1[*] A; res .0 condition(fresh2) fresh2 π1, .0[*] ~condition(fresh3) ~π1[*], .1 condition(fresh1) fresh1 ~condition(fresh5) π1, condition(fresh4){shared}
+  summary apart: π1 RA, π2 RAW[storage], π2[*] A; res .0 condition(fresh5) ~condition(fresh2) ~fresh2 ~π2, .0[*] ~condition(fresh3) ~π2[*], .1 ~condition(fresh1) ~fresh1 ~π1, condition(fresh4){sep π1 π2, sep π1 π2[*]}
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 1
+cause alias 1

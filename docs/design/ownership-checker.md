@@ -1983,6 +1983,39 @@ measured until F2 is decided: with F2 as measured it does not get that far.
 until then `Nest.pushInner` stays accepted through a call. Its soundness is §16.7's first amendment: a type that
 does not reach itself has no levels, so two of its steps on a path are two places.
 
+*Amended 2026-10-23 (issue #286, decision (a), built): only a type that reaches itself folds.* The fold of a
+constructor step into a type that does not reach itself through its own definition (`typeRecursive`) was
+retired with the full-type cast marker (#748, commit `b5caf1495`, the dated amendment *nested nonrecursive
+constructors* under F2). A constructor step of such a type is now a step of its own, wherever the path has
+entered the type before; only a recursive type opens a region (`regionOf`), takes the level marker `⟨T⟩`, and
+merges places. This is (a), and this amendment records it as built.
+
+- *Soundness.* A type that does not reach itself has no levels: its definition places a value of it at finitely
+  many positions of a value, each at its own path, so two of its steps on one path are two places, one inside
+  the other. The fold merged them, and a merge that makes one place the prefix of another does more than add
+  aliasing: it turns two places into a container and what it holds, which a deep condition does not compare
+  (*Pairs a deep condition compares*), so a holder was lost. That is F1's unsound form again. `pushInner`
+  writes `π1#Just.0.1#Just.0` and returns `π1#Just.0.0`; folded, the write was at `π1#Just.0`, a prefix of
+  `π1#Just.0.0`, and `caller`, which hands it one list at both places, was accepted `param` while `local`, the
+  same body written inline, was refused `alias`. Unfolded, the call is refused `disjoint` and the inline push
+  `alias`, and `apart`, two lists, is accepted.
+- *Finite.* A path through types that do not reach themselves walks an acyclic part of the type graph, so it is
+  bounded by the graph (the bound argument's source 1). A type read at a type it was not made at was the one
+  route by which such a path grew; that is a cast, and F2's full-type marker folds it at a repeated full type
+  (source 3). A type argument that grows (`a` at `List a`) is source 4's composed-path fold.
+- *Schema.* The measurement of 2026-10-17 above (`Schema.run` and `descend` past `entries`, four functions past
+  `value-cells`) was made without a cast marker, where every round trip through `Js.Value` grew a path. With
+  F2 the cast paths fold at their full type and `value-cells` is retired; core's report is 117 lines accepted,
+  none pending, rejected or past a limit, which two tests of `tests/blackbox/check_test.zig` assert on every
+  gate run (*ownership words: core's are catalogued*, *ownership everywhere: core holds no rejected or pending
+  line*).
+
+`ownership/Nest` pins `pushInner`, `caller`, `local` and `apart`; with the old fold restored, `caller`'s call is
+accepted `param`, which is the red result. The paragraph *Not yet built: decision (a)* above, the first bullet of
+*Scope (the owner, 2026-10-18)* ("Folds of a type that does not reach itself are unchanged from `master`") and
+the bound argument's "a type that does not reach itself until F2" are superseded by this amendment: the one
+exemption that keeps a merged fold is core `Dict`'s tree, until #294.
+
 **(d) The levels of a recursive value are pairwise distinct.** Thesis §3.1's representatives' exclusivity, as a
 condition atom of §18.2: `lvl c` holds when no list is reachable at two levels of the recursive value `c`, or at
 one of its levels and above it.
