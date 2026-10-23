@@ -5735,6 +5735,19 @@ reassigned parameter stays: written at its use it prints 30, not 15), `run/Relea
 `model.n`, writes it, keeps the old value; records are spread today, so the page is right either
 way and pins the shape #315 starts from).
 
+*Amended 2026-10-24 (#916): a fresh object or array is such a value.* `pureValue` also takes an
+object literal whose every property is `key: value` — a plain name for a key, no spread — and an
+array literal, each value one it takes. Making one runs no code: a key is no getter, no spread
+reads another object, so nothing can throw or be observed. It is a fresh object, and folded into
+its one use it is still made once, so the binding's one object is the one its use reads. A literal
+that holds a field read moves only by the ordering rule, as the read alone would. The case is the
+program's model: `init` pins each slice's initialiser to a `const` before the record, because the
+record's keys are sorted (*records' written order*, §4), and once each `W.init ⊤` is inlined to a
+literal of constants the pin was all that was left —
+`d={d:0,b:-1,…},e={a:""},…,z={c:d,a:o,…}` is now `z={c:{d:0,b:-1,…},a:{…},…}`. On S1 seed 1: −2.1
+B per widget from N = 64 to 256, −4.2 from 16 to 64, −3 B at N = 1
+(`emit/release/inline/RootRuns`).
+
 **Determinism.** The pass reads only `JsIr`, visits statements in emission order, and its output is
 a subset of its input with substitutions at fixed positions; no map is iterated and no counter is
 shared. **Cost:** two linear walks of each function body and no sort. **No fixpoint either**, as long
