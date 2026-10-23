@@ -15,6 +15,8 @@ console.log: label: "two"
   </main>
 </body>
 -- click #pick1
+console.log: label: "one"
+console.log: label: "two"
 <body>
   <main>
     <button id="relabel">"relabel"</button>
@@ -29,6 +31,8 @@ console.log: label: "two"
   </main>
 </body>
 -- click #pick2
+console.log: label: "one"
+console.log: label: "two"
 <body>
   <main>
     <button id="relabel">"relabel"</button>
@@ -43,6 +47,8 @@ console.log: label: "two"
   </main>
 </body>
 -- click #pick1
+console.log: label: "one"
+console.log: label: "two"
 <body>
   <main>
     <button id="relabel">"relabel"</button>
@@ -57,6 +63,7 @@ console.log: label: "two"
   </main>
 </body>
 -- click #relabel
+console.log: label: "one"
 console.log: label: "two!"
 <body>
   <main>

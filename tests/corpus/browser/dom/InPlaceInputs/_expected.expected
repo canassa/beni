@@ -1,0 +1,69 @@
+-- load
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <p id="list">"1"</p>
+    <!---->
+    <p id="record">"1"</p>
+    <!---->
+    <p id="wrapped">"10"</p>
+    <!---->
+    <p id="boxed">"10"</p>
+    <!---->
+    <p id="component">"2"</p>
+    <ul id="captured-list">
+      <li>"2"</li>
+    </ul>
+    <ul id="captured-record">
+      <li>"2"</li>
+    </ul>
+    <p id="shown">"1"</p>
+    <!---->
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <p id="list">"2"</p>
+    <!---->
+    <p id="record">"2"</p>
+    <!---->
+    <p id="wrapped">"11"</p>
+    <!---->
+    <p id="boxed">"11"</p>
+    <!---->
+    <p id="component">"4"</p>
+    <ul id="captured-list">
+      <li>"3"</li>
+    </ul>
+    <ul id="captured-record">
+      <li>"3"</li>
+    </ul>
+    <p id="shown">"2"</p>
+    <!---->
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <p id="list">"3"</p>
+    <!---->
+    <p id="record">"3"</p>
+    <!---->
+    <p id="wrapped">"12"</p>
+    <!---->
+    <p id="boxed">"12"</p>
+    <!---->
+    <p id="component">"6"</p>
+    <ul id="captured-list">
+      <li>"4"</li>
+    </ul>
+    <ul id="captured-record">
+      <li>"4"</li>
+    </ul>
+    <p id="shown">"3"</p>
+    <!---->
+  </main>
+</body>

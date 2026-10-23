@@ -25,31 +25,21 @@ const DomAttributes$k27 = { m: ($v$7, $cx$8) => {
 }, p: DomAttributes$p27 };
 const DomAttributes$p48 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
-  const $x$4 = $input$3.classes;
-  if ($x$4 !== $i$1.g0_0) {
-    $i$1.g0_0 = $x$4;
-    const $t$5 = $input$3.classes;
-    if ($t$5 !== $i$1.a0) {
-      Rt$classes($i$1.w0, $t$5, $i$1.a0);
-      $i$1.a0 = $t$5;
-    }
+  {
+    const $t$4 = $input$3.classes;
+    $i$1.a0 = Rt$classes($i$1.w0, $t$4, $i$1.a0);
   }
-  const $x$6 = $input$3.styles;
-  if ($x$6 !== $i$1.g1_0) {
-    $i$1.g1_0 = $x$6;
-    const $t$7 = $input$3.styles;
-    if ($t$7 !== $i$1.a1) {
-      Rt$styles($i$1.w0, $t$7, $i$1.a1);
-      $i$1.a1 = $t$7;
-    }
+  {
+    const $t$5 = $input$3.styles;
+    $i$1.a1 = Rt$styles($i$1.w0, $t$5, $i$1.a1);
   }
 };
 const DomAttributes$t48 = Rt$template("<p>x");
-const DomAttributes$k48 = { m: ($v$8, $cx$9) => {
-  const $r$10 = DomAttributes$t48();
-  const $i$11 = { s: $r$10, q: null, e: $r$10, w0: $r$10, a0: null, a1: null, g0_0: NaN, g1_0: NaN };
-  DomAttributes$p48($i$11, $v$8);
-  return $i$11;
+const DomAttributes$k48 = { m: ($v$6, $cx$7) => {
+  const $r$8 = DomAttributes$t48();
+  const $i$9 = { s: $r$8, q: null, e: $r$8, w0: $r$8, a0: null, a1: null };
+  DomAttributes$p48($i$9, $v$6);
+  return $i$9;
 }, p: DomAttributes$p48 };
 const DomAttributes$p68 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
@@ -64,13 +54,13 @@ const DomAttributes$p68 = ($i$1, $v$2) => {
   if ($x$5 !== $i$1.g1_0) {
     $i$1.g1_0 = $x$5;
     const $t$6 = $input$3.text;
-    Rt$control($i$1.w1, "value", $t$6);
+    Rt$control($i$1.w1, "value", $t$6, true);
   }
   const $x$7 = $input$3.on;
   if ($x$7 !== $i$1.g2_0) {
     $i$1.g2_0 = $x$7;
     const $t$8 = $input$3.on;
-    Rt$control($i$1.w1, "checked", $t$8);
+    Rt$control($i$1.w1, "checked", $t$8, true);
   }
 };
 const DomAttributes$t68 = Rt$template("<form><input><a>link</a><b>");

@@ -1,0 +1,11 @@
+-- Test-only writers force the future representation without waiting for O5.
+pub foreign impure grow : List Int → List Int
+
+
+pub foreign impure row : List Int → List Int
+
+
+pub foreign impure record : { id : Int, count : Int } → { id : Int, count : Int }
+
+
+pub foreign impure rekey : { id : Int, count : Int } → { id : Int, count : Int }

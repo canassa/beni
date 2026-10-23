@@ -30,9 +30,8 @@ const DomComponents$p14 = ($i$1, $v$2) => {
     const $t$4 = $input$3.title;
     const $t$5 = $input$3.name;
     const $made$6 = { t: DomComponents$k14n4, v: [$t$5] };
-    if ($t$4 !== $i$1.a0_0 || $made$6 !== $i$1.a0c) {
+    if ($t$4 !== $i$1.a0_0 || true) {
       $i$1.a0_0 = $t$4;
-      $i$1.a0c = $made$6;
       Rt$childHtml($i$1.c0, Card$view({ children: $made$6, title: $t$4 }));
     } else {
       Rt$restate($i$1.c0);
@@ -43,8 +42,7 @@ const DomComponents$p14 = ($i$1, $v$2) => {
   if ($i$1.g1 === undefined) {
     $i$1.g1 = true;
     const $made$16 = DomComponents$b14n6;
-    if ($made$16 !== $i$1.a1c) {
-      $i$1.a1c = $made$16;
+    if (true) {
       Rt$childHtml($i$1.c1, Card$view({ children: $made$16, title: "static" }));
     } else {
       Rt$restate($i$1.c1);

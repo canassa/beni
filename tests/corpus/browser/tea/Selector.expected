@@ -36,6 +36,9 @@ console.log: id 3: ""
 </body>
 -- click #pick1
 console.log: row 1: "on"
+console.log: row 2: ""
+console.log: row 3: ""
+console.log: row 2: ""
 <body>
   <main>
     <button id="pick9">"9"</button>
@@ -66,7 +69,9 @@ console.log: row 1: "on"
 </body>
 -- click #pick3
 console.log: row 1: ""
+console.log: row 2: ""
 console.log: row 3: "on"
+console.log: row 2: ""
 <body>
   <main>
     <button id="pick9">"9"</button>
@@ -96,9 +101,16 @@ console.log: row 3: "on"
   </main>
 </body>
 -- click #pick3
+console.log: row 1: ""
+console.log: row 2: ""
+console.log: row 3: "on"
+console.log: row 2: ""
 (the DOM did not change)
 -- click #pick9
+console.log: row 1: ""
+console.log: row 2: ""
 console.log: row 3: ""
+console.log: row 2: ""
 <body>
   <main>
     <button id="pick9">"9"</button>
@@ -128,9 +140,15 @@ console.log: row 3: ""
   </main>
 </body>
 -- click #unpick
+console.log: row 1: ""
+console.log: row 2: ""
+console.log: row 3: ""
+console.log: row 2: ""
 (the DOM did not change)
 -- click #pick2
+console.log: row 1: ""
 console.log: row 2: "on"
+console.log: row 3: ""
 console.log: row 2: "on"
 <body>
   <main>
@@ -194,6 +212,9 @@ console.log: row 2: ""
   </main>
 </body>
 -- click #drop3
+console.log: row 1: ""
+console.log: row 2: ""
+console.log: row 2: ""
 <body>
   <main>
     <button id="pick9">"9"</button>
@@ -221,6 +242,8 @@ console.log: row 2: ""
 </body>
 -- click #pick1
 console.log: row 1: "on"
+console.log: row 2: ""
+console.log: row 2: ""
 <body>
   <main>
     <button id="pick9">"9"</button>
@@ -247,6 +270,9 @@ console.log: row 1: "on"
   </main>
 </body>
 -- click #cursor2
+console.log: row 1: "on"
+console.log: row 2: ""
+console.log: row 2: ""
 console.log: id 1: ""
 console.log: id 2: "at"
 <body>

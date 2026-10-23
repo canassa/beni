@@ -1,13 +1,10 @@
--- `browser/dom/RowItemOnly` on `browser-direct`, as written there (S3): its
--- `List.map` is the identity walk. `browser/direct/RowItemOnly` is the page S2
--- rebuilt with `List.update`.
---
--- A row patched because an input changed leaves alone what reads only its
--- item (language.md §11.11, backend.md §15.5): `Debug.log` on each row's
--- label shows when it is computed. A selection runs every row, for its
--- class, and computes no label and builds no handler message; each row's
--- handler still sends its own row's message after it. A relabelled item
--- computes its label again and writes it; the others do not.
+-- List.map makes a new outer list while keeping its record items.
+-- A record item no longer authorizes an item-only identity skip
+-- (backend.md §15.5, O3). Every visited row recomputes its label and scalar
+-- handler message, including on a selection. Scalar DOM writes still
+-- compare their values. Each handler sends its own row's message after
+-- the patch; relabelling changes only the intended row's visible text.
+
 import Browser
 import Html exposing (Html)
 import Tea

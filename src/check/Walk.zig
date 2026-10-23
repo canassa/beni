@@ -296,6 +296,11 @@ pub fn recordFields(store: *const TypeStore, record: TypeStore.Structure.Record)
     return store.fields(record.fields);
 }
 
+/// A record row's extension, for a structural projection walk.
+pub fn recordExtension(record: TypeStore.Structure.Record) Var {
+    return record.ext;
+}
+
 /// A step of an effect site's path (transparent-effects-proposal.md §14.6):
 /// what an interface's effect block says to reach one function type or
 /// nominal application of a scheme from its root. The values are the

@@ -1,19 +1,10 @@
--- `browser/dom/RowMountOrder` rebuilt for slice S2 (browser-direct.md §6, as
--- amended for S2): the order a keyed row's values are evaluated in when it
--- is made and when it is visited. `Debug.log` in each value shows it. At
--- `make` every row's values run in source order; a mark, which every row
--- reads, visits every row and runs only the value that reads it; a label
--- written at an index visits that row and runs only the value that reads
--- the label. That is the documented difference (`.tea-expected`): on
--- `browser-tea` a row whose item changed runs both of its values, the
--- model's first, and here a value runs only when what it reads was written
--- (§4.1: a handler calls only the groups its key's writes reach). The
--- original's rename is a `List.map`, slice S3's identity walk; here it is
--- `List.update`, and its append is `List.push`.
---
--- `#after` writes the value that reads the model first and the item-only
--- one after it, `#before` the other way round, `#toggled` has a class
--- toggle.
+-- Pin source evaluation order at mount and patch (language.md §6;
+-- backend.md §15.5). Record rows are visited on every render under O3,
+-- so their item-only values run again as well as their model inputs.
+-- `#after` reads the model before the item; `#before` reverses that order;
+-- `#toggled` includes a class toggle. Adding, marking and relabelling must
+-- preserve that order and leave every unrelated DOM value unchanged.
+
 import Browser
 import Html exposing (Html)
 import Tea

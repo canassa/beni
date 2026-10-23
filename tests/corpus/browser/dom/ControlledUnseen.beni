@@ -1,11 +1,9 @@
--- A message that changes nothing a row reads visits no row (backend.md
--- §15.3, *Controlled inputs*; §15.4, as amended 2026-10-08): a controlled
--- input no longer makes its row live. What shows it is a value written
--- with no event (the driver's `set`, as a script outside beni would):
--- nothing marks it, so a render leaves it — where the design that visited
--- every control on every render put it back. `pageshow`, which follows
--- the browser's restoring of form state, reconciles every control.
--- Rejected edits are still put back, keyed and by position.
+-- Record rows are visited on every render (backend.md §15.5, O3), so the
+-- row's Debug.log runs again. Its unchanged scalar control value must
+-- still leave an unmarked external DOM edit alone. `pageshow` reconciles
+-- every control; rejected input edits are put back at render end. The
+-- helper's String argument keeps its own scalar skip.
+
 import Browser
 import Html exposing (Html)
 

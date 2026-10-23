@@ -8,16 +8,14 @@ const DomEvents$p16 = ($i$1, $v$2) => {
     $i$1.g0 = true;
     const $t$5 = ($x$4) => ({ $: "Typed", a: $x$4 });
     const $t$7 = ($x$6) => ({ $: "Down", a: $x$6 });
-    if (DomEvents$Sent !== $i$1.a0) {
-      $i$1.a0 = DomEvents$Sent;
+    if (true) {
       $i$1.w0.$$submit = DomEvents$Sent;
     }
     if ($t$5 !== $i$1.a2) {
       $i$1.a2 = $t$5;
       $i$1.w3.$$input = $t$5;
     }
-    if (DomEvents$Focused !== $i$1.a3) {
-      $i$1.a3 = DomEvents$Focused;
+    if (true) {
       $i$1.w3.$$focus = DomEvents$Focused;
     }
     if ($t$7 !== $i$1.a4) {
@@ -29,8 +27,7 @@ const DomEvents$p16 = ($i$1, $v$2) => {
   if ($x$8 !== $i$1.g1_0) {
     $i$1.g1_0 = $x$8;
     const $t$9 = { $: "Clicked", a: $input$3 };
-    if ($t$9 !== $i$1.a1) {
-      $i$1.a1 = $t$9;
+    if (true) {
       $i$1.w1.$$click = $t$9;
     }
   }

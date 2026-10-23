@@ -266,6 +266,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
     const reads = try b.rootReads();
     const item_only = try b.itemOnly();
     const constant = try b.constants();
+    const identity_safe = try b.identityFacts();
     return .{
         .tree = .{
             .roots = b.roots,
@@ -290,6 +291,7 @@ pub fn build(arena: Allocator, input: Input) Allocator.Error!?Built {
             },
             .requires = m.gated,
             .item_only = item_only,
+            .identity_safe = identity_safe,
             .constant = constant,
             .value_reads = reads.value_reads,
             .read_sets = reads.read_sets,
@@ -463,6 +465,61 @@ const Builder = struct {
             b.tree_rows.items[row_index].body = @fromBackingInt(@intCast(at));
         }
         b.roots = grown;
+    }
+
+    fn identityFacts(b: *Builder) ![]const bool {
+        const facts = try b.arena.alloc(bool, b.values.items.len);
+        @memset(facts, false);
+        for (b.roots, 0..) |root, ri| {
+            const decl = b.declOf(b.root_insts.items[ri]) orelse continue;
+            const base = b.bir().decls[decl].locals_start;
+            for (0..root.values.len) |k| {
+                const vi = @backingInt(root.values.at(@intCast(k)));
+                facts[vi] = b.identityValue(b.values.items[vi], base);
+            }
+            for (0..root.inputs.len) |k| {
+                const vi = @backingInt(root.inputs.at(@intCast(k)));
+                facts[vi] = b.identityValue(b.values.items[vi], base);
+            }
+            for (0..root.reads.len) |k| {
+                const vi = @backingInt(root.reads.at(@intCast(k)));
+                facts[vi] = b.identityValue(b.values.items[vi], base);
+            }
+            for (0..root.lets.len) |k| {
+                const vi = @backingInt(root.lets.at(@intCast(k)));
+                facts[vi] = b.identityValue(b.values.items[vi], base);
+            }
+        }
+        for (b.tree_rows.items) |row| {
+            const decl = b.declOf(row.site.inst) orelse continue;
+            const base = b.bir().decls[decl].locals_start;
+            for (0..row.inputs.len) |k| {
+                const vi = @backingInt(row.inputs.at(@intCast(k)));
+                facts[vi] = b.identityValue(b.values.items[vi], base);
+            }
+        }
+        return facts;
+    }
+
+    fn identityValue(b: *Builder, v: Value, base: u32) bool {
+        const d = b.in.dispatch;
+        return switch (v) {
+            .inst => |i| d.renderStable(false, i.int(), &.{}),
+            .call => |c| d.renderStable(false, c.inst.int(), &.{}),
+            .let_value => |lv| d.renderStable(false, lv.inst.int(), &.{}),
+            .capture => |k| d.renderStable(true, base + k, &.{}),
+            .input => |at| blk: {
+                const in = b.bir().extraData(at, Bir.MarkupInput);
+                var links: [Bir.max_input_links]u32 = undefined;
+                // The input paths have BIR's bounded representation. No
+                // traversal or type precision is truncated here.
+                for (0..in.len) |k| links[k] = if (in.link(k) & Bir.tuple_link != 0) in.link(k) else @backingInt(b.bir().symbols[in.link(k)]);
+                break :blk d.renderStable(true, base + in.local, links[0..in.len]);
+            },
+            .read => |r| d.renderStable(true, base + r.local, r.links[0..r.len]),
+            .string, .true, .callee => true,
+            else => false,
+        };
     }
 
     fn value(b: *Builder, v: Value) !m.Value.Index {

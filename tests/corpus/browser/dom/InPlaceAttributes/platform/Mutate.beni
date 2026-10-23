@@ -1,0 +1,4 @@
+-- Test-only writer: both arrays keep their identities as their entries change.
+pub foreign impure attributes :
+      { classes : List (String × Bool), styles : List (String × String) }
+    → { classes : List (String × Bool), styles : List (String × String) }

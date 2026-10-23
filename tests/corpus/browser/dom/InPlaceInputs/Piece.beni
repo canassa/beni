@@ -1,0 +1,9 @@
+import Html exposing (Html)
+
+
+pub box : { numbers : List Int, item : { id : Int, count : Int } } → Html msg
+box props = <p id="component">{List.sum props.numbers + props.item.count}</p>
+
+
+pub count : { id : Int, count : Int } → Int
+count item = item.count

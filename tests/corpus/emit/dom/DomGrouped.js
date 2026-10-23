@@ -25,7 +25,7 @@ const DomGrouped$p21 = ($i$1, $v$2) => {
   if ($x$7 !== $i$1.g3_0) {
     $i$1.g3_0 = $x$7;
     const $t$8 = $input$3.text;
-    Rt$control($i$1.w5, "value", $t$8);
+    Rt$control($i$1.w5, "value", $t$8, true);
   }
 };
 const DomGrouped$t21 = Rt$template("<div><p> </p><b> </b><input>");

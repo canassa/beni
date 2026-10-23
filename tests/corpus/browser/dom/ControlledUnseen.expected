@@ -69,6 +69,8 @@ console.log: cell: "b"
   </main>
 </body>
 -- click #tick
+console.log: keyed: "a"
+console.log: keyed: "b"
 <body>
   <main>
     <button id="tick">"1"</button>
@@ -113,12 +115,17 @@ console.log: cell: "b"
   </main>
 </body>
 -- input #k1 "abcdef"
+console.log: keyed: "a"
+console.log: keyed: "b"
 (the DOM did not change)
 -- input #p0 "abcdef"
+console.log: keyed: "a"
+console.log: keyed: "b"
 (the DOM did not change)
 -- input #k0 "xy"
 console.log: keyed: "xy"
 console.log: cell: "xy"
+console.log: keyed: "b"
 <body>
   <main>
     <button id="tick">"1"</button>

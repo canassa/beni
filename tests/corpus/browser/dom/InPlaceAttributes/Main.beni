@@ -1,0 +1,32 @@
+-- Removed class names and style properties must come from the last write,
+-- even when both input lists are changed in place before the next render.
+import Browser
+import Html exposing (Html)
+import Mutate
+
+
+type Msg
+    = Change
+
+
+type alias Model =
+    classes : List (String × Bool)
+    styles : List (String × String)
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="change" onClick={Change}>change</button>
+        <p id="target" class={model.classes} style={model.styles}>value</p>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init =
+            λ⊤ → { classes = [ ( "before", True ) ], styles = [ ( "background-color", "red" ) ] }
+        , update = λ_ model → Mutate.attributes model
+        , view = view
+        }

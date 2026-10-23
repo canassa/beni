@@ -89,7 +89,8 @@ pub const magic = "BENIDSP\x00";
 /// tags, `identity` (its parts in `args`) and `text` (a range of `text`).
 /// 12 since derived codecs (schema.md §12.10): a `codec` term, its index the
 /// module's schema plan's `codecs` and its slots' evidence in `args`.
-pub const format_version: u32 = 13;
+// Version 14 adds checked render identity facts and their local paths.
+pub const format_version: u32 = 14;
 
 pub const Column = enum(u32) {
     terms,
@@ -103,6 +104,8 @@ pub const Column = enum(u32) {
     tries,
     appends,
     markup,
+    render_facts,
+    render_links,
     effect_sites,
     effect_decls,
     boundary,
@@ -132,6 +135,8 @@ pub const Column = enum(u32) {
             .tries => 8,
             .appends => 4,
             .markup => 20,
+            .render_facts => 16,
+            .render_links => 8,
             .effect_sites => 8,
             .effect_decls => 4,
             .boundary => 12,
@@ -313,6 +318,26 @@ pub fn write(
         std.mem.writeInt(u32, row[16..20], n.extractor, .little);
     }
 
+    const render_facts = try gpa.alloc(u8, d.render_facts.len * 16);
+    defer gpa.free(render_facts);
+    @memset(render_facts, 0);
+    for (d.render_facts, 0..) |f, i| {
+        const row = render_facts[i * 16 ..][0..16];
+        row[0] = @intFromBool(f.local);
+        std.mem.writeInt(u32, row[4..8], f.index, .little);
+        writeRange(row[8..16], f.path);
+    }
+    const render_links = try gpa.alloc(u8, d.render_links.len * 8);
+    defer gpa.free(render_links);
+    @memset(render_links, 0);
+    for (d.render_links, 0..) |link, i| {
+        const row = render_links[i * 8 ..][0..8];
+        const tuple = link & Bir.tuple_link != 0;
+        row[0] = @intFromBool(tuple);
+        const value = if (tuple) link & ~Bir.tuple_link else try w.string(@fromBackingInt(@intCast(link)));
+        std.mem.writeInt(u32, row[4..8], value, .little);
+    }
+
     const effect_sites = try gpa.alloc(u8, d.effect_sites.len * Column.effect_sites.width());
     defer gpa.free(effect_sites);
     @memset(effect_sites, 0);
@@ -400,6 +425,8 @@ pub fn write(
         tries,
         appends,
         markup,
+        render_facts,
+        render_links,
         effect_sites,
         effect_decls,
         boundary,
@@ -424,6 +451,8 @@ pub fn write(
         @intCast(d.tries.len),
         @intCast(d.appends.len),
         @intCast(d.markup.len),
+        @intCast(d.render_facts.len),
+        @intCast(d.render_links.len),
         @intCast(d.effect_sites.len),
         @intCast(d.effect_decls.len),
         @intCast(d.boundary.len),
@@ -842,6 +871,35 @@ fn decode(gpa: Allocator, bytes: []const u8, in: *Interning) ReadError!Loaded {
         }
     }
     {
+        const input = col(bytes, offsets, .render_facts);
+        const facts = try gpa.alloc(Dispatch.RenderFact, lengths[@backingInt(Column.render_facts)]);
+        out.table.render_facts = facts;
+        for (facts, 0..) |*f, i| {
+            const row = input[i * 16 ..][0..16];
+            if (row[0] > 1) return error.BadSidecar;
+            f.* = .{ .local = row[0] != 0, .index = std.mem.readInt(u32, row[4..8], .little), .path = readRange(row[8..16]) };
+        }
+        const link_bytes = col(bytes, offsets, .render_links);
+        const links = try gpa.alloc(u32, lengths[@backingInt(Column.render_links)]);
+        out.table.render_links = links;
+        for (links, 0..) |*link, i| {
+            const row = link_bytes[i * 8 ..][0..8];
+            const raw = std.mem.readInt(u32, row[4..8], .little);
+            link.* = switch (row[0]) {
+                0 => @backingInt(try symbolAt(blob, raw, in) orelse return error.BadSidecar),
+                1 => if (raw & Bir.tuple_link == 0) raw | Bir.tuple_link else return error.BadSidecar,
+                else => return error.BadSidecar,
+            };
+        }
+        for (facts, 0..) |f, i| {
+            if (!rangeOk(f.path, links.len) or (!f.local and f.path.len != 0)) return error.BadSidecar;
+            if (i != 0) {
+                const prev = facts[i - 1];
+                if (@intFromBool(prev.local) > @intFromBool(f.local) or (prev.local == f.local and prev.index > f.index)) return error.BadSidecar;
+            }
+        }
+    }
+    {
         const in_bytes = col(bytes, offsets, .effect_sites);
         const sites = try gpa.alloc(Dispatch.EffectSite, lengths[@backingInt(Column.effect_sites)]);
         out.table.effect_sites = sites;
@@ -1221,6 +1279,8 @@ fn expectSameTable(a: *const Dispatch, b: *const Dispatch, interner: *const Inte
     try testing.expectEqualSlices(Dispatch.Try, a.tries, b.tries);
     try testing.expectEqualSlices(Bir.Inst.Index, a.appends, b.appends);
     try testing.expectEqualSlices(Dispatch.Markup, a.markup, b.markup);
+    try testing.expectEqualSlices(Dispatch.RenderFact, a.render_facts, b.render_facts);
+    try testing.expectEqualSlices(u32, a.render_links, b.render_links);
     try testing.expectEqualSlices(Dispatch.EffectSite, a.effect_sites, b.effect_sites);
     try testing.expectEqualSlices(Dispatch.EffectDecl, a.effect_decls, b.effect_decls);
     try testing.expectEqualSlices(Dispatch.DeclInfo, a.decls, b.decls);
@@ -1290,6 +1350,39 @@ test "an empty table round-trips" {
     defer loaded.deinit(gpa);
     try testing.expectEqual(@as(usize, 0), loaded.table.sites.len);
     try testing.expectEqual(@as(usize, 0), loaded.module_refs.len);
+}
+
+test "render identity facts round-trip and reject malformed paths" {
+    const gpa = testing.allocator;
+    var global = try InternPool.Global.init(gpa);
+    defer global.deinit(gpa);
+    const field = @backingInt(InternPool.WellKnown.main.symbol());
+    const table: Dispatch = .{
+        .render_facts = &.{
+            .{ .local = false, .index = 7, .path = .empty },
+            .{ .local = true, .index = 3, .path = .{ .start = 0, .len = 2 } },
+        },
+        .render_links = &.{ field, Bir.tuple_link | 1 },
+    };
+    const graph: Graph = .empty;
+    const types: Types = .empty;
+    const bytes = try write(gpa, &table, &graph, &types, &global);
+    defer gpa.free(bytes);
+    var loaded = try read(gpa, bytes, &global);
+    defer loaded.deinit(gpa);
+    try expectSameTable(&table, &loaded.table, &global);
+    try testing.expect(loaded.table.renderStable(false, 7, &.{}));
+    try testing.expect(loaded.table.renderStable(true, 3, &.{ field, Bir.tuple_link | 1 }));
+    try testing.expect(!loaded.table.renderStable(true, 3, &.{field}));
+    const again = try write(gpa, &loaded.table, &graph, &types, &global);
+    defer gpa.free(again);
+    try testing.expectEqualSlices(u8, bytes, again);
+
+    const corrupt = try gpa.dupe(u8, bytes);
+    defer gpa.free(corrupt);
+    const fact = columnAt(corrupt, .render_facts);
+    std.mem.writeInt(u32, corrupt[fact + 12 ..][0..4], 1, .little);
+    try testing.expectError(error.BadSidecar, read(gpa, corrupt, &global));
 }
 
 test "every table of a project round-trips: sites, evidence, derived, tries and ext targets" {

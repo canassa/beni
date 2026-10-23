@@ -306,6 +306,7 @@ console.log: scaled: 6
   </main>
 </body>
 -- click #noop
+console.log: total: 6
 console.log: scaled: 6
 <body>
   <main>

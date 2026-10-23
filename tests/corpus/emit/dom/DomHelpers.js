@@ -67,38 +67,34 @@ const DomHelpers$k27 = { m: ($v$5, $cx$6) => {
 const DomHelpers$t42 = Rt$template("<li>");
 const DomHelpers$p44 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
-  const $x$4 = $input$3;
-  if ($x$4 !== $i$1.g0_0) {
-    $i$1.g0_0 = $x$4;
-    const $made$5 = { m: ($item$6, $position$7, $cx$8) => {
-      const $r$9 = DomHelpers$t42();
-      const $c$10 = Rt$slot($r$9, null, $cx$8);
-      Rt$childHtml($c$10, DomHelpers$label($item$6, 0));
-      return { s: $r$9, q: null, e: $r$9, c0: $c$10, a0_0: $item$6, l: $c$10.l };
-    }, p: ($i$11, $item$12, $position$13) => {
-      if ($item$12 !== $i$11.a0_0) {
-        $i$11.a0_0 = $item$12;
-        Rt$childHtml($i$11.c0, DomHelpers$label($item$12, 0));
+  {
+    const $made$4 = { o: true, h: [], m: ($item$5, $position$6, $cx$7) => {
+      const $r$8 = DomHelpers$t42();
+      const $c$9 = Rt$slot($r$8, null, $cx$7);
+      Rt$childHtml($c$9, DomHelpers$label($item$5, 0));
+      return { s: $r$8, q: null, e: $r$8, c0: $c$9, a0_0: $item$5, l: $c$9.l };
+    }, p: ($i$10, $item$11, $position$12) => {
+      if ($item$11 !== $i$10.a0_0) {
+        $i$10.a0_0 = $item$11;
+        Rt$childHtml($i$10.c0, DomHelpers$label($item$11, 0));
       } else {
-        Rt$restate($i$11.c0);
+        Rt$restate($i$10.c0);
       }
-      $i$11.l = $i$11.c0.l;
-    }, l: true, r: ($i$14) => {
-      Rt$restate($i$14.c0);
+      $i$10.l = $i$10.c0.l;
+    }, l: true, r: ($i$13) => {
+      Rt$restate($i$13.c0);
     }, i: false, f: null };
-    Rt$forKeyed($i$1.c0, $input$3, null, $made$5, null);
-  } else {
-    Rt$restate($i$1.c0);
+    Rt$forKeyed($i$1.c0, $input$3, null, $made$4, null);
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
 const DomHelpers$t44 = Rt$template("<ul>");
-const DomHelpers$k44 = { m: ($v$15, $cx$16) => {
-  const $r$17 = DomHelpers$t44();
-  const $c$18 = Rt$slot($r$17, null, $cx$16);
-  const $i$19 = { s: $r$17, q: null, e: $r$17, c0: $c$18, g0_0: NaN };
-  DomHelpers$p44($i$19, $v$15);
-  return $i$19;
+const DomHelpers$k44 = { m: ($v$14, $cx$15) => {
+  const $r$16 = DomHelpers$t44();
+  const $c$17 = Rt$slot($r$16, null, $cx$15);
+  const $i$18 = { s: $r$16, q: null, e: $r$16, c0: $c$17 };
+  DomHelpers$p44($i$18, $v$14);
+  return $i$18;
 }, p: DomHelpers$p44, l: true };
 const DomHelpers$t69 = Rt$template("<b> ");
 const DomHelpers$k69 = { m: ($v$2, $cx$3) => {

@@ -232,8 +232,8 @@ module Rt
   value childHtml : V, V → ⊤  -- impure
   value childList : V, V → ⊤  -- impure
   value childMaybe : V, V → ⊤  -- impure
-  value classes : V, V, V → ⊤  -- impure
-  value control : V, String, V → ⊤  -- impure
+  value classes : V, V, V → V  -- impure
+  value control : V, String, V, Bool → ⊤  -- impure
   value delegate : V → ⊤  -- impure
   value drop : V → ⊤  -- impure
   value edited : V → ⊤  -- impure
@@ -260,7 +260,7 @@ module Rt
   value show : V, V, V → ⊤  -- impure
   value slot : V, V, V → V
   value start : V → ⊤  -- impure
-  value styles : V, V, V → ⊤  -- impure
+  value styles : V, V, V → V  -- impure
   value swap : V, V → ⊤  -- impure
   value template : String → ⊤ → V  -- impure
   value templateOf : String, Int → ⊤ → V  -- impure

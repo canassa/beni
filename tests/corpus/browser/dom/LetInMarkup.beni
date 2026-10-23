@@ -1,8 +1,8 @@
 -- A `let` read only by markup is one of its values (language.md §11.11,
 -- the `let` rule; backend.md §15.4). `shown`, the items sorted, is used
--- only inside the root, so it is computed when `model.items` is another
--- list and not otherwise: a tick logs no "sorted", an added item does,
--- and the list's rows run only then. `label` is used to choose between
+-- only inside the root. It is recomputed on every render because it reads
+-- a List (backend.md §15.5, O3): a tick logs "sorted" as does an added item.
+-- `label` is used to choose between
 -- two roots, outside either, so it is computed on every render, as
 -- before. `Debug.log` shows each computation; it is written in the `let`
 -- itself, as a call of a helper that logs would be a call that may have

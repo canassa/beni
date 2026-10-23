@@ -150,6 +150,7 @@ console.log: total: 5
   </main>
 </body>
 -- click #noop
+console.log: total: 5
 <body>
   <main>
     <button id="a">"a"</button>

@@ -1,0 +1,57 @@
+-- load
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <ul id="items">
+      <li>"1"</li>
+    </ul>
+    <ul id="lists">
+      <li>"1"</li>
+    </ul>
+    <ul id="records">
+      <li>"1"</li>
+    </ul>
+    <ul id="keys">
+      <li>"10:1"</li>
+    </ul>
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <ul id="items">
+      <li>"1"</li>
+      <li>"2"</li>
+    </ul>
+    <ul id="lists">
+      <li>"2"</li>
+    </ul>
+    <ul id="records">
+      <li>"2"</li>
+    </ul>
+    <ul id="keys">
+      <li>"11:2"</li>
+    </ul>
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <ul id="items">
+      <li>"1"</li>
+      <li>"2"</li>
+      <li>"3"</li>
+    </ul>
+    <ul id="lists">
+      <li>"3"</li>
+    </ul>
+    <ul id="records">
+      <li>"3"</li>
+    </ul>
+    <ul id="keys">
+      <li>"12:3"</li>
+    </ul>
+  </main>
+</body>
