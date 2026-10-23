@@ -1,0 +1,14 @@
+{"type":"set","value":3}: step 3, level 7, mark 7, tock 7 unknown
+{"type":"ping"}: step 7, level 7, mark 7, tock 7 unknown
+{"type":"note","text":"hi"}: step 7, level 7, mark 7, tock 7 unknown
+{"type":"note","text":1}: step 7, level 7, mark 7, tock 7 unknown
+{"type":"bump","by":2}: step 9, level 7, mark 7, tock 7 unknown
+{"type":"other"}: step 7, level 7, mark 7, tock 7 unknown
+{"kind":"loud","level":5}: step 7, level 5, mark 7, tock 7 unknown
+{"kind":"quiet"}: step 7, level 0, mark 7, tock 7 unknown
+{"m":"on","at":4}: step 7, level 7, mark 4, tock 7 unknown
+{"m":"off"}: step 7, level 7, mark 7, tock 7 unknown
+{"t":"run","speed":9}: step 7, level 7, mark 7, tock 9 known
+{"t":"idle"}: step 7, level 7, mark 7, tock 7 known
+[]: step 7, level 7, mark 7, tock 7 unknown
+fillers 2

@@ -1,0 +1,70 @@
+-- The tags no run tells from a failure (`schema.md` §6, amended 2026-10-24):
+-- `step`'s `Ping` and `Note` arms give `n`, as its `Err _` arm does, and
+-- nothing else reads `Event`, so its validator worker has no `ping` or
+-- `note` arm — they are unknown tags, which fail — and the `case` has no arm
+-- for them. `Signal.Quiet`'s arm gives another value, and stays.
+-- `run/SchemaDeadTags` proves the answers.
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Ping as "ping"
+    Note as "note"
+        text : String
+    Bump as "bump"
+        by : Int
+
+
+step : Value, Int → Int
+step v n =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set s) →
+            s.value
+
+        Ok Event.Ping →
+            n
+
+        Ok (Event.Note _) →
+            n
+
+        Ok (Event.Bump b) →
+            n + b.by
+
+        Err _ →
+            n
+
+
+schema Signal tagged "kind" of
+    Loud as "loud"
+        level : Int
+    Quiet as "quiet"
+
+
+level : Value, Int → Int
+level v n =
+    case Schema.read (Signal.schema ⊤) v of
+        Ok (Signal.Loud l) →
+            l.level
+
+        Ok Signal.Quiet →
+            0
+
+        Err _ →
+            n
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            "${String.fromInt (step v 7)} ${String.fromInt (level v 7)}"
+
+        Err _ →
+            "not JSON"
+
+
+main : Node.Program
+main = Node.print (line "{\"type\": \"ping\"}")

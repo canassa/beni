@@ -1,0 +1,129 @@
+-- The tags no run tells from a failure (`schema.md` §6, amended 2026-10-24).
+-- `step`'s `Ping` and `Note` arms give `n`, what its `Err _` arm gives, and
+-- `Event` is read nowhere else: its validator reads `ping` and `note` as
+-- unknown tags, which fail, and the `case` has no arm for them. Every line
+-- prints the same either way. Kept: `Signal.Quiet`, whose arm gives another
+-- value; `Shared.Mark.Off`, of a schema another module exposes; and
+-- `Tock.Idle`, of a schema also read through `Result.toMaybe`.
+-- `emit/release/app/SchemaDeadTags` shows the shape, and
+-- `run/SchemaDeadTagsShapes` reads the same through shapes.
+import Hosts
+import Node
+import Schema exposing (Value)
+import Shared
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Ping as "ping"
+    Note as "note"
+        text : String
+    Bump as "bump"
+        by : Int
+
+
+step : Value, Int → Int
+step v n =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set s) →
+            s.value
+
+        Ok Event.Ping →
+            n
+
+        Ok (Event.Note _) →
+            n
+
+        Ok (Event.Bump b) →
+            n + b.by
+
+        Err _ →
+            n
+
+
+schema Signal tagged "kind" of
+    Loud as "loud"
+        level : Int
+    Quiet as "quiet"
+
+
+level : Value, Int → Int
+level v n =
+    case Schema.read (Signal.schema ⊤) v of
+        Ok (Signal.Loud l) →
+            l.level
+
+        Ok Signal.Quiet →
+            0
+
+        Err _ →
+            n
+
+
+mark : Value, Int → Int
+mark v n =
+    case Schema.read (Shared.Mark.schema ⊤) v of
+        Ok (Shared.Mark.On o) →
+            o.at
+
+        Ok Shared.Mark.Off →
+            n
+
+        Err _ →
+            n
+
+
+schema Tock tagged "t" of
+    Run as "run"
+        speed : Int
+    Idle as "idle"
+
+
+tock : Value, Int → Int
+tock v n =
+    case Schema.read (Tock.schema ⊤) v of
+        Ok (Tock.Run r) →
+            r.speed
+
+        Ok Tock.Idle →
+            n
+
+        Err _ →
+            n
+
+
+tockKnown : Value → Bool
+tockKnown v =
+    case Result.toMaybe (Schema.read (Tock.schema ⊤) v) of
+        Just _ →
+            True
+
+        Nothing →
+            False
+
+
+line : String, Int → String
+line text n =
+    v = Hosts.parse text
+    known = if tockKnown v then "known" else "unknown"
+    "${text}: step ${String.fromInt (step v n)}, level ${String.fromInt (level v n)}, mark ${String.fromInt (mark v n)}, tock ${String.fromInt (tock v n)} ${known}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ line "{\"type\":\"set\",\"value\":3}" 7
+        , line "{\"type\":\"ping\"}" 7
+        , line "{\"type\":\"note\",\"text\":\"hi\"}" 7
+        , line "{\"type\":\"note\",\"text\":1}" 7
+        , line "{\"type\":\"bump\",\"by\":2}" 7
+        , line "{\"type\":\"other\"}" 7
+        , line "{\"kind\":\"loud\",\"level\":5}" 7
+        , line "{\"kind\":\"quiet\"}" 7
+        , line "{\"m\":\"on\",\"at\":4}" 7
+        , line "{\"m\":\"off\"}" 7
+        , line "{\"t\":\"run\",\"speed\":9}" 7
+        , line "{\"t\":\"idle\"}" 7
+        , line "[]" 7
+        ]

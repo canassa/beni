@@ -1,0 +1,10 @@
+--! Host values for the dead tags' fixture (`schema.md` §6, *A tag no run
+--! tells from a failure*): what `Schema.read` is handed from JavaScript.
+
+import Js
+import Schema exposing (Value)
+
+
+--| `JSON.parse` of the text.
+pub parse : String → Value
+parse text = Js.to (Js.call (Js.global "JSON") "parse" [ Js.from text ])

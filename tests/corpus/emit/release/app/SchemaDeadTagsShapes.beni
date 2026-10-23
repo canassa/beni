@@ -1,0 +1,459 @@
+-- `SchemaDeadTags` with 29 shape runs and more (`SchemaValid.shape_threshold`):
+-- a dead tag is no row of its union's shape, and the `case` has no arm for
+-- it (`schema.md` §6, amended 2026-10-24).
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Ping as "ping"
+    Note as "note"
+        text : String
+    Bump as "bump"
+        by : Int
+
+
+step : Value, Int → Int
+step v n =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set s) →
+            s.value
+
+        Ok Event.Ping →
+            n
+
+        Ok (Event.Note _) →
+            n
+
+        Ok (Event.Bump b) →
+            n + b.by
+
+        Err _ →
+            n
+
+
+schema Signal tagged "kind" of
+    Loud as "loud"
+        level : Int
+    Quiet as "quiet"
+
+
+level : Value, Int → Int
+level v n =
+    case Schema.read (Signal.schema ⊤) v of
+        Ok (Signal.Loud l) →
+            l.level
+
+        Ok Signal.Quiet →
+            0
+
+        Err _ →
+            n
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            "${String.fromInt (step v 7)} ${String.fromInt (level v 7)} ${String.fromInt (filler1 v + filler2 v + filler3 v + filler4 v + filler5 v + filler6 v + filler7 v + filler8 v + filler9 v + filler10 v + filler11 v + filler12 v + filler13 v + filler14 v + filler15 v + filler16 v + filler17 v + filler18 v + filler19 v + filler20 v + filler21 v + filler22 v + filler23 v + filler24 v + filler25 v + filler26 v + filler27 v + filler28 v + 0)}"
+
+        Err _ →
+            "not JSON"
+
+
+main : Node.Program
+main = Node.print (line "{\"type\": \"ping\"}")
+
+
+schema Filler1 =
+    f1 : Int
+
+
+filler1 : Value → Int
+filler1 v =
+    case Schema.read (Filler1.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler2 =
+    f2 : Int
+
+
+filler2 : Value → Int
+filler2 v =
+    case Schema.read (Filler2.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler3 =
+    f3 : Int
+
+
+filler3 : Value → Int
+filler3 v =
+    case Schema.read (Filler3.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler4 =
+    f4 : Int
+
+
+filler4 : Value → Int
+filler4 v =
+    case Schema.read (Filler4.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler5 =
+    f5 : Int
+
+
+filler5 : Value → Int
+filler5 v =
+    case Schema.read (Filler5.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler6 =
+    f6 : Int
+
+
+filler6 : Value → Int
+filler6 v =
+    case Schema.read (Filler6.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler7 =
+    f7 : Int
+
+
+filler7 : Value → Int
+filler7 v =
+    case Schema.read (Filler7.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler8 =
+    f8 : Int
+
+
+filler8 : Value → Int
+filler8 v =
+    case Schema.read (Filler8.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler9 =
+    f9 : Int
+
+
+filler9 : Value → Int
+filler9 v =
+    case Schema.read (Filler9.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler10 =
+    f10 : Int
+
+
+filler10 : Value → Int
+filler10 v =
+    case Schema.read (Filler10.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler11 =
+    f11 : Int
+
+
+filler11 : Value → Int
+filler11 v =
+    case Schema.read (Filler11.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler12 =
+    f12 : Int
+
+
+filler12 : Value → Int
+filler12 v =
+    case Schema.read (Filler12.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler13 =
+    f13 : Int
+
+
+filler13 : Value → Int
+filler13 v =
+    case Schema.read (Filler13.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler14 =
+    f14 : Int
+
+
+filler14 : Value → Int
+filler14 v =
+    case Schema.read (Filler14.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler15 =
+    f15 : Int
+
+
+filler15 : Value → Int
+filler15 v =
+    case Schema.read (Filler15.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler16 =
+    f16 : Int
+
+
+filler16 : Value → Int
+filler16 v =
+    case Schema.read (Filler16.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler17 =
+    f17 : Int
+
+
+filler17 : Value → Int
+filler17 v =
+    case Schema.read (Filler17.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler18 =
+    f18 : Int
+
+
+filler18 : Value → Int
+filler18 v =
+    case Schema.read (Filler18.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler19 =
+    f19 : Int
+
+
+filler19 : Value → Int
+filler19 v =
+    case Schema.read (Filler19.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler20 =
+    f20 : Int
+
+
+filler20 : Value → Int
+filler20 v =
+    case Schema.read (Filler20.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler21 =
+    f21 : Int
+
+
+filler21 : Value → Int
+filler21 v =
+    case Schema.read (Filler21.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler22 =
+    f22 : Int
+
+
+filler22 : Value → Int
+filler22 v =
+    case Schema.read (Filler22.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler23 =
+    f23 : Int
+
+
+filler23 : Value → Int
+filler23 v =
+    case Schema.read (Filler23.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler24 =
+    f24 : Int
+
+
+filler24 : Value → Int
+filler24 v =
+    case Schema.read (Filler24.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler25 =
+    f25 : Int
+
+
+filler25 : Value → Int
+filler25 v =
+    case Schema.read (Filler25.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler26 =
+    f26 : Int
+
+
+filler26 : Value → Int
+filler26 v =
+    case Schema.read (Filler26.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler27 =
+    f27 : Int
+
+
+filler27 : Value → Int
+filler27 v =
+    case Schema.read (Filler27.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
+
+
+schema Filler28 =
+    f28 : Int
+
+
+filler28 : Value → Int
+filler28 v =
+    case Schema.read (Filler28.schema ⊤) v of
+        Ok _ →
+            1
+
+        Err _ →
+            0
