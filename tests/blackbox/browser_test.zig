@@ -2,8 +2,8 @@
 //! walker itself: the walker binary (`BENI_CORPUS_TEST_EXE`, installed by
 //! `build.zig`) is run against a corpus of the scenario's own, a `browser/`
 //! directory in the world's project, and what it did is read from its exit
-//! code, its report of the failure, the `.run-hash` records and the counts
-//! `BENI_RUN_HASH_REPORT` makes it write.
+//! code, its report of the failure, the digests in its run-hash cache (the
+//! world's `cache/`) and the counts `BENI_RUN_HASH_REPORT` makes it write.
 //!
 //! The walker runs in the repository root, as every run the build makes
 //! does, so it finds the driver, the DOM and the `page` platform where the
@@ -58,15 +58,24 @@ const loaded =
 ;
 
 /// Run the corpus walker over `corpus/` in the world's project, from the
-/// repository root, with `BENI_RUN_HASHES=<mode>` ("" to check), writing
-/// its counts into `counts/`.
-fn walker(w: *World, mode: []const u8) !world.Result {
-    return walkerIn(w, mode, .inherit);
+/// repository root, on the project's `cache/`, writing its counts into
+/// `counts/`.
+fn walker(w: *World) !world.Result {
+    return walkerIn(w, .inherit);
 }
 
 /// `walker` from `root` instead of the repository root: where the walker
 /// finds the driver, the DOM and the `page` platform.
-fn walkerIn(w: *World, mode: []const u8, root: std.process.Child.Cwd) !world.Result {
+fn walkerIn(w: *World, root: std.process.Child.Cwd) !world.Result {
+    return walkerWith(w, root, false);
+}
+
+/// `walker` with `BENI_WRITE_EXPECTED=1`: the goldens are blessed.
+fn walkerBless(w: *World) !world.Result {
+    return walkerWith(w, .inherit, true);
+}
+
+fn walkerWith(w: *World, root: std.process.Child.Cwd, bless: bool) !world.Result {
     const arena = w.arena.allocator();
     const project = try w.projectPath();
     var env = std.process.Environ.Map.init(arena);
@@ -75,8 +84,9 @@ fn walkerIn(w: *World, mode: []const u8, root: std.process.Child.Cwd) !world.Res
     try env.put("BENI_EXE", w.exe);
     try env.put("BENI_CORPUS_ROOT", try std.fmt.allocPrint(arena, "{s}/corpus", .{project}));
     try env.put("BENI_CORPUS_PART", "browser");
-    try env.put("BENI_RUN_HASHES", mode);
+    try env.put("BENI_RUN_HASH_DIR", try std.fmt.allocPrint(arena, "{s}/cache", .{project}));
     try env.put("BENI_RUN_HASH_REPORT", try std.fmt.allocPrint(arena, "{s}/counts", .{project}));
+    if (bless) try env.put("BENI_WRITE_EXPECTED", "1");
     const argv = try arena.dupe([]const u8, &.{try testing.environ.getAlloc(arena, "BENI_CORPUS_TEST_EXE")});
     return world.spawnAndCaptureIn(arena, w.io, argv, root, world.default_timeout_ms, &env);
 }
@@ -94,9 +104,21 @@ fn expectReported(r: world.Result, text: []const u8) !void {
     }
 }
 
-fn expectCounts(w: *World, skipped: u32, stale: u32, recorded: u32, refused: u32) !void {
-    const want = try std.fmt.allocPrint(w.arena.allocator(), "skipped {d}\nstale {d}\nrecorded {d}\nrefused {d}\n", .{ skipped, stale, recorded, refused });
+fn expectCounts(w: *World, skipped: u32, stale: u32) !void {
+    const want = try std.fmt.allocPrint(w.arena.allocator(), "skipped {d}\nstale {d}\n", .{ skipped, stale });
     try testing.expectEqualStrings(want, try w.read("counts/browser.txt"));
+}
+
+/// The cache's entries, sorted: each an empty file named by a SHA-256 in
+/// lower-case hex.
+fn digests(w: *World) ![]const []const u8 {
+    const files = try w.listFiles("cache");
+    for (files) |name| {
+        try testing.expectEqual(64, name.len);
+        for (name) |ch| try testing.expect(std.ascii.isDigit(ch) or (ch >= 'a' and ch <= 'f'));
+        try testing.expectEqualStrings("", try w.read(try std.fmt.allocPrint(w.arena.allocator(), "cache/{s}", .{name})));
+    }
+    return files;
 }
 
 test "a page that no longer shows its golden fails the case with both transcripts" {
@@ -118,7 +140,7 @@ test "a page that no longer shows its golden fails the case with both transcript
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -127,15 +149,16 @@ test "a page that no longer shows its golden fails the case with both transcript
     try expectReported(r, "Button.beni: output differs from ");
     try expectReported(r, "/corpus/browser/Button.expected; set BENI_WRITE_EXPECTED=1 to bless\n--- expected ---\n" ++ stale_golden ++ "\n--- actual ---\n" ++ loaded);
     try expectReported(r, "/corpus/browser/Button.beni: GoldenMismatch\n");
-    // The development build's page ran for want of a record, failed, and
-    // ended the case.
-    try expectCounts(&w, 0, 1, 0, 0);
+    // The development build's page ran for want of a verified digest,
+    // failed, and ended the case.
+    try expectCounts(&w, 0, 1);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
     try testing.expectEqualStrings(stale_golden, try w.read("corpus/browser/Button.expected"));
-    try testing.expect(!w.exists("corpus/browser/Button.run-hash"));
+    // A failed page writes no digest.
+    try testing.expectEqual(0, (try digests(&w)).len);
 }
 
 test "an exception the page throws fails the case with its message and the step that threw it" {
@@ -151,7 +174,7 @@ test "an exception the page throws fails the case with its message and the step 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -188,7 +211,7 @@ test "a step whose selector matches nothing fails the case with the step's line"
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -250,7 +273,7 @@ test "a socket opened with a protocol the page did not offer fails the case" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -276,7 +299,7 @@ test "a socket opened with no protocol when the page offered some fails the case
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -300,7 +323,7 @@ test "a malformed step fails the case before the page loads" {
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -315,68 +338,60 @@ test "a malformed step fails the case before the page loads" {
     try expectReported(r, "/corpus/browser/Button.beni: PageFailed\n");
 }
 
-/// Record `Button`'s run hashes, with `steps` as its script, and return the
-/// record.
-fn recordButton(w: *World, steps: []const u8) ![]const u8 {
+/// Verify `Button`'s two pages, with `steps` as its script, on an empty
+/// cache, and return the two digests they left.
+fn verifyButton(w: *World, steps: []const u8) ![]const []const u8 {
     try w.write("corpus/browser/Button.beni", button);
     try w.write("corpus/browser/Button.steps", steps);
     try w.write("corpus/browser/Button.expected", loaded);
-    try expectExit(0, try walker(w, "record"));
-    try expectCounts(w, 0, 0, 2, 0);
-    return w.read("corpus/browser/Button.run-hash");
+    try expectExit(0, try walker(w));
+    // Both pages ran for want of a verified digest.
+    try expectCounts(w, 0, 2);
+    const found = try digests(w);
+    // One digest per build.
+    try testing.expectEqual(2, found.len);
+    return found;
 }
 
-test "a browser page whose run hash is recorded is not loaded again" {
+test "a browser page whose run hash is verified is not loaded again" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const record = try recordButton(&w, "# Nothing is clicked.\n");
+    const verified = try verifyButton(&w, "# Nothing is clicked.\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExit(0, r);
     // Both builds skipped, neither page loaded.
-    try expectCounts(&w, 2, 0, 0, 0);
-    // One line per build, naming the DOM the page ran in.
-    var lines = std.mem.splitScalar(u8, record, '\n');
-    for ([_][]const u8{ "dev", "release" }) |pass| {
-        var fields = std.mem.splitScalar(u8, lines.next() orelse return error.RecordTooShort, ' ');
-        try testing.expectEqualStrings(pass, fields.next().?);
-        _ = fields.next() orelse return error.NoNodeVersion;
-        try testing.expectEqualStrings("happy-dom-20.14.5", fields.next() orelse return error.NoDom);
-        try testing.expectEqual(64, (fields.next() orelse return error.NoDigest).len);
-        try testing.expectEqual(null, fields.next());
-    }
-    try testing.expectEqualStrings("", lines.next().?);
-    try testing.expectEqual(null, lines.next());
+    try expectCounts(&w, 2, 0);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    // Checking never writes a record.
-    try testing.expectEqualStrings(record, try w.read("corpus/browser/Button.run-hash"));
+    // A skipped page writes nothing.
+    try testing.expectEqualDeep(verified, try digests(&w));
 }
 
-test "a page recorded in one checkout is not loaded again in a checkout at another path" {
+test "a page verified in one checkout is not loaded again in a checkout at another path" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The same corpus, recorded from the repository root, then checked
+    // The same corpus, verified from the repository root, then checked
     // from a second checkout: another directory holding the same driver,
     // fuzzer, DOM and `page` platform. The platform is copied, not linked,
     // so its absolute path is the second checkout's. Nothing the page runs
-    // differs, so neither may its output tree nor its record.
+    // differs, so neither may its output tree nor its digest.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const record = try recordButton(&w, "# Nothing is clicked.\n");
+    const verified = try verifyButton(&w, "# Nothing is clicked.\n");
     var checkout = try World.init(testing.allocator, testing.io);
     defer checkout.deinit();
     const arena = w.arena.allocator();
@@ -394,46 +409,95 @@ test "a page recorded in one checkout is not loaded again in a checkout at anoth
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walkerIn(&w, "", .{ .dir = checkout.tmp.dir });
+    const r = try walkerIn(&w, .{ .dir = checkout.tmp.dir });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExit(0, r);
     // Both builds skipped: the second checkout built the same bytes.
-    try expectCounts(&w, 2, 0, 0, 0);
+    try expectCounts(&w, 2, 0);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(record, try w.read("corpus/browser/Button.run-hash"));
+    try testing.expectEqualDeep(verified, try digests(&w));
 }
 
-test "a changed step script loads a recorded page again though its golden still matches" {
+test "a page that does not show its golden writes no digest" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/Button.beni", button);
+    try w.write("corpus/browser/Button.steps", "# Nothing is clicked.\n");
+    try w.write("corpus/browser/Button.expected", "-- load\n<body>\n  <p>not what the page shows</p>\n</body>\n");
+    try expectExit(1, try walker(&w));
+    // No digest: the cache is empty or was never made.
+    const found: []const []const u8 = if (w.exists("cache")) try digests(&w) else &.{};
+    try testing.expectEqual(0, found.len);
+}
+
+test "a blessing run records the release page's digest against the golden it showed" {
+    // The page twin of run_hash_test's "a blessed build looks nothing up
+    // and writes no digest; the pass compared with its golden is
+    // recorded". The golden is wrong. A blessing run writes the development
+    // page's transcript over it, and the release page is compared with the
+    // golden the development page just wrote; so its digest must cover
+    // that golden, not the wrong one the walker read before the pages ran.
+    // Then an ordinary walk, with the same builds and the same golden, must
+    // skip the release page and leave two digests. A digest of the wrong
+    // golden would be a verdict no page gave: with that golden restored,
+    // the release page would skip Node and pass.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/Button.beni", button);
+    try w.write("corpus/browser/Button.steps", "# Nothing is clicked.\n");
+    try w.write("corpus/browser/Button.expected", "-- load\n<body>\n  <p>not what the page shows</p>\n</body>\n");
+    try expectExit(0, try walkerBless(&w));
+    try testing.expectEqualStrings(loaded, try w.read("corpus/browser/Button.expected"));
+    // Only the release page was looked up, and it ran.
+    try expectCounts(&w, 0, 1);
+    try testing.expectEqual(1, (try digests(&w)).len);
+
+    const r = try walker(&w);
+
+    try expectExit(0, r);
+    // The development page runs; the release page was verified already.
+    try expectCounts(&w, 1, 1);
+    try testing.expectEqual(2, (try digests(&w)).len);
+}
+
+test "a changed step script loads a verified page again though its golden still matches" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    const record = try recordButton(&w, "# Nothing is clicked.\n");
+    const verified = try verifyButton(&w, "# Nothing is clicked.\n");
     // The same page, from another script: only the script changed.
     try w.write("corpus/browser/Button.steps", "# Still nothing is clicked.\n");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try walker(&w, "");
+    const r = try walker(&w);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     try expectExit(0, r);
-    try expectCounts(&w, 0, 2, 0, 0);
+    try expectCounts(&w, 0, 2);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expectEqualStrings(record, try w.read("corpus/browser/Button.run-hash"));
+    // Two new digests beside the two the first script left.
+    const now = try digests(&w);
+    try testing.expectEqual(4, now.len);
+    for (verified) |d| {
+        var found = false;
+        for (now) |n| found = found or std.mem.eql(u8, n, d);
+        try testing.expect(found);
+    }
 }
 
 test "a library build's page delivers the events its markup delegates, with no program start" {

@@ -26,7 +26,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `run/` | `build --platform=node`, then `node out/_main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
 | `run/`, with `<name>.requests` | `build --platform=node`, then `node tests/serve/driver.mjs out/_main.mjs <name>.requests` | `<name>.expected` | a server program driven by the script: the transcript of its answers, then its streams and exit (*A server program*) |
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
-| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug` with its own `_expected.release-run-hash`); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
+| `workers/` | `build --platform=cloudflare`, then `node tests/workers/driver.mjs out _expected.steps` under Miniflare | `_expected.expected` | a Worker (`boundary.md` §9.12 (k)): the transcript of each request's answer and the Worker's console; projects only, two cases each (the development build, and `--release --allow-debug`, each with a digest of its own); not a gate — `zig build test-workers` in `nix develop .#workers` (*A Worker*) |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
 **Warnings on a fixture that compiles.** A `check/good/`, `writes/`,
@@ -72,29 +72,42 @@ the one code in the catalogue a development build cannot produce
 `README.md` has the four assertions.
 
 `run/` builds every fixture twice, in development and with `--release
---allow-debug`, and runs each build under Node — unless the fixture's
-`.run-hash` (`_expected.run-hash` in a project) says that exact build was
-already verified. A record holds one line per build, `<dev|release> <node
-version> <sha-256>`; the digest covers every file of the output tree (its
-path and bytes; `_manifest.txt` left out, since it only lists the others'
-hashes), the golden the build is compared with (`.expected`, or
-`.release-expected` for the release build when there is one) and the Node
+--allow-debug`, and runs each build under Node — unless the run-hash cache
+holds the build's digest, which says that exact build was verified before.
+The digest covers every file of the output tree (its path and bytes;
+`_manifest.txt` left out, since it only lists the others' hashes), the
+golden the build is compared with (`.expected`, or `.release-expected` for
+the release build when there is one), the build's name and the Node
 version. Any change to one of them makes the build run under Node again,
-exactly as it would with no record, and the gates say in one line how many
-did. `zig build test-run-hashes` (with `-Dcorpus`, `-Dllvm`) runs the
-selected programs and rewrites their records with the builds whose output
-matched; a build that fails is reported and left without a line. Regenerate
-after a change to what the compiler emits (the emitter, the runtime,
-`core/`), after adding or re-blessing a `run/` fixture, or after a Node
-upgrade, and commit the records with the change; on a merge conflict in
-them, take either side and regenerate. The code is
+exactly as it would with no cache, and the gates say in one line how many
+did. A build that ran, exited as expected and matched its golden writes its
+digest into the cache: one empty file, `<dir>/<sha-256>`, written
+atomically (a named temporary file in the directory, then a rename), so two
+processes that verify the same program both succeed; a writer killed in
+between leaves a 16-digit temporary file, which is never read as a digest.
+The digest written is of the bytes the compare used, not of a golden read
+before the run. A build that fails writes nothing. A blessing run
+(`BENI_WRITE_EXPECTED=1`) writes no digest for the build it blesses — a
+golden written from the output is no verdict — while the fixture's other
+passes, compared with the golden it just wrote as always, are verified and
+recorded. A cache that cannot be read or written prints one warning, and
+every build runs and nothing is recorded. The cache is the
+directory `BENI_RUN_HASH_DIR` names — the dev shells set
+`~/.cache/beni-run-hashes`, one directory for every worktree, which is safe
+because the digest covers every input of the verdict; empty means no cache.
+Nothing is committed, and nothing records on demand (the owner,
+2026-10-23, #875): a fresh clone, a new Node or a change to what the
+compiler emits runs the affected programs once. On CI `actions/cache` keeps
+the directory, saved from master and restored into every run; a pull
+request writes only in its own scope. The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
-show a recorded build skipped, a changed one run, and a mismatch refused.
-A line of `tests/blackbox/run-hashes.txt`, a program a black-box scenario
-runs, covers the same things: the emitted output tree, the expectation
-written in the test and the Node version. A script that lives in the
-project directory rather than in that tree contributes its own bytes, and
-the rest of the project, `.beni-cache` included, contributes nothing.
+show a verified build skipped, a changed one run, a mismatch failed with
+nothing written, and one digest written by eight writers at once.
+A program a black-box scenario runs goes through the same cache; its digest
+covers the same things: the emitted output tree, the expectation written in
+the test and the Node version. A script that lives in the project directory
+rather than in that tree contributes its own bytes, and the rest of the
+project, `.beni-cache` included, contributes nothing.
 
 ### A program that must crash
 
@@ -239,8 +252,7 @@ The driver exits 0 whatever the program did; what it did is the
 transcript. A served fixture has no `.crash`: the crash is in the
 transcript.
 
-The record line (`.run-hash`) of a served build is `<pass> <node version>
-serve <sha-256>`: the digest covers what a `run/` one covers, and the
+The digest of a served build covers what a `run/` one covers, and the
 driver's bytes, the preload's and the script, so a change to any of them
 runs the program again (`tests/blackbox/serve.zig`).
 
@@ -271,11 +283,11 @@ the release build — is run by `node tests/workers/driver.mjs
 Miniflare (the `workerd` nixpkgs' `wrangler` carries; `nix develop .#workers`
 sets `BENI_MINIFLARE`), with `cf: false`, on 127.0.0.1, disposed at the end.
 Nothing is deployed and no account is used. The transcript is the golden,
-`_expected.expected`; the port never appears in it. The two run-hash
-records of a project are written by `zig build test-run-hashes
--Dcorpus=workers` in the same shell; `zig build test-workers` only checks
-them and does not read `BENI_RUN_HASHES`. The script is one JSON object per
-line, `#` for a comment:
+`_expected.expected`; the port never appears in it. Each of the two cases
+has a digest of its own in the run-hash cache, covering the driver, the
+script and the Wrangler configuration as well: `zig build test-workers`
+skips a build whose digest is there and records a build that matched. The
+script is one JSON object per line, `#` for a comment:
 
     {"method": "GET", "path": "/items?limit=3", "headers": {"accept": "text/plain"}, "body": "…"}
                                 a request, printed as `> GET /items?limit=3`,
@@ -817,11 +829,9 @@ compares instead of `.expected`. The differences known today:
 - `history.back()`: happy-dom fires the `popstate` at once, in the step's
   task, Chrome in a later one; the `back` and `forward` steps wait for it.
 
-**Run hashes** work as in `run/`, with the DOM on the line
-(`dev v24.19.0 happy-dom-20.14.5 <sha-256>`) and the digest covering the
-DOM's checksum, the driver and the steps as well; `zig build
-test-run-hashes` records them. `test-browser` never skips and never
-records.
+**Run hashes** work as in `run/`, the digest covering the DOM's name and
+checksum, the driver and the steps as well. `test-browser` never skips and
+never records.
 
 **The `dom` lowering's fixtures** (`backend.md` §15.10) are under
 `browser/dom/`, files and projects alike, and are built with
@@ -875,14 +885,13 @@ every logged line but those the pair may differ on, the errors — in the
 driver's process after the fixture's pages. A difference fails the case
 with the seed, the step, the sequence shrunk, and what differs; a
 sequence of view events is printed as a `.steps` script, the red-first
-fixture of the defect. A fuzz that agreed is the `fuzz` line of the
-fixture's run hash. `zig build fuzz` runs fifty seeds of sixty steps.
-A `browser/tea/` page that carries a `.fuzz-run-hash` (create it empty,
-then `zig build test-run-hashes`) has a value-fuzz case of its own,
+fixture of the defect. A fuzz that agreed has a digest of its own in the
+run-hash cache. `zig build fuzz` runs fifty seeds of sixty steps.
+A `browser/tea/` page that carries an empty `<name>.value-fuzz` marker
+(`_expected.value-fuzz` in a project) has a value-fuzz case of its own,
 `<page> [value fuzz]`, budgeted apart from the page's: it builds the two
 `--fuzz` builds, development and release, dumps the message types and
-fuzzes them, messages as values included, and records its line in
-`<name>.fuzz-run-hash` (`_expected.fuzz-run-hash` in a project), beside
+fuzzes them, messages as values included, with a digest of its own beside
 the page case's own fuzz of view events (`browser/tea/TypedInput`).
 
 **`emit/release/split/`** — release applications, whose golden is

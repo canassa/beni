@@ -75,6 +75,19 @@ jobs:
           echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
           ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
 
+      # The run-hash cache (tests/blackbox/run_hash.zig): one empty file
+      # per emitted program that ran under Node and matched its golden,
+      # named by the digest of everything the verdict depended on. The
+      # gates skip Node for a program whose digest is there. The dev shell
+      # puts it in `~/.cache/beni-run-hashes` unless BENI_RUN_HASH_DIR is
+      # set already (flake.nix, `runHashCache`); pinned here, as the Zig
+      # cache is, to the path the cache steps restore and save. If the
+      # shell stops keeping the value, this step fails.
+      - name: the run-hash cache's directory
+        run: |
+          echo "BENI_RUN_HASH_DIR=$HOME/.cache/beni-run-hashes" >> "$GITHUB_ENV"
+          BENI_RUN_HASH_DIR=$HOME/.cache/beni-run-hashes nix develop --command sh -c 'test "$BENI_RUN_HASH_DIR" = "$HOME/.cache/beni-run-hashes"'
+
       # Zig's local and global caches, from master's newest build.
       - name: restore the Zig caches
         id: zig-cache
@@ -98,6 +111,36 @@ jobs:
           if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
             echo "Zig caches over 3 GiB: removed"
             rm -rf .zig-cache ~/.cache/zig
+          fi
+
+      # The run-hash cache, from the newest run of this pull request, else
+      # from master's newest. A pull request's key is its own merge
+      # commit's, so a second push to it restores what the first verified.
+      # Restoring takes master's entries into a pull request, never the
+      # other way: a pull request saves in its own scope, which master
+      # never restores, so CI's verdict on master depends on no pull
+      # request's cache and on no developer's.
+      - name: restore the run-hash cache
+        id: run-hash-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/beni-run-hashes
+          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          restore-keys: run-hashes-${{ runner.os }}-${{ runner.arch }}-
+
+      # A digest is never removed, and each master run saves the restored
+      # cache plus its own additions. When a master run restores more than
+      # 50 000 digests (the gates verify about 2 600), it starts from
+      # nothing and runs every program once. A pull request keeps what it
+      # restored.
+      - name: bound the run-hash cache
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          count=$(find ~/.cache/beni-run-hashes -type f 2>/dev/null | wc -l)
+          echo "$count verified digests restored"
+          if [ "$count" -gt 50000 ]; then
+            echo "run-hash cache over 50 000 digests: removed"
+            rm -rf ~/.cache/beni-run-hashes
           fi
 
       - name: zig build gates
@@ -125,6 +168,18 @@ jobs:
             .zig-cache
             ~/.cache/zig
           key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
+      # The run-hash cache is saved from every run, also when a test fails:
+      # a failed program writes no digest, and the programs that passed
+      # are verified. A push to master saves in master's scope, which
+      # every later run restores; a pull request saves in its own. The key
+      # is new for each commit, so only a re-run finds it saved already.
+      - name: save the run-hash cache
+        if: ${{ !cancelled() && steps.run-hash-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/beni-run-hashes
+          key: run-hashes-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
 
   # The playground's shipped compiler against the native one, byte for
   # byte, on the corpus (docs/design/playground.md §6): `zig build

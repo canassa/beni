@@ -1,5 +1,10 @@
 # The syntax batch of 2026-10-02: decisions and slices
 
+> Run hashes, 2026-10-23: the record files and `zig build test-run-hashes` were removed (#881).
+> The verified digests live in a cache outside git (`BENI_RUN_HASH_DIR`), and every ordinary
+> test run records. A line below that records or re-records run hashes describes a historical
+> step, not a current one.
+
 **Status:** plan, 2026-10-02. The owner's decisions S1–S5 are in
 [`browser-decisions.md`](browser-decisions.md), *Syntax — 2026-10-02*. The contract they build is
 normative and lives in the design documents; this file is the order of work, what each step owes,

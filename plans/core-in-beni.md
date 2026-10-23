@@ -1,5 +1,10 @@
 # Core's hand-written JavaScript, moved to beni one piece at a time
 
+> Run hashes, 2026-10-23: the record files and `zig build test-run-hashes` were removed (#881).
+> The verified digests live in a cache outside git (`BENI_RUN_HASH_DIR`), and every ordinary
+> test run records. A line below that records or re-records run hashes describes a historical
+> step, not a current one.
+
 > Test policy, 2026-10-22: per-test instruction limits, grants and reference CPU
 > requirements were removed (#740). Each test or corpus case now has a
 > 120-second wall-clock hang guard. Older counts and budget references below

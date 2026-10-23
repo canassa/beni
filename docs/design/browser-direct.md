@@ -1736,15 +1736,16 @@ not compared is listed, never what is**.
 - **Seeds and replay.** A seed is a mulberry32 stream; the second build replays the first's
   actions. Every page has `Math.random` (an LCG from 1), `new Date()`, `Date.now` and
   `performance.now` pinned to the driver's virtual clock and fixed sequence, besides the
-  prelude's `crypto.getRandomValues`. Wherever a verdict may be recorded — `zig build
-  test-run-hashes`, the scenarios of `page_fuzz_test.zig` — and in a sweep, the first seed is
-  also played twice on the first build, and the two must agree, so a page that does not replay
-  itself never passes into a record.
+  prelude's `crypto.getRandomValues`. Wherever a verdict may be recorded — a gate's fuzz whose digest
+  the run-hash cache lacks, the scenarios of `page_fuzz_test.zig` — and in a sweep, the first
+  seed is also played twice on the first build, and the two must agree, so a page that does not
+  replay itself never passes into the cache.
 - **Which pairs the gates fuzz** (the corpus walker, `fuzzPair`): a `browser/direct/` page's
   `browser-tea` and `browser-direct` development builds, unless the fixture has a
   `.tea-expected`; a `browser/tea/` page's development and release builds, which backend.md §9
-  says behave alike. **One seed of thirty steps**, a line `fuzz <node> <dom> <sha-256>` in the
-  fixture's `.run-hash` covering both output trees, the driver, the fuzzer, the message types,
+  says behave alike. **One seed of thirty steps**, with a digest of its own in the run-hash cache
+  (pass `fuzz`; a `fuzz` line of the fixture's `.run-hash` until 2026-10-23, #881) covering
+  both output trees, the driver, the fuzzer, the message types,
   the fixture's script and the spec. One seed and not two of fifteen, because a page and its
   module graph cost more than fifteen steps: `browser/tea/ApiAndRoutes`'s two builds take 3.4
   of its 4.3 billion instructions, and the fuzz with two pages brings it to 4.14. `zig build
@@ -1793,8 +1794,11 @@ not compared is listed, never what is**.
   `<html>`'s and `<head>`'s attributes other than the title. Coverage of a random walk is what
   the seeds give: a write reached only by a deep sequence is the sweep's, not the gates'.
 - **A finding, not the fuzzer's:** `browser/tea/ApiAndRoutes` costs 4.52 billion instructions
-  without the fuzz whenever its pages must run, over the 4.3 billion budget; the gates pass only
-  because its pages' run hashes are recorded, and `test-run-hashes` records without a budget.
+  without the fuzz whenever its pages must run, over the 4.3 billion budget of the time; the
+  gates passed only because its pages' run hashes were recorded, and `test-run-hashes` recorded
+  without a budget. (Amended 2026-10-23, #881: the per-test budgets went with #744 on
+  2026-10-22, and the record files and `test-run-hashes` with #881. A cold run-hash cache runs
+  the pages once, under the 120-second hang guard, and the cache keeps the verdict.)
   Its two builds alone are 3.4 billion.
 ### *Amended 2026-10-09 (slice S1, as built; research 66):* holes, handlers and the two oracles
 
@@ -2100,7 +2104,8 @@ fixed cost per message is to be profiled (record spread against list copy) befor
 - **The value fuzz is a case of its own.** A `browser/direct/` page is two cases of the corpus:
   the page case builds the four pages and runs them, and the *value-fuzz* case builds the two
   `--fuzz` builds, dumps the message types and fuzzes them, messages as values and bursts
-  included, with its record in `<page>.fuzz-run-hash`. Each is budgeted alone, so **every page's
+  included, with its record in `<page>.fuzz-run-hash` (since 2026-10-23 a digest in the run-hash
+  cache, the opt-in an empty `<page>.value-fuzz` marker; #881). Each is budgeted alone, so **every page's
   value fuzz runs in the gates** and `value_fuzz_in_sweep`, with the owner's opt-out it carried,
   is withdrawn: one test per branch, not an exemption (CLAUDE.md, *Building*). The heaviest case
   is 3.8 billion instructions of the 4.3 (research 67 §9). `browser/direct/ListValues` is the

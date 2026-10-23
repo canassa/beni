@@ -23,7 +23,11 @@
 //!                         <text>, in `test-blackbox` and `test-pending`
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
 //! `gates` refuses filters and deliberate ownership mutations. Every test
-//! has a 120-second hang guard (`tests/hang_guard.zig`).
+//! has a 120-second hang guard (`tests/hang_guard.zig`). An emitted program
+//! a test runs goes under Node only when the run-hash cache holds no
+//! verified digest for it (`tests/blackbox/run_hash.zig`): the directory
+//! `BENI_RUN_HASH_DIR` names, else
+//! `${XDG_CACHE_HOME:-$HOME/.cache}/beni-run-hashes`; empty, no cache.
 //!
 //! And three that are NOT gates — the first two because their fixtures are red
 //! by design, the third because a timing claim is not a gate (rule 4):
@@ -32,13 +36,6 @@
 //!                                 (plans/checker-rewrite.md §2)
 //!   zig build test-perf           the FIXED timing scenarios, on a ReleaseFast
 //!                                 beni (promoted from test-pending-perf)
-//! And the run hashes, not a gate either:
-//!   zig build test-run-hashes     run every tests/corpus/run/ program and
-//!                                 every program a black-box scenario runs
-//!                                 under Node, and record a hash of each
-//!                                 that did what its test expects
-//!                                 (`tests/blackbox/run_hash.zig`); takes
-//!                                 -Dtest-filter, -Dcorpus and -Dllvm
 //! And where the test time goes, not a gate either:
 //!   zig build test-time-report    run the steps of `gates` (or
 //!                                 `-Dtime-step=<step>`) with every test
@@ -162,8 +159,8 @@ const fuzz_sweep_seeds = blk: {
 };
 
 /// The black-box test files `test-blackbox` runs besides the corpus walker,
-/// each with the number of processes it is split into. `test-run-hashes`
-/// records them and `coverage` measures them.
+/// each with the number of processes it is split into. `coverage` measures
+/// them.
 const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/blackbox_test.zig", 6 },
     .{ "tests/blackbox/abuse_test.zig", 3 },
@@ -534,8 +531,7 @@ pub fn build(b: *std.Build) void {
     // suite it touches.
     const blackbox_step = b.step("test-blackbox", "Run the black-box tests (spawns the ReleaseSafe compiler)");
     // The run-hash tool (`tests/run_hash_summary.zig`): it prints what the
-    // processes did with their run hashes, merges a recording into the
-    // index, and asks Node its version.
+    // processes did with their run hashes, and asks Node its version.
     const summary_exe = b.addExecutable(.{
         .name = "run-hash-summary",
         .root_module = b.createModule(.{
@@ -552,6 +548,7 @@ pub fn build(b: *std.Build) void {
     node_probe.has_side_effects = true;
     const bb: Blackbox = .{
         .node_version = node_probe.captureStdOut(.{}),
+        .run_hash_dir = runHashDir(b),
         .b = b,
         .target = target,
         .optimize = optimize,
@@ -569,9 +566,10 @@ pub fn build(b: *std.Build) void {
         .chrome = b.option([]const u8, "chrome", "The Chrome or Chromium `test-browser` runs pages in (default: the first of chromium, google-chrome-stable and google-chrome on PATH)") orelse "",
         .miniflare = b.option([]const u8, "miniflare", "Miniflare's entry file, which `test-workers` runs Workers under (default: BENI_MINIFLARE, set by `nix develop .#workers`)") orelse "",
     };
-    // A process that runs an emitted program skips Node when the run's
-    // hash is recorded (`tests/blackbox/run_hash.zig`); every process of the
-    // step writes its counts into a directory of this build's own, and
+    // A process that runs an emitted program skips Node when the run-hash
+    // cache holds the run's digest, and puts it there after a run that
+    // matched (`tests/blackbox/run_hash.zig`); every process of the step
+    // writes its counts into a directory of this build's own, and
     // `run-hash-summary` prints them as one line once every process is
     // done — straight to the terminal, because a passing test that writes
     // to stderr reads as a failed command. The `test-blackbox-<file>` steps
@@ -581,9 +579,9 @@ pub fn build(b: *std.Build) void {
     b.graph.poisonCache();
     const counts_dir = installPath(b, b.fmt("run-hash-counts/{d}", .{std.posix.system.getpid()}));
     const gate_counts_dir = b.fmt("{s}-all", .{counts_dir});
-    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, &.{});
+    const gate_summary = runHashSummary(b, summary_exe, gate_counts_dir, bb.run_hash_dir);
     blackbox_step.dependOn(&gate_summary.step);
-    // The suites `test-run-hashes` records, with their process counts.
+    // The suites, with their process counts.
     const suites = blackbox_suites;
     var suite_tests: [suites.len]*std.Build.Step.Compile = undefined;
     for (suites, &suite_tests) |suite, *t| {
@@ -601,11 +599,11 @@ pub fn build(b: *std.Build) void {
     // process. The one knob the build line sets is `BENI_CORPUS_ONLY`, from
     // `-Dcorpus`, which `gates` refuses.
     //
-    // `run/` skips Node for a build whose output tree carries a recorded run
-    // hash, and its parts report into the same directory.
+    // `run/` skips Node for a build whose digest the cache holds, and its
+    // parts report into the same directory.
     const corpus_test = bb.artifact("tests/blackbox/corpus_test.zig");
     const corpus_step = bb.fileStep("tests/blackbox/corpus_test.zig");
-    const corpus_summary = runHashSummary(b, summary_exe, counts_dir, &.{});
+    const corpus_summary = runHashSummary(b, summary_exe, counts_dir, bb.run_hash_dir);
     for (std.enums.values(corpus_parts.Part)) |part| {
         // `workers/` needs Miniflare, which only `nix develop .#workers`
         // has: `test-workers` runs it, below, and the gates do not.
@@ -632,31 +630,6 @@ pub fn build(b: *std.Build) void {
     bb.runSharded(bb.fileStep(wasm_file), wasm_test, .{ .root = "tests/corpus", .wasm = .gate }, wasm_shards);
     bb.runSharded(&gate_summary.step, wasm_test, .{ .root = "tests/corpus", .wasm = .gate, .report_dir = gate_counts_dir }, wasm_shards);
 
-    // Record the run hashes: every `run/` program and every program a
-    // black-box scenario runs goes under Node. Each fixture's `.run-hash` is
-    // rewritten with the builds that matched their golden (one process for
-    // both builds of a fixture, so one worker writes each record), and
-    // `tests/blackbox/run-hashes.txt` with the scenario runs that did what
-    // their test expects. `-Dtest-filter` narrows the scenarios, and the
-    // index keeps every other test's lines; `-Dcorpus` alone records only
-    // the corpus. Takes `-Dllvm`; not a gate. The index is merged after the
-    // last process, so a recording whose tests fail changes no line of it.
-    const record_dir = b.fmt("{s}-record", .{counts_dir});
-    const records_scenarios = test_filters.len != 0 or corpus_only.len == 0;
-    const record_summary = runHashSummary(b, summary_exe, record_dir, if (!records_scenarios)
-        &.{}
-    else if (test_filters.len == 0)
-        &.{ "--index=tests/blackbox/run-hashes.txt", "--whole" }
-    else
-        &.{"--index=tests/blackbox/run-hashes.txt"});
-    record_summary.step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }).step);
-    if (records_scenarios) for (suites, suite_tests) |suite, t| {
-        bb.runSharded(&record_summary.step, t, .{ .root = "tests/corpus", .run_hashes = "record", .report_dir = record_dir }, suite[1]);
-    };
-    if (records_scenarios) bb.runSharded(&record_summary.step, external_test, .{ .root = "tests/corpus", .exe = .toy, .run_hashes = "record", .report_dir = record_dir }, 1);
-    if (records_scenarios) bb.runSharded(&record_summary.step, build_id_test, .{ .root = "tests/corpus", .variant = true, .run_hashes = "record", .report_dir = record_dir }, 1);
-    b.step("test-run-hashes", "Run every emitted program the black-box suites run under Node, and record the hash of each that did what its test expects").dependOn(&record_summary.step);
-
     // The `browser/` corpus in a real browser: every fixture's pages run in
     // one headless Chrome instead of happy-dom, against the same goldens
     // (`tests/blackbox/browser.zig`), so a difference between the two DOMs
@@ -671,23 +644,22 @@ pub fn build(b: *std.Build) void {
     // Miniflare comes from `BENI_MINIFLARE` (`nix develop .#workers`) or
     // `-Dminiflare=`; with neither the step fails and says so. Not a gate
     // (no CI job runs it yet, #697); a case starts Miniflare once
-    // (§9.12 (k)). Takes `-Dcorpus`. Its run hashes are recorded by
-    // `test-run-hashes` only in the same shell.
+    // (§9.12 (k)). Takes `-Dcorpus`. Its digests go to the same run-hash
+    // cache as the gates'.
     const workers_step = b.step("test-workers", "Run the workers/ corpus under Miniflare (nix develop .#workers)");
     workers_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "workers" }).step);
 
     // The page fuzzer's long sweep (docs/design/browser-direct.md §8.3):
     // every fuzzed `browser/` fixture with fifty seeds of sixty steps, where
-    // the gates run one of thirty. Part of `fuzz`: no record covers a sweep
+    // the gates run one of thirty. Part of `fuzz`: no digest covers a sweep
     // and every case has a hang guard. Takes `-Dcorpus`.
     fuzz_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "browser", .fuzz_seeds = fuzz_sweep_seeds, .fuzz_steps = "60" }).step);
 
-    // The run hashes' own scenarios drive the corpus walker, a test binary
-    // that runs one scenario program (`run_hash_probe.zig`, compiled without
-    // `-Dtest-filter` so a filter never empties it) and the summary tool as
-    // programs, on an index and a corpus of their own, so they need all
-    // three installed. The test-time report's smoke test times the walker
-    // too.
+    // The run hashes' own scenarios drive the corpus walker and a test
+    // binary that runs one scenario program (`run_hash_probe.zig`, compiled
+    // without `-Dtest-filter` so a filter never empties it) as programs, on
+    // a cache and a corpus of their own, so they need both installed. The
+    // test-time report's smoke test times the walker too.
     const tools = std.Build.Step.InstallArtifact.Options{ .dest_dir = .{ .override = .{ .custom = "tools" } } };
     const corpus_tool_install = b.addInstallArtifact(corpus_test, tools);
     {
@@ -706,10 +678,8 @@ pub fn build(b: *std.Build) void {
         const run = bb.run(bb.artifact(file), .{ .root = "tests/corpus" });
         run.setEnvironmentVariable("BENI_CORPUS_TEST_EXE", installPath(b, "tools/corpus_test"));
         run.setEnvironmentVariable("BENI_RUN_HASH_PROBE_EXE", installPath(b, "tools/run_hash_probe"));
-        run.setEnvironmentVariable("BENI_RUN_HASH_SUMMARY_EXE", installPath(b, "tools/run-hash-summary"));
         run.step.dependOn(&corpus_tool_install.step);
         run.step.dependOn(&b.addInstallArtifact(probe, tools).step);
-        run.step.dependOn(&b.addInstallArtifact(summary_exe, tools).step);
         step.dependOn(&run.step);
         blackbox_step.dependOn(step);
     }
@@ -1196,16 +1166,30 @@ pub fn build(b: *std.Build) void {
     gates_step.dependOn(beni_fmt_step);
 }
 
-/// `run-hash-summary <dir> <args>` in the repo root, printing to the
-/// terminal.
-fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, args: []const []const u8) *std.Build.Step.Run {
+/// `run-hash-summary <dir>` in the repo root, printing to the terminal.
+fn runHashSummary(b: *std.Build, exe: *std.Build.Step.Compile, dir: []const u8, cache_dir: []const u8) *std.Build.Step.Run {
     const run = b.addRunArtifact(exe);
     run.addArg(dir);
-    run.addArgs(args);
+    // Empty for no cache: the line then says that nothing was recorded.
+    run.addArg(cache_dir);
     run.setCwd(b.path("."));
     run.stdio = .inherit;
     run.has_side_effects = true;
     return run;
+}
+
+/// The run-hash cache's directory (`tests/blackbox/run_hash.zig`), handed
+/// to every test process as `BENI_RUN_HASH_DIR`: this build's own
+/// environment's value when it is set — empty for no cache — else
+/// `$XDG_CACHE_HOME/beni-run-hashes`, else `$HOME/.cache/beni-run-hashes`,
+/// the path the dev shells export (`flake.nix`, `runHashCache`), and no
+/// cache when neither is set either.
+fn runHashDir(b: *std.Build) []const u8 {
+    const env = b.graph.environ_map;
+    if (env.get("BENI_RUN_HASH_DIR")) |given| return given;
+    if (env.get("XDG_CACHE_HOME")) |xdg| if (xdg.len != 0) return b.pathJoin(&.{ xdg, "beni-run-hashes" });
+    if (env.get("HOME")) |home| if (home.len != 0) return b.pathJoin(&.{ home, ".cache", "beni-run-hashes" });
+    return "";
 }
 
 /// The options of this build that a child `zig build` needs to build and run
@@ -2292,9 +2276,7 @@ const HarnessEnvironment = struct {
     /// (`wasm_test.zig`), or the playground's shipped `.wasm` alone
     /// (`playground_test.zig`).
     wasm: enum { none, gate, shipped } = .none,
-    /// The corpus walker's `BENI_RUN_HASHES` (`record`) and
-    /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
-    run_hashes: []const u8 = "",
+    /// `BENI_RUN_HASH_REPORT`: where the process's run counts go.
     report_dir: []const u8 = "",
     /// The corpus walker's `BENI_BROWSER`: `chrome` runs the `browser/`
     /// pages in Chrome instead of happy-dom.
@@ -2315,6 +2297,9 @@ const Blackbox = struct {
     /// What `node --version` printed, asked once per build; every process
     /// gets it as `--node-version=` (`tests/test_runner.zig`).
     node_version: std.Build.LazyPath,
+    /// The run-hash cache (`runHashDir`), pinned as `BENI_RUN_HASH_DIR` on
+    /// every run; empty for none.
+    run_hash_dir: []const u8,
     target: std.Build.ResolvedTarget,
     optimize: std.lang.Optimize,
     diagnostic: *std.Build.Module,
@@ -2414,7 +2399,7 @@ const Blackbox = struct {
         r.setEnvironmentVariable("BENI_PENDING_SCENARIOS", env.scenarios);
         r.setEnvironmentVariable("BENI_PERF_SHARD", env.perf_shard);
         r.setEnvironmentVariable("BENI_TEST_SHARD", env.shard);
-        r.setEnvironmentVariable("BENI_RUN_HASHES", env.run_hashes);
+        r.setEnvironmentVariable("BENI_RUN_HASH_DIR", bb.run_hash_dir);
         r.setEnvironmentVariable("BENI_RUN_HASH_REPORT", env.report_dir);
         r.setEnvironmentVariable("BENI_BROWSER", env.browser);
         r.setEnvironmentVariable("BENI_CHROME", bb.chrome);
