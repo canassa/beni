@@ -1,0 +1,47 @@
+import Js
+
+
+pub repeated : ⊤ → List (List Int)
+repeated _ =
+    xs = [ 0 ]
+    rows : List (List Int)
+    rows = Js.to (Js.from ( xs, xs ))
+    List.map rows λys → List.push ys 1
+
+
+pub separate : ⊤ → List (List Int)
+separate _ =
+    rows : List (List Int)
+    rows = Js.to (Js.from ( [ 0 ], [ 1 ] ))
+    List.map rows λys → List.push ys 1
+
+
+pub grow : Int, a → Js.Value
+grow n value =
+    if n == 0 then
+        Js.from value
+    else
+        grow (n - 1) [ value ]
+
+
+pub foldedRepeated : ⊤ → List (List Int)
+foldedRepeated _ =
+    xs = [ 0 ]
+    decoded : List (List (List Int))
+    decoded = Js.to (grow 1 ( xs, xs ))
+    case decoded of
+        [ rows ] →
+            List.map rows λys → List.push ys 1
+        _ →
+            []
+
+
+pub foldedSeparate : ⊤ → List (List Int)
+foldedSeparate _ =
+    decoded : List (List (List Int))
+    decoded = Js.to (grow 1 ( [ 0 ], [ 1 ] ))
+    case decoded of
+        [ rows ] →
+            List.map rows λys → List.push ys 1
+        _ →
+            []

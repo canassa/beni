@@ -112,7 +112,8 @@ pub const magic = "BENIOWN\x00";
 /// 30 preserves callable environments and fixed cast type contexts.
 /// 31 integrates those keys with the lazy summary directory.
 /// 32 separates single uncertain views from spatial repeated reads.
-pub const version: u32 = 32;
+/// 33 preserves occurrence conditions before cast read normalization.
+pub const version: u32 = 33;
 
 pub const Error = error{Bad} || Allocator.Error;
 
