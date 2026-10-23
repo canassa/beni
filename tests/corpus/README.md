@@ -374,7 +374,7 @@ project) against it, one step per line, `#` for a comment:
                                 `dragleave` and `dragend`; one whose
                                 default a handler prevented logs
                                 `(drop's default prevented)` (or its name's)
-    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]
+    pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>] [trusted]
                                 one `PointerEvent` of that name
                                 (`pointerdown`, `pointermove`, `pointerup`,
                                 `pointercancel`, `pointerenter`,
@@ -397,7 +397,15 @@ project) against it, one step per line, `#` for a comment:
                                 handler converting the point to its own
                                 box: name the point in the box of the
                                 element that has the handler, and both DOMs
-                                print the same transcript
+                                print the same transcript. With `trusted`,
+                                a user's mouse move to the point: only
+                                `pointermove`, with the mouse's defaults
+                                (`id:1`, `type:mouse`, primary). It is
+                                trusted (below): a `pointermove`, then a
+                                `mousemove`, and neither logs a prevented
+                                default. In Chrome the mouse goes to the
+                                point, and a step whose point is over an
+                                element outside the selector's fails
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -756,10 +764,14 @@ compares instead of `.expected`. The differences known today:
   the `location` step prints the same, since `location.hash` is `""` in
   both;
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
-  except `press` and the focus events a `focus()` or `blur()` call fires,
-  which are trusted as Chrome makes them: Chrome's `press` is its own
-  click, sent through `Input.dispatchMouseEvent`, and happy-dom, which has
-  no `isTrusted`, is given one that is true for exactly those. The
+  except `press`, a `trusted` `pointer` move and the focus events a
+  `focus()` or `blur()` call fires, which are trusted as Chrome makes
+  them: Chrome's `press` is its own click and its move its own mouse
+  move, sent through `Input.dispatchMouseEvent`, and happy-dom, which has
+  no `isTrusted`, is given one that is true for exactly those. A move in
+  Chrome also sends the over, out, enter and leave events of the elements
+  that the mouse crosses, and happy-dom's does not, so a page that a
+  `trusted` move drives has no handler for those events. The
   emulation is dispatched from the driver's stack, so where Chrome runs
   microtasks between two listeners of a user's click, happy-dom does not:
   a fixture shows what the runtime does at a listener's end, not what the
