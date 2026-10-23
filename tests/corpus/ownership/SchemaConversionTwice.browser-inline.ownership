@@ -19,12 +19,12 @@ module SchemaConversionTwice
   summary nested: res .0 fresh1{lost} ~condition(fresh6), .0[*] ~condition(fresh3) ~fresh3{lost}r{lost}, .0[*]⋆ ~condition(fresh8) ~⊤twice{lost}r{lost}, .0⋆ ~condition(fresh4) ~⊤twice{lost}r{lost}, .1 fresh2{lost} ~condition(fresh7), .1⋆ ~condition(fresh9) ~⊤twice{lost}r{lost}, condition(fresh5){lost}r{lost}
   summary library: res .0 fresh1{lost} ~condition(fresh6), .0[*] ~condition(fresh3) ~fresh3{lost}r{lost}, .0[*]⋆ ~condition(fresh8) ~⊤twice{lost}r{lost}, .0⋆ ~condition(fresh4) ~⊤twice{lost}r{lost}, .1 fresh2{lost} ~condition(fresh7), .1⋆ ~condition(fresh9) ~⊤twice{lost}r{lost}, condition(fresh5){lost}r{lost}
   summary single: res [*] ~condition(fresh2) ~fresh2{lost}r{lost}, [*]⋆ ~⊤twice{lost}r{lost}, fresh1{lost}, ⋆ ~condition(fresh3) ~⊤twice{lost}r{lost}
-  summary once: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .1 fresh2{lost}
+  summary once: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .1 fresh2{lost}
   summary made: res .0 fresh1{lost} ~condition(fresh6), .0[*] ~condition(fresh3) ~fresh3{lost}r{lost}, .0[*]⋆ ~condition(fresh8) ~⊤twice{lost}r{lost}, .0⋆ ~condition(fresh4) ~⊤twice{lost}r{lost}, .1 fresh2{lost} ~condition(fresh7), .1⋆ ~condition(fresh9) ~⊤twice{lost}r{lost}, condition(fresh5){lost}r{lost}
   summary copied: res .0 fresh1{lost} ~condition(fresh6), .0[*] ~condition(fresh3) ~fresh3{lost}r{lost}, .0[*]⋆ ~condition(fresh8) ~⊤twice{lost}r{lost}, .0⋆ ~condition(fresh4) ~⊤twice{lost}r{lost}, .1 fresh2{lost} ~condition(fresh7), .1⋆ ~condition(fresh9) ~⊤twice{lost}r{lost}, condition(fresh5){lost}r{lost}
   summary sibling: res [*] ~condition(fresh2) ~fresh2{lost}r{lost}, [*]⋆ ~⊤twice{lost}r{lost}, fresh1{lost}, ⋆ ~condition(fresh3) ~⊤twice{lost}r{lost}
-  summary ranged: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
-  summary rangedPair: res .0 fresh1{lost}, .0[*] ~fresh3{lost}r{lost}, .1 fresh2{lost}
+  summary ranged: res [*] ~fresh2{lost}, fresh1{lost}
+  summary rangedPair: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .1 fresh2{lost}
   summary dict: res .0 fresh1{lost} ~condition(fresh6), .0[*] ~condition(fresh3) ~fresh3{lost}r{lost}, .0[*]⋆ ~condition(fresh8) ~condition(shared(SchemaConversionTwice.helpers)#Dict.0#Node.2) ~condition(shared(SchemaConversionTwice.helpers)#Dict.0#Node.2⋆) ~⊤call{lost}r{lost}, .0⋆ ~condition(fresh4) ~condition(shared(SchemaConversionTwice.helpers)#Dict.0#Node.2) ~condition(shared(SchemaConversionTwice.helpers)#Dict.0#Node.2⋆) ~⊤call{lost}r{lost}, .1 fresh2{lost} ~condition(fresh7), .1⋆ ~condition(fresh9) ~condition(shared(SchemaConversionTwice.helpers)#Dict.0#Node.2) ~condition(shared(SchemaConversionTwice.helpers)#Dict.0#Node.2⋆) ~⊤call{lost}r{lost}, condition(fresh5){lost}r{lost}
   demands 13: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9
 total 13: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 9

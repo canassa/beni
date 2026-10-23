@@ -1,0 +1,44 @@
+-- ownership: record conditions a decoder's answer and a function parameter
+-- answered through a lambda keep (#420, #868; `ownership-checker.md` §31.4
+-- item 6). `flip` writes each row a destructive read hands it, so it relies
+-- on its list holding no record at two positions.
+--
+-- `decoded`: a decoder builds a new object for every record it answers, so
+-- the rows a host value decodes to hold no record twice. `patched`: `patch`
+-- hands `set` each row taken out of its list, and the lambda the caller
+-- writes answers the row it is handed, so the patched list holds each row
+-- once. `shared`: a `set` that answers one captured row every time holds it
+-- at every position, and is refused.
+import Json
+import Schema exposing (Value)
+
+
+type alias Row =
+    id : Int
+    done : Bool
+
+
+flip : List Row → List Row
+flip rows = List.map rows λr → { r | done = not r.done }
+
+
+pub decoded : Value → List Row
+decoded value =
+    case Json.decodeValue value of
+        Ok rows →
+            flip (List.copy rows)
+
+        Err _ →
+            []
+
+
+patch : List row, (row → Bool), (row → row) → List row
+patch rows pick set = List.map rows λrow → if pick row then set row else row
+
+
+pub patched : List Row → List Row
+patched rows = flip (patch rows (λr → r.id > 0) λr → { r | done = True })
+
+
+pub shared : List Row, Row → List Row
+shared rows one = flip (patch rows (λr → r.id > 0) λ_ → one)

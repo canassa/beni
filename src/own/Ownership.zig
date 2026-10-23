@@ -4440,6 +4440,10 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
         },
         .type, .encoded => unreachable,
     }
+    // As `codecRunRow`'s: a declaration's parse builds every record it
+    // answers, when neither its own conversions nor its schema arguments
+    // answer values the program made.
+    if ((kind == .parse or kind == .parse_with) and n == 0 and taint.decoded.len == 0) res.items[0].rxc = .{};
     const s = try keep.create(Summary);
     s.* = try o.normalize(.{ .params = arity, .uses = uses.items, .res = res.items, .asserted = true });
     try o.schema_members.put(o.in.gpa, key, s);
@@ -11139,12 +11143,48 @@ const Walker = struct {
         for (classes) |cls| {
             const c = (try w.callbackSummary(cls, j, ctx)) orelse return cond_lost;
             if (c.limit != .none) return cond_limit;
+            // What the declaration's own function parameters answer inside
+            // the lambda (`cb` with `b` 1, §18.9; #868): two calls of the
+            // lambda make two calls of each, so their answers are apart when
+            // the parameter's are, `sep cb cb` of the declaration, which its
+            // caller discharges with the actual's summary.
+            var answered: std.ArrayList(u32) = .empty;
             for ([_][]const ResEntry{ c.objs, c.res }) |entries| for (entries) |r| {
                 switch (r.prov.kind) {
                     .fresh, .esc => {},
                     .param => try acc.add(w, try w.rtakenSupply(j, r.prov, ctx)),
+                    .cb => {
+                        if (r.prov.b != 1 or w.frame != 0) return cond_lost;
+                        const cb = try w.cell(.{ .kind = .cbres, .a = r.prov.a, .b = ctx.inst.int(), .path = r.prov.path });
+                        try acc.add(w, try w.rmkCond(&.{.{ .kind = .sep, .a = cb, .b = cb }}));
+                        try answered.append(w.a, cb);
+                    },
                     else => return cond_lost,
                 }
+            };
+            // An answer of a parameter at one call and the element the
+            // callee hands the lambda at another: the parameter must answer
+            // only records it makes or the element it is handed, `keep cb c`
+            // of the declaration over the element's container, which its
+            // caller discharges with the actual's summary (`rkeepShape`).
+            if (answered.items.len != 0) for ([_][]const ResEntry{ c.objs, c.res }) |entries| for (entries) |r| {
+                if (r.prov.kind != .param) continue;
+                for ([_][]const SupplyEntry{ ctx.s.supply, ctx.s.rsupply }) |sup| for (sup) |e| {
+                    if (e.prov.condition_only or e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
+                    const at = w.o.steps(e.prov.path);
+                    if (at.len == 0 or at[at.len - 1].kind != .elem) return cond_lost;
+                    var container = e.prov;
+                    container.taken = false;
+                    container.path = eps;
+                    for (at[0 .. at.len - 1]) |st| container.path = try w.o.child(container.path, st.kind, st.arg);
+                    for (try w.instProv(container, ctx)) |held| {
+                        if (held.path != eps) continue;
+                        for (answered.items) |cb| {
+                            const k = w.cells.items[cb].a;
+                            try acc.add(w, try w.rmkCond(&.{.{ .kind = .keep, .a = k, .b = try w.rbase(held.cell) }}));
+                        }
+                    }
+                };
             };
         }
         return acc.done(w);
@@ -14232,6 +14272,13 @@ const Walker = struct {
                 try o.inputAside(&res, input);
             },
         }
+        // A decoder's records are its own (#420, §31.4 item 6): the
+        // specialised read builds a new object for every record it answers,
+        // so a decoded value holds no record at two places unless its
+        // codec's slot answers values the program made (a conversion's,
+        // `taint.decoded`). A `Value` position holds the host's value, in
+        // which no record a program can write is reached.
+        if ((kind == .decode or kind == .decode_value) and taint.decoded.len == 0) res.items[0].rxc = .{};
         const s = try w.a.create(Summary);
         s.* = try o.normalize(.{ .params = @intCast(arity), .uses = uses.items, .res = res.items, .asserted = true });
         return s;
