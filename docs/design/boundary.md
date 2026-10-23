@@ -6867,7 +6867,15 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
   starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
   … the client disconnects" — under the same `deadline`. That the hold works after an
-  abort is #600's second half.
+  abort is #600's second half. ***Measured 2026-10-23 at the edge (#600's second half):*** a
+  plain-JavaScript probe Worker (`beni-probe-593-600`, deployed to the account's `workers.dev`
+  with `enable_request_signal` and deleted after the measurement) slept 10 s in `fetch` with a
+  listener on `request.signal`; the client aborted after 1 s. The listener ran, and a fetch to a
+  Durable Object it held in `ctx.waitUntil` landed after the client was gone (`aborted 1`), while
+  the handler's own continuation after the sleep never ran (`finished 0`): the hold works after an
+  abort, and work not held is dropped with the request. Without the flag the listener did not run
+  and the continuation was dropped the same way, so the flag is what (i) must set. Under Miniflare
+  the signal never fires ((k)), so the fact is the probe's, not a fixture's.
 - *Amended 2026-10-22 (the Worker slice, as built).* **The scheduler per request, as built**
   (`platforms/cloudflare/Worker.beni`, `handle`): the host's `fetch` makes a scheduler with
   `Task.schedulerWith`, whose `run` queues each drain through a promise made in the request's own
@@ -7179,7 +7187,19 @@ inside a handler queues it behind the events already waiting ((e.10)).
 - **A live fiber keeps the object in memory**, as a set timer does: while the scope has a live
   fiber, the platform holds a host timer. Hibernation happens only when the mailbox is empty and
   the scope has no live fiber, so it never strands a parked fiber. That the timer prevents
-  hibernation reliably is a fact to establish (#593, (k)).
+  hibernation reliably is a fact to establish (#593, (k)). ***Measured 2026-10-23 at the edge
+  (#593 closes):*** a plain-JavaScript probe Worker (`beni-probe-593-600`, deployed to the
+  account's `workers.dev` and deleted after the measurement; compatibility date 2026-05-18) with
+  one Durable Object class and one hibernatable socket per object. An idle object is a new
+  instance after 15 s — a per-instance id made in the constructor changed, and an in-memory count
+  started again — and `deserializeAttachment()` on the socket still held the value written at
+  `acceptWebSocket`. The same object with the platform's hold armed, one
+  `setTimeout(…, 2147483647)`, was the same instance after 15 s idle, its count continued; after
+  `clearTimeout` and 15 s more it was a new instance. So the live-fiber timer keeps the object in
+  memory, and the attachment crosses the restart ((g)). The probe is not a corpus fixture: local
+  workerd never hibernates an idle object (the local dry run showed the same instance after the
+  idle), and `wrangler dev --remote` is no longer supported for Durable Objects (wrangler 4.93.0),
+  so the fact needs a deploy, which (k) does not do.
 - **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
   `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
   marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
@@ -7769,7 +7789,11 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   once it ran, or 409 when `tick` names no timer — and one ending in `/__beni/alarm` an `alarm`
   event, answered 204; under the flag no host timer is armed, so the transcript is the steps'
   alone. The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
-  hibernation needs more than the 10 s delay, and a step is limited to 5 s.
+  hibernation needs more than the 10 s delay, and a step is limited to 5 s. *Settled 2026-10-23 by
+  a deployed probe, (e.5): local workerd never hibernates an idle object, and `wrangler dev
+  --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of hibernation or of
+  a client's disconnect at the edge is measured by a deploy of a probe Worker to the owner's
+  account, deleted after the measurement, and never by the corpus.*
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of
