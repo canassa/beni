@@ -882,6 +882,11 @@ const Config = struct {
     /// for `zig build fuzz`; such a run is never skipped for a record.
     fuzz_seeds: ?[]const u8 = null,
     fuzz_steps: ?u32 = null,
+    /// `BENI_IN_PLACE=all` (`zig build test-records-in-place`): every
+    /// `run/` fixture gets the in-place pass a `.in-place` fixture has,
+    /// those the ownership checker refuses under `--ownership-everywhere`
+    /// skipped (`ownership-checker.md` §31.12 slice 3).
+    in_place_all: bool = false,
 
     const RunHashes = enum {
         /// Unset: a build whose digest is recorded is not run under Node.
@@ -968,8 +973,16 @@ const Config = struct {
             }
         else
             null;
+        const in_place_all = if (envOr(arena, "BENI_IN_PLACE")) |text| blk: {
+            if (!std.mem.eql(u8, text, "all")) {
+                std.debug.print("BENI_IN_PLACE must be `all` (or unset), not `{s}`\n", .{text});
+                return error.BadInPlace;
+            }
+            break :blk true;
+        } else false;
         var cfg: Config = .{
             .fuzz_seeds = envOr(arena, "BENI_FUZZ_SEEDS"),
+            .in_place_all = in_place_all,
             .fuzz_steps = fuzz_steps,
             .chrome = chrome,
             .run_hashes = run_hashes,
@@ -2065,7 +2078,7 @@ const Case = struct {
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        var verified: [4]?[]const u8 = .{ null, null, null, null };
+        var verified: [6]?[]const u8 = .{ null, null, null, null, null, null };
         // Recording runs both builds whatever the first did, so one failing
         // build does not cost the other its line.
         var first_error: ?anyerror = null;
@@ -2085,6 +2098,46 @@ const Case = struct {
                 break :blk null;
             };
             if (first_error == null) try c.checkCompiledSchemas("out");
+            // A fixture of the records' differential corpus (`.in-place`,
+            // its reason; `ownership-checker.md` §31.12 slice 3) is built
+            // twice more with its records written in place — under the hidden
+            // stale-read sanitiser, then the stores as they ship — and
+            // each must print the same golden, which was recorded under
+            // spreads. Their run hashes are the fixture's, as its other
+            // passes' are; `BENI_IN_PLACE=all` records none and runs every one.
+            if (c.cfg.in_place_all or c.goldenExists("in-place")) in_place: {
+                const in_place_record = if (c.cfg.in_place_all) "" else record;
+                var in_place: std.ArrayList([]const u8) = .empty;
+                try in_place.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--sanitize-records", "--out=out-in-place" });
+                if (c.cfg.mode == .pending) try in_place.append(c.arena, "--diagnostics=json");
+                try in_place.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                // Every fixture, under `BENI_IN_PLACE=all`: one the ownership
+                // checker refuses under the flag has nothing to run in place.
+                if (c.cfg.in_place_all and !c.goldenExists("in-place")) {
+                    var probe: std.ArrayList([]const u8) = .empty;
+                    try probe.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--diagnostics=json", "--out=out-in-place-probe" });
+                    try probe.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                    const tried = try c.inProject(probe.items);
+                    if (tried.exit_code == 1 and ownershipOnly(tried.stderr)) break :in_place;
+                }
+                var stores: std.ArrayList([]const u8) = .empty;
+                try stores.appendSlice(c.arena, &.{ "build", platform_arg, "--ownership-everywhere", "--out=out-stores" });
+                if (c.cfg.mode == .pending) try stores.append(c.arena, "--diagnostics=json");
+                try stores.appendSlice(c.arena, try buildPaths(c.arena, sources));
+                // The sanitiser first: a stale read traps there, naming its field.
+                verified[5] = c.runOnce("out-in-place", .dev, in_place.items, "expected", false, in_place_record) catch |err| blk: {
+                    if (!recording) return err;
+                    RunCounts.add(&run_counts.refused);
+                    if (first_error == null) first_error = err;
+                    break :blk null;
+                };
+                verified[4] = c.runOnce("out-stores", .dev, stores.items, "expected", false, in_place_record) catch |err| blk: {
+                    if (!recording) return err;
+                    RunCounts.add(&run_counts.refused);
+                    if (first_error == null) first_error = err;
+                    break :blk null;
+                };
+            }
         }
         if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
             var forced: std.ArrayList([]const u8) = .empty;
@@ -3718,6 +3771,8 @@ fn expectExit(expected: u8, r: world.Result) !void {
 /// The pass a `run/` fixture's build belongs to, by its `--out`: `dev` or
 /// `release`.
 fn passName(out_dir: []const u8) []const u8 {
+    if (std.mem.eql(u8, out_dir, "out-in-place")) return "dev-in-place";
+    if (std.mem.eql(u8, out_dir, "out-stores")) return "dev-stores";
     if (std.mem.eql(u8, out_dir, "release-library")) return "release-library";
     if (std.mem.eql(u8, out_dir, "out-library")) return "dev-library";
     return if (std.mem.eql(u8, out_dir, "release")) "release" else "dev";

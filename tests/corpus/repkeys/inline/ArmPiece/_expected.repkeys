@@ -13,15 +13,8 @@ module Counter
   name model$2 #2
   node object 9:12 #2
   node arrow 9:12 #2
-  node object 21:13 #2
-  node object 24:13 #2
   node arrow 19:5 #2
-  node object 21:13 #2
-  node object 24:13 #2
 module Main
   name model$2 #7
-  node object 26:13 #7
   node arrow 24:5 #7
   node object 45:41 #7
-  node object 26:13 #7
-  node object 26:13 #7

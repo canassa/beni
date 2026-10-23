@@ -1,0 +1,2 @@
+The records differential corpus (ownership-checker.md §31.12 slice 3): its answers were recorded under
+spreads, and it is built again with its records written in place, under the stale-read sanitiser.
