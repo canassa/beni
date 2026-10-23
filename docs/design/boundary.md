@@ -6862,19 +6862,22 @@ pub type ServiceError = Unavailable            -- `retryable` is true: the call 
   promise in the same `waitUntil`; a finaliser therefore runs if it finishes within that
   deadline, and a fiber the platform
   cancels there has its finalisers run before the host's cap (*wording, 2026-10-21, R7-6*). That the host honours the held teardown is a fact to
-  establish (#600, (k)). ***Measured 2026-10-23 at the edge (#600's first half):*** the probe
-  Worker of the bullet below answered at once and held two promises in `ctx.waitUntil`, one of
-  26 s and one of 35 s, each ending in a fetch to a Durable Object; after 45 s the first had landed
-  and the second had not. So a hold lands past 25 s and is cut by the host's 30 s cap, and the
-  platform's deadline of 25 s plus its 1 s teardown is inside it. With the next bullet's result,
-  #600 closes.
+  establish (#600, (k)). ***Measured 2026-10-23 at the edge (#600's first half; compatibility
+  date 2026-05-18, `enable_request_signal`):*** the probe Worker of the bullet below answered at
+  once and held two promises in `ctx.waitUntil`, one of 26 s and one of 35 s, each ending in a
+  fetch to a Durable Object; after 45 s the first had landed and the second had not. So a hold
+  lands past 25 s and is cut somewhere between 26 and 35 s as measured — the documented 30 s — and
+  the platform's deadline of 25 s plus its 1 s teardown is inside it. With the next bullet's
+  result, #600 closes; the platform's own path through a `Task.bracket` release, deployed as a
+  beni build, is #865.
 - **A client disconnect interrupts the request's scope**, so finalisers run: the platform listens
   to `request.signal` where the host provides it (`enable_request_signal`, (i)), and the abort
   starts the same teardown, held in `waitUntil` — the host gives it the same 30 seconds "after
   … the client disconnects" — under the same `deadline`. That the hold works after an
   abort is #600's second half. ***Measured 2026-10-23 at the edge (#600's second half):*** a
   plain-JavaScript probe Worker (`beni-probe-593-600`, deployed to the account's `workers.dev`
-  with `enable_request_signal` and deleted after the measurement) slept 10 s in `fetch` with a
+  with compatibility date 2026-05-18 and `enable_request_signal`, deleted after the measurement)
+  slept 10 s in `fetch` with a
   listener on `request.signal`; the client aborted after 1 s. The listener ran, and a fetch to a
   Durable Object it held in `ctx.waitUntil` landed after the client was gone (`aborted 1`), while
   the handler's own continuation after the sleep never ran (`finished 0`): the hold works after an
@@ -7193,18 +7196,23 @@ inside a handler queues it behind the events already waiting ((e.10)).
   fiber, the platform holds a host timer. Hibernation happens only when the mailbox is empty and
   the scope has no live fiber, so it never strands a parked fiber. That the timer prevents
   hibernation reliably is a fact to establish (#593, (k)). ***Measured 2026-10-23 at the edge
-  (#593 closes):*** a plain-JavaScript probe Worker (`beni-probe-593-600`, deployed to the
-  account's `workers.dev` and deleted after the measurement; compatibility date 2026-05-18) with
-  one Durable Object class and one hibernatable socket per object. An idle object is a new
-  instance after 15 s — a per-instance id made in the constructor changed, and an in-memory count
-  started again — and `deserializeAttachment()` on the socket still held the value written at
-  `acceptWebSocket`. The same object with the platform's hold armed, one
-  `setTimeout(…, 2147483647)`, was the same instance after 15 s idle, its count continued; after
-  `clearTimeout` and 15 s more it was a new instance. So the live-fiber timer keeps the object in
-  memory, and the attachment crosses the restart ((g)). The probe is not a corpus fixture: local
-  workerd never hibernates an idle object (the local dry run showed the same instance after the
-  idle), and `wrangler dev --remote` is no longer supported for Durable Objects (wrangler 4.93.0),
-  so the fact needs a deploy, which (k) does not do.
+  (#593's fact; the issue stays open for the corpus fixture):*** a plain-JavaScript probe Worker
+  (`beni-probe-593-600`, deployed to the account's `workers.dev` and deleted after the
+  measurement; compatibility date 2026-05-18) with one Durable Object class and one hibernatable
+  socket per object. An idle object is a new instance after 15 s — a per-instance id made in the
+  constructor changed, and an in-memory count started again — and `deserializeAttachment()` on the
+  socket still held the value written at `acceptWebSocket`. A second object with the platform's
+  hold armed, one `setTimeout(…, 2147483647)`, was the same instance after 15 s idle, its count
+  continued; after `clearTimeout` and 15 s more it was a new instance. So the live-fiber timer
+  keeps the object in memory, and the attachment crosses the restart ((g)). **The limit of the
+  hold is documented**: the lifecycle page says "Each operation prevents eviction until it
+  completes or for up to 15 minutes from when it starts", so one timer holds the object for at
+  most 15 minutes from when it was armed, and a fiber parked longer is #864 (re-arm the hold, or
+  accept the limit). Local workerd hibernates an idle object too: the review of #860 ran the
+  probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
+  on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
+  this fact once the driver has a step that idles 15 s, past (k)'s 5 s step limit — that fixture
+  is what #593 stays open for.
 - **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
   `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
   marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
@@ -7794,11 +7802,13 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   once it ran, or 409 when `tick` names no timer — and one ending in `/__beni/alarm` an `alarm`
   event, answered 204; under the flag no host timer is armed, so the transcript is the steps'
   alone. The five object fixtures are listed in (e.10)'s *as built* note. **#593 stays owed**:
-  hibernation needs more than the 10 s delay, and a step is limited to 5 s. *Settled 2026-10-23 by
-  a deployed probe, (e.5): local workerd never hibernates an idle object, and `wrangler dev
-  --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of hibernation or of
-  a client's disconnect at the edge is measured by a deploy of a probe Worker to the owner's
-  account, deleted after the measurement, and never by the corpus.*
+  hibernation needs more than the 10 s delay, and a step is limited to 5 s. *2026-10-23: the fact
+  is measured by a deployed probe, (e.5), and local workerd hibernates an idle object too (the
+  review of #860: a new instance after 15 s and 25 s under Miniflare), so the corpus can hold it
+  once the driver has a step that idles 15 s; #593 stays open for that fixture. `wrangler dev
+  --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of the edge is
+  measured by a deployed probe Worker on the owner's account, deleted after the measurement, where
+  the local host differs — the client's disconnect, (d) — and by the corpus where it does not.*
 - The probes behind every *measured* mark of this section — the cross-request scheduler, the
   abort, the attachment and value sizes, the close handshake — become fixtures of the first code
   slice under this driver; until then their result is what is cited, not a file. Three facts of
@@ -7806,8 +7816,8 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   prevents hibernation (#593), the call-chain id travels through `stub.fetch` and an RPC stub
   (#594), two objects in one isolate stay isolated (#595), and a request's scope teardown runs
   under `waitUntil` at the platform's deadline and after a client disconnect (#600). *2026-10-23:
-  #593 and #600 are measured by the deployed probe ((e.5), (d)); #594's fetch half by
-  `ObjectRefused` and its RPC half by `ObjectRpc` ((e.11)); #595 stays.*
+  #593's and #600's facts are measured by the deployed probe ((e.5), (d)); #595 stays, and #593
+  stays open for the corpus fixture.*
 
 **(l) The owner's answers.** Taken on the dashboard; each is recorded here the day it comes, and
 the part of the section it settles keeps its text.
@@ -7858,6 +7868,13 @@ the part of the section it settles keeps its text.
   fibers that outlive the response run under `ctx.waitUntil` with the host's 30-second cap and
   are delivered at most once; a client disconnect interrupts the request's scope, so finalisers
   run ((d)).
+- **`cf-workers-q11`, an account for the two probes** (Jayson Reis, 2026-10-23 06:04 UTC): **A, an
+  account may be used** for #593's hibernation probe and #600's disconnect probe; the recommended
+  answer. The other choice, the probes stay owed, was not taken.
+- **`cf-workers-q12`, whose account and how** (Jayson Reis, 2026-10-23 06:07 UTC): "wrangler is
+  logged in with the default account, use it" — the logged-in wrangler's default account, no token
+  file; `wrangler dev --remote` first and a deploy only where it cannot show the fact, the probe
+  Worker deleted after. It replaced q11's token proposal and is how (e.5) and (d) were measured.
 - No question of this section is open.
 
 ## Appendix — what is deliberately not done
