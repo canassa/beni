@@ -13,9 +13,10 @@
 //! `document`, every write after the first of an attribute hole, a
 //! controlled input's `.value`, a keyed list, and the page's title.
 //!
-//! Each fuzz run is recorded in `tests/blackbox/run-hashes.txt` like a
-//! scenario's program run (`run_hash.checkDigested`): Node runs only when
-//! the builds, the harness or the expectation changed.
+//! Each fuzz run goes through the run-hash cache like a scenario's program
+//! run (`run_hash.checkDigested`): Node runs only when the builds, the
+//! harness or the expectation changed, and a fuzz that did what the test
+//! expects puts its digest in.
 
 const std = @import("std");
 const testing = std.testing;
@@ -250,7 +251,7 @@ fn breakAfterMount(w: *World, path: []const u8, needle: []const u8) !void {
 }
 
 /// The fuzz of `f`, expected to end with `code` and print `stdout`, unless
-/// the index lists this exact run (`run_hash.checkDigested`).
+/// the cache holds this exact run (`run_hash.checkDigested`).
 fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !void {
     const arena = w.arena.allocator();
     // Two seeds of fifteen steps, whatever the gates' corpus fuzz runs.
@@ -258,8 +259,8 @@ fn expectFuzz(w: *World, given: browser.Fuzz, code: u8, stdout: []const u8) !voi
     f.seeds = "1,2";
     f.steps = 15;
     const h = try browser.harness(testing.io);
-    const line = try browser.fuzzLine(arena, w, h, f);
-    const digest = try run_hash.digestOf(arena, &.{ line, &.{code}, stdout });
+    const fuzz_digest = try browser.fuzzDigest(arena, w, h, f);
+    const digest = try run_hash.digestOf(arena, &.{ fuzz_digest, &.{code}, stdout });
     const Run = struct {
         w: *World,
         h: browser.Harness,

@@ -63,8 +63,9 @@ bytes (research 40 §4.2), only the sign and the large magnitudes carry informat
   one-token mutants, all caught — because an LCG's low bits for `% n` caught only
   three of ten).
 - For anything beni ships: `zig build gates` (the `run/` corpus runs every
-  program twice, dev and `--release`, and `browser/` pages too), and
-  `zig build test-run-hashes` after touching `core/` or a runtime.
+  program twice, dev and `--release`, and `browser/` pages too); after a
+  change to `core/` or a runtime every affected program runs under Node
+  once, and the gates say how many did.
 - For a sibling: `boundary.md` §4's four checks must still pass — **never change
   an export's parameter list** (check 4 counts it) and keep `export const x = (…) =>`
   per export.
