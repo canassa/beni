@@ -7343,6 +7343,28 @@ the same name.
 - no single-use binding of such a read is inlined past it;
 - it is never dropped as an unused pure expression.
 
+*Amended 2026-10-23 (#889): **the form**.* An update written in place is an expression wherever its spread
+was one: `(b.f₁ = v₁, …, b.fₙ = vₙ, b)`, a sequence of stores whose value is the base's object (`JsIr`'s
+`assign` and `sequence`). The order above is kept, with three precisions, none of which a program can see:
+- A value is bound to a temporary first only when it must be: when the update has reads hoisted after its
+  operands, or when some value after the first could see a store — one that reads a field or calls something.
+  A value that reads nothing a store can change (a name, a literal, a function made there, and an operator,
+  a conditional, an object or an array of such) answers the same before the stores as among them.
+- The fields are distinct and nothing runs between two stores, so their order is not observable: a literal's
+  store comes after the others. `{ r | a = True, b = f r }` is `(r.b = f(r), r.a = true, r)`, which needs no
+  temporary.
+- Where a statement may stand before it — a binding, a handler's arm — the update is its stores as statements
+  and then its object (`Lower.settleStores`), and a statement that assigns one to a name or a property of a
+  name leads with its stores: `b.a = b.a + 1, m.c = b`.
+
+The barrier holds for the expression as for a statement: a store is a write to item 1 (`Opt.mayWriteIn`), so
+no field read crosses it and no single-use read is inlined past it; a binding or a discarded statement that
+holds a store is never dropped (`JsIr.holdsStore`); and whole-program specialisation (`backend.md` §9) takes a
+store's target as a write, never as a read it may fold, and its value as no literal. *As built:* S1
+(`unique-components`, `--lists none`) is smaller than before R6 at every size measured, where R6 and R7's
+block-bodied helpers had stopped slice 8 from writing them in. `run/RecordInPlaceExpressions` pins the forms,
+and every `.in-place` fixture is built a third time in place, as a release ships it.
+
 ### 31.11 Identity, on every platform
 
 `language.md` §11.12's first promise stands: an untouched field keeps its identity. Its second is amended (that
