@@ -48,7 +48,10 @@ function run(command, args, cwd = root, timeout = 120000) {
   });
 }
 const must = async (...args) => { const r = await run(...args); if (r.status) throw Error(`${args[0]} failed (${r.status}):\n${r.stderr}\n${r.stdout}`); return r; };
-if (!options['no-build']) await must('zorg', ['build', `-j${jobs}`]);
+// The compiler build is not what the bridge measures: a cold cache under load
+// takes more than `run`'s two minutes (a `zorg killed: SIGKILL` on 2026-10-23,
+// with two heavy jobs beside it), so it gets thirty.
+if (!options['no-build']) await must('zorg', ['build', `-j${jobs}`], root, 1800000);
 const inputs = [];
 if (options.input) inputs.push(resolve(options.input));
 else {
@@ -230,10 +233,10 @@ function parseDump(text, programs) {
       // A record update (`{ r | F = … }`) is a demand line since #391, with
       // the operation `update` (`List.update` prints as `List.update`, so the
       // bare word is the record one). The Lean oracle has no record field
-      // assignment (#316), so it has no verdict for the site; and the
-      // compiler reports the demand without enforcing it (`Enforce.zig`,
-      // until §31.9's codes land), so a rejected one has no diagnostic to
-      // match either. Skipped until #316 lands.
+      // assignment (#316), so it has no verdict for the site. Since §31.9's
+      // codes landed (69abd4568) the compiler enforces the line, and
+      // `checkBatch` keeps its diagnostics out of the site comparison the
+      // same way (#887). Skipped until #316 lands.
       if (m[3].startsWith('update ')) { current.skippedUpdates = (current.skippedUpdates ?? 0) + 1; continue; }
       current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue;
     }
@@ -265,7 +268,17 @@ async function checkBatch(programs, n) {
   const enforced = await run(compiler, ['check',`--platform=${inPlace}`,'--no-cache','--jobs=1','--diagnostics=json',dir]);
   if (![0,1].includes(enforced.status)) throw Error(`unexpected enforcement exit ${enforced.status}: ${enforced.stderr}`);
   const diagnostics = JSON.parse(enforced.stderr || '[]');
-  const errors = diagnostics.filter(d => d.severity === 'error');
+  const allErrors = diagnostics.filter(d => d.severity === 'error');
+  // A record update (`{ r | F = … }`) is enforced since §31.9's codes landed
+  // (69abd4568, R4 of #315). Its demand is an `update` line, which `parseDump`
+  // skips until #316 gives the oracle a record field assignment; so its
+  // diagnostics stay out of the site comparison too, and count only in the
+  // exit-code parity below (#887). A record's `view_changes_model` shares the
+  // lists' code; no translated program has a `view`, so one would be an
+  // unmatched site, and a finding.
+  const recordCodes = ['record_still_used','top_level_record_changed','record_may_be_shared'];
+  const recordErrors = allErrors.filter(d => recordCodes.includes(d.code));
+  const errors = allErrors.filter(d => !recordCodes.includes(d.code));
   const permitted = ['list_still_used','list_may_be_shared','top_level_list_changed','view_changes_model','ownership_limit'];
   if (errors.some(d => !permitted.includes(d.code))) {
     await writeFile(resolve(dir,'enforce-error.json'), JSON.stringify(enforced,null,2));
@@ -300,7 +313,7 @@ async function checkBatch(programs, n) {
         (spans.get(a).end.col - spans.get(a).start.col) - (spans.get(b).end.col - spans.get(b).start.col));
     if (covering.length) unmatched.delete(covering[0]); else uncovered++;
   }
-  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0) !== (enforced.status === 0)) {
+  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0 && recordErrors.length === 0) !== (enforced.status === 0)) {
     await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
     throw Error(`dump/enforcement mismatch: ${dir}`);
   }
