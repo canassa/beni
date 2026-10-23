@@ -1814,6 +1814,13 @@ the cast, including uncertain and repeated views. Ordinary field projections
 continue to use their existing projected guards. Format 33 covers these
 read semantics.
 
+This supersedes the read-side aligned-row bookkeeping above: construction
+and instantiation already record occurrence requirements as value-scoped
+guards before their rows normalize. The read must retain those guards and
+include them when judging the selected root. It does not globally lower
+allocation conditions merely because two views merge. The existing
+composed-path fold bookkeeping is unchanged.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
