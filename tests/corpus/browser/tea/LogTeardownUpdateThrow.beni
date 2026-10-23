@@ -1,0 +1,54 @@
+-- The finalisers that a throw leaves outside any fiber run in a fiber
+-- that the teardown starts for them, each with the slots that the record
+-- outside any fiber has at that moment (boundary.md §9.8.14 (d) step 4,
+-- amended 2026-10-23, #811). The command is made inside `Log.annotate`, so
+-- its body keeps that context (#597), and it does not wait, so it runs with
+-- no fiber. Inside a `bracket`, it sends `Boom`, whose `update` has the
+-- program's context (#818), annotates it, opens a `bracket` and throws.
+-- `withoutLogContext` leaves `update`'s slots for its finalisers, with a
+-- restore of the body's under them (§9.8.16 (b), amended 2026-10-23). So
+-- `Boom`'s release logs with `update`'s annotation, and the body's release
+-- with the body's. `LogUpdateDefect` is the same page with a body in a
+-- fiber.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Log
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Go
+    | Boom
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Go →
+            Log.annotate "request" "r1" λ⊤ →
+                ( n + 1
+                , Cmd.perform λsend →
+                    Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "the body's release") λ_ → send Boom
+                )
+
+        Boom →
+            Log.annotate "update" "u" λ⊤ →
+                Log.info "Boom's update"
+                Task.bracket (λ⊤ → ⊤) (λ_ _ → Log.info "Boom's release") λ_ →
+                    Debug.todo "Boom's update threw"
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <p id="n">{String.fromInt n}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none ), update = update, view = view, subscriptions = λ_ → Sub.none }
