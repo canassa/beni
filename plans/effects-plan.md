@@ -845,3 +845,22 @@ verdict changes. **Purity:** to make a command now reads the slot, so 17 functio
 `Restart`, `Queue`, `Ignore` and `Concurrent` over a running body, a body queued behind a fiber, a
 `Cmd.task` that waits, `Cmd.map` of an after-render body, and a subscription declared inside
 `annotate` (not changed); a defect in a kept body is #775.
+
+*P7, sixth part, as built (2026-10-23; #818).* A message's `update` has the program's log context,
+whoever sends the message, as the owner decided on 2026-10-23 (Cesar, dashboard `node-log-q4`;
+`boundary.md` §9.8.16 (b) and proposal §17.5 and §17.11, amended). `Rt.beni`'s `$$root`, the one
+way into a program's `update`, runs `update` inside `Task.withoutLogContext` when
+`Task.hasLogContext` says that the caller has a context; the call of `update` is written twice, so
+that a release build in which nothing sets a slot keeps only the plain one. `withoutLogContext`
+puts the old slots back in a `Js.finally`, because `update` cannot wait. Its first version ran
+through `inLogContext`, and so reached `here ⊤` and `pushFinalizer`, which write `fibered` and
+`finalising`: even unreached, those writes kept the teardown in a hosted release page with no
+fiber (`build_test`: 6 `finally`, not 5). Fixture: `browser/tea/LogCommandContext`'s `Done`, which
+the bodies of `Task` (no fiber) and `TaskWait` (a fiber) send, writes an `Info` line, a `Debug` line
+and a `Cmd.log`; without the change the lines carry the sender's annotation, the `Debug` line is
+written, and the command keeps the sender's context. **Bytes** (the same 614 builds as the fifth
+part, on `master` `6e3d6abae`): release, the 4 pages that set a slot +207 raw (+38 to +64 brotli);
+every other release build, Conduit's included, the same bytes. Development, 307 builds +784 to
++1 188 raw (+108 to +251 brotli): `browser/dom` pages too, since `Rt.beni` is every page's. No
+instruction count was taken: where a slot is set, each message reads it, and a message sent inside
+a context copies the slot record once.
