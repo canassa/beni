@@ -4820,6 +4820,17 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   a body's `bracket`, run with the caller's, as an `onExit` finaliser would (proposal §17.5). When
   `update` throws and leaves no finaliser, the old slots go back at once. (A body with no fiber
   gets the same: §9.8.14 (d) step 4, amended 2026-10-23, #811.)
+  *(Amended 2026-10-24, #859: the caller can go on before the teardown. A throw out of an event
+  handler does not reach the code that fired the event: the DOM reports it, and the call returns.
+  A body that calls `Dom.focus` or `Dom.blur` thus goes on after the handler's `update` throws,
+  and the old slots go back at once in every case. When `update` leaves finalisers, one more entry
+  goes on top of them, which sets the slots that `update` had at the throw. At the teardown, that
+  entry runs first, then `update`'s finalisers with `update`'s context, then the restore of the
+  old slots, then the caller's finalisers. The rest of the body has the body's context. Not
+  covered: such a body's `bracket` that it closes after the throw takes `update`'s leftover off
+  the list, not its own release, which then runs again at the teardown (#921). Cost, measured on
+  634 builds: in release only the 8 pages that set a slot change, by +29 raw bytes (−49 to +11
+  brotli); development +89 raw.)*
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
   set, each message reads the slot, and a message sent inside a context copies the slot record
