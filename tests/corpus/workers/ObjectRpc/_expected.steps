@@ -5,6 +5,15 @@
 # cycle, over RPC as over fetch.
 {"path": "/cycle"}
 {"path": "/count"}
+# An ask over the host's 32 MiB RPC limit is refused in beni before the
+# call; a reply over it is Unreadable at the asker.
+{"path": "/big-ask"}
+{"path": "/big-reply"}
+{"path": "/count"}
+# A forwarded request meets the same cycle rule: the Pong forwards the
+# Ping's request back while the Ping waits, and the Ping's chain refuses
+# it with 508, Err Cycle at the Pong's forward.
+{"path": "/forward-back"}
 # The Pong throws while it holds the Ping's ask: the Ping sees Reset, the
 # Pong is stopped, and its next event starts a new instance.
 {"path": "/crash"}

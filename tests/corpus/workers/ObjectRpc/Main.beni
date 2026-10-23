@@ -1,9 +1,12 @@
 -- workers: `post` and `ask` travel over the host's RPC (boundary.md §9.12
 -- (e.11); #594's RPC half). The Worker asks the Ping, which asks the Pong;
 -- the Pong asking the Ping back while the Ping waits on it is the refused
--- cycle; and a Pong that throws while it holds the Ping's ask gives the
--- Ping `Err Reset`, after which the Pong's next event starts a new
--- instance.
+-- cycle, and so is a request the Pong forwards back while the Ping waits
+-- (508 at the Ping, `Err Cycle` at the Pong's forward); an ask over the
+-- host's 32 MiB RPC limit is refused in beni and a reply over it is
+-- `Unreadable` at the asker; and a Pong that throws while it holds the
+-- Ping's ask gives the Ping `Err Reset`, after which the Pong's next event
+-- starts a new instance.
 import Schema exposing (Schema)
 import String
 import Worker exposing (Context, Request, Response)
@@ -40,7 +43,26 @@ protocol =
 -- ---- The Ping -----------------------------------------------------------------
 
 ping : Worker.Definition
-ping = Object.define "Ping" protocol (λ_ → ⊤) { Object.none | received = pinged }
+ping =
+    Object.define "Ping" protocol (λ_ → ⊤)
+        { Object.none | request = pingRequest, received = pinged }
+
+
+-- A request forwarded on while this handler waits on it: the Pong forwards
+-- it back, and the chain parked here refuses it with 508.
+pingRequest : Object.Context Msg, ⊤, Request → ⊤ × Response
+pingRequest ctx _ request =
+    case Worker.objects (Object.env ctx) "PONGS" protocol of
+        Just pongs →
+            case Worker.forward (Worker.byName pongs "p") request of
+                Ok response →
+                    ( ⊤, response )
+
+                Err _ →
+                    ( ⊤, Worker.text 503 "the pong is not available" )
+
+        Nothing →
+            ( ⊤, Worker.text 500 "no PONGS binding" )
 
 
 pinged : Object.Context Msg, ⊤, Msg → ⊤
@@ -60,6 +82,10 @@ pinged ctx _ msg =
 
                 "crash" →
                     Object.reply msg.reply (askPong "crash")
+
+                "big-reply" →
+                    big = askPong "big-reply"
+                    Object.reply msg.reply "big reply: ${big}"
 
                 _ →
                     -- "echo" from the Pong's "back": refused before it is received.
@@ -98,12 +124,39 @@ ponged ctx n msg =
                     Object.reply msg.reply "no PINGS binding"
                     n + 1
 
+        "big-reply" →
+            -- Over the host's 32 MiB RPC limit: the asker gets Unreadable.
+            Object.reply msg.reply (String.repeat "y" 34000000)
+            n + 1
+
         _ →
             Debug.todo "the pong threw"
 
 
 count : Object.Context Msg, Int, Request → Int × Response
-count _ n _ = ( n, Worker.text 200 "${String.fromInt n} received" )
+count ctx n request =
+    case List.reverse (String.split (Worker.path request) "/") of
+        [ "forward-back", …rest ] →
+            -- The Ping waits on this request: forwarding it back is the cycle.
+            case Worker.objects (Object.env ctx) "PINGS" protocol of
+                Just pings →
+                    back =
+                        case Worker.forward (Worker.byName pings "p") request of
+                            Ok _ →
+                                "Ok"
+
+                            Err Worker.Cycle →
+                                "Err Cycle"
+
+                            Err _ →
+                                "Err"
+                    ( n, Worker.text 200 "forward back: ${back}" )
+
+                Nothing →
+                    ( n, Worker.text 500 "no PINGS binding" )
+
+        _ →
+            ( n, Worker.text 200 "${String.fromInt n} received" )
 
 
 -- ---- The Worker ---------------------------------------------------------------
@@ -123,6 +176,23 @@ route ctx request =
 
                 Err _ →
                     Worker.text 503 "the pong is not available"
+
+        ( Just pings, Just _, "/forward-back" ) →
+            case Worker.forward (Worker.byName pings "p") request of
+                Ok response →
+                    response
+
+                Err _ →
+                    Worker.text 503 "the ping is not available"
+
+        ( Just pings, Just _, "/big-ask" ) →
+            -- Over the host's 32 MiB RPC limit: refused in beni before the call.
+            Worker.text 200
+                (showAsk
+                    (Object.ask (Worker.byName pings "p") Schema.string λr →
+                        { op = String.repeat "x" 34000000, reply = r }
+                    )
+                )
 
         ( Just pings, Just _, path ) →
             Worker.text 200

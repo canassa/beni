@@ -6157,7 +6157,9 @@ const Emitter = struct {
                 continue;
             }
             if (!f.read.inert) return null;
-            for (f.read.imports) |imp| if (!std.mem.startsWith(u8, imp.specifier, "node:")) return null;
+            // A host built-in, as `Minify.Hoisted.declines` reads it
+            // (backend.md §9, *Host imports*, amended 2026-10-23).
+            for (f.read.imports) |imp| if (!std.mem.startsWith(u8, imp.specifier, "node:") and !std.mem.startsWith(u8, imp.specifier, "cloudflare:")) return null;
             // `run` and `start` are imported from a declined runtime as
             // written, for the harness that reads the entry file's import.
             if (runtime_index == @as(?u32, @intCast(x)) or (start != null and start.?.file == @as(?u32, @intCast(x)))) {

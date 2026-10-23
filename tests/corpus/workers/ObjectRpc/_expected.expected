@@ -13,6 +13,27 @@
 < content-type: text/plain; charset=utf-8
 <
 < 2 received
+> GET /big-ask
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Err Unprintable
+> GET /big-reply
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok big reply: Err Unreadable (1 issue)
+| err: beni: a reply from the object Pong is over the host's 32 MiB RPC limit: the asker gets Unreadable
+> GET /count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 3 received
+> GET /forward-back
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< forward back: Err Cycle
 > GET /crash
 < 200
 < content-type: text/plain; charset=utf-8

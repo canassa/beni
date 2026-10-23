@@ -7517,7 +7517,16 @@ transport of (e.10)'s `post` and `ask`, in place of `stub.fetch` on `/__beni/pos
   "unparsed" }`, `Unreadable`), or when the chain already holds a handler parked here (`{ kind:
   "cycle" }`, (e.3)'s `Cycle`). The host's failures of the call itself — overloaded, reset,
   retryable — reach the caller as the stub's rejection and are sorted as (d) sorts them. Nothing
-  is caught (rule 9). A receiver that throws while it holds an ask is (f)'s defect: its abort
+  is caught (rule 9). The host's fourth documented failure, **the 32 MiB limit on one serialized
+  argument or result** ("The maximum serialized RPC limit is 32 MiB", the RPC page), is kept from
+  being reached: the printed text is measured in beni with `utf8Bytes` against 32 MiB less a
+  64 KiB margin for the other arguments and the clone's framing — an ask over it is
+  `Err (Unprintable …)` naming the limit, a reply over it is answered `{ kind: "large" }`, which
+  is `Unreadable` at the asker, with one `Log.warn` line at the replier, and a post over it is
+  dropped with the warning line an unprintable post gets (*R9-1*: on master the same ask over
+  `stub.fetch` was answered 200, and over RPC without the check the host's 500 would have been a
+  defect; `ObjectRpc`'s `/big-ask` and `/big-reply`). Streams, which the page says the limit does
+  not bind, are not used. A receiver that throws while it holds an ask is (f)'s defect: its abort
   rejects the pending call with the host's reset, and the asker sees `Err Reset` (*measured*,
   `workers/ObjectRpc`).
 - **The chain id is an argument**, not a header: an RPC call carries no headers. It travels the
@@ -7525,12 +7534,19 @@ transport of (e.10)'s `post` and `ask`, in place of `stub.fetch` on `/__beni/pos
   (e.3)'s cycle refusal holds over RPC as it holds over `stub.fetch` (*measured*: `ObjectRefused`'s
   Scorer asking the Lobby back, and `ObjectRpc`'s Pong asking the Ping back, are `Err Cycle` with
   neither object hanging). A forwarded request still carries `x-beni-chain`, and an object still
-  refuses a request of a chain parked in it with 508.
+  refuses a request of a chain parked in it with 508 (`ObjectRpc`'s `/forward-back`: the Pong
+  forwards the Ping's request back while the Ping waits on it, and the Pong's `forward` is
+  `Err Cycle`; *R9-5*).
 - **The forged-message path closes by construction**: an RPC method is not reachable through
   `forward`, which forwards HTTP alone, so the origin mark `x-beni-origin: platform` of (e.10) and
   the two paths are gone from the object. `forward`'s refusal of `/__beni/` paths stays: the test
   hooks and (k)'s marks are the platform's own paths still, and a client reaches none of them
-  (`ObjectCounter`'s forged post and ask are answered 404 by `forward` as before).
+  (`ObjectCounter`'s forged post and ask are answered 404 by `forward` as before). **The trust
+  boundary is the account** (*R9-4*): the RPC page says a Durable Object's methods "can be called
+  by other workers on the same Cloudflare account that declare a binding to it", so such a Worker
+  can call `$beni` as the platform does — and can deliver only what the protocol parses: a text
+  the schema refuses is `unparsed`, and a text it accepts is a message of the protocol, as any
+  other.
 - **The host requires the class to extend `DurableObject`** from `cloudflare:workers` for RPC, and
   the release compactor refuses a platform runtime file that holds the `class` keyword
   (`backend.md` §9, `src/js/Minify.zig`). `runtime.js` keeps its function form and gains the
