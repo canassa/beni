@@ -6982,6 +6982,29 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    `indexedMap` that swaps two rows by index (`swapRows`, `ExchangeRows`), and a decoder's issues
    (`Schema`, #413). `ownership/RecordContentsRows` pins the accepted rows and `rows ++ rows`, refused.
 
+   *Revised 2026-10-23 (#420, #868; R4's enforcement met the reactivity research's generated apps).* Two more
+   places state a record condition, each by where the records come from:
+   - **A decoder's answer.** `Json.decode` and `Json.decodeValue` (`codecRunRow`), and a schema declaration's
+     `parse` and `parseWith` with no schema argument (`schemaMemberRow`), state that their answer holds no record
+     twice when the codec's decoded slot holds nothing the program made (`taint.decoded` empty: no conversion,
+     no derived evidence that answers values). The specialised read builds a new object for every record it
+     answers (`emit`'s `…$$readValid` returns `{ x: …, y: … }`), and a `Value` position holds the host's value,
+     in which no record a program can write is reached. A run of a schema built at run time
+     (`Schema.read (Schema.list …)`, `schemaRunRow`) is not refined: its slots are the argument's.
+   - **A function parameter answered through a lambda** (`rfreshAcross`, records only). When a callee's
+     callback is a lambda that answers what the declaration's own function parameter `π_k` answers (a `cb`
+     provenance with `b` 1), two calls of the lambda are two calls of `π_k`: their answers are apart when
+     `π_k`'s are, the atom `sep cb_k cb_k` of the declaration. When the lambda may also answer the element the
+     callee hands it, `π_k`'s answers must be records it makes or the element it is handed, `keep cb_k c` over
+     the element's container, which the caller discharges with its actual's summary (`rkeepShape`). So
+     `edit list f = List.map list λrow → if … then f row else row` answers `excl π1, keep cb2 π1, sep cb2 cb2`,
+     and `edit rows λr → { r | … }` is accepted, while a `set` that answers one captured row at every call is
+     refused. A list's condition reads none of it.
+   `ownership/RecordContentsAnswered` pins both and the captured row, refused; the generated apps of
+   `unique-components`, `big-component` and `shared-components` check again at sizes 16, 64 and 128 and seeds
+   1–3. Still refused, each its own limit: `List.sortWith` (`big-table`'s sorts), a run-time schema's run
+   (`big-table`'s `Schema.read (Schema.list …)`), and a base no provenance names (#870, `routed-app`).
+
    *Compared (2026-10-19); the owner chose the parallel domain.* The alternative is one lattice whose atoms carry a domain:
    `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
    instead of dropping it, a list's demand reading the list atoms, a record's reading both.

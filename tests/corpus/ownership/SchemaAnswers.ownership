@@ -12,14 +12,14 @@ module SchemaAnswers
   173:13 List.push out.items: accepted param
   185:13 List.push vs: accepted param
   196:15 List.push xs: accepted call
-  summary declared: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
+  summary declared: res [*] ~fresh2{lost}, fresh1{lost}
   summary composed: res [*] ~fresh2{lost}r{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}r{lost}
   summary generic: res [*] ~fresh2{lost}r{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}r{lost}
-  summary built: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
+  summary built: res [*] ~fresh2{lost}, fresh1{lost}
   summary topLevel: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆
   summary captured: π1 RAw[storage], π1⋆ RAw[storage]; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~condition(fresh5) ~π1 ~π1⋆, .0⋆ ~condition(fresh4) ~π1 ~π1⋆, .1 ~condition(fresh6) π1, condition(fresh3){lost}
   summary interpreted: res [*] ~condition(fresh2) ~fresh2{lost}r{lost}, [*]⋆ ~⊤schema{lost}r{lost}, fresh1{lost}, ⋆ ~condition(fresh3) ~⊤schema{lost}r{lost}
-  summary derived: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
+  summary derived: res [*] ~fresh2{lost}, fresh1{lost}
   summary decoded: π1 RA; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .1 π1
   summary encodedKept: π1 RA, π1⋆ RAw[storage]; res .0 fresh1{lost}, .0[*] ~fresh2{lost}r{lost}, .0[*]⋆ ~condition(fresh5) ~π1 ~π1⋆, .0⋆ ~condition(fresh4) ~π1 ~π1⋆, .1 ~condition(fresh6) π1, condition(fresh3){lost}r{lost}
   summary encodedAlone: π1 RA, π1⋆ RAw[storage]; res [*] ~fresh2{lost}r{lost}, [*]⋆ ~π1 ~π1⋆, fresh1{lost}, ⋆ ~π1 ~π1⋆

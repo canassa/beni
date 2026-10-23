@@ -1,0 +1,17 @@
+module RecordContentsAnswered
+  22:13 update rows[*]: accepted param (List.map writes it)
+  22:32 update r: accepted callback-param (List.map supplies it owned)
+  29:13 update <call List.copy>[*]: accepted call (RecordContentsAnswered.flip writes it)
+  40:16 update <call RecordContentsAnswered.patch>[*]: accepted param (RecordContentsAnswered.flip writes it)
+  40:22 update rows[*]: accepted param (RecordContentsAnswered.patch writes it)
+  40:54 update r: accepted callback-param (RecordContentsAnswered.patch supplies it owned)
+  44:19 update <call RecordContentsAnswered.patch>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsAnswered.flip writes it) (approx) [copy]
+  summary flip: π1 R, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary decoded: π1 R; res [*] ~condition(fresh2) ~fresh2 ~fresh501◦ ~fresh502◦, fresh1
+  summary patch: π1 R, π1[*] A, π2 R, π3 R; res [*] ~cb3{excl cb3}r{excl cb3} ~condition(fresh2) ~fresh2{lost}r{excl cb3, excl π1, keep cb3 π1, sep cb3 cb3} ~π1[*], fresh1{lost}r{excl cb3, excl π1, keep cb3 π1, sep cb3 cb3}; π2 calls many, supply 1 π1[*] borrowed taken{excl π1[*]}r{excl π1[*]}; π3 calls many, supply 1 π1[*] owned taken{excl π1[*]}r{excl π1[*]}
+  summary patched: π1 R, π1[*] RW{done}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~fresh501◦r{excl π1} ~fresh502◦r{excl π1} ~π1[*]◦, fresh1r{excl π1}; rxreq excl π1
+  summary shared: π1 R, π1[*] RW{done}, π2 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1[*]◦ ~π2◦, fresh1r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 6, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 7: accepted 6, pending 0, rejected 1 (copy 1, restructure 0); hoisted 0, eager reads 0
