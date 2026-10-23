@@ -3774,11 +3774,17 @@ pub const Lowerer = struct {
             if (already) continue;
             try emitted.append(l.scratch, first.module);
 
+            // One name can be needed twice, by its interface row and by its
+            // base (a route's row names its function by base, #897); it is
+            // one binding, so one specifier.
             var specs: std.ArrayList(JsIr.Specifier) = .empty;
             for (l.needed.items) |entry| {
                 if (entry.module != first.module) continue;
                 const n = try l.neededName(entry);
-                try specs.append(l.scratch, .{ .imported = n, .local = n });
+                const seen = for (specs.items) |s| {
+                    if (s.local == n) break true;
+                } else false;
+                if (!seen) try specs.append(l.scratch, .{ .imported = n, .local = n });
             }
             const specifier = if (first.module.int() < l.in.specifiers.len) l.in.specifiers[first.module.int()] else "";
             if (specifier.len == 0) continue;

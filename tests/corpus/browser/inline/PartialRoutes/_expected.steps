@@ -1,0 +1,9 @@
+element "root"
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": 9}}
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": "x"}}
+detail window rr-push {"type": "serverSet", "widget": "__proto__", "state": {"cups": 1}}
+detail window rr-push {"type": "serverSet", "widget": "constructor", "state": {"cups": 1}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 2}, "w2": {"venue": "West"}}}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 3}, "w2": {"venue": 5}}}}
+click [data-role=four]
+input [data-role=venue] "Hall"
