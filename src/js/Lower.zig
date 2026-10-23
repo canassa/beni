@@ -6523,6 +6523,12 @@ pub const Lowerer = struct {
     /// is that parameter, an update of it — written in place, so only in a
     /// module whose records are (`Input.clean_modules`) — or a call of such
     /// a function handing it on. Bounded: past depth 8, no.
+    /// An update of a clean module is one the ownership checker accepted, and
+    /// every such update is written into its base (§31.10), which is what makes
+    /// it answer the parameter's object. A `.call`'s arguments are the
+    /// source's, one per parameter of `decl.params`: `where` evidence is no
+    /// BIR argument (the lowering adds it), and a dot-call is a `method_call`,
+    /// which `answersFieldObject` does not take.
     fn answersParam(l: *const Lowerer, m: u32, d: u32, i: usize, depth: u32) bool {
         if (depth > 8 or m >= l.in.birs.len) return false;
         const b = l.in.birs[m];
