@@ -1,0 +1,155 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      ""
+      <aside>""</aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- event window poke
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"0"</button>
+        <p>
+          <button data-poke="deep">"Deep"</button>
+        </p>
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- event window poke
+console.log: hit: 1
+console.log: hit: 2
+console.log: piece: 12
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"12"</button>
+        <p>
+          <button data-poke="deep">"Deep"</button>
+        </p>
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inner]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"12"</button>
+        ""
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- event window poke
+console.log: hit: 13
+console.log: piece: 23
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"23"</button>
+        ""
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main>
+      ""
+      <aside>""</aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- event window poke
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"23"</button>
+        ""
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- click [data-role=inner]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"23"</button>
+        <p>
+          <button data-poke="deep">"Deep"</button>
+        </p>
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>
+-- event window poke
+console.log: hit: 24
+console.log: hit: 25
+console.log: piece: 35
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <button data-poke="hit">"35"</button>
+        <p>
+          <button data-poke="deep">"Deep"</button>
+        </p>
+      </section>
+      <aside>
+        <button data-poke="piece">"Piece"</button>
+      </aside>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="inner">"Inner"</button>
+    </main>
+  </div>
+</body>

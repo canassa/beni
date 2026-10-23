@@ -1,0 +1,86 @@
+-- A handler inside an eager arm, with no flag and no captured argument, is
+-- the runtime's `on` handed the arms' elements, outermost first (#844). It
+-- is inert while any of its arms is hidden, even when the host clicks the
+-- button out of the page (browser-inline.md §8.2, #466): locally, in an arm
+-- inside an arm, and in another module's piece. Shown again, it works.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub exposing (Sub)
+import Tea
+import Widget
+
+
+type alias Model =
+    shown : Bool
+    inner : Bool
+    count : Int
+
+
+type Msg
+    = Toggle
+    | Inner
+    | Hit
+    | Child Widget.Msg
+    | Poke Int
+
+
+type Key
+    = ProbeKey
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Toggle →
+            ( { model | shown = not model.shown }, Cmd.none )
+
+        Inner →
+            ( { model | inner = not model.inner }, Cmd.none )
+
+        Hit →
+            ( { model | count = Debug.log "hit" (model.count + 1) }, Cmd.none )
+
+        Child Widget.Clicked →
+            ( { model | count = Debug.log "piece" (model.count + 10) }, Cmd.none )
+
+        Poke _ →
+            ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {if model.shown then
+            <section>
+                <button data-poke="hit" onClick={Hit}>{model.count}</button>
+                {if model.inner then
+                    <p><button data-poke="deep" onClick={Hit}>Deep</button></p>
+                 else
+                    <></>
+                }
+            </section>
+         else
+            <></>
+        }
+        {Html.map (Widget.view model.shown) Child}
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+        <button data-role="inner" onClick={Inner}>Inner</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element
+            { init =
+                λ⊤ →
+                    Probe.keep ⊤
+                    ( { shown = False, inner = True, count = 0 }, Cmd.none )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.on ProbeKey Probe.start Poke
+            }
+        )
+        "root"

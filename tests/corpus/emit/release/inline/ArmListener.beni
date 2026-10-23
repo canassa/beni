@@ -1,0 +1,62 @@
+-- emit/release/inline: a handler inside an eager arm, with no flag and no
+-- captured argument, is the runtime's `on` with the arm's element as its
+-- fourth argument, or an array of the arms' elements, outermost first, for
+-- an arm inside an arm (browser-inline.md §8.2, amended 2026-10-23, #844).
+-- The page is `browser/inline/ArmListenerHidden`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    shown : Bool
+    inner : Bool
+    name : String
+    count : Int
+
+
+type Msg
+    = Toggle
+    | Hit
+    | Typed String
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | shown = not model.shown, inner = not model.inner }
+
+        Hit →
+            { model | count = model.count + 1 }
+
+        Typed s →
+            { model | name = s }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {if model.shown then
+            <section>
+                <button onClick={Hit}>{model.count}</button>
+                <input type="text" value={model.name} onInput={Typed} />
+                {if model.inner then <p><button onClick={Hit}>Deep</button></p> else <></>}
+            </section>
+         else
+            <></>
+        }
+        <button onClick={Toggle}>Toggle</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { shown = False, inner = True, name = "", count = 0 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

@@ -285,11 +285,38 @@ pub part : V → V
 part node = Js.call node "querySelectorAll" [ Js.from "*" ]
 
 
---| `(node, f, kind)`: a listener of event `kind`, `click` when not given,
---| whose event enters the dispatch guard with `f`.
-pub on : V, V, V → ⊤
-on node f kind =
+--| `(node, f, kind, arms)`: a listener of event `kind`, `click` when not
+--| given, whose event enters the dispatch guard with `f`. `arms`, when given,
+--| are the elements of the eager arms around `node`, outermost first: while
+--| one of them is hidden — its `when` anchor stands in the page in its place
+--| — the event does nothing, not even enter the guard (`browser-inline.md`
+--| §8.2, #466: an inactive arm has no active handler). The outermost is
+--| asked first: an arm inside a hidden arm may never have been written.
+pub on : V, V, V, V → ⊤
+on node f kind arms =
     _ =
         Js.call node "addEventListener"
-            [ if Js.isUndefined kind then Js.from "click" else kind, Js.from λevent → send f event ]
+            [ if Js.isUndefined kind then Js.from "click" else kind
+            , Js.from λevent → if Js.isUndefined arms || armsShown arms then send f event
+            ]
     ⊤
+
+
+-- Whether `arms`, one element or an array of them, are in the page: no
+-- anchor of theirs is.
+armsShown : V → Bool
+armsShown arms =
+    if Js.instanceOf arms (Js.global "Array") then
+        allShown arms 0
+    else
+        Js.isNull (Js.get (Js.get arms "$a") "parentNode")
+
+
+allShown : V, Int → Bool
+allShown arms i =
+    if i == Js.to (Js.get arms "length") then
+        True
+    else if armsShown (Js.at arms i) then
+        allShown arms (i + 1)
+    else
+        False
