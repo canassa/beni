@@ -4266,9 +4266,9 @@ names the fixture that pins each (§24.6).
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
 | `Hosted.keyOf` | `String, aliased k → fresh Key` | `Hosted.js`: `({ t: type, c: compare, v: value })`, a new object holding the value |
 | `Html.Event` | `crossing` | a DOM event, made by the host: no beni value is ever put in one |
-| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.js`: `({ code, out })`, a new object of a number and a string |
-| `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
-| `Ssr.render` | `borrowed Html msg → String` | `Ssr.js`: `html.t`, the markup's text |
+| `Node.print`, `Node.exitWith` | `→ fresh Program` | `Node.beni` (2026-10-23, #877): `Js.object [ ( "$c", code ), ( "$o", out ) ]`, a new object of a number and a string |
+| `Node.printLines` | `borrowed List String → fresh Program` | `Node.beni`: `Js.get` of the list's `length`, then `String.join` on it, which keeps nothing |
+| `Ssr.render` | `borrowed Html msg → String` | `Ssr.beni`: `Js.get (Js.from html) "t"`, the markup's text |
 
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.

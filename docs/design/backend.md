@@ -6196,7 +6196,7 @@ both, so `slotName` (`src/js/Lower.zig:430-437`) costs the field alphabet nothin
 
 | | Why |
 |---|---|
-| `program.out` / `program.code` | **not a record and never were.** `Program` is a `foreign type` (`platforms/node/Node.beni:24`); the object is built in `Node.js` and read in `runtime.js`, and **no generated `.mjs` in any of the 109 trees mentions either name**. The first slice recorded this as item 4's hard constraint; it is not one |
+| `program.out` / `program.code` | **not a record and never were.** *(2026-10-23, #877: the two keys are `$c` and `$o`, written by `Js.object` in `Node.beni`, so that a beni field named `code` or `out` is not pinned by them; `boundary.md` §4's amendment.)* `Program` is a `foreign type` (`platforms/node/Node.beni:24`); the object is built in `Node.js` and read in `runtime.js`, and **no generated `.mjs` in any of the 109 trees mentions either name**. The first slice recorded this as item 4's hard constraint; it is not one |
 | the `$` tag and the `a`/`b`/`c`â¦ slots | not fields, and already one character |
 | a `<T>$$order` key | it is a **constructor tag name**, read dynamically as `M$T$$order[x]` (`Lower.orderTable`, `src/js/Lower.zig:2229-2272`; `orderLookup`, `:2282-2286`). Not item 4's â but it is worth recording that report 12 Â§5.4's "no `obj[dynamicString]` exists" is **false of today's output**, and the integer-tag item is where that is paid |
 | anything inside a `*.foreign.mjs` | copied verbatim, never parsed. *Amended 2026-09-29: never renamed still; under `--release` compacted and cut to its imported exports by a lexical pass (*Hand-written JavaScript under `--release`*, below)* |
@@ -12058,6 +12058,9 @@ DOM (research 36 Â§2.12, Â§5.5): the same tree, and the same template split,
   printed by the `node` platform's own `foreign render : Html msg -> String`, which reads `.t` â legal
   because `node` names `ssr` (`boundary.md` Â§9.3) â so a `run/` fixture prints a view with
   `Node.printLines [ Node.render (view model) ]`.
+  *(Amended 2026-10-23, #877: `Ssr.render` is beni over `Js` — `Js.get` of `t` under `Js.pure`, in
+  `platforms/node/Ssr.beni` — and `Ssr.js` is gone; reading `.t` is legal for the same reason, and the
+  release output of every `run/Markup*` program is what it was; `plans/core-in-beni.md`, step 4.)*
 
 *As built, 2026-09-29* (`platforms/node/zig/ssr.zig`, `platforms/node/markup.js`,
 `platforms/html/zig/parser_table.zig`; `tests/corpus/run/Markup*`, `emit/MarkupSsr`). The list above

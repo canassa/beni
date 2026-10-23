@@ -403,6 +403,16 @@ third rule, *marshal to plain data*, made specific: a list crosses as a plain ar
 arrays*). A **port**'s generated codec (§3.1) follows the same two rules: a list going out is read
 through the protocol, and one coming in is a fresh array the codec built.
 
+*Amended 2026-10-23 (#877):* `platforms/node/Node.js` is gone. `Node.printLines` is beni over
+`String.join`, and tells an empty list apart by `Js.get` of its `length`, which every form of a list
+answers (`backend.md` §4, *Lists are arrays*); `print`, `printLines` and `exitWith` build the
+`Program` object with `Js.object`, whose keys are never renamed, so `runtime.js`'s `run` and
+`Io.js`'s `finish` read the two by name in every build. Its keys are `$c` and `$o` now, where the
+sibling wrote `code` and `out`: a `Js.object` key is a plain property, and a beni record field of
+the same text keeps its source name in every release build (`backend.md` §9, *field spellings*) —
+`code` and `out` are fields of many a program, `Schema`'s `Issue.code` among them, and `$` is in no
+beni identifier (`plans/core-in-beni.md`, step 4).
+
 #### What JavaScript may read of a beni value
 
 **Amended 2026-10-22: field spellings may be reused.** One source field text

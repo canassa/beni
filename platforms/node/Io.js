@@ -10,12 +10,12 @@ import { readFile } from "node:fs/promises";
 
 // How a fiber `Io.run` started ended: its program's output and exit code,
 // or 130 when it was cancelled. `runtime.js` has already run the empty
-// program `main` evaluated to.
+// program `main` evaluated to. A `Program` is `{ $c, $o }` (`Node.beni`).
 export const finish = (exit) => {
   if (exit.$ === "Done") {
     const program = exit.a;
-    if (program.out.length !== 0) process.stdout.write(program.out);
-    process.exitCode = program.code;
+    if (program.$o.length !== 0) process.stdout.write(program.$o);
+    process.exitCode = program.$c;
   } else {
     process.exitCode = 130;
   }
