@@ -6270,6 +6270,7 @@ pub const Lowerer = struct {
     /// `base` a local. Only of a clean module, where the inner update
     /// answers its base's object.
     fn sameFieldObject(l: *Lowerer, base: Inst.Index, field: Symbol, value: Inst.Index) bool {
+        if (std.debug.runtime_safety) std.debug.assert(l.in.ownership.clean and !l.in.sanitize_records);
         if (l.bir.instTag(base) != .local or l.bir.instTag(value) != .record_update) return false;
         var inner: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(value).lhs));
         if (l.bir.instTag(inner) == .local) inner = l.letValueOf(inner) orelse return false;
