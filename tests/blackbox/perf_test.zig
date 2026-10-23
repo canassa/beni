@@ -1171,6 +1171,34 @@ fn enumComparisons(arena: std.mem.Allocator, count: usize) ![]const u8 {
     return out.toOwnedSlice(arena);
 }
 
+// A `case` read branch by branch judged each branch against a matrix of
+// the branches above it specialised afresh, so n branches
+// `[ Just ( k, y ), …rest ] →` cost O(n²) before the literal threw the rows
+// away (issue #812). Usefulness now walks a tree of the specialised matrices
+// kept for the whole `case` (checker-v2.md §16, amended 2026-10-23).
+// Calibration (ReleaseFast, instructions): afresh 128.3M / 448.2M at 500 /
+// 1 000 branches, a ratio of 3.5, and 2 000 refused by the default pattern
+// budget; on the tree 27.2M / 42.4M / 72.9M / 133.8M / 255.6M at 500 /
+// 1 000 / 2 000 / 4 000 / 8 000, 1.6 to 1.9. n = 2 000.
+test "a case of nested literal patterns is linear in its branches" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("Arms.beni", try nestedLiteralArms(s.arena(), 2_000));
+    try s.w.write("Arms2.beni", try nestedLiteralArms(s.arena(), 4_000));
+    const verdict = try s.ratio("Arms.beni", "Arms2.beni", 2_000);
+    try s.finish("a case of nested literal arms", verdict);
+}
+
+/// One `case` on a `List (Maybe (Int × Int))` of `count` branches
+/// `[ Just ( k, y ), …rest ] → y` and a trailing `_`.
+fn nestedLiteralArms(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "f : List (Maybe (Int × Int)) → Int\nf xs =\n    case xs of\n");
+    for (0..count) |i| try out.print(arena, "        [ Just ( {d}, y ), …rest ] →\n            y\n\n", .{i});
+    try out.appendSlice(arena, "        _ →\n            0\n");
+    return out.toOwnedSlice(arena);
+}
+
 /// `mk` a record literal nested `depth` deep, and `uses` declarations
 /// comparing it with itself.
 fn nestedRecord(arena: std.mem.Allocator, depth: usize, uses: usize) ![]const u8 {

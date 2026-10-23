@@ -1,14 +1,14 @@
 //! Column zero of a pattern matrix, indexed by the alternative that heads
-//! each row. `Exhaustive`'s two relations ask three questions of
-//! that column — which alternatives appear (`collect`), which rows a
-//! specialisation by EACH alternative keeps (`split`), and, as a `case` is
-//! read branch by branch, which rows above a new branch share its head
-//! (`Heads`). Each was a scan of the whole matrix per alternative or per
-//! branch, so a `case` over a type of n constructors listing each once cost
-//! n² steps and a flat 2 000-constructor `case` ran out of the budget that
-//! exists for exponential matrices. Each is now one pass over the rows,
+//! each row. `Exhaustive.isExhaustive` asks two questions of that column —
+//! which alternatives appear (`collect`) and which rows a specialisation by
+//! EACH alternative keeps (`split`). Each was a scan of the whole matrix per
+//! alternative, so a `case` over a type of n constructors listing each once
+//! cost n² steps and a flat 2 000-constructor `case` ran out of the budget
+//! that exists for exponential matrices. Each is now one pass over the rows,
 //! with the alternatives as dense indices into arrays (`fast-compiler.md` §5)
-//! relative to their union's `alts_start`.
+//! relative to their union's `alts_start`. (A third question, which rows
+//! above a new branch share its head, was `Heads` here; `Useful.Node` now
+//! answers it at every node and not only the root.)
 //!
 //! Nothing here decides an answer: it only says which rows a question
 //! reads, in matrix order, so the matrices `Exhaustive` builds from it are
@@ -119,57 +119,3 @@ pub fn split(arena: Allocator, pats: *const Patterns, matrix: []const []const Pa
     }
     return .{ .alts_start = u.alts_start, .starts = starts, .rows = rows, .wild = wild };
 }
-
-/// The rows of a `case` so far by what heads them, kept as `Exhaustive.one`
-/// adds each branch. A branch headed by constructor `C` is useful against
-/// the rows above it exactly when it is useful against the ones headed by
-/// `C` or by a wildcard — which is `isUseful`'s first step — so asking that
-/// of the whole matrix made a `case` of n branches over n constructors n²,
-/// the budget spent before any branch had nested patterns worth exploring.
-/// `ok` goes false for good at a head this index does not describe (a
-/// literal, a second union), and the caller then asks the general relation
-/// of the whole matrix, as before.
-pub const Heads = struct {
-    ok: bool = true,
-    un: ?u32 = null,
-    alts_start: u32 = 0,
-    by_alt: []std.ArrayList(u32) = &.{},
-    wild: std.ArrayList(u32) = .empty,
-
-    pub fn add(h: *Heads, arena: Allocator, pats: *const Patterns, row_index: usize, head: PatIndex) Allocator.Error!void {
-        if (!h.ok) return;
-        const index: u32 = @intCast(row_index);
-        switch (pats.tag(head)) {
-            .anything => try h.wild.append(arena, index),
-            .literal, .list => h.ok = false,
-            .ctor => {
-                const c = pats.ctor(head);
-                if (h.un == null) {
-                    const u = pats.unionAt(c.un);
-                    h.un = c.un;
-                    h.alts_start = u.alts_start;
-                    h.by_alt = try arena.alloc(std.ArrayList(u32), u.count());
-                    @memset(h.by_alt, .empty);
-                }
-                const at = h.slot(c) orelse {
-                    h.ok = false;
-                    return;
-                };
-                try h.by_alt[at].append(arena, index);
-            },
-        }
-    }
-
-    /// The rows above headed by constructor `c`'s alternative, or null when
-    /// this index cannot say (it is off, or `c` is of another union).
-    pub fn headedBy(h: *const Heads, c: Patterns.Ctor) ?[]const u32 {
-        if (!h.ok) return null;
-        if (h.un == null) return &.{};
-        return h.by_alt[h.slot(c) orelse return null].items;
-    }
-
-    fn slot(h: *const Heads, c: Patterns.Ctor) ?usize {
-        if (c.un != h.un.? or c.alt < h.alts_start or c.alt - h.alts_start >= h.by_alt.len) return null;
-        return c.alt - h.alts_start;
-    }
-};

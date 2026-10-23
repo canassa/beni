@@ -106,6 +106,7 @@ const files = [_]File{
     .{ .path = "Types.zig", .text = @embedFile("Types.zig") },
     .{ .path = "Unify.zig", .text = @embedFile("Unify.zig") },
     .{ .path = "Unit.zig", .text = @embedFile("Unit.zig") },
+    .{ .path = "Useful.zig", .text = @embedFile("Useful.zig") },
     .{ .path = "Vocab.zig", .text = @embedFile("Vocab.zig") },
     .{ .path = "Walk.zig", .text = @embedFile("Walk.zig") },
     .{ .path = "checker_test.zig", .text = @embedFile("checker_test.zig") },

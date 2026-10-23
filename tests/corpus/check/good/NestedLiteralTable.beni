@@ -1,0 +1,3618 @@
+-- check/good: a `case` of 1 200 branches `[ Just ( k, y ), …rest ]` plus a
+-- wildcard — ordinary code, generated (see tests/corpus/README.md).
+--
+-- A `case` like this must not be REFUSED at the default budget. Judging
+-- every branch against the branches above it specialised afresh read every
+-- row above it three times before the literal `k` dropped it, ~4·n² steps:
+-- 1 200 branches came to more than the default 5 000 000, and this was
+-- `pattern_budget_exhausted` on a `case` with nothing wrong with it (issue
+-- #812). Usefulness walks a tree of the specialised matrices, kept for the
+-- whole `case` (`checker-v2.md` §16, amended 2026-10-23), so this costs 23
+-- steps a branch. The number of branches is chosen to cross the old
+-- threshold, so this fixture fails the moment a branch reads the rows above
+-- it again.
+pub f : List (Maybe (Int × Int)) → Int
+f xs =
+    case xs of
+        [ Just ( 0, y ), …rest ] →
+            y
+
+        [ Just ( 1, y ), …rest ] →
+            y
+
+        [ Just ( 2, y ), …rest ] →
+            y
+
+        [ Just ( 3, y ), …rest ] →
+            y
+
+        [ Just ( 4, y ), …rest ] →
+            y
+
+        [ Just ( 5, y ), …rest ] →
+            y
+
+        [ Just ( 6, y ), …rest ] →
+            y
+
+        [ Just ( 7, y ), …rest ] →
+            y
+
+        [ Just ( 8, y ), …rest ] →
+            y
+
+        [ Just ( 9, y ), …rest ] →
+            y
+
+        [ Just ( 10, y ), …rest ] →
+            y
+
+        [ Just ( 11, y ), …rest ] →
+            y
+
+        [ Just ( 12, y ), …rest ] →
+            y
+
+        [ Just ( 13, y ), …rest ] →
+            y
+
+        [ Just ( 14, y ), …rest ] →
+            y
+
+        [ Just ( 15, y ), …rest ] →
+            y
+
+        [ Just ( 16, y ), …rest ] →
+            y
+
+        [ Just ( 17, y ), …rest ] →
+            y
+
+        [ Just ( 18, y ), …rest ] →
+            y
+
+        [ Just ( 19, y ), …rest ] →
+            y
+
+        [ Just ( 20, y ), …rest ] →
+            y
+
+        [ Just ( 21, y ), …rest ] →
+            y
+
+        [ Just ( 22, y ), …rest ] →
+            y
+
+        [ Just ( 23, y ), …rest ] →
+            y
+
+        [ Just ( 24, y ), …rest ] →
+            y
+
+        [ Just ( 25, y ), …rest ] →
+            y
+
+        [ Just ( 26, y ), …rest ] →
+            y
+
+        [ Just ( 27, y ), …rest ] →
+            y
+
+        [ Just ( 28, y ), …rest ] →
+            y
+
+        [ Just ( 29, y ), …rest ] →
+            y
+
+        [ Just ( 30, y ), …rest ] →
+            y
+
+        [ Just ( 31, y ), …rest ] →
+            y
+
+        [ Just ( 32, y ), …rest ] →
+            y
+
+        [ Just ( 33, y ), …rest ] →
+            y
+
+        [ Just ( 34, y ), …rest ] →
+            y
+
+        [ Just ( 35, y ), …rest ] →
+            y
+
+        [ Just ( 36, y ), …rest ] →
+            y
+
+        [ Just ( 37, y ), …rest ] →
+            y
+
+        [ Just ( 38, y ), …rest ] →
+            y
+
+        [ Just ( 39, y ), …rest ] →
+            y
+
+        [ Just ( 40, y ), …rest ] →
+            y
+
+        [ Just ( 41, y ), …rest ] →
+            y
+
+        [ Just ( 42, y ), …rest ] →
+            y
+
+        [ Just ( 43, y ), …rest ] →
+            y
+
+        [ Just ( 44, y ), …rest ] →
+            y
+
+        [ Just ( 45, y ), …rest ] →
+            y
+
+        [ Just ( 46, y ), …rest ] →
+            y
+
+        [ Just ( 47, y ), …rest ] →
+            y
+
+        [ Just ( 48, y ), …rest ] →
+            y
+
+        [ Just ( 49, y ), …rest ] →
+            y
+
+        [ Just ( 50, y ), …rest ] →
+            y
+
+        [ Just ( 51, y ), …rest ] →
+            y
+
+        [ Just ( 52, y ), …rest ] →
+            y
+
+        [ Just ( 53, y ), …rest ] →
+            y
+
+        [ Just ( 54, y ), …rest ] →
+            y
+
+        [ Just ( 55, y ), …rest ] →
+            y
+
+        [ Just ( 56, y ), …rest ] →
+            y
+
+        [ Just ( 57, y ), …rest ] →
+            y
+
+        [ Just ( 58, y ), …rest ] →
+            y
+
+        [ Just ( 59, y ), …rest ] →
+            y
+
+        [ Just ( 60, y ), …rest ] →
+            y
+
+        [ Just ( 61, y ), …rest ] →
+            y
+
+        [ Just ( 62, y ), …rest ] →
+            y
+
+        [ Just ( 63, y ), …rest ] →
+            y
+
+        [ Just ( 64, y ), …rest ] →
+            y
+
+        [ Just ( 65, y ), …rest ] →
+            y
+
+        [ Just ( 66, y ), …rest ] →
+            y
+
+        [ Just ( 67, y ), …rest ] →
+            y
+
+        [ Just ( 68, y ), …rest ] →
+            y
+
+        [ Just ( 69, y ), …rest ] →
+            y
+
+        [ Just ( 70, y ), …rest ] →
+            y
+
+        [ Just ( 71, y ), …rest ] →
+            y
+
+        [ Just ( 72, y ), …rest ] →
+            y
+
+        [ Just ( 73, y ), …rest ] →
+            y
+
+        [ Just ( 74, y ), …rest ] →
+            y
+
+        [ Just ( 75, y ), …rest ] →
+            y
+
+        [ Just ( 76, y ), …rest ] →
+            y
+
+        [ Just ( 77, y ), …rest ] →
+            y
+
+        [ Just ( 78, y ), …rest ] →
+            y
+
+        [ Just ( 79, y ), …rest ] →
+            y
+
+        [ Just ( 80, y ), …rest ] →
+            y
+
+        [ Just ( 81, y ), …rest ] →
+            y
+
+        [ Just ( 82, y ), …rest ] →
+            y
+
+        [ Just ( 83, y ), …rest ] →
+            y
+
+        [ Just ( 84, y ), …rest ] →
+            y
+
+        [ Just ( 85, y ), …rest ] →
+            y
+
+        [ Just ( 86, y ), …rest ] →
+            y
+
+        [ Just ( 87, y ), …rest ] →
+            y
+
+        [ Just ( 88, y ), …rest ] →
+            y
+
+        [ Just ( 89, y ), …rest ] →
+            y
+
+        [ Just ( 90, y ), …rest ] →
+            y
+
+        [ Just ( 91, y ), …rest ] →
+            y
+
+        [ Just ( 92, y ), …rest ] →
+            y
+
+        [ Just ( 93, y ), …rest ] →
+            y
+
+        [ Just ( 94, y ), …rest ] →
+            y
+
+        [ Just ( 95, y ), …rest ] →
+            y
+
+        [ Just ( 96, y ), …rest ] →
+            y
+
+        [ Just ( 97, y ), …rest ] →
+            y
+
+        [ Just ( 98, y ), …rest ] →
+            y
+
+        [ Just ( 99, y ), …rest ] →
+            y
+
+        [ Just ( 100, y ), …rest ] →
+            y
+
+        [ Just ( 101, y ), …rest ] →
+            y
+
+        [ Just ( 102, y ), …rest ] →
+            y
+
+        [ Just ( 103, y ), …rest ] →
+            y
+
+        [ Just ( 104, y ), …rest ] →
+            y
+
+        [ Just ( 105, y ), …rest ] →
+            y
+
+        [ Just ( 106, y ), …rest ] →
+            y
+
+        [ Just ( 107, y ), …rest ] →
+            y
+
+        [ Just ( 108, y ), …rest ] →
+            y
+
+        [ Just ( 109, y ), …rest ] →
+            y
+
+        [ Just ( 110, y ), …rest ] →
+            y
+
+        [ Just ( 111, y ), …rest ] →
+            y
+
+        [ Just ( 112, y ), …rest ] →
+            y
+
+        [ Just ( 113, y ), …rest ] →
+            y
+
+        [ Just ( 114, y ), …rest ] →
+            y
+
+        [ Just ( 115, y ), …rest ] →
+            y
+
+        [ Just ( 116, y ), …rest ] →
+            y
+
+        [ Just ( 117, y ), …rest ] →
+            y
+
+        [ Just ( 118, y ), …rest ] →
+            y
+
+        [ Just ( 119, y ), …rest ] →
+            y
+
+        [ Just ( 120, y ), …rest ] →
+            y
+
+        [ Just ( 121, y ), …rest ] →
+            y
+
+        [ Just ( 122, y ), …rest ] →
+            y
+
+        [ Just ( 123, y ), …rest ] →
+            y
+
+        [ Just ( 124, y ), …rest ] →
+            y
+
+        [ Just ( 125, y ), …rest ] →
+            y
+
+        [ Just ( 126, y ), …rest ] →
+            y
+
+        [ Just ( 127, y ), …rest ] →
+            y
+
+        [ Just ( 128, y ), …rest ] →
+            y
+
+        [ Just ( 129, y ), …rest ] →
+            y
+
+        [ Just ( 130, y ), …rest ] →
+            y
+
+        [ Just ( 131, y ), …rest ] →
+            y
+
+        [ Just ( 132, y ), …rest ] →
+            y
+
+        [ Just ( 133, y ), …rest ] →
+            y
+
+        [ Just ( 134, y ), …rest ] →
+            y
+
+        [ Just ( 135, y ), …rest ] →
+            y
+
+        [ Just ( 136, y ), …rest ] →
+            y
+
+        [ Just ( 137, y ), …rest ] →
+            y
+
+        [ Just ( 138, y ), …rest ] →
+            y
+
+        [ Just ( 139, y ), …rest ] →
+            y
+
+        [ Just ( 140, y ), …rest ] →
+            y
+
+        [ Just ( 141, y ), …rest ] →
+            y
+
+        [ Just ( 142, y ), …rest ] →
+            y
+
+        [ Just ( 143, y ), …rest ] →
+            y
+
+        [ Just ( 144, y ), …rest ] →
+            y
+
+        [ Just ( 145, y ), …rest ] →
+            y
+
+        [ Just ( 146, y ), …rest ] →
+            y
+
+        [ Just ( 147, y ), …rest ] →
+            y
+
+        [ Just ( 148, y ), …rest ] →
+            y
+
+        [ Just ( 149, y ), …rest ] →
+            y
+
+        [ Just ( 150, y ), …rest ] →
+            y
+
+        [ Just ( 151, y ), …rest ] →
+            y
+
+        [ Just ( 152, y ), …rest ] →
+            y
+
+        [ Just ( 153, y ), …rest ] →
+            y
+
+        [ Just ( 154, y ), …rest ] →
+            y
+
+        [ Just ( 155, y ), …rest ] →
+            y
+
+        [ Just ( 156, y ), …rest ] →
+            y
+
+        [ Just ( 157, y ), …rest ] →
+            y
+
+        [ Just ( 158, y ), …rest ] →
+            y
+
+        [ Just ( 159, y ), …rest ] →
+            y
+
+        [ Just ( 160, y ), …rest ] →
+            y
+
+        [ Just ( 161, y ), …rest ] →
+            y
+
+        [ Just ( 162, y ), …rest ] →
+            y
+
+        [ Just ( 163, y ), …rest ] →
+            y
+
+        [ Just ( 164, y ), …rest ] →
+            y
+
+        [ Just ( 165, y ), …rest ] →
+            y
+
+        [ Just ( 166, y ), …rest ] →
+            y
+
+        [ Just ( 167, y ), …rest ] →
+            y
+
+        [ Just ( 168, y ), …rest ] →
+            y
+
+        [ Just ( 169, y ), …rest ] →
+            y
+
+        [ Just ( 170, y ), …rest ] →
+            y
+
+        [ Just ( 171, y ), …rest ] →
+            y
+
+        [ Just ( 172, y ), …rest ] →
+            y
+
+        [ Just ( 173, y ), …rest ] →
+            y
+
+        [ Just ( 174, y ), …rest ] →
+            y
+
+        [ Just ( 175, y ), …rest ] →
+            y
+
+        [ Just ( 176, y ), …rest ] →
+            y
+
+        [ Just ( 177, y ), …rest ] →
+            y
+
+        [ Just ( 178, y ), …rest ] →
+            y
+
+        [ Just ( 179, y ), …rest ] →
+            y
+
+        [ Just ( 180, y ), …rest ] →
+            y
+
+        [ Just ( 181, y ), …rest ] →
+            y
+
+        [ Just ( 182, y ), …rest ] →
+            y
+
+        [ Just ( 183, y ), …rest ] →
+            y
+
+        [ Just ( 184, y ), …rest ] →
+            y
+
+        [ Just ( 185, y ), …rest ] →
+            y
+
+        [ Just ( 186, y ), …rest ] →
+            y
+
+        [ Just ( 187, y ), …rest ] →
+            y
+
+        [ Just ( 188, y ), …rest ] →
+            y
+
+        [ Just ( 189, y ), …rest ] →
+            y
+
+        [ Just ( 190, y ), …rest ] →
+            y
+
+        [ Just ( 191, y ), …rest ] →
+            y
+
+        [ Just ( 192, y ), …rest ] →
+            y
+
+        [ Just ( 193, y ), …rest ] →
+            y
+
+        [ Just ( 194, y ), …rest ] →
+            y
+
+        [ Just ( 195, y ), …rest ] →
+            y
+
+        [ Just ( 196, y ), …rest ] →
+            y
+
+        [ Just ( 197, y ), …rest ] →
+            y
+
+        [ Just ( 198, y ), …rest ] →
+            y
+
+        [ Just ( 199, y ), …rest ] →
+            y
+
+        [ Just ( 200, y ), …rest ] →
+            y
+
+        [ Just ( 201, y ), …rest ] →
+            y
+
+        [ Just ( 202, y ), …rest ] →
+            y
+
+        [ Just ( 203, y ), …rest ] →
+            y
+
+        [ Just ( 204, y ), …rest ] →
+            y
+
+        [ Just ( 205, y ), …rest ] →
+            y
+
+        [ Just ( 206, y ), …rest ] →
+            y
+
+        [ Just ( 207, y ), …rest ] →
+            y
+
+        [ Just ( 208, y ), …rest ] →
+            y
+
+        [ Just ( 209, y ), …rest ] →
+            y
+
+        [ Just ( 210, y ), …rest ] →
+            y
+
+        [ Just ( 211, y ), …rest ] →
+            y
+
+        [ Just ( 212, y ), …rest ] →
+            y
+
+        [ Just ( 213, y ), …rest ] →
+            y
+
+        [ Just ( 214, y ), …rest ] →
+            y
+
+        [ Just ( 215, y ), …rest ] →
+            y
+
+        [ Just ( 216, y ), …rest ] →
+            y
+
+        [ Just ( 217, y ), …rest ] →
+            y
+
+        [ Just ( 218, y ), …rest ] →
+            y
+
+        [ Just ( 219, y ), …rest ] →
+            y
+
+        [ Just ( 220, y ), …rest ] →
+            y
+
+        [ Just ( 221, y ), …rest ] →
+            y
+
+        [ Just ( 222, y ), …rest ] →
+            y
+
+        [ Just ( 223, y ), …rest ] →
+            y
+
+        [ Just ( 224, y ), …rest ] →
+            y
+
+        [ Just ( 225, y ), …rest ] →
+            y
+
+        [ Just ( 226, y ), …rest ] →
+            y
+
+        [ Just ( 227, y ), …rest ] →
+            y
+
+        [ Just ( 228, y ), …rest ] →
+            y
+
+        [ Just ( 229, y ), …rest ] →
+            y
+
+        [ Just ( 230, y ), …rest ] →
+            y
+
+        [ Just ( 231, y ), …rest ] →
+            y
+
+        [ Just ( 232, y ), …rest ] →
+            y
+
+        [ Just ( 233, y ), …rest ] →
+            y
+
+        [ Just ( 234, y ), …rest ] →
+            y
+
+        [ Just ( 235, y ), …rest ] →
+            y
+
+        [ Just ( 236, y ), …rest ] →
+            y
+
+        [ Just ( 237, y ), …rest ] →
+            y
+
+        [ Just ( 238, y ), …rest ] →
+            y
+
+        [ Just ( 239, y ), …rest ] →
+            y
+
+        [ Just ( 240, y ), …rest ] →
+            y
+
+        [ Just ( 241, y ), …rest ] →
+            y
+
+        [ Just ( 242, y ), …rest ] →
+            y
+
+        [ Just ( 243, y ), …rest ] →
+            y
+
+        [ Just ( 244, y ), …rest ] →
+            y
+
+        [ Just ( 245, y ), …rest ] →
+            y
+
+        [ Just ( 246, y ), …rest ] →
+            y
+
+        [ Just ( 247, y ), …rest ] →
+            y
+
+        [ Just ( 248, y ), …rest ] →
+            y
+
+        [ Just ( 249, y ), …rest ] →
+            y
+
+        [ Just ( 250, y ), …rest ] →
+            y
+
+        [ Just ( 251, y ), …rest ] →
+            y
+
+        [ Just ( 252, y ), …rest ] →
+            y
+
+        [ Just ( 253, y ), …rest ] →
+            y
+
+        [ Just ( 254, y ), …rest ] →
+            y
+
+        [ Just ( 255, y ), …rest ] →
+            y
+
+        [ Just ( 256, y ), …rest ] →
+            y
+
+        [ Just ( 257, y ), …rest ] →
+            y
+
+        [ Just ( 258, y ), …rest ] →
+            y
+
+        [ Just ( 259, y ), …rest ] →
+            y
+
+        [ Just ( 260, y ), …rest ] →
+            y
+
+        [ Just ( 261, y ), …rest ] →
+            y
+
+        [ Just ( 262, y ), …rest ] →
+            y
+
+        [ Just ( 263, y ), …rest ] →
+            y
+
+        [ Just ( 264, y ), …rest ] →
+            y
+
+        [ Just ( 265, y ), …rest ] →
+            y
+
+        [ Just ( 266, y ), …rest ] →
+            y
+
+        [ Just ( 267, y ), …rest ] →
+            y
+
+        [ Just ( 268, y ), …rest ] →
+            y
+
+        [ Just ( 269, y ), …rest ] →
+            y
+
+        [ Just ( 270, y ), …rest ] →
+            y
+
+        [ Just ( 271, y ), …rest ] →
+            y
+
+        [ Just ( 272, y ), …rest ] →
+            y
+
+        [ Just ( 273, y ), …rest ] →
+            y
+
+        [ Just ( 274, y ), …rest ] →
+            y
+
+        [ Just ( 275, y ), …rest ] →
+            y
+
+        [ Just ( 276, y ), …rest ] →
+            y
+
+        [ Just ( 277, y ), …rest ] →
+            y
+
+        [ Just ( 278, y ), …rest ] →
+            y
+
+        [ Just ( 279, y ), …rest ] →
+            y
+
+        [ Just ( 280, y ), …rest ] →
+            y
+
+        [ Just ( 281, y ), …rest ] →
+            y
+
+        [ Just ( 282, y ), …rest ] →
+            y
+
+        [ Just ( 283, y ), …rest ] →
+            y
+
+        [ Just ( 284, y ), …rest ] →
+            y
+
+        [ Just ( 285, y ), …rest ] →
+            y
+
+        [ Just ( 286, y ), …rest ] →
+            y
+
+        [ Just ( 287, y ), …rest ] →
+            y
+
+        [ Just ( 288, y ), …rest ] →
+            y
+
+        [ Just ( 289, y ), …rest ] →
+            y
+
+        [ Just ( 290, y ), …rest ] →
+            y
+
+        [ Just ( 291, y ), …rest ] →
+            y
+
+        [ Just ( 292, y ), …rest ] →
+            y
+
+        [ Just ( 293, y ), …rest ] →
+            y
+
+        [ Just ( 294, y ), …rest ] →
+            y
+
+        [ Just ( 295, y ), …rest ] →
+            y
+
+        [ Just ( 296, y ), …rest ] →
+            y
+
+        [ Just ( 297, y ), …rest ] →
+            y
+
+        [ Just ( 298, y ), …rest ] →
+            y
+
+        [ Just ( 299, y ), …rest ] →
+            y
+
+        [ Just ( 300, y ), …rest ] →
+            y
+
+        [ Just ( 301, y ), …rest ] →
+            y
+
+        [ Just ( 302, y ), …rest ] →
+            y
+
+        [ Just ( 303, y ), …rest ] →
+            y
+
+        [ Just ( 304, y ), …rest ] →
+            y
+
+        [ Just ( 305, y ), …rest ] →
+            y
+
+        [ Just ( 306, y ), …rest ] →
+            y
+
+        [ Just ( 307, y ), …rest ] →
+            y
+
+        [ Just ( 308, y ), …rest ] →
+            y
+
+        [ Just ( 309, y ), …rest ] →
+            y
+
+        [ Just ( 310, y ), …rest ] →
+            y
+
+        [ Just ( 311, y ), …rest ] →
+            y
+
+        [ Just ( 312, y ), …rest ] →
+            y
+
+        [ Just ( 313, y ), …rest ] →
+            y
+
+        [ Just ( 314, y ), …rest ] →
+            y
+
+        [ Just ( 315, y ), …rest ] →
+            y
+
+        [ Just ( 316, y ), …rest ] →
+            y
+
+        [ Just ( 317, y ), …rest ] →
+            y
+
+        [ Just ( 318, y ), …rest ] →
+            y
+
+        [ Just ( 319, y ), …rest ] →
+            y
+
+        [ Just ( 320, y ), …rest ] →
+            y
+
+        [ Just ( 321, y ), …rest ] →
+            y
+
+        [ Just ( 322, y ), …rest ] →
+            y
+
+        [ Just ( 323, y ), …rest ] →
+            y
+
+        [ Just ( 324, y ), …rest ] →
+            y
+
+        [ Just ( 325, y ), …rest ] →
+            y
+
+        [ Just ( 326, y ), …rest ] →
+            y
+
+        [ Just ( 327, y ), …rest ] →
+            y
+
+        [ Just ( 328, y ), …rest ] →
+            y
+
+        [ Just ( 329, y ), …rest ] →
+            y
+
+        [ Just ( 330, y ), …rest ] →
+            y
+
+        [ Just ( 331, y ), …rest ] →
+            y
+
+        [ Just ( 332, y ), …rest ] →
+            y
+
+        [ Just ( 333, y ), …rest ] →
+            y
+
+        [ Just ( 334, y ), …rest ] →
+            y
+
+        [ Just ( 335, y ), …rest ] →
+            y
+
+        [ Just ( 336, y ), …rest ] →
+            y
+
+        [ Just ( 337, y ), …rest ] →
+            y
+
+        [ Just ( 338, y ), …rest ] →
+            y
+
+        [ Just ( 339, y ), …rest ] →
+            y
+
+        [ Just ( 340, y ), …rest ] →
+            y
+
+        [ Just ( 341, y ), …rest ] →
+            y
+
+        [ Just ( 342, y ), …rest ] →
+            y
+
+        [ Just ( 343, y ), …rest ] →
+            y
+
+        [ Just ( 344, y ), …rest ] →
+            y
+
+        [ Just ( 345, y ), …rest ] →
+            y
+
+        [ Just ( 346, y ), …rest ] →
+            y
+
+        [ Just ( 347, y ), …rest ] →
+            y
+
+        [ Just ( 348, y ), …rest ] →
+            y
+
+        [ Just ( 349, y ), …rest ] →
+            y
+
+        [ Just ( 350, y ), …rest ] →
+            y
+
+        [ Just ( 351, y ), …rest ] →
+            y
+
+        [ Just ( 352, y ), …rest ] →
+            y
+
+        [ Just ( 353, y ), …rest ] →
+            y
+
+        [ Just ( 354, y ), …rest ] →
+            y
+
+        [ Just ( 355, y ), …rest ] →
+            y
+
+        [ Just ( 356, y ), …rest ] →
+            y
+
+        [ Just ( 357, y ), …rest ] →
+            y
+
+        [ Just ( 358, y ), …rest ] →
+            y
+
+        [ Just ( 359, y ), …rest ] →
+            y
+
+        [ Just ( 360, y ), …rest ] →
+            y
+
+        [ Just ( 361, y ), …rest ] →
+            y
+
+        [ Just ( 362, y ), …rest ] →
+            y
+
+        [ Just ( 363, y ), …rest ] →
+            y
+
+        [ Just ( 364, y ), …rest ] →
+            y
+
+        [ Just ( 365, y ), …rest ] →
+            y
+
+        [ Just ( 366, y ), …rest ] →
+            y
+
+        [ Just ( 367, y ), …rest ] →
+            y
+
+        [ Just ( 368, y ), …rest ] →
+            y
+
+        [ Just ( 369, y ), …rest ] →
+            y
+
+        [ Just ( 370, y ), …rest ] →
+            y
+
+        [ Just ( 371, y ), …rest ] →
+            y
+
+        [ Just ( 372, y ), …rest ] →
+            y
+
+        [ Just ( 373, y ), …rest ] →
+            y
+
+        [ Just ( 374, y ), …rest ] →
+            y
+
+        [ Just ( 375, y ), …rest ] →
+            y
+
+        [ Just ( 376, y ), …rest ] →
+            y
+
+        [ Just ( 377, y ), …rest ] →
+            y
+
+        [ Just ( 378, y ), …rest ] →
+            y
+
+        [ Just ( 379, y ), …rest ] →
+            y
+
+        [ Just ( 380, y ), …rest ] →
+            y
+
+        [ Just ( 381, y ), …rest ] →
+            y
+
+        [ Just ( 382, y ), …rest ] →
+            y
+
+        [ Just ( 383, y ), …rest ] →
+            y
+
+        [ Just ( 384, y ), …rest ] →
+            y
+
+        [ Just ( 385, y ), …rest ] →
+            y
+
+        [ Just ( 386, y ), …rest ] →
+            y
+
+        [ Just ( 387, y ), …rest ] →
+            y
+
+        [ Just ( 388, y ), …rest ] →
+            y
+
+        [ Just ( 389, y ), …rest ] →
+            y
+
+        [ Just ( 390, y ), …rest ] →
+            y
+
+        [ Just ( 391, y ), …rest ] →
+            y
+
+        [ Just ( 392, y ), …rest ] →
+            y
+
+        [ Just ( 393, y ), …rest ] →
+            y
+
+        [ Just ( 394, y ), …rest ] →
+            y
+
+        [ Just ( 395, y ), …rest ] →
+            y
+
+        [ Just ( 396, y ), …rest ] →
+            y
+
+        [ Just ( 397, y ), …rest ] →
+            y
+
+        [ Just ( 398, y ), …rest ] →
+            y
+
+        [ Just ( 399, y ), …rest ] →
+            y
+
+        [ Just ( 400, y ), …rest ] →
+            y
+
+        [ Just ( 401, y ), …rest ] →
+            y
+
+        [ Just ( 402, y ), …rest ] →
+            y
+
+        [ Just ( 403, y ), …rest ] →
+            y
+
+        [ Just ( 404, y ), …rest ] →
+            y
+
+        [ Just ( 405, y ), …rest ] →
+            y
+
+        [ Just ( 406, y ), …rest ] →
+            y
+
+        [ Just ( 407, y ), …rest ] →
+            y
+
+        [ Just ( 408, y ), …rest ] →
+            y
+
+        [ Just ( 409, y ), …rest ] →
+            y
+
+        [ Just ( 410, y ), …rest ] →
+            y
+
+        [ Just ( 411, y ), …rest ] →
+            y
+
+        [ Just ( 412, y ), …rest ] →
+            y
+
+        [ Just ( 413, y ), …rest ] →
+            y
+
+        [ Just ( 414, y ), …rest ] →
+            y
+
+        [ Just ( 415, y ), …rest ] →
+            y
+
+        [ Just ( 416, y ), …rest ] →
+            y
+
+        [ Just ( 417, y ), …rest ] →
+            y
+
+        [ Just ( 418, y ), …rest ] →
+            y
+
+        [ Just ( 419, y ), …rest ] →
+            y
+
+        [ Just ( 420, y ), …rest ] →
+            y
+
+        [ Just ( 421, y ), …rest ] →
+            y
+
+        [ Just ( 422, y ), …rest ] →
+            y
+
+        [ Just ( 423, y ), …rest ] →
+            y
+
+        [ Just ( 424, y ), …rest ] →
+            y
+
+        [ Just ( 425, y ), …rest ] →
+            y
+
+        [ Just ( 426, y ), …rest ] →
+            y
+
+        [ Just ( 427, y ), …rest ] →
+            y
+
+        [ Just ( 428, y ), …rest ] →
+            y
+
+        [ Just ( 429, y ), …rest ] →
+            y
+
+        [ Just ( 430, y ), …rest ] →
+            y
+
+        [ Just ( 431, y ), …rest ] →
+            y
+
+        [ Just ( 432, y ), …rest ] →
+            y
+
+        [ Just ( 433, y ), …rest ] →
+            y
+
+        [ Just ( 434, y ), …rest ] →
+            y
+
+        [ Just ( 435, y ), …rest ] →
+            y
+
+        [ Just ( 436, y ), …rest ] →
+            y
+
+        [ Just ( 437, y ), …rest ] →
+            y
+
+        [ Just ( 438, y ), …rest ] →
+            y
+
+        [ Just ( 439, y ), …rest ] →
+            y
+
+        [ Just ( 440, y ), …rest ] →
+            y
+
+        [ Just ( 441, y ), …rest ] →
+            y
+
+        [ Just ( 442, y ), …rest ] →
+            y
+
+        [ Just ( 443, y ), …rest ] →
+            y
+
+        [ Just ( 444, y ), …rest ] →
+            y
+
+        [ Just ( 445, y ), …rest ] →
+            y
+
+        [ Just ( 446, y ), …rest ] →
+            y
+
+        [ Just ( 447, y ), …rest ] →
+            y
+
+        [ Just ( 448, y ), …rest ] →
+            y
+
+        [ Just ( 449, y ), …rest ] →
+            y
+
+        [ Just ( 450, y ), …rest ] →
+            y
+
+        [ Just ( 451, y ), …rest ] →
+            y
+
+        [ Just ( 452, y ), …rest ] →
+            y
+
+        [ Just ( 453, y ), …rest ] →
+            y
+
+        [ Just ( 454, y ), …rest ] →
+            y
+
+        [ Just ( 455, y ), …rest ] →
+            y
+
+        [ Just ( 456, y ), …rest ] →
+            y
+
+        [ Just ( 457, y ), …rest ] →
+            y
+
+        [ Just ( 458, y ), …rest ] →
+            y
+
+        [ Just ( 459, y ), …rest ] →
+            y
+
+        [ Just ( 460, y ), …rest ] →
+            y
+
+        [ Just ( 461, y ), …rest ] →
+            y
+
+        [ Just ( 462, y ), …rest ] →
+            y
+
+        [ Just ( 463, y ), …rest ] →
+            y
+
+        [ Just ( 464, y ), …rest ] →
+            y
+
+        [ Just ( 465, y ), …rest ] →
+            y
+
+        [ Just ( 466, y ), …rest ] →
+            y
+
+        [ Just ( 467, y ), …rest ] →
+            y
+
+        [ Just ( 468, y ), …rest ] →
+            y
+
+        [ Just ( 469, y ), …rest ] →
+            y
+
+        [ Just ( 470, y ), …rest ] →
+            y
+
+        [ Just ( 471, y ), …rest ] →
+            y
+
+        [ Just ( 472, y ), …rest ] →
+            y
+
+        [ Just ( 473, y ), …rest ] →
+            y
+
+        [ Just ( 474, y ), …rest ] →
+            y
+
+        [ Just ( 475, y ), …rest ] →
+            y
+
+        [ Just ( 476, y ), …rest ] →
+            y
+
+        [ Just ( 477, y ), …rest ] →
+            y
+
+        [ Just ( 478, y ), …rest ] →
+            y
+
+        [ Just ( 479, y ), …rest ] →
+            y
+
+        [ Just ( 480, y ), …rest ] →
+            y
+
+        [ Just ( 481, y ), …rest ] →
+            y
+
+        [ Just ( 482, y ), …rest ] →
+            y
+
+        [ Just ( 483, y ), …rest ] →
+            y
+
+        [ Just ( 484, y ), …rest ] →
+            y
+
+        [ Just ( 485, y ), …rest ] →
+            y
+
+        [ Just ( 486, y ), …rest ] →
+            y
+
+        [ Just ( 487, y ), …rest ] →
+            y
+
+        [ Just ( 488, y ), …rest ] →
+            y
+
+        [ Just ( 489, y ), …rest ] →
+            y
+
+        [ Just ( 490, y ), …rest ] →
+            y
+
+        [ Just ( 491, y ), …rest ] →
+            y
+
+        [ Just ( 492, y ), …rest ] →
+            y
+
+        [ Just ( 493, y ), …rest ] →
+            y
+
+        [ Just ( 494, y ), …rest ] →
+            y
+
+        [ Just ( 495, y ), …rest ] →
+            y
+
+        [ Just ( 496, y ), …rest ] →
+            y
+
+        [ Just ( 497, y ), …rest ] →
+            y
+
+        [ Just ( 498, y ), …rest ] →
+            y
+
+        [ Just ( 499, y ), …rest ] →
+            y
+
+        [ Just ( 500, y ), …rest ] →
+            y
+
+        [ Just ( 501, y ), …rest ] →
+            y
+
+        [ Just ( 502, y ), …rest ] →
+            y
+
+        [ Just ( 503, y ), …rest ] →
+            y
+
+        [ Just ( 504, y ), …rest ] →
+            y
+
+        [ Just ( 505, y ), …rest ] →
+            y
+
+        [ Just ( 506, y ), …rest ] →
+            y
+
+        [ Just ( 507, y ), …rest ] →
+            y
+
+        [ Just ( 508, y ), …rest ] →
+            y
+
+        [ Just ( 509, y ), …rest ] →
+            y
+
+        [ Just ( 510, y ), …rest ] →
+            y
+
+        [ Just ( 511, y ), …rest ] →
+            y
+
+        [ Just ( 512, y ), …rest ] →
+            y
+
+        [ Just ( 513, y ), …rest ] →
+            y
+
+        [ Just ( 514, y ), …rest ] →
+            y
+
+        [ Just ( 515, y ), …rest ] →
+            y
+
+        [ Just ( 516, y ), …rest ] →
+            y
+
+        [ Just ( 517, y ), …rest ] →
+            y
+
+        [ Just ( 518, y ), …rest ] →
+            y
+
+        [ Just ( 519, y ), …rest ] →
+            y
+
+        [ Just ( 520, y ), …rest ] →
+            y
+
+        [ Just ( 521, y ), …rest ] →
+            y
+
+        [ Just ( 522, y ), …rest ] →
+            y
+
+        [ Just ( 523, y ), …rest ] →
+            y
+
+        [ Just ( 524, y ), …rest ] →
+            y
+
+        [ Just ( 525, y ), …rest ] →
+            y
+
+        [ Just ( 526, y ), …rest ] →
+            y
+
+        [ Just ( 527, y ), …rest ] →
+            y
+
+        [ Just ( 528, y ), …rest ] →
+            y
+
+        [ Just ( 529, y ), …rest ] →
+            y
+
+        [ Just ( 530, y ), …rest ] →
+            y
+
+        [ Just ( 531, y ), …rest ] →
+            y
+
+        [ Just ( 532, y ), …rest ] →
+            y
+
+        [ Just ( 533, y ), …rest ] →
+            y
+
+        [ Just ( 534, y ), …rest ] →
+            y
+
+        [ Just ( 535, y ), …rest ] →
+            y
+
+        [ Just ( 536, y ), …rest ] →
+            y
+
+        [ Just ( 537, y ), …rest ] →
+            y
+
+        [ Just ( 538, y ), …rest ] →
+            y
+
+        [ Just ( 539, y ), …rest ] →
+            y
+
+        [ Just ( 540, y ), …rest ] →
+            y
+
+        [ Just ( 541, y ), …rest ] →
+            y
+
+        [ Just ( 542, y ), …rest ] →
+            y
+
+        [ Just ( 543, y ), …rest ] →
+            y
+
+        [ Just ( 544, y ), …rest ] →
+            y
+
+        [ Just ( 545, y ), …rest ] →
+            y
+
+        [ Just ( 546, y ), …rest ] →
+            y
+
+        [ Just ( 547, y ), …rest ] →
+            y
+
+        [ Just ( 548, y ), …rest ] →
+            y
+
+        [ Just ( 549, y ), …rest ] →
+            y
+
+        [ Just ( 550, y ), …rest ] →
+            y
+
+        [ Just ( 551, y ), …rest ] →
+            y
+
+        [ Just ( 552, y ), …rest ] →
+            y
+
+        [ Just ( 553, y ), …rest ] →
+            y
+
+        [ Just ( 554, y ), …rest ] →
+            y
+
+        [ Just ( 555, y ), …rest ] →
+            y
+
+        [ Just ( 556, y ), …rest ] →
+            y
+
+        [ Just ( 557, y ), …rest ] →
+            y
+
+        [ Just ( 558, y ), …rest ] →
+            y
+
+        [ Just ( 559, y ), …rest ] →
+            y
+
+        [ Just ( 560, y ), …rest ] →
+            y
+
+        [ Just ( 561, y ), …rest ] →
+            y
+
+        [ Just ( 562, y ), …rest ] →
+            y
+
+        [ Just ( 563, y ), …rest ] →
+            y
+
+        [ Just ( 564, y ), …rest ] →
+            y
+
+        [ Just ( 565, y ), …rest ] →
+            y
+
+        [ Just ( 566, y ), …rest ] →
+            y
+
+        [ Just ( 567, y ), …rest ] →
+            y
+
+        [ Just ( 568, y ), …rest ] →
+            y
+
+        [ Just ( 569, y ), …rest ] →
+            y
+
+        [ Just ( 570, y ), …rest ] →
+            y
+
+        [ Just ( 571, y ), …rest ] →
+            y
+
+        [ Just ( 572, y ), …rest ] →
+            y
+
+        [ Just ( 573, y ), …rest ] →
+            y
+
+        [ Just ( 574, y ), …rest ] →
+            y
+
+        [ Just ( 575, y ), …rest ] →
+            y
+
+        [ Just ( 576, y ), …rest ] →
+            y
+
+        [ Just ( 577, y ), …rest ] →
+            y
+
+        [ Just ( 578, y ), …rest ] →
+            y
+
+        [ Just ( 579, y ), …rest ] →
+            y
+
+        [ Just ( 580, y ), …rest ] →
+            y
+
+        [ Just ( 581, y ), …rest ] →
+            y
+
+        [ Just ( 582, y ), …rest ] →
+            y
+
+        [ Just ( 583, y ), …rest ] →
+            y
+
+        [ Just ( 584, y ), …rest ] →
+            y
+
+        [ Just ( 585, y ), …rest ] →
+            y
+
+        [ Just ( 586, y ), …rest ] →
+            y
+
+        [ Just ( 587, y ), …rest ] →
+            y
+
+        [ Just ( 588, y ), …rest ] →
+            y
+
+        [ Just ( 589, y ), …rest ] →
+            y
+
+        [ Just ( 590, y ), …rest ] →
+            y
+
+        [ Just ( 591, y ), …rest ] →
+            y
+
+        [ Just ( 592, y ), …rest ] →
+            y
+
+        [ Just ( 593, y ), …rest ] →
+            y
+
+        [ Just ( 594, y ), …rest ] →
+            y
+
+        [ Just ( 595, y ), …rest ] →
+            y
+
+        [ Just ( 596, y ), …rest ] →
+            y
+
+        [ Just ( 597, y ), …rest ] →
+            y
+
+        [ Just ( 598, y ), …rest ] →
+            y
+
+        [ Just ( 599, y ), …rest ] →
+            y
+
+        [ Just ( 600, y ), …rest ] →
+            y
+
+        [ Just ( 601, y ), …rest ] →
+            y
+
+        [ Just ( 602, y ), …rest ] →
+            y
+
+        [ Just ( 603, y ), …rest ] →
+            y
+
+        [ Just ( 604, y ), …rest ] →
+            y
+
+        [ Just ( 605, y ), …rest ] →
+            y
+
+        [ Just ( 606, y ), …rest ] →
+            y
+
+        [ Just ( 607, y ), …rest ] →
+            y
+
+        [ Just ( 608, y ), …rest ] →
+            y
+
+        [ Just ( 609, y ), …rest ] →
+            y
+
+        [ Just ( 610, y ), …rest ] →
+            y
+
+        [ Just ( 611, y ), …rest ] →
+            y
+
+        [ Just ( 612, y ), …rest ] →
+            y
+
+        [ Just ( 613, y ), …rest ] →
+            y
+
+        [ Just ( 614, y ), …rest ] →
+            y
+
+        [ Just ( 615, y ), …rest ] →
+            y
+
+        [ Just ( 616, y ), …rest ] →
+            y
+
+        [ Just ( 617, y ), …rest ] →
+            y
+
+        [ Just ( 618, y ), …rest ] →
+            y
+
+        [ Just ( 619, y ), …rest ] →
+            y
+
+        [ Just ( 620, y ), …rest ] →
+            y
+
+        [ Just ( 621, y ), …rest ] →
+            y
+
+        [ Just ( 622, y ), …rest ] →
+            y
+
+        [ Just ( 623, y ), …rest ] →
+            y
+
+        [ Just ( 624, y ), …rest ] →
+            y
+
+        [ Just ( 625, y ), …rest ] →
+            y
+
+        [ Just ( 626, y ), …rest ] →
+            y
+
+        [ Just ( 627, y ), …rest ] →
+            y
+
+        [ Just ( 628, y ), …rest ] →
+            y
+
+        [ Just ( 629, y ), …rest ] →
+            y
+
+        [ Just ( 630, y ), …rest ] →
+            y
+
+        [ Just ( 631, y ), …rest ] →
+            y
+
+        [ Just ( 632, y ), …rest ] →
+            y
+
+        [ Just ( 633, y ), …rest ] →
+            y
+
+        [ Just ( 634, y ), …rest ] →
+            y
+
+        [ Just ( 635, y ), …rest ] →
+            y
+
+        [ Just ( 636, y ), …rest ] →
+            y
+
+        [ Just ( 637, y ), …rest ] →
+            y
+
+        [ Just ( 638, y ), …rest ] →
+            y
+
+        [ Just ( 639, y ), …rest ] →
+            y
+
+        [ Just ( 640, y ), …rest ] →
+            y
+
+        [ Just ( 641, y ), …rest ] →
+            y
+
+        [ Just ( 642, y ), …rest ] →
+            y
+
+        [ Just ( 643, y ), …rest ] →
+            y
+
+        [ Just ( 644, y ), …rest ] →
+            y
+
+        [ Just ( 645, y ), …rest ] →
+            y
+
+        [ Just ( 646, y ), …rest ] →
+            y
+
+        [ Just ( 647, y ), …rest ] →
+            y
+
+        [ Just ( 648, y ), …rest ] →
+            y
+
+        [ Just ( 649, y ), …rest ] →
+            y
+
+        [ Just ( 650, y ), …rest ] →
+            y
+
+        [ Just ( 651, y ), …rest ] →
+            y
+
+        [ Just ( 652, y ), …rest ] →
+            y
+
+        [ Just ( 653, y ), …rest ] →
+            y
+
+        [ Just ( 654, y ), …rest ] →
+            y
+
+        [ Just ( 655, y ), …rest ] →
+            y
+
+        [ Just ( 656, y ), …rest ] →
+            y
+
+        [ Just ( 657, y ), …rest ] →
+            y
+
+        [ Just ( 658, y ), …rest ] →
+            y
+
+        [ Just ( 659, y ), …rest ] →
+            y
+
+        [ Just ( 660, y ), …rest ] →
+            y
+
+        [ Just ( 661, y ), …rest ] →
+            y
+
+        [ Just ( 662, y ), …rest ] →
+            y
+
+        [ Just ( 663, y ), …rest ] →
+            y
+
+        [ Just ( 664, y ), …rest ] →
+            y
+
+        [ Just ( 665, y ), …rest ] →
+            y
+
+        [ Just ( 666, y ), …rest ] →
+            y
+
+        [ Just ( 667, y ), …rest ] →
+            y
+
+        [ Just ( 668, y ), …rest ] →
+            y
+
+        [ Just ( 669, y ), …rest ] →
+            y
+
+        [ Just ( 670, y ), …rest ] →
+            y
+
+        [ Just ( 671, y ), …rest ] →
+            y
+
+        [ Just ( 672, y ), …rest ] →
+            y
+
+        [ Just ( 673, y ), …rest ] →
+            y
+
+        [ Just ( 674, y ), …rest ] →
+            y
+
+        [ Just ( 675, y ), …rest ] →
+            y
+
+        [ Just ( 676, y ), …rest ] →
+            y
+
+        [ Just ( 677, y ), …rest ] →
+            y
+
+        [ Just ( 678, y ), …rest ] →
+            y
+
+        [ Just ( 679, y ), …rest ] →
+            y
+
+        [ Just ( 680, y ), …rest ] →
+            y
+
+        [ Just ( 681, y ), …rest ] →
+            y
+
+        [ Just ( 682, y ), …rest ] →
+            y
+
+        [ Just ( 683, y ), …rest ] →
+            y
+
+        [ Just ( 684, y ), …rest ] →
+            y
+
+        [ Just ( 685, y ), …rest ] →
+            y
+
+        [ Just ( 686, y ), …rest ] →
+            y
+
+        [ Just ( 687, y ), …rest ] →
+            y
+
+        [ Just ( 688, y ), …rest ] →
+            y
+
+        [ Just ( 689, y ), …rest ] →
+            y
+
+        [ Just ( 690, y ), …rest ] →
+            y
+
+        [ Just ( 691, y ), …rest ] →
+            y
+
+        [ Just ( 692, y ), …rest ] →
+            y
+
+        [ Just ( 693, y ), …rest ] →
+            y
+
+        [ Just ( 694, y ), …rest ] →
+            y
+
+        [ Just ( 695, y ), …rest ] →
+            y
+
+        [ Just ( 696, y ), …rest ] →
+            y
+
+        [ Just ( 697, y ), …rest ] →
+            y
+
+        [ Just ( 698, y ), …rest ] →
+            y
+
+        [ Just ( 699, y ), …rest ] →
+            y
+
+        [ Just ( 700, y ), …rest ] →
+            y
+
+        [ Just ( 701, y ), …rest ] →
+            y
+
+        [ Just ( 702, y ), …rest ] →
+            y
+
+        [ Just ( 703, y ), …rest ] →
+            y
+
+        [ Just ( 704, y ), …rest ] →
+            y
+
+        [ Just ( 705, y ), …rest ] →
+            y
+
+        [ Just ( 706, y ), …rest ] →
+            y
+
+        [ Just ( 707, y ), …rest ] →
+            y
+
+        [ Just ( 708, y ), …rest ] →
+            y
+
+        [ Just ( 709, y ), …rest ] →
+            y
+
+        [ Just ( 710, y ), …rest ] →
+            y
+
+        [ Just ( 711, y ), …rest ] →
+            y
+
+        [ Just ( 712, y ), …rest ] →
+            y
+
+        [ Just ( 713, y ), …rest ] →
+            y
+
+        [ Just ( 714, y ), …rest ] →
+            y
+
+        [ Just ( 715, y ), …rest ] →
+            y
+
+        [ Just ( 716, y ), …rest ] →
+            y
+
+        [ Just ( 717, y ), …rest ] →
+            y
+
+        [ Just ( 718, y ), …rest ] →
+            y
+
+        [ Just ( 719, y ), …rest ] →
+            y
+
+        [ Just ( 720, y ), …rest ] →
+            y
+
+        [ Just ( 721, y ), …rest ] →
+            y
+
+        [ Just ( 722, y ), …rest ] →
+            y
+
+        [ Just ( 723, y ), …rest ] →
+            y
+
+        [ Just ( 724, y ), …rest ] →
+            y
+
+        [ Just ( 725, y ), …rest ] →
+            y
+
+        [ Just ( 726, y ), …rest ] →
+            y
+
+        [ Just ( 727, y ), …rest ] →
+            y
+
+        [ Just ( 728, y ), …rest ] →
+            y
+
+        [ Just ( 729, y ), …rest ] →
+            y
+
+        [ Just ( 730, y ), …rest ] →
+            y
+
+        [ Just ( 731, y ), …rest ] →
+            y
+
+        [ Just ( 732, y ), …rest ] →
+            y
+
+        [ Just ( 733, y ), …rest ] →
+            y
+
+        [ Just ( 734, y ), …rest ] →
+            y
+
+        [ Just ( 735, y ), …rest ] →
+            y
+
+        [ Just ( 736, y ), …rest ] →
+            y
+
+        [ Just ( 737, y ), …rest ] →
+            y
+
+        [ Just ( 738, y ), …rest ] →
+            y
+
+        [ Just ( 739, y ), …rest ] →
+            y
+
+        [ Just ( 740, y ), …rest ] →
+            y
+
+        [ Just ( 741, y ), …rest ] →
+            y
+
+        [ Just ( 742, y ), …rest ] →
+            y
+
+        [ Just ( 743, y ), …rest ] →
+            y
+
+        [ Just ( 744, y ), …rest ] →
+            y
+
+        [ Just ( 745, y ), …rest ] →
+            y
+
+        [ Just ( 746, y ), …rest ] →
+            y
+
+        [ Just ( 747, y ), …rest ] →
+            y
+
+        [ Just ( 748, y ), …rest ] →
+            y
+
+        [ Just ( 749, y ), …rest ] →
+            y
+
+        [ Just ( 750, y ), …rest ] →
+            y
+
+        [ Just ( 751, y ), …rest ] →
+            y
+
+        [ Just ( 752, y ), …rest ] →
+            y
+
+        [ Just ( 753, y ), …rest ] →
+            y
+
+        [ Just ( 754, y ), …rest ] →
+            y
+
+        [ Just ( 755, y ), …rest ] →
+            y
+
+        [ Just ( 756, y ), …rest ] →
+            y
+
+        [ Just ( 757, y ), …rest ] →
+            y
+
+        [ Just ( 758, y ), …rest ] →
+            y
+
+        [ Just ( 759, y ), …rest ] →
+            y
+
+        [ Just ( 760, y ), …rest ] →
+            y
+
+        [ Just ( 761, y ), …rest ] →
+            y
+
+        [ Just ( 762, y ), …rest ] →
+            y
+
+        [ Just ( 763, y ), …rest ] →
+            y
+
+        [ Just ( 764, y ), …rest ] →
+            y
+
+        [ Just ( 765, y ), …rest ] →
+            y
+
+        [ Just ( 766, y ), …rest ] →
+            y
+
+        [ Just ( 767, y ), …rest ] →
+            y
+
+        [ Just ( 768, y ), …rest ] →
+            y
+
+        [ Just ( 769, y ), …rest ] →
+            y
+
+        [ Just ( 770, y ), …rest ] →
+            y
+
+        [ Just ( 771, y ), …rest ] →
+            y
+
+        [ Just ( 772, y ), …rest ] →
+            y
+
+        [ Just ( 773, y ), …rest ] →
+            y
+
+        [ Just ( 774, y ), …rest ] →
+            y
+
+        [ Just ( 775, y ), …rest ] →
+            y
+
+        [ Just ( 776, y ), …rest ] →
+            y
+
+        [ Just ( 777, y ), …rest ] →
+            y
+
+        [ Just ( 778, y ), …rest ] →
+            y
+
+        [ Just ( 779, y ), …rest ] →
+            y
+
+        [ Just ( 780, y ), …rest ] →
+            y
+
+        [ Just ( 781, y ), …rest ] →
+            y
+
+        [ Just ( 782, y ), …rest ] →
+            y
+
+        [ Just ( 783, y ), …rest ] →
+            y
+
+        [ Just ( 784, y ), …rest ] →
+            y
+
+        [ Just ( 785, y ), …rest ] →
+            y
+
+        [ Just ( 786, y ), …rest ] →
+            y
+
+        [ Just ( 787, y ), …rest ] →
+            y
+
+        [ Just ( 788, y ), …rest ] →
+            y
+
+        [ Just ( 789, y ), …rest ] →
+            y
+
+        [ Just ( 790, y ), …rest ] →
+            y
+
+        [ Just ( 791, y ), …rest ] →
+            y
+
+        [ Just ( 792, y ), …rest ] →
+            y
+
+        [ Just ( 793, y ), …rest ] →
+            y
+
+        [ Just ( 794, y ), …rest ] →
+            y
+
+        [ Just ( 795, y ), …rest ] →
+            y
+
+        [ Just ( 796, y ), …rest ] →
+            y
+
+        [ Just ( 797, y ), …rest ] →
+            y
+
+        [ Just ( 798, y ), …rest ] →
+            y
+
+        [ Just ( 799, y ), …rest ] →
+            y
+
+        [ Just ( 800, y ), …rest ] →
+            y
+
+        [ Just ( 801, y ), …rest ] →
+            y
+
+        [ Just ( 802, y ), …rest ] →
+            y
+
+        [ Just ( 803, y ), …rest ] →
+            y
+
+        [ Just ( 804, y ), …rest ] →
+            y
+
+        [ Just ( 805, y ), …rest ] →
+            y
+
+        [ Just ( 806, y ), …rest ] →
+            y
+
+        [ Just ( 807, y ), …rest ] →
+            y
+
+        [ Just ( 808, y ), …rest ] →
+            y
+
+        [ Just ( 809, y ), …rest ] →
+            y
+
+        [ Just ( 810, y ), …rest ] →
+            y
+
+        [ Just ( 811, y ), …rest ] →
+            y
+
+        [ Just ( 812, y ), …rest ] →
+            y
+
+        [ Just ( 813, y ), …rest ] →
+            y
+
+        [ Just ( 814, y ), …rest ] →
+            y
+
+        [ Just ( 815, y ), …rest ] →
+            y
+
+        [ Just ( 816, y ), …rest ] →
+            y
+
+        [ Just ( 817, y ), …rest ] →
+            y
+
+        [ Just ( 818, y ), …rest ] →
+            y
+
+        [ Just ( 819, y ), …rest ] →
+            y
+
+        [ Just ( 820, y ), …rest ] →
+            y
+
+        [ Just ( 821, y ), …rest ] →
+            y
+
+        [ Just ( 822, y ), …rest ] →
+            y
+
+        [ Just ( 823, y ), …rest ] →
+            y
+
+        [ Just ( 824, y ), …rest ] →
+            y
+
+        [ Just ( 825, y ), …rest ] →
+            y
+
+        [ Just ( 826, y ), …rest ] →
+            y
+
+        [ Just ( 827, y ), …rest ] →
+            y
+
+        [ Just ( 828, y ), …rest ] →
+            y
+
+        [ Just ( 829, y ), …rest ] →
+            y
+
+        [ Just ( 830, y ), …rest ] →
+            y
+
+        [ Just ( 831, y ), …rest ] →
+            y
+
+        [ Just ( 832, y ), …rest ] →
+            y
+
+        [ Just ( 833, y ), …rest ] →
+            y
+
+        [ Just ( 834, y ), …rest ] →
+            y
+
+        [ Just ( 835, y ), …rest ] →
+            y
+
+        [ Just ( 836, y ), …rest ] →
+            y
+
+        [ Just ( 837, y ), …rest ] →
+            y
+
+        [ Just ( 838, y ), …rest ] →
+            y
+
+        [ Just ( 839, y ), …rest ] →
+            y
+
+        [ Just ( 840, y ), …rest ] →
+            y
+
+        [ Just ( 841, y ), …rest ] →
+            y
+
+        [ Just ( 842, y ), …rest ] →
+            y
+
+        [ Just ( 843, y ), …rest ] →
+            y
+
+        [ Just ( 844, y ), …rest ] →
+            y
+
+        [ Just ( 845, y ), …rest ] →
+            y
+
+        [ Just ( 846, y ), …rest ] →
+            y
+
+        [ Just ( 847, y ), …rest ] →
+            y
+
+        [ Just ( 848, y ), …rest ] →
+            y
+
+        [ Just ( 849, y ), …rest ] →
+            y
+
+        [ Just ( 850, y ), …rest ] →
+            y
+
+        [ Just ( 851, y ), …rest ] →
+            y
+
+        [ Just ( 852, y ), …rest ] →
+            y
+
+        [ Just ( 853, y ), …rest ] →
+            y
+
+        [ Just ( 854, y ), …rest ] →
+            y
+
+        [ Just ( 855, y ), …rest ] →
+            y
+
+        [ Just ( 856, y ), …rest ] →
+            y
+
+        [ Just ( 857, y ), …rest ] →
+            y
+
+        [ Just ( 858, y ), …rest ] →
+            y
+
+        [ Just ( 859, y ), …rest ] →
+            y
+
+        [ Just ( 860, y ), …rest ] →
+            y
+
+        [ Just ( 861, y ), …rest ] →
+            y
+
+        [ Just ( 862, y ), …rest ] →
+            y
+
+        [ Just ( 863, y ), …rest ] →
+            y
+
+        [ Just ( 864, y ), …rest ] →
+            y
+
+        [ Just ( 865, y ), …rest ] →
+            y
+
+        [ Just ( 866, y ), …rest ] →
+            y
+
+        [ Just ( 867, y ), …rest ] →
+            y
+
+        [ Just ( 868, y ), …rest ] →
+            y
+
+        [ Just ( 869, y ), …rest ] →
+            y
+
+        [ Just ( 870, y ), …rest ] →
+            y
+
+        [ Just ( 871, y ), …rest ] →
+            y
+
+        [ Just ( 872, y ), …rest ] →
+            y
+
+        [ Just ( 873, y ), …rest ] →
+            y
+
+        [ Just ( 874, y ), …rest ] →
+            y
+
+        [ Just ( 875, y ), …rest ] →
+            y
+
+        [ Just ( 876, y ), …rest ] →
+            y
+
+        [ Just ( 877, y ), …rest ] →
+            y
+
+        [ Just ( 878, y ), …rest ] →
+            y
+
+        [ Just ( 879, y ), …rest ] →
+            y
+
+        [ Just ( 880, y ), …rest ] →
+            y
+
+        [ Just ( 881, y ), …rest ] →
+            y
+
+        [ Just ( 882, y ), …rest ] →
+            y
+
+        [ Just ( 883, y ), …rest ] →
+            y
+
+        [ Just ( 884, y ), …rest ] →
+            y
+
+        [ Just ( 885, y ), …rest ] →
+            y
+
+        [ Just ( 886, y ), …rest ] →
+            y
+
+        [ Just ( 887, y ), …rest ] →
+            y
+
+        [ Just ( 888, y ), …rest ] →
+            y
+
+        [ Just ( 889, y ), …rest ] →
+            y
+
+        [ Just ( 890, y ), …rest ] →
+            y
+
+        [ Just ( 891, y ), …rest ] →
+            y
+
+        [ Just ( 892, y ), …rest ] →
+            y
+
+        [ Just ( 893, y ), …rest ] →
+            y
+
+        [ Just ( 894, y ), …rest ] →
+            y
+
+        [ Just ( 895, y ), …rest ] →
+            y
+
+        [ Just ( 896, y ), …rest ] →
+            y
+
+        [ Just ( 897, y ), …rest ] →
+            y
+
+        [ Just ( 898, y ), …rest ] →
+            y
+
+        [ Just ( 899, y ), …rest ] →
+            y
+
+        [ Just ( 900, y ), …rest ] →
+            y
+
+        [ Just ( 901, y ), …rest ] →
+            y
+
+        [ Just ( 902, y ), …rest ] →
+            y
+
+        [ Just ( 903, y ), …rest ] →
+            y
+
+        [ Just ( 904, y ), …rest ] →
+            y
+
+        [ Just ( 905, y ), …rest ] →
+            y
+
+        [ Just ( 906, y ), …rest ] →
+            y
+
+        [ Just ( 907, y ), …rest ] →
+            y
+
+        [ Just ( 908, y ), …rest ] →
+            y
+
+        [ Just ( 909, y ), …rest ] →
+            y
+
+        [ Just ( 910, y ), …rest ] →
+            y
+
+        [ Just ( 911, y ), …rest ] →
+            y
+
+        [ Just ( 912, y ), …rest ] →
+            y
+
+        [ Just ( 913, y ), …rest ] →
+            y
+
+        [ Just ( 914, y ), …rest ] →
+            y
+
+        [ Just ( 915, y ), …rest ] →
+            y
+
+        [ Just ( 916, y ), …rest ] →
+            y
+
+        [ Just ( 917, y ), …rest ] →
+            y
+
+        [ Just ( 918, y ), …rest ] →
+            y
+
+        [ Just ( 919, y ), …rest ] →
+            y
+
+        [ Just ( 920, y ), …rest ] →
+            y
+
+        [ Just ( 921, y ), …rest ] →
+            y
+
+        [ Just ( 922, y ), …rest ] →
+            y
+
+        [ Just ( 923, y ), …rest ] →
+            y
+
+        [ Just ( 924, y ), …rest ] →
+            y
+
+        [ Just ( 925, y ), …rest ] →
+            y
+
+        [ Just ( 926, y ), …rest ] →
+            y
+
+        [ Just ( 927, y ), …rest ] →
+            y
+
+        [ Just ( 928, y ), …rest ] →
+            y
+
+        [ Just ( 929, y ), …rest ] →
+            y
+
+        [ Just ( 930, y ), …rest ] →
+            y
+
+        [ Just ( 931, y ), …rest ] →
+            y
+
+        [ Just ( 932, y ), …rest ] →
+            y
+
+        [ Just ( 933, y ), …rest ] →
+            y
+
+        [ Just ( 934, y ), …rest ] →
+            y
+
+        [ Just ( 935, y ), …rest ] →
+            y
+
+        [ Just ( 936, y ), …rest ] →
+            y
+
+        [ Just ( 937, y ), …rest ] →
+            y
+
+        [ Just ( 938, y ), …rest ] →
+            y
+
+        [ Just ( 939, y ), …rest ] →
+            y
+
+        [ Just ( 940, y ), …rest ] →
+            y
+
+        [ Just ( 941, y ), …rest ] →
+            y
+
+        [ Just ( 942, y ), …rest ] →
+            y
+
+        [ Just ( 943, y ), …rest ] →
+            y
+
+        [ Just ( 944, y ), …rest ] →
+            y
+
+        [ Just ( 945, y ), …rest ] →
+            y
+
+        [ Just ( 946, y ), …rest ] →
+            y
+
+        [ Just ( 947, y ), …rest ] →
+            y
+
+        [ Just ( 948, y ), …rest ] →
+            y
+
+        [ Just ( 949, y ), …rest ] →
+            y
+
+        [ Just ( 950, y ), …rest ] →
+            y
+
+        [ Just ( 951, y ), …rest ] →
+            y
+
+        [ Just ( 952, y ), …rest ] →
+            y
+
+        [ Just ( 953, y ), …rest ] →
+            y
+
+        [ Just ( 954, y ), …rest ] →
+            y
+
+        [ Just ( 955, y ), …rest ] →
+            y
+
+        [ Just ( 956, y ), …rest ] →
+            y
+
+        [ Just ( 957, y ), …rest ] →
+            y
+
+        [ Just ( 958, y ), …rest ] →
+            y
+
+        [ Just ( 959, y ), …rest ] →
+            y
+
+        [ Just ( 960, y ), …rest ] →
+            y
+
+        [ Just ( 961, y ), …rest ] →
+            y
+
+        [ Just ( 962, y ), …rest ] →
+            y
+
+        [ Just ( 963, y ), …rest ] →
+            y
+
+        [ Just ( 964, y ), …rest ] →
+            y
+
+        [ Just ( 965, y ), …rest ] →
+            y
+
+        [ Just ( 966, y ), …rest ] →
+            y
+
+        [ Just ( 967, y ), …rest ] →
+            y
+
+        [ Just ( 968, y ), …rest ] →
+            y
+
+        [ Just ( 969, y ), …rest ] →
+            y
+
+        [ Just ( 970, y ), …rest ] →
+            y
+
+        [ Just ( 971, y ), …rest ] →
+            y
+
+        [ Just ( 972, y ), …rest ] →
+            y
+
+        [ Just ( 973, y ), …rest ] →
+            y
+
+        [ Just ( 974, y ), …rest ] →
+            y
+
+        [ Just ( 975, y ), …rest ] →
+            y
+
+        [ Just ( 976, y ), …rest ] →
+            y
+
+        [ Just ( 977, y ), …rest ] →
+            y
+
+        [ Just ( 978, y ), …rest ] →
+            y
+
+        [ Just ( 979, y ), …rest ] →
+            y
+
+        [ Just ( 980, y ), …rest ] →
+            y
+
+        [ Just ( 981, y ), …rest ] →
+            y
+
+        [ Just ( 982, y ), …rest ] →
+            y
+
+        [ Just ( 983, y ), …rest ] →
+            y
+
+        [ Just ( 984, y ), …rest ] →
+            y
+
+        [ Just ( 985, y ), …rest ] →
+            y
+
+        [ Just ( 986, y ), …rest ] →
+            y
+
+        [ Just ( 987, y ), …rest ] →
+            y
+
+        [ Just ( 988, y ), …rest ] →
+            y
+
+        [ Just ( 989, y ), …rest ] →
+            y
+
+        [ Just ( 990, y ), …rest ] →
+            y
+
+        [ Just ( 991, y ), …rest ] →
+            y
+
+        [ Just ( 992, y ), …rest ] →
+            y
+
+        [ Just ( 993, y ), …rest ] →
+            y
+
+        [ Just ( 994, y ), …rest ] →
+            y
+
+        [ Just ( 995, y ), …rest ] →
+            y
+
+        [ Just ( 996, y ), …rest ] →
+            y
+
+        [ Just ( 997, y ), …rest ] →
+            y
+
+        [ Just ( 998, y ), …rest ] →
+            y
+
+        [ Just ( 999, y ), …rest ] →
+            y
+
+        [ Just ( 1000, y ), …rest ] →
+            y
+
+        [ Just ( 1001, y ), …rest ] →
+            y
+
+        [ Just ( 1002, y ), …rest ] →
+            y
+
+        [ Just ( 1003, y ), …rest ] →
+            y
+
+        [ Just ( 1004, y ), …rest ] →
+            y
+
+        [ Just ( 1005, y ), …rest ] →
+            y
+
+        [ Just ( 1006, y ), …rest ] →
+            y
+
+        [ Just ( 1007, y ), …rest ] →
+            y
+
+        [ Just ( 1008, y ), …rest ] →
+            y
+
+        [ Just ( 1009, y ), …rest ] →
+            y
+
+        [ Just ( 1010, y ), …rest ] →
+            y
+
+        [ Just ( 1011, y ), …rest ] →
+            y
+
+        [ Just ( 1012, y ), …rest ] →
+            y
+
+        [ Just ( 1013, y ), …rest ] →
+            y
+
+        [ Just ( 1014, y ), …rest ] →
+            y
+
+        [ Just ( 1015, y ), …rest ] →
+            y
+
+        [ Just ( 1016, y ), …rest ] →
+            y
+
+        [ Just ( 1017, y ), …rest ] →
+            y
+
+        [ Just ( 1018, y ), …rest ] →
+            y
+
+        [ Just ( 1019, y ), …rest ] →
+            y
+
+        [ Just ( 1020, y ), …rest ] →
+            y
+
+        [ Just ( 1021, y ), …rest ] →
+            y
+
+        [ Just ( 1022, y ), …rest ] →
+            y
+
+        [ Just ( 1023, y ), …rest ] →
+            y
+
+        [ Just ( 1024, y ), …rest ] →
+            y
+
+        [ Just ( 1025, y ), …rest ] →
+            y
+
+        [ Just ( 1026, y ), …rest ] →
+            y
+
+        [ Just ( 1027, y ), …rest ] →
+            y
+
+        [ Just ( 1028, y ), …rest ] →
+            y
+
+        [ Just ( 1029, y ), …rest ] →
+            y
+
+        [ Just ( 1030, y ), …rest ] →
+            y
+
+        [ Just ( 1031, y ), …rest ] →
+            y
+
+        [ Just ( 1032, y ), …rest ] →
+            y
+
+        [ Just ( 1033, y ), …rest ] →
+            y
+
+        [ Just ( 1034, y ), …rest ] →
+            y
+
+        [ Just ( 1035, y ), …rest ] →
+            y
+
+        [ Just ( 1036, y ), …rest ] →
+            y
+
+        [ Just ( 1037, y ), …rest ] →
+            y
+
+        [ Just ( 1038, y ), …rest ] →
+            y
+
+        [ Just ( 1039, y ), …rest ] →
+            y
+
+        [ Just ( 1040, y ), …rest ] →
+            y
+
+        [ Just ( 1041, y ), …rest ] →
+            y
+
+        [ Just ( 1042, y ), …rest ] →
+            y
+
+        [ Just ( 1043, y ), …rest ] →
+            y
+
+        [ Just ( 1044, y ), …rest ] →
+            y
+
+        [ Just ( 1045, y ), …rest ] →
+            y
+
+        [ Just ( 1046, y ), …rest ] →
+            y
+
+        [ Just ( 1047, y ), …rest ] →
+            y
+
+        [ Just ( 1048, y ), …rest ] →
+            y
+
+        [ Just ( 1049, y ), …rest ] →
+            y
+
+        [ Just ( 1050, y ), …rest ] →
+            y
+
+        [ Just ( 1051, y ), …rest ] →
+            y
+
+        [ Just ( 1052, y ), …rest ] →
+            y
+
+        [ Just ( 1053, y ), …rest ] →
+            y
+
+        [ Just ( 1054, y ), …rest ] →
+            y
+
+        [ Just ( 1055, y ), …rest ] →
+            y
+
+        [ Just ( 1056, y ), …rest ] →
+            y
+
+        [ Just ( 1057, y ), …rest ] →
+            y
+
+        [ Just ( 1058, y ), …rest ] →
+            y
+
+        [ Just ( 1059, y ), …rest ] →
+            y
+
+        [ Just ( 1060, y ), …rest ] →
+            y
+
+        [ Just ( 1061, y ), …rest ] →
+            y
+
+        [ Just ( 1062, y ), …rest ] →
+            y
+
+        [ Just ( 1063, y ), …rest ] →
+            y
+
+        [ Just ( 1064, y ), …rest ] →
+            y
+
+        [ Just ( 1065, y ), …rest ] →
+            y
+
+        [ Just ( 1066, y ), …rest ] →
+            y
+
+        [ Just ( 1067, y ), …rest ] →
+            y
+
+        [ Just ( 1068, y ), …rest ] →
+            y
+
+        [ Just ( 1069, y ), …rest ] →
+            y
+
+        [ Just ( 1070, y ), …rest ] →
+            y
+
+        [ Just ( 1071, y ), …rest ] →
+            y
+
+        [ Just ( 1072, y ), …rest ] →
+            y
+
+        [ Just ( 1073, y ), …rest ] →
+            y
+
+        [ Just ( 1074, y ), …rest ] →
+            y
+
+        [ Just ( 1075, y ), …rest ] →
+            y
+
+        [ Just ( 1076, y ), …rest ] →
+            y
+
+        [ Just ( 1077, y ), …rest ] →
+            y
+
+        [ Just ( 1078, y ), …rest ] →
+            y
+
+        [ Just ( 1079, y ), …rest ] →
+            y
+
+        [ Just ( 1080, y ), …rest ] →
+            y
+
+        [ Just ( 1081, y ), …rest ] →
+            y
+
+        [ Just ( 1082, y ), …rest ] →
+            y
+
+        [ Just ( 1083, y ), …rest ] →
+            y
+
+        [ Just ( 1084, y ), …rest ] →
+            y
+
+        [ Just ( 1085, y ), …rest ] →
+            y
+
+        [ Just ( 1086, y ), …rest ] →
+            y
+
+        [ Just ( 1087, y ), …rest ] →
+            y
+
+        [ Just ( 1088, y ), …rest ] →
+            y
+
+        [ Just ( 1089, y ), …rest ] →
+            y
+
+        [ Just ( 1090, y ), …rest ] →
+            y
+
+        [ Just ( 1091, y ), …rest ] →
+            y
+
+        [ Just ( 1092, y ), …rest ] →
+            y
+
+        [ Just ( 1093, y ), …rest ] →
+            y
+
+        [ Just ( 1094, y ), …rest ] →
+            y
+
+        [ Just ( 1095, y ), …rest ] →
+            y
+
+        [ Just ( 1096, y ), …rest ] →
+            y
+
+        [ Just ( 1097, y ), …rest ] →
+            y
+
+        [ Just ( 1098, y ), …rest ] →
+            y
+
+        [ Just ( 1099, y ), …rest ] →
+            y
+
+        [ Just ( 1100, y ), …rest ] →
+            y
+
+        [ Just ( 1101, y ), …rest ] →
+            y
+
+        [ Just ( 1102, y ), …rest ] →
+            y
+
+        [ Just ( 1103, y ), …rest ] →
+            y
+
+        [ Just ( 1104, y ), …rest ] →
+            y
+
+        [ Just ( 1105, y ), …rest ] →
+            y
+
+        [ Just ( 1106, y ), …rest ] →
+            y
+
+        [ Just ( 1107, y ), …rest ] →
+            y
+
+        [ Just ( 1108, y ), …rest ] →
+            y
+
+        [ Just ( 1109, y ), …rest ] →
+            y
+
+        [ Just ( 1110, y ), …rest ] →
+            y
+
+        [ Just ( 1111, y ), …rest ] →
+            y
+
+        [ Just ( 1112, y ), …rest ] →
+            y
+
+        [ Just ( 1113, y ), …rest ] →
+            y
+
+        [ Just ( 1114, y ), …rest ] →
+            y
+
+        [ Just ( 1115, y ), …rest ] →
+            y
+
+        [ Just ( 1116, y ), …rest ] →
+            y
+
+        [ Just ( 1117, y ), …rest ] →
+            y
+
+        [ Just ( 1118, y ), …rest ] →
+            y
+
+        [ Just ( 1119, y ), …rest ] →
+            y
+
+        [ Just ( 1120, y ), …rest ] →
+            y
+
+        [ Just ( 1121, y ), …rest ] →
+            y
+
+        [ Just ( 1122, y ), …rest ] →
+            y
+
+        [ Just ( 1123, y ), …rest ] →
+            y
+
+        [ Just ( 1124, y ), …rest ] →
+            y
+
+        [ Just ( 1125, y ), …rest ] →
+            y
+
+        [ Just ( 1126, y ), …rest ] →
+            y
+
+        [ Just ( 1127, y ), …rest ] →
+            y
+
+        [ Just ( 1128, y ), …rest ] →
+            y
+
+        [ Just ( 1129, y ), …rest ] →
+            y
+
+        [ Just ( 1130, y ), …rest ] →
+            y
+
+        [ Just ( 1131, y ), …rest ] →
+            y
+
+        [ Just ( 1132, y ), …rest ] →
+            y
+
+        [ Just ( 1133, y ), …rest ] →
+            y
+
+        [ Just ( 1134, y ), …rest ] →
+            y
+
+        [ Just ( 1135, y ), …rest ] →
+            y
+
+        [ Just ( 1136, y ), …rest ] →
+            y
+
+        [ Just ( 1137, y ), …rest ] →
+            y
+
+        [ Just ( 1138, y ), …rest ] →
+            y
+
+        [ Just ( 1139, y ), …rest ] →
+            y
+
+        [ Just ( 1140, y ), …rest ] →
+            y
+
+        [ Just ( 1141, y ), …rest ] →
+            y
+
+        [ Just ( 1142, y ), …rest ] →
+            y
+
+        [ Just ( 1143, y ), …rest ] →
+            y
+
+        [ Just ( 1144, y ), …rest ] →
+            y
+
+        [ Just ( 1145, y ), …rest ] →
+            y
+
+        [ Just ( 1146, y ), …rest ] →
+            y
+
+        [ Just ( 1147, y ), …rest ] →
+            y
+
+        [ Just ( 1148, y ), …rest ] →
+            y
+
+        [ Just ( 1149, y ), …rest ] →
+            y
+
+        [ Just ( 1150, y ), …rest ] →
+            y
+
+        [ Just ( 1151, y ), …rest ] →
+            y
+
+        [ Just ( 1152, y ), …rest ] →
+            y
+
+        [ Just ( 1153, y ), …rest ] →
+            y
+
+        [ Just ( 1154, y ), …rest ] →
+            y
+
+        [ Just ( 1155, y ), …rest ] →
+            y
+
+        [ Just ( 1156, y ), …rest ] →
+            y
+
+        [ Just ( 1157, y ), …rest ] →
+            y
+
+        [ Just ( 1158, y ), …rest ] →
+            y
+
+        [ Just ( 1159, y ), …rest ] →
+            y
+
+        [ Just ( 1160, y ), …rest ] →
+            y
+
+        [ Just ( 1161, y ), …rest ] →
+            y
+
+        [ Just ( 1162, y ), …rest ] →
+            y
+
+        [ Just ( 1163, y ), …rest ] →
+            y
+
+        [ Just ( 1164, y ), …rest ] →
+            y
+
+        [ Just ( 1165, y ), …rest ] →
+            y
+
+        [ Just ( 1166, y ), …rest ] →
+            y
+
+        [ Just ( 1167, y ), …rest ] →
+            y
+
+        [ Just ( 1168, y ), …rest ] →
+            y
+
+        [ Just ( 1169, y ), …rest ] →
+            y
+
+        [ Just ( 1170, y ), …rest ] →
+            y
+
+        [ Just ( 1171, y ), …rest ] →
+            y
+
+        [ Just ( 1172, y ), …rest ] →
+            y
+
+        [ Just ( 1173, y ), …rest ] →
+            y
+
+        [ Just ( 1174, y ), …rest ] →
+            y
+
+        [ Just ( 1175, y ), …rest ] →
+            y
+
+        [ Just ( 1176, y ), …rest ] →
+            y
+
+        [ Just ( 1177, y ), …rest ] →
+            y
+
+        [ Just ( 1178, y ), …rest ] →
+            y
+
+        [ Just ( 1179, y ), …rest ] →
+            y
+
+        [ Just ( 1180, y ), …rest ] →
+            y
+
+        [ Just ( 1181, y ), …rest ] →
+            y
+
+        [ Just ( 1182, y ), …rest ] →
+            y
+
+        [ Just ( 1183, y ), …rest ] →
+            y
+
+        [ Just ( 1184, y ), …rest ] →
+            y
+
+        [ Just ( 1185, y ), …rest ] →
+            y
+
+        [ Just ( 1186, y ), …rest ] →
+            y
+
+        [ Just ( 1187, y ), …rest ] →
+            y
+
+        [ Just ( 1188, y ), …rest ] →
+            y
+
+        [ Just ( 1189, y ), …rest ] →
+            y
+
+        [ Just ( 1190, y ), …rest ] →
+            y
+
+        [ Just ( 1191, y ), …rest ] →
+            y
+
+        [ Just ( 1192, y ), …rest ] →
+            y
+
+        [ Just ( 1193, y ), …rest ] →
+            y
+
+        [ Just ( 1194, y ), …rest ] →
+            y
+
+        [ Just ( 1195, y ), …rest ] →
+            y
+
+        [ Just ( 1196, y ), …rest ] →
+            y
+
+        [ Just ( 1197, y ), …rest ] →
+            y
+
+        [ Just ( 1198, y ), …rest ] →
+            y
+
+        [ Just ( 1199, y ), …rest ] →
+            y
+
+        _ →
+            0
