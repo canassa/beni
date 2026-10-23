@@ -1,0 +1,29 @@
+--! Roots, when there is one: core's `Nothing` built here too, and a type of
+--! this module's own with a nullary constructor.
+
+--| The whole square root of a perfect square.
+pub root : Int → Maybe Int
+root n = if n == 9 then Just 3 else Nothing
+
+
+pub show : Maybe Int → String
+show m = Maybe.withDefault (Maybe.map m String.fromInt) "none"
+
+
+pub type Sign
+    = Known Int
+    | Unknown
+
+
+pub sign : Int → Sign
+sign n = if n > 0 then Known n else Unknown
+
+
+pub describe : Sign → String
+describe s =
+    case s of
+        Known n →
+            "known ${String.fromInt n}"
+
+        Unknown →
+            "unknown"

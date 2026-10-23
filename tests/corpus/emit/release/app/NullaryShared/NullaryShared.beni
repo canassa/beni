@@ -1,0 +1,20 @@
+-- One `Nothing` for the one file (`backend.md` §4, *A nullary constructor
+-- is one object*, amended 2026-10-24): `Lefts` and `Rights` each build core's
+-- `Nothing`, so each module declares its constant, and the scope-hoisted
+-- file keeps the first one, in the file's order, and gives every later use
+-- its name. A constant of the module's own constructor (`Rights.Unknown`)
+-- is that module's alone.
+import Lefts
+import Node
+import Rights
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ Lefts.show (Lefts.half 4)
+        , Lefts.show (Lefts.half 3)
+        , Rights.show (Rights.root 9)
+        , Rights.show (Rights.root 4)
+        , Rights.describe (Rights.sign 0)
+        ]
