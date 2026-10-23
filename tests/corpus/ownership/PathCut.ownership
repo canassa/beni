@@ -1,0 +1,12 @@
+module PathCut
+  25:14 List.push s.c.d.e.f.g.h.x: accepted param
+  32:5 call PathCut.writeRead r.a.b.c.d.e.f.g.h.x: rejected disjoint: another operand of the same operation reaches it (PathCut.writeRead writes π1.c.d.e.f.g.h.x)
+  36:14 call PathCut.writeRead <record>.c.d.e.f.g.h.x: rejected disjoint: another operand of the same operation reaches it (PathCut.writeRead writes π1.c.d.e.f.g.h.x)
+  42:5 call PathCut.writeRead r.a.b.c.d.e.f.g.h.x: accepted param (PathCut.writeRead writes π1.c.d.e.f.g.h.x)
+  summary writeRead: π1.c.d.e.f.g.h.x RAW[storage], π1.c.d.e.f.g.h.x[*] RA, π1.c.d.e.f.g.h.y RA; res .0 condition(fresh2) π1.c.d.e.f.g.h.x, .0[*] ~condition(fresh3) ~π1.c.d.e.f.g.h.x[*], .1 ~condition(fresh4) π1.c.d.e.f.g.h.y, condition(fresh1){sep π1.c.d.e.f.g.h.x π1.c.d.e.f.g.h.y, sep π1.c.d.e.f.g.h.x[*] π1.c.d.e.f.g.h.y}
+  summary deep: π1 RAW[storage], π1[*] RA; res .0 condition(fresh1) π1, .0[*] ~condition(fresh4) ~π1[*], .1 condition(fresh2) ~condition(fresh5) π1, condition(fresh3){shared}
+  summary shallow: π1 RAW[storage], π1[*] A; res .0 condition(fresh1) π1, .0[*] ~condition(fresh4) ~π1[*], .1 condition(fresh2) ~condition(fresh5) π1, condition(fresh3){shared}
+  summary apart: π1 RAW[storage], π1[*] RA, π2 RA; res .0 condition(fresh1) π1, .0[*] ~condition(fresh3) ~π1[*], .1 condition(fresh2) ~condition(fresh5) π2, condition(fresh4){sep π1 π2, sep π1[*] π2}
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 2

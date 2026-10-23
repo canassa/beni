@@ -22,7 +22,7 @@ module RecordHoistChannel
   summary aliased: π1 RW{x}, π1.x R
   summary captured: π1 W{x}, π1.x R
   summary twice: π1 W{x}, π1.x R
-  summary deep: π1 W{a}, π1.a.b.c.d.e.f.g.h R
+  summary deep: π1 W{a}, π1.a.b.c.d.e.f.g.h.i.j R
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 9: accepted 9, pending 0, rejected 0 (copy 0, restructure 0); hoisted 7, eager reads 2
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

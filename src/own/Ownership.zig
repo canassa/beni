@@ -72,8 +72,6 @@ pub const approx_place: u32 = std.math.maxInt(u32);
 /// `level`: the checker cannot tell the levels apart.
 pub const approx_level: u32 = std.math.maxInt(u32) - 1;
 
-/// k: the path cut (§4.1, thesis §3.1).
-pub const k_limit: u32 = 8;
 /// Depth of a walk over a type before it answers conservatively.
 const type_depth: u32 = 16;
 const debug_own = false;
@@ -708,23 +706,29 @@ pub const XSum = struct {
 };
 
 /// §16.7's mark (F3, the owner's choice (a)), in memory while a group is
-/// solved: in the low byte, bit 0 marks a path below a variable that a
-/// recursive call grew at a structure; bits 1–7 hold 1 + a *pending*
-/// boundary, for a symbolic cell at such a variable: its places below that
-/// many steps are below the variable. A group clears its members' marks
-/// when it settles, including the annotation boundary in the upper bits,
-/// so no settled summary carries one and the summary block
-/// does not.
+/// solved: bit 0 marks a path below a variable that a recursive call grew
+/// at a structure; bits 1–30 hold 1 + a *pending* boundary, a path depth,
+/// for a symbolic cell at such a variable: its places below that many
+/// steps are below the variable. The annotation boundary is in the 33
+/// bits above (`grown_guard`). Both hold any path depth: there is no path
+/// cut (§16.7 (c)), and no path is deeper than 2³⁰ − 2 steps (`rawChild`
+/// asserts it: its steps alone would fill memory). A group clears its
+/// members' marks when it settles, so no settled summary carries one and
+/// the summary block does not.
 pub const Grown = u64;
+/// The mark and the pending boundary.
+const grown_low: Grown = (@as(Grown, 1) << grown_guard) - 1;
+/// Where the annotation boundary begins.
+const grown_guard = 31;
 fn gMarked(g: Grown) bool {
     return g & 1 != 0;
 }
 fn gPending(g: Grown) ?usize {
-    const x = (g & 255) >> 1;
+    const x = (g & grown_low) >> 1;
     return if (x == 0) null else @intCast(x - 1);
 }
 fn gMake(marked: bool, pending: ?usize) Grown {
-    const x: u8 = if (pending) |b| @intCast(@min(b, 126) + 1) else 0;
+    const x: Grown = if (pending) |b| @as(Grown, @as(u30, @intCast(b))) + 1 else 0;
     return (x << 1) | @intFromBool(marked);
 }
 /// Two marks at one result path: keep either mark and the nearer pending
@@ -734,13 +738,13 @@ fn gJoin(a: Grown, b: Grown) Grown {
     const pa = gPending(a);
     const pb = gPending(b);
     const pend: ?usize = if (pa) |x| (if (pb) |y| @min(x, y) else x) else pb;
-    return gMake(gMarked(a) or gMarked(b), pend) | (@max(a >> 8, b >> 8) << 8);
+    return gMake(gMarked(a) or gMarked(b), pend) | (@max(a >> grown_guard, b >> grown_guard) << grown_guard);
 }
 /// A symbolic cell's mark one step further down: the boundary is a step
 /// nearer, and a cell already below stays below.
 fn gStep(g: Grown) Grown {
     const pend = gPending(g) orelse return g;
-    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0) | (g & ~@as(Grown, 255));
+    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0) | (g & ~grown_low);
 }
 
 /// A projected annotation's boundary may lie above its current result path.
@@ -748,11 +752,11 @@ fn gStep(g: Grown) Grown {
 /// they represent the full u32 path-depth range without truncation.
 /// Like the ordinary growth mark, it is cleared when the group settles.
 fn gGuard(g: Grown) ?u32 {
-    const encoded = g >> 8;
+    const encoded = g >> grown_guard;
     return if (encoded == 0) null else @intCast(encoded - 1);
 }
 fn gGuardAt(g: Grown, distance: u32) Grown {
-    return (g & 255) | ((@as(Grown, distance) + 1) << 8);
+    return (g & grown_low) | ((@as(Grown, distance) + 1) << grown_guard);
 }
 fn gDropGuard(g: Grown, depth: u32) Grown {
     const distance = gGuard(g) orelse return g;
@@ -778,6 +782,8 @@ test "annotation growth preserves deep boundaries and joins at the earlier bound
     try std.testing.expect(gMarked(joined));
     try std.testing.expectEqual(earlier, gJoin(0, earlier));
     try std.testing.expectEqual(earlier, gJoin(earlier, 0));
+    // §16.7 (c): no path cut, so a pending boundary is any path depth.
+    for ([_]usize{ 126, 127, 1000, std.math.maxInt(u30) - 1 }) |b| try std.testing.expectEqual(@as(?usize, b), gPending(gMake(true, b)));
 }
 
 /// `rxc`: the record condition (§31.4 item 6), failing approximately unless
@@ -2137,7 +2143,6 @@ fn opaqueShape(o: *Ownership, w: *Walker, ty: Walker.TyRef, path: u32, slots: *s
         };
         if (!found) try slots.append(w.a, .{ .path = path, .container = container, .fields = if (shape == .record) shape.record.names else null });
     }
-    if (o.paths.depth.items[path] >= k_limit) return;
     switch (shape) {
         .tuple => |ts| for (ts, 0..) |t, i| try o.opaqueShape(w, t, try o.child(path, .tuple, @intCast(i)), slots, seen),
         .record => |rec| {
@@ -2171,8 +2176,7 @@ pub fn opaquePrefix(o: *Ownership, steps_in: []const Step) Allocator.Error!?Opaq
     if (!bir.decls[di].is_opaque) return null;
     var best: ?OpaquePrefix = null;
     for (try o.opaqueSlots(key.module, di), 0..) |slot, si| {
-        var buf: [k_limit + 1]Step = undefined;
-        const ss = o.steps(slot.path, &buf);
+        const ss = o.steps(slot.path);
         if (ss.len > steps_in.len or (best != null and ss.len <= best.?.len)) continue;
         var matches = true;
         for (ss, steps_in[0..ss.len]) |x, y| if (x.kind != y.kind or x.arg != y.arg) {
@@ -2187,8 +2191,7 @@ pub fn opaquePrefix(o: *Ownership, steps_in: []const Step) Allocator.Error!?Opaq
 /// A record object's fields stay private too: the wire numbers its fields
 /// within its opaque slot and reconstructs their names only inside analysis.
 pub fn opaqueRecordFields(o: *Ownership, path: u32) Allocator.Error!?[]const u32 {
-    var buf: [k_limit + 1]Step = undefined;
-    const ss = o.steps(path, &buf);
+    const ss = o.steps(path);
     for (ss, 0..) |_, i| {
         const slot = (try o.opaquePrefix(ss[i..])) orelse continue;
         if (slot.len != ss.len - i) continue;
@@ -3402,12 +3405,10 @@ fn normalizeRaw(o: *Ownership, s_in: Summary) Allocator.Error!Summary {
 /// when the summary has no such set. Innermost marker first; the caller
 /// normalizes again, and asks again, until nothing changes.
 fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
-    // Inserting a nominal marker before composing a cast prefix can
-    // consume the path cut sooner than the expanded facts. Keep the
-    // complete expanded set for summaries that cross cast boundaries.
-    for (s.uses) |u| if (o.paths.casts.items[u.path]) return null;
-    for (s.res) |r| if (o.paths.casts.items[r.path] or o.paths.casts.items[r.prov.path]) return null;
-    for (s.supply) |r| if (o.paths.casts.items[r.path] or o.paths.casts.items[r.prov.path]) return null;
+    // §16.7 (c): a summary whose paths cross a cast is abbreviated too. F2
+    // kept such a summary expanded because, with the path cut, inserting a
+    // marker before a cast prefix could cut a path the expanded facts kept;
+    // with no cut the two name the same places.
     // A use's bits written for more places only add reads and writes, so the
     // regions a use counts are the type's as written. A result's and a
     // supply's entries carry guarantees — its conditions, an owned supply —
@@ -3681,8 +3682,7 @@ fn memoSplit(o: *Ownership, col: *std.ArrayList(u32), p: u32, comptime f: fn (*O
 }
 
 fn canonicalPlacesRaw(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
-    var buf: [k_limit + 1]u32 = undefined;
-    const ns = o.pathNodes(p, &buf);
+    const ns = o.pathNodes(p);
     var i = ns.len;
     while (i > 1) {
         i -= 1;
@@ -3710,8 +3710,7 @@ fn canonicalSplit(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
 }
 
 fn canonicalSplitRaw(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
-    var buf: [k_limit + 1]u32 = undefined;
-    const ns = o.pathNodes(p, &buf);
+    const ns = o.pathNodes(p);
     var i = ns.len;
     while (i > 2) {
         i -= 1;
@@ -4138,9 +4137,8 @@ fn isOkStep(o: *const Ownership, step: ?Step) bool {
 /// through the steps of lists, records and tuples; true where the type does
 /// not say (a constructor's step, a `⋆`, a type variable).
 fn partTracked(o: *Ownership, store: *TypeStore, v: Var, path: u32) Allocator.Error!bool {
-    var buf: [k_limit + 1]Step = undefined;
     var t = v;
-    for (o.steps(path, &buf)) |st| {
+    for (o.steps(path)) |st| {
         const next: ?Var = switch (store.resolvedContent(t)) {
             .structure => |sc| switch (sc) {
                 .app => |a| if (st.kind == .elem and a.type == o.in.types.well_known.list and store.vars(a.args).len == 1) store.vars(a.args)[0] else null,
@@ -5076,7 +5074,12 @@ const Paths = struct {
     parent: std.ArrayList(u32) = .empty,
     kind: std.ArrayList(StepKind) = .empty,
     arg: std.ArrayList(u32) = .empty,
-    depth: std.ArrayList(u8) = .empty,
+    depth: std.ArrayList(u32) = .empty,
+    /// §16.7 (c): each path's nodes and steps, root first, kept for the
+    /// run (`keep`): a path has no length limit, and a reader holds its
+    /// steps while `child` makes more paths.
+    nodes_of: std.ArrayList([]const u32) = .empty,
+    steps_of: std.ArrayList([]const Step) = .empty,
     /// The path without its first step, once asked (§18.11).
     rest: std.ArrayList(u32) = .empty,
     /// Whether the path holds a `⋆` step: two paths with none overlap
@@ -5097,6 +5100,8 @@ const Paths = struct {
         p.kind.deinit(gpa);
         p.arg.deinit(gpa);
         p.depth.deinit(gpa);
+        p.nodes_of.deinit(gpa);
+        p.steps_of.deinit(gpa);
         p.rest.deinit(gpa);
         p.any.deinit(gpa);
         p.casts.deinit(gpa);
@@ -5154,6 +5159,8 @@ pub fn seedPaths(o: *Ownership) Allocator.Error!void {
     try o.paths.kind.append(gpa, .any);
     try o.paths.arg.append(gpa, 0);
     try o.paths.depth.append(gpa, 0);
+    try o.paths.nodes_of.append(gpa, &.{});
+    try o.paths.steps_of.append(gpa, &.{});
     try o.paths.rest.append(gpa, none);
     try o.paths.any.append(gpa, false);
     try o.paths.casts.append(gpa, false);
@@ -5363,8 +5370,8 @@ fn child(o: *Ownership, parent: u32, kind_in: StepKind, arg: u32) Allocator.Erro
 
 /// `child`, computed: the fold of §16.7 needs the region the parent is in.
 fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u32 {
-    // The cut: a path never grows past k steps; a `⋆` absorbs what is below it.
-    if (o.paths.depth.items[parent] >= k_limit) return parent;
+    // A `⋆` absorbs what is below it. There is no cut (§16.7 (c)): every
+    // source of unbounded paths has a fold, below.
     if (parent != eps and o.paths.kind.items[parent] == .any) return parent;
     // A type the path is already inside is folded (thesis §3.1, §16.7's
     // level marker): a constructor step into it goes on from the region's
@@ -5421,19 +5428,10 @@ const Region = union(enum) { first: u32, marker: u32 };
 /// value of the type, `Dict String (Dict …)`'s inner dictionaries, not a
 /// level of this one.
 fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
-    var chain: [k_limit + 1]u32 = undefined;
-    var n: usize = 0;
-    var at = parent;
-    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
-        chain[n] = at;
-        n += 1;
-    }
-    // Root first: `chain[n - 1]` is the first step.
+    // Root first.
+    const chain: []const u32 = if (parent == none) &.{} else o.pathNodes(parent);
     var region: ?Region = null;
-    var i = n;
-    while (i > 0) {
-        i -= 1;
-        const node = chain[i];
+    for (chain) |node| {
         switch (o.paths.kind.items[node]) {
             .ctor => {
                 const t = o.ctorType(o.stepCtor(o.paths.arg.items[node])) orelse continue;
@@ -5448,7 +5446,12 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
             .env => if (ty == fn_type and region == null) {
                 region = .{ .first = node };
             },
-            .cast, .cast_level => region = null,
+            // §16.7 (c), the manager's decision on #853: a recursive type's
+            // region goes on across a cast, so a `T` read through a cast below
+            // a `T` folds into the region. A closure's region still ends there.
+            .cast, .cast_level => if (ty == fn_type) {
+                region = null;
+            },
             else => {},
         }
     }
@@ -6103,8 +6106,7 @@ fn anchoredAt(o: *Ownership, f: u32, parent: u32) Allocator.Error!bool {
     if (pd <= fd) return false;
     const a = try o.anchorsOf(o.paths.arg.items[f]);
     if (a.paths.len == 0) return false;
-    var buf: [k_limit + 1]Step = undefined;
-    const st = o.steps(parent, &buf);
+    const st = o.steps(parent);
     const q = st[fd..];
     // `parent` is below `f` itself, not below another path of its depth.
     var at = parent;
@@ -6134,7 +6136,22 @@ pub fn rawChild(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.
     try o.paths.parent.append(o.in.gpa, parent);
     try o.paths.kind.append(o.in.gpa, kind);
     try o.paths.arg.append(o.in.gpa, arg);
+    // §16.7 (c): no cut. A growth mark holds a depth in 30 bits; a path that
+    // deep would hold 2³⁰ steps in `steps_of` alone, more than memory.
+    std.debug.assert(o.paths.depth.items[parent] < std.math.maxInt(u30) - 1);
     try o.paths.depth.append(o.in.gpa, o.paths.depth.items[parent] + 1);
+    {
+        const keep = o.keep.allocator();
+        const pd = o.paths.depth.items[parent];
+        const ns = try keep.alloc(u32, pd + 1);
+        @memcpy(ns[0..pd], o.paths.nodes_of.items[parent]);
+        ns[pd] = id;
+        const ss = try keep.alloc(Step, pd + 1);
+        @memcpy(ss[0..pd], o.paths.steps_of.items[parent]);
+        ss[pd] = .{ .kind = kind, .arg = arg };
+        try o.paths.nodes_of.append(o.in.gpa, ns);
+        try o.paths.steps_of.append(o.in.gpa, ss);
+    }
     try o.paths.rest.append(o.in.gpa, none);
     // A marker is compared step by step (§16.7, *Overlap*).
     const uncertain = kind == .cast and o.cast_wild.items[arg];
@@ -6148,23 +6165,15 @@ pub fn rawChild(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.
 
 pub const Step = struct { kind: StepKind, arg: u32 };
 
-/// The steps of `p`, root first.
-pub fn steps(o: *const Ownership, p: u32, buf: *[k_limit + 1]Step) []const Step {
-    const n: usize = o.paths.depth.items[p];
-    var at = p;
-    var i = n;
-    while (i > 0) {
-        i -= 1;
-        buf[i] = .{ .kind = o.paths.kind.items[at], .arg = o.paths.arg.items[at] };
-        at = o.paths.parent.items[at];
-    }
-    return buf[0..n];
+/// The steps of `p`, root first: kept for the run, so they stay valid
+/// while more paths are made.
+pub fn steps(o: *const Ownership, p: u32) []const Step {
+    return o.paths.steps_of.items[p];
 }
 
 /// `s` followed by `p`'s steps.
 fn prepend(o: *Ownership, s: Step, p: u32) Allocator.Error!u32 {
-    var buf: [k_limit + 1]Step = undefined;
-    const rest = o.steps(p, &buf);
+    const rest = o.steps(p);
     var at = try o.child(eps, s.kind, s.arg);
     for (rest) |r| at = try o.child(at, r.kind, r.arg);
     return at;
@@ -6197,9 +6206,8 @@ fn concat(o: *Ownership, p: u32, q: u32) Allocator.Error!u32 {
     if (q == eps) return p;
     if (p == eps) return q;
     if (o.concat_memo.get(.{ p, q })) |r| return r;
-    var buf: [k_limit + 1]Step = undefined;
     var at = p;
-    for (o.steps(q, &buf)) |r| at = try o.child(at, r.kind, r.arg);
+    for (o.steps(q)) |r| at = try o.child(at, r.kind, r.arg);
     try o.concat_memo.put(o.in.gpa, .{ p, q }, at);
     return at;
 }
@@ -6227,29 +6235,17 @@ fn overlap(o: *const Ownership, p: u32, q: u32) bool {
 /// Match the loan as ancestor of the written place, including marker expansions.
 fn writeOverlap(o: *const Ownership, written: u32, loan: u32, extent: WriteExtent) bool {
     if (extent == .deep) return o.overlap(written, loan);
-    var wb: [k_limit + 1]u32 = undefined;
-    var lb: [k_limit + 1]u32 = undefined;
-    return o.match(o.pathNodes(loan, &lb), o.pathNodes(written, &wb), .loan);
+    return o.match(o.pathNodes(loan), o.pathNodes(written), .loan);
 }
 
 /// `overlap`, step by step.
 fn overlapSteps(o: *const Ownership, p: u32, q: u32) bool {
-    var bp: [k_limit + 1]u32 = undefined;
-    var bq: [k_limit + 1]u32 = undefined;
-    return o.overlapNodes(o.pathNodes(p, &bp), o.pathNodes(q, &bq));
+    return o.overlapNodes(o.pathNodes(p), o.pathNodes(q));
 }
 
 /// The nodes of `p`, root first: `p`'s prefix at each depth.
-fn pathNodes(o: *const Ownership, p: u32, buf: *[k_limit + 1]u32) []const u32 {
-    const n: usize = o.paths.depth.items[p];
-    var at = p;
-    var i = n;
-    while (i > 0) {
-        i -= 1;
-        buf[i] = at;
-        at = o.paths.parent.items[at];
-    }
-    return buf[0..n];
+fn pathNodes(o: *const Ownership, p: u32) []const u32 {
+    return o.paths.nodes_of.items[p];
 }
 
 fn physicalPath(o: *const Ownership, p: u32) u32 {
@@ -6359,8 +6355,7 @@ fn suffix(o: *Ownership, p: u32, q: u32) Allocator.Error!?u32 {
     if (p == q) return eps;
     const key: [2]u32 = .{ p, q };
     if (o.suffix_memo.get(key)) |cached| return cached;
-    var buf: [k_limit + 1]Step = undefined;
-    const sq = o.steps(q, &buf);
+    const sq = o.steps(q);
     var at: u32 = eps;
     for (sq[o.paths.depth.items[p]..]) |s| at = try o.child(at, s.kind, s.arg);
     try o.suffix_memo.put(o.in.gpa, key, at);
@@ -6368,7 +6363,7 @@ fn suffix(o: *Ownership, p: u32, q: u32) Allocator.Error!?u32 {
 }
 
 /// `p`'s prefix of depth `d`, which is at most `p`'s.
-fn ancestor(o: *const Ownership, p: u32, d: u8) u32 {
+fn ancestor(o: *const Ownership, p: u32, d: u32) u32 {
     var at = p;
     var n = o.paths.depth.items[p];
     while (n > d) : (n -= 1) at = o.paths.parent.items[at];
@@ -6388,9 +6383,7 @@ fn levelHoldsPaths(o: *const Ownership, p: u32, q: u32) bool {
     if (!o.paths.any.items[p] and !o.paths.any.items[q] and !o.paths.casts.items[p] and !o.paths.casts.items[q]) return false;
     const key: [3]u32 = .{ p, q, 1 };
     if (o.match_cache) |memo| if (memo.get(key)) |answer| return answer;
-    var bp: [k_limit + 1]u32 = undefined;
-    var bq: [k_limit + 1]u32 = undefined;
-    const answer = o.match(o.pathNodes(p, &bp), o.pathNodes(q, &bq), .holds);
+    const answer = o.match(o.pathNodes(p), o.pathNodes(q), .holds);
     if (o.match_cache) |memo| memo.put(o.in.gpa, key, answer) catch {};
     return answer;
 }
@@ -6435,16 +6428,14 @@ fn dropFirst(o: *Ownership, p: u32) Allocator.Error!u32 {
 }
 
 fn dropFirstRaw(o: *Ownership, p: u32) Allocator.Error!u32 {
-    var buf: [k_limit + 1]Step = undefined;
-    const s = o.steps(p, &buf);
+    const s = o.steps(p);
     var at: u32 = eps;
     for (s[1..]) |r| at = try o.child(at, r.kind, r.arg);
     return at;
 }
 
 fn writePath(o: *Ownership, w: *std.Io.Writer, p: u32) (Allocator.Error || std.Io.Writer.Error)!void {
-    var buf: [k_limit + 1]Step = undefined;
-    for (o.steps(p, &buf)) |s| switch (s.kind) {
+    for (o.steps(p)) |s| switch (s.kind) {
         .field => try w.print(".{s}", .{o.in.interner.slice(@fromBackingInt(@intCast(s.arg)))}),
         .tuple => try w.print(".{d}", .{s.arg}),
         .ctor => {
@@ -8295,8 +8286,7 @@ const Walker = struct {
             .env => w.localType(c.a) orelse return false,
             .shared, .top, .closure, .func, .payload, .except, .taken => return false,
         };
-        var buf: [k_limit + 1]Step = undefined;
-        const path_steps = w.o.steps(c.path, &buf);
+        const path_steps = w.o.steps(c.path);
         for (path_steps[from..], from..) |s, si| {
             // A constructor's field, and what is below it, as its declaration
             // writes them (`birHoldsOnlyRecords`), whatever the root's type
@@ -8693,8 +8683,7 @@ const Walker = struct {
     fn projPathVia(w: *Walker, idx: *StepIndex, p: u32) Allocator.Error!AV {
         const av = idx.av;
         if (p == eps or av.len < step_index_min or av.len >= wide_index) return w.projPath(av, p, null);
-        var buf: [k_limit + 1]Step = undefined;
-        const st = w.o.steps(p, &buf);
+        const st = w.o.steps(p);
         var at = try w.projIndexed(idx, st[0]);
         for (st[1..]) |x| at = try w.proj(at, x, null);
         return at;
@@ -8754,8 +8743,7 @@ const Walker = struct {
         // Where the root may not be a `T`, a place inside it may be one, at
         // a path the entry does not show.
         if (w.o.markerAny(arg)) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap, .grown = e.grown });
-        var buf: [k_limit + 1]Step = undefined;
-        const st = w.o.steps(e.path, &buf);
+        const st = w.o.steps(e.path);
         for (st, 0..) |x, i| if (x.kind == .level and w.o.markerType(x.arg) == w.o.markerType(arg)) {
             var at: u32 = eps;
             for (st[i + 1 ..]) |y| at = try w.o.child(at, y.kind, y.arg);
@@ -8861,9 +8849,8 @@ const Walker = struct {
     }
 
     fn projPathRaw(w: *Walker, av: AV, p: u32, ty: ?Var) Allocator.Error!AV {
-        var buf: [k_limit + 1]Step = undefined;
         var at = av;
-        const s = w.o.steps(p, &buf);
+        const s = w.o.steps(p);
         var from: usize = 0;
         // A wide value projected again and again — an entry model (§20.4) —
         // is indexed by its first step once.
@@ -9708,8 +9695,7 @@ const Walker = struct {
     fn containerOf(w: *Walker, c: u32) Allocator.Error!u32 {
         const t = w.cells.items[c];
         var b = w.cells.items[t.a];
-        var buf: [k_limit + 1]Step = undefined;
-        const s = w.o.steps(b.path, &buf);
+        const s = w.o.steps(b.path);
         if (s.len == 0 or s[s.len - 1].kind != .elem) return t.a;
         var at: u32 = eps;
         for (s[0 .. s.len - 1]) |st| at = try w.o.child(at, st.kind, st.arg);
@@ -11841,8 +11827,7 @@ const Walker = struct {
         if (si >= ctx.s.slots.len) return null;
         const slot = ctx.s.slots[si];
         var ty = w.callArgRef(ctx, slot[0]) orelse return null;
-        var buf: [k_limit + 1]Step = undefined;
-        for (w.o.steps(slot[1], &buf)) |step| {
+        for (w.o.steps(slot[1])) |step| {
             if (step.kind == .cast or step.kind == .cast_level) {
                 ty = .{ .cast = step.arg };
                 continue;
@@ -12241,8 +12226,7 @@ const Walker = struct {
     /// the group being solved: how many of its steps are above the first
     /// variable `a` instantiates at a structure, or null when none is.
     fn polyBound(w: *Walker, p: u32, g0: TyRef, a0: TyRef) Allocator.Error!?usize {
-        var buf: [k_limit + 1]Step = undefined;
-        const st = w.o.steps(p, &buf);
+        const st = w.o.steps(p);
         var g = g0;
         var a = a0;
         for (st, 0..) |s, k| {
@@ -12333,8 +12317,7 @@ const Walker = struct {
 
     /// `p`'s first `k` steps followed by `⋆`.
     fn cutAt(w: *Walker, p: u32, k: usize) Allocator.Error!u32 {
-        var buf: [k_limit + 1]Step = undefined;
-        const st = w.o.steps(p, &buf);
+        const st = w.o.steps(p);
         var at: u32 = eps;
         for (st[0..@min(k, st.len)]) |x| at = try w.o.child(at, x.kind, x.arg);
         return w.o.child(at, .any, 0);
@@ -12654,7 +12637,6 @@ const Walker = struct {
     /// Change 9's opaque markup slots. Unknown types/paths keep §6.1's aliases.
     fn markupEvents(w: *Walker, av: AV, ty: ?Var, inst: Inst.Index, depth: u32) Allocator.Error!AV {
         const v = ty orelse return av;
-        if (depth >= k_limit) return av;
         switch (w.store.resolvedContent(v)) {
             .structure => |st| switch (st) {
                 .app => |app| {
@@ -13003,8 +12985,7 @@ const Walker = struct {
     /// Whether the value at `path` below a value of type `t` crosses.
     fn crossesAt(w: *Walker, t: Var, path: u32) Allocator.Error!bool {
         var v = t;
-        var buf: [k_limit + 1]Step = undefined;
-        for (w.o.steps(path, &buf)) |s| {
+        for (w.o.steps(path)) |s| {
             const st = switch (w.store.resolvedContent(v)) {
                 .structure => |x| x,
                 else => return false,
@@ -16860,8 +16841,7 @@ const Walker = struct {
         var x: TyRef = .{ .cast = from };
         var y: TyRef = .{ .cast = to };
         var prefix: u32 = eps;
-        var buf: [k_limit + 1]Step = undefined;
-        const steps_ = w.o.steps(path, &buf);
+        const steps_ = w.o.steps(path);
         for (steps_, 0..) |step, i| {
             const sx = try w.tyShape(x);
             const sy = try w.tyShape(y);
@@ -16929,8 +16909,7 @@ const Walker = struct {
                 continue;
             };
             const before = out.items.len;
-            var nodes: [k_limit + 1]u32 = undefined;
-            for (w.o.pathNodes(e.path, &nodes)) |node| {
+            for (w.o.pathNodes(e.path)) |node| {
                 const kind = w.o.paths.kind.items[node];
                 if (kind == .any) {
                     try out.append(w.a, .{ .path = try w.o.child(eps, .any, 1), .cell = e.cell, .approx = ap, .grown = e.grown });
@@ -17257,7 +17236,7 @@ const Walker = struct {
             const path = try w.o.concat(r.path, e.path);
 
             const marked = gMarked(e.grown) or gMarked(r.grown);
-            x.* = .{ .path = path, .cell = e.cell, .approx = e.approx, .grown = gMake(marked, gPending(e.grown)) | (@max(e.grown >> 8, r.grown >> 8) << 8) };
+            x.* = .{ .path = path, .cell = e.cell, .approx = e.approx, .grown = gMake(marked, gPending(e.grown)) | (@max(e.grown >> grown_guard, r.grown >> grown_guard) << grown_guard) };
             try before.append(w.a, x.*);
             const folded_prefix = w.castFoldPath(r.path);
             const prefix = if (marked) folded_prefix orelse r.path else r.path;
@@ -17805,8 +17784,7 @@ const Walker = struct {
     /// The prefix of `p` before its first marker, when it has one.
     fn markerAnchor(w: *Walker, p: u32) Allocator.Error!?u32 {
         if (!w.o.paths.any.items[p]) return null;
-        var buf: [k_limit + 1]u32 = undefined;
-        const ns = w.o.pathNodes(p, &buf);
+        const ns = w.o.pathNodes(p);
         for (ns, 0..) |n, k| if (w.o.paths.kind.items[n] == .level) return if (k == 0) eps else ns[k - 1];
         return null;
     }
@@ -17841,8 +17819,7 @@ const Walker = struct {
             .param, .env, .cbres => {},
             else => return null,
         }
-        var buf: [k_limit + 1]u32 = undefined;
-        const ns = w.o.pathNodes(x.path, &buf);
+        const ns = w.o.pathNodes(x.path);
         const cut = for (ns, 0..) |n, k| {
             switch (w.o.paths.kind.items[n]) {
                 .elem, .level, .cast_level => break k,
@@ -18540,9 +18517,14 @@ const Walker = struct {
         const marked = entry.grown != 0 or for (sr.av) |e| {
             if (e.grown != 0) break true;
         } else false;
+        // §16.7 (c): a call that grows the variable of the supply's parameter
+        // composes it too (F3 on every route): without the path cut, its
+        // paths would grow by a step in every round of the group.
+        const grown = try w.grownArgs(ctx);
+        const grows = entry.prov.kind == .param and entry.prov.a < grown.len and grown[entry.prov.a] != null;
         // With no growth information the existing deferred placement is
         // already exact; do not install its annotations a second time.
-        if (!crossing and !marked) return w.supplies.append(w.a, sr);
+        if (!crossing and !marked and !grows) return w.supplies.append(w.a, sr);
         var out = sr;
         out.av = try w.composeSupply(entry, sr.av, ctx);
         out.path = eps;
@@ -20291,10 +20273,8 @@ const Walker = struct {
         // One place named twice (a definition's made cell, and the same value
         // through another's summary) is one cell.
         if (w.o.physicalPath(o.path) == w.o.physicalPath(i.path)) return .{ .rest = eps };
-        var bo: [k_limit + 1]Step = undefined;
-        var bi: [k_limit + 1]Step = undefined;
-        const so = w.o.steps(o.path, &bo);
-        const si = w.o.steps(i.path, &bi);
+        const so = w.o.steps(o.path);
+        const si = w.o.steps(i.path);
         if (so.len < si.len) exact: {
             for (so, si[0..so.len]) |x, y| if (x.kind != y.kind or x.arg != y.arg) break :exact;
             var at: u32 = eps;
@@ -21295,8 +21275,7 @@ const Walker = struct {
                     // read, so a read of a written field is a whole use.
                     .hoist => if (rec.kind != .creation) {
                         try hoisted.append(w.a, ui);
-                        var buf: [k_limit + 1]Step = undefined;
-                        const prefix: u32 = @intCast(w.o.steps(h.path, &buf).len + 1);
+                        const prefix: u32 = @intCast(w.o.steps(h.path).len + 1);
                         try w.hoist_uses.append(w.a, .{ .use = u, .prefix = prefix });
                         continue;
                     },
@@ -21564,10 +21543,8 @@ const Walker = struct {
         }
         if (w.o.isPrefix(u.path, q)) {
             if (u.except.len != 0) {
-                var bu: [k_limit + 1]Step = undefined;
-                var bq: [k_limit + 1]Step = undefined;
-                const su = w.o.steps(u.path, &bu);
-                const sq = w.o.steps(q, &bq);
+                const su = w.o.steps(u.path);
+                const sq = w.o.steps(q);
                 if (sq.len > su.len) {
                     const next = sq[su.len];
                     if (next.kind == .field and std.mem.indexOfScalar(u32, u.except, next.arg) != null) return .none;
@@ -21576,10 +21553,8 @@ const Walker = struct {
             return .whole;
         }
         if (!w.o.isPrefix(q, u.path)) return .none;
-        var bu: [k_limit + 1]Step = undefined;
-        var bq: [k_limit + 1]Step = undefined;
-        const su = w.o.steps(u.path, &bu);
-        const sq = w.o.steps(q, &bq);
+        const su = w.o.steps(u.path);
+        const sq = w.o.steps(q);
         const next = su[sq.len];
         if (next.kind != .field) return .whole;
         // No field named is every field: a write a block could not name, an

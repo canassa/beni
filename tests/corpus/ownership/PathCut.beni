@@ -1,0 +1,42 @@
+-- ownership: no path is cut (§4.1, §16.7 (c), issue #286). The cut `k = 8`
+-- dropped every step past the eighth, so two places nine steps down were
+-- one: `deep` hands `writeRead` a record whose `x` and `y` hold one list,
+-- nine steps below its root, and the call-site demand found no other path
+-- that holds the list, so `deep` was accepted while its twin seven steps
+-- down, `shallow`, was refused `disjoint`. `writeRead` writes `x` and then
+-- reads `y`: in place `y` would see the push. Both are refused now, and
+-- `apart`, two lists, is accepted.
+type alias Leaf =
+    x : List Int
+    y : List Int
+
+
+type alias C =
+    c :
+        d :
+            e :
+                f :
+                    g :
+                        h : Leaf
+
+
+pub writeRead : C → List Int × List Int
+writeRead s =
+    pushed = List.push s.c.d.e.f.g.h.x 1
+    ( pushed, s.c.d.e.f.g.h.y )
+
+
+pub deep : List Int → List Int × List Int
+deep xs =
+    r = { a = { b = { c = { d = { e = { f = { g = { h = { x = xs, y = xs } } } } } } } } }
+    writeRead r.a.b
+
+
+pub shallow : List Int → List Int × List Int
+shallow xs = writeRead { c = { d = { e = { f = { g = { h = { x = xs, y = xs } } } } } } }
+
+
+pub apart : List Int, List Int → List Int × List Int
+apart xs ys =
+    r = { a = { b = { c = { d = { e = { f = { g = { h = { x = xs, y = ys } } } } } } } } }
+    writeRead r.a.b

@@ -1,0 +1,15 @@
+module CastRegion
+  34:23 List.push xs: accepted param
+  44:15 call CastRegion.pushRoot <Node …>#Node.0: accepted param (CastRegion.pushRoot writes π1#Node.0)
+  48:13 call CastRegion.pushRoot <Node …>#Node.0: rejected disjoint: another operand of the same operation reaches it (CastRegion.pushRoot writes π1#Node.0)
+  57:23 List.push xs: accepted param
+  67:17 call CastRegion.pushDeep <Node …>#Node.0: rejected disjoint: another operand of the same operation reaches it (CastRegion.pushDeep writes π1#Node.0)
+  summary childOf: π1 R, π1#Node.1 R, π1#Node.1⟨as 0:CastRegion::Tree()⟩ A; res π1#Node.1⟨as 0:CastRegion::Tree()⟩
+  summary pushRoot: π1 R, π1#Node.0 RAW[storage], π1#Node.0[*] A, π1#Node.1 R, π1#Node.1⟨as 0:CastRegion::Tree()⟩ R, π1#Node.1⟨as 0:CastRegion::Tree()⟩#Node.0 R; res .0 fresh1 π1#Node.0, .0[*] ~π1#Node.0[*]
+  summary apart: π1 RAW[storage], π1[*] A, π2 R; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary shared: π1 RAW[storage], π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  summary pushDeep: π1 R, π1#Node.0 RAW[storage], π1#Node.0[*] A, π1#Node.1 R, π1#Node.1⟨as 0:CastRegion::Tree()⟩ R, π1#Node.1⟨as 0:CastRegion::Tree()⟩⟨as 0:CastRegion::Tree()⟩⁺#Node.0 R; res .0 fresh1 π1#Node.0, .0[*] ~π1#Node.0[*]
+  summary deepShared: π1 RAW[storage], π1[*] A; res .0 ~condition(fresh1) ~fresh1 ~π1, .0[*] ~condition(fresh2) ~π1[*]
+  demands 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 5: accepted 3 (fresh 0, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause disjoint 2

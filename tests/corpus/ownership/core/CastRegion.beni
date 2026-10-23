@@ -1,0 +1,67 @@
+-- A recursive type's region goes on across a cast (§16.7 (c), the
+-- manager's decision on #853): a `Tree` read back through `Js.Value` below
+-- a `Tree` folds into the enclosing region instead of starting one of its
+-- own. The fold only merges places. `pushRoot` writes the root's list while
+-- it reads the child's, read through the cast: `apart` hands it two lists
+-- and is accepted, and `shared` hands it one list at both, which is real
+-- sharing, and is refused. `pushDeep` reads the grandchild, two casts down,
+-- which the region folds onto the child's place: `deepShared` puts the
+-- root's list there, and is refused.
+import Js
+
+
+type Tree
+    = Leaf
+    | Node (List Int) Js.Value
+
+
+childOf : Tree → Tree
+childOf t =
+    case t of
+        Node _ host →
+            Js.to host
+
+        Leaf →
+            Leaf
+
+
+pub pushRoot : Tree → List Int × Int
+pushRoot t =
+    case t of
+        Node xs _ →
+            case childOf t of
+                Node ys _ →
+                    ( List.push xs 1, List.length ys )
+
+                Leaf →
+                    ( [], 0 )
+
+        Leaf →
+            ( [], 0 )
+
+
+pub apart : List Int, List Int → List Int × Int
+apart xs ys = pushRoot (Node xs (Js.from (Node ys (Js.from Leaf))))
+
+
+pub shared : List Int → List Int × Int
+shared xs = pushRoot (Node xs (Js.from (Node xs (Js.from Leaf))))
+
+
+pub pushDeep : Tree → List Int × Int
+pushDeep t =
+    case t of
+        Node xs _ →
+            case childOf (childOf t) of
+                Node zs _ →
+                    ( List.push xs 1, List.length zs )
+
+                Leaf →
+                    ( [], 0 )
+
+        Leaf →
+            ( [], 0 )
+
+
+pub deepShared : List Int → List Int × Int
+deepShared xs = pushDeep (Node xs (Js.from (Node [] (Js.from (Node xs (Js.from Leaf))))))

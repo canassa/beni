@@ -283,6 +283,9 @@ conservative call's aliases are placed at (§6.1). A projection past the cut sta
 `⋆` overlapping anything; that is the prefix order of thesis §3.9 without folding, which slice 1 does
 not need because it walks no type's definition into paths.
 
+*Amended 2026-10-23 (#286, §16.7 (c)):* there is no `k`. A path has any finite length, and every source of unbounded
+paths has a fold (§16.7). A step past the eighth is no longer dropped.
+
 ### 4.2 Cells
 
 | Cell | Meaning | Thesis |
@@ -1202,7 +1205,7 @@ code:
 | Cap | Value | Where | Past it | Kind |
 |---|---|---|---|---|
 | `entries`, `path-entries`, `conditions`, `rounds`, `owned-atoms`, `value-cells`, `fixpoint`, `callbacks` | the table above | summaries and walks | the table above | loud |
-| the path cut `k` (`k_limit`) | 8 | every path (§4.1) | the step is dropped, so two places merge into one: a call that writes one of them is not seen to write the other | **silent**, issue #286 (below) |
+| the path cut `k` (`k_limit`) | was 8 | every path (§4.1) | *before 2026-10-23:* the step was dropped, so two places merged into one, and a call that wrote one was not seen to write the other (silent); now there is no cut, and every source of unbounded paths folds (§16.7 (c), as amended) | conservative: a fold only merges places; issue #286 |
 | `type_depth` | 16 | the walks over types: what a type may hold or share (`tracked`, `holdsList`, `mayShare`, `mayHold`, `ownMayHold`), a type's facts | "may hold", "may share" | conservative |
 | `type_depth` in `occursBelow` | 16 | `mayShare`'s shortcut (rule 4) | "does not occur": the shortcut is not taken | conservative |
 | `type_depth` in `typeExprHeads` | 16 | which types a type names, for "is this type recursive" | the type may be taken for one that is not: only "exact" becomes "approximate" or the reverse in a line; both reject | conservative |
@@ -2936,6 +2939,55 @@ extended by `schemaCtorBases`. They had no type in the ownership type graph (`ct
   invented. In `tests/corpus/ownership/`, no other verdict changes. Under `-Downership-full-cross-check`, `RecordTree`
   (#427) and `LevelPlacesKinds.demoRose` now pass. `LevelPlacesKinds.demoA` (`A (List Int) (Maybe A)`, a route
   through `Maybe`'s constructor that is not anchored) fails as it does on `master` (#694).
+
+*Amended 2026-10-23 (issue #286, (c), built; the manager's decision on #853, recorded for the owner to review): no path
+is cut, and a recursive type's region goes on across a cast.* `k_limit` is removed. A path's nodes and steps are
+slices kept for the run (`steps`, `pathNodes`), and no path buffer is left. The depth column is a `u32`. The
+opaque-slot and `markupEvents` guards are gone, because each walk is bounded by a finite type. A growth mark holds a
+pending boundary in 30 bits and the annotation boundary in 33 bits. Before, the pending boundary was clamped at 126.
+`rawChild` asserts that no path is deeper than 2³⁰ − 2 steps; the steps of such a path would fill memory. The
+summary block writes a path's length as a `u32` (version 37), and the interface format is 17. Two routes of growth
+that the cut had hidden get their folds:
+
+- **A forwarded supply composes at a growing call** (`forwardSupply`), as F3's rule does on every other route.
+  `core/GrowingFunctionSlot.loop`'s supply to a function read through a cast grew by `[*]` in every round. It is now
+  `1[*]⋆`.
+- **The canonical form applies to summaries whose paths cross a cast.** F2 turned it off there because, with the cut,
+  a marker inserted before a cast prefix could cut a path that the expanded facts kept. Without the cut, the two forms
+  name the same places.
+
+**The rule.** A first build kept F2's rule that a cast ends a nominal region. Each `Node` read through a cast below a
+`Node` then began a region of its own. Every ordering of `Node` regions and casts became a place, and core's check as
+user code was about ten times slower (#853). Now a cast ends the region of a closure (F1's marker of function types)
+and of no other type. A ctor step of a recursive type `T` after a cast, inside a region of `T`, folds onto that
+region's marker (`regionOf`). The marker cannot stand at an anchor, because the path to it is not a written one (it
+holds the cast), so it stands after the region's first step, where any step may follow it.
+
+- **Soundness.** A fold only merges places. The value read through the cast is below the region's position, so it is
+  one of the `T`s the marker stands for. Every holder stays at a path that stands for it. Containment through the
+  marker is approximate, as for any marker.
+- **Where F2's rule still holds.** A cast step is still its own boundary. An exact first cast is cancelled only by a
+  read at the same full type, so `ownership/core/FullCast`'s `List Int` and `List String` stay apart. A repeated full
+  type still folds as F2 says. A type that does not reach itself never folds, by (a), so two `Maybe`s on either side of
+  a cast are two places. A closure's region still ends at a cast.
+- **Finite.** A path holds at most one marker per region. The cast steps between markers are bounded by F2's fold
+  (two markers per full type), and the casts no longer multiply the regions.
+
+**What it gives.**
+
+- `ownership/PathCut` (#286's `writeRead`/`deep` hole, red on master) refuses `deep` `disjoint`, like its depth-seven
+  twin, and accepts `apart`.
+- `ownership/core/CastRegion` pins the cast region. `pushRoot` reads a child through `Js.Value`: `apart` is accepted
+  and `shared` is refused. `pushDeep` reads a grandchild two casts down: `deepShared`, whose root's list is also the
+  grandchild's, is refused.
+- In `tests/corpus/ownership/`, no other verdict line changes from `master`. Some summary lines change: longer exact
+  paths, and `GrowingFunctionSlot`'s folded supply.
+- Core and every platform hold no rejected line.
+- Checking core as user code (`--core-root`, a safe self-hosted build, `run/SchemaShapeThreshold`) takes about 1.27 s
+  against `master`'s 2.31 s. `Schema.shapeOf`'s summary has 1 344 entries, against 2 848 on `master`.
+
+The note *Stopped 2026-10-23* is withdrawn. The path cut's row in the audit table above now reads **conservative**:
+there is no cut, every source of unbounded paths has a fold, and each fold only merges places.
 
 ### 16.8 The library
 
