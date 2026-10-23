@@ -284,6 +284,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #873 (`0f04af708`; a pure, total value is evaluated at its write; also carries R4 enforcement `69abd4568`, which changes no output here) | 235.6 | | 1 513 | 62 589 | 1.11 | 1.46 |
 | after #876 (`fd298f90c`; an arm's handler gets its own runtime `onArm`, so a page without one keeps the old `on`, #874; #844 cost 3 has no smaller shape after brotli) | 236.1 | | 1 457 | 62 689 | 1.07 | 1.46 |
 | after #315 R6 + R7 (`a6918ba71`; records written in place. +9.3: each update helper of the widget module became a block-bodied function, `a=>{a.b=4;return a}`, which is no longer inlined into its handler, where the spread form was) | 245.4 | | 1 483 | 65 086 | 1.09 | 1.52 |
+| after #893 (`62fb8a1e9`; an in-place update is an expression again, `(b.f=v,b)`, and is inlined as the spread was, #889) | 232.1 | | 1 446 | 61 682 | 1.06 | 1.44 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
