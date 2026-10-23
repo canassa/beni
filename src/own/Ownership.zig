@@ -125,6 +125,31 @@ const split_memo_min: usize = if (wide_ways) 0 else 8;
 /// A declaration with more locals than this keeps the log its demands
 /// look for holders in (`Walker.bound_log`).
 const holder_scan_max: usize = if (wide_ways) 0 else 64;
+/// A value at least this wide, and narrower than `wide_index`, is projected
+/// through a `StepIndex` where its holder keeps one (`projArg`,
+/// `projPathVia`).
+const step_index_min: usize = if (wide_ways) 0 else 32;
+
+/// §20.4 (#825): a value's entries by their first step, for a value its
+/// holder keeps unchanged while it projects it again and again. It holds
+/// positions in the value, in the value's order: those every step acts on
+/// (ε, and `⋆`, a marker or a cast first) and those of each first step. A projection
+/// through it acts on the entries the direct scan acts on, in the order the
+/// scan acts on them, and skips only entries the scan does nothing with, so
+/// it interns what the scan interns, in the same order.
+const StepIndex = struct {
+    av: []const Entry = &.{},
+    built: bool = false,
+    always: std.ArrayList(u32) = .empty,
+    by: std.AutoHashMapUnmanaged([2]u32, std.ArrayList(u32)) = .empty,
+};
+
+/// The arguments of one instantiation of a summary (`InstCtx.args`), each
+/// with its `StepIndex` once a provenance projects it.
+const ArgIndex = struct {
+    avs: []const []const Entry,
+    of: []StepIndex = &.{},
+};
 
 const WideIndex = struct {
     roots: std.ArrayList(Entry) = .empty,
@@ -8047,46 +8072,126 @@ const Walker = struct {
         const here = unmarked != null and try w.o.levelOf(s.arg) == .here;
         const any = if (unmarked != null and !here) try w.o.child(eps, .any, 0) else eps;
         var out: std.ArrayList(Entry) = .empty;
-        for (av) |e| {
-            if (e.path == eps) {
-                if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
-                continue;
-            }
-            const first = w.o.firstStep(e.path).?;
-            if (analysisStep(s.kind) and (first.kind == .cast or first.kind == .cast_level)) continue;
-            if (first.kind == .cast) {
-                var kept = e;
-                kept.path = try w.o.child(eps, .any, 1);
-                if (kept.approx == 0) kept.approx = approx_place;
-                try out.append(w.a, kept);
-                continue;
-            }
-            if (first.kind == .cast_level) {
-                var kept = e;
-                kept.approx = if (e.approx != 0) e.approx else approx_place;
-                try out.append(w.a, kept);
-                continue;
-            }
-            if (first.kind == .any) {
-                if (first.arg == 1 and analysisStep(s.kind)) continue;
-                try out.append(w.a, e);
-                continue;
-            }
-            if (first.kind == s.kind and first.arg == s.arg) {
-                try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = gDropGuard(e.grown, w.o.paths.depth.items[e.path]) });
-            }
-            if (unmarked) |t| if (first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t) {
-                try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
-                continue;
-            };
-            if (first.kind == s.kind and first.arg == s.arg) continue;
-            if (first.kind == .level) {
-                try w.underMarker(&out, e, first, s);
-            } else if (s.kind == .level) {
-                try w.alongMarker(&out, e, s.arg);
+        for (av) |e| try w.projEntry(&out, e, s, ty, unmarked, here, any);
+        return w.norm(out.items);
+    }
+
+    /// `proj`'s work on one entry `e` of the value.
+    inline fn projEntry(w: *Walker, out: *std.ArrayList(Entry), e: Entry, s: Step, ty: ?Var, unmarked: ?u64, here: bool, any: u32) Allocator.Error!void {
+        if (e.path == eps) {
+            if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
+            return;
+        }
+        const first = w.o.firstStep(e.path).?;
+        if (analysisStep(s.kind) and (first.kind == .cast or first.kind == .cast_level)) return;
+        if (first.kind == .cast) {
+            var kept = e;
+            kept.path = try w.o.child(eps, .any, 1);
+            if (kept.approx == 0) kept.approx = approx_place;
+            try out.append(w.a, kept);
+            return;
+        }
+        if (first.kind == .cast_level) {
+            var kept = e;
+            kept.approx = if (e.approx != 0) e.approx else approx_place;
+            try out.append(w.a, kept);
+            return;
+        }
+        if (first.kind == .any) {
+            if (first.arg == 1 and analysisStep(s.kind)) return;
+            try out.append(w.a, e);
+            return;
+        }
+        if (first.kind == s.kind and first.arg == s.arg) {
+            try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = gDropGuard(e.grown, w.o.paths.depth.items[e.path]) });
+        }
+        if (unmarked) |t| if (first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t) {
+            try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
+            return;
+        };
+        if (first.kind == s.kind and first.arg == s.arg) return;
+        if (first.kind == .level) {
+            try w.underMarker(out, e, first, s);
+        } else if (s.kind == .level) {
+            try w.alongMarker(out, e, s.arg);
+        }
+    }
+
+    /// `proj(idx.av, s, null)`, through the index (#825). A marker step, or
+    /// a constructor step of a type that folds, reads every entry, and is
+    /// the scan.
+    fn projIndexed(w: *Walker, idx: *StepIndex, s: Step) Allocator.Error!AV {
+        if (analysisStep(s.kind) or s.kind == .cast or s.kind == .cast_level or s.kind == .level or (s.kind == .ctor and try w.o.levelOf(s.arg) != .none)) return w.proj(idx.av, s, null);
+        if (!idx.built) {
+            idx.built = true;
+            for (idx.av, 0..) |e, i| {
+                if (e.path != eps) {
+                    const first = w.o.firstStep(e.path).?;
+                    if (first.kind != .any and first.kind != .level and first.kind != .cast and first.kind != .cast_level) {
+                        const g = try idx.by.getOrPut(w.a, .{ @backingInt(first.kind), first.arg });
+                        if (!g.found_existing) g.value_ptr.* = .empty;
+                        try g.value_ptr.append(w.a, @intCast(i));
+                        continue;
+                    }
+                }
+                try idx.always.append(w.a, @intCast(i));
             }
         }
+        const keyed: []const u32 = if (idx.by.getPtr(.{ @backingInt(s.kind), s.arg })) |l| l.items else &.{};
+        const always = idx.always.items;
+        var out: std.ArrayList(Entry) = .empty;
+        // The two runs of positions, merged: the scan's order.
+        var i: usize = 0;
+        var j: usize = 0;
+        while (i < always.len or j < keyed.len) {
+            const at = if (j == keyed.len or (i < always.len and always[i] < keyed[j])) blk: {
+                i += 1;
+                break :blk always[i - 1];
+            } else blk: {
+                j += 1;
+                break :blk keyed[j - 1];
+            };
+            try w.projEntry(&out, idx.av[at], s, null, null, false, eps);
+        }
+        if (wide_ways) {
+            // What the merge skipped is what the scan does nothing with.
+            const visited = try w.a.alloc(bool, idx.av.len);
+            @memset(visited, false);
+            for (always) |at| visited[at] = true;
+            for (keyed) |at| visited[at] = true;
+            for (idx.av, visited) |e, v| if (!v) {
+                const first = w.o.firstStep(e.path).?;
+                std.debug.assert(first.kind != .any and first.kind != .level and first.kind != .cast and first.kind != .cast_level and !(first.kind == s.kind and first.arg == s.arg));
+            };
+        }
         return w.norm(out.items);
+    }
+
+    /// `projPath(idx.av, p, null)` through the index, for a value at least
+    /// `step_index_min` wide and narrower than `wide_index`; any other the
+    /// way `projPath` takes it.
+    fn projPathVia(w: *Walker, idx: *StepIndex, p: u32) Allocator.Error!AV {
+        const av = idx.av;
+        if (p == eps or av.len < step_index_min or av.len >= wide_index) return w.projPath(av, p, null);
+        var buf: [k_limit + 1]Step = undefined;
+        const st = w.o.steps(p, &buf);
+        var at = try w.projIndexed(idx, st[0]);
+        for (st[1..]) |x| at = try w.proj(at, x, null);
+        return at;
+    }
+
+    /// Argument `a` of the instantiation `ctx` projected along `p`: through
+    /// its `StepIndex` when the instantiation's maker keeps one.
+    fn projArg(w: *Walker, ctx: InstCtx, a: u32, p: u32) Allocator.Error!AV {
+        const av = ctx.avs[a];
+        const ai = ctx.args orelse return w.projPath(av, p, null);
+        if (ai.avs.ptr != ctx.avs.ptr or ai.avs.len != ctx.avs.len) return w.projPath(av, p, null);
+        if (p == eps or av.len < step_index_min or av.len >= wide_index) return w.projPath(av, p, null);
+        if (ai.of.len == 0) {
+            ai.of = try w.a.alloc(StepIndex, ai.avs.len);
+            for (ai.of, ai.avs) |*x, v| x.* = .{ .av = v };
+        }
+        return w.projPathVia(&ai.of[a], p);
     }
 
     /// §16.7: an entry `⟨T⟩r` stands for the places `r` of every `T` at
@@ -13679,10 +13784,11 @@ const Walker = struct {
 
     fn entryResMode(w: *Walker, inst: Inst.Index, f: EntryFn, avs: []const AV, ns: u32, conds: bool, effects: bool) Allocator.Error!AV {
         const actual = try w.entryArgs(f, avs);
+        var arg_index: ArgIndex = .{ .avs = actual };
         var parts: std.ArrayList(AV) = .empty;
         for (f.classes, f.sums) |cls, s| {
             const ci: u32 = if (cls == .closure) cls.closure else none;
-            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = actual, .closure = ci, .depth = 0, .fresh_ns = ns, .conds = conds, .effects = effects }));
+            try parts.append(w.a, try w.instRes(s, .{ .inst = inst, .s = s, .avs = actual, .closure = ci, .depth = 0, .fresh_ns = ns, .conds = conds, .effects = effects, .args = &arg_index }));
         }
         return w.unionOf(parts.items);
     }
@@ -13943,11 +14049,14 @@ const Walker = struct {
         const view_lists = try w.listView(view_msgs);
         res = try w.entryRes(inst, upd, &.{ msg, model }, 0);
         // (a) What every call the runtime makes escapes.
+        // The settled model, projected at every path update writes or the
+        // view reads (#825).
+        var model_steps: StepIndex = .{ .av = model };
         for (transitions, 0..) |callback, wi| {
             if (wi != 0) _ = try w.entryRes(inst, callback, &.{ msg, model }, entry_settle_ns);
             for (callback.sums) |s| for (s.uses) |u| {
                 if (entryParam(callback, u.param) == 1) {
-                    const at = try w.projPath(model, u.path, null);
+                    const at = try w.projPathVia(&model_steps, u.path);
                     try w.entryEscape(inst, at, entryBits(u.bits));
                     if (u.bits & bit_k != 0) try w.escapeObjects(at, w.point);
                 }
@@ -13959,7 +14068,7 @@ const Walker = struct {
         }
         for ([_]EntryFn{ view, subs }) |f| for (f.sums) |s| for (s.uses) |u| {
             if (u.param == 0) {
-                const at = try w.projPath(model, u.path, null);
+                const at = try w.projPathVia(&model_steps, u.path);
                 try w.entryEscape(inst, at, entryBits(u.bits));
                 if (u.bits & bit_k != 0) try w.escapeObjects(at, w.point);
             }
@@ -14020,7 +14129,7 @@ const Walker = struct {
                 }
                 var rest: std.ArrayList(Entry) = .empty;
                 if (model_idx == null) for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
-                const at = try w.projPath(model, x.path, null);
+                const at = try w.projPathVia(&model_steps, x.path);
                 // Not Disjoint against this message: what a send put in the
                 // model was another send's, given up there (§23.6).
                 try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, if (model_idx != null) &.{retained} else &.{ rest.items, retained }, view_lists, row, x.origin, x.xfail, x.deep, x.extent, model_idx, x.path, lists_idx);
@@ -14061,7 +14170,7 @@ const Walker = struct {
                     const src = if (x.param == 0) msg else model;
                     var rest: std.ArrayList(Entry) = .empty;
                     if (x.param == 1 and model_idx == null) for (model) |e| if (!w.o.overlap(e.path, x.path)) try rest.append(w.a, e);
-                    const base = try w.projPath(src, x.path, null);
+                    const base = if (x.param == 0) try w.projPath(src, x.path, null) else try w.projPathVia(&model_steps, x.path);
                     try w.demandOn(.{
                         .kind = .callsite,
                         .token = tok,
@@ -14769,6 +14878,9 @@ const Walker = struct {
     fn applySummaryAV(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee_inst: ?CalleeRef, arg_types: []const ?Var) Allocator.Error!AV {
         const s = callee.sum;
         w.popPending(args.len);
+        // The arguments, indexed as the summary's provenances project them
+        // (#825); `avs` is not changed below.
+        var arg_index: ArgIndex = .{ .avs = avs };
         w.point += 1;
         const tok = w.token(inst);
         const saved_limit_callee = w.limit_callee;
@@ -14835,7 +14947,7 @@ const Walker = struct {
         // names, or on a line of its own when there is none.
         const xfail = try w.a.alloc(?Rely, args.len);
         @memset(xfail, null);
-        try w.relyReqs(s.xreq, .list, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 }, xfail);
+        try w.relyReqs(s.xreq, .list, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .args = &arg_index }, xfail);
         // 3b. §31.7: a record the callee writes is an `update` demand at the
         // call, on the argument's record objects at the path, with the
         // fields it writes; reported, not enforced (R4). An asserted row
@@ -14850,7 +14962,7 @@ const Walker = struct {
         // argument it names, or on a record line of its own.
         const rxfail = try w.a.alloc(?Rely, args.len);
         @memset(rxfail, null);
-        try w.relyReqs(s.rxreq, .record, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 }, rxfail);
+        try w.relyReqs(s.rxreq, .record, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .args = &arg_index }, rxfail);
         for (s.uses) |u| {
             if (u.bits & bit_f == 0 or u.param >= args.len) continue;
             if (s.limit != .none and !w.isRecordType(w.instType(args[u.param]))) continue;
@@ -14944,7 +15056,7 @@ const Walker = struct {
         }
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
-        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .poly = callee.poly });
+        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .poly = callee.poly, .args = &arg_index });
         if (res.len == 0 and callee.merge_fresh) if (ty) |v| switch (w.store.resolvedContent(v)) {
             .structure => |st| if (st == .func) {
                 const site: CarrySite = .{ .inst = inst.int(), .sum = @intFromPtr(s), .klass = none, .depth = 0, .ns = 0, .merge = true };
@@ -15243,6 +15355,10 @@ const Walker = struct {
         /// §16.7 (F3, choice (a)): the callee's declared parameter types, when
         /// it is a member of the group being solved.
         poly: []const ?Var = &.{},
+        /// §20.4 (#825): the arguments indexed by first step, when the
+        /// instantiation's maker keeps them (`projArg`). Checked against
+        /// `avs` before it is used.
+        args: ?*ArgIndex = null,
     };
 
     /// `s.res` instantiated at the call (§16.4 item 6).
@@ -16477,7 +16593,7 @@ const Walker = struct {
         switch (p.kind) {
             .param => {
                 if (p.a >= ctx.avs.len) return &.{};
-                const av = try w.projPath(ctx.avs[p.a], p.path, null);
+                const av = try w.projArg(ctx, p.a, p.path);
                 if (!p.taken or !ctx.take) return av;
                 // The traversal primitive's element, taken out (§18.5): a
                 // cell that arrived from outside stands for it taken.
