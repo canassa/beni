@@ -1,0 +1,61 @@
+-- A key whose arm is the program's work (`docs/design/browser-inline.md`
+-- §8.4, amended 2026-10-22, the owner's decision 2): `W1`'s click is
+-- forwarded with more than `W1.update` — the arm also writes `w2` — so its
+-- handler stays the program's and is handed to `W1`'s root, which wires its
+-- event to it. The arm writes both slices and the pass runs both buckets.
+-- `Tick` writes the same and gives the same reads after its pass.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Interval
+import Sub exposing (Sub)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { w1 = W1.init ⊤, w2 = W2.init ⊤ }, Cmd.none )
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Tick
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        W1Msg sub →
+            ( { model | w1 = W1.update sub model.w1, w2 = W2.mark model.w2 }, Cmd.none )
+
+        W2Msg sub →
+            ( { model | w2 = W2.update sub model.w2 }, Cmd.none )
+
+        Tick →
+            ( { model | w1 = W1.bump model.w1, w2 = W2.mark model.w2 }, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Interval.every 1000 Tick
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+    </div>

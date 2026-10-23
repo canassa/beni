@@ -7418,3 +7418,197 @@ test "Tea keyed tables do not reach core Dict" {
     try expectBuilt(r);
     try testing.expect(!w.exists("out/_core/Dict.mjs"));
 }
+
+// ---- Root closures and the caches (`browser-inline.md` §8.4, amended
+// 2026-10-22, *Incremental lowering and the emit cache*) --------------------
+
+const roots_w1_base =
+    \\import Html exposing (Html)
+    \\
+    \\
+    \\pub type alias Model =
+    \\    cups : Int
+    \\    label : String
+    \\
+    \\
+    \\pub init : ⊤ → Model
+    \\init ⊤ = { cups = -1, label = "cups" }
+    \\
+    \\
+    \\pub type Msg
+    \\    = MakeFour
+    \\
+    \\
+    \\pub update : Msg, Model → Model
+    \\update msg model =
+    \\    case msg of
+    \\        MakeFour →
+    \\            { model | cups = 4 }
+    \\
+    \\
+    \\pub view : Model → Html Msg
+    \\view model =
+    \\    <section data-role="w1">
+    \\        <button data-role="four" onClick={MakeFour}>Make it 4</button>
+    \\        <p>{model.cups}</p>
+    \\    </section>
+    \\
+;
+
+const roots_w2_base =
+    \\import Html exposing (Html)
+    \\import W1
+    \\
+    \\
+    \\pub type alias Model =
+    \\    venue : String
+    \\
+    \\
+    \\pub init : ⊤ → Model
+    \\init ⊤ = { venue = "" }
+    \\
+    \\
+    \\pub type Msg
+    \\    = Write String
+    \\
+    \\
+    \\pub update : Msg, Model → Model
+    \\update msg model =
+    \\    case msg of
+    \\        Write typed →
+    \\            { model | venue = typed }
+    \\
+    \\
+    \\pub view : Model, W1.Model → Html Msg
+    \\view model first =
+    \\    <section data-role="w2">
+    \\        <input data-role="venue" value={model.venue} onInput={Write} />
+    \\        <output>{first.cups}</output>
+    \\    </section>
+    \\
+;
+
+const roots_main_base =
+    \\import Browser
+    \\import Html exposing (Html)
+    \\import Tea
+    \\import W1
+    \\import W2
+    \\
+    \\
+    \\main : Tea.Program
+    \\main =
+    \\    Browser.mountAt
+    \\        (Tea.sandbox { init = λ⊤ → { w1 = W1.init ⊤, w2 = W2.init ⊤ }, update = update, view = view })
+    \\        "root"
+    \\
+    \\
+    \\type alias Model =
+    \\    w1 : W1.Model
+    \\    w2 : W2.Model
+    \\
+    \\
+    \\type Msg
+    \\    = W1Msg W1.Msg
+    \\    | W2Msg W2.Msg
+    \\
+    \\
+    \\update : Msg, Model → Model
+    \\update msg model =
+    \\    case msg of
+    \\        W1Msg sub →
+    \\            { model | w1 = W1.update sub model.w1 }
+    \\
+    \\        W2Msg sub →
+    \\            { model | w2 = W2.update sub model.w2 }
+    \\
+    \\
+    \\view : Model → Html Msg
+    \\view model =
+    \\    <div data-role="app">
+    \\        {Html.map (W1.view model.w1) W1Msg}
+    \\        {Html.map (W2.view model.w2 model.w1) W2Msg}
+    \\    </div>
+    \\
+;
+
+test "root closures: warm, cold and cache-less builds agree after each owner, reader and program edit, at every --jobs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `browser-inline.md` §8.4, amended 2026-10-22: a root's factory is
+    // written by its own module from the program's root plan, and the plan
+    // moves with edits the interface does not see — the writer's markup and
+    // buckets, a reader's read path, the program's forwarding arm, and
+    // whether a slice keeps its object. Each stage below changes one of them
+    // and keeps every interface: a build that reuses the cache of the stage
+    // before must write what a cold build and a build with no cache write,
+    // at one job and at eight, in development and release.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const Stage = struct { w1: []const u8, w2: []const u8, main: []const u8 };
+    // The writer's markup and its buckets: a second hole, of `label`.
+    const w1_html = try std.mem.replaceOwned(u8, arena, roots_w1_base, "<p>{model.cups}</p>", "<p>{model.cups}</p>\n        <small>{model.label}</small>");
+    // A reader's read path: `W2` reads `first.label`, not `first.cups`.
+    const w2_path = try std.mem.replaceOwned(u8, arena, roots_w2_base, "{first.cups}", "{first.label}");
+    // The program's forwarding arm: no longer a pure forward, so the key's
+    // handler leaves `W1`'s root for the program.
+    const main_arm = try std.mem.replaceOwned(u8, arena, roots_main_base, "{ model | w1 = W1.update sub model.w1 }", "{ model | w1 = W1.update sub model.w1, w2 = model.w2 }");
+    // Whether the slice keeps its object: the arm rebuilds `W1`'s record.
+    const w1_fresh = try std.mem.replaceOwned(u8, arena, w1_html, "{ model | cups = 4 }", "{ cups = 4, label = model.label }");
+    const stages = [_]Stage{
+        .{ .w1 = roots_w1_base, .w2 = roots_w2_base, .main = roots_main_base },
+        .{ .w1 = w1_html, .w2 = roots_w2_base, .main = roots_main_base },
+        .{ .w1 = w1_html, .w2 = w2_path, .main = roots_main_base },
+        .{ .w1 = w1_html, .w2 = w2_path, .main = main_arm },
+        .{ .w1 = w1_fresh, .w2 = w2_path, .main = main_arm },
+    };
+
+    for (stages, 0..) |stage, si| {
+        try w.write("W1.beni", stage.w1);
+        try w.write("W2.beni", stage.w2);
+        try w.write("Main.beni", stage.main);
+        for ([_][]const u8{ "dev", "rel" }) |mode| for ([_][]const u8{ "1", "8" }) |jobs| {
+            const release = std.mem.eql(u8, mode, "rel");
+            const jobs_arg = try std.fmt.allocPrint(arena, "--jobs={s}", .{jobs});
+            // ┌─────────────────────────────────────────┐
+            // │ EXECUTE                                 │
+            // └─────────────────────────────────────────┘
+            var outs: [3][]const u8 = undefined;
+            for ([_][]const u8{ "warm", "cold", "none" }, &outs) |kind, *out| {
+                out.* = try std.fmt.allocPrint(arena, "{s}-{d}-{s}-{s}", .{ kind, si, mode, jobs });
+                var args: std.ArrayList([]const u8) = .empty;
+                try args.appendSlice(arena, &.{ "build", "--platform=browser-inline", jobs_arg, try std.fmt.allocPrint(arena, "--out={s}", .{out.*}) });
+                if (release) try args.append(arena, "--release");
+                if (std.mem.eql(u8, kind, "warm")) {
+                    // One cache directory per mode and job count, kept across
+                    // the stages.
+                    try args.append(arena, try std.fmt.allocPrint(arena, "--cache-dir=cache-warm-{s}-{s}", .{ mode, jobs }));
+                } else if (std.mem.eql(u8, kind, "cold")) {
+                    try args.append(arena, try std.fmt.allocPrint(arena, "--cache-dir=cache-cold-{d}-{s}-{s}", .{ si, mode, jobs }));
+                } else try args.append(arena, "--no-cache");
+                try args.appendSlice(arena, &.{ "Main.beni", "W1.beni", "W2.beni" });
+                try expectBuilt(try w.runWith(args.items, .{ .raw_diagnostics = true }));
+            }
+            // ┌─────────────────────────────────────────┐
+            // │ VERIFY OUTPUT                           │
+            // └─────────────────────────────────────────┘
+            try expectSameTree(&w, outs[0], outs[1]);
+            try expectSameTree(&w, outs[0], outs[2]);
+        };
+        // ┌─────────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                     │
+        // └─────────────────────────────────────────┘
+        // One job and eight write the same tree.
+        try expectSameTree(&w, try std.fmt.allocPrint(arena, "none-{d}-dev-1", .{si}), try std.fmt.allocPrint(arena, "none-{d}-dev-8", .{si}));
+        try expectSameTree(&w, try std.fmt.allocPrint(arena, "none-{d}-rel-1", .{si}), try std.fmt.allocPrint(arena, "none-{d}-rel-8", .{si}));
+    }
+    // The stages moved the output: the first stage's handler is `W1`'s own,
+    // the fourth's the program's, and the last one's root reads its slice
+    // through the model.
+    const first = try w.read("none-0-dev-1/W1.mjs");
+    try testing.expect(std.mem.indexOf(u8, first, "W1$update$$arm$0($model$") != null);
+    const fourth = try w.read("none-3-dev-1/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, fourth, "W1$update$$arm$0(") != null);
+}

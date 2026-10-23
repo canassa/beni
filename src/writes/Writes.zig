@@ -41,6 +41,7 @@ const Interface = @import("../resolve/Interface.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const SourceStore = @import("../SourceStore.zig");
 pub const Core = @import("Core.zig");
+const Lift = @import("../js/Lift.zig");
 
 const Inst = Bir.Inst;
 const Symbol = InternPool.Symbol;
@@ -103,6 +104,13 @@ pub const Input = struct {
     /// A message part of a type of one constructor is split on, into its
     /// one child, for a lowering whose handlers take a key's leaf fields.
     follow_single: bool = false,
+    /// Per module index: whether its record updates are written in place
+    /// (`ownership-checker.md` §31.10: a clean module, in a build that
+    /// enforces). Empty: no consumer reads object identity. What tells a
+    /// key's `Rec` of its own base, which keeps the base's object, from a
+    /// spread (`Key.replaced`, `browser-inline.md` §8.4, amended
+    /// 2026-10-22).
+    in_place: []const bool = &.{},
 };
 
 /// The values of a platform's `Sub` and `Cmd` the pass recognises by name
@@ -427,6 +435,17 @@ pub const Key = struct {
     steps: []const KeyStep,
     writes: []const Write,
     caps: Caps,
+    /// The model paths at which the key's result may hold another object
+    /// than the old model did, minimal and sorted: a path the result does
+    /// not keep as `Same`, nor as an update of its own object, which a
+    /// record update written in place keeps (`browser-inline.md` §8.4,
+    /// amended 2026-10-22: what a held slice rests on). A path below none
+    /// of them keeps its object on every run of the key. `replaced_strict`
+    /// is the same with no update trusted to keep its object, for a build
+    /// in which some record update the pass walked is a spread
+    /// (`Writes.spreads`).
+    replaced: []const u32 = &.{},
+    replaced_strict: []const u32 = &.{},
     /// `Input.effects` only: what the key's command is.
     command: Command = .{},
 };
@@ -587,6 +606,79 @@ pub const Program = struct {
     /// For an `update` written as a lambda (`λmsg model → …`) whose first
     /// parameter is a name: that local, module-wide, in `update_module`.
     update_param_local: u32 = none,
+    /// Each parameter of a function the view walk called, per call path, and
+    /// what the walk handed it: one exact model path every time, a value
+    /// closed over nothing the model holds, or neither (`browser-inline.md`
+    /// §8.4, amended 2026-10-22: how a root reaches its arguments). Sorted by
+    /// module, parameter instruction and call path.
+    view_params: []const ViewParam = &.{},
+    /// Each `Html.map` of a constructor the view walk evaluated, with its
+    /// call path — the markup hole it is in — and the constructor, in the
+    /// order the walk met them: an inner map before the one around it.
+    map_ctors: []const MapCtor = &.{},
+    /// `browser-inline.md` §8.4, amended 2026-10-22: the pushed-state routes
+    /// of `update`'s arms (`findRoutes`), when the program's records are
+    /// written in place.
+    routes: Routes = .{},
+};
+
+pub const MapCtor = struct { path: []const u64, ctor: u32 };
+
+/// The routes (§8.4, amended 2026-10-22, *Program-owned keys and pushed
+/// state*): places in `update`'s arms, each a tail of the arm, where a field
+/// of the model is given `F x model.f` — `F` a function whose result is the
+/// old value it is handed or a value made from `x` alone, with no part of the
+/// old value — and nothing on the way to the tail holds any part of the
+/// model. Each such place is lowered as a copy of the result into the old
+/// object, which keeps its identity: `Routes.rows` are the fields and their
+/// functions, `sites` the places.
+pub const Routes = struct {
+    rows: []const RouteRow = &.{},
+    sites: []const RouteSite = &.{},
+};
+
+pub const RouteRow = struct {
+    /// The model's field, a symbol.
+    field: u32,
+    /// The function `F`, `(module, declaration)`.
+    fn_module: u32,
+    fn_decl: u32,
+    /// The record type's fields at the field, those that are records of
+    /// their own each with its own plan: what the copy writes.
+    plan: []const PlanItem,
+};
+
+pub const PlanItem = struct { field: u32, sub: ?[]const PlanItem = null };
+
+pub const RouteSite = struct {
+    module: u32,
+    /// The instruction: a `record_update` of the model (`update`), a record
+    /// of every field of the model (`record`), or a `case` on a key whose
+    /// branches are `update`s of one field each and whose default is the
+    /// model (`keyed`).
+    inst: u32,
+    kind: enum { update, record, keyed },
+    /// `update`, `record`: one row per field written, with the instruction
+    /// of its `x`. `keyed`: one row per branch, `raws` its one `x`, `keys`
+    /// the branches' literals.
+    rows: []const u32,
+    raws: []const u32,
+    keys: []const []const u8 = &.{},
+    /// The model's local in the site's declaration.
+    model: u32,
+};
+
+pub const ViewParam = struct {
+    module: u32,
+    /// The parameter pattern's instruction.
+    param: u32,
+    path: []const u64,
+    /// The model path the argument is exactly, with no choice controlling
+    /// it, or `none`.
+    exact: u32 = none,
+    /// The argument is closed over nothing the model holds: the same value
+    /// on every evaluation.
+    constant: bool = false,
 };
 
 pub const Capped = struct { module: u32, decl: u32, caps: Caps };
@@ -726,6 +818,9 @@ resolve_view_controls: bool = false,
 /// Caller instruction identity; nested markup holes save/replace their own collector.
 entry_call: ?struct { module: u32, inst: u32 } = null,
 view_args: std.HashMapUnmanaged(VHoleKey, ViewArg, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+/// Each `Html.map` of a constructor the view walk evaluated, by its call
+/// path, in the order met (`Program.map_ctors`).
+map_ctor_acc: std.ArrayList([2]u32) = .empty,
 view_arms: std.HashMapUnmanaged(VHoleKey, bool, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 
 next_root: u32 = 0,
@@ -781,6 +876,14 @@ uncut: u32 = none,
 /// `Input.effects`: while the subscription set is read, platform functions
 /// are walked as the program's own are (`browser-inline.md` §3).
 walk_platform: bool = false,
+/// `Input.in_place`: a record update of a module whose updates are not
+/// written in place was walked, so no update is trusted to keep its
+/// object (`Key.replaced_strict`).
+spread_seen: bool = false,
+/// The current program's route sites (`findRoutes`), by `module << 32 |
+/// instruction`: what `eval` writes as a copy into the old object.
+route_sites: std.AutoHashMapUnmanaged(u64, RouteSite) = .empty,
+route_rows: []const RouteRow = &.{},
 
 /// `Maybe` and `Basics` constructors the rows build.
 ctor_just: u32 = none,
@@ -800,6 +903,8 @@ const ViewArg = struct {
     paths: ?[]const u32 = null,
     closed: u32 = none,
     varied: bool = false,
+    /// A `Same` argument some choice controls (`ViewParam.exact`).
+    controlled: bool = false,
 };
 
 const VHoleKey = struct { module: u32, token: u32, path: u32 };
@@ -873,6 +978,8 @@ pub fn deinit(a: *Writes) void {
     a.root_row.deinit(gpa);
     a.root_control.deinit(gpa);
     a.view_args.deinit(gpa);
+    a.map_ctor_acc.deinit(gpa);
+    a.route_sites.deinit(gpa);
     a.view_arms.deinit(gpa);
     a.active.deinit(gpa);
     a.split_ctors.deinit(gpa);
@@ -1498,6 +1605,7 @@ fn viewArgument(a: *Writes, frame: *Frame, param: Inst.Index, arg: u32, g: u32) 
         .varied = !known,
     };
     const witness = entry.value_ptr;
+    if (same and a.termWord(arg, 2) != 0) witness.controlled = true;
     if (same) {
         if (witness.paths == null or !std.mem.eql(u32, witness.paths.?, paths.items)) witness.varied = true;
     } else if (!closed or witness.closed != a.closedIdentity(arg)) witness.varied = true;
@@ -2280,12 +2388,15 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
             return a.mkLstLit(vals);
         },
         .record => {
+            if (a.route_sites.get((@as(u64, f.m) << 32) | inst.int())) |site| if (site.kind == .record) return a.routeValue(f, site, g);
             const fields = b.extraSlice(Bir.inlineRange(data), Bir.Field);
             const pairs = try a.arena().alloc([2]u32, fields.len);
             for (fields, pairs) |fld, *p| p.* = .{ @backingInt(b.symbol(fld.name)), try a.eval(f, fld.value, g) };
             return a.mkRec(none, 0, pairs);
         },
         .record_update => {
+            if (a.route_sites.get((@as(u64, f.m) << 32) | inst.int())) |site| if (site.kind == .update) return a.routeValue(f, site, g);
+            if (a.in.in_place.len != 0 and (f.m >= a.in.in_place.len or !a.in.in_place[f.m])) a.spread_seen = true;
             const base = try a.eval(f, @fromBackingInt(data.lhs), g);
             const fields = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Field);
             const pairs = try a.arena().alloc([2]u32, fields.len);
@@ -2939,6 +3050,12 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
                 else
                     .{ .module = none, .token = 0 };
                 try a.map_sites.append(a.gpa, at);
+            }
+            if (a.ctx.mode == .view and args.len == 2 and std.mem.eql(u8, a.in.module_names[m], "Html") and
+                std.mem.eql(u8, a.declName(m, d), "map") and a.termTag(args[1]) == .fun and
+                @as(FunKind, @fromBackingInt(a.termWord(args[1], 1))) == .ctor)
+            {
+                try a.map_ctor_acc.append(a.gpa, .{ a.ctx.call_path, a.termWord(args[1], 3) });
             }
             // While the subscription set is read (`Input.effects`), a platform
             // function is walked as the program's own are: what a layer's
@@ -5013,6 +5130,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     // caps are listed for the program that reached it.
     a.diff_memo.clearRetainingCapacity();
     a.view_args.clearRetainingCapacity();
+    a.map_ctor_acc.clearRetainingCapacity();
     a.view_arms.clearRetainingCapacity();
     a.resolve_view_controls = false;
     @memset(a.summaries, .absent);
@@ -5114,6 +5232,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                 }
             }
         }
+        // The pushed-state routes (`findRoutes`), before any key is read.
+        if (a.in.in_place.len != 0 and prog.update_decl != none and prog.update_module == fs.m and a.model_type != null) prog.routes = try a.findRoutes(fs.m, prog.update_decl, kind);
         // init (§3.5).
         a.ctx = .{ .mode = .init };
         init_model = blk: {
@@ -5251,7 +5371,348 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         try capped.append(a.arena(), .{ .module = mm, .decl = @as(u32, @intCast(id)) - a.fn_base[mm], .caps = c });
     }
     prog.summaries = capped.items;
+    prog.view_params = try a.finishViewParams();
+    const maps = try a.arena().alloc(MapCtor, a.map_ctor_acc.items.len);
+    for (maps, a.map_ctor_acc.items) |*mc, x| mc.* = .{ .path = try a.arena().dupe(u64, if (x[0] == 0 or x[0] >= a.call_paths.items.len) &.{} else a.call_paths.items[x[0]]), .ctor = x[1] };
+    prog.map_ctors = maps;
     return prog;
+}
+
+fn finishViewParams(a: *Writes) Error![]const ViewParam {
+    var out: std.ArrayList(ViewParam) = .empty;
+    var it = a.view_args.iterator();
+    while (it.next()) |entry| {
+        const k = entry.key_ptr.*;
+        const v = entry.value_ptr.*;
+        var vp: ViewParam = .{ .module = k.module, .param = k.token, .path = try a.arena().dupe(u64, if (k.path == 0 or k.path >= a.call_paths.items.len) &.{} else a.call_paths.items[k.path]) };
+        if (!v.varied and v.controls == 0 and !v.controlled) {
+            if (v.paths) |ps| {
+                if (ps.len == 1 and a.rootOf(ps[0]) == rho_path and !a.hasStarOrUnknown(ps[0])) vp.exact = ps[0];
+            } else if (v.closed != none) vp.constant = true;
+        }
+        try out.append(a.arena(), vp);
+    }
+    std.mem.sort(ViewParam, out.items, {}, struct {
+        fn less(_: void, x: ViewParam, y: ViewParam) bool {
+            if (x.module != y.module) return x.module < y.module;
+            if (x.param != y.param) return x.param < y.param;
+            return std.mem.order(u64, x.path, y.path) == .lt;
+        }
+    }.less);
+    return out.items;
+}
+
+// ---------------------------------------------------------------------------
+// Routes (`browser-inline.md` §8.4, amended 2026-10-22)
+// ---------------------------------------------------------------------------
+
+const RouteWalk = struct {
+    rows: std.ArrayList(RouteRow) = .empty,
+    sites: std.ArrayList(RouteSite) = .empty,
+    /// Per declaration of the program's module, the calls the walk took.
+    calls: []u32,
+    ok: bool = true,
+    /// `Tea.element`: `update`'s tails are pairs, each walked at its model
+    /// when its command is `Cmd.none`.
+    element: bool = false,
+};
+
+/// The routes of `update`, declaration `d` of module `m`: its body walked to
+/// its tails through `case`s, `let`s and calls of the module's functions that
+/// hand the model on, nothing on the way reading the model. A tail that
+/// gives a field of the model `F x model.f`, `F` a function whose body is
+/// `Result.withDefault D old` with `D` not reading `old`, is a route; every
+/// declaration the walk entered must be called only where the walk called it,
+/// or there are none.
+fn findRoutes(a: *Writes, m: u32, d: u32, kind: ProgramKind) Error!Routes {
+    const b = a.bir(m);
+    const decl = b.decls[d];
+    const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
+    if (params.len != 2 or b.instTag(params[1]) != .pat_var) return .{};
+    const body = decl.body.unwrap() orelse return .{};
+    if (kind != .element and kind != .sandbox) return .{};
+    var walk: RouteWalk = .{ .calls = try a.arena().alloc(u32, b.decls.len), .element = kind == .element };
+    @memset(walk.calls, 0);
+    walk.calls[d] = 1;
+    try a.routeWalk(&walk, m, b.instData(params[1]).lhs, body, 0);
+    if (!walk.ok or walk.sites.items.len == 0) return .{};
+    // Every declaration the walk entered is called only where it did.
+    const refs = try a.arena().alloc(u32, b.decls.len);
+    @memset(refs, 0);
+    const tags = b.insts.items(.tag);
+    const data = b.insts.items(.data);
+    for (tags, data) |tag, x| if (tag == .top and x.lhs < refs.len) {
+        refs[x.lhs] += 1;
+    };
+    for (walk.calls, refs) |c, r| if (c != 0 and c != r) return .{};
+    for (walk.sites.items) |site| try a.route_sites.put(a.gpa, (@as(u64, site.module) << 32) | site.inst, site);
+    a.route_rows = walk.rows.items;
+    return .{ .rows = walk.rows.items, .sites = walk.sites.items };
+}
+
+fn readsModel(a: *Writes, m: u32, inst: Inst.Index, local: u32) Error!bool {
+    return Lift.readsLocal(a.bir(m), a.arena(), inst.int(), local);
+}
+
+fn routeWalk(a: *Writes, w: *RouteWalk, m: u32, model: u32, body: Inst.Index, depth: u32) Error!void {
+    if (!w.ok) return;
+    if (depth > 16) {
+        w.ok = false;
+        return;
+    }
+    const b = a.bir(m);
+    const data = b.instData(body);
+    switch (b.instTag(body)) {
+        .local => {},
+        .let => {
+            for (b.extraSlice(b.subRange(@fromBackingInt(data.lhs)), Inst.Index)) |item| {
+                switch (b.instTag(item)) {
+                    .let_def, .let_pattern, .let_stmt => if (try a.readsModel(m, @fromBackingInt(b.instData(item).rhs), model)) {
+                        w.ok = false;
+                        return;
+                    },
+                    else => {},
+                }
+            }
+            try a.routeWalk(w, m, model, @fromBackingInt(data.rhs), depth + 1);
+        },
+        .case => {
+            if (try a.readsModel(m, @fromBackingInt(data.lhs), model)) {
+                w.ok = false;
+                return;
+            }
+            if (try a.keyedRoute(w, m, model, body)) return;
+            for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |br| {
+                if (b.instTag(br) != .branch) continue;
+                try a.routeWalk(w, m, model, @fromBackingInt(b.instData(br).rhs), depth + 1);
+            }
+        },
+        .call => {
+            const callee: Inst.Index = @fromBackingInt(data.lhs);
+            const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index);
+            var at: ?usize = null;
+            for (args, 0..) |arg, i| {
+                if (b.instTag(arg) == .local and b.instData(arg).lhs == model) {
+                    if (at != null) {
+                        w.ok = false;
+                        return;
+                    }
+                    at = i;
+                } else if (try a.readsModel(m, arg, model)) {
+                    w.ok = false;
+                    return;
+                }
+            }
+            const i = at orelse return;
+            // A function of the module handed the model: walked in turn.
+            if (b.instTag(callee) != .top) {
+                w.ok = false;
+                return;
+            }
+            const d2 = b.instData(callee).lhs;
+            const decl = b.decls[d2];
+            const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
+            if (params.len != args.len or b.instTag(params[i]) != .pat_var) {
+                w.ok = false;
+                return;
+            }
+            w.calls[d2] += 1;
+            try a.routeWalk(w, m, b.instData(params[i]).lhs, decl.body.unwrap() orelse return, depth + 1);
+        },
+        .record_update => {
+            const base: Inst.Index = @fromBackingInt(data.lhs);
+            if (b.instTag(base) != .local or b.instData(base).lhs != model) {
+                if (try a.readsModel(m, body, model)) w.ok = false;
+                return;
+            }
+            const fields = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Field);
+            var rows: std.ArrayList(u32) = .empty;
+            var raws: std.ArrayList(u32) = .empty;
+            for (fields) |fld| {
+                const row = (try a.routeRow(w, m, model, @backingInt(b.symbol(fld.name)), fld.value)) orelse return;
+                try rows.append(a.arena(), row.row);
+                try raws.append(a.arena(), row.raw);
+            }
+            try w.sites.append(a.arena(), .{ .module = m, .inst = body.int(), .kind = .update, .rows = rows.items, .raws = raws.items, .model = model });
+        },
+        .record => {
+            // Every field of the model, each a route.
+            const model_fields = (try a.fieldsAt(rho_path)) orelse return;
+            const fields = b.extraSlice(Bir.inlineRange(data), Bir.Field);
+            if (fields.len != model_fields.len) return;
+            var rows: std.ArrayList(u32) = .empty;
+            var raws: std.ArrayList(u32) = .empty;
+            for (fields) |fld| {
+                const row = (try a.routeRow(w, m, model, @backingInt(b.symbol(fld.name)), fld.value)) orelse return;
+                try rows.append(a.arena(), row.row);
+                try raws.append(a.arena(), row.raw);
+            }
+            try w.sites.append(a.arena(), .{ .module = m, .inst = body.int(), .kind = .record, .rows = rows.items, .raws = raws.items, .model = model });
+        },
+        .tuple => if (w.element) {
+            // `update`'s pair: its model walked, when its command is
+            // `Cmd.none`; a tail with another command is no route.
+            const items = b.extraSlice(Bir.inlineRange(data), Inst.Index);
+            if (items.len != 2) return;
+            const fx = a.in.effects orelse return;
+            const t = a.valueTarget(m, items[1]) orelse return;
+            if (t.m != fx.cmd_none.m or t.d != fx.cmd_none.d) return;
+            try a.routeWalk(w, m, model, items[0], depth + 1);
+        },
+        // Any other tail is no route; one that reads the model holds it.
+        else => {},
+    }
+}
+
+/// A `case` on a key whose branches are each a string literal giving one
+/// field `F x model.f`, the same `x` in each, and a default that is the
+/// model: a keyed route, one row per branch.
+fn keyedRoute(a: *Writes, w: *RouteWalk, m: u32, model: u32, case: Inst.Index) Error!bool {
+    const b = a.bir(m);
+    const data = b.instData(case);
+    var rows: std.ArrayList(u32) = .empty;
+    var keys: std.ArrayList([]const u8) = .empty;
+    var raw: ?Inst.Index = null;
+    var default = false;
+    // Each branch is an `update` site too, which the pass reads as the copy
+    // it is (`routeValue`); the lowering writes the `case` whole.
+    var inner: std.ArrayList(RouteSite) = .empty;
+    for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Inst.Index)) |br| {
+        if (b.instTag(br) != .branch) return false;
+        const pattern: Inst.Index = @fromBackingInt(b.instData(br).lhs);
+        const arm_body: Inst.Index = @fromBackingInt(b.instData(br).rhs);
+        switch (b.instTag(pattern)) {
+            .pat_wild => {
+                if (default or b.instTag(arm_body) != .local or b.instData(arm_body).lhs != model) return false;
+                default = true;
+            },
+            .pat_string => {
+                if (default or b.instTag(arm_body) != .record_update) return false;
+                const vd = b.instData(arm_body);
+                const base: Inst.Index = @fromBackingInt(vd.lhs);
+                if (b.instTag(base) != .local or b.instData(base).lhs != model) return false;
+                const fields = b.extraSlice(b.subRange(@fromBackingInt(vd.rhs)), Bir.Field);
+                if (fields.len != 1) return false;
+                const mark = w.rows.items.len;
+                const row = (try a.routeRow(w, m, model, @backingInt(b.symbol(fields[0].name)), fields[0].value)) orelse {
+                    w.rows.shrinkRetainingCapacity(mark);
+                    return false;
+                };
+                const x: Inst.Index = @fromBackingInt(row.raw);
+                if (b.instTag(x) != .local) return false;
+                if (raw) |r| {
+                    if (b.instData(r).lhs != b.instData(x).lhs) return false;
+                } else raw = x;
+                for (rows.items) |other| if (w.rows.items[other].field == w.rows.items[row.row].field) return false;
+                try rows.append(a.arena(), row.row);
+                try keys.append(a.arena(), b.bytes(pattern));
+                try inner.append(a.arena(), .{ .module = m, .inst = arm_body.int(), .kind = .update, .rows = try a.arena().dupe(u32, &.{row.row}), .raws = try a.arena().dupe(u32, &.{row.raw}), .model = model });
+            },
+            else => return false,
+        }
+    }
+    if (!default or rows.items.len == 0) return false;
+    try w.sites.appendSlice(a.arena(), inner.items);
+    try w.sites.append(a.arena(), .{ .module = m, .inst = case.int(), .kind = .keyed, .rows = rows.items, .raws = try a.arena().dupe(u32, &.{raw.?.int()}), .keys = keys.items, .model = model });
+    return true;
+}
+
+/// Field `field` given `arm_body`: a route row when `arm_body` is `F x
+/// model.field`, `F` a route function and the field's type a record; null
+/// otherwise.
+fn routeRow(a: *Writes, w: *RouteWalk, m: u32, model: u32, field: u32, given: Inst.Index) Error!?struct { row: u32, raw: u32 } {
+    const b = a.bir(m);
+    if (b.instTag(given) != .call) return null;
+    const vd = b.instData(given);
+    const args = b.extraSlice(b.subRange(@fromBackingInt(vd.rhs)), Inst.Index);
+    if (args.len != 2) return null;
+    // `x` a path of locals, which reads nothing that can run: the loader
+    // reads every route's `x` before its first function runs.
+    if (!a.isPathExpr(m, args[0]) or try a.readsModel(m, args[0], model)) return null;
+    if (b.instTag(args[1]) != .field_access) return null;
+    const fa = b.instData(args[1]);
+    const read: Inst.Index = @fromBackingInt(fa.lhs);
+    if (b.instTag(read) != .local or b.instData(read).lhs != model) return null;
+    if (@backingInt(b.symbol(@fromBackingInt(fa.rhs))) != field) return null;
+    const t = a.valueTarget(m, @fromBackingInt(vd.lhs)) orelse return null;
+    // Another module's function: the route's row, a constant of the
+    // program's module, names it before the module's own declarations.
+    if (t.m == m or !try a.routeFunction(t.m, t.d)) return null;
+    const at = try a.mkPath(rho_path, .field, field, 0);
+    const plan = (try a.copyPlan(at, 0)) orelse return null;
+    try w.rows.append(a.arena(), .{ .field = field, .fn_module = t.m, .fn_decl = t.d, .plan = plan });
+    return .{ .row = @intCast(w.rows.items.len - 1), .raw = args[0].int() };
+}
+
+/// Whether `(m, d)` is `λx old → Result.withDefault D old`, `D` not
+/// reading `old`: its result is `old` itself or `D`'s value, which holds
+/// nothing of `old`.
+fn routeFunction(a: *Writes, m: u32, d: u32) Error!bool {
+    const b = a.bir(m);
+    const decl = b.decls[d];
+    if (decl.kind != .value) return false;
+    const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
+    if (params.len != 2 or b.instTag(params[1]) != .pat_var) return false;
+    const old = b.instData(params[1]).lhs;
+    const body = decl.body.unwrap() orelse return false;
+    if (b.instTag(body) != .call) return false;
+    const bd = b.instData(body);
+    const t = a.valueTarget(m, @fromBackingInt(bd.lhs)) orelse return false;
+    if (a.in.packages[t.m] != .core or !std.mem.eql(u8, a.in.module_names[t.m], "Result") or !std.mem.eql(u8, a.declName(t.m, t.d), "withDefault")) return false;
+    const args = b.extraSlice(b.subRange(@fromBackingInt(bd.rhs)), Inst.Index);
+    if (args.len != 2) return false;
+    if (b.instTag(args[1]) != .local or b.instData(args[1]).lhs != old) return false;
+    return !try a.readsModel(m, args[0], old);
+}
+
+/// What a copy into the record at `p` writes: its fields, each record field
+/// with a plan of its own; null when `p` is not a record.
+fn copyPlan(a: *Writes, p: u32, depth: u32) Error!?[]const PlanItem {
+    if (depth > k_limit) return null;
+    const fields = (try a.fieldsAt(p)) orelse return null;
+    const out = try a.arena().alloc(PlanItem, fields.len);
+    for (fields, out) |fld, *o| {
+        o.* = .{ .field = fld };
+        if (a.pathLen(p) + 1 < k_limit) {
+            const q = try a.mkPath(p, .field, fld, 0);
+            o.sub = try a.copyPlan(q, depth + 1);
+        }
+    }
+    return out;
+}
+
+/// The value a route site gives the model (§8.4, amended 2026-10-22): the
+/// model's object, each routed field the old field's object with every
+/// field of the plan written — what the copy does — from the function's
+/// result.
+fn routeValue(a: *Writes, f: *Frame, site: RouteSite, g: u32) Error!u32 {
+    const b = a.bir(f.m);
+    const data = b.instData(@fromBackingInt(site.inst));
+    const model = f.env[site.model];
+    var pairs: std.ArrayList([2]u32) = .empty;
+    const fields: []const Bir.Field = switch (site.kind) {
+        .update => b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Field),
+        .record => b.extraSlice(Bir.inlineRange(data), Bir.Field),
+        .keyed => unreachable,
+    };
+    for (fields, site.rows) |fld, row| {
+        const v = try a.eval(f, fld.value, g);
+        const old = try a.projField(model, b.symbol(fld.name));
+        try pairs.append(a.gpa, .{ @backingInt(b.symbol(fld.name)), try a.copyTerm(old, a.route_rows[row].plan, try a.deps(v)) });
+    }
+    defer pairs.deinit(a.gpa);
+    return a.recordUpdate(model, try a.arena().dupe([2]u32, pairs.items));
+}
+
+fn copyTerm(a: *Writes, old: u32, plan: []const PlanItem, d: u32) Error!u32 {
+    if (a.termTag(old) != .same) return a.mkFresh(d);
+    const p = a.termWord(old, 1);
+    const pairs = try a.arena().alloc([2]u32, plan.len);
+    for (plan, pairs) |item, *pair| {
+        const part = if (item.sub) |sub| try a.copyTerm(try a.proj(old, .field, item.field, 0), sub, d) else try a.mkFresh(d);
+        pair.* = .{ item.field, part };
+    }
+    return a.mkRec(p, 1, pairs);
 }
 
 /// Apply a function value directly: walk a top-level function's body rather
@@ -5264,13 +5725,15 @@ fn applyDirect(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     return a.apply(fun, args, g);
 }
 
-fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct { writes: []Write, caps: Caps, split: u32, command: Command } {
+fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct { writes: []Write, caps: Caps, split: u32, command: Command, replaced: []const u32, replaced_strict: []const u32 } {
     a.ctx = .{ .mode = .key };
     a.split_ctors.clearRetainingCapacity();
     a.inst_depth = 0;
     var ws: WsBuilder = .empty;
     defer ws.deinit(a.gpa);
     var command: Command = .{};
+    var replaced: []const u32 = &.{rho_path};
+    var replaced_strict: []const u32 = &.{rho_path};
     const msg = try a.mkSame(mu_path);
     const model = try a.mkSame(rho_path);
     const ok = blk: {
@@ -5284,6 +5747,10 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
         r = try a.capSize(r);
         // A message placed in the model is a value (browser-direct.md §11).
         try a.noteMu(r);
+        if (a.in.in_place.len != 0) {
+            replaced = try a.identityBreaks(r, true);
+            replaced_strict = try a.identityBreaks(r, false);
+        }
         const id = a.diff(r, rho_path, g) catch |err| switch (err) {
             error.WorkCap => break :blk false,
             else => |e| return e,
@@ -5295,12 +5762,92 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
         a.ctx.caps.w = true;
         ws.clearRetainingCapacity();
         try ws.append(a.gpa, value(rho_path));
+        replaced = &.{rho_path};
+        replaced_strict = &.{rho_path};
     }
     try a.closure(&ws);
     const caps = a.ctx.caps;
     const split = if (ok) a.ctx.split_path else none;
     a.ctx = .{ .mode = .closed };
-    return .{ .writes = try a.arena().dupe(Write, ws.items.items), .caps = caps, .split = split, .command = command };
+    return .{ .writes = try a.arena().dupe(Write, ws.items.items), .caps = caps, .split = split, .command = command, .replaced = replaced, .replaced_strict = replaced_strict };
+}
+
+/// The model paths at which `r`, a key's result placed at ρ, may hold
+/// another object than the old model (`Key.replaced`): minimal, sorted. A
+/// path keeps its object where the result is `Same` of it, or `Rec` over it
+/// as its own base — a record update, which is written into the object it
+/// updates — when `trust_updates`; any other term, a record literal among
+/// them, may be a new object, and so is everything below it.
+fn identityBreaks(a: *Writes, r: u32, trust_updates: bool) Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    defer out.deinit(a.gpa);
+    var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
+    defer seen.deinit(a.gpa);
+    try a.breaksAt(r, rho_path, trust_updates, &out, &seen);
+    // Minimal: a path under another is implied by it.
+    const all = try a.arena().dupe(u32, out.items);
+    std.mem.sort(u32, all, a, struct {
+        fn less(w: *Writes, x: u32, y: u32) bool {
+            return w.pathLess(x, y);
+        }
+    }.less);
+    var kept: std.ArrayList(u32) = .empty;
+    for (all) |p| {
+        const covered = for (kept.items) |q| {
+            if (a.mayPrefix(q, p)) break true;
+        } else false;
+        if (!covered) try kept.append(a.arena(), p);
+    }
+    return kept.items;
+}
+
+fn breaksAt(a: *Writes, t: u32, p: u32, trust: bool, out: *std.ArrayList(u32), seen: *std.AutoHashMapUnmanaged([2]u32, void)) Error!void {
+    if ((try seen.getOrPut(a.gpa, .{ t, p })).found_existing) return;
+    switch (a.termTag(t)) {
+        .same => {
+            const q = a.termWord(t, 1);
+            if (q == p and !a.hasStarOrUnknown(q)) return;
+        },
+        .rec => if (trust and a.termWord(t, 1) == p) {
+            const n = (a.termLen(t) - 3) / 2;
+            for (0..n) |i| {
+                const field = a.termWord(t, @intCast(3 + 2 * i));
+                const child = a.termWord(t, @intCast(4 + 2 * i));
+                // Past the depth limit the field is a new value as far as
+                // the pass can say.
+                const q = (try a.mkPathCapped(p, .field, field)) orelse {
+                    try out.append(a.gpa, p);
+                    return;
+                };
+                try a.breaksAt(child, q, trust, out, seen);
+            }
+            return;
+        },
+        .alt => {
+            for (0..a.altLen(t)) |i| try a.breaksAt(a.altItem(t, @intCast(i)).term, p, trust, out, seen);
+            return;
+        },
+        else => {},
+    }
+    try out.append(a.gpa, p);
+}
+
+/// `p.field`, or null past k; unlike `extend`, no cap is noted.
+fn mkPathCapped(a: *Writes, p: u32, kind: PathKind, x: u32) Allocator.Error!?u32 {
+    if (a.pathLen(p) >= k_limit) return null;
+    return try a.mkPath(p, kind, x, 0);
+}
+
+/// Whether a record update the pass walked is not written in place
+/// (`Input.in_place`): then only `Key.replaced_strict` holds.
+pub fn spreads(a: *const Writes) bool {
+    return a.spread_seen;
+}
+
+/// `parent.f`, interned: a model path by its steps, for a consumer that
+/// names a path the pass may not have made.
+pub fn fieldPath(a: *Writes, parent: u32, field: u32) Allocator.Error!u32 {
+    return a.mkPath(parent, .field, field, 0);
 }
 
 fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *std.ArrayList(KeyStep), keys: *std.ArrayList(Key), leaves: *u32) Error!void {
@@ -5332,10 +5879,10 @@ fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *
         }
         var caps = res.caps;
         caps.l = true;
-        try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = caps, .command = res.command });
+        try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = caps, .command = res.command, .replaced = res.replaced, .replaced_strict = res.replaced_strict });
         return;
     }
-    try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = res.caps, .command = res.command });
+    try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = res.caps, .command = res.command, .replaced = res.replaced, .replaced_strict = res.replaced_strict });
 }
 
 // ---------------------------------------------------------------------------

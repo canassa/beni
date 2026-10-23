@@ -1,0 +1,5 @@
+element "root"
+input [data-role=venue] "West"
+click [data-role=four]
+input [data-role=venue] "East"
+advance 1000

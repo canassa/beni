@@ -1,0 +1,30 @@
+--! The first widget: its model a number alone, which every write replaces.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    Int
+
+
+pub init : ⊤ → Model
+init ⊤ = -1
+
+
+pub type Msg
+    = Raise
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Raise →
+            model + 1
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="raise" onClick={Raise}>Raise</button>
+        <p>{model}</p>
+    </section>

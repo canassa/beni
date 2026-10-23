@@ -1,0 +1,69 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"-1"</output>
+      </section>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=four]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"4"</output>
+      </section>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=reset]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"0"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"0"</output>
+      </section>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=four]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <output>"4"</output>
+      </section>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>

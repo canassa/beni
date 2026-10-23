@@ -44,7 +44,12 @@ const std = @import("std");
 /// `browser-inline.md` §8.2) — the rest of 1.15 lands with the slices that
 /// use it (`boundary.md` §9.4.6).
 /// Version 1.16 adds immutable-value facts for renderer identity guards.
-pub const version: Version = .{ .major = 1, .minor = 16 };
+/// Version 1.17 adds the root plan (`browser-inline.md` §8.4, amended
+/// 2026-10-22): a program's table of buckets, the buckets each read set and
+/// each key selects, and how a root reaches its arguments (`programRows`,
+/// `groupBuckets`, `keyBuckets`, `programRootArgs`, `pieceRoot`,
+/// `pieceRootArg`, `programRootRow`, `programModelCell`).
+pub const version: Version = .{ .major = 1, .minor = 17 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -541,6 +546,16 @@ pub const Program = struct {
         /// The pass could not read it.
         unknown,
     };
+
+    /// 1.17: one bucket of a program's table (`browser-inline.md` §8.4,
+    /// amended 2026-10-22): the row, a root's, and the bucket of the row.
+    pub const BucketRef = struct { row: u32, bucket: u32 };
+
+    /// 1.17: how a root reaches one argument of its function: an object
+    /// every key keeps (`held`), a value below one (`through`), a value below
+    /// the program's model cell (`cell`), or a value the same on every
+    /// evaluation (`constant`).
+    pub const RootArg = enum(u8) { held, through, cell, constant, _ };
 
     /// 1.7: what a view event's handler value makes when its event fires
     /// (`Context.programMessage`).
@@ -1331,6 +1346,77 @@ pub const Context = struct {
 
     pub const PieceEvent = struct { ctor: Ctor, fields: u32 };
 
+    /// 1.17, inside `Lowering.program` only: the program's table — per row,
+    /// its number of buckets; empty when no root has a bucket.
+    pub fn programRows(cx: *Context) []const u32 {
+        return cx.vtable.program_rows(cx.impl);
+    }
+
+    /// 1.17: the row of the program's own `view` (`node` null), or of the
+    /// root another module writes as pieces at hole `node`; null when it has
+    /// no bucket.
+    pub fn programRootRow(cx: *Context, node: ?Node.Index) ?u32 {
+        return cx.vtable.program_root_row(cx.impl, node);
+    }
+
+    /// 1.17: some root reaches the model through the program's cell, so the
+    /// program holds its model in one (`Program.RootArg.cell`).
+    pub fn programModelCell(cx: *Context) bool {
+        return cx.vtable.program_model_cell(cx.impl);
+    }
+
+    /// 1.17, inside `Lowering.program` or `Lowering.piece`: the buckets read
+    /// set `group` (`HoleFacts.group`) selects, sorted by row and bucket.
+    pub fn groupBuckets(cx: *Context, group: u32) []const Program.BucketRef {
+        return cx.vtable.group_buckets(cx.impl, group);
+    }
+
+    /// 1.17: the buckets key `key`'s writes conflict with, sorted.
+    pub fn keyBuckets(cx: *Context, key: u32) []const Program.BucketRef {
+        return cx.vtable.key_buckets(cx.impl, key);
+    }
+
+    /// 1.17, inside `Lowering.program`, in `programViewEnter`: what the
+    /// program hands the root another module writes as pieces at hole
+    /// `node`, one value per argument of its function, evaluated into
+    /// `block`: the argument for `held` and `constant`, its holder for
+    /// `through`, and `cell` for `cell`. The model is `model`, or the one
+    /// slot of `cell` when the program holds it in one.
+    pub fn programRootArgs(cx: *Context, block: Block, node: Node.Index, model: Name, cell: ?Name) Error![]const Expr {
+        return cx.vtable.program_root_args(cx.impl, block, node, model, cell);
+    }
+
+    /// 1.17, inside `Lowering.piece` only: the root's row (null: none) and
+    /// how it reaches each argument of its function.
+    pub fn pieceRoot(cx: *Context) PieceRoot {
+        return cx.vtable.piece_root(cx.impl);
+    }
+
+    pub const PieceRoot = struct {
+        row: ?u32,
+        args: []const Program.RootArg,
+        /// The keys whose handlers the root writes itself (§8.4, amended
+        /// 2026-10-22: a key whose forwarding arms are proved pure), each by
+        /// the constructor of the root's message its events send.
+        moved: []const MovedKey = &.{},
+    };
+
+    pub const MovedKey = struct { key: u32, ctor: Ctor };
+
+    /// 1.17, inside `Lowering.piece` only: moved key `key`'s arm, written
+    /// into `block` as the call of its arm piece with the key's fields and
+    /// the root's slice, `slice`, which it writes in place.
+    pub fn pieceArm(cx: *Context, block: Block, key: u32, fields: []const Name, slice: Expr) Error!void {
+        return cx.vtable.piece_arm(cx.impl, block, key, fields, slice);
+    }
+
+    /// 1.17, inside `Lowering.piece` only: argument `k` of the root's
+    /// function read from `holder`, what the program handed for it
+    /// (`programRootArgs`): itself, or the value below it.
+    pub fn pieceRootArg(cx: *Context, k: u32, holder: Expr) Error!Expr {
+        return cx.vtable.piece_root_arg(cx.impl, k, holder);
+    }
+
     /// 1.15: how many of root `r`'s values read its `k`-th `let`
     /// (`Root.lets`), the other `let`s aside.
     pub fn rootLetReaders(cx: *Context, r: Root.Index, k: u32) u32 {
@@ -1852,6 +1938,15 @@ pub const VTable = struct {
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
     program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
     program_command: *const fn (impl: *anyopaque, key: ?u32) Program.Command,
+    program_rows: *const fn (impl: *anyopaque) []const u32,
+    program_root_row: *const fn (impl: *anyopaque, node: ?Node.Index) ?u32,
+    program_model_cell: *const fn (impl: *anyopaque) bool,
+    group_buckets: *const fn (impl: *anyopaque, group: u32) []const Program.BucketRef,
+    key_buckets: *const fn (impl: *anyopaque, key: u32) []const Program.BucketRef,
+    program_root_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index, model: Name, cell: ?Name) Error![]const Expr,
+    piece_root: *const fn (impl: *anyopaque) Context.PieceRoot,
+    piece_root_arg: *const fn (impl: *anyopaque, k: u32, holder: Expr) Error!Expr,
+    piece_arm: *const fn (impl: *anyopaque, block: Block, key: u32, fields: []const Name, slice: Expr) Error!void,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

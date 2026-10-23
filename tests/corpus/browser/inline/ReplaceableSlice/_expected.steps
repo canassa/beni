@@ -1,0 +1,4 @@
+element "root"
+click [data-role=raise]
+detail window rr-push {"type": "set", "cups": 7}
+click [data-role=raise]

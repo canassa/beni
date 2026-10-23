@@ -1,0 +1,4 @@
+element "root"
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"form": {"cups": 7}}}
+click [data-role=four]
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"form": {"cups": 8}}, "w2": {"venue": "West"}}}}

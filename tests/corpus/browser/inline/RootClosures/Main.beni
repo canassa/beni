@@ -1,0 +1,67 @@
+-- Two widgets, each its own module's root (`docs/design/browser-inline.md`
+-- §8.4, amended 2026-10-22): one closure per root holds the root's slice,
+-- its elements, its binding entries and its handlers. `W1`'s click writes
+-- its slice in place and runs its own `cups` bucket, into which `W2`'s
+-- reader of `first.cups` registered once at mount; `W2`'s input runs only
+-- its `venue` bucket. `Tick` belongs to `Main`, whose arm writes `w1` and
+-- runs the same bucket. The transcript: `(-1, '', -1)`, then `(4, '', 4)`,
+-- `(4, 'Hall', 4)`, `(5, 'Hall', 5)`.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Interval
+import Sub exposing (Sub)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { w1 = W1.init ⊤, w2 = W2.init ⊤ }, Cmd.none )
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Tick
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model = ( step msg model, Cmd.none )
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+        Tick →
+            { model | w1 = W1.bump model.w1 }
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Interval.every 1000 Tick
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+    </div>

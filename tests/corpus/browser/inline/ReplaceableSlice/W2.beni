@@ -1,0 +1,32 @@
+--! The second widget: a venue the user types, and what it shows of the
+--! first widget's cups, which it reads and never writes.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    venue : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { venue = "" }
+
+
+pub type Msg
+    = Write String
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Write typed →
+            { model | venue = typed }
+
+
+pub view : Model, Int → Html Msg
+view model cups =
+    <section data-role="w2">
+        <input data-role="venue" value={model.venue} onInput={Write} />
+        <p>{model.venue}</p>
+        <output>{cups}</output>
+    </section>

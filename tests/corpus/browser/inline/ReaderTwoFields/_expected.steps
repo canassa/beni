@@ -1,0 +1,4 @@
+element "root"
+click [data-role=four]
+input [data-role=venue] "West"
+click [data-role=both]

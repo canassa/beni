@@ -2815,6 +2815,11 @@ const Emitter = struct {
         }
         // A lowering whose handlers take a key's leaf fields (`Lowering.arm_fields`).
         const arm_fields = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false;
+        // Per module, whether its record updates are written in place
+        // (`ownership-checker.md` §31.10), for a lowering that holds a root's
+        // slice (`browser-inline.md` §8.4, amended 2026-10-22).
+        const in_place = try a.alloc(bool, n);
+        for (in_place, 0..) |*x, i| x.* = arm_fields and i < e.session.checked.hoists.len and e.session.checked.hoists[i].clean and e.session.enforce_ownership;
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -2833,6 +2838,7 @@ const Emitter = struct {
             // constructor is followed to its arm. Both are the one fact.
             .lift_caps = arm_fields,
             .follow_single = arm_fields,
+            .in_place = if (arm_fields) in_place else &.{},
         });
         e.writes = w;
         e.writes_calls = try w.runCalls();
@@ -3024,8 +3030,11 @@ const Emitter = struct {
         const effects = e.writes_effects;
         const birs = e.writes_birs;
         const programs = try a.alloc(Lower.Direct.Program, calls.len);
+        // Per program, its read sets and its keys' writes, for the root plan.
+        const plan_groups = try a.alloc([]const []const u32, calls.len);
+        const plan_writes = try a.alloc([]const []const Writes.Write, calls.len);
         var text: std.Io.Writer.Allocating = .init(a);
-        for (calls, programs) |call, *out| {
+        for (calls, programs, plan_groups, plan_writes) |call, *out, *pg_out, *pw_out| {
             const prog = &call.program;
             out.* = .{ .module = call.module, .inst = call.inst, .keys = &.{}, .steps = &.{}, .holes = &.{}, .groups = 0, .key_groups = &.{}, .written = &.{} };
             // The keys: the pass's leaves, or the one `*` key of a program
@@ -3303,6 +3312,8 @@ const Emitter = struct {
             }.less);
             out.arms = arms;
             out.groups = @intCast(groups.reads.items.len);
+            pg_out.* = groups.reads.items;
+            pw_out.* = key_writes;
             out.key_groups = conflicts.key_groups;
             out.written = conflicts.written;
             out.lists = lists.out.items;
@@ -3324,7 +3335,454 @@ const Emitter = struct {
         // Only a lowering that writes pieces has them (`Lowering.piece`).
         const pieces = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.piece != null else false) else false;
         if (pieces) e.direct.?.view_pieces = try e.findViewPieces(programs, birs);
+        if (pieces) try e.buildPlans(w, calls, programs, @constCast(e.direct.?.view_pieces), plan_groups, plan_writes, birs);
         if (!e.options.release) try e.debugReach();
+    }
+
+    /// The root plan of every program (`browser-inline.md` §8.4, amended
+    /// 2026-10-22), serial, before any module is lowered: its roots — the
+    /// program's own `view` and each root another module writes as pieces,
+    /// in placement order — which keep their objects, how each reaches the
+    /// arguments of its function, the buckets of each root's row, keyed by
+    /// the read paths the root owns, and which buckets each read set and
+    /// each key selects. Every number is input-derived (CLAUDE.md rule 5).
+    fn buildPlans(e: *Emitter, w: *Writes, calls: []const Writes.Call, programs: []Lower.Direct.Program, vps: []Lower.Direct.ViewPiece, group_reads: []const []const []const u32, key_writes: []const []const []const Writes.Write, birs: []const *const Bir) !void {
+        const a = e.scratch;
+        const rho = Writes.rho_path;
+        const none = Writes.none;
+        const effects_on = e.writes_effects != null;
+        for (calls, programs, 0..) |call, *out, pi_| {
+            const pi: u32 = @intCast(pi_);
+            const prog = &call.program;
+            // The pieces of this program, by placement: the call path into
+            // the root, then the root's token.
+            var pieces: std.ArrayList(u32) = .empty;
+            for (vps, 0..) |vp, i| if (vp.program == pi and vp.refusal == null) try pieces.append(a, @intCast(i));
+            std.mem.sort(u32, pieces.items, vps, struct {
+                fn less(v: []Lower.Direct.ViewPiece, x: u32, y: u32) bool {
+                    const o = std.mem.order(u64, v[x].path, v[y].path);
+                    if (o != .eq) return o == .lt;
+                    if (v[x].module != v[y].module) return v[x].module < v[y].module;
+                    return v[x].token < v[y].token;
+                }
+            }.less);
+            // The paths some run of some key may give another object.
+            var replaced: std.ArrayList(u32) = .empty;
+            if (!prog.recognised) {
+                try replaced.append(a, rho);
+            } else for (prog.keys) |k| try replaced.appendSlice(a, if (w.spreads()) k.replaced_strict else k.replaced);
+            // A program whose commands run keeps no route: a command's
+            // closure made in an earlier dispatch may hold a field's old
+            // object, which a copy into it would change. Each route's site is
+            // then lowered as written, which gives its fields — and the model,
+            // for a record of every field — new values.
+            const routed = prog.recognised and !commandsRun(prog);
+            if (!routed) for (prog.routes.sites) |site| {
+                if (site.kind == .record) try replaced.append(a, rho);
+                for (site.rows) |row| try replaced.append(a, try w.fieldPath(rho, prog.routes.rows[row].field));
+            };
+            const stable = struct {
+                fn of(ww: *const Writes, rs: []const u32, p: u32) bool {
+                    for (rs) |q| if (ww.mayPrefix(q, p)) return false;
+                    return true;
+                }
+            }.of;
+            // Each piece's arguments, and its slice: its first argument's
+            // exact path.
+            const slices = try a.alloc(u32, pieces.items.len);
+            var model_cell = false;
+            for (pieces.items, slices) |vi, *slice| {
+                const vp = &vps[vi];
+                slice.* = none;
+                const b = birs[vp.module];
+                const d = b.decls[vp.decl];
+                const params = b.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
+                // A root with no hole has no call path from its holes
+                // (`findViewPieces`): the view walk's one call of its
+                // function gives it.
+                if (vp.path.len == 0 and params.len != 0) {
+                    var found: ?[]const u64 = null;
+                    var seen: u32 = 0;
+                    for (prog.view_params) |x| if (x.module == vp.module and x.param == params[0].int()) {
+                        found = x.path;
+                        seen += 1;
+                    };
+                    if (seen == 1) vp.path = try a.dupe(u64, found.?);
+                }
+                const args = try a.alloc(Lower.Direct.RootArg, params.len);
+                for (params, args, 0..) |param, *arg, k| {
+                    const fact = viewParam(prog.view_params, vp.module, param.int(), vp.path);
+                    arg.* = .{ .kind = .constant };
+                    if (fact) |f| if (f.exact != none) {
+                        if (k == 0) slice.* = f.exact;
+                        if (try fieldSteps(a, w, rho, f.exact)) |all| {
+                            if (stable(w, replaced.items, f.exact)) {
+                                arg.* = .{ .kind = .held, .holder = all };
+                                continue;
+                            }
+                            // The deepest prefix every key keeps.
+                            var h = w.pathParent(f.exact);
+                            var depth: usize = all.len;
+                            while (h != none) : (h = w.pathParent(h)) {
+                                depth -= 1;
+                                if (stable(w, replaced.items, h)) break;
+                            }
+                            if (h == none) {
+                                model_cell = true;
+                                arg.* = .{ .kind = .cell, .steps = all };
+                            } else arg.* = .{ .kind = .through, .holder = all[0..depth], .steps = all[depth..] };
+                            continue;
+                        }
+                    };
+                    if (fact != null and fact.?.constant) continue;
+                    // Neither one exact path nor a constant: a limit of the
+                    // compiler, reported at the program's hole.
+                    vp.refusal =
+                        \\A limit of the compiler: this program hands another module's markup an argument that is
+                        \\neither a path of the model nor a constant, and `browser-inline` writes that markup's
+                        \\bindings to read each argument where the model holds it
+                        \\(`docs/design/browser-inline.md` §8.4; §5, class 4). Hand the function a field of the
+                        \\model, and compute the value in it. The program is valid: it builds with
+                        \\`--platform=browser-tea`.
+                    ;
+                }
+                vp.args = args;
+            }
+            // Who owns each read: the root whose slice is the longest prefix
+            // of it, the first placed among equals; the program's own `view`
+            // owns the rest.
+            const reads = group_reads[pi];
+            // Columns of the pass's paths: whether a read was placed, and its
+            // bucket.
+            const placed = try a.alloc(bool, w.pathCount());
+            @memset(placed, false);
+            const local: u32 = std.math.maxInt(u32);
+            const owned = try a.alloc(std.ArrayList(u32), pieces.items.len + 1);
+            @memset(owned, .empty);
+            for (reads) |set| for (set) |r| {
+                if (placed[r]) continue;
+                placed[r] = true;
+                var best: u32 = local;
+                var best_len: u32 = 0;
+                if (w.rootOf(r) == rho) for (slices, 0..) |s, j| {
+                    if (s == none or !exactPrefix(w, s, r)) continue;
+                    const len = w.pathLen(s) + 1;
+                    if (len > best_len) {
+                        best = @intCast(j);
+                        best_len = len;
+                    }
+                };
+                try owned[if (best == local) 0 else best + 1].append(a, r);
+            };
+            // Rows, in placement order: the program's own `view`, then the
+            // pieces; a root with no bucket has none.
+            var rows: std.ArrayList(u32) = .empty;
+            const row_of = try a.alloc(u32, owned.len);
+            const bucket_of = try a.alloc(Lower.Direct.BucketRef, w.pathCount());
+            var flat: std.ArrayList([]const u32) = .empty;
+            var flat_refs: std.ArrayList(Lower.Direct.BucketRef) = .empty;
+            for (owned, row_of) |*list, *row| {
+                row.* = none;
+                if (list.items.len == 0) continue;
+                std.mem.sort(u32, list.items, w, struct {
+                    fn less(ww: *Writes, x: u32, y: u32) bool {
+                        if (ww.pathLess(x, y)) return true;
+                        if (ww.pathLess(y, x)) return false;
+                        return x < y;
+                    }
+                }.less);
+                row.* = @intCast(rows.items.len);
+                try rows.append(a, @intCast(list.items.len));
+                for (list.items, 0..) |r, bi| {
+                    const ref: Lower.Direct.BucketRef = .{ .row = row.*, .bucket = @intCast(bi) };
+                    bucket_of[r] = ref;
+                    try flat.append(a, try a.dupe(u32, &.{r}));
+                    try flat_refs.append(a, ref);
+                }
+            }
+            for (pieces.items, row_of[1..]) |vi, row| vps[vi].row = row;
+            // The keys a root handles itself (§8.4, amended 2026-10-22, the
+            // owner's decision 2): a key of two steps, its first the
+            // constructor the root's one `Html.map` applies, whose arm in the
+            // program's `update` is a pure forward — the model's field the
+            // root holds updated with the root's module's function of the
+            // inner message and that field, and `Cmd.none` — whose second
+            // step's arm piece writes the field in place, and whose handler
+            // nothing but the root's events names: no subscription and no
+            // dispatcher of commands.
+            const dispatcher = if (!prog.recognised) true else if (prog.kind == .sandbox) false else blk: {
+                if (prog.init_command.class == .runs) break :blk true;
+                for (prog.keys) |k| if (k.command.class == .runs) break :blk true;
+                break :blk false;
+            };
+            if (prog.recognised and !dispatcher) for (pieces.items) |vi| {
+                const vp = &vps[vi];
+                if (vp.args.len == 0 or vp.args[0].kind != .held) continue;
+                const slice = slices[std.mem.indexOfScalar(u32, pieces.items, vi).?];
+                if (w.pathLen(slice) != 1 or w.pathKind(slice) != .field) continue;
+                var map_ctor: u32 = none;
+                var maps: u32 = 0;
+                for (prog.map_ctors) |mc| if (std.mem.eql(u64, mc.path, vp.path)) {
+                    map_ctor = mc.ctor;
+                    maps += 1;
+                };
+                if (maps != 1) continue;
+                var moved: std.ArrayList(Lower.Direct.Moved) = .empty;
+                for (prog.keys, 0..) |k, ki| {
+                    if (k.steps.len != 2 or k.steps[0].ctor != map_ctor or k.steps[1].ctor == none) continue;
+                    if (k.caps.any() or w.keyClass(k.writes) == .star) continue;
+                    if (prog.kind != .sandbox and (!effects_on or k.command.class != .none)) continue;
+                    if (subscribed(prog, @intCast(ki))) continue;
+                    const fwd = e.forwardOf(w, prog, birs, map_ctor) orelse continue;
+                    if (fwd.field != w.pathA(slice)) continue;
+                    const leaf = w.ctorPlace(k.steps[1].ctor);
+                    if (leaf.module != vp.module or fwd.module != vp.module) continue;
+                    const lift = for (e.lifts, 0..) |pc, li| {
+                        const arm = pc.arm orelse continue;
+                        if (pc.module == fwd.module and arm.value == fwd.value and arm.ctor_module == leaf.module and arm.ctor_index == leaf.index) break li;
+                    } else continue;
+                    // The arm piece takes the branch's variables and the
+                    // function's one other parameter, the field.
+                    if (e.lifts[lift].captures.len != e.lifts[lift].arm.?.fields.len + 1) continue;
+                    try moved.append(a, .{ .key = @intCast(ki), .ctor = .{ .module = leaf.module, .index = leaf.index, .iface = Lower.Direct.Ctor.none }, .lift = @intCast(lift) });
+                }
+                vp.moved = moved.items;
+            };
+            const group_buckets = try a.alloc([]const Lower.Direct.BucketRef, reads.len);
+            for (reads, group_buckets) |set, *gb| {
+                var refs: std.ArrayList(Lower.Direct.BucketRef) = .empty;
+                for (set) |r| {
+                    const ref = bucket_of[r];
+                    for (refs.items) |x| {
+                        if (x.row == ref.row and x.bucket == ref.bucket) break;
+                    } else try refs.append(a, ref);
+                }
+                std.mem.sort(Lower.Direct.BucketRef, refs.items, {}, refLess);
+                gb.* = refs.items;
+            }
+            const conflicts = try sparseConflicts(a, w, flat.items, key_writes[pi]);
+            const key_buckets = try a.alloc([]const Lower.Direct.BucketRef, conflicts.key_groups.len);
+            for (conflicts.key_groups, key_buckets) |gs, *kb| {
+                const refs = try a.alloc(Lower.Direct.BucketRef, gs.len);
+                for (gs, refs) |g, *ref| ref.* = flat_refs.items[g];
+                kb.* = refs;
+            }
+            // The routes, in the lowering's terms.
+            const routes: Writes.Routes = if (routed) prog.routes else .{};
+            const rrows = try a.alloc(Lower.Direct.RouteRow, routes.rows.len);
+            for (rrows, routes.rows) |*o, r| o.* = .{ .field = @fromBackingInt(r.field), .fn_module = r.fn_module, .fn_decl = r.fn_decl, .plan = try planOf(a, r.plan) };
+            const rsites = try a.alloc(Lower.Direct.RouteSite, routes.sites.len);
+            for (rsites, routes.sites) |*o, st| o.* = .{
+                .module = st.module,
+                .inst = st.inst,
+                .kind = switch (st.kind) {
+                    .update => .update,
+                    .record => .record,
+                    .keyed => .keyed,
+                },
+                .rows = try a.dupe(u32, st.rows),
+                .raws = try a.dupe(u32, st.raws),
+                .keys = keys: {
+                    const ks = try a.alloc([]const u8, st.keys.len);
+                    for (ks, st.keys) |*k, x| k.* = try a.dupe(u8, x);
+                    break :keys ks;
+                },
+                .model = st.model,
+            };
+            out.routes = .{ .rows = rrows, .sites = rsites };
+            out.plan = .{
+                .rows = rows.items,
+                .local_row = row_of[0],
+                .group_buckets = group_buckets,
+                .key_buckets = key_buckets,
+                .model_cell = model_cell,
+            };
+        }
+    }
+
+    /// Whether the program runs a command: `init`'s, or a key's, of a
+    /// `Tea.element`.
+    fn commandsRun(prog: *const Writes.Program) bool {
+        if (prog.kind == .sandbox) return false;
+        if (prog.init_command.class != .none) return true;
+        for (prog.keys) |k| if (k.command.class != .none) return true;
+        return false;
+    }
+
+    /// Whether key `k` is the handler of one of the program's
+    /// subscriptions.
+    fn subscribed(prog: *const Writes.Program, k: u32) bool {
+        if (prog.subscriptions.class != .set) return false;
+        for (prog.subscriptions.decls) |dcl| if (dcl.key_index == k) return true;
+        return false;
+    }
+
+    const Forward = struct { field: u32, module: u32, value: u32 };
+
+    /// The forward of `update`'s arm for messages of constructor `ctor`
+    /// (§8.4, amended 2026-10-22): `{ model | f = W.fn sub model.f }`, the
+    /// branch of `case msg of` for `ctor`, reached from `update`'s body
+    /// through calls of the program module's functions handed the message
+    /// and the model, and for `Tea.element` the first part of a pair whose
+    /// second is `Cmd.none`; null for an arm of any other shape. Nothing
+    /// else runs on the way, so the forward has no write, condition,
+    /// command or effect of its own.
+    fn forwardOf(e: *Emitter, w: *Writes, prog: *const Writes.Program, birs: []const *const Bir, ctor: u32) ?Forward {
+        if (prog.update_module == Writes.none or prog.update_decl == Writes.none) return null;
+        const b = birs[prog.update_module];
+        const d = b.decls[prog.update_decl];
+        const params = b.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
+        if (params.len != 2 or b.instTag(params[0]) != .pat_var or b.instTag(params[1]) != .pat_var) return null;
+        const body = d.body.unwrap() orelse return null;
+        return e.forwardIn(w, b, prog.update_module, b.instData(params[0]).lhs, b.instData(params[1]).lhs, body, ctor, 0, prog.kind == .element);
+    }
+
+    fn forwardIn(e: *Emitter, w: *Writes, b: *const Bir, m: u32, msg: u32, model: u32, body: Bir.Inst.Index, ctor: u32, depth: u32, pair: bool) ?Forward {
+        if (depth > 8) return null;
+        const data = b.instData(body);
+        switch (b.instTag(body)) {
+            .tuple => {
+                // `Tea.element`'s pair: its model, when its command is
+                // `Cmd.none`.
+                if (!pair) return null;
+                const items = b.extraSlice(Bir.inlineRange(data), Bir.Inst.Index);
+                if (items.len != 2) return null;
+                const fx = e.writes_effects orelse return null;
+                const t = e.valueDeclOf(b, m, items[1]) orelse return null;
+                if (t[0] != fx.cmd_none.m or t[1] != fx.cmd_none.d) return null;
+                return e.forwardIn(w, b, m, msg, model, items[0], ctor, depth + 1, false);
+            },
+            .call => {
+                // A function of the program's module handed the message and
+                // the model, each once, as its two parameters.
+                const callee: Bir.Inst.Index = @fromBackingInt(data.lhs);
+                if (b.instTag(callee) != .top) return null;
+                const args = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index);
+                const fd = b.decls[b.instData(callee).lhs];
+                const params = b.extraSlice(.{ .start = fd.params_start, .end = fd.params_end }, Bir.Inst.Index);
+                if (args.len != 2 or params.len != 2) return null;
+                var next_msg: u32 = Writes.none;
+                var next_model: u32 = Writes.none;
+                for (args, params) |arg, param| {
+                    if (b.instTag(arg) != .local or b.instTag(param) != .pat_var) return null;
+                    if (b.instData(arg).lhs == msg) next_msg = b.instData(param).lhs else if (b.instData(arg).lhs == model) next_model = b.instData(param).lhs else return null;
+                }
+                if (next_msg == Writes.none or next_model == Writes.none) return null;
+                return e.forwardIn(w, b, m, next_msg, next_model, fd.body.unwrap() orelse return null, ctor, depth + 1, pair);
+            },
+            .case => {
+                const scrutinee: Bir.Inst.Index = @fromBackingInt(data.lhs);
+                if (b.instTag(scrutinee) != .local or b.instData(scrutinee).lhs != msg) return null;
+                for (b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Inst.Index)) |br| {
+                    if (b.instTag(br) != .branch) return null;
+                    const pattern: Bir.Inst.Index = @fromBackingInt(b.instData(br).lhs);
+                    if (b.instTag(pattern) != .pat_ctor) continue;
+                    const pd = b.instData(pattern);
+                    if (w.ctorOfInst(m, @fromBackingInt(pd.lhs)) != ctor) continue;
+                    const subs = b.extraSlice(b.subRange(@fromBackingInt(pd.rhs)), Bir.Inst.Index);
+                    if (subs.len != 1 or b.instTag(subs[0]) != .pat_var) return null;
+                    var arm: Bir.Inst.Index = @fromBackingInt(b.instData(br).rhs);
+                    if (pair) {
+                        // The branch is the pair: its model the forward.
+                        if (b.instTag(arm) != .tuple) return null;
+                        const items = b.extraSlice(Bir.inlineRange(b.instData(arm)), Bir.Inst.Index);
+                        if (items.len != 2) return null;
+                        const fx = e.writes_effects orelse return null;
+                        const t = e.valueDeclOf(b, m, items[1]) orelse return null;
+                        if (t[0] != fx.cmd_none.m or t[1] != fx.cmd_none.d) return null;
+                        arm = items[0];
+                    }
+                    return e.forwardUpdate(b, m, b.instData(subs[0]).lhs, model, arm);
+                }
+                return null;
+            },
+            else => return null,
+        }
+    }
+
+    /// `{ model | f = W.fn sub model.f }`, exactly.
+    fn forwardUpdate(e: *Emitter, b: *const Bir, m: u32, sub: u32, model: u32, body: Bir.Inst.Index) ?Forward {
+        _ = m;
+        _ = e;
+        if (b.instTag(body) != .record_update) return null;
+        const data = b.instData(body);
+        const base: Bir.Inst.Index = @fromBackingInt(data.lhs);
+        if (b.instTag(base) != .local or b.instData(base).lhs != model) return null;
+        const fields = b.extraSlice(b.subRange(@fromBackingInt(data.rhs)), Bir.Field);
+        if (fields.len != 1) return null;
+        const field = b.symbol(fields[0].name);
+        const value = fields[0].value;
+        if (b.instTag(value) != .call) return null;
+        const vd = b.instData(value);
+        const callee: Bir.Inst.Index = @fromBackingInt(vd.lhs);
+        if (b.instTag(callee) != .ext_value) return null;
+        const args = b.extraSlice(b.subRange(@fromBackingInt(vd.rhs)), Bir.Inst.Index);
+        if (args.len != 2) return null;
+        if (b.instTag(args[0]) != .local or b.instData(args[0]).lhs != sub) return null;
+        if (b.instTag(args[1]) != .field_access) return null;
+        const fa = b.instData(args[1]);
+        const read: Bir.Inst.Index = @fromBackingInt(fa.lhs);
+        if (b.instTag(read) != .local or b.instData(read).lhs != model) return null;
+        if (b.symbol(@fromBackingInt(fa.rhs)) != field) return null;
+        return .{ .field = @backingInt(field), .module = b.instData(callee).lhs, .value = b.instData(callee).rhs };
+    }
+
+    /// The `(module, declaration)` a value reference names.
+    fn valueDeclOf(e: *Emitter, b: *const Bir, m: u32, inst: Bir.Inst.Index) ?[2]u32 {
+        const data = b.instData(inst);
+        return switch (b.instTag(inst)) {
+            .top => .{ m, data.lhs },
+            .ext_value => blk: {
+                if (data.lhs >= e.session.resolution.provenance.len) break :blk null;
+                const decl = e.session.resolution.provenance[data.lhs].valueDecl(data.rhs) orelse break :blk null;
+                break :blk .{ data.lhs, decl.int() };
+            },
+            else => null,
+        };
+    }
+
+    fn planOf(a: std.mem.Allocator, plan: []const Writes.PlanItem) ![]const Lower.Direct.PlanItem {
+        const out = try a.alloc(Lower.Direct.PlanItem, plan.len);
+        for (out, plan) |*o, item| o.* = .{ .field = @fromBackingInt(item.field), .sub = if (item.sub) |sub| try planOf(a, sub) else null };
+        return out;
+    }
+
+    fn refLess(_: void, x: Lower.Direct.BucketRef, y: Lower.Direct.BucketRef) bool {
+        if (x.row != y.row) return x.row < y.row;
+        return x.bucket < y.bucket;
+    }
+
+    /// Whether path `s` is `r` or a prefix of it, step for step.
+    fn exactPrefix(w: *const Writes, s: u32, r: u32) bool {
+        var q = r;
+        while (true) {
+            if (q == s) return true;
+            if (w.pathLen(q) <= w.pathLen(s)) return false;
+            q = w.pathParent(q);
+        }
+    }
+
+    /// The fields from `from` down to `p`, each a symbol; null when a step
+    /// between them is not a field.
+    fn fieldSteps(a: std.mem.Allocator, w: *const Writes, from: u32, p: u32) !?[]const InternPool.Symbol {
+        var out: std.ArrayList(InternPool.Symbol) = .empty;
+        var q = p;
+        while (q != from) {
+            if (q == Writes.none or w.pathKind(q) != .field) return null;
+            try out.append(a, @fromBackingInt(w.pathA(q)));
+            q = w.pathParent(q);
+        }
+        std.mem.reverse(InternPool.Symbol, out.items);
+        return out.items;
+    }
+
+    /// The view walk's fact about parameter `param` of module `module` on
+    /// call path `path` (`Writes.Program.view_params`, sorted).
+    fn viewParam(params: []const Writes.ViewParam, module: u32, param: u32, path: []const u64) ?Writes.ViewParam {
+        for (params) |vp| {
+            if (vp.module == module and vp.param == param and std.mem.eql(u64, vp.path, path)) return vp;
+        }
+        return null;
     }
 
     /// The arm pieces among `lifts`, by index, sorted by their owner, the

@@ -1,0 +1,38 @@
+--! The second widget: a venue the user types, and what it shows of the
+--! first widget's cups, which it reads and never writes.
+
+import Html exposing (Html)
+import W1
+
+
+pub type alias Model =
+    venue : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { venue = "" }
+
+
+pub type Msg
+    = Write String
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Write typed →
+            { model | venue = typed }
+
+
+--| What the program marks after `W1`'s click: the venue it shows.
+pub mark : Model → Model
+mark model = { model | venue = "Hall" }
+
+
+pub view : Model, W1.Model → Html Msg
+view model first =
+    <section data-role="w2">
+        <input data-role="venue" value={model.venue} onInput={Write} />
+        <p>{model.venue}</p>
+        <output>{first.cups}</output>
+    </section>

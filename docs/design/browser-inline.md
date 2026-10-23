@@ -1038,6 +1038,102 @@ contract of #668:
    until the plan's dependencies can be replayed safely. Preparatory changes that move no emitted
    byte may land before it.
 
+*As built 2026-10-23 (#668): the root closures.* The design amendment above, built whole; the
+preceding *as built* rules of §8.3–§8.4 that it reverses no longer describe the compiler. What the
+code settled, which the amendment left to the build:
+
+- **The root plan** is `Emit.buildPlans`, serial, after the write-set pass and the pieces pre-pass,
+  from the pass's facts (`write-sets.md`, amended 2026-10-23). A program's **roots** are its own
+  `view` and each root another module writes as pieces, in placement order: the program's own
+  first, then the pieces by their call paths. A piece's **slice** is the exact model path of the
+  first argument of its function. A path **keeps its object** when no key's `Key.replaced` path
+  may be a prefix of it. Each argument is `held` — a path that keeps its object, handed once as
+  that object — `through` — a path below the deepest prefix that keeps its object, handed that
+  object and read through it — `cell` — read through the program's model cell, when not even the
+  model keeps its object — or `constant`. An argument that is none of these, a value the program
+  computes, is refused as a limit of the compiler (§5, class 4; `build/bad/inline/RootComputedArg`).
+- **The cell of a replaceable value is its slot.** A value the program replaces — a number, a
+  record rebuilt fresh — is read through the nearest object that keeps its identity, whose field
+  is the one mutable slot, or through the program's model cell `[model]`, whose one slot the
+  handlers write in place of the model's local, when no object of the model keeps its identity.
+  The oracle's separate cell `c = [-1]` beside the model is not built: the model's own slot is that
+  cell, and every source write lands in it (`browser/inline/ReplaceableSlice`,
+  `ReplaceableRecord`).
+- **Buckets.** Each read path of the program's read sets is owned by the root whose slice is its
+  longest prefix — the first placed among equals — and every other read, the model whole and any
+  read not of the model among them, by the program's own `view`. A row is a root that owns a
+  read; its buckets are those reads, ordered by `Writes.pathLess`, which is §8.4's structural
+  encoding. `groupBuckets` maps a read set to its buckets and `keyBuckets` a key to the buckets
+  its writes conflict with, by `Writes.conflicts`, as `sparseConflicts` does for groups. A
+  control's repair (§8.3) runs the buckets of the control's own binding entry.
+- **Ordinals.** The runtime's `entry(f, buckets)` gives each entry its ordinal as it is made and
+  adds it to each bucket of what it reads, one bucket or an array of them. The
+  mount makes the program's own entries, then calls each root's factory in placement order, and a
+  factory makes its entries in document order, so the order made is the pass order: the program's
+  own entries, then each root's — the order §8.3's passes had. Each bucket is filled as entries are
+  made, so it is in ordinal order and finalisation sorts nothing. `pass(bucket)` runs one bucket;
+  `passes([…])` stamps each entry once and sorts the union by ordinal; `first()` runs every entry
+  made at the mount, once, before the subscriptions start.
+- **The factory** is `<Module>$<declaration>$$root$<n>`, taking `(elements, holder…, row?,
+  table?, handler…)`: one holder per argument of the root's function, its own row when it fills
+  it, the program's table when it fills another root's, and one handler per constructor of a key
+  that stays the program's, in the order of each one's first event. A root with no binding and no
+  event has no factory. The program's own `view` is written in the mount.
+- **Moved handlers** (the owner's decision 2). A key moves into the root at the hole whose one
+  `Html.map` applies the key's first constructor when the key has two steps; the program's arm for
+  that constructor is exactly `{ model | f = W.fn sub model.f }`, reached through calls of the
+  module's functions that hand the message and the model on and, for `Tea.element`, as the model
+  of a pair whose command is `Cmd.none` (`Emit.forwardOf`); `model.f` is the root's slice and is
+  `held`; `W.fn`'s arm piece for the key takes the branch's fields and the slice alone; no
+  subscription names the key; and no command of the program runs, which would need every handler
+  at the program's dispatcher. Any other key's handler is the program's, handed to the root
+  (`browser/inline/MainOwnedKeys`).
+- **Pushed state** (the owner's decision 5). A route is what `write-sets.md`'s `findRoutes`
+  recognises, amended the same day: a tail of `update` that gives a field `F x model.f`, `F` a
+  function whose body is `Result.withDefault D old` with `D` not reading `old` — so its result is
+  the old value itself, or a value made from `x` alone that holds nothing of it — reached with
+  nothing on the way reading the model, every declaration on the way called only there. Its site
+  is lowered as the loader: a keyed `case` as `load(model, table, key, raw)`, `table` a constant
+  of `[key, row]` pairs, looked up by an own-key scan, so `__proto__` and `constructor` are
+  unknown keys; an update or a record of every field as `loadAll(model, rows, raws)`, which runs
+  every row's function before it copies any result. A row is the constant `[F, field, plan]`: the
+  source's own function, which validates and decides between the old value and the new, the field,
+  and the copy plan — the record type's fields, each record field with a plan of its own. A result
+  that is not the old value is copied into the old object, which keeps its identity, nested
+  records descended into (`browser/inline/ValidatedLoader`, `NestedStableLoad`; a transformed
+  push stays the program's code, `PushTransformed`). The copy is exact: the old object has no
+  holder but the model's slot — nothing on the way to the route reads the model, the model is
+  exclusive at the entry (`ownership-checker.md` §31.8), a binding that retains an argument is
+  in the push's pass and is evaluated again, and a program whose commands run keeps no route,
+  since a command's closure from an earlier dispatch may hold the old object. So the evidence is
+  the route's own proof and ownership's entry exclusivity; R5's table needed no extension
+  (decision 3). The write-set pass reads a route site as the copy it is (`write-sets.md`), so the
+  model and its routed slices keep their objects in the plan.
+- **Retention** rests on `Key.replaced` and the ownership channel's clean bit
+  (`Lower.Input.ownership`, `Emit.runWrites`'s `in_place`): an update of a module that is not
+  clean, a project's platform layer among them, is trusted to keep nothing, and its program's
+  slices are read through the program's model cell (`browser/inline/PlatformWidget`,
+  `PlatformReader`).
+- **What stays as it was.** A key's pass is the buckets its whole write set reaches, at the end of
+  its arm: §8.5's per-tail passes are not built (the write-set pass's per-path sets are not
+  either), so a route's row carries no groups and a push runs the buckets of every root its key
+  may write, as the pass before this one did. The development output of a piece keeps its arm
+  pieces as exports; release fuses a factory used once into the mount.
+- **Caches.** App modules are lowered on every build and the plan is made on every build from the
+  modules' BIR; the emit pack covers the embedded modules only, none of which is a root's owner or
+  a program. `build_test`'s *root closures: warm, cold and cache-less builds agree…* edits a
+  writer's markup and buckets, a reader's read path, the program's forwarding arm and a slice's
+  identity in turn, with every interface kept, and compares warm, cold and cache-less builds at
+  one job and eight, development and release.
+- **Evidence.** The new pages and goldens of the fixture ledger above — `RootClosures`,
+  `ReaderBeforeWriter` (the reader placed first), `ReaderCycle`, `ReaderTwoFields` (one entry in
+  two buckets, run once, logged), `MainOwnedKeys`, `ValidatedLoader`, `PushTransformed`,
+  `ReplaceableSlice`, `ReplaceableRecord`, `NestedStableLoad`, `ControlledNoWrite` — whose
+  transcripts are, normalised for the platforms' anchors, `browser-tea`'s for the same sources; the
+  bad builds `RootComputedArg` (class 4), `RootsSharedRecord` and `RootsPayloadRecord` (the
+  ownership checker's record errors), beside the existing class 1, 2 and 3 fixtures; every
+  existing `browser/inline/` transcript unchanged.
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host

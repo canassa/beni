@@ -329,3 +329,137 @@ allShown arms i =
         allShown arms (i + 1)
     else
         False
+
+
+-- ---- Groups (`browser-inline.md` §8.4, amended 2026-10-22) -------------
+
+-- Every binding entry made at this mount, in the order made: an entry's
+-- place here is its ordinal. Roots are set up in placement order and each
+-- makes its entries in document order, so the order made is the order a
+-- pass runs them in, and every bucket, filled as entries are made, is in it.
+entries : Js.Ref V
+entries = Js.ref (Js.array [])
+
+
+-- The pass a stamp belongs to: an entry two selected buckets hold is run
+-- once in a pass.
+stamp : Js.Ref Int
+stamp = Js.ref 0
+
+
+--| `(f, buckets)`: binding entry `f`, given its ordinal and added to the
+--| buckets of what it reads — one bucket, or an array of them. A bucket
+--| holds entries, functions, so an array whose first element is an array is
+--| several. Returns `f`.
+pub entry : V, V → V
+entry f buckets =
+    Js.set f "$o" (Js.get (Js.read entries) "length")
+    _ = Js.call (Js.read entries) "push" [ f ]
+    if Js.instanceOf (Js.at buckets 0) (Js.global "Array") then
+        Js.each buckets λbucket → Js.to (Js.call bucket "push" [ f ])
+    else
+        _ = Js.call buckets "push" [ f ]
+        ⊤
+    f
+
+
+--| `(bucket)`: a write pass of one bucket, its entries in order.
+pub pass : V → ⊤
+pass bucket = Js.each bucket λf → Js.to (Js.apply f [])
+
+
+--| `(buckets)`: a write pass of several buckets: every entry of any of them,
+--| once, in ordinal order — document order — synchronously.
+pub passes : V → ⊤
+passes buckets =
+    Js.write stamp (Js.read stamp + 1)
+    now = Js.from (Js.read stamp)
+    selected = Js.array []
+    Js.each buckets λbucket →
+        Js.each bucket λf →
+            if not (Js.same (Js.get f "$s") now) then
+                Js.set f "$s" now
+                Js.to (Js.call selected "push" [ f ])
+    _ = Js.call selected "sort" [ Js.from ordinalOrder ]
+    pass selected
+
+
+ordinalOrder : V, V → Int
+ordinalOrder x y = Js.to (Js.get x "$o") - Js.to (Js.get y "$o")
+
+
+--| The first pass: every entry made at this mount, once, in order. Run when
+--| every root has made and registered its entries, before subscriptions
+--| start and `init`'s command runs.
+pub first : ⊤ → ⊤
+first ⊤ =
+    all = Js.read entries
+    Js.write entries (Js.array [])
+    pass all
+
+
+-- ---- Pushed state (`browser-inline.md` §8.4, amended 2026-10-22) -------
+
+--| `(model, table, key, raw)`: a keyed route. `table` holds `[key, row]`
+--| pairs; the row of `key`, when there is one, is committed with `raw`. An
+--| unknown key does nothing, as the route's default does.
+pub load : V, V, V, V → ⊤
+load model table key raw = Js.each table λpair →
+    if Js.same (Js.at pair 0) key then
+        commit model (Js.at pair 1) raw
+
+
+--| `(model, rows, raws)`: routes in turn. Every row's function runs first,
+--| each with its raw value and the model's old value at its field, in
+--| order; then each result that is not the old value is copied into it.
+pub loadAll : V, V, V → ⊤
+loadAll model rows raws =
+    nexts = Js.array []
+    prepareFrom model rows raws nexts 0
+    commitFrom model rows nexts 0
+
+
+prepareFrom : V, V, V, V, Int → ⊤
+prepareFrom model rows raws nexts i =
+    if i < Js.to (Js.get rows "length") then
+        row = Js.at rows i
+        _ =
+            Js.call nexts "push"
+                [ Js.apply (Js.at row 0) [ Js.at raws i, Js.get model (Js.to (Js.at row 1)) ] ]
+        prepareFrom model rows raws nexts (i + 1)
+
+
+commitFrom : V, V, V, Int → ⊤
+commitFrom model rows nexts i =
+    if i < Js.to (Js.get rows "length") then
+        row = Js.at rows i
+        old = Js.get model (Js.to (Js.at row 1))
+        next = Js.at nexts i
+        if not (Js.same next old) then
+            copy old next (Js.at row 2)
+        commitFrom model rows nexts (i + 1)
+
+
+-- A row `[f, field, plan]` committed with `raw`: `f raw old`, `old` the
+-- model's value at `field`, copied into `old` when it is another value, so
+-- the object every root holds keeps its identity.
+commit : V, V, V → ⊤
+commit model row raw =
+    old = Js.get model (Js.to (Js.at row 1))
+    next = Js.apply (Js.at row 0) [ raw, old ]
+    if not (Js.same next old) then
+        copy old next (Js.at row 2)
+
+
+-- `next`'s fields into `old`, as `plan` lists them: a name is written, a
+-- `[name, plan]` pair is copied into the object `old` holds there.
+copy : V, V, V → ⊤
+copy old next plan = Js.each plan λitem →
+    if Js.typeIs item "string" then
+        name : String
+        name = Js.to item
+        Js.set old name (Js.get next name)
+    else
+        name : String
+        name = Js.to (Js.at item 0)
+        copy (Js.get old name) (Js.get next name) (Js.at item 1)

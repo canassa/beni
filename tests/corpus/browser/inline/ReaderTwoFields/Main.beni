@@ -1,0 +1,55 @@
+-- One entry reads two roots' fields (`docs/design/browser-inline.md` §8.4,
+-- amended 2026-10-22): `W2`'s text `cups:venue` reads `w1.cups` and
+-- `w2.venue`, so its one entry is in two buckets, `W1`'s `cups` and its own
+-- `venue`. `Both`, the program's own button, writes both fields and runs both
+-- buckets in one pass, where the entry runs once, in document order.
+import Browser
+import Html exposing (Html)
+import Tea
+import W1
+import W2
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { w1 = W1.init ⊤, w2 = W2.init ⊤ }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | Both
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+        Both →
+            { model | w1 = W1.bump model.w1, w2 = W2.hall model.w2 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2 model.w1) W2Msg}
+        <button data-role="both" onClick={Both}>Both</button>
+    </div>
