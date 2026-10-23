@@ -10326,6 +10326,19 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `null` or `undefined` â none of which converts an operand, so none can run code. It is what a
    guard leaves when specialisation folds away what it guarded: `Rt`'s `stop` in a page that runs
    no fiber (`boundary.md` Â§9.8.14, the size pass). Fixture: `emit/release/core/EmptyIfTest`.
+10. **What a discarded value does, and no more** (`Print.discardedParts`, `skippedOperand`,
+   `flatOperands`; *added 2026-10-23*, #896). A name or a literal evaluates nothing, so a release
+   build leaves it out where nothing reads it: an operand of a sequence before its last, a
+   sequence's last operand and an object literal's values where the sequence or the literal is
+   itself a value nothing reads (an expression statement, the end of a function whose result
+   nothing reads), and a whole expression statement that is one. A sequence that is an operand of
+   another before its last is written in its place, so its own last operand is before the last
+   too. `c.a=4,c;` is `c.a=4;` — a record written in place (`ownership-checker.md` §31.10, *The
+   form*) whose value a handler discards — `(d.a=a,d),c=b` is `d.a=a,c=b`, and `({a:K(a,f)});` is
+   `K(a,f);`. An object literal with a computed key or a spread is left as it is, and a
+   conditional left as the one part is not made an `if` (item 8), which the decision of an outer
+   `if`'s braces does not foresee. Fixtures: `emit/release/inline/RootClosures`, `PushAndTimer`,
+   `TickInPlace`, `emit/release/tea/HttpSendTracked`.
 
 And under all of them:
 

@@ -49,7 +49,9 @@ const std = @import("std");
 /// each key selects, and how a root reaches its arguments (`programRows`,
 /// `groupBuckets`, `keyBuckets`, `programRootArgs`, `pieceRoot`,
 /// `pieceRootArg`, `programRootRow`, `programModelCell`).
-pub const version: Version = .{ .major = 1, .minor = 17 };
+/// Version 1.18 adds `programModelKept` (`browser-inline.md` §8.4, amended
+/// 2026-10-23, #896).
+pub const version: Version = .{ .major = 1, .minor = 18 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -1365,6 +1367,13 @@ pub const Context = struct {
         return cx.vtable.program_model_cell(cx.impl);
     }
 
+    /// 1.18: no key of the program gives its model another object — every
+    /// arm writes it in place or leaves it — so a handler need not store the
+    /// arm's model back (`browser-inline.md` §8.4, amended 2026-10-23).
+    pub fn programModelKept(cx: *Context) bool {
+        return cx.vtable.program_model_kept(cx.impl);
+    }
+
     /// 1.17, inside `Lowering.program` or `Lowering.piece`: the buckets read
     /// set `group` (`HoleFacts.group`) selects, sorted by row and bucket.
     pub fn groupBuckets(cx: *Context, group: u32) []const Program.BucketRef {
@@ -1941,6 +1950,7 @@ pub const VTable = struct {
     program_rows: *const fn (impl: *anyopaque) []const u32,
     program_root_row: *const fn (impl: *anyopaque, node: ?Node.Index) ?u32,
     program_model_cell: *const fn (impl: *anyopaque) bool,
+    program_model_kept: *const fn (impl: *anyopaque) bool,
     group_buckets: *const fn (impl: *anyopaque, group: u32) []const Program.BucketRef,
     key_buckets: *const fn (impl: *anyopaque, key: u32) []const Program.BucketRef,
     program_root_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index, model: Name, cell: ?Name) Error![]const Expr,

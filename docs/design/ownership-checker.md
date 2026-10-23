@@ -7534,6 +7534,18 @@ keeps nothing across renders.
    `browser/inline/NestedFieldWrite`). `OldValueAfterWrite` shows the hoist, `let b=e.a;e.a=e.a+1;e.b=b`. The
    `./rr check` matrix above passes again.
 
+   *Amended 2026-10-23 (#896): a call that answers the field's object.* The first store above is also not
+   written when the field's value is a call `G(…, m.c, …)` — `m.c` read directly or through a `let` of it —
+   of a function that answers its parameter's object at that position (`Lower.answersFieldObject`): every
+   tail of `G`'s body, through `let`s and `case`s, is that parameter, an update of it in a module whose
+   records are written in place (`Lower.Input.clean_modules`), or a call of such a function handing it on,
+   to a depth of 8. `{ model | w7 = W7.tick model.w7 }`, `W7.tick` answering `model` or
+   `{ model | minutes = … }`, is then `W7$tick(m.w7)`: the call runs, its writes are the update, and the
+   store is not written. Under the sanitiser `G`'s update answers a new object and the store stays
+   (`emit/release/inline/TickInPlace`, `browser/inline/TickInPlace`). The second store, the model's, is
+   not written either when the root plan proves that no key gives the model another object
+   (`browser-inline.md` §8.4, amended the same day), whatever the arm's shape.
+
 ### 31.13 Measured (2026-10-17): a static approximation, not the checker
 
 **The checker's count (2026-10-19, R2c of #315), which replaces the approximation below.** Over the same set,

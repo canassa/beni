@@ -424,6 +424,13 @@ pub fn run(
     // Which of `core/List`'s core-private values this build's core
     // declares: every module that would import one it lacks says so.
     if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
+    // Which modules write their record updates in place (§31.10).
+    {
+        const hs = e.session.checked.hoists;
+        const clean = try e.scratch.alloc(bool, hs.len);
+        for (clean, hs) |*c, h| c.* = h.clean and e.session.enforce_ownership;
+        e.clean_modules = clean;
+    }
     // The write-set pass, for a lowering that compiles programs whole
     // (`boundary.md` §9.4.6, version 1.7), before reachability: the pieces
     // it lifts are nodes of the walk (`browser-inline.md` §7).
@@ -990,6 +997,8 @@ const Emitter = struct {
     live: Reach.Result = .empty,
     /// `Lower.Input.core_private`, the same for every module of the build.
     core_private: Lower.CorePrivate = @splat(true),
+    /// `Lower.Input.clean_modules`, the same for every module of the build.
+    clean_modules: []const bool = &.{},
     /// §9 item 2's whole-program namespace: one table for the BUILD, so that
     /// an `import` specifier in one file and the `export` in another are
     /// given the same short name. Empty and unused in a dev build.
@@ -3596,6 +3605,7 @@ const Emitter = struct {
                 .group_buckets = group_buckets,
                 .key_buckets = key_buckets,
                 .model_cell = model_cell,
+                .model_kept = prog.recognised and stable(w, replaced.items, rho),
             };
         }
     }
@@ -5419,6 +5429,7 @@ const Emitter = struct {
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
                 .sanitize_records = e.options.sanitize_records,
+                .clean_modules = e.clean_modules,
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
                 .schema_library = e.options.schema_library,
