@@ -337,6 +337,16 @@ beni over `Js` in `Inline.beni`:
   (`checker-v2.md` §26) when every argument is pure and total too, so `bump (String.length s)` is
   eager; the classification is an uncapped iterative walk, so an expression's size alone never
   makes it guarded.
+  *Amended 2026-10-23 (#844):* it includes a well-known `==`, `≠`, `<`, `≤`, `>` or `≥`, or a
+  dot-call — a `method_call` — with no hidden evidence whose callee the checker proves total
+  (`checker-v2.md` §26, `Totality.termTarget`): a primitive comparison (`===`, a number's or a
+  character's order), `String`'s order and a key's when `String.compare` is total, and a method that
+  is a declaration the checker proved total; its operands must be pure and total too. These are
+  the facts the checker already uses for a declaration's totality, so `if model.n < 4 then <p>…</p>
+  else <></>` inside an arm no longer makes that arm guarded. An evidence parameter, a derived
+  function and a field call stay unknown, and a type's own `compare` that logs keeps its arm guarded
+  (`browser/inline/SelectedOperators`, `browser/inline/ArmOperators`,
+  `emit/release/inline/ArmOperators`).
   *Corrected 2026-10-19 (the owner, #466):* a helper argument used by an event handler is part
   of the handler binding, as in the source: its message is built during view evaluation and lives
   on the node until the binding reruns. Bound arguments share that lifetime, are refreshed by a

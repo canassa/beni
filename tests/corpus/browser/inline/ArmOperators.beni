@@ -1,0 +1,69 @@
+-- An eager arm whose values are comparisons: `==`, `≠`, `<`, `≥` on `Int`
+-- and `String`, and an arm inside an arm whose branch is `<`. Each is a
+-- well-known call the checker proves total (checker-v2.md §26), so the
+-- arms stay eager (browser-inline.md §8.2, amended 2026-10-23, #844): the
+-- page shows the current values whenever an arm is revealed, after updates
+-- made while it was hidden.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : String
+    shown : Bool
+    n : Int
+
+
+type Msg
+    = Grow
+    | Flip
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Grow →
+            { model | name = model.name ++ "m" }
+
+        Flip →
+            { model | shown = not model.shown }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {if model.shown then
+            <section>
+                <span>{if model.name ≠ "mm" then "changed" else "same"}</span>
+                <em>{if model.name < "mmm" then "short" else "long"}</em>
+                <strong>{if model.n == 3 then "three" else "other"}</strong>
+            </section>
+         else
+            <></>
+        }
+        {if model.n ≥ 2 then
+            <aside>
+                {if model.n < 4 then <p>low</p> else <></>}
+                <b>{model.n}</b>
+            </aside>
+         else
+            <></>
+        }
+        <button data-role="grow" onClick={Grow}>Grow</button>
+        <button data-role="flip" onClick={Flip}>Flip</button>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { name = "", shown = False, n = 0 }, update = update, view = view }
+        )
+        "root"

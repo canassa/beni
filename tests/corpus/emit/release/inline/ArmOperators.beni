@@ -1,0 +1,65 @@
+-- emit/release/inline: the page is `browser/inline/ArmOperators`. Its arms
+-- are eager: each binding writes its value in place, with no guard.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : String
+    shown : Bool
+    n : Int
+
+
+type Msg
+    = Grow
+    | Flip
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Grow →
+            { model | name = model.name ++ "m" }
+
+        Flip →
+            { model | shown = not model.shown }
+
+        Bump →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {if model.shown then
+            <section>
+                <span>{if model.name ≠ "mm" then "changed" else "same"}</span>
+                <em>{if model.name < "mmm" then "short" else "long"}</em>
+                <strong>{if model.n == 3 then "three" else "other"}</strong>
+            </section>
+         else
+            <></>
+        }
+        {if model.n ≥ 2 then
+            <aside>
+                {if model.n < 4 then <p>low</p> else <></>}
+                <b>{model.n}</b>
+            </aside>
+         else
+            <></>
+        }
+        <button data-role="grow" onClick={Grow}>Grow</button>
+        <button data-role="flip" onClick={Flip}>Flip</button>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { name = "", shown = False, n = 0 }, update = update, view = view }
+        )
+        "root"
