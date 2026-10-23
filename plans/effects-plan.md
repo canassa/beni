@@ -858,9 +858,9 @@ through `inLogContext`, and so reached `here ⊤` and `pushFinalizer`, which wri
 fiber (`build_test`: 6 `finally`, not 5). Fixture: `browser/tea/LogCommandContext`'s `Done`, which
 the bodies of `Task` (no fiber) and `TaskWait` (a fiber) send, writes an `Info` line, a `Debug` line
 and a `Cmd.log`; without the change the lines carry the sender's annotation, the `Debug` line is
-written, and the command keeps the sender's context. **Bytes** (the same 614 builds as the fifth
-part, on `master` `6e3d6abae`): release, the 4 pages that set a slot +207 raw (+38 to +64 brotli);
-every other release build, Conduit's included, the same bytes. Development, 307 builds +784 to
-+1 188 raw (+108 to +251 brotli): `browser/dom` pages too, since `Rt.beni` is every page's. No
+written, and the command keeps the sender's context. **Bytes** (the builds of the fifth part, 622
+now, on `master` `62d6202d9`): release, the 4 pages that set a slot +207 raw (+50 to +65 brotli);
+every other release build, Conduit's included, the same bytes. Development, 311 builds +784 to
++1 188 raw (+106 to +256 brotli): `browser/dom` pages too, since `Rt.beni` is every page's. No
 instruction count was taken: where a slot is set, each message reads it, and a message sent inside
 a context copies the slot record once.
