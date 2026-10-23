@@ -1218,6 +1218,10 @@ const Page = struct {
             try args.append(pg.a(), try js.name(u.elements));
             try args.appendSlice(pg.a(), holders);
             const row = cx.programRootRow(u.node);
+            // The owner filled its own row only when the plan gave it one,
+            // and a table only when the program has one.
+            std.debug.assert(!u.data.own_row or row != null);
+            std.debug.assert(!(u.data.own_row or u.data.table) or rows.len != 0);
             if (u.data.own_row) try args.append(pg.a(), try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{row.?}))));
             if (u.data.table) try args.append(pg.a(), try js.name(pg.table.?));
             for (ks, u.data.handlers) |pk, h| {
@@ -1794,6 +1798,9 @@ const Page = struct {
             return js.index(try js.name(pg.own.?), b);
         }
         pg.used_table = true;
+        // A bucket exists only in a table the program made: no plan names one
+        // for a program with no row.
+        std.debug.assert(pg.piece or pg.cx.programRows().len != 0);
         const row = try js.index(try js.name(pg.table.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{at.row})));
         return js.index(row, b);
     }

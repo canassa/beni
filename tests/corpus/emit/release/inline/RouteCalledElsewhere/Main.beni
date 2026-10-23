@@ -1,0 +1,20 @@
+-- A route's function called from another module (`docs/design/browser-inline.md`
+-- §8.4, amended 2026-10-23, *as built*, *Pushed state*): `Main` calls
+-- `App.replaced` too, with a model that is not the program's, so the copy a
+-- route is lowered as could change a record that caller still holds. The
+-- program keeps no route: `replaced` is written as the source says, and the
+-- roots read the widgets through the model, whose fields every push may
+-- replace.
+import App
+import Browser
+import Schema exposing (Value)
+import Tea
+
+
+main : Tea.Program
+main = Browser.mountAt App.app "root"
+
+
+--| The state `value` given to widget `widget` of `model` twice.
+twice : String, Value, App.Model → App.Model
+twice widget value model = App.replaced widget value (App.replaced widget value model)

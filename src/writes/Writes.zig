@@ -5436,18 +5436,38 @@ fn findRoutes(a: *Writes, m: u32, d: u32, kind: ProgramKind) Error!Routes {
     walk.calls[d] = 1;
     try a.routeWalk(&walk, m, b.instData(params[1]).lhs, body, 0);
     if (!walk.ok or walk.sites.items.len == 0) return .{};
-    // Every declaration the walk entered is called only where it did.
+    // Every declaration the walk entered is called only where it did: its
+    // references in its own module, and those of every other module, which
+    // name it by its interface row.
     const refs = try a.arena().alloc(u32, b.decls.len);
     @memset(refs, 0);
-    const tags = b.insts.items(.tag);
-    const data = b.insts.items(.data);
-    for (tags, data) |tag, x| if (tag == .top and x.lhs < refs.len) {
-        refs[x.lhs] += 1;
-    };
+    for (a.in.birs, 0..) |ob, om| {
+        const tags = ob.insts.items(.tag);
+        const data = ob.insts.items(.data);
+        for (tags, data) |tag, x| switch (tag) {
+            .top => if (om == m and x.lhs < refs.len) {
+                refs[x.lhs] += 1;
+            },
+            .ext_value => if (x.lhs == m and m < a.in.provenance.len) {
+                const d2 = a.in.provenance[m].valueDecl(x.rhs) orelse continue;
+                if (d2.int() < refs.len) refs[d2.int()] += 1;
+            },
+            else => {},
+        };
+    }
     for (walk.calls, refs) |c, r| if (c != 0 and c != r) return .{};
-    for (walk.sites.items) |site| try a.route_sites.put(a.gpa, (@as(u64, site.module) << 32) | site.inst, site);
+    // A function the walk entered from two tails was walked twice, so its
+    // sites are listed twice; one is kept. Rows a tail began and abandoned
+    // (a record with a field no route gives) name no site and are unused.
+    var unique: std.ArrayList(RouteSite) = .empty;
+    for (walk.sites.items) |site| {
+        const gop = try a.route_sites.getOrPut(a.gpa, (@as(u64, site.module) << 32) | site.inst);
+        if (gop.found_existing) continue;
+        gop.value_ptr.* = site;
+        try unique.append(a.arena(), site);
+    }
     a.route_rows = walk.rows.items;
-    return .{ .rows = walk.rows.items, .sites = walk.sites.items };
+    return .{ .rows = walk.rows.items, .sites = unique.items };
 }
 
 fn readsModel(a: *Writes, m: u32, inst: Inst.Index, local: u32) Error!bool {
@@ -5559,7 +5579,9 @@ fn routeWalk(a: *Writes, w: *RouteWalk, m: u32, model: u32, body: Inst.Index, de
             if (t.m != fx.cmd_none.m or t.d != fx.cmd_none.d) return;
             try a.routeWalk(w, m, model, items[0], depth + 1);
         },
-        // Any other tail is no route; one that reads the model holds it.
+        // Any other tail is no route, and is lowered as written: what it
+        // returns, the model or a value that holds part of it, is no copy,
+        // so the routes' copies never meet it.
         else => {},
     }
 }
