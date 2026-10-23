@@ -2386,13 +2386,16 @@ that context, in whatever fiber, or none, the page runs it in (`Task.keepLogCont
 slots are the running fiber's. Which context the `update` of a message that a body sends has is
 open (dashboard `node-log-q4`). `boundary.md` §9.8.16 (b), amended the same day, has the details.
 
-*Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`):* a message's `update` has
-the program's log context, whoever sends the message: a context stops at the body. When the
-caller of the page's `send` has a log context of its own, `send` runs `update` inside
-`Task.withoutLogContext`, which sets the slot to the default and puts the old one back when
-`update` returns or throws. So the `annotate` around a body does not reach the `update` of a message that the
-body sends, or that `update`'s commands. The other slots are the caller's. `boundary.md`
-§9.8.16 (b), amended the same day, has the details.
+*Amended 2026-10-23 (#818; the owner, Cesar, dashboard `node-log-q4`):* this decides the
+sentence above that calls the question open. A message's `update` has the program's log context,
+whoever sends the message: a context stops at the body. When the caller of the page's `send` has
+a log context of its own, `send` runs `update` inside `Task.withoutLogContext`, which sets the
+slot to the default and puts the old one back when `update` returns. When `update` throws and
+leaves finalisers on the fiber, the old slots go back under them, so that each finaliser runs at
+the teardown with the context that it was put on in, as an `onExit` finaliser would. So the
+`annotate` around a body does not reach the `update` of a message that the body sends, or that
+`update`'s commands. The other slots are the caller's. `boundary.md` §9.8.16 (b), amended the
+same day, has the details.
 
 **Changing a slot** is only ever **scoped to a function**: `Clock.run`, `Log.annotate`, `Log.span`,
 `Log.minimum`, `Log.withSink`, `Trace.span`, `Trace.withExporter` and (P9) `Random.withSeed` set

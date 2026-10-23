@@ -4707,14 +4707,25 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   program's `update`, for `Browser.program` and `Browser.hosted` alike. When the calling fiber has
   a log context of its own (`Task.hasLogContext`), `send` runs `update` inside
   `Task.withoutLogContext`. That function sets the slot to the default context, and puts the old
-  one back when `update` returns or throws. The other slots stay the caller's. In a hosted program, a
+  one back when `update` returns. The other slots stay the caller's. In a hosted program, a
   message that is sent while an `update` runs is applied in the same call of `send`, after that
   `update`, so it has the program's context too.
+- **A throw in `update`.** A defect stops the page (§9.8.14), and the teardown then runs the
+  finalisers that the throw left on the fiber, last first. `update` can leave some of its own: the
+  restore of an `annotate`, and the release of a `bracket` that it opened. So when `update` throws
+  and leaves finalisers, `withoutLogContext` does not put the old slots back at once. It puts a
+  restore of them into the fiber's list, under `update`'s finalisers. At the teardown, `update`'s
+  finalisers run with `update`'s context, and then the caller's finalisers, such as the release of
+  a body's `bracket`, run with the caller's, as an `onExit` finaliser would (proposal §17.5). When
+  `update` throws and leaves no finaliser, the old slots go back at once. (For a body with no
+  fiber, the teardown runs the finalisers in a fiber with no slots, so they have the default
+  context: #811.)
 - **Cost.** `Task.hasLogContext` reads `slotted` first. In a build in which nothing sets a slot,
   it is `False`, and a release build keeps only the call of `update`, as before. Where a slot is
   set, each message reads the slot, and a message sent inside a context copies the slot record
-  once. `update` cannot wait, so `withoutLogContext` puts the old slots back in a `Js.finally`,
-  with no finaliser. So it writes none of the cells that a build with no fiber folds away
+  once. `update` cannot wait, so `withoutLogContext` puts the old slots back in a `Js.finally`.
+  After a throw, it edits the list of finalisers that is there. It calls neither `here` nor
+  `addFinalizer`, so it writes none of the cells that a build with no fiber folds away
   (`slotted`, `fibered`, `finalising`), not even in code that is not reached: one such write keeps
   the teardown in a release page that has no fiber. A development build folds nothing, so each
   page ships the check and the run. Measured on 622 builds of the `browser/tea` and `browser/dom`
