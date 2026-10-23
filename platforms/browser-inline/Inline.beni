@@ -418,32 +418,77 @@ roots rows elements from table at =
     ⊤
 
 
--- ---- Pushed state (`browser-inline.md` §8.4, amended 2026-10-22) -------
+-- ---- Pushed state (`browser-inline.md` §8.4, amended 2026-10-22, 2026-10-24)
 
---| `(model, table, key, raw)`: a keyed route. `table` holds `[key, row]`
---| pairs; the row of `key`, when there is one, is committed with `raw`. An
---| unknown key does nothing, as the route's default does.
+-- A route's row is `[key, F, field]`: the source's key, `0` for a row no
+-- keyed route names; the source's function, which validates and gives the
+-- old value or a new one; and the model's field. A program one of whose
+-- routes has a record field whose object the copy keeps adds the row's
+-- copy plan, `[key, F, field, plan]`, and calls the `…Planned` loaders.
+-- Each loader hands `loadRows` a copy of its own, so a page ships the one
+-- it calls: the walker only when a plan needs it.
+
+--| `(model, table, key, raw)`: a keyed route. The first row of `table`
+--| whose key is `key`, when there is one, is loaded with `raw`. An unknown
+--| key does nothing, as the route's default does.
 pub load : V, V, V, V → ⊤
-load model table key raw = Js.each table λpair →
-    if Js.same (Js.at pair 0) key then
-        loadAll model (Js.array [ Js.at pair 1 ]) (Js.array [ raw ])
+load model table key raw = keyed model table key raw assign
 
 
---| `(model, rows, raws)`: routes in turn. Every row's function runs first,
---| each with its raw value and the model's old value at its field, in
---| order; then each result that is not the old value is copied into it.
+--| `(model, rows, raws)`: routes in turn, each row loaded with the value
+--| `raws` holds at its field.
 pub loadAll : V, V, V → ⊤
-loadAll model rows raws =
+loadAll model rows raws = loadRows model rows (λrow → Js.get raws (fieldOf row)) assign
+
+
+--| `load` for rows with copy plans.
+pub loadPlanned : V, V, V, V → ⊤
+loadPlanned model table key raw = keyed model table key raw planned
+
+
+--| `loadAll` for rows with copy plans.
+pub loadAllPlanned : V, V, V → ⊤
+loadAllPlanned model rows raws = loadRows model rows (λrow → Js.get raws (fieldOf row)) planned
+
+
+keyed : V, V, V, V, (V, V, V → ⊤) → ⊤
+keyed model table key raw into =
+    row = Js.call table "find" [ Js.from λr → Js.same (Js.at r 0) key ]
+    if not (Js.isUndefined row) then
+        loadRows model (Js.array [ row ]) (λ_ → raw) into
+
+
+-- Every row's function runs first, each with its raw value and the model's
+-- old value at its field, in order; then each result that is not the old
+-- value is copied into it, by `into`.
+loadRows : V, V, (V → V), (V, V, V → ⊤) → ⊤
+loadRows model rows rawOf into =
     nexts =
         Js.call rows "map"
-            [ Js.from λrow i →
-                Js.apply (Js.at row 0) [ Js.at raws i, Js.get model (Js.to (Js.at row 1)) ]
-            ]
+            [ Js.from λrow → Js.apply (Js.at row 1) [ rawOf row, Js.get model (fieldOf row) ] ]
     Js.each rows λrow →
-        old = Js.get model (Js.to (Js.at row 1))
+        old = Js.get model (fieldOf row)
         next = Js.call nexts "shift" []
         if not (Js.same next old) then
-            copy old next (Js.at row 2)
+            into old next row
+
+
+fieldOf : V → String
+fieldOf row = Js.to (Js.at row 2)
+
+
+-- Every field of `next` into `old`: `next` is a record of the route's type,
+-- which a function of the raw value alone made, so its own fields are
+-- exactly the type's, and no field of it is a record whose object the copy
+-- keeps.
+assign : V, V, V → ⊤
+assign old next _ =
+    _ = Js.call (Js.global "Object") "assign" [ old, next ]
+    ⊤
+
+
+planned : V, V, V → ⊤
+planned old next row = copy old next (Js.at row 3)
 
 
 -- `next`'s fields into `old`, as `plan` lists them: a name is written, a
