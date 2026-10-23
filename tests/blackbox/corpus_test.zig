@@ -2347,7 +2347,7 @@ const Case = struct {
         if (c.cfg.mode == .strict and !c.bless) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 const d = try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, bytes, try worker_harness.inputs(c.arena, h, steps, config));
-                if (try run_hash.verified(testing.io, d)) {
+                if (run_hash.verified(testing.io, d)) {
                     RunCounts.add(&run_counts.skipped);
                     return;
                 }
@@ -2370,8 +2370,12 @@ const Case = struct {
             return error.ProgramFailed;
         }
         try c.expectGoldenMaybeBless(golden, program.stdout, c.bless);
-        // Verified: the golden holds exactly what the Worker printed.
-        if (digest) |d| try run_hash.record(testing.io, d);
+        // Verified: the golden holds exactly what the Worker printed. The
+        // digest recorded is of those bytes, not of the golden read before
+        // the run: a blessing run of another pass may rewrite the golden
+        // between the two reads, and the cache must say what this run
+        // showed.
+        if (digest != null) run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, out_dir, @tagName(pass), golden, program.stdout, try worker_harness.inputs(c.arena, h, steps, config)));
     }
 
     fn runPage(case: Case) !void {
@@ -2456,15 +2460,20 @@ const Case = struct {
             const page = shown.pages[next];
             next += 1;
             try c.pageVerdict(p, shown.run, page);
-            // Verified: the golden holds exactly what the page showed.
-            if (p.digest) |d| try run_hash.record(testing.io, d);
+            // Verified: the golden holds exactly what the page showed. The
+            // digest recorded is of the transcript the verdict compared, not
+            // of the golden `checkedPlan` read before the pages ran: a
+            // blessing run writes the development page's golden first, and
+            // the release page is compared with that one, so its digest must
+            // cover the golden it showed, not the one the blessing replaced.
+            if (p.digest != null) run_hash.record(testing.io, try run_hash.digestWith(c.arena, c.w, p.out, @tagName(p.pass), p.golden, (page orelse shown.run).stdout, try browser.page(c.arena, h, script.bytes)));
         }
         if (release_error) |err| return err;
         if (fuzz_plan) |f| {
             if (f.checked) RunCounts.add(if (f.skip) &run_counts.skipped else &run_counts.stale);
             if (!f.skip) {
                 try c.fuzzVerdict(f, shown.run, shown.pages[next]);
-                if (f.checked) try run_hash.record(testing.io, f.digest);
+                if (f.checked) run_hash.record(testing.io, f.digest);
             }
         }
     }
@@ -2577,7 +2586,7 @@ const Case = struct {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(plan.golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 var checked = plan;
                 checked.digest = try run_hash.digestWith(c.arena, c.w, plan.out, @tagName(plan.pass), plan.golden, bytes, try browser.page(c.arena, h, script.bytes));
-                checked.skip = try run_hash.verified(testing.io, checked.digest.?);
+                checked.skip = run_hash.verified(testing.io, checked.digest.?);
                 return checked;
             } else |_| {
                 // No golden: the comparison below reports it.
@@ -2685,7 +2694,7 @@ const Case = struct {
             return err;
         };
         try c.fuzzVerdict(plan, shown.run, if (shown.pages.len != 0) shown.pages[0] else null);
-        if (plan.checked) try run_hash.record(testing.io, plan.digest);
+        if (plan.checked) run_hash.record(testing.io, plan.digest);
     }
 
     var fuzz_flag_mutex: Io.Mutex = .init;
@@ -2730,7 +2739,7 @@ const Case = struct {
         pair.replay = checking or sweep;
         try browser.writeFuzzSpec(c.arena, c.w, pair, FuzzPlan.spec);
         const digest = try browser.fuzzDigest(c.arena, c.w, h, pair);
-        return .{ .pair = pair, .digest = digest, .skip = checking and try run_hash.verified(testing.io, digest), .checked = checking };
+        return .{ .pair = pair, .digest = digest, .skip = checking and run_hash.verified(testing.io, digest), .checked = checking };
     }
 
     /// The fuzz's report (`report`, null when the driver's `run` stopped
@@ -2830,7 +2839,7 @@ const Case = struct {
         if (c.cfg.mode == .strict and !bless and !sweep) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
                 const d = try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash), requests);
-                if (try run_hash.verified(testing.io, d)) {
+                if (run_hash.verified(testing.io, d)) {
                     RunCounts.add(&run_counts.skipped);
                     return;
                 }
@@ -2879,9 +2888,12 @@ const Case = struct {
             classify("{s}: exit=0 stdout-differs", .{passName(out_dir)});
             return err;
         };
-        // Verified: the golden holds exactly what the program printed, so
-        // the digest taken from it before the run is this run's.
-        if (digest) |d| try run_hash.record(testing.io, d);
+        // Verified: the golden holds exactly what the program printed. The
+        // digest recorded is of those bytes, not of the golden read before
+        // the run: the release pass runs in another process than the
+        // development pass, and under `BENI_WRITE_EXPECTED=1` that one may
+        // rewrite the golden between the two reads.
+        if (digest != null) run_hash.record(testing.io, try c.runDigest(out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash), requests));
     }
 
     /// A build's digest: a plain `run/` one's, or, for a server program,
