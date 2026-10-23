@@ -7528,8 +7528,9 @@ transport of (e.10)'s `post` and `ask`, in place of `stub.fetch` on `/__beni/pos
   is `Unreadable` at the asker, with one `Log.warn` line at the replier, and a post over it is
   dropped with the warning line an unprintable post gets (*R9-1*: on master the same ask over
   `stub.fetch` was answered 200, and over RPC without the check the host's 500 would have been a
-  defect; `ObjectRpc`'s `/big-ask` and `/big-reply` send 17 MiB of ASCII plus one `字`, 34 MiB
-  serialized). Streams, which the page says the limit does
+  defect; `ObjectRpc`'s `/big-ask` and `/big-reply` send 17 000 000 characters of ASCII, about
+  16.2 MiB, plus one `字`: 34 000 002 bytes serialized, and the host counted 34 000 207 with the
+  call's framing). Streams, which the page says the limit does
   not bind, are not used. A receiver that throws while it holds an ask is (f)'s defect: its abort
   rejects the pending call with the host's reset, and the asker sees `Err Reset` (*measured*,
   `workers/ObjectRpc`).
@@ -7849,7 +7850,12 @@ pub type PutError
 - *As built (2026-10-22, `Worker/Storage.beni`, `workers/ObjectStorage`):* the four operations as
   above; `TooLarge` counts two bytes per code unit of key and text plus 64 before the host is
   called (a 2 000 000-character value is refused; *2026-10-23, #858: UTF-16 units, the JavaScript
-  string's `length`, not `String.length`'s code points — 600 000 emoji are refused too*); `Full` is `kvPut`'s one caught text; a read
+  string's `length`, not `String.length`'s code points — 600 000 emoji are refused too. The local
+  host's own `kv.put` limit, measured by the review of #863: about 2 200 000 serialized bytes, one
+  byte per unit for a one-byte string and two for a two-byte one. Beni's ceiling of 2 000 000
+  bytes at two per unit, about 1 000 000 units of key and text, stays under it for every string;
+  an ASCII value could go to about 2 200 000 characters before the host refuses it*); `Full` is
+  `kvPut`'s one caught text; a read
   with another schema is `Err` with its issues; what one instance put, the instance after its
   abort reads in `restore`.
 

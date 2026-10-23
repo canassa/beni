@@ -125,9 +125,10 @@ ponged ctx n msg =
                     n + 1
 
         "big-reply" →
-            -- Over the host's 32 MiB RPC limit — 17 MiB of ASCII and one
-            -- character above U+00FF, which V8 serializes as two bytes per
-            -- unit: the asker gets Unreadable.
+            -- Over the host's 32 MiB RPC limit — 17 000 000 characters of
+            -- ASCII (about 16.2 MiB) and one above U+00FF, which V8
+            -- serializes as two bytes per unit, 34 000 002 bytes: the asker
+            -- gets Unreadable.
             Object.reply msg.reply (String.repeat "y" 17000000 ++ "字")
             n + 1
 
@@ -188,9 +189,9 @@ route ctx request =
                     Worker.text 503 "the ping is not available"
 
         ( Just pings, Just _, "/big-ask" ) →
-            -- Over the host's 32 MiB RPC limit — 17 MiB of ASCII and one
-            -- character above U+00FF, 34 MiB serialized: refused in beni
-            -- before the call.
+            -- Over the host's 32 MiB RPC limit — 17 000 000 characters of
+            -- ASCII (about 16.2 MiB) and one above U+00FF, 34 000 002 bytes
+            -- serialized: refused in beni before the call.
             Worker.text 200
                 (showAsk
                     (Object.ask (Worker.byName pings "p") Schema.string λr →
