@@ -178,7 +178,7 @@ const base = "http://127.0.0.1";
 // `ws` library's private `_socket`, since the library has no way to send
 // a frame it would refuse; the library still reads the server's answer.
 const rawClose = (ws, name, hex) => {
-  if (!/^(?:[0-9a-fA-F]{2})*$/.test(hex)) scriptError(`close frame of socket ${name}: "${hex}" is not an even count of hex digits`);
+  if (!/^(?:[0-9a-fA-F]{2})*$/.test(hex)) scriptError(`close frame of socket ${name}: "${hex}" is not hex: an even count of hex digits is wanted`);
   const payload = Buffer.from(hex, "hex");
   if (payload.length > 125) scriptError(`close frame of socket ${name}: ${payload.length} bytes, and a control frame holds at most 125`);
   const key = crypto.randomBytes(4);

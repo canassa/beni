@@ -5,9 +5,10 @@
 # cycle, over RPC as over fetch.
 {"path": "/cycle"}
 {"path": "/count"}
-# An ask over the host's 32 MiB RPC limit (17 MiB of ASCII plus one
-# character above U+00FF, two bytes a unit when serialized) is refused in
-# beni before the call; a reply over it is Unreadable at the asker.
+# An ask over the host's 32 MiB RPC limit (17 000 000 characters of ASCII,
+# about 16.2 MiB, plus one character above U+00FF: two bytes a unit when
+# serialized, 34 000 002 bytes) is refused in beni before the call; a reply
+# over it is Unreadable at the asker.
 {"path": "/big-ask"}
 {"path": "/big-reply"}
 {"path": "/count"}
