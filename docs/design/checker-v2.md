@@ -5502,6 +5502,11 @@ primitive, not an apparent BIR self-call such as `add a b = a + b`. Partial
 indexed reads and writes do not gain a total proof. A string-comparison
 primitive follows its actual core String.compare declaration, using an own
 declaration edge inside that module and the published fact elsewhere.
+A `key_compare` primitive is the same call on a string key. Totality reads
+only the interfaces of this module's transitive dependencies, which are final
+when it starts; any other may still be being published. A module that does not
+depend on `String` therefore has no String.compare proof, whatever order
+modules finish in (`fast-compiler.md` §10).
 
 P8 writes the bit in `Interface.Scheme.total`; private declarations carry the
 same answer in `Dispatch.EffectDecl.total`. Interface format 14 → 15 grows the

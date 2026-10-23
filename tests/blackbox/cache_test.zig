@@ -5569,8 +5569,9 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
     const victim = try std.fs.path.join(a, &.{ "cache", &relative });
     const good = try a.dupe(u8, try w.read(victim));
     // Entry header(32), then seven {offset,len} rows. Hoists is section 6.
+    // Entry format 14: embedded interfaces publish declaration totality.
     try testing.expect(good.len >= 88);
-    try testing.expectEqual(@as(u32, 13), std.mem.readInt(u32, good[8..12], .little));
+    try testing.expectEqual(@as(u32, 14), std.mem.readInt(u32, good[8..12], .little));
     try testing.expectEqual(@as(u32, 7), std.mem.readInt(u32, good[12..16], .little));
     const base = std.mem.readInt(u32, good[80..84], .little);
     const len = std.mem.readInt(u32, good[84..88], .little);
