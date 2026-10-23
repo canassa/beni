@@ -646,6 +646,17 @@ pub const RouteRow = struct {
     /// The record type's fields at the field, those that are records of
     /// their own each with its own plan: what the copy writes.
     plan: []const PlanItem,
+    /// The tail's call `F x model.f`, an instruction of `module`.
+    module: u32 = none,
+    call: u32 = none,
+    /// When `F`'s body is exactly `Result.withDefault (Json.decodeValue x)
+    /// old`: the `decodeValue` call, an instruction of `fn_module`; `none`
+    /// otherwise (§8.4, amended 2026-10-24).
+    decode: u32 = none,
+    /// Set by the emitter once the program's shapes are decided: the codec,
+    /// in `fn_module`'s plan, of a `decode` that is a shape run, whose
+    /// shape the row holds in place of `F`; `none` otherwise.
+    shape: u32 = none,
 };
 
 pub const PlanItem = struct { field: u32, sub: ?[]const PlanItem = null };
@@ -5662,7 +5673,7 @@ fn routeRow(a: *Writes, w: *RouteWalk, m: u32, model: u32, field: u32, given: In
     if (t.m == m or !try a.routeFunction(t.m, t.d)) return null;
     const at = try a.mkPath(rho_path, .field, field, 0);
     const plan = (try a.copyPlan(at, 0)) orelse return null;
-    try w.rows.append(a.arena(), .{ .field = field, .fn_module = t.m, .fn_decl = t.d, .plan = plan });
+    try w.rows.append(a.arena(), .{ .field = field, .fn_module = t.m, .fn_decl = t.d, .plan = plan, .module = m, .call = given.int(), .decode = a.decodeOrKeep(t.m, t.d) });
     return .{ .row = @intCast(w.rows.items.len - 1), .raw = args[0].int() };
 }
 
@@ -5680,6 +5691,34 @@ fn routeFunction(a: *Writes, m: u32, d: u32) Error!bool {
     const old = b.instData(params[1]).lhs;
     const body = decl.body.unwrap() orelse return false;
     return a.oldAtTails(m, body, old, 0);
+}
+
+/// The `Json.decodeValue x` call of `(m, d)` when its body is exactly
+/// `Result.withDefault (Json.decodeValue x) old`, `x` and `old` its two
+/// parameters: what the source writes as "the decoded value, or the old one
+/// when it does not decode" (§8.4, amended 2026-10-24); `none` otherwise.
+fn decodeOrKeep(a: *const Writes, m: u32, d: u32) u32 {
+    const b = a.bir(m);
+    const decl = b.decls[d];
+    const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
+    if (params.len != 2 or b.instTag(params[0]) != .pat_var or b.instTag(params[1]) != .pat_var) return none;
+    const body = decl.body.unwrap() orelse return none;
+    if (!a.callsCore(m, body, "Result", "withDefault")) return none;
+    const args = b.extraSlice(b.subRange(@fromBackingInt(b.instData(body).rhs)), Inst.Index);
+    if (args.len != 2 or b.instTag(args[1]) != .local or b.instData(args[1]).lhs != b.instData(params[1]).lhs) return none;
+    const decode = args[0];
+    if (!a.callsCore(m, decode, "Json", "decodeValue")) return none;
+    const decode_args = b.extraSlice(b.subRange(@fromBackingInt(b.instData(decode).rhs)), Inst.Index);
+    if (decode_args.len != 1 or b.instTag(decode_args[0]) != .local or b.instData(decode_args[0]).lhs != b.instData(params[0]).lhs) return none;
+    return decode.int();
+}
+
+/// Whether `e` of module `m` is a call of core's `module.name`.
+fn callsCore(a: *const Writes, m: u32, e: Inst.Index, module: []const u8, name: []const u8) bool {
+    const b = a.bir(m);
+    if (b.instTag(e) != .call) return false;
+    const t = a.valueTarget(m, @fromBackingInt(b.instData(e).lhs)) orelse return false;
+    return a.in.packages[t.m] == .core and std.mem.eql(u8, a.in.module_names[t.m], module) and std.mem.eql(u8, a.declName(t.m, t.d), name);
 }
 
 fn oldAtTails(a: *Writes, m: u32, e: Inst.Index, old: u32, depth: u32) Error!bool {

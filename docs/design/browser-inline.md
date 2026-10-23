@@ -1253,6 +1253,23 @@ ships no walker (`emit/release/inline/ValidatedLoader`, `CaseLoader`, `ErrorUnre
 `NestedStableLoad`). Validation, its order and the snapshot's all-or-nothing are unchanged: the
 functions are the source's own, and they all run before any copy.
 
+*Amended 2026-10-24 (#915): a row holds the shape of a function that decodes or keeps.* A route's
+function whose body is exactly `Result.withDefault (Json.decodeValue x) old`, `x` and `old` its two
+parameters, is "the decoded value, or the old one". When the program takes the shapes side of
+`schema.md` §6's fork and that run is a shape run, its row holds the run's shape in place of the
+function: `[key, shape, field]`. The loader decodes the raw value with core's `validShape` of it,
+which the lowering hands it last, and gives the decoded value or the old one, as the function's
+body does. `Result.withDefault`'s argument is the old value, so the decoded type is the field's
+type, and the copy is the one any route's is. The program then calls the `…Shaped` loaders. They
+tell a row's shape (an array) from a function by `typeof`, so a row whose function is anything
+else — a `case` on the run, `CaseLoader`'s `W2.replace` — keeps its function. The tail's call of
+the function is not followed by reachability (`Emit.shapeRoutes`, a cut at the call's callee), and
+the shape and `validShape` are roots. So the function is in the output only when something else
+names it. The codec's shape is exported by the function's module, which in a development build the
+program's module imports. On the workers side of the fork the row keeps its function: a worker is a
+function too, and the loader could not tell it from the route's own (`emit/release/inline/
+ShapeLoader`, `browser/inline/ShapeLoader`, whose transcript is `CaseLoader`'s).
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host

@@ -3579,7 +3579,7 @@ const Emitter = struct {
             // The routes, in the lowering's terms.
             const routes: Writes.Routes = if (routed) prog.routes else .{};
             const rrows = try a.alloc(Lower.Direct.RouteRow, routes.rows.len);
-            for (rrows, routes.rows) |*o, r| o.* = .{ .field = @fromBackingInt(r.field), .fn_module = r.fn_module, .fn_decl = r.fn_decl, .plan = try planOf(a, r.plan) };
+            for (rrows, routes.rows) |*o, r| o.* = .{ .field = @fromBackingInt(r.field), .fn_module = r.fn_module, .fn_decl = r.fn_decl, .plan = try planOf(a, r.plan), .module = r.module, .call = r.call, .shape = if (r.shape == Writes.none) null else r.shape };
             const rsites = try a.alloc(Lower.Direct.RouteSite, routes.sites.len);
             for (rsites, routes.sites) |*o, st| o.* = .{
                 .module = st.module,
@@ -4400,6 +4400,44 @@ const Emitter = struct {
         e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain, &conflicts);
     }
 
+    /// `browser-inline.md` §8.4, amended 2026-10-24: a route whose function
+    /// is `Result.withDefault (Json.decodeValue x) old`, the run a shape run,
+    /// holds its codec's shape in its row in place of the function, and the
+    /// loader runs `validShape` of it as the function's body does. So the
+    /// tail's call of the function is not followed — the function is reached
+    /// only if something else names it — and the shape and `validShape` are
+    /// roots.
+    fn shapeRoutes(e: *Emitter, in: *Reach.Input, birs: []const *const Bir, tables: []const *const Dispatch) !void {
+        if (e.writes == null) return;
+        const sg = &(e.schema_graph orelse return);
+        const runner = in.coreDeclNamed(.Schema, "validShape") orelse return;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        try cuts.appendSlice(e.scratch, in.cuts);
+        var pinned: std.ArrayList(Reach.Node) = .empty;
+        try pinned.appendSlice(e.scratch, in.pinned);
+        var any = false;
+        for (e.writes_calls) |*call| {
+            const prog = &call.program;
+            // Only a program whose routes are lowered as routes (`buildPlans`).
+            if (!prog.recognised or commandsRun(prog)) continue;
+            for (@constCast(prog.routes.rows)) |*row| {
+                if (row.decode == Writes.none) continue;
+                const fm: Graph.Index = @fromBackingInt(@intCast(row.fn_module));
+                const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, false, true);
+                const k = sites.shapeCodecOfCall(row.decode) orelse continue;
+                row.shape = k;
+                const callee = birs[row.module].instData(@fromBackingInt(row.call)).lhs;
+                try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(row.module)), .lo = callee, .hi = callee });
+                try pinned.append(e.scratch, Reach.schemaNode(sg.codecTarget(fm, k), .shape));
+                any = true;
+            }
+        }
+        if (!any) return;
+        try pinned.append(e.scratch, runner);
+        in.cuts = cuts.items;
+        in.pinned = pinned.items;
+    }
+
     /// §9's elimination: every module's edge lists, on the workers, then
     /// the walk from the build's roots. Once per build; a second walk reads
     /// the same lists (`walk`).
@@ -4481,6 +4519,7 @@ const Emitter = struct {
                 runs += SchemaValid.shapeRunCount(s);
             }
             in.schema_shapes = e.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
+            if (in.schema_shapes) try e.shapeRoutes(&in, birs, tables);
         }
         // Every module's edges on the workers, each into its own slot and
         // its worker's `edges` arena — read from its row, or built — then

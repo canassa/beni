@@ -1,0 +1,9 @@
+element "root"
+input [data-role=seats] "x"
+detail window rr-push {"type": "serverSet", "widget": "w2", "state": {"venue": "Hall", "seats": 3}}
+detail window rr-push {"type": "serverSet", "widget": "w2", "state": {"venue": "Hall"}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 2}, "w2": {"venue": "West", "seats": 7}}}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 3}, "w2": {"venue": 5}}}}
+input [data-role=seats] "9"
+input [data-role=venue] "East"
+click [data-role=four]

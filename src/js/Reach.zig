@@ -351,7 +351,7 @@ pub const Input = struct {
     /// module being lowered IS that module and both paths name one
     /// declaration.
     /// `coreDecl`, the value named by its text.
-    fn coreDeclNamed(in: Input, owner: InternPool.WellKnown, value: []const u8) ?Node {
+    pub fn coreDeclNamed(in: Input, owner: InternPool.WellKnown, value: []const u8) ?Node {
         const interner = in.interner orelse return null;
         const symbol = interner.find(value) orelse return null;
         const m = in.graph.lookup(.core, owner.symbol()) orelse return null;

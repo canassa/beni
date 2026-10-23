@@ -78,11 +78,17 @@ pub const lowering: m.Lowering = .{
         .{ .name = "roots", .arity = 5 },
         // The pushed-state loader (§8.4, amended 2026-10-22 and 2026-10-24):
         // `(model, table, key, raw)` a keyed route, `(model, rows, raws)`
-        // routes in turn; the `…Planned` pair for rows with copy plans.
+        // routes in turn; the `…Planned` pair for rows with copy plans, and
+        // the `…Shaped` ones for rows that may hold a shape, which take
+        // `validShape` last.
         .{ .name = "load", .arity = 4 },
         .{ .name = "loadAll", .arity = 3 },
         .{ .name = "loadPlanned", .arity = 4 },
         .{ .name = "loadAllPlanned", .arity = 3 },
+        .{ .name = "loadShaped", .arity = 5 },
+        .{ .name = "loadAllShaped", .arity = 4 },
+        .{ .name = "loadShapedPlanned", .arity = 5 },
+        .{ .name = "loadAllShapedPlanned", .arity = 4 },
     },
     .module = module,
     .root = root,
