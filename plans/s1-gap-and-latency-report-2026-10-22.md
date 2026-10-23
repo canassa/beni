@@ -288,6 +288,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #895 (`93249ae2b`; fix 7, #668: one closure per root, readers registered at mount, a loader for pushed state. +9.0, not −65: at N ≥ 16 the model is a cell and every handler stays at the program site; see #896) | 241.1 | | 1 702 | 64 252 | 1.25 | 1.50 |
 | after #899 (`ba2c5ef0c`; the generator's `replace` shape is a route, so every slice is held and every forwarding handler is in its root, #896 causes 1–2) | 208.0 | | 1 738 | 55 930 | 1.28 | 1.31 |
 | after #902 (`05019dcfa`; no store back of an unchanged model, slice or Tick answer, no dead `,c`, #896 cause 3) | 207.7 | | 1 732 | 55 859 | 1.27 | 1.30 |
+| after #909 (`227b61fb6`; a smaller group runner and loader, and a push pass that no longer lists every bucket, #896 cause 4) | 204.4 | | 1 667 | 54 917 | 1.23 | 1.28 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
@@ -318,13 +319,13 @@ the mean of three seeds.
 
 ### Status, 2026-10-23 (end of day)
 
-`05019dcfa`: slope **207.7** B/widget, N = 1 **1 732** (1.27× the bar), N = 256 **55 859** (1.30×). The day
-went 241.0 → 207.7, with the steps in the table above.
+`227b61fb6`: slope **204.4** B/widget, N = 1 **1 667** (1.23× the bar), N = 256 **54 917** (1.28×). The day
+went 241.0 → 204.4, with the steps in the table above.
 
 - **Fix 7 delivered −24, not −65.** The estimate came from hand-editing the output into tea-inline's
   shape, and the built shape still differs from tea-inline's. #896 will list where the remaining bytes
   are, per widget, against tea-inline's output for the same seed.
 - **N = 1 got worse: 1 446 → 1 732 B.** Fix 7 added a fixed runtime (group runner, ordinal sort,
   copy-plan walker, loader) that a one-widget page pays in full. It is about +290 B once against −24 B
-  per widget, so it breaks even at about 12 widgets. #909 makes these pieces smaller.
-- **Still needed for the bar:** about 48 B/widget on the slope, and about 380 B on the N = 1 page.
+  per widget, so it breaks even at about 12 widgets. #909 made them smaller (1 732 → 1 667 B).
+- **Still needed for the bar:** about 45 B/widget on the slope, and about 310 B on the N = 1 page.
