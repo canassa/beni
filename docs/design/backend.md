@@ -1070,6 +1070,11 @@ no longer the spread `({ ...r, a: x })`:
   record (Â§15.5, amended the same day). A runtime may keep such a value, but it never reads it expecting the
   contents it had.
 
+*As built 2026-10-23 (#315, R6; `ownership-checker.md` §31.12 slice 3):* the lowering above, in every module
+whose table is clean — an application module checked under enforcement, every demand accepted. Core, the
+platforms and any module checked without enforcement keep `({ ...r, a: x })` until O4, so their output did not
+move. `--sanitize-records` (hidden, development only) is the stale-read sanitiser for records.
+
 #### The representation: E1t
 
 *Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*

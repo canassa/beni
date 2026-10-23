@@ -306,6 +306,9 @@ pub const Options = struct {
     /// build's test hooks*); a platform's test hooks are in the build only
     /// with it.
     test_hooks: bool = false,
+    /// `--sanitize-records`, the hidden test-only flag (`src/Cli.zig`,
+    /// `Lower.Input.sanitize_records`).
+    sanitize_records: bool = false,
     /// `--schema-library`, the hidden test-only flag (`src/Cli.zig`): every
     /// schema declaration's `parse` and `print` run its description through
     /// the library interpreter, and no worker is written — the forced
@@ -4951,6 +4954,7 @@ const Emitter = struct {
                 .unit_results = e.options.release,
                 .development = !e.options.release,
                 .test_hooks = e.options.test_hooks,
+                .sanitize_records = e.options.sanitize_records,
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
                 .schema_library = e.options.schema_library,

@@ -337,6 +337,14 @@ pub const Input = struct {
     /// What `Js.testHooks` is: `true` under the hidden `--test-hooks`
     /// (`backend.md` §4, *`Js.testHooks` is the build's test hooks*).
     test_hooks: bool = false,
+    /// The hidden `--sanitize-records` (`ownership-checker.md` §31.12 slice
+    /// 3): a record written in place is copied into a new object, and each
+    /// field the update wrote is made, on the old object, a read that
+    /// throws. A holder older than the write then traps where it reads a
+    /// written field, which is exactly a stale read; the hoisted reads run
+    /// before it. Test-only, development builds only, and only in a module
+    /// whose records are written in place.
+    sanitize_records: bool = false,
     /// The build's schema plans and what reads them (`schema.md` §6), when
     /// a module declares or uses a schema. Null: the module emits none.
     schemas: ?*const SchemaGraph = null,
@@ -1286,6 +1294,20 @@ pub const Lowerer = struct {
     /// The `let`s that lowering leaves out: an arm's statements, outside
     /// the mount of its markup.
     let_skip: []const Inst.Index = &.{},
+    /// §31.10, R6: the module's hoisted reads, indexed once its table is
+    /// clean (`hoistsReady`). `hoist_at` lists the reads a placement binds,
+    /// by `(instruction, phase)`; `hoist_prefix` the read each rewritten
+    /// field access or record-pattern binding names; `hoist_live` the
+    /// temporary that stands for a read in the lowering under way.
+    hoist_ready: bool = false,
+    hoist_at: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
+    hoist_prefix: std.AutoHashMapUnmanaged(u64, std.ArrayList(u32)) = .empty,
+    hoist_live: []HoistLive = &.{},
+    /// Raised for each top-level lowering of a declaration: a temporary
+    /// bound in another lowering is not this one's.
+    hoist_gen: u32 = 0,
+    /// Each read row's group: the row that stands for its source read.
+    hoist_groups: []const u32 = &.{},
     /// The values of `let`s `directReachesDebug` found reach no `Debug`.
     debug_free: std.DynamicBitSetUnmanaged = .{},
     /// Which body of the declaration being lowered this is
@@ -1496,6 +1518,9 @@ pub const Lowerer = struct {
     /// declaration prints does not depend on which others survived.
     pub fn restartNames(l: *Lowerer) void {
         l.next_tag = 1;
+        // A hoisted read's temporary is named in this numbering, and so
+        // belongs to the lowering it was bound in (§31.14).
+        l.hoist_gen +%= 1;
     }
 
     /// A fresh compiler-made name from `base`, unique in the top-level
@@ -5017,6 +5042,7 @@ pub const Lowerer = struct {
         const saved = l.evidence_out;
         l.evidence_out = out;
         defer l.evidence_out = saved;
+        try l.placeHoists(out, inst, 0);
         const d = l.bir.instData(inst);
         if (l.deadArm(inst)) {
             const nothing = try l.add(.undefined_lit, l.pos(inst), Node.Data.unused, Node.Data.unused);
@@ -6059,10 +6085,197 @@ pub const Lowerer = struct {
         };
     }
 
+    // ---- Records written in place (ownership-checker.md §31.10, §31.14) ---
+
+    /// What stands for one read in the lowering under way: the row that
+    /// bound it, its temporary, and the lowering that bound it.
+    const HoistLive = struct { row: u32, name: JsIr.NameIndex, gen: u32 };
+
+    const hoist_binding_key: u64 = 1 << 63;
+
+    /// Index the module's hoist table, once, when its records are written
+    /// in place. A read is grouped with every other row of the same source
+    /// read (its instruction, binding and closure): two writes may
+    /// invalidate one read at different depths, and the first placement the
+    /// lowering meets binds it (§31.14, *before the first accepted write*).
+    fn hoistsReady(l: *Lowerer) Allocator.Error!bool {
+        if (!l.in.ownership.clean) return false;
+        if (l.hoist_ready) return true;
+        l.hoist_ready = true;
+        const t = l.in.ownership;
+        const groups = try l.scratch.alloc(u32, t.reads.len);
+        var by_read: std.AutoHashMapUnmanaged([3]u32, u32) = .empty;
+        for (t.reads, 0..) |r, i| {
+            const g = try by_read.getOrPut(l.scratch, .{ r.inst, r.binding, r.capture });
+            if (!g.found_existing) g.value_ptr.* = @intCast(i);
+            groups[i] = g.value_ptr.*;
+            const at = try l.hoist_at.getOrPut(l.scratch, (@as(u64, r.placement) << 1) | r.phase);
+            if (!at.found_existing) at.value_ptr.* = .empty;
+            try at.value_ptr.append(l.scratch, @intCast(i));
+            const target = try l.hoist_prefix.getOrPut(l.scratch, l.hoistTarget(r));
+            if (!target.found_existing) target.value_ptr.* = .empty;
+            try target.value_ptr.append(l.scratch, @intCast(i));
+        }
+        l.hoist_groups = groups;
+        l.hoist_live = try l.scratch.alloc(HoistLive, t.reads.len);
+        @memset(l.hoist_live, .{ .row = Hoists.none, .name = .none, .gen = 0 });
+        // Generation 0 marks a read no lowering bound.
+        if (l.hoist_gen == 0) l.hoist_gen = 1;
+        return true;
+    }
+
+    /// The node a read's temporary replaces: the field access at the end of
+    /// its prefix, or, when the prefix ends in a record pattern's field,
+    /// that pattern's binding.
+    fn hoistTarget(l: *const Lowerer, r: Hoists.Read) u64 {
+        var steps = r.path_len - r.prefix_len;
+        if (r.binding != Hoists.none) {
+            if (steps == 0) return hoist_binding_key | (@as(u64, r.decl) << 32) | r.binding;
+            steps -= 1;
+        }
+        var inst: Inst.Index = @fromBackingInt(r.inst);
+        while (steps > 0) : (steps -= 1) inst = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+        return inst.int();
+    }
+
+    /// Bind the temporaries placed at `inst` (§31.14): before it (phase 0),
+    /// or after an update's values and before its stores (phase 1). Each is
+    /// the holder's path to the written field, read as the source writes it.
+    fn placeHoists(l: *Lowerer, out: *StmtList, inst: Inst.Index, phase: u1) Allocator.Error!void {
+        if (!try l.hoistsReady()) return;
+        const rows = l.hoist_at.get((@as(u64, inst.int()) << 1) | phase) orelse return;
+        const t = l.in.ownership;
+        const p = l.pos(inst);
+        for (rows.items) |ri| {
+            const r = t.reads[ri];
+            const g = l.hoist_groups[ri];
+            const was = l.hoist_live[g];
+            if (was.gen == l.hoist_gen and was.row != ri) continue;
+            if (std.debug.runtime_safety) std.debug.assert(l.decl_index == r.decl);
+            const value = try l.hoistValue(r, p);
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, value, p);
+            l.hoist_live[g] = .{ .row = ri, .name = n, .gen = l.hoist_gen };
+        }
+    }
+
+    /// `holder.f₁.….fₖ`, `k` the read's prefix: the BIR's own access chain
+    /// from the read back to the holder, then the pattern's field.
+    fn hoistValue(l: *Lowerer, r: Hoists.Read, p: u32) Allocator.Error!Node.Index {
+        var chain: std.ArrayList(Inst.Index) = .empty;
+        var inst: Inst.Index = @fromBackingInt(r.inst);
+        while (true) switch (l.bir.instTag(inst)) {
+            .field_access, .tuple_index => {
+                try chain.append(l.scratch, inst);
+                inst = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
+            },
+            else => break,
+        };
+        var value = try l.ident(try l.localName(r.holder), p);
+        var k: u32 = 0;
+        var i = chain.items.len;
+        while (i > 0 and k < r.prefix_len) : (k += 1) {
+            i -= 1;
+            const step = chain.items[i];
+            const d = l.bir.instData(step);
+            value = if (l.bir.instTag(step) == .field_access)
+                try l.fieldMember(value, l.bir.symbols[d.rhs], p)
+            else
+                try l.member(value, try l.slotName(d.rhs), p);
+        }
+        if (k < r.prefix_len) {
+            // The record pattern's own field: the binding's name is it.
+            const locals = l.bir.declLocals(l.bir.decls[r.decl]);
+            const field = locals[r.binding].name.unwrap() orelse unreachable;
+            value = try l.fieldMember(value, l.bir.symbols[field], p);
+        }
+        return value;
+    }
+
+    /// The temporary that stands for the read `key` names, or null when
+    /// another row of the same read was bound first (its own target, inside
+    /// or around this one, stands for it). A read whose temporary was never
+    /// placed is a miscompile, never emitted as the old access.
+    fn hoistedRead(l: *Lowerer, key: u64, p: u32) Allocator.Error!?Node.Index {
+        if (!try l.hoistsReady()) return null;
+        const rows = l.hoist_prefix.get(key) orelse return null;
+        for (rows.items) |ri| {
+            const live = l.hoist_live[l.hoist_groups[ri]];
+            if (live.gen != l.hoist_gen) std.debug.panic("ownership: a hoisted record read is lowered before its placement (read row {d})", .{ri});
+            if (live.row == ri) return try l.ident(live.name, p);
+        }
+        return null;
+    }
+
+    /// `{ r | f₁ = v₁, … }` written in place (§31.10): the base, then each
+    /// value in written order, every one evaluated before any store; then
+    /// the reads hoisted after the operands; then the stores; the value is
+    /// the base's object. Under the hidden sanitiser the stores go into a
+    /// copy, and each written field of the old object becomes a read that
+    /// throws: a holder older than the write traps there.
+    fn recordUpdateInPlace(l: *Lowerer, out: *StmtList, inst: Inst.Index, p: u32) Allocator.Error!Node.Index {
+        const d = l.bir.instData(inst);
+        const fields = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Bir.Field);
+        const insts = try l.scratch.alloc(Inst.Index, fields.len + 1);
+        insts[0] = @fromBackingInt(@intCast(d.lhs));
+        for (fields, insts[1..]) |f, *slot| slot.* = f.value;
+        const values = try l.orderedExprs(out, insts, false);
+        const phased = l.hoist_at.contains((@as(u64, inst.int()) << 1) | 1);
+        // The object written: a name, evaluated once.
+        var base = values[0];
+        if (l.b.tagOf(base) != .ident or l.isMutable(base)) {
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, base, p);
+            base = try l.ident(n, p);
+        }
+        // Every value before any store: a later value may read a field an
+        // earlier store writes (`{ r | a = r.b, b = r.a }` swaps), and the
+        // hoisted reads come after the operands.
+        if (fields.len > 1 or phased or l.in.sanitize_records) for (values[1..]) |*v| {
+            if (l.isAtom(v.*)) continue;
+            const n = try l.fresh(l.well.temp);
+            try l.constDecl(out, n, v.*, p);
+            v.* = try l.ident(n, p);
+        };
+        try l.placeHoists(out, inst, 1);
+        const base_name: JsIr.NameIndex = @fromBackingInt(@intCast(l.b.dataOf(base).lhs));
+        if (l.in.sanitize_records) {
+            const copy = try l.fresh(l.well.temp);
+            try l.constDecl(out, copy, try l.object(&.{try l.add(.spread_property, p, (try l.ident(base_name, p)).int(), Node.Data.unused)}, p), p);
+            for (fields, values[1..]) |f, value| {
+                try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.fieldMember(try l.ident(copy, p), l.bir.symbol(f.name), p)).int(), value.int()));
+            }
+            for (fields) |f| try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.staleField(try l.ident(base_name, p), l.bir.symbol(f.name), p)).int(), Node.Data.unused));
+            return l.ident(copy, p);
+        }
+        for (fields, values[1..]) |f, value| {
+            try out.append(l.scratch, try l.add(.assign_stmt, p, (try l.fieldMember(try l.ident(base_name, p), l.bir.symbol(f.name), p)).int(), value.int()));
+        }
+        return l.ident(base_name, p);
+    }
+
+    /// The sanitiser's trap (`Input.sanitize_records`):
+    /// `Object.defineProperty(old, "f", { get: () => { throw new Error(…) } })`,
+    /// naming the field and the update that wrote it.
+    fn staleField(l: *Lowerer, old: Node.Index, field: Symbol, p: u32) Allocator.Error!Node.Index {
+        const field_text = l.interner.slice(field);
+        const message_text = try std.fmt.allocPrint(l.scratch, "beni: a stale read of the record field `{s}`, which an update in {s} changed in place (at byte {d})", .{ field_text, l.interner.slice(l.module_name), p });
+        const global = try l.add(.global_this, p, Node.Data.unused, Node.Data.unused);
+        const err = try l.member(global, try l.interner.getOrPut(l.gpa, "Error"), p);
+        const message = try l.stringNode(message_text, p);
+        const made = try l.add(.new_call, p, err.int(), @backingInt(try l.b.addRecord(try l.b.addRange(&.{message}))));
+        const getter = try l.arrowOf(&.{}, &.{try l.add(.throw_stmt, p, made.int(), Node.Data.unused)}, p);
+        const descriptor = try l.object(&.{try l.property(try l.interner.getOrPut(l.gpa, "get"), getter, p)}, p);
+        const object_ctor = try l.member(global, try l.interner.getOrPut(l.gpa, "Object"), p);
+        const define = try l.member(object_ctor, try l.interner.getOrPut(l.gpa, "defineProperty"), p);
+        return l.call(define, &.{ old, try l.stringNode(field_text, p), descriptor }, p);
+    }
+
     fn exprValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         l.region = inst;
+        try l.placeHoists(out, inst, 0);
         if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         if (l.arm_override) |ov| if (try l.overriddenArm(out, ov, inst)) |node_| return node_;
         if (l.msg_track) |mt| if (try l.trackedExpr(out, mt, inst)) |node_| return node_;
@@ -6121,9 +6334,14 @@ pub const Lowerer = struct {
             .list => return l.arrayNode(try l.exprList(out, Bir.inlineRange(d)), p),
             .record => return l.recordNode(out, Bir.inlineRange(d), p),
             .record_update => {
-                // A clean channel is the prerequisite of every future store.
-                // This slice retains the spread, including in clean modules.
-                if (l.in.ownership.clean) l.in.ownership.assertAccepted(inst);
+                // A clean channel is the prerequisite of every store: every
+                // update of such a module was accepted, and is written in
+                // place (§31.10). Core, the platforms and any module checked
+                // without enforcement keep the spread until O4.
+                if (l.in.ownership.clean) {
+                    l.in.ownership.assertAccepted(inst);
+                    return l.recordUpdateInPlace(out, inst, p);
+                }
 
                 // The base, then the updated fields in written order
                 // (`language.md` §6). Nothing is sorted — a spread carries
@@ -6144,10 +6362,14 @@ pub const Lowerer = struct {
                 return l.object(properties.items, p);
             },
             .field_access => {
+                // A read of a written field the lowering read before the
+                // write (§31.14): its temporary.
+                if (try l.hoistedRead(inst.int(), p)) |t| return t;
                 const target = try l.expr(out, @fromBackingInt(@intCast(d.lhs)));
                 return l.fieldMember(target, l.bir.symbols[d.rhs], p);
             },
             .tuple_index => {
+                if (try l.hoistedRead(inst.int(), p)) |t| return t;
                 const target = try l.expr(out, @fromBackingInt(@intCast(d.lhs)));
                 return l.member(target, try l.slotName(d.rhs), p);
             },
@@ -10718,6 +10940,7 @@ pub const Lowerer = struct {
         for (defs) |def| {
             const d = l.bir.instData(def);
             const p = l.pos(def);
+            try l.placeHoists(out, def, 0);
             if (l.let_skip.len != 0 and std.mem.indexOfScalar(Inst.Index, l.let_skip, def) != null) continue;
             switch (l.bir.instTag(def)) {
                 .let_def => {
@@ -10741,6 +10964,8 @@ pub const Lowerer = struct {
                         // name exactly as `go i acc = …` does.
                         const value_inst: Inst.Index = @fromBackingInt(@intCast(d.rhs));
                         if (l.bir.instTag(value_inst) == .lambda) {
+                            // Its eager reads (§31.6): the lambda is made here.
+                            try l.placeHoists(out, value_inst, 0);
                             const ld = l.bir.instData(value_inst);
                             const lambda_p = l.pos(value_inst);
                             const lambda_params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(ld.lhs))), Inst.Index);
@@ -12978,7 +13203,10 @@ pub const Lowerer = struct {
                 for (l.bir.extraSlice(Bir.inlineRange(d), u32)) |local| {
                     if (local >= l.locals.len) continue;
                     const field = l.locals[local].name.unwrap() orelse continue;
-                    const value = try l.fieldMember(subject, l.bir.symbols[field], p);
+                    // A written field this pattern binds after the write
+                    // reads the temporary bound before it (§31.14).
+                    const hoisted = if (l.decl_index) |decl| try l.hoistedRead(hoist_binding_key | (@as(u64, decl) << 32) | local, p) else null;
+                    const value = hoisted orelse try l.fieldMember(subject, l.bir.symbols[field], p);
                     try l.constDecl(out, try l.localName(local), value, p);
                 }
             },
@@ -17366,6 +17594,11 @@ pub const Lowerer = struct {
             const local = st.built.values[row.captures.start + k].capture;
             if (local < l.local_names.len) l.local_names[local] = s;
         };
+        // The row's eager reads (§31.6): the runtime calls a row's
+        // functions while it renders the `For` that makes them, so a read
+        // at the function's start reads the field the closure captured
+        // before any update can write it.
+        try l.placeHoists(&stmts, source.function, 0);
         for (l.bir.extraSlice(source.lets, Inst.Index)) |let| {
             try l.letBindings(&stmts, l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(let).lhs))));
         }
@@ -17425,6 +17658,8 @@ pub const Lowerer = struct {
                 else => try l.bindings(&stmts, param, try l.ident(bound, p)),
             }
         }
+        // As `markupRowValues`: the row's eager reads at its function's start.
+        try l.placeHoists(&stmts, source.function, 0);
         for (l.bir.extraSlice(source.lets, Inst.Index)) |let| {
             try l.letBindings(&stmts, l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(let).lhs))));
         }

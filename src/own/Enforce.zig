@@ -159,6 +159,11 @@ pub fn checkModule(ctx: *const Context, d: *@import("../check/Driver.zig"), m: G
     const block = if (private_only) try block_wire.write(&o, gpa, &.{}) else try o.writeBlock(m.int());
     if (!private_only) {
         d.hoists[m.int()] = try reports[0].hoist_table.clone(gpa);
+        // §31.10, R6: a module checked under enforcement whose every demand
+        // was accepted lowers its record updates in place. Core and the
+        // platforms keep their spreads until O4 (the owner's answer 3),
+        // and a report-only module never authorises a store.
+        d.hoists[m.int()].clean = ctx.ins.packages[m.int()] == .app and report and allAccepted(reports[0]);
         block_wire.certify(block, reports[0]);
     }
     session.ownership_blocks[m.int()] = block;
@@ -178,6 +183,15 @@ pub fn checkModule(ctx: *const Context, d: *@import("../check/Driver.zig"), m: G
     ctx.ins.blocks[m.int()] = d.interfaces[m.int()].ownership;
 
     if (report) try diagnostics(session, reports, &d.per_module[m.int()]);
+}
+
+/// Whether a module's report has no rejected or pending line and reached
+/// no limit: the condition, beside enforcement, for its records to be
+/// written in place (§31.10).
+fn allAccepted(r: Ownership.ModuleReport) bool {
+    if (!r.checked or r.limits.len != 0) return false;
+    for (r.demands) |d| if (d.verdict != .accepted) return false;
+    return true;
 }
 
 fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest: *std.ArrayList(CheckDiagnostics.Item)) Allocator.Error!void {

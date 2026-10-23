@@ -766,6 +766,15 @@ pub fn build(b: *std.Build) void {
     lost.has_side_effects = true;
     lost_step.dependOn(&lost.step);
 
+    // Every `run/` program built again with its records written in place,
+    // under the hidden stale-read sanitiser, against its golden, recorded
+    // under spreads (ownership-checker.md §31.12 slice 3); a program the
+    // ownership checker refuses under `--ownership-everywhere` is skipped.
+    // Not a gate: a third build and run of every `run/` program. The
+    // gates run the `.in-place` fixtures, the seeded differential corpus.
+    const in_place_step = b.step("test-records-in-place", "Build every run/ program with its records written in place, as shipped and under the stale-read sanitiser, and compare its output with its golden (ownership-checker.md §31.12); not a gate");
+    in_place_step.dependOn(&bb.run(corpus_test, .{ .root = "tests/corpus", .part = "run_dev", .in_place = "all" }).step);
+
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast }).step);
 
@@ -2294,6 +2303,9 @@ const HarnessEnvironment = struct {
     /// fuzz longer than the gates' (`zig build fuzz`).
     fuzz_seeds: []const u8 = "",
     fuzz_steps: []const u8 = "",
+    /// The corpus walker's `BENI_IN_PLACE` (`all`): every `run/` fixture
+    /// built again with its records written in place, under the sanitiser.
+    in_place: []const u8 = "",
 };
 
 /// The black-box test roots, compiled against the build's target and
@@ -2409,6 +2421,7 @@ const Blackbox = struct {
         if (bb.miniflare.len != 0) r.setEnvironmentVariable("BENI_MINIFLARE", bb.miniflare);
         r.setEnvironmentVariable("BENI_FUZZ_SEEDS", env.fuzz_seeds);
         r.setEnvironmentVariable("BENI_FUZZ_STEPS", env.fuzz_steps);
+        r.setEnvironmentVariable("BENI_IN_PLACE", env.in_place);
         const exe_dir = switch (env.exe) {
             .safe => bb.safe_dir,
             .fast => perf_bin_dir,

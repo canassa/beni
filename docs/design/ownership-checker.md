@@ -7458,6 +7458,42 @@ keeps nothing across renders.
    amended). `browser-inline` then emits an in-place field write for a single-module program, pinned by an
    `emit/release/inline/` golden and a page that behaves as the spread version did (#315, *Done when*).
 
+   *As built (2026-10-23, slice R6 of #315): the lowering.* A module's table is **clean** when it was checked
+   under enforcement, is an application module, and every one of its demands was accepted (`Enforce.allAccepted`);
+   core and the platforms keep their spreads until O4 (the owner's answer 3). In a clean module,
+   `Lower.recordUpdateInPlace` writes every `record_update`: the base and the values in written order
+   (`orderedExprs`), the base bound to a name, every value bound before any store when the update writes more
+   than one field or has reads hoisted after its operands, then those reads (phase 1), then
+   `b.f = t` per field in written order, and the update's value is `b`. A read the table names
+   (`hoistedRead`) is lowered as its temporary, bound where the table places it (`placeHoists`): before an
+   instruction, at `exprValue`, `tailStmts`, a `let` item and a `let`-bound lambda, and at the start of a markup
+   row's functions, which the runtime calls while it renders the `For` that makes them, so a field captured
+   there is read before any update can write it. A record pattern that binds a written field takes the
+   temporary. When two writes invalidate one read at different depths, the placement the lowering meets
+   first binds it. A read lowered before its placement is a compiler bug and panics; it is never emitted as
+   the old access. Stores are `assign_stmt`s, which §9's optimiser already takes as writes: no field read moves
+   across one and none is inlined past it, and a statement is never dropped as unused. The emitted output of
+   every module that is not clean is byte for byte what it was.
+
+   **The sanitiser** is the hidden, development-only `--sanitize-records` (`--release` is refused with it). It
+   gives each version of a record its own object: the stores go into `{ ...b }`, the update's value is that copy,
+   and each written field of the old object becomes `Object.defineProperty(b, "f", { get: () => { throw … } })`.
+   A holder older than the write then holds the old version, whose untouched fields read as before and whose
+   written fields trap, which is exactly a stale read under §31.4 item 5; the hoisted reads run before it. It is
+   never a build anyone ships and it tolerates nothing an in-place build would not: a program that passes it
+   reads no stale field, so its in-place run prints the same (thesis §12.2's lemma). The real stores are run as
+   well: every `.in-place` fixture is built twice more, as shipped and under the sanitiser.
+
+   **Evidence.** Every `run/`, `browser/` and `emit/` golden is unchanged but the `emit/release/inline/` ones
+   that show the stores (`OldValueAfterWrite`: `let a=e,b=a.a;a.a=a.a+1;a.b=b`) and `repkeys/inline/ArmPiece`'s
+   spread objects, which are gone. The differential corpus is `run/RecordHoistValues` and
+   `run/RecordInPlaceValues` (`tests/generate-record-hoists.mjs`, seed 315), whose answers were recorded under
+   spreads; `zig build test-records-in-place` builds every other `run/` program in place under the sanitiser
+   against its golden, skipping the ones `--ownership-everywhere` refuses, and every one prints its golden.
+   The `wrong-placement` control (`zig build test-record-mutations`) is trapped by the sanitiser in
+   `run/RecordHoistValues`. The research's generated `beni-inline` apps pass `./rr check` (`unique-components`
+   and `big-component`, `--lists none`, sizes 1, 16, 64 and 256, seeds 1–3).
+
 ### 31.13 Measured (2026-10-17): a static approximation, not the checker
 
 **The checker's count (2026-10-19, R2c of #315), which replaces the approximation below.** Over the same set,

@@ -5588,8 +5588,9 @@ fn hoistCache(corrupt: enum { version, placement }) !void {
     const table = good[base..][0..len];
     try testing.expectEqualStrings("BENIHOI\x00", table[0..8]);
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[8..12], .little));
-    // Report-only facts cannot authorise stores, even in a list-enforced build.
-    try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, table[12..16], .little));
+    // A module checked under enforcement with every demand accepted is
+    // clean: its records are written in place (ownership-checker.md §31.10).
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[12..16], .little));
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[16..20], .little));
     try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, table[20..24], .little));
 

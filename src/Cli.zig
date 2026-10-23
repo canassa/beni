@@ -342,6 +342,11 @@ pub const Build = struct {
     /// it they are dropped as a release build drops `Js.development`'s
     /// arm (`backend.md` §4), so a user's build never holds them.
     test_hooks: bool = false,
+    /// `--sanitize-records` — **hidden**, for `--allow-debug`'s reason:
+    /// the stale-read sanitiser for records written in place
+    /// (`ownership-checker.md` §31.12 slice 3, `Lower.Input.sanitize_records`).
+    /// Development builds only.
+    sanitize_records: bool = false,
     /// `--schema-library` — **hidden**, for `--allow-debug`'s reason: every
     /// schema declaration's `parse` and `print` run through the library
     /// interpreter rather than its specialised code, which is the forced
@@ -862,6 +867,7 @@ const BuildSpecific = struct {
     library: bool = false,
     allow_debug: bool = false,
     test_hooks: bool = false,
+    sanitize_records: bool = false,
     schema_library: bool = false,
     schema_shapes: ?bool = null,
     fuzz: bool = false,
@@ -907,6 +913,11 @@ const BuildSpecific = struct {
             // `--allow-debug`.
             if (value != null) return noValue(name);
             self.test_hooks = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--sanitize-records")) {
+            // A hidden flag (see `Build.sanitize_records`).
+            if (value != null) return noValue(name);
+            self.sanitize_records = true;
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--schema-library")) {
             // The fourth hidden flag (see `Build.schema_library`).
@@ -978,6 +989,9 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
     if (s.specific.contradicts) {
         return .{ .usage = .init("beni: --source-maps and --no-source-maps contradict each other", .{}) };
     }
+    if (s.specific.sanitize_records and s.specific.release) {
+        return .{ .usage = .init("beni: --sanitize-records is for development builds, not --release", .{}) };
+    }
     const platform = s.specific.platform orelse defaults.platform orelse
         return .{ .usage = .init("beni: {s} needs --platform=<name>", .{command}) };
     if (defaults.base) |base| if (!validBase(base)) {
@@ -1001,6 +1015,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
         .test_hooks = s.specific.test_hooks,
+        .sanitize_records = s.specific.sanitize_records,
         .schema_library = s.specific.schema_library,
         .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
