@@ -48,11 +48,10 @@ core/Js.js                      Js.pure             d26c91d0e718d417966b583cd064
 core/Js.js                      Js.fingerprint      30a526a5dfc14aa239d4e5a546c481c08b8010d51d0ec3c7dae88921f03e9288
 core/Js.js                      Js.suspending       4ec46a146eac3d0f1f029df6b311ffddbab73f54789897f67340ca12b7564c09
 platforms/browser/Hosted.js     Hosted.keyOf        02fe44a29c74a774ed38492ad5b42731a0eaea6857a103cbaebd90a25c7d1bb0
-platforms/node/Node.js          Node.spine          fd1ebdf431275a32ad587ffd29f818d512b258bcf6572ecf1e1cad0a8eada4a4
-platforms/node/Node.js          Node.print          a10b7db6541292679a3e959151c1bae95eab61202c4f4a8d45b5361f83573911
-platforms/node/Node.js          Node.printLines     6e0c6a75d11138ad964ed9579e8e5d2dd0f41685106561b7e5ba69baa51cb8e1
-platforms/node/Node.js          Node.exitWith       6a610ffef02442fae778d2d281e7de08500c2a0c8d56d72862e66eab7c3b99ba
-platforms/node/Ssr.js           Ssr.render          37ee0eae3d16ff93948d7a631bf45c19de7beb0c31893d6a0f2abc47665d02df
+platforms/node/Node.beni        Node.print          264360a1ae4275474cc5654558a20dd9aa413f8084915660ff1ecc340dfc7fa3
+platforms/node/Node.beni        Node.printLines     3bbcc03c964b4ae581e4781d6f610f27c3c08cc47c74581faab0c6778f0c8fdd
+platforms/node/Node.beni        Node.exitWith       9b93eadbc1527b0c5d581049e76862b8e9cb320666f2f9d8bc26149ae54127c3
+platforms/node/Ssr.beni         Ssr.render          045f71e7ff0de60367e997ca719fcc6d3a102caa10e0e2df17deed0c922bff8a
 
 # Entry protocols audited 2026-10-22: ownership-checker.md §24.8 and §30.3.
 platforms/browser/Browser.beni               Browser.program          a1a03d3bdb04728a2178b66cab64a4ee5b0a208a1df64457b3653f821d0980f8

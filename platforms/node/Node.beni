@@ -3,20 +3,30 @@
 --!
 --! A platform package is an ordinary package that declares itself one in its
 --! manifest (`"platform": true`). What that buys is §2's privilege: it may
---! write `foreign`, and it owns `Program` — the opaque type `main` must
---! have. Anyone may publish one; nothing here is special to this repository
---! except that it ships in the box.
+--! write `foreign` and import `Js`, and it owns `Program` — the opaque type
+--! `main` must have. Anyone may publish one; nothing here is special to this
+--! repository except that it ships in the box.
 --!
 --! `Program` is a `foreign type`, so it has no constructors and user code
 --! cannot build one. The only way to get a `Program` is to ask this module
 --! for one, which is the unforgeable-capability shape of §5: a capability is
 --! granted, never fabricated.
 --!
+--! A `Program` is plain data, `{ $c, $o }`: the exit code and the output
+--! (`boundary.md` §4.1). That is what lets `runtime.js` be the only file
+--! that touches the host: its `run`, and `Io.js`'s `finish`, read the two
+--! keys by name. `Js.object` never renames a key, so a release build keeps
+--! them. The keys hold a `$`, which no beni identifier can: a `Js.object`
+--! key is a plain property, and a beni record field of the same text would
+--! keep its source name in every release build of every `node` program
+--! (`backend.md` §9, *field spellings*); `code` and `out` are common field
+--! names, `$c` and `$o` are nobody's.
+--!
 --! This is the platform the test suite's second boundary runs against —
 --! compile a program, run the emitted JavaScript, assert what it printed —
 --! so it is not a nicety, it is what makes codegen testable at all (§8, B2).
 
-import List
+import Js
 
 
 --| What `main` is. A program says what to write to standard output and what
@@ -29,7 +39,8 @@ pub foreign type Program
 --|     main : Program
 --|     main =
 --|         Node.print "hello"
-pub foreign pure print : String → fresh Program
+pub print : String → fresh Program
+print line = Js.to (Js.object [ ( "$c", 0 ), ( "$o", line ++ "\n" ) ])
 
 
 --| A program that writes each string as its own line and exits 0.
@@ -37,7 +48,16 @@ pub foreign pure print : String → fresh Program
 --|     main : Program
 --|     main =
 --|         Node.printLines [ "one", "two" ]
-pub foreign pure printLines : borrowed List String → fresh Program
+pub printLines : borrowed List String → fresh Program
+printLines lines =
+    -- Every form of a list answers `length` (`backend.md` §4, *Lists are
+    -- arrays*), so an empty one is told apart without a call.
+    out =
+        if Js.pure (λ⊤ → Js.to (Js.get (Js.from lines) "length")) == 0 then
+            ""
+        else
+            String.join lines "\n" ++ "\n"
+    Js.to (Js.object [ ( "$c", 0 ), ( "$o", out ) ])
 
 
 --| A program that writes one line and exits with the code you give it. A
@@ -54,7 +74,8 @@ pub foreign pure printLines : borrowed List String → fresh Program
 --|     main : Program
 --|     main =
 --|         formatError err ▷ Node.exitWith 1
-pub foreign pure exitWith : String, Int → fresh Program
+pub exitWith : String, Int → fresh Program
+exitWith line code = Js.to (Js.object [ ( "$c", code ), ( "$o", line ++ "\n" ) ])
 
 
 --| A program that writes nothing and exits 0.

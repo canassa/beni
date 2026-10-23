@@ -79,14 +79,14 @@ test "a program computes something and prints the right answer" {
     // └─────────────────────────────────────────┘
     // One `.mjs` per source module, mirroring the source tree, packages in
     // directories of their own, plus each sibling next to its module and the
-    // platform's runtime (backend.md §5, boundary.md §5.2).
+    // platform's runtime (backend.md §5, boundary.md §5.2). `Node` has no
+    // sibling since 2026-10-23 (#877): its values are beni over `Js`.
     for ([_][]const u8{
         "out/Main.mjs",
         "out/_main.mjs",
         "out/_core/Basics.mjs",
         "out/_core/List.mjs",
         "out/_platform/Node.mjs",
-        "out/_platform/Node.foreign.mjs",
         "out/_platform/runtime.foreign.mjs",
     }) |path| {
         if (!w.exists(path)) {
@@ -4592,6 +4592,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\version 3, file _main.mjs
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/List.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
         \\p=|a=>{ -> Main.beni:24:13 spread
         \\let b=a*7919 -> Main.beni:22:5
@@ -4731,6 +4732,7 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\version 3, file _main.mjs
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/Debug.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
         \\a(|b()) -> Main.beni:14:9
         \\a(|b*2) -> Main.beni:8:41
@@ -4744,6 +4746,7 @@ test "a branch that specialisation decides maps to the code it keeps" {
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
         \\source beni:///core/Debug.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
         \\source ../and/Main.beni: its text
         \\a()?"y" -> Main.beni:8:16
         \\
@@ -6686,8 +6689,10 @@ test "the release specialiser writes every independent function called once in o
     // └─────────────────────────────────────────┘
     // And `total`, called once, and since slice 6 (#676) core `List`'s
     // length setter, written into the loop that calls it once the liveness
-    // read-off has left that loop's body small.
-    try testing.expectEqual(@as(u64, n + 2), c.spec_inlined);
+    // read-off has left that loop's body small; and since 2026-10-23 (#877)
+    // the two single-call functions the `node` platform's beni `printLines`
+    // reaches, `String.join` and the list reader it calls.
+    try testing.expectEqual(@as(u64, n + 4), c.spec_inlined);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_capped);
     try testing.expectEqual(@as(u64, 0), c.spec_inline_waits);
     // Since #781 the 260 are written before the first solve. The length
@@ -6782,8 +6787,11 @@ test "the release specialiser leaves a function whose call a write just copied f
     try testing.expectEqual(@as(u64, 1), c.spec_passes);
     // `g`, `k`, `twice` and, a pass later, `h`: every one of them; and since
     // slice 6 (#676) core `List`'s length setter, written into the loop
-    // that calls it (647 → 631 bytes).
-    try testing.expectEqual(@as(u64, 5), c.spec_inlined);
+    // that calls it (647 → 631 bytes). Since 2026-10-23 (#877) the `node`
+    // platform's `printLines` is beni over `Js`, and the two single-call
+    // functions it reaches — `String.join` and the list reader it calls —
+    // are written into it: 5 → 7.
+    try testing.expectEqual(@as(u64, 7), c.spec_inlined);
 }
 
 test "the release specialiser does not ask a declined call again while neither module changed" {

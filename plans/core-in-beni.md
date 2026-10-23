@@ -24,7 +24,7 @@ spelling — it is kept minimal, and the step says why.
 | 1 | **Small primitives and thin wrappers**: `core/Int32.js`, `core/String.js`, `core/Char.js`, `core/Basics.js`; the browser platform's `Time.js`, `Url.js`, `Storage.js`, `Http.js` | **landed 2026-10-01**, below: all but `Char.js` and `Basics.js`, which the core module graph keeps out of `Js`'s reach |
 | 2 | **`core/Task.js`**: the fiber runtime | **studied 2026-10-02**, below and research 49: all of it expressible with one new intrinsic (`Js.suspending`) and a one-line `Reach` fix; a prototype passes the gates, ships 182–279 brotli bytes less per fiber program and matches the sibling's instructions; the slices below |
 | 3 | **`core/List.js`**: the array-backed list and its views | **studied 2026-10-02**, below and research 50: all of it expressible with two new intrinsics (`Js.object`, `Js.method`) and two one-line `Lower` fixes; a prototype prints every `run/` program right, keeps the persistence sweep, ties the sibling but for `compare` (1.16–1.19×, a loop-printing cause), and is 1 408 brotli bytes smaller in total but larger for 44 programs; an `abuse_wide` budget is the wall; the slices below. **The port decided 2026-10-02**: both intrinsics adopted, the growth taken to `hand-minify` first. **Landed 2026-10-02**, below (*Landed: L2, L3, L6 and L7*): release brotli −6 845 over every program, 3 programs larger by 1–34, every operation within noise |
-| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change; deferred by the owner 2026-10-02**, below), the browser platform's `Hosted.js` (**all but the keys gone 2026-10-02**, `plans/runtime-in-beni.md` step 7), `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | to come |
+| 4 | **The rest**: `Char.js` (**gone 2026-10-02**), `Basics.js` and `Debug.js` (**gone 2026-10-02**, below), `Js.js`'s value-passing half (**a contract change; deferred by the owner 2026-10-02**, below), the browser platform's `Hosted.js` (**all but the keys gone 2026-10-02**, `plans/runtime-in-beni.md` step 7), `Browser.js` (**gone**, `plans/runtime-in-beni.md` step 6), `Dom.js`, `runtime.js`'s `safeUrl` (**gone**, `plans/runtime-in-beni.md` step 6), `html`'s `Html.js`, and the `node` platform | **`node`'s `Ssr.js` and `Node.js` gone 2026-10-23** (below, *Step 4*; #877); the rest to come, one pull request per piece |
 | 5 | **`core/Schema.js`**: the schema library's engine | **landed 2026-10-02**, below: all of it, the sibling deleted; the `--library` bench within 1–3 % on valid input and 4–6 % on failures, and the corpus's schema programs up to 8.5 % larger; **2026-10-03**: failures at parity in instructions (0.999–1.021) and 0–3 % in wall time once a release build keeps a top-level `const`, seven of the nine schema programs 15–192 brotli bytes smaller once the engine stopped pinning `Issue` (the other two +1 and +9), and what is left a wall (*The two gaps*, below) |
 
 ## Step 1 — primitives and thin wrappers (2026-10-01)
@@ -1002,3 +1002,109 @@ program grows **+424** (91 smaller, 113 larger, worst `bench/corpus` +45, `Schem
 spec amendment stays unwritten, and `NestingEvidence` +34, `ListElementEq` +6 and
 `ConsPatterns` +1 stand as the residue for the owner. *Accepted by the owner, 2026-10-02*
 ("merge them"): the port landed with these three, against a release total of −6 845 B brotli.
+
+## Step 4 — the `node` platform's thin wrappers (2026-10-23)
+
+**What moved.** `platforms/node/Ssr.js` and `platforms/node/Node.js` are gone (#877). `Ssr.render`
+is `Js.get` of the markup's `t` under `Js.pure`; `Node.print`, `printLines` and `exitWith` build the
+`Program` object with `Js.object`, whose keys are never renamed, so `runtime.js`'s `run` and
+`Io.js`'s `finish` read them by name in every build. `printLines` tells an empty list apart by
+`Js.get` of its `length`, which every form of a list answers (`backend.md` §4), and joins the rest
+with `String.join`. `Program` stays a `foreign type`. The `run/` corpus prints what it printed in
+both builds, and every development `emit/` golden is unchanged: each imports `Node$printLines` from
+the module's own file whether the value is `foreign` or beni.
+
+**What it needed.** No compiler feature. Under `--release`, `line ++ "\n"` is written as `+` in
+place (`backend.md` §9, *Compact statements*), so each one-liner costs what the sibling's did.
+
+**Two things the first version taught**, each fixed before the step landed:
+
+- **A `Js.object` key pins every beni field of its text.** The first version wrote `{ code, out }`,
+  the sibling's keys. A `Js.object` key is a plain property, and a beni record field of the same text
+  then keeps its source name in every release build (`backend.md` §9, *field spellings*): `Schema`'s
+  `Issue.code` went from `b` to `code` in every schema program, +10 raw bytes each. The keys are
+  `$c` and `$o` now, which no beni identifier can spell; `runtime.js` and `Io.js` read them.
+- **A private helper called from one live function stayed a function.** `program code out`, called
+  by the three, was specialised but not written in place when only `print` was live
+  (`a=b=>({code:0,out:b}),b=c=>a(c+"\n")`). Each function writes its literal, as the sibling did.
+
+**One effect beside the bytes.** `String` and `List String` leave the release optimiser's wild set
+in a program that reaches nothing else at the wall: they were wild only because a live `foreign`
+named them (`printLines : List String → Program`). Only a keyed root module adds its `Js.from` and
+`Js.to` types to the set; core and a platform add their crossing quantifiers alone
+(`check/TypeKeys.zig`, `checker-v2.md` §36), and `printLines` has none. The five `repkeys` goldens
+that record the set are re-blessed with this note; fact 3 may now follow a `String` the program
+hands `printLines`, which is more precise, not less safe.
+
+**Sizes** (release, brotli 11, the whole bundle; master at `e5789ad73` against this step, the same
+sources, `bench/size.mjs` over `tests/corpus/run` and `bench/corpus`, both compilers ReleaseSafe):
+
+| | master | step 4 | |
+|---|--:|--:|--:|
+| the 587 programs, release brotli | 1 190 511 | **1 179 623** | −10 888 (−0.91 %) |
+| the 587 programs, release raw | 3 492 207 | **3 462 666** | −29 541 |
+| the floor (`Node.done`) | 184 | **176** | −8 (raw 271 → 226) |
+| `bench/corpus` | 19 094 | 19 118 | +24 (raw −99) |
+| `node sleep`, `bracket`, `combinators` (the fiber programs) | 1 803, 2 589, 3 655 | **1 783, 2 563, 3 631** | −20, −26, −24 |
+
+558 programs smaller, 9 equal, **20 larger by 1–30 bytes**, every one of the 20 with fewer raw
+bytes (−9 to −77). In each of the 20, once every name of up to three characters is masked, the only
+segments that differ are the node runtime's own: the sibling's `run`, `spine` and `printLines` at
+the front of the hoisted file, and the beni `run`-reader and `printLines` after core's modules,
+where the module order places `Node` now. The pages (`browser/`, the empty pages, the `bench/ui`
+app) reach nothing of `node` and did not move. The first version, with a `program` helper and the
+keys `code`/`out`, measured −5 496 with 73 larger (18 of them larger raw): the two fixes above are
+worth −5 392 brotli bytes more.
+
+**The 20 that grow**, priced with `hand-minify`'s method, one change at a time, on each: the keys
+`code`/`out` in place of `$c`/`$o` moved a program by −11 to +7 B, the beni `printLines` placed
+where the sibling's was (first in the hoisted file) by −8 to +6 B, and neither removed the growth
+on all — it is brotli's context around the moved text, not a text `Node.beni` can shrink. Whether
+a growth of at most 30 B at fewer raw bytes meets R47-3 was asked of the owner on 2026-10-23
+(the dashboard, `runtime-in-beni-q1`); the answer is recorded here.
+
+| program | raw | brotli |
+|---|--:|--:|
+| `NestingLogicalStatements.beni` | 23416 → 23377 (-39) | 2904 → 2934 (+30) |
+| `bench/corpus` | 72887 → 72788 (-99) | 19094 → 19118 (+24) |
+| `JoinAllCancelAll.beni` | 12791 → 12714 (-77) | 4769 → 4786 (+17) |
+| `SchedulerStopped.beni` | 14058 → 14007 (-51) | 5019 → 5033 (+14) |
+| `LogSetMinimum.beni` | 12562 → 12497 (-65) | 4533 → 4546 (+13) |
+| `ParOkFailCancelsSibling.beni` | 14381 → 14319 (-62) | 4975 → 4988 (+13) |
+| `TaskDefectOnNode.beni` | 9474 → 9423 (-51) | 3572 → 3581 (+9) |
+| `SchemaErrorUnreadShapes/Main.beni` | 46450 → 46395 (-55) | 9716 → 9723 (+7) |
+| `ReleaseRedeclaredSiblings.beni` | 679 → 670 (-9) | 310 → 315 (+5) |
+| `CoreStringUnicode.beni` | 5944 → 5870 (-74) | 2459 → 2463 (+4) |
+| `LogSpanLabel.beni` | 13149 → 13084 (-65) | 4766 → 4769 (+3) |
+| `SchemaValidator/Main.beni` | 5423 → 5414 (-9) | 1671 → 1674 (+3) |
+| `ForeignFunctionCast/Main.beni` | 250 → 241 (-9) | 169 → 171 (+2) |
+| `LoopHeadChain/Main.beni` | 263 → 254 (-9) | 173 → 175 (+2) |
+| `FieldColouringSchema.beni` | 4024 → 4015 (-9) | 1194 → 1195 (+1) |
+| `ForeignNominalCast/Main.beni` | 250 → 241 (-9) | 169 → 170 (+1) |
+| `ForeignRecordCast/Main.beni` | 266 → 257 (-9) | 175 → 176 (+1) |
+| `InlineOnceOrder.beni` | 3169 → 3160 (-9) | 1415 → 1416 (+1) |
+| `NestingFlatList.beni` | 7088 → 7047 (-41) | 2962 → 2963 (+1) |
+| `ReleaseRedeclared.beni` | 309 → 300 (-9) | 202 → 203 (+1) |
+| `DerivedEqualityEdges.beni` | 608 → 569 (-39) | 305 → 305 (+0) |
+
+**Speed.** Each function runs once per program, when it ends; nothing is timed.
+
+**Shape**, the hand-written function as `Minify` left it in a release build, against the beni one
+(the same small programs built by master's compiler and this one):
+
+```js
+// printLines: the sibling and its list reader, then the beni one
+const d=b=>(Array.isArray(b)?b:b.$plain());const a=e=>{let c=d(e);return{code:0,out:c.length===0?"":`${c.join("\n")}\n`}}
+const a=b=>({$c:0,$o:b.length===0?"":(Array.isArray(b)?b:b.$plain()).join("\n")+"\n"})
+// print and exitWith, in a program that calls each once: two functions, then two literals
+const a=c=>({code:0,out:`${c}\n`});const b=(c,code)=>({code,out:`${c}\n`});const c=Array.from("x").length===1?a("hello"):b("bad",2)
+const a=Array.from("x").length===1?{$c:0,$o:"hello\n"}:{$c:2,$o:"bad\n"}
+// render (development build; a release build writes `.t` in place)
+export const render = (html) => html.t;
+const Ssr$render = (html$1) => html$1.t;
+```
+
+Three differences that are not bytes: `printLines` tests the list's own `length` before it reads
+the array, where the sibling read the array first; `print` and `exitWith` are folded into their
+callers' literals, since whole-program specialisation now sees their bodies; and a `++` with a
+string literal is `+` where the sibling wrote a template literal.
