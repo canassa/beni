@@ -2383,6 +2383,17 @@ one that first uses it; a lowering that targets 1.14 sees what it saw.
   key whose leaf is a map's constructor. The owner is lowered before the program site
   (`browser-inline.md` §8.4, amended 2026-10-18).
 
+**Version 1.16** (*amended 2026-10-23*, additive, gated on nothing; Ownership O3,
+#319): `Tree.identity_safe` and `Tree.identitySafe(value)` report whether a
+value's solved type permits an identity skip. Missing facts mean unknown, so
+they never authorize a skip. Lists, records, and nominal or tuple values that
+may hold either carry no proof; primitives and types proven to hold neither
+retain their comparisons. A release representation that erases a one-field
+constructor over a List or record inherits the same refusal. The compiler
+publishes these facts for instructions and local read paths in the dispatch
+sidecar and carries the nominal mutable-cell fact in the cache digest. No
+renderer examines a runtime value to guess its type.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

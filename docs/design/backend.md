@@ -11364,7 +11364,7 @@ runtime, `boundary.md` Â§9.2, Â§15.11) and the `html` primitives `text` (1) 
 | `safeUrl` | 1 | a URL, or `""` for a script URL â Elm's rule, which keeps a `view` from injecting script (research 24 Â§6.3) |
 | `rawHtml` | 2 | `(el, markup)`: the `raw` escape hatch |
 | `listen` | 3 | `(el, name, flags)`: the stable stub of a non-delegated event |
-| `control` | 3 | `(el, prop, v)`: a `stateful` attribute's model value, kept on the element and written when the page's differs (*Controlled inputs*, amended 2026-10-08) |
+| `control` | 4 | `(el, prop, v, immutable)`: the current stateful value and its checked identity permission. Only proven immutable values use identity comparisons; aggregates are assigned on every visit. Marked edits reconcile at render end. |
 | `edited` | 1 | `(el)`: a controlled element a write of this render may have changed, reconciled when the render ends (*Controlled inputs*) |
 
 *Amended 2026-10-15 (research 103 Â§5): `template` is two exports.* `template` was arity 2,
@@ -11841,6 +11841,27 @@ render's), builds the body's block as a row's and calls `show(slot, key, block)`
 remounts when the key is not `===` the slot's last key or the slot showed the fallback, and otherwise
 patches as `childHtml`. A body is always a block in interface version 1.0 â a `Show` is not a list,
 so the one allocation per render is not worth a pair.
+
+*Runtime half as built, 2026-10-23 (#319).* The DOM lowering receives checked,
+cached identity facts for values and local read paths (markup interface 1.16).
+A List or record, including one held through a nominal wrapper or tuple, never
+authorizes a value, input or grouped-read skip. `For` and `List Html` reconcile
+every time their root runs, and keep no old source list. Record/list row items
+patch even when their reference is unchanged; keyed matching also recomputes a
+mutable item's key. Scalar item and input comparisons remain. A block is
+patched even when it is the same block, with scalar guards inside its patch.
+Class/style diffing keeps the scalar names and values actually written rather
+than the mutable input lists. Controlled properties likewise keep their last
+scalar value; an unchanged value does not overwrite an unmarked external DOM
+edit merely because a record row is visited. Marked edits still reconcile at
+render end.
+
+The owner's acceptance clarification on 2026-10-23 keeps every DOM snapshot and
+page behaviour unchanged. Console-only `Debug.log` lines may change where the
+required List/record recomputation explains them; fixtures state that reason.
+The `entry` word was already implemented by #767. Deleting the template row and
+`platform` cause remains the next half, after O2 (#318) merges. Measurement of
+the runtime changes belongs to the owner; this implementation claims none.
 
 #### `For` over arrays
 
