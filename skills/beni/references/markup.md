@@ -94,7 +94,9 @@ The mouse, the pen and a touch screen use one set of events: `onPointerDown`, `o
 - When an element and an element inside it both have a handler for the same pointer event, both
   handlers run for one event, the inner one first, as for `onClick`. On the `browser` and
   `browser-tea` platforms the page renders once after them, so each handler runs with the view that
-  was on the page when the event came. `onPointerEnter` and `onPointerLeave` do not bubble.
+  was on the page when the event came. `onPointerEnter` and `onPointerLeave` do not bubble: each
+  element gets its own enter or leave event, so nested enter or leave handlers render once for each
+  element, and an inner handler runs with the view that the outer one's render wrote.
 - On the `browser` and `browser-tea` platforms, a pointer handler on a disabled control does not
   run, as an `onClick` there does not.
 - The pointer events name their extractor `pointer` (`via pointer`). It is private to `Html`, so
