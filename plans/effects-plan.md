@@ -855,12 +855,18 @@ that a release build in which nothing sets a slot keeps only the plain one. `wit
 puts the old slots back in a `Js.finally`, because `update` cannot wait. Its first version ran
 through `inLogContext`, and so reached `here ⊤` and `pushFinalizer`, which write `fibered` and
 `finalising`: even unreached, those writes kept the teardown in a hosted release page with no
-fiber (`build_test`: 6 `finally`, not 5). Fixture: `browser/tea/LogCommandContext`'s `Done`, which
+fiber (`build_test`: 6 `finally`, not 5). The review then found that a throw in `update` inside
+`annotate` left that `annotate`'s restore on the fiber, with the reset record as its `old`: at the
+teardown it ran before the release of the sending body's `bracket`, which then had no context.
+So when `update` throws and leaves finalisers, the slots stay, and the restore of the caller's
+goes into the list under them (`browser/tea/LogUpdateDefect`). Fixture: `browser/tea/LogCommandContext`'s `Done`, which
 the bodies of `Task` (no fiber) and `TaskWait` (a fiber) send, writes an `Info` line, a `Debug` line
 and a `Cmd.log`; without the change the lines carry the sender's annotation, the `Debug` line is
-written, and the command keeps the sender's context. **Bytes** (the builds of the fifth part, 622
-now, on `master` `62d6202d9`): release, the 4 pages that set a slot +207 raw (+50 to +65 brotli);
-every other release build, Conduit's included, the same bytes. Development, 311 builds +784 to
-+1 188 raw (+106 to +256 brotli): `browser/dom` pages too, since `Rt.beni` is every page's. No
+written, and the command keeps the sender's context. After the review, `LogCommandContext` also covers an after-render body, a
+`Cmd.map` child's body, a keyed body after a wait, a focus that a body makes through `Html.map`,
+and the other program of `Browser.programs`. **Bytes** (the builds of the fifth part, 624 now, on
+`master` `62d6202d9`): release, the 5 pages that set a slot +335 to +337 raw (+93 to +130 brotli),
+of which the throw's fix is about 130; every other release build, Conduit's included, the same
+bytes. Development, 312 builds +1 344 to +1 748 raw (+226 to +368 brotli): `browser/dom` pages too, since `Rt.beni` is every page's. No
 instruction count was taken: where a slot is set, each message reads it, and a message sent inside
 a context copies the slot record once.
