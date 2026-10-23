@@ -2702,6 +2702,11 @@ pub fn shapeName(l: *Lowerer, ref: SchemaGraph.Ref, p: u32) !Node.Index {
     return l.ident(try schemaName(l, ref, "shape"), p);
 }
 
+/// The name of `ref`'s shape, which this module defines.
+pub fn codecShapeName(l: *Lowerer, ref: SchemaGraph.Ref) !NameIndex {
+    return schemaName(l, ref, "shape");
+}
+
 /// `<Module>$<Schema>$$readValid`, the root validator worker of `ref`, which
 /// a validator run whose schema is `S.schema ⊤` calls (`SchemaValid`).
 pub fn validWorker(l: *Lowerer, ref: SchemaGraph.Ref, p: u32) !Node.Index {

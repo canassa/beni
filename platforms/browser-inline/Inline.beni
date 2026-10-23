@@ -424,53 +424,108 @@ roots rows elements from table at =
 -- keyed route names; the source's function, which validates and gives the
 -- old value or a new one; and the model's field. A program one of whose
 -- routes has a record field whose object the copy keeps adds the row's
--- copy plan, `[key, F, field, plan]`, and calls the `…Planned` loaders.
--- Each loader hands `loadRows` a copy of its own, so a page ships the one
--- it calls: the walker only when a plan needs it.
+-- copy plan, `[key, F, field, plan]`, and calls the `…Planned` loaders. A
+-- row whose function is "the decoded value, or the old one" holds its run's
+-- shape in place of `F`, and the program calls the `…Shaped` loaders, which
+-- take `validShape` last. Each loader hands the rows' loader a copy function
+-- of its own, so a page ships only what it calls.
 
 --| `(model, table, key, raw)`: a keyed route. The first row of `table`
 --| whose key is `key`, when there is one, is loaded with `raw`. An unknown
 --| key does nothing, as the route's default does.
 pub load : V, V, V, V → ⊤
-load model table key raw = keyed model table key raw assign
+load model table key raw = loadRows model (keyedRow table key) (λ_ → raw) assign
 
 
 --| `(model, rows, raws)`: routes in turn, each row loaded with the value
 --| `raws` holds at its field.
 pub loadAll : V, V, V → ⊤
-loadAll model rows raws = loadRows model rows (λrow → Js.get raws (fieldOf row)) assign
+loadAll model rows raws = loadRows model rows (atField raws) assign
 
 
 --| `load` for rows with copy plans.
 pub loadPlanned : V, V, V, V → ⊤
-loadPlanned model table key raw = keyed model table key raw planned
+loadPlanned model table key raw = loadRows model (keyedRow table key) (λ_ → raw) planned
 
 
 --| `loadAll` for rows with copy plans.
 pub loadAllPlanned : V, V, V → ⊤
-loadAllPlanned model rows raws = loadRows model rows (λrow → Js.get raws (fieldOf row)) planned
+loadAllPlanned model rows raws = loadRows model rows (atField raws) planned
 
 
-keyed : V, V, V, V, (V, V, V → ⊤) → ⊤
-keyed model table key raw into =
-    row = Js.call table "find" [ Js.from λr → Js.same (Js.at r 0) key ]
-    if not (Js.isUndefined row) then
-        loadRows model (Js.array [ row ]) (λ_ → raw) into
+--| `load` for rows that may hold a shape, `check` core's `validShape`,
+--| which the lowering hands it.
+pub loadShaped : V, V, V, V, (V, V → Result V V) → ⊤
+loadShaped model table key raw check =
+    loadShapedRows model (keyedRow table key) (λ_ → raw) check assign
+
+
+--| `loadAll` for rows that may hold a shape.
+pub loadAllShaped : V, V, V, (V, V → Result V V) → ⊤
+loadAllShaped model rows raws check = loadShapedRows model rows (atField raws) check assign
+
+
+--| `loadPlanned` for rows that may hold a shape.
+pub loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤
+loadShapedPlanned model table key raw check =
+    loadShapedRows model (keyedRow table key) (λ_ → raw) check planned
+
+
+--| `loadAllPlanned` for rows that may hold a shape.
+pub loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤
+loadAllShapedPlanned model rows raws check = loadShapedRows model rows (atField raws) check planned
+
+
+-- The first row of `table` whose key is `key`, as a list of rows: empty
+-- when there is none.
+keyedRow : V, V → V
+keyedRow table key =
+    Js.call (Js.call table "filter" [ Js.from λr → Js.same (Js.at r 0) key ]) "slice"
+        [ Js.from 0, Js.from 1 ]
+
+
+atField : V → (V → V)
+atField raws = λrow → Js.get raws (fieldOf row)
 
 
 -- Every row's function runs first, each with its raw value and the model's
--- old value at its field, in order; then each result that is not the old
--- value is copied into it, by `into`.
+-- old value at its field, in order; then each result is copied in.
 loadRows : V, V, (V → V), (V, V, V → ⊤) → ⊤
 loadRows model rows rawOf into =
     nexts =
         Js.call rows "map"
             [ Js.from λrow → Js.apply (Js.at row 1) [ rawOf row, Js.get model (fieldOf row) ] ]
-    Js.each rows λrow →
-        old = Js.get model (fieldOf row)
-        next = Js.call nexts "shift" []
-        if not (Js.same next old) then
-            into old next row
+    copyIn model rows nexts into
+
+
+-- `loadRows` for rows that may hold a shape in place of the function: the
+-- value `check` decodes from the raw value with it, or the old value when
+-- it does not decode, as the function's `Result.withDefault
+-- (Json.decodeValue raw) old` gives.
+loadShapedRows : V, V, (V → V), (V, V → Result V V), (V, V, V → ⊤) → ⊤
+loadShapedRows model rows rawOf check into =
+    nexts =
+        Js.call rows "map"
+            [ Js.from λrow →
+                f = Js.at row 1
+                raw = rawOf row
+                old = Js.get model (fieldOf row)
+                if Js.typeIs f "function" then
+                    Js.apply f [ raw, old ]
+                else
+                    Result.withDefault (check f raw) old
+            ]
+    copyIn model rows nexts into
+
+
+-- Each result that is not the old value at its row's field is copied into
+-- it, by `into`.
+copyIn : V, V, V, (V, V, V → ⊤) → ⊤
+copyIn model rows nexts into = Js.each rows λrow →
+    old = Js.get model (fieldOf row)
+    next = Js.call nexts "shift" []
+    if not (Js.same next old) then
+        into old next row
 
 
 fieldOf : V → String

@@ -540,7 +540,19 @@ pub const Direct = struct {
         sites: []const RouteSite = &.{},
     };
 
-    pub const RouteRow = struct { field: Symbol, fn_module: u32, fn_decl: u32, plan: []const PlanItem };
+    pub const RouteRow = struct {
+        field: Symbol,
+        fn_module: u32,
+        fn_decl: u32,
+        plan: []const PlanItem,
+        /// The tail's call `F x model.f`, an instruction of `module`.
+        module: u32 = 0,
+        call: u32 = 0,
+        /// `F` is `Result.withDefault (Json.decodeValue x) old` and the run
+        /// is a shape run: its codec, in `fn_module`'s plan, whose shape the
+        /// row holds in place of `F` (§8.4, amended 2026-10-24).
+        shape: ?u32 = null,
+    };
     pub const PlanItem = struct { field: Symbol, sub: ?[]const PlanItem = null };
     pub const RouteSite = struct {
         module: u32,
@@ -3680,6 +3692,20 @@ pub const Lowerer = struct {
         }
         // Its view pieces (`browser-inline.md` §8.4).
         try names.appendSlice(l.scratch, l.piece_exports.items);
+        // The derived codecs' shapes a program's route rows hold, which the
+        // program's module names (§8.4, amended 2026-10-24).
+        if (l.in.direct) |dr| for (dr.programs) |prog| for (prog.routes.rows, 0..) |row, ri| {
+            const k = row.shape orelse continue;
+            if (row.fn_module != l.in.module.int()) continue;
+            const seen = for (prog.routes.rows[0..ri]) |before| {
+                if (before.fn_module == row.fn_module and before.shape == k) break true;
+            } else false;
+            if (seen) continue;
+            const n = try SchemaLower.codecShapeName(l, l.in.schemas.?.codecTarget(l.in.module, k));
+            for (names.items) |have| {
+                if (have == n) break;
+            } else try names.append(l.scratch, n);
+        };
         // The pieces it lifts for program sites that survived
         // (`browser-inline.md` §7).
         if (l.in.direct) |dr| for (dr.lifts, 0..) |piece, gi| {
@@ -15147,14 +15173,19 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         const model = try l.localName(site.model);
         const planned = routesPlanned(prog);
+        const shaped = for (prog.routes.rows) |r| {
+            if (r.shape != null) break true;
+        } else false;
         switch (site.kind) {
             .keyed => {
                 const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
                 const key = try l.expr(out, scrutinee);
                 const raw = try l.expr(out, @fromBackingInt(site.raws[0]));
                 const table = try l.routeTable(prog, @intCast(pi), site, planned);
-                const load = try l.ident(try l.routeRuntime(if (planned) "loadPlanned" else "load"), p);
-                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(load, &.{ try l.ident(model, p), try l.ident(table, p), key, raw }, p)).int(), Node.Data.unused));
+                const load = try l.ident(try l.routeRuntime(loaderName(true, planned, shaped)), p);
+                var args: [5]Node.Index = .{ try l.ident(model, p), try l.ident(table, p), key, raw, undefined };
+                if (shaped) args[4] = try l.coreSchemaValue("validShape", p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(load, args[0..if (shaped) 5 else 4], p)).int(), Node.Data.unused));
             },
             .update, .record => {
                 // The rows: a keyed site's table when it holds exactly this
@@ -15179,8 +15210,10 @@ pub const Lowerer = struct {
                         x.* = try l.fieldProperty(prog.routes.rows[row].field, try l.expr(out, @fromBackingInt(raw)), p);
                     break :raws try l.object(props, p);
                 };
-                const all = try l.ident(try l.routeRuntime(if (planned) "loadAllPlanned" else "loadAll"), p);
-                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, &.{ try l.ident(model, p), rows, raws }, p)).int(), Node.Data.unused));
+                const all = try l.ident(try l.routeRuntime(loaderName(false, planned, shaped)), p);
+                var args: [4]Node.Index = .{ try l.ident(model, p), rows, raws, undefined };
+                if (shaped) args[3] = try l.coreSchemaValue("validShape", p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, args[0..if (shaped) 4 else 3], p)).int(), Node.Data.unused));
             },
         }
         return try l.ident(model, p);
@@ -15192,6 +15225,16 @@ pub const Lowerer = struct {
     fn routesPlanned(prog: *const Direct.Program) bool {
         for (prog.routes.rows) |r| for (r.plan) |item| if (item.sub != null) return true;
         return false;
+    }
+
+    /// The loader a route site calls: keyed or not, with plans or not, and
+    /// with rows that may hold a shape or not.
+    fn loaderName(keyed: bool, planned: bool, shaped: bool) []const u8 {
+        const names = [2][2][2][]const u8{
+            .{ .{ "loadAll", "loadAllShaped" }, .{ "loadAllPlanned", "loadAllShapedPlanned" } },
+            .{ .{ "load", "loadShaped" }, .{ "loadPlanned", "loadShapedPlanned" } },
+        };
+        return names[@intFromBool(keyed)][@intFromBool(planned)][@intFromBool(shaped)];
     }
 
     /// Whether two lists of route rows name the same fields and functions,
@@ -15254,15 +15297,20 @@ pub const Lowerer = struct {
     }
 
     /// Route row `row` of `prog` as data: `[key, F, field]`, the source's
-    /// key or `0`, the route's function and the model's field, and the
-    /// copy plan after them when the program's rows carry plans.
+    /// key or `0`, the route's function — or its run's shape — and the
+    /// model's field, and the copy plan after them when the program's rows
+    /// carry plans.
     fn routeRowNode(l: *Lowerer, prog: *const Direct.Program, row: u32, key: ?[]const u8, planned: bool, p: u32) Allocator.Error!Node.Index {
         const r = prog.routes.rows[row];
         const fm: Graph.Index = @fromBackingInt(@intCast(r.fn_module));
-        const fb = l.in.birs[r.fn_module];
-        const base = fb.symbol(fb.decls[r.fn_decl].name);
-        try l.needName(.{ .module = fm, .base = base.toOptional() });
-        const f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(fm).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+        // A row whose function decodes or keeps holds its run's shape,
+        // which the loader reads as the function would.
+        const f = if (r.shape) |k| try SchemaLower.shapeName(l, l.in.schemas.?.codecTarget(fm, k), p) else f: {
+            const fb = l.in.birs[r.fn_module];
+            const base = fb.symbol(fb.decls[r.fn_decl].name);
+            try l.needName(.{ .module = fm, .base = base.toOptional() });
+            break :f try l.ident(try l.name(.{ .module = l.in.graph.moduleName(fm).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+        };
         const k = if (key) |bytes| try l.stringNode(bytes, p) else try l.numberNode("0", p);
         var parts: [4]Node.Index = .{ k, f, try l.fieldString(r.field, p), undefined };
         if (planned) parts[3] = try l.planArray(r.plan, p);
