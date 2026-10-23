@@ -1,0 +1,34 @@
+# Two rooms of one class, one hibernatable socket each, the attachment
+# holding a seat. Each counts its requests in memory.
+{"socket": "p", "path": "/room/plain/ws"}
+{"send": "p", "text": "attach:seat 4"}
+{"receive": "p"}
+{"path": "/room/plain/count"}
+{"socket": "h", "path": "/room/held/ws"}
+{"send": "h", "text": "attach:seat 9"}
+{"receive": "h"}
+# `held` parks a fiber on a gate no host timer backs, so only the
+# platform's live-fiber timer keeps it in memory.
+{"path": "/room/held/park"}
+{"path": "/room/held/__beni/hold"}
+{"path": "/room/plain/__beni/hold"}
+# No event, past the host's hibernation delay.
+{"idle": 16000}
+# `plain` is a new instance: `restore` ran again with the socket the host
+# kept, the count started again, and the attachment is read back.
+{"path": "/room/plain/count"}
+{"send": "p", "text": "seat?"}
+{"receive": "p"}
+{"path": "/room/plain/__beni/hold"}
+# `held` is the same instance: its count continued, and `restore` did not
+# run again.
+{"path": "/room/held/count"}
+{"send": "h", "text": "seat?"}
+{"receive": "h"}
+{"path": "/room/held/__beni/hold"}
+# The gate opens: the fiber ends and the hold is released.
+{"path": "/room/held/finish"}
+{"path": "/room/held/__beni/hold"}
+# A peer's close after the wake reaches the new instance.
+{"close": "p", "code": 4000, "reason": "bye", "until": "closed plain 4000 bye"}
+{"close": "h", "code": 4000, "reason": "bye", "until": "closed held 4000 bye"}
