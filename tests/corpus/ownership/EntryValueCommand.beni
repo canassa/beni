@@ -3,8 +3,8 @@
 -- persist or send — the text `Storage.save` stores, the request
 -- `Http.send` sends with its body already text, the line `Cmd.log`
 -- writes — computed by `update` before it makes the command, so no command
--- holds `model.items`, and `Add`'s push is accepted on browser-direct
--- (`platform` on browser-tea). `closure` saves through `Cmd.do`, whose
+-- holds `model.items`, and `Add`'s push is accepted by every entry row.
+-- In contrast, `closure` saves through `Cmd.do`, whose
 -- work is a function run later (an effect, which stays a closure): it
 -- captured `model`, and everything a command holds escapes at the entry
 -- (§20.4 (a)), so the same push is rejected `escaped` — the program says

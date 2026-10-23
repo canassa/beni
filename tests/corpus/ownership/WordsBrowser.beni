@@ -7,8 +7,8 @@
 -- the word, `update`'s summary has the `Pointer` of `Aim` escape. The
 -- key of a keyed command is held by the command (`Hosted.keyOf`, `aliased`),
 -- not given to JavaScript: a command built and dropped leaves its key list
--- unescaped, and `keys` writes it afterwards, accepted. On browser-tea every
--- entry edit is `platform` (§20.2).
+-- unescaped, and `keys` writes it afterwards, accepted. Each program's
+-- entry word selects its direct row, including on browser-tea (§20.2).
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub

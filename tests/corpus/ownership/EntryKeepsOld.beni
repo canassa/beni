@@ -7,7 +7,7 @@
 -- `saved` shows — rejected `disjoint` on every platform, approximately,
 -- since update's arms are joined (§16.4 item 7) and the thesis counts it a
 -- limit (T41). `copied` saves `List.copy model.items` (Change 2), a list of
--- its own, and is accepted on browser-direct, rejected `platform` on
+-- its own, and is accepted by the entry row on every platform, including
 -- browser-tea.
 import Browser
 import Html exposing (Html)

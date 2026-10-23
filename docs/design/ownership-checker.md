@@ -3403,38 +3403,22 @@ and text; where this section changes a rule, it wins. Research 78 measures it.*
 
 ### 20.2 Entry rows
 
-Thesis §7, *The protocol*: the protocol "is an asserted row on the function the runtime actually calls … the
-program constructors", whose record parameter holds the functions the runtime calls. Until Change 5's words let
-a platform declare its rows, the checker asserts them:
+*Amended 2026-10-23 (#319), completing the owner's 2026-10-15 withdrawal:*
+every program constructor uses the direct entry protocol (§20.3–§20.6),
+declared by `entry` on its written-out record parameter (§30.3). The word,
+not a constructor name, package name or renderer property, selects the row.
+A constructor with no supported entry row leaves its writers pending.
 
-| The build's platform | Program constructors | Row |
-|---|---|---|
-| `browser-direct` | `Tea.sandbox`, `Tea.element`, `Tea.document`, `Tea.application` | **direct**: thesis Table 7.1 |
-| `browser-tea` | `Tea.sandbox`, `Tea.element`, `Tea.document`, `Tea.application` | **template** |
-| `browser` | `Browser.program` | **template** |
+The template row and the `platform` rejection cause are deleted. An accepted
+entry demand keeps its entry-row verdict on browser, browser-tea, browser-inline
+and test platforms alike. Read-only callbacks, retained view handlers,
+message payloads, escaped state and shared initial values retain their refusals.
 
-A constructor is the declaration of that name, in the module of that name, of the platform package of that name
-(the chain layer's manifest `"name"`).
-
-*Amended 2026-10-13 (slice 4, §28.2):* the direct row is chosen by the property, not by the name: `Tea.sandbox`,
-`element`, `document` and `application` of a platform package whose own manifest declares `"lists": "in-place"` have
-the direct row, whatever the package is called, so that the row survives `browser-direct`'s rename to `browser-tea`.
-The template rows keep their names (`browser-tea`'s `Tea`, `browser`'s `Browser.program`) and apply only to a
-package that does not declare the property. Any other program constructor — `Browser.hosted`, which a program never
-meets, or a test platform's — has no row: the functions it is handed stay `pending` (§16.5).
-
-*Amended 2026-10-15 (the owner, §30.3):* the template rows and the `platform` cause are
-withdrawn. Every program constructor has the direct row, declared by the ownership word `entry`
-on its record parameter instead of by this table: `browser-direct`'s and `browser-tea`'s `Tea.*`,
-`browser`'s `Browser.program` and the test platform `page`'s `Page.sandbox`.
-
-**Which platform.** Thesis §7 checks every program against the direct row "so that a source has one verdict on
-both browser back ends"; Change 8 keeps in-place lists to the direct platform. Both hold here: a template row
-computes everything the direct row does, and then an edit the direct row would accept is rejected with the cause
-**`platform`**, of the position kind — browser-tea's and browser's runtimes keep the model they hand `update`
-(the renderer compares the values the last render read by identity, and keeps that render's handlers), so they
-hand it nothing owned. Every other rejection is the same line on every browser platform. Verdicts therefore
-differ between platforms by exactly the `platform` lines.
+The entry word (#767) and the renderer/driver audit (#829) establish the
+protocol and its P1–P4/P7 obligations. The module-DAG ownership pass (#842)
+publishes the same callable facts through module interfaces. Enforcement scope
+remains a separate rule (§28.2, §30.7 O4): selecting a row does not depend on
+whether that build currently enforces ownership errors.
 
 ### 20.3 What each function receives (the direct row)
 
@@ -5944,13 +5928,11 @@ determine whether a result is the whole state or a state/command pair, and
 whether init receives application arguments. Renaming a constructor changes no
 ownership verdict. All existing entry demands and refusals remain in force.
 
-This first piece preserves existing verdicts while the rest of O3 is pending:
-the existing renderer-mode check (the in-place platform property, or
-ownership-everywhere for checking the future universal contract) still decides
-whether an otherwise accepted entry write is reported as platform-refused.
-The declaration is selected only by entry, never by a constructor's name.
-Browser-inline's Tea.sandbox and Tea.element also carry entry, preserving the
-rows the existing in-place-property lookup gave them.
+The first implementation (#767) preserved the previous renderer-mode refusal
+until the runtime met the direct contract. After #829 and O2 (#842), the
+2026-10-23 completion of #319 removes that override: an entry word always
+selects this protocol. Browser-inline's Tea.sandbox and Tea.element also carry
+entry. Renderer properties and ownership-everywhere no longer select rows.
 
 A record with a settle field declares the **hosted protocol**. Its callbacks
 are init : Host msg → state; update : Host msg, msg, state → state;
@@ -6161,6 +6143,16 @@ behaviour changes.
     (thesis T35–T37, T47). They are red against a runtime that keeps the skip, which O5 proves once the
     write is really in place;
   - the `browser/` corpus is unchanged.
+  *As built, 2026-10-23 (#319):* #767 supplied entry words and their refusals;
+  #829 removed mutable List/record identity skips and audited P1. After O2
+  (#842), the template row and platform cause are removed from analysis and
+  reports. Rows are selected only by entry. Ownership corpus changes are
+  restricted to former platform refusals receiving their entry-row verdict
+  and the corresponding totals. The owner runs the measurements; no research
+  harness or measurements form part of this implementation. The owner's
+  2026-10-23 transcript clarification permits only console changes explained
+  by required List/record recomputation; every existing DOM line stays identical.
+
 - **O4 — enforcement is the language's.**
   - *Builds:* the pass in every `check` and `build`, with a platform or without one; `"lists"` removed
     from `Manifest` and from `browser-direct`'s manifest; O0's flag deleted; §28.7's maker reporting
