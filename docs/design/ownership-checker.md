@@ -1760,6 +1760,17 @@ fixed context, not type equality or a fold by a type head. Construction conditio
 are lowered before type-coincident paths normalize, as before. Summary block 30
 invalidates the older conflation of type uncertainty with spatial repetition.
 
+*Amended 2026-10-23 (#748, fixed physical selectors across closed views):*
+The same prefix projection applies when two closed full types differ. A cast
+from `List Int` to `List String` does not change where an existing element is
+stored, although the marker keys remain different and cannot cancel. Compare
+the complete types along each actual selector; preserve only the justified
+physical prefix, and keep an incompatible remainder approximately below it.
+This retains every holder without promoting an element to its containing array.
+It proves no equality between the types, makes no primitive a list, and grants
+no ownership to a captured value. A returned function whose recursive captures
+grow tests the fresh outer write alongside captured-write and unknown-call twins.
+
 **F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
