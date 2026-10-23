@@ -24,11 +24,21 @@
 //! before, on exactly these bytes. On a miss Node runs and the output is
 //! compared with the golden, and only when the program exited as expected
 //! and its output equalled the golden is the digest written (`record`),
-//! atomically: an unnamed file in the directory, then a rename over the
-//! final name, so two processes that write the same digest at once both
-//! succeed. A run that fails writes nothing. A blessing run
-//! (`BENI_WRITE_EXPECTED=1`) and pending mode never look and never write.
-//! There is no recording mode.
+//! atomically: a named temporary file in the directory (16 hex digits),
+//! then a rename over the final name, so two processes that write the same
+//! digest at once both succeed. A writer killed between the two leaves its
+//! temporary file; it is never read as a digest (a digest has 64 digits)
+//! and it counts toward CI's bound. The digest recorded is of the bytes
+//! the compare used, never of a golden read before the run: a blessing run
+//! can rewrite the golden between the two reads, and the cache must say
+//! what the program showed. A run that fails writes nothing. Pending mode
+//! never looks and never writes. A blessing run (`BENI_WRITE_EXPECTED=1`)
+//! writes no digest for the build it blesses — a golden written from the
+//! output is no verdict — but the other passes of the fixture, compared
+//! with the golden it just wrote as always, are verified and recorded.
+//! There is no recording mode. And the cache is a cache: when its
+//! directory cannot be read or written, one warning is printed, every
+//! program runs and nothing is recorded (`verified`, `record`).
 //!
 //! **What a digest covers.** For a corpus `run/` build (`digest`): the
 //! build's name (`dev`, `release`, …), the Node version (`process.version`
@@ -209,10 +219,15 @@ fn entryPath(buffer: []u8, dir: []const u8, digest_hex: []const u8) ![]const u8 
 }
 
 /// Whether the cache holds `digest_hex`: a run with this digest ran and
-/// matched before. Always false without a cache.
-pub fn verified(io: Io, digest_hex: []const u8) !bool {
+/// matched before. Always false without a cache, and false when the cache
+/// cannot be read (one warning per process): a cache that fails is no
+/// cache, never a verdict.
+pub fn verified(io: Io, digest_hex: []const u8) bool {
     const dir = cacheDir(io) orelse return false;
-    return verifiedIn(io, dir, digest_hex);
+    return verifiedIn(io, dir, digest_hex) catch |err| {
+        warnOnce(dir, "read", err);
+        return false;
+    };
 }
 
 /// `verified`, in the cache at `dir`.
@@ -227,14 +242,24 @@ pub fn verifiedIn(io: Io, dir: []const u8, digest_hex: []const u8) !bool {
 }
 
 /// Put `digest_hex` into the cache: the run it names ran and matched.
-/// Atomic — an unnamed file in the directory, then a rename over the final
-/// name — so two processes that record the same digest at once both
-/// succeed, and a reader never sees a half-written entry (there is nothing
-/// to half-write: the file is empty, its name is the record). The
-/// directory is created when it does not exist. Nothing without a cache.
-pub fn record(io: Io, digest_hex: []const u8) !void {
+/// Atomic — a named temporary file in the directory, then a rename over
+/// the final name — so two processes that record the same digest at once
+/// both succeed, and a reader never sees a half-written entry (there is
+/// nothing to half-write: the file is empty, its name is the record). The
+/// directory is created when it does not exist. Nothing without a cache,
+/// and a cache that cannot be written loses the entry with one warning per
+/// process: the program passed, and the cache is not the verdict.
+pub fn record(io: Io, digest_hex: []const u8) void {
     const dir = cacheDir(io) orelse return;
-    return recordIn(io, dir, digest_hex);
+    recordIn(io, dir, digest_hex) catch |err| warnOnce(dir, "written", err);
+}
+
+var warned = false;
+
+/// Say once per process that the cache at `dir` cannot be `what`.
+fn warnOnce(dir: []const u8, what: []const u8, err: anyerror) void {
+    if (@atomicRmw(bool, &warned, .Xchg, true, .monotonic)) return;
+    std.debug.print("run-hash cache: {s} cannot be {s} ({t}); every program runs and nothing is recorded\n", .{ dir, what, err });
 }
 
 /// `record`, into the cache at `dir`.
@@ -291,14 +316,14 @@ pub fn checkProgram(w: *World, script: []const u8, expected: world.Expected) !?w
     const arena = w.arena.allocator();
     // Taken before Node runs, so nothing the program does can change it.
     const digest_hex = try programDigest(arena, w, script, expected);
-    if (digest_hex) |d| if (try verified(w.io, d)) {
+    if (digest_hex) |d| if (verified(w.io, d)) {
         report(w.io, .skipped);
         return null;
     };
     report(w.io, .stale);
     const got = try w.node(script);
     if (!matches(got, expected)) return got;
-    if (digest_hex) |d| try record(w.io, d);
+    if (digest_hex) |d| record(w.io, d);
     return null;
 }
 
@@ -310,13 +335,13 @@ pub fn checkProgram(w: *World, script: []const u8, expected: world.Expected) !?w
 /// result says whether the run did what was expected, and is recorded
 /// when it did.
 pub fn checkDigested(w: *World, digest_hex: []const u8, context: anytype, comptime run: fn (@TypeOf(context)) anyerror!bool) !?bool {
-    if (try verified(w.io, digest_hex)) {
+    if (verified(w.io, digest_hex)) {
         report(w.io, .skipped);
         return null;
     }
     report(w.io, .stale);
     const ok = try run(context);
-    if (ok) try record(w.io, digest_hex);
+    if (ok) record(w.io, digest_hex);
     return ok;
 }
 

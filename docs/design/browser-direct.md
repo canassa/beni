@@ -1794,10 +1794,11 @@ not compared is listed, never what is**.
   `<html>`'s and `<head>`'s attributes other than the title. Coverage of a random walk is what
   the seeds give: a write reached only by a deep sequence is the sweep's, not the gates'.
 - **A finding, not the fuzzer's:** `browser/tea/ApiAndRoutes` costs 4.52 billion instructions
-  without the fuzz whenever its pages must run, over the 4.3 billion budget; the gates pass only
-  because its pages' run hashes are recorded, and `test-run-hashes` records without a budget
-  (the per-test budgets went with #744 on 2026-10-22, and the records with #881 on 2026-10-23:
-  a cold run-hash cache runs the pages once).
+  without the fuzz whenever its pages must run, over the 4.3 billion budget of the time; the
+  gates passed only because its pages' run hashes were recorded, and `test-run-hashes` recorded
+  without a budget. (Amended 2026-10-23, #881: the per-test budgets went with #744 on
+  2026-10-22, and the record files and `test-run-hashes` with #881. A cold run-hash cache runs
+  the pages once, under the 120-second hang guard, and the cache keeps the verdict.)
   Its two builds alone are 3.4 billion.
 ### *Amended 2026-10-09 (slice S1, as built; research 66):* holes, handlers and the two oracles
 
