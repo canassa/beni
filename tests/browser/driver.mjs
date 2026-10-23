@@ -773,6 +773,131 @@ function prelude() {
   } else {
     record.trust = null;
   }
+  // Boxes. happy-dom lays nothing out and puts every box at 0, so under it
+  // a reader of a box that subtracts the wrong element's box, or none,
+  // reads what a correct one reads (`Html.localX`, issue #558). So under
+  // happy-dom an element gets the box Chrome gives it on a page that is
+  // not scrolled when an allow list leaves nothing else that can move or
+  // size its box:
+  // - the document has no style sheet, and no `style` or `link` element;
+  // - the element is a `div` or a `span`, which have no default margin,
+  //   border or padding. Its inline style sets `position: absolute` or
+  //   `fixed`, `left` and `top` as `Npx` or `0`, and `width` and `height`
+  //   as `Npx` or `0` that is not negative;
+  // - each ancestor is an `html`, `body`, `main`, `div` or `span`, whose
+  //   children Chrome renders;
+  // - the element and each ancestor are HTML elements with no `hidden` or
+  //   `popover` attribute. Their inline style names no property but
+  //   `position`, `left`, `top`, `width`, `height` and `touch-action`, and
+  //   names each one once;
+  // - the element is in the document, not in a shadow tree.
+  // happy-dom keeps a declaration only for a property that it knows, so a
+  // `-webkit-` alias or an unknown name leaves no trace in `element.style`.
+  // The names therefore come from the `style` attribute's text, which
+  // happy-dom keeps as written until a write through `element.style`
+  // writes it again. Every such write reads `element.style` first: its
+  // getter marks the element when the text names a property outside the
+  // list, and `setProperty` marks it when its name is outside the list. A
+  // marked element is never placed. The marks see the two writes that the
+  // runtimes make, the `style` attribute and `setProperty`, and not
+  // `cssText`, a style property's assignment (`style.left = …`),
+  // `attachShadow` or `element.animate`: a runtime that starts to use one
+  // of those must add it here.
+  // The box is from the containing block: the viewport for `fixed`; for
+  // `absolute`, the box of the nearest ancestor whose inline `position` is
+  // not `static`, which the list must allow too, or the page's origin when
+  // there is none. Every other element keeps happy-dom's box at 0. The list
+  // reads no computed style: happy-dom computes CSS in part only, so a
+  // computed value can differ from Chrome's. Installed once, as above.
+  if (globalThis.happyDOM !== undefined && !Object.hasOwn(Element.prototype, "__beniBox")) {
+    const own = Element.prototype.getBoundingClientRect;
+    const html = "http://www.w3.org/1999/xhtml";
+    const allowed = new Set(["position", "left", "top", "width", "height", "touch-action"]);
+    const tags = new Set(["html", "body", "main", "div", "span"]);
+    // A name is tested as it is written. Chrome applies `LEFT` or `Left`,
+    // and happy-dom drops them, so another case is outside the list.
+    const names = (text) =>
+      text
+        .split(";")
+        .map((d) => (d.includes(":") ? d.slice(0, d.indexOf(":")) : d).trim())
+        .filter((name) => name !== "");
+    const listed = (text) => {
+      const all = names(text);
+      return all.every((name) => allowed.has(name)) && new Set(all).size === all.length;
+    };
+    // The marks. `element.style` is a proxy of happy-dom's, and the `this`
+    // of `setProperty` is the declaration behind it, which `__beniSelf`
+    // returns: `owner` maps each declaration to its element.
+    const marked = new WeakSet();
+    const owner = new WeakMap();
+    const declaration = CSSStyleDeclaration.prototype;
+    Object.defineProperty(declaration, "__beniSelf", {
+      value() {
+        return this;
+      },
+    });
+    let holder = Object.getPrototypeOf(document.createElement("div"));
+    while (!Object.hasOwn(holder, "style")) holder = Object.getPrototypeOf(holder);
+    const style = Object.getOwnPropertyDescriptor(holder, "style");
+    Object.defineProperty(holder, "style", {
+      ...style,
+      get() {
+        const text = this.getAttribute("style");
+        if (text !== null && !listed(text)) marked.add(this);
+        const d = style.get.call(this);
+        owner.set(d.__beniSelf(), this);
+        return d;
+      },
+    });
+    const setProperty = declaration.setProperty;
+    declaration.setProperty = function (name, value, priority) {
+      const element = owner.get(this);
+      if (element !== undefined && !allowed.has(String(name))) marked.add(element);
+      return setProperty.call(this, name, value, priority);
+    };
+    const pixels = (text) => {
+      if (text === "0") return 0;
+      const match = /^(-?[0-9]+(?:\.[0-9]+)?)px$/.exec(text);
+      return match === null ? null : Number(match[1]);
+    };
+    const size = (text) => {
+      const n = pixels(text);
+      return n === null || n < 0 ? null : n;
+    };
+    // An element whose markup and inline style the list allows.
+    const plain = (element, kinds) => {
+      if (element.namespaceURI !== html || !kinds.has(element.localName)) return false;
+      if (element.hasAttribute("hidden") || element.hasAttribute("popover")) return false;
+      const text = element.getAttribute("style");
+      if (text !== null && !listed(text)) return false;
+      return !marked.has(element);
+    };
+    const boxes = new Set(["div", "span"]);
+    const placed = (element) => {
+      const style = element.style;
+      if (style === undefined || (style.position !== "absolute" && style.position !== "fixed")) return null;
+      if (element.getRootNode() !== document || !plain(element, boxes)) return null;
+      if (document.styleSheets.length !== 0 || document.adoptedStyleSheets?.length || document.querySelector("style, link") !== null) return null;
+      const box = { x: pixels(style.left), y: pixels(style.top), width: size(style.width), height: size(style.height) };
+      if (box.x === null || box.y === null || box.width === null || box.height === null) return null;
+      let block = null;
+      for (let up = element.parentElement; up !== null; up = up.parentElement) {
+        if (!plain(up, tags)) return null;
+        if (block === null && style.position === "absolute" && up.style.position !== "" && up.style.position !== "static") block = up;
+      }
+      if (block === null) return box;
+      const origin = placed(block);
+      if (origin === null) return null;
+      box.x += origin.x;
+      box.y += origin.y;
+      return box;
+    };
+    Object.defineProperty(Element.prototype, "__beniBox", { value: true });
+    Element.prototype.getBoundingClientRect = function () {
+      const box = placed(this);
+      return box === null ? own.call(this) : new DOMRect(box.x, box.y, box.width, box.height);
+    };
+  }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
   // Every listener the page adds to the window or the document from here
@@ -1245,8 +1370,9 @@ function step(s) {
     // A pointer event at a point of a box: `x` and `y` are CSS pixels from
     // the top-left corner of the `box:` element (by default the element the
     // event is dispatched on), so its `clientX` is that box's left plus `x`.
-    // happy-dom has no layout and puts every box at 0; Chrome lays the page
-    // out, so only Chrome shows the conversion. `pointerenter` and
+    // happy-dom has no layout, so there only an element that the prelude's
+    // allow list places has a box away from 0 (*Boxes*); Chrome
+    // lays out every element. `pointerenter` and
     // `pointerleave` neither bubble nor cancel, and nor does
     // `pointercancel`, as the Pointer Events standard fires them.
     case "pointer": {

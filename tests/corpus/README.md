@@ -392,12 +392,15 @@ project) against it, one step per line, `#` for a comment:
                                 neither, `pointercancel` does not cancel.
                                 One whose default a handler prevented logs
                                 `(pointerdown's default prevented)` (or its
-                                name's). happy-dom has no layout, so every
-                                box is at 0 there and only Chrome shows a
-                                handler converting the point to its own
-                                box: name the point in the box of the
-                                element that has the handler, and both DOMs
-                                print the same transcript
+                                name's). happy-dom has no layout: there,
+                                only an element that an allow list places
+                                has a box away from 0 (*layout*, below).
+                                Name the point in the box of the element
+                                that has the handler, and both DOMs print
+                                the same transcript. For the gates to see
+                                a handler convert the point to its own box,
+                                place that element as the list allows and
+                                point at a child of it
     press <selector>            a user's click: trusted (below), in two
                                 tasks — `pointerdown` and `mousedown`,
                                 whose default focuses the nearest focusable
@@ -734,7 +737,42 @@ compares instead of `.expected`. The differences known today:
   a fixture about scheduling order belongs to `test-browser`. Frames are
   not among the differences: both DOMs draw only the driver's virtual
   frames (`frame`);
-- layout: happy-dom lays nothing out, so sizes and positions are zero;
+- layout: happy-dom lays nothing out, so sizes and positions are zero,
+  with one exception for `getBoundingClientRect`. An element is placed
+  when an allow list leaves nothing else that can move or size its box:
+  - the document has no style sheet, and no `style` or `link` element;
+  - the element is a `div` or a `span`. Its inline style sets
+    `position: absolute` or `fixed`, and `left`, `top`, `width` and
+    `height`, each written as `Npx` or `0`. `width` and `height` are not
+    negative;
+  - each ancestor is an `html`, `body`, `main`, `div` or `span`;
+  - the element and each ancestor are HTML elements with no `hidden` or
+    `popover` attribute. Their inline style names no property but
+    `position`, `left`, `top`, `width`, `height` and `touch-action`, and
+    names each one once;
+  - the element is in the document, not in a shadow tree.
+
+  happy-dom keeps a declaration only for a property that it knows, so the
+  names come from the text of the `style` attribute, as written: an
+  unknown name, a `-webkit-` alias or a name in another case (`LEFT`)
+  there refuses the element. A later `style.setProperty` writes that text
+  again without the unknown name, so the driver marks the element each
+  time it reads its `style` and the text has such a name, and a
+  `setProperty` whose name, as given, is outside the list marks it too. A
+  marked element keeps the box at 0. The marks see the two writes that
+  the runtimes make: the `style` attribute and `setProperty`. They do not
+  see `cssText`, an assignment to a style property (`style.left = …`),
+  `attachShadow` or `element.animate`, so a platform that starts to use
+  one of these adds it to the driver's list.
+
+  A placed element gets the box that Chrome gives it on a page that is
+  not scrolled: from the viewport for `fixed`, and for `absolute` from
+  the box of the nearest ancestor whose inline `position` is not
+  `static`. That ancestor must be placed too. When there is none, the box
+  is from the page's origin. Any other element has the box at 0. So under
+  the gates, `browser/tea/PointerInput` and
+  `browser/dom/PointerEvents` see `Html.localX` subtract the box of the
+  element that has the handler;
 - CSS values: a property the page sets through `style.setProperty`
   goes back into the `style` attribute as each DOM serialises it. A
   colour is `rgb(…)` in Chrome and as the page wrote it in happy-dom

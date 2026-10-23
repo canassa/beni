@@ -5256,7 +5256,17 @@ the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot
 pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
 a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
 *Amended 2026-10-22* (#696): the first is refused with `private_name`, because `pointer` is not
-`pub`.
+`pub`. *Amended 2026-10-23* (#558): under happy-dom, an element that an allow list places has the
+box that Chrome gives it, and every other element has the box at 0. The list: the document has no
+style sheet; the element is a `div` or a `span` whose inline style sets `position: absolute` or
+`fixed` and `left`, `top`, `width` and `height` as `Npx` or `0`, with no negative size; each
+ancestor is an `html`, `body`, `main`, `div` or `span`; the element and each ancestor name no
+inline property but those and `touch-action`, read from the `style` attribute's text and from each
+`setProperty`, because happy-dom drops a property that it does not know; and none is hidden
+(`tests/corpus/README.md`, *layout*, has the whole list). So the gates see the
+conversion of (c) in `browser/tea/PointerInput` and `browser/dom/PointerEvents`: a reader that drops the subtraction, or subtracts the target's box,
+fails them. `browser/inline/PointerPoint` has no such element, because `browser-inline` compiles no
+`style` yet, so only Chrome sees its conversion.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:

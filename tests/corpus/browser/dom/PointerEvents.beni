@@ -5,7 +5,11 @@
 -- of the list listens for its own `pointerdown`, and a row added later
 -- listens as well. The move handler captures only the scalar `track` flag,
 -- and the render replaces that handler: after `#track` the
--- moves are logged again.
+-- moves are logged again. The surface's inline style places it at 20, 60,
+-- so under happy-dom too it has the box Chrome gives it
+-- (`tests/corpus/README.md`, *layout*), and a row keeps the box at 0. So
+-- the gates fail this page when the extractor subtracts no box, or the
+-- box of the target.
 import Browser
 import Html exposing (Html)
 
