@@ -1,8 +1,8 @@
 module PolyRecTwice
   34:26 List.push ys: accepted param
-  44:26 List.push ys: rejected call: zs⋆ may hold it through the call at 42:10, and is read at 44:44 (approx)
-  54:26 List.push a: rejected call: b⋆ may hold it through the call at 52:10, and is read at 54:43 (approx)
-  64:26 List.push a: rejected call: b⋆ may hold it through the call at 62:17, and is read at 64:43 (approx)
+  44:26 List.push ys: rejected level: zs⋆ may hold it at another level, and is read at 44:44 (approx)
+  54:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 54:43 (approx)
+  64:26 List.push a: rejected level: b⋆ may hold it at another level, and is read at 64:43 (approx)
   71:15 call PolyRecTwice.once xs: rejected call: xs is read again at 71:25; the callee writes it only through an approximate step (PolyRecTwice.once writes π1) (approx)
   75:21 call PolyRecTwice.once xs: rejected call: xs is read again at 75:19; the callee writes it only through an approximate step (PolyRecTwice.once writes π1) (approx)
   summary wm: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{excl π2}r{excl π2} fresh2{excl π2}r{excl π2} ~fresh3{excl π2}r{excl π2}, ⟨M⟩⁺#MLeaf.0#Just.0[*] π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh2{excl π2}r{excl π2} ~fresh3{excl π2}r{excl π2} ~π2
@@ -15,4 +15,5 @@ module PolyRecTwice
   summary callOnceKeep: π1 RAw[storage]; res .1 π1; xreq excl π1
   demands 6: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 total 6: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
-cause call 5
+cause call 2
+cause level 3

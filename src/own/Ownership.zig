@@ -66,6 +66,11 @@ pub const none: u32 = std.math.maxInt(u32);
 /// that stands for more than one: a level of a recursive value, which
 /// folding merged with the levels below it (§16.7).
 pub const approx_place: u32 = std.math.maxInt(u32);
+/// §16.7 (e): a place that stands for several levels of one region of a
+/// recursive value, where a projection took one level out of the marker
+/// `⟨T⟩` that keeps them as one place. A holder found so is the cause
+/// `level`: the checker cannot tell the levels apart.
+pub const approx_level: u32 = std.math.maxInt(u32) - 1;
 
 /// k: the path cut (§4.1, thesis §3.1).
 pub const k_limit: u32 = 8;
@@ -311,6 +316,9 @@ pub const Cause = enum {
     read_only,
     /// §20.2: a template platform keeps the model it hands `update`.
     platform,
+    /// §16.7 (e): a holder another level of the same region may be; the
+    /// checker keeps one place for the levels of a recursive value.
+    level,
 
     pub fn text(c: Cause) []const u8 {
         return switch (c) {
@@ -333,6 +341,7 @@ pub const Cause = enum {
             .payload => "payload",
             .read_only => "read-only",
             .platform => "platform",
+            .level => "level",
         };
     }
 
@@ -340,7 +349,7 @@ pub const Cause = enum {
     /// decided per rejection (§16.11).
     pub fn approximate(c: Cause) bool {
         return switch (c) {
-            .unknown, .escaped, .captured_edit, .element, .call, .limit, .exclusive, .payload => true,
+            .unknown, .escaped, .captured_edit, .element, .call, .limit, .exclusive, .payload, .level => true,
             else => false,
         };
     }
@@ -5962,6 +5971,17 @@ fn hasStep(o: *const Ownership, p: u32, kind: StepKind) bool {
     return false;
 }
 
+/// §16.7 (e): whether `p` goes through the level marker `⟨T⟩` of a recursive
+/// type (not F1's marker of closures), so that it names the places of
+/// several levels of one region.
+fn levelMarked(o: *const Ownership, p: u32) bool {
+    var at = p;
+    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
+        if (o.paths.kind.items[at] == .level and o.markerType(o.paths.arg.items[at]) != fn_type) return true;
+    }
+    return false;
+}
+
 fn firstStep(o: *const Ownership, p: u32) ?Step {
     if (p == eps) return null;
     var at = p;
@@ -7174,6 +7194,9 @@ const Holder = struct {
     approx: u32,
     /// Found through a split element's list (§18.4 item 4): the element itself.
     split: bool = false,
+    /// §16.7 (e): it holds the written cell itself, a cell that stands for
+    /// the lists of several levels of one region: it may be another level.
+    level: bool = false,
 };
 
 /// `creation`: a once closure's creation, or a local function's call, demanding
@@ -8230,8 +8253,11 @@ const Walker = struct {
     /// `r` begins with `s` (the root is one of the `T`s); both
     /// approximately.
     fn underMarker(w: *Walker, out: *std.ArrayList(Entry), e: Entry, first: Step, s: Step) Allocator.Error!void {
-        const ap = if (e.approx != 0) e.approx else approx_place;
         const t = w.o.markerType(first.arg);
+        // §16.7 (e): a level taken out of a recursive type's marker is one
+        // the checker cannot tell from the region's other levels, however the
+        // entry got there: that is what a holder found so may be.
+        const ap = if (t != fn_type) approx_level else if (e.approx != 0) e.approx else approx_place;
         const r = try w.o.dropFirst(e.path);
         // Kept whole when the step may lead into the region, under a marker
         // that says where the step went: to a `T`, to a field whose `T`s
@@ -8255,7 +8281,7 @@ const Walker = struct {
     /// and what a marker of `T` in its path names is at the rest after it;
     /// both approximately.
     fn alongMarker(w: *Walker, out: *std.ArrayList(Entry), e: Entry, arg: u32) Allocator.Error!void {
-        const ap = if (e.approx != 0) e.approx else approx_place;
+        const ap = if (w.o.markerType(arg) != fn_type) approx_level else if (e.approx != 0) e.approx else approx_place;
         // The root's own places, as the expansion that is empty reads them.
         if (w.o.markerEmpty(arg)) try out.append(w.a, e);
         // Where the root may not be a `T`, a place inside it may be one, at
@@ -17016,7 +17042,10 @@ const Walker = struct {
                     if ((try w.covers(e.cell, b.cell)) != null) break true;
                 } else false;
                 if (same and try w.reliesApart(e.cell)) continue;
-                try there.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
+                // §16.7 (e): a cell that stands for several levels of a region
+                // is another level, which the checker cannot tell apart.
+                const levels = w.o.levelMarked(w.cells.items[e.cell].path) or w.o.levelMarked(u.path);
+                try there.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else if (levels) approx_level else approx_place, .grown = e.grown });
             }
             try others.append(w.a, there.items);
         }
@@ -17049,6 +17078,17 @@ const Walker = struct {
         const ns = w.o.pathNodes(p, &buf);
         for (ns, 0..) |n, k| if (w.o.paths.kind.items[n] == .level) return if (k == 0) eps else ns[k - 1];
         return null;
+    }
+
+    /// §16.7 (e): whether `c` is a symbolic cell that stands for the lists of
+    /// several levels of one region of a recursive value (its path goes
+    /// through the level marker): two bindings of it may be two levels.
+    fn standsForLevels(w: *const Walker, c: u32) bool {
+        const x = w.cells.items[c];
+        return switch (x.kind) {
+            .param, .env, .cbres, .result => w.o.levelMarked(x.path),
+            else => false,
+        };
     }
 
     /// §16.7: a symbolic cell that stands for several places — under `[*]`
@@ -19945,6 +19985,11 @@ const Walker = struct {
                 }
             }
         }
+        if (approx_hit == approx_level) {
+            rec.prelim = .{ .cause = .level, .detail = "another operand may hold it at another level: the checker keeps one place for the levels of a recursive value" };
+            try w.demands.append(w.a, rec);
+            return;
+        }
         if (approx_hit == approx_place) {
             rec.prelim = .{ .cause = .element, .detail = "another operand may hold it: one place of it stands for several: the levels of a recursive value, or the environments of closures inside closures" };
             try w.demands.append(w.a, rec);
@@ -20010,6 +20055,7 @@ const Walker = struct {
                         .path = try w.o.concat(e.path, cv.rest),
                         .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0,
                         .split = split,
+                        .level = !split and e.cell == c.cell and w.standsForLevels(c.cell),
                     });
                 }
             }
@@ -20544,10 +20590,14 @@ const Walker = struct {
             // which is a limit of the checker.
             const cause: Cause = if (h.approx == approx_place)
                 .element
+            else if (h.approx == approx_level)
+                .level
             else if (h.approx != 0 or (rec.fields != null and u.call == 2))
                 .call
             else if (h.local == rec.base_local and w.o.overlap(h.path, rec.base_path) and !w.o.hasStep(h.path, .env))
                 .later_use
+            else if (h.level)
+                .level
             else if (h.split)
                 .alias
             else if (rec.element and try w.o.representative(h.path))
@@ -20586,6 +20636,7 @@ const Walker = struct {
             switch (bst.cause) {
                 .later_use => wr.print(" is read again at {d}:{d}", .{ up.line, up.col }) catch return error.OutOfMemory,
                 .captured => wr.print(", a closure holding it, is used at {d}:{d}", .{ up.line, up.col }) catch return error.OutOfMemory,
+                .level => wr.print(" may hold it at another level, and is read at {d}:{d}", .{ up.line, up.col }) catch return error.OutOfMemory,
                 .call => if (whole_call) {
                     wr.print(" is handed whole at {d}:{d} to a call the checker cannot see into, which may read any field", .{ up.line, up.col }) catch return error.OutOfMemory;
                 } else {

@@ -1,0 +1,41 @@
+-- `list_may_be_shared` for the levels of a recursive value (§16.7 (e),
+-- language.md §6.8): the checker keeps one place for all the levels of one
+-- region of a tree, so it cannot tell the left child's list from the list
+-- two levels down. `alternate` puts `a` at the root and two levels down and
+-- `b` between, and `grown` writes the root's list while it reads the left
+-- child's. That is safe, and it is the one refusal of safe code the checker
+-- keeps: the message names the levels, the copy that fixes it and the limit.
+import Html exposing (Html)
+import Tea
+
+
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+alternate : List Int, List Int → Tree
+alternate a b = Node (Node (Node Leaf a Leaf) b Leaf) a Leaf
+
+
+grown : List Int, List Int → Int
+grown a b =
+    case alternate a b of
+        Node l xs _ →
+            case l of
+                Node _ ys _ →
+                    List.length (List.push xs 1) + List.length ys
+
+                Leaf →
+                    0
+
+        Leaf →
+            0
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → grown [ 1 ] [ 2 ], update = λ_ m → m, view = view }

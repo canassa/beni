@@ -122,6 +122,74 @@ snapshot xs =
     ( xs, after )
 ```
 
+## Recursive values
+
+The checker keeps one place for all the levels of one part of a recursive value. For a `Tree`,
+the lists of the left subtree are one place, the left child's own list included. The checker
+cannot show that two levels of that part hold different lists. A write to a list of one level,
+while a list of another level of the same part is read later, is the error `list_may_be_shared`.
+The error occurs also when the two lists are different. This is the one case where the checker
+refuses a safe program.
+
+Here `alternate` puts `a` at the root and two levels down, and `b` between. `grown` changes the
+root's list and reads the left child's list. That is safe, but it is refused:
+
+```beni platform=browser-inline refused=list_may_be_shared
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+alternate : List Int, List Int → Tree
+alternate a b = Node (Node (Node Leaf a Leaf) b Leaf) a Leaf
+
+
+pub grown : List Int, List Int → Int
+grown a b =
+    case alternate a b of
+        Node l xs _ →
+            case l of
+                Node _ ys _ →
+                    List.length (List.push xs 1) + List.length ys
+
+                Leaf →
+                    0
+
+        Leaf →
+            0
+```
+
+The fix is a copy where the list is put into the value, so that no two levels hold the same list.
+A copy at the write (`List.push (List.copy xs) 1`) also works. Copy a record field with
+`Record.copy`.
+
+```beni platform=browser-inline
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+alternate : List Int, List Int → Tree
+alternate a b = Node (Node (Node Leaf (List.copy a) Leaf) b Leaf) a Leaf
+
+
+pub grown : List Int, List Int → Int
+grown a b =
+    case alternate a b of
+        Node l xs _ →
+            case l of
+                Node _ ys _ →
+                    List.length (List.push xs 1) + List.length ys
+
+                Leaf →
+                    0
+
+        Leaf →
+            0
+```
+
+Sources: `docs/design/language.md` §6.8; `docs/design/ownership-checker.md` §16.7.
+
 ## Identity
 
 `List.map`, `List.filter` and the other readers return a fresh list, never the one they were given.
