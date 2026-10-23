@@ -921,6 +921,15 @@ const Gen = struct {
 
     /// Whether any variant of the union has a payload: §4's padded object
     /// then, the bare tag when none does.
+    /// Whether variant `order` of union `n` is a tag no run tells from a
+    /// failure (`SchemaValid.deadTags`; `schema.md` §6, amended 2026-10-24):
+    /// the validator worker and the shape read it as an unknown tag. Only
+    /// the declaration's root union's tags are.
+    fn deadTag(g: *Gen, n: PNode, order: usize) bool {
+        if (g.codec or n != g.def.root) return false;
+        return std.mem.indexOfScalar(u32, g.l.valid_sites.deadVariants(g.ref), @intCast(order)) != null;
+    }
+
     fn variantsOf(g: *Gen, n: PNode) Variants {
         var padded = false;
         for (SchemaGraph.variants(g.plan, n)) |vi| {
@@ -1015,6 +1024,7 @@ const Gen = struct {
                 try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))))));
                 for (SchemaGraph.variants(plan, n), 0..) |vi, order| {
                     if (vi >= plan.variants.len) continue;
+                    if (g.deadTag(n, order)) continue;
                     const v = plan.variants[vi];
                     const name = SchemaGraph.symbol(plan, v.name);
                     try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, v.external)));
@@ -2083,6 +2093,8 @@ const Fn = struct {
         for (SchemaGraph.variants(plan, n), 0..) |vi, order| {
             if (vi >= plan.variants.len) continue;
             const variant = plan.variants[vi];
+            // A dead tag is an unknown one to the validator.
+            if (w.op == .valid and g.deadTag(n, order)) continue;
             const tag_text = SchemaGraph.literal(plan, variant.external);
             try expected.print(g.l.scratch, "{s}\"{s}\"", .{ if (order == 0) "" else ", ", tag_text });
             var arm: Stmts = .empty;
