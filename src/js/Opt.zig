@@ -259,6 +259,10 @@ const Opt = struct {
     found_in: Index = undefined,
     /// Whether the value `pureValue` last accepted reads a field.
     reads_field: bool = false,
+    /// `pureValue` asked for a value whose one read is in the next statement
+    /// (`list`'s next-statement rule): a name written through, or rebound,
+    /// elsewhere in the declaration is not written between the two.
+    next_statement: bool = false,
     /// `copy`'s use sites, found by `ownUsesInto`.
     found_all: std.ArrayList(Index) = .empty,
 
@@ -594,6 +598,23 @@ const Opt = struct {
             const here = stmt.int();
             const listed = o.kept[here / 32] & (@as(u32, 1) << @intCast(here % 32)) != 0;
             if (listed and o.ir.tag(value) == .member) continue;
+            // A value that calls, constructs and assigns nothing, read once
+            // in the very next statement before anything there may write
+            // (`backend.md` §9 item 1, amended 2026-10-23, #896): nothing
+            // runs between where it is made and where it is read, so it
+            // reads the same there, whatever the declaration writes through
+            // its names elsewhere — a root factory's handlers write the
+            // slice its bindings read, which the rules below refuse.
+            if (!listed and i + 1 < stmts.len and o.nextStatementValue(value)) next: {
+                const after = stmts[i + 1];
+                o.found = .none;
+                if (try o.ownUses(after, n) != 1) break :next;
+                const at = o.found.unwrap() orelse break :next;
+                if (!o.cleanBefore(after, at)) break :next;
+                o.drop(stmt);
+                o.inlined[at.int()] = o.compress(value).toOptional();
+                continue;
+            }
             // A value made only of beni field reads, names and literals
             // (`backend.md` §9 item 1, amended 2026-10-18). It does nothing
             // and cannot throw, but a write of the record it reads would
@@ -759,6 +780,17 @@ const Opt = struct {
     /// The budget is a conservative one: a member chain deeper than it
     /// answers null, which declines the fold (and, in `isPureReadConst`,
     /// stops the scan). Output is then unoptimised, never wrong.
+    /// A value the next-statement rule takes: a member chain of a name
+    /// (`chainBase`), or one `pureValue` accepts with names written
+    /// through elsewhere let in — the licences the rules below give, less
+    /// the scan past statements, which the rule does not make.
+    fn nextStatementValue(o: *Opt, value: Index) bool {
+        if (o.chainBase(value) != null) return true;
+        o.next_statement = true;
+        defer o.next_statement = false;
+        return o.pureValue(value, 0) != null;
+    }
+
     fn chainBase(o: *Opt, node: Index) ?NameIndex {
         var n = node;
         var budget: u32 = 64;
@@ -960,6 +992,7 @@ const Opt = struct {
                 // value: `n = c.v; three = n == 3` judges `c.v == 3`.
                 if (o.inlined[node.int()].unwrap()) |v| return o.pureValue(v, depth + 1);
                 const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                if (o.next_statement) return .any;
                 if (n.unwrap()) |i| if (i < o.assigned.len and o.stamp[i] == o.current and o.assigned[i]) return null;
                 if (std.mem.indexOfScalar(NameIndex, o.mutable, n) != null) return null;
                 return .any;

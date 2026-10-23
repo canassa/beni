@@ -5687,6 +5687,16 @@ written at its single use, in a later statement's own expressions of the same li
   write is evaluated before the use (`Opt.cleanBefore`) â `l(a[3],`Cups = ${c.u}`)` takes it,
   `f(bump(c), c.u)` does not.
 
+*Amended 2026-10-23 (#896): the next statement.* Either kind of value is also written at its one
+read when that read is in the **very next statement**, before anything there that may write
+(`Opt.cleanBefore`), even when a name it is built of is written through or rebound somewhere else
+in the declaration, which the rules above refuse (`Opt.nextStatementValue`: a member chain of a
+name, or what `pureValue` accepts with such names let in). Nothing runs between where the value is
+made and where it is read, so it reads the same there. This is what a root factory needs
+(`browser-inline.md` §8.4): its handlers write the slice its binding entries read, so every slice
+read was refused, and an entry was `let d=c.a;k(b[3],`Cups = ${d}`)` where the old binding function
+had `k(b[3],`Cups = ${c.a}`)`. Fixtures: `emit/release/inline/*`, `emit/release/tea/HttpSendTracked`.
+
 The atom-and-chain rule above keeps its scan, and a member chain it folds now passes
 `cleanBefore` too: before, its use's statement was not asked, so a chain of a program object that
 specialisation had stopped listing could be written after a call in the same statement that wrote
