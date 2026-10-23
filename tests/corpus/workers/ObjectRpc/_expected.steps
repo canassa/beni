@@ -1,0 +1,11 @@
+# Two objects over RPC (#594's RPC half): the Worker asks the Ping, the
+# Ping asks the Pong, and both replies come back.
+{"path": "/relay"}
+# The Pong asking the Ping back while the Ping waits on it is the refused
+# cycle, over RPC as over fetch.
+{"path": "/cycle"}
+{"path": "/count"}
+# The Pong throws while it holds the Ping's ask: the Ping sees Reset, the
+# Pong is stopped, and its next event starts a new instance.
+{"path": "/crash"}
+{"path": "/count"}

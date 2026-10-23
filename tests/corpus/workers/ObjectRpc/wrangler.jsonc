@@ -1,0 +1,12 @@
+{
+  "name": "object-rpc",
+  "main": "out/_worker.mjs",
+  "compatibility_date": "2026-05-18",
+  "durable_objects": {
+    "bindings": [
+      { "name": "PINGS", "class_name": "Ping" },
+      { "name": "PONGS", "class_name": "Pong" },
+    ],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Ping", "Pong"] }],
+}

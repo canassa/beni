@@ -180,6 +180,8 @@ start className schema restore handlers ctx bindings worker =
     Js.from
         { alarm = Js.from λ⊤ → deliver instance (Js.from { kind = "alarm" })
         , fetch = Js.from λrequest → arrived instance request
+        , rpc =
+            Js.from λchain kind correlation text → rpcArrived instance chain kind correlation text
         , webSocketClose =
             Js.from λws code reason clean →
                 answerClose ws code reason
@@ -276,8 +278,8 @@ runLater t task =
 -- ---- Events -----------------------------------------------------------------
 
 -- The class's `fetch`: read the body, then an event in the mailbox — the
--- test hooks' tick and alarm, the platform's own post and ask, a refused
--- cycle, or the program's `request` — and a promise of the response.
+-- test hooks' tick and alarm, a refused cycle, or the program's `request`
+-- — and a promise of the response.
 arrived : V, V → V
 arrived instance request =
     d = Js.call (Js.global "Promise") "withResolvers" []
@@ -293,6 +295,28 @@ arrived instance request =
             )
             "then"
             [ Js.null, Js.get d "reject" ]
+    Js.get d "promise"
+
+
+-- The class's `$beni`, (e.11)'s one RPC method: the transport of `post`
+-- and `ask`. A promise: `null` for a post once `received` has run; for an
+-- ask a tagged result — a refused cycle at once, a message that did not
+-- parse, `NoReply`, or the reply's text — read back by `answered`.
+rpcArrived : V, V, V, V, V → V
+rpcArrived instance chain kind correlation text =
+    d = Js.call (Js.global "Promise") "withResolvers" []
+    if not (Js.isNull chain) && parked instance chain then
+        -- The chain already holds a handler parked here: a cycle, refused
+        -- at once ((e.3)).
+        Js.to (Js.apply (Js.get d "resolve") [ Js.from { kind = "cycle" } ])
+    else
+        received
+            instance
+            (Js.to text)
+            chain
+            (if Js.same kind (Js.from "ask") then correlation else Js.null)
+            (Js.get d "resolve")
+    wake instance
     Js.get d "promise"
 
 
@@ -335,7 +359,6 @@ classify instance request text resolve reject =
 
 classifyEvent : V, V, V, V, V, V → ⊤
 classifyEvent instance request text chain resolve reject =
-    path = Js.get (Js.construct (Js.global "URL") [ Js.get request "url" ]) "pathname"
     if not (Js.isNull chain) && parked instance chain then
         -- The chain already holds a handler parked here: a cycle, refused
         -- at once ((e.3)).
@@ -350,22 +373,6 @@ classifyEvent instance request text chain resolve reject =
                     ]
                 ]
             )
-    else if endsWith path "/__beni/post" || endsWith path "/__beni/ask" then
-        -- The stubs' own paths, run only with the mark the platform's own
-        -- `post` and `ask` set, which a Worker's `forward` strips ((e.10)).
-        if
-            Js.same
-                (Js.call (Js.get request "headers") "get" [ Js.from "x-beni-origin" ])
-                (Js.from "platform")
-        then
-            received instance request (Js.to text) chain resolve
-        else
-            Js.to
-                (Js.apply resolve
-                    [ Js.construct (Js.global "Response")
-                        [ Js.from "no such page", Js.from { status = 404 } ]
-                    ]
-                )
     else
         Js.set request "$beniBody" text
         Js.to
@@ -391,10 +398,10 @@ noContent resolve = Js.from λ_ →
     Js.apply resolve [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
 
 
--- A message from another object, or an ask: parsed by the protocol's
--- schema, or refused with 422 and `x-beni-message: unparsed` ((e.10)).
-received : V, V, String, V, V → ⊤
-received instance request text chain resolve =
+-- A message from another object, or an ask, over RPC ((e.11)): parsed by
+-- the protocol's schema, or answered `unparsed` at once.
+received : V, String, V, V, V → ⊤
+received instance text chain askId resolve =
     schema : Schema e msg
     schema = Js.to (Js.get instance "schema")
     Js.write parsingIn instance
@@ -404,7 +411,6 @@ received instance request text chain resolve =
         Ok message →
             -- An ask is pending here until `reply`, or until nothing can
             -- reply any more; a post is answered when its handler has run.
-            askId = Js.call (Js.get request "headers") "get" [ Js.from "x-beni-ask" ]
             if Js.isNull askId then
                 ⊤
             else
@@ -425,19 +431,7 @@ received instance request text chain resolve =
             ⊤
 
         Err _ →
-            Js.to
-                (Js.apply resolve
-                    [ Js.construct (Js.global "Response")
-                        [ Js.null
-                        , Js.from
-                            { headers =
-                                Js.array
-                                    [ Js.array [ Js.from "x-beni-message", Js.from "unparsed" ] ]
-                            , status = 422
-                            }
-                        ]
-                    ]
-                )
+            Js.to (Js.apply resolve [ Js.from { kind = "unparsed" } ])
 
 
 -- The instance a message is being parsed in: the `Reply` the protocol's
@@ -631,16 +625,13 @@ handle instance h event =
             Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
 
 
--- A post is answered 204 as soon as its handler has run; an ask stays open
+-- A post is answered as soon as its handler has run; an ask stays open
 -- until `reply`, or until nothing can reply any more (`settlePending`).
 answerPost : V, V → ⊤
 answerPost instance event =
     askId = Js.get event "askId"
     if Js.isNull askId then
-        Js.to
-            (Js.apply (Js.get event "resolve")
-                [ Js.construct (Js.global "Response") [ Js.null, Js.from { status = 204 } ] ]
-            )
+        Js.to (Js.apply (Js.get event "resolve") [ Js.null ])
     else
         entry = Js.call (Js.get instance "asks") "get" [ askId ]
         if Js.isUndefined entry then
@@ -667,18 +658,7 @@ settlePending instance =
             entry = Js.at pair 1
             if Js.to (Js.get entry "returned") && not (carried instance askKey) then
                 _ = Js.call asks "delete" [ askKey ]
-                Js.to
-                    (Js.apply (Js.get entry "resolve")
-                        [ Js.construct (Js.global "Response")
-                            [ Js.null
-                            , Js.from
-                                { headers =
-                                    Js.array [ Js.array [ Js.from "x-beni-reply", Js.from "none" ] ]
-                                , status = 204
-                                }
-                            ]
-                        ]
-                    )
+                Js.to (Js.apply (Js.get entry "resolve") [ Js.from { kind = "none" } ])
 
 
 -- Whether a message to `self` waiting in the mailbox carries the reply.
@@ -1030,22 +1010,10 @@ post ref message =
         Js.write printingTo Js.null
         case printed of
             Ok text →
+                -- Over the stub's RPC method, the chain id an argument ((e.11)).
                 _ =
-                    Js.call (Js.get r "stub") "fetch"
-                        [ Js.from "https://beni/__beni/post"
-                        , Js.from
-                            { body = Js.from text
-                            , headers =
-                                Js.array
-                                    [ Js.array
-                                        [ Js.from "x-beni-chain"
-                                        , Js.apply (Js.get r "chainNow") []
-                                        ]
-                                    , Js.array [ Js.from "x-beni-origin", Js.from "platform" ]
-                                    ]
-                            , method = "POST"
-                            }
-                        ]
+                    Js.call (Js.get r "stub") "$beni"
+                        [ Js.apply (Js.get r "chainNow") [], Js.from "post", Js.null, Js.from text ]
                 ⊤
 
             Err issues →
@@ -1081,25 +1049,11 @@ ask ref schema wrap =
 
             Ok text →
                 sent =
-                    Js.call (Js.get r "stub") "fetch"
-                        [ Js.from "https://beni/__beni/ask"
-                        , Js.from
-                            { body = Js.from text
-                            , headers =
-                                Js.array
-                                    [ Js.array
-                                        [ Js.from "x-beni-chain"
-                                        , Js.apply (Js.get r "chainNow") []
-                                        ]
-                                    , Js.array [ Js.from "x-beni-ask", askId ]
-                                    , Js.array [ Js.from "x-beni-origin", Js.from "platform" ]
-                                    ]
-                            , method = "POST"
-                            }
-                        ]
+                    Js.call (Js.get r "stub") "$beni"
+                        [ Js.apply (Js.get r "chainNow") [], Js.from "ask", askId, Js.from text ]
                 case settle sent of
-                    Ok response →
-                        answered response schema
+                    Ok result →
+                        answered result schema
 
                     Err reason →
                         if Js.to (Js.get reason "overloaded") == True then
@@ -1126,38 +1080,25 @@ settle promise = Task.callback λresume →
     λ⊤ → ⊤
 
 
--- The receiver's answer to an ask, read by its fields: a refused cycle, a
--- message that did not parse, `NoReply`, or the reply's text.
+-- The receiver's answer to an ask, read by its tag ((e.11)): a refused
+-- cycle, a message that did not parse, `NoReply`, or the reply's text.
 answered : V, Schema e a → Result AskError a
-answered response schema =
-    status : Int
-    status = Js.to (Js.get response "status")
-    headers = Js.get response "headers"
-    if
-        status == 508 && Js.same (Js.call headers "get" [ Js.from "x-beni-cycle" ]) (Js.from "1")
-    then
+answered result schema =
+    kind : String
+    kind = Js.to (Js.get result "kind")
+    if kind == "cycle" then
         Err Cycle
-    else if
-        status == 422
-            && Js.same (Js.call headers "get" [ Js.from "x-beni-message" ]) (Js.from "unparsed")
-    then
+    else if kind == "unparsed" then
         Err (Unreadable [ Schema.issue "the message did not parse by the receiver's schema" ])
-    else if
-        status == 204 && Js.same (Js.call headers "get" [ Js.from "x-beni-reply" ]) (Js.from "none")
-    then
+    else if kind == "none" then
         Err NoReply
     else
-        case settle (Js.call response "text" []) of
-            Ok text →
-                case Schema.parse schema (Js.to text) of
-                    Ok value →
-                        Ok value
+        case Schema.parse schema (Js.to (Js.get result "text")) of
+            Ok value →
+                Ok value
 
-                    Err issues →
-                        Err (Unreadable issues)
-
-            Err reason →
-                Js.throw reason
+            Err issues →
+                Err (Unreadable issues)
 
 
 -- The stub a message is being printed for, or null: a `Reply` printed for
@@ -1190,26 +1131,11 @@ reply channel value =
             Ok text →
                 Js.to
                     (Js.apply (Js.get entry "resolve")
-                        [ Js.construct (Js.global "Response")
-                            [ Js.from text, Js.from { status = 200 } ]
-                        ]
+                        [ Js.from { kind = "reply", text = Js.from text } ]
                     )
 
             Err _ →
-                Js.to
-                    (Js.apply (Js.get entry "resolve")
-                        [ Js.construct (Js.global "Response")
-                            [ Js.null
-                            , Js.from
-                                { headers =
-                                    Js.array
-                                        [ Js.array [ Js.from "x-beni-message", Js.from "unparsed" ]
-                                        ]
-                                , status = 422
-                                }
-                            ]
-                        ]
-                    )
+                Js.to (Js.apply (Js.get entry "resolve") [ Js.from { kind = "unparsed" } ])
 
 
 objectName : V → String

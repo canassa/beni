@@ -6761,7 +6761,11 @@ spelling. What is new is the hand-written files' top-level bindings, which join 
 
 **Host imports.** A hand-written file's `import` of a `node:` built-in moves to the top of the one
 file, once per distinct statement text; a built-in's evaluation is not observable to the program, so
-evaluating it first moves nothing anyone can see. Of two files binding one name from different
+evaluating it first moves nothing anyone can see. *Amended 2026-10-23: a `cloudflare:` built-in is a
+host built-in the same way — the `cloudflare` platform's runtime imports `DurableObject` from
+`cloudflare:workers`, which the host requires of a class that answers RPC (`boundary.md` §9.12
+(e.11)) — so the rule reads "a `node:` or `cloudflare:` built-in" wherever this section says
+`node:`.* Of two files binding one name from different
 statements, the later keeps a module of its own, and so does a file whose `import` binds a name
 another file reads freely. Any other bare specifier â a package, which may do anything when
 evaluated â keeps its file in a module of its own.

@@ -1,0 +1,26 @@
+> GET /relay
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok ping heard Ok pong
+> GET /cycle
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok Ok back: Err Cycle
+> GET /count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 2 received
+> GET /crash
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< Ok Err Reset
+| err: beni: a defect stopped the object Pong; its next event starts a new instance
+> GET /count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< 0 received
