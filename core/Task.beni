@@ -2054,8 +2054,9 @@ hasLogContext ⊤ = Js.read slotted && not (Js.isUndefined (currentLogContext �
 
 
 --| Run `work`, which cannot wait, with the default log context, the
---| program's, and put the calling fiber's back when `work` returns or
---| throws.
+--| program's, and put the calling fiber's back when `work` returns. When
+--| `work` throws and leaves finalisers, the teardown runs them first, with
+--| `work`'s context, and then puts the calling fiber's back.
 pub withoutLogContext : sync (⊤ → a) → a
 withoutLogContext work =
     -- The record that holds the context, found as `slotRecord` finds it:
@@ -2070,10 +2071,36 @@ withoutLogContext work =
         work ⊤
     else
         old = Js.get holder "slots"
+        below = finalizerCount holder
         next = Js.call (Js.global "Object") "assign" [ Js.from {}, old ]
         Js.set next "logContext" Js.undefined
         Js.set holder "slots" next
-        Js.finally (λ⊤ → work ⊤) λ⊤ → Js.set holder "slots" old
+        Js.finally (λ⊤ → work ⊤) λ⊤ → restoreSlots holder old below
+
+
+-- Put `old` back as `holder`'s slots when `withoutLogContext`'s work ends.
+-- A `work` that returned took off every finaliser it put on. One that
+-- threw may leave some, an `annotate`'s restore or a `bracket`'s release,
+-- and the teardown runs them, last first, with the slots as they are at
+-- the throw. So then the slots stay, and the restore of `old` goes under
+-- those finalisers: it runs after them, and before the ones that were
+-- there already, as an `onExit` finaliser would (§17.5). It edits the list
+-- that is there, as `addFinalizer` would not, which writes `finalising`.
+restoreSlots : V, V, Int → ⊤
+restoreSlots holder old below =
+    if finalizerCount holder > below then
+        fins = Js.get holder "finalizers"
+        slotsBack = λ⊤ → Js.set holder "slots" old
+        _ = Js.call fins "splice" [ Js.from below, Js.from 0, Js.from slotsBack ]
+        ⊤
+    else
+        Js.set holder "slots" old
+
+
+finalizerCount : V → Int
+finalizerCount fiber =
+    fins = Js.get fiber "finalizers"
+    if Js.isNull fins then 0 else Js.to (Js.get fins "length")
 
 
 -- ---- Schedulers (§17.5, amended 2026-10-22; #596) --------------------------
