@@ -8126,7 +8126,8 @@ const Walker = struct {
     fn spineCond(w: *Walker, av: AV) Allocator.Error!u32 {
         var acc: CondAcc = .{};
         const any = try w.o.child(eps, .any, 0);
-        for (av) |e| if (e.path == eps or e.path == any) {
+        const runtime = try w.o.child(eps, .any, 1);
+        for (av) |e| if (e.path == eps or e.path == any or e.path == runtime) {
             var k = try w.cellSpine(e.cell);
             const c = w.cells.items[e.cell];
             // An annotation on an opaque top-level value has no exact
@@ -15586,7 +15587,7 @@ const Walker = struct {
     fn readCastView(w: *Walker, av: AV, id: u32, repeated: bool) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
-            if (w.analysisSlot(e.path)) {
+            if (w.analysisSlot(e.path) or (e.path == eps and w.cells.items[e.cell].condition_only)) {
                 try out.append(w.a, e);
                 continue;
             }
@@ -15628,7 +15629,7 @@ const Walker = struct {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             var x = e;
-            if (w.analysisSlot(e.path)) {
+            if (w.analysisSlot(e.path) or (e.path == eps and w.cells.items[e.cell].condition_only)) {
                 try out.append(w.a, e);
                 continue;
             }
@@ -18627,8 +18628,9 @@ const Walker = struct {
         var acc: CondAcc = .{};
         const other = try w.expand(y);
         const any = try w.o.child(eps, .any, 0);
+        const runtime = try w.o.child(eps, .any, 1);
         for (x) |e| {
-            if ((e.path != eps and e.path != any) or w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
+            if ((e.path != eps and e.path != any and e.path != runtime) or w.cells.items[e.cell].condition_only or w.listFacing(e.cell) == null) continue;
             for (other) |f| {
                 if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
                 const k = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
