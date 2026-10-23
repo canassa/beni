@@ -7299,6 +7299,32 @@ const SplitMemo = struct {
     fields: []SplitField,
     unknown: usize,
     sorted: ?[]const u32 = null,
+    /// Once `sorted` is known: the split as entries, one run per base
+    /// entry's `approx` and `grown` (#825).
+    runs: std.ArrayList(*const SplitRun) = .empty,
+};
+
+/// A closed update's split of one base entry, whole (#825): every field
+/// with a cell, in `norm`'s order, each field's position in it (`none` for
+/// a field with no cell), and the positions whose cell a list's facts read
+/// (`spineValue`).
+const SplitRun = struct {
+    entries: []const Entry,
+    at: []const u32,
+    facing: []const u32,
+    approx: u32,
+    grown: Grown,
+};
+
+/// A value made of a split and a few entries more (#825): `run`'s entries
+/// but those at `removed` (ascending), and `rest`, in `norm`'s form; the
+/// value is `norm` of both. `len` is the value's length, checked with its
+/// address before the value is read this way.
+const SplitValue = struct {
+    len: usize,
+    run: *const SplitRun,
+    removed: []const u32,
+    rest: []const Entry,
 };
 
 /// A `Maybe.withDefault (Maybe.map m f) d` (§7.2 as amended for slice 3f):
@@ -7656,6 +7682,10 @@ const Walker = struct {
     /// first time an update needs it, so cells and paths are interned in
     /// the order the unshared walk interns them (#716).
     split_memo: std.AutoHashMapUnmanaged([3]usize, *SplitMemo) = .empty,
+    /// §31.3 (#825): the values an update or a join made of a split, by
+    /// address, so that a join of them merges what they do not share
+    /// rather than every entry of each (`unionOf`).
+    split_values: std.AutoHashMapUnmanaged(usize, SplitValue) = .empty,
     /// The locals bound so far, in binding order, without those bound in
     /// an earlier arm of a `case` whose later arm is being walked: those
     /// are never compatible with where the walk is (`compatible`), so a
@@ -7902,6 +7932,7 @@ const Walker = struct {
     }
 
     fn unionOf(w: *Walker, parts: []const AV) Allocator.Error!AV {
+        if (parts.len >= 2 and w.split_values.count() != 0) if (try w.unionSplit(parts)) |got| return got;
         var total: usize = 0;
         for (parts) |p| total += p.len;
         if (total <= union_merge_min or parts.len <= union_merge_parts) {
@@ -12691,7 +12722,7 @@ const Walker = struct {
         const all_fields = w.recordFields(w.instType(base_inst));
         // One base entry whose split is known whole, merged in its order
         // rather than sorted again with the rest (#716).
-        var whole: ?struct { e: Entry, memo: *const SplitMemo } = null;
+        var whole: ?struct { e: Entry, memo: *SplitMemo } = null;
         for (base) |e| {
             const k = w.cells.items[e.cell].kind;
             if (e.path == eps and k != .top and k != .site and k != .closure and k != .func) {
@@ -12757,6 +12788,7 @@ const Walker = struct {
             }
             try out.append(w.a, e);
         }
+        if (whole) |x| return w.splitUpdate(inst, x.e, x.memo, all_fields.?, names, out.items, fields, avs);
         var parts: std.ArrayList(AV) = .empty;
         try parts.append(w.a, base: {
             const x = whole orelse break :base try w.norm(out.items);
@@ -12784,6 +12816,270 @@ const Walker = struct {
             try parts.append(w.a, shifted);
         }
         return w.spineValue(inst, parts.items);
+    }
+
+    /// `evalRecordUpdate`'s value for a base entry `e` whose split is known
+    /// whole (#825): the same value, made from the split's run without
+    /// copying it entry by entry, and kept with what it is made of
+    /// (`split_values`). `out` holds the base's other entries, and `avs` the
+    /// new fields' values, of `fields`.
+    fn splitUpdate(w: *Walker, inst: Inst.Index, e: Entry, memo: *SplitMemo, fs: []const TypeStore.Field, names: []const u32, out: []Entry, fields: []const Bir.Field, avs: []const AV) Allocator.Error!AV {
+        const b = w.bir;
+        const sr = try w.splitRun(memo, e.approx, gStep(e.grown));
+        // The written fields' places in the run, ascending.
+        var removed: std.ArrayList(u32) = .empty;
+        for (names) |n| if (fieldIndex(fs, n)) |i| if (sr.at[i] != none) try removed.append(w.a, sr.at[i]);
+        std.mem.sort(u32, removed.items, {}, std.sort.asc(u32));
+        const rest0 = try w.norm(out);
+        if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+            // The base part is the split without the written fields, and
+            // the base's other entries, as the entry by entry way makes it.
+            var split: std.ArrayList(Entry) = .empty;
+            for (memo.sorted.?) |i| {
+                if (std.mem.indexOfScalar(u32, names, @backingInt(fs[i].name)) != null) continue;
+                const m = memo.fields[i];
+                try split.append(w.a, .{ .path = m.path, .cell = m.cell, .approx = e.approx, .grown = gStep(e.grown) });
+            }
+            const want = try w.mergeNormal(split.items, rest0);
+            const got = try w.mergeSplit(sr.entries, removed.items, rest0);
+            std.debug.assert(want.len == got.len);
+            for (want, got) |x, y| std.debug.assert(std.meta.eql(x, y));
+        }
+        const others = try w.a.alloc(AV, fields.len);
+        for (fields, avs, others) |f, av, *o| {
+            const shifted = try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
+            try w.sight(shifted, .{ .pending = "it is stored in a record" }, w.token(inst));
+            o.* = shifted;
+        }
+        return w.splitSpineValue(inst, sr, removed.items, rest0, others);
+    }
+
+    /// The index of the field `name` in `fs`, which the type store keeps
+    /// sorted by symbol id; null when it has none.
+    fn fieldIndex(fs: []const TypeStore.Field, name: u32) ?u32 {
+        var lo: usize = 0;
+        var hi = fs.len;
+        while (lo < hi) {
+            const mid = lo + (hi - lo) / 2;
+            const at = @backingInt(fs[mid].name);
+            if (at == name) return @intCast(mid);
+            if (at < name) lo = mid + 1 else hi = mid;
+        }
+        return null;
+    }
+
+    /// `memo`'s run for a base entry of this `approx` and `grown`, made the
+    /// first time it is asked for (#825).
+    fn splitRun(w: *Walker, memo: *SplitMemo, approx: u32, grown: Grown) Allocator.Error!*const SplitRun {
+        for (memo.runs.items) |r| if (r.approx == approx and r.grown == grown) return r;
+        const sorted = memo.sorted.?;
+        const entries = try w.a.alloc(Entry, sorted.len);
+        const at = try w.a.alloc(u32, memo.fields.len);
+        @memset(at, none);
+        var facing: std.ArrayList(u32) = .empty;
+        for (sorted, entries, 0..) |i, *x, k| {
+            const m = memo.fields[i];
+            x.* = .{ .path = m.path, .cell = m.cell, .approx = approx, .grown = grown };
+            at[i] = @intCast(k);
+            if (!w.cells.items[m.cell].condition_only and w.listFacing(m.cell) != null) try facing.append(w.a, @intCast(k));
+        }
+        const sr = try w.a.create(SplitRun);
+        sr.* = .{ .entries = entries, .at = at, .facing = facing.items, .approx = approx, .grown = grown };
+        try memo.runs.append(w.a, sr);
+        return sr;
+    }
+
+    /// `big` without the entries at `removed` (ascending), merged with
+    /// `small`, both in `norm`'s form, as `mergeNormal` merges them: a
+    /// binary search per entry of `small`, and the runs of `big` between
+    /// them copied whole (#825).
+    fn mergeSplit(w: *Walker, big: []const Entry, removed: []const u32, small: AV) Allocator.Error!AV {
+        const out = try w.a.alloc(Entry, big.len - removed.len + small.len);
+        var n: usize = 0;
+        var bi: usize = 0;
+        var ri: usize = 0;
+        for (small) |e| {
+            // The first entry of `big` from `bi` not before `e`.
+            var lo = bi;
+            var hi = big.len;
+            while (lo < hi) {
+                const mid = lo + (hi - lo) / 2;
+                const m = big[mid];
+                if (m.path < e.path or (m.path == e.path and m.cell < e.cell)) lo = mid + 1 else hi = mid;
+            }
+            n = copyKept(out, n, big, bi, lo, removed, &ri);
+            bi = lo;
+            const kept = bi < big.len and !(ri < removed.len and removed[ri] == bi);
+            if (bi < big.len and big[bi].path == e.path and big[bi].cell == e.cell) {
+                if (kept) {
+                    out[n] = .{ .path = e.path, .cell = e.cell, .approx = @min(big[bi].approx, e.approx), .grown = gJoin(big[bi].grown, e.grown) };
+                } else {
+                    out[n] = e;
+                    ri += 1;
+                }
+                bi += 1;
+            } else out[n] = e;
+            n += 1;
+        }
+        n = copyKept(out, n, big, bi, big.len, removed, &ri);
+        return out[0..n];
+    }
+
+    /// `big[from..to]` into `out` at `n`, but the positions of `removed`
+    /// from `ri.*` on; the new `n`.
+    fn copyKept(out: []Entry, n_in: usize, big: []const Entry, from: usize, to: usize, removed: []const u32, ri: *usize) usize {
+        var n = n_in;
+        var at = from;
+        while (at < to) {
+            const stop = if (ri.* < removed.len and removed[ri.*] < to) removed[ri.*] else to;
+            @memcpy(out[n..][0 .. stop - at], big[at..stop]);
+            n += stop - at;
+            at = stop;
+            if (at < to) {
+                at += 1;
+                ri.* += 1;
+            }
+        }
+        return n;
+    }
+
+    /// `spineValue(inst, parts)` for `parts` = the split `run` without
+    /// `removed` merged with `rest0`, then `others` (#825): the same guards
+    /// made in the same order, from the entries a list's facts read, and
+    /// the same value, kept with what it is made of (`split_values`).
+    fn splitSpineValue(w: *Walker, inst: Inst.Index, sr: *const SplitRun, removed: []const u32, rest0: AV, others: []const AV) Allocator.Error!AV {
+        const lfs = try w.a.alloc([]const Entry, others.len + 1);
+        // Part 0's entries that a list's facts read, in its order: the
+        // run's facing ones that stay, merged with `rest0`'s.
+        {
+            var lf: std.ArrayList(Entry) = .empty;
+            var fi: usize = 0;
+            var ri: usize = 0;
+            var rest_lf: std.ArrayList(Entry) = .empty;
+            for (rest0) |e| if (!w.cells.items[e.cell].condition_only and w.listFacing(e.cell) != null) try rest_lf.append(w.a, e);
+            var ki: usize = 0;
+            while (true) {
+                // The next facing position of the run that is not removed.
+                while (fi < sr.facing.len) {
+                    while (ri < removed.len and removed[ri] < sr.facing[fi]) ri += 1;
+                    if (ri < removed.len and removed[ri] == sr.facing[fi]) {
+                        fi += 1;
+                        continue;
+                    }
+                    break;
+                }
+                const have_run = fi < sr.facing.len;
+                const have_rest = ki < rest_lf.items.len;
+                if (!have_run and !have_rest) break;
+                if (have_run and have_rest) {
+                    const a = sr.entries[sr.facing[fi]];
+                    const r = rest_lf.items[ki];
+                    if (a.path == r.path and a.cell == r.cell) {
+                        try lf.append(w.a, .{ .path = a.path, .cell = a.cell, .approx = @min(a.approx, r.approx), .grown = gJoin(a.grown, r.grown) });
+                        fi += 1;
+                        ki += 1;
+                    } else if (a.path < r.path or (a.path == r.path and a.cell < r.cell)) {
+                        try lf.append(w.a, a);
+                        fi += 1;
+                    } else {
+                        try lf.append(w.a, r);
+                        ki += 1;
+                    }
+                } else if (have_run) {
+                    try lf.append(w.a, sr.entries[sr.facing[fi]]);
+                    fi += 1;
+                } else {
+                    try lf.append(w.a, rest_lf.items[ki]);
+                    ki += 1;
+                }
+            }
+            lfs[0] = lf.items;
+        }
+        for (others, lfs[1..]) |o, *l| {
+            var lf: std.ArrayList(Entry) = .empty;
+            for (o) |e| if (!w.cells.items[e.cell].condition_only and w.listFacing(e.cell) != null) try lf.append(w.a, e);
+            l.* = lf.items;
+        }
+        var small: std.ArrayList(Entry) = .empty;
+        try small.appendSlice(w.a, rest0);
+        for (others) |o| try small.appendSlice(w.a, o);
+        for (lfs, 0..) |part, i| for (part) |e| {
+            var acc: CondAcc = .{};
+            var approximate = e.approx;
+            for (lfs, 0..) |other, j| {
+                if (i == j) continue;
+                for (other) |f| {
+                    if (f.approx != 0) approximate = f.approx;
+                    if (e.path != f.path and try w.nested(e, f)) continue;
+                    const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                    if (separation == cond_yes) continue;
+                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, f.cell) else separation);
+                }
+            }
+            const k = try w.condAndAll(&acc);
+            if (k == cond_yes) continue;
+            const guard = try w.cell(.{ .kind = .site, .a = inst.int(), .b = 1, .path = e.path, .condition_only = true });
+            try w.initCond(guard, cond_yes);
+            try w.initSpine(guard, k);
+            try small.append(w.a, .{ .path = e.path, .cell = guard, .approx = approximate, .grown = e.grown });
+        };
+        const rest = try w.norm(small.items);
+        const got = try w.mergeSplit(sr.entries, removed, rest);
+        if (got.len != 0) try w.split_values.put(w.a, @intFromPtr(got.ptr), .{ .len = got.len, .run = sr, .removed = removed, .rest = rest });
+        return got;
+    }
+
+    /// `parts` joined through what they share (#825): when two or more of
+    /// them are values `split_values` keeps over one run, their join is the
+    /// run without the positions every one of them removed, merged with
+    /// everything else, so no entry of the run is merged more than once.
+    /// Null when no two parts share a run.
+    fn unionSplit(w: *Walker, parts: []const AV) Allocator.Error!?AV {
+        var sr: ?*const SplitRun = null;
+        var shared: usize = 0;
+        for (parts) |p| {
+            if (p.len == 0) continue;
+            const v = w.split_values.get(@intFromPtr(p.ptr)) orelse continue;
+            if (v.len != p.len) continue;
+            if (sr == null) sr = v.run;
+            if (v.run == sr.?) shared += 1;
+        }
+        if (shared < 2) return null;
+        var removed: ?[]const u32 = null;
+        var small: std.ArrayList(Entry) = .empty;
+        for (parts) |p| {
+            if (p.len == 0) continue;
+            if (w.split_values.get(@intFromPtr(p.ptr))) |v| if (v.len == p.len and v.run == sr.?) {
+                try small.appendSlice(w.a, v.rest);
+                // The positions every part removed: both lists ascending.
+                if (removed) |r| {
+                    var both: std.ArrayList(u32) = .empty;
+                    var i: usize = 0;
+                    var j: usize = 0;
+                    while (i < r.len and j < v.removed.len) {
+                        if (r[i] == v.removed[j]) {
+                            try both.append(w.a, r[i]);
+                            i += 1;
+                            j += 1;
+                        } else if (r[i] < v.removed[j]) i += 1 else j += 1;
+                    }
+                    removed = both.items;
+                } else removed = v.removed;
+                continue;
+            };
+            try small.appendSlice(w.a, p);
+        }
+        const rest = try w.norm(small.items);
+        const got = try w.mergeSplit(sr.?.entries, removed.?, rest);
+        if (std.debug.runtime_safety and @import("ownership_options").full_cross_check) {
+            var all: std.ArrayList(Entry) = .empty;
+            for (parts) |p| try all.appendSlice(w.a, p);
+            const want = try w.norm(all.items);
+            std.debug.assert(want.len == got.len);
+            for (want, got) |x, y| std.debug.assert(std.meta.eql(x, y));
+        }
+        if (got.len != 0) try w.split_values.put(w.a, @intFromPtr(got.ptr), .{ .len = got.len, .run = sr.?, .removed = removed.?, .rest = rest });
+        return got;
     }
 
     /// The fields of a closed record type, or null.

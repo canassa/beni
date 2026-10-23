@@ -1,0 +1,103 @@
+-- ownership: a `case` whose arms update one model of twelve parts (#825):
+-- one field, two fields, a field another arm writes too, a part with a new
+-- list, the model as it came, and an inner `case`. Their join is made from
+-- the split they share (§16.7, amended 2026-10-23), and every line reads as
+-- it did when each arm was merged entry by entry.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Part =
+    count : Int
+    items : List Int
+
+
+type alias Model =
+    p1 : Part
+    p2 : Part
+    p3 : Part
+    p4 : Part
+    p5 : Part
+    p6 : Part
+    p7 : Part
+    p8 : Part
+    p9 : Part
+    p10 : Part
+    p11 : Part
+    p12 : Part
+
+
+type Msg
+    = One
+    | Two
+    | Again
+    | Fresh
+    | Same
+    | Inner Int
+
+
+fresh : ⊤ → Part
+fresh ⊤ = { count = 0, items = [] }
+
+
+init : ⊤ → Model
+init ⊤ =
+    { p1 = fresh ⊤
+    , p2 = fresh ⊤
+    , p3 = fresh ⊤
+    , p4 = fresh ⊤
+    , p5 = fresh ⊤
+    , p6 = fresh ⊤
+    , p7 = fresh ⊤
+    , p8 = fresh ⊤
+    , p9 = fresh ⊤
+    , p10 = fresh ⊤
+    , p11 = fresh ⊤
+    , p12 = fresh ⊤
+    }
+
+
+bump : Part → Part
+bump part = { part | count = part.count + 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        One →
+            { model | p1 = bump model.p1 }
+
+        Two →
+            { model | p2 = bump model.p2, p3 = bump model.p3 }
+
+        Again →
+            { model | p2 = bump model.p2 }
+
+        Fresh →
+            { model | p4 = { count = 1, items = [ 1, 2 ] } }
+
+        Same →
+            model
+
+        Inner k →
+            case k of
+                0 →
+                    { model | p5 = bump model.p5 }
+
+                1 →
+                    { model | p6 = bump model.p6 }
+
+                _ →
+                    { model | p7 = bump model.p7 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={One}>{String.fromInt model.p1.count}</button>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = init, update = update, view = view }

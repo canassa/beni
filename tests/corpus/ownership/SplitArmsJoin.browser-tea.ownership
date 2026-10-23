@@ -1,0 +1,32 @@
+module SplitArmsJoin
+  62:13 update part: accepted param
+  69:13 update model: accepted param
+  69:28 update model.p1: accepted param (SplitArmsJoin.bump writes it)
+  72:13 update model: accepted param
+  72:28 update model.p2: accepted param (SplitArmsJoin.bump writes it)
+  72:48 update model.p3: accepted param (SplitArmsJoin.bump writes it)
+  75:13 update model: accepted param
+  75:28 update model.p2: accepted param (SplitArmsJoin.bump writes it)
+  78:13 update model: accepted param
+  86:21 update model: accepted param
+  86:36 update model.p5: accepted param (SplitArmsJoin.bump writes it)
+  89:21 update model: accepted param
+  89:36 update model.p6: accepted param (SplitArmsJoin.bump writes it)
+  92:21 update model: accepted param
+  92:36 update model.p7: accepted param (SplitArmsJoin.bump writes it)
+  103:8 update entry SplitArmsJoin.update model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  103:8 update entry SplitArmsJoin.update model.p1: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  103:8 update entry SplitArmsJoin.update model.p2: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  103:8 update entry SplitArmsJoin.update model.p3: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  103:8 update entry SplitArmsJoin.update model.p5: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  103:8 update entry SplitArmsJoin.update model.p6: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  103:8 update entry SplitArmsJoin.update model.p7: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  summary fresh: res .items fresh1, fresh501◦
+  summary init: res .p1 fresh502◦, .p1.items fresh1, .p10 fresh511◦, .p10.items fresh10, .p11 fresh512◦, .p11.items fresh11, .p12 fresh513◦, .p12.items fresh12, .p2 fresh503◦, .p2.items fresh2, .p3 fresh504◦, .p3.items fresh3, .p4 fresh505◦, .p4.items fresh4, .p5 fresh506◦, .p5.items fresh5, .p6 fresh507◦, .p6.items fresh6, .p7 fresh508◦, .p7.items fresh7, .p8 fresh509◦, .p8.items fresh8, .p9 fresh510◦, .p9.items fresh9, fresh501◦
+  summary bump: π1 W{count}, π1.count R, π1.items RA; res .items π1.items, π1◦
+  summary update: π2 RAW{p1, p2, p3, p4, p5, p6, p7}, π2.p1 RAW{count}, π2.p1.count R, π2.p1.items RA, π2.p10 RA, π2.p11 RA, π2.p12 RA, π2.p2 RAW{count}, π2.p2.count R, π2.p2.items RA, π2.p3 RAW{count}, π2.p3.count R, π2.p3.items RA, π2.p4 RA, π2.p5 RAW{count}, π2.p5.count R, π2.p5.items RA, π2.p6 RAW{count}, π2.p6.count R, π2.p6.items RA, π2.p7 RAW{count}, π2.p7.count R, π2.p7.items RA, π2.p8 RA, π2.p9 RA; res .p1 condition(fresh13) π2.p1 π2.p1◦, .p1.items condition(fresh1) π2.p1.items, .p10 condition(fresh10) π2.p10, .p11 condition(fresh11) π2.p11, .p12 condition(fresh12) π2.p12, .p2 condition(fresh2) π2.p2 π2.p2◦, .p2.items condition(fresh14) π2.p2.items, .p3 condition(fresh3) π2.p3 π2.p3◦, .p3.items condition(fresh15) π2.p3.items, .p4 condition(fresh4) fresh501◦ π2.p4, .p4.items fresh16, .p5 condition(fresh5) π2.p5 π2.p5◦, .p5.items condition(fresh17) π2.p5.items, .p6 condition(fresh6) π2.p6 π2.p6◦, .p6.items condition(fresh18) π2.p6.items, .p7 condition(fresh7) π2.p7 π2.p7◦, .p7.items condition(fresh19) π2.p7.items, .p8 condition(fresh8) π2.p8, .p9 condition(fresh9) π2.p9, π2 π2◦
+  summary view: π1.p1.count R; res ⟨render⟩ fresh1{lost}r{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 22: accepted 15, pending 0, rejected 7 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 22: accepted 15, pending 0, rejected 7 (copy 0, restructure 0); hoisted 0, eager reads 0
