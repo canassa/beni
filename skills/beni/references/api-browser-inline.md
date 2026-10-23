@@ -37,6 +37,7 @@ module Inline
   value passes : V → ⊤  -- impure
   value prop : V, V, V → ⊤  -- impure
   value root : V → V  -- impure
+  value roots : V, V, Int, V, Int → ⊤  -- impure
   value run : V → ⊤  -- impure
   value send : V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure

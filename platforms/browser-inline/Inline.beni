@@ -396,6 +396,28 @@ first ⊤ =
     pass all
 
 
+--| `(rows, elements, from, table, at)`: a run of roots mounted in placement
+--| order through one table (`browser-inline.md` §8.4, amended 2026-10-24).
+--| Row `i` is `[factory, holder…]`: its factory is called with the elements
+--| below `elements[from + i]`, the row's holders, the root's own row of the
+--| program's table, `table[at + i]`, and the table. A factory takes only
+--| what it uses, so one that fills no other root's row leaves the table.
+pub roots : V, V, Int, V, Int → ⊤
+roots rows elements from table at =
+    _ =
+        Js.call rows "forEach"
+            [ Js.from λrow i →
+                Js.call (Js.at row 0) "apply"
+                    [ Js.null
+                    , Js.call (Js.array [ part (Js.at elements (from + i)) ]) "concat"
+                        [ Js.call row "slice" [ Js.from 1 ]
+                        , Js.array [ Js.at table (at + i), table ]
+                        ]
+                    ]
+            ]
+    ⊤
+
+
 -- ---- Pushed state (`browser-inline.md` §8.4, amended 2026-10-22) -------
 
 --| `(model, table, key, raw)`: a keyed route. `table` holds `[key, row]`
