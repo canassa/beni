@@ -1708,7 +1708,13 @@ not compared is listed, never what is**.
   `advance` of the virtual clock; `respond` to or `fail` a pending request — half the answers
   being the fixture's own script's `respond` lines, status, body and headers, so a decoder sees
   what it expects; `hash`. A sequence with no message is therefore a `.steps` script, and the
-  report prints it as one.
+  report prints it as one. *Amended 2026-10-23* (#527): on a page with an element that holds a
+  pointer handler (the `dom` runtime's `$$pointerdown`, `$$pointermove`, `$$pointerup`,
+  `$$pointercancel`, `$$pointerenter` or `$$pointerleave`, which the page walk reports), three
+  in ten view events are a `pointer` step on such an element: a random name (a move three times
+  as often as each other), a point from -10 to 110 CSS pixels in its box, a pointer id from 1 to
+  3, a type (mouse, touch, pen or none) and, one in seven times, a secondary pointer. A page with
+  no pointer handler draws no extra number, so it draws the sequences it drew before.
 - **The comparison**, after the load and after every step, of everything a step may change:
   - the body as `serialise` prints it (every element, attribute, text, comment, a control's
     live value and the focus, as a fixture's transcript);
