@@ -92,9 +92,10 @@ pub const magic = "BENIIFC\x00";
 /// into JavaScript (checker-v2.md §36).
 /// 14: closed scalar-key kinds and published parameter domains.
 /// 15: schemes grow 16 → 20 bytes, publishing declaration totality.
-pub const format_version: u32 = 15;
+/// 16: public ownership summary rows and opaque slots (ownership-checker.md §16.10).
+pub const format_version: u32 = 16;
 
-/// The eighteen columns, in this order and no other (`hidden_types` since
+/// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
 /// §25.8). `terms` is split into
 /// its three SoA columns rather than written as a row of 12 bytes, because
@@ -118,6 +119,7 @@ pub const Column = enum(u32) {
     events,
     symbols,
     strings,
+    ownership,
 
     pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
@@ -136,7 +138,7 @@ pub const Column = enum(u32) {
             .elements, .attributes, .events => 24,
             .schemas => 32,
             .schema_members, .schema_ctors => 16,
-            .strings => 1,
+            .strings, .ownership => 1,
         };
     }
 };
@@ -331,6 +333,7 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
     lengths[@backingInt(Column.events)] = @intCast(iface.events.len);
     lengths[@backingInt(Column.symbols)] = @intCast(iface.symbols.len);
     lengths[@backingInt(Column.strings)] = @intCast(blob.items.len);
+    lengths[@backingInt(Column.ownership)] = @intCast(iface.ownership.len);
 
     var offsets_of: [Column.count]u32 = undefined;
     var at: u32 = body_start;
@@ -352,6 +355,8 @@ pub fn write(gpa: Allocator, iface: *const Interface, interner: *const InternPoo
         std.mem.writeInt(u32, row[0..4], offsets_of[i], .little);
         std.mem.writeInt(u32, row[4..8], lengths[i], .little);
     }
+
+    @memcpy(bytes[offsets_of[@backingInt(Column.ownership)]..][0..iface.ownership.len], iface.ownership);
 
     // 3. The columns.
     {
@@ -853,6 +858,7 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!In
         }
     }
 
+    iface.ownership = try gpa.dupe(u8, bytes[offsets_of[@backingInt(Column.ownership)]..][0..lengths[@backingInt(Column.ownership)]]);
     if (!verify(&iface, interning.pool())) return error.BadRecord;
     return iface;
 }

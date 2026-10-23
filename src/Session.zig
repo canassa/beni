@@ -192,6 +192,8 @@ enforce_ownership: bool = false,
 /// Owned. Per module, the summary block its cache entry carries
 /// (`ownership-checker.md` §28.4), or null; empty unless the pass wrote any.
 ownership_blocks: []?[]u8 = &.{},
+/// Runtime-safety comparison of the worker reports with the serial dump.
+ownership_sites: []?[]const [6]u64 = &.{},
 
 pub const DiagnosticsFormat = enum { text, json };
 
@@ -199,6 +201,9 @@ pub fn freeOwnershipBlocks(session: *Session) void {
     for (session.ownership_blocks) |slot| if (slot) |bytes| session.gpa.free(bytes);
     session.gpa.free(session.ownership_blocks);
     session.ownership_blocks = &.{};
+    for (session.ownership_sites) |slot| if (slot) |sites| session.gpa.free(sites);
+    session.gpa.free(session.ownership_sites);
+    session.ownership_sites = &.{};
 }
 
 pub const Options = struct {
@@ -362,7 +367,7 @@ pub const Options = struct {
     /// module's solved types, which only a module this run checks keeps
     /// (`ownership-checker.md` §16.9). No `check` or `build` sets it.
     no_pack: bool = false,
-    /// `check` and `build`: run the ownership checker after the module
+    /// `check` and `build`: enforce the ownership check on the module
     /// check when the chain says `"lists": "in-place"`, and make what it
     /// rejects errors (`ownership-checker.md` §28.3). On any other chain it
     /// does nothing at all.
@@ -570,13 +575,11 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     };
     errdefer session.interner.deinit(gpa);
     session.build_id_bytes = keyBuildId(options);
-    // §28.3: the pass reads solved types, so a run that enforces, and the
-    // maker of the checked core, which writes every core and platform
-    // module's summary block (§28.7), keep the type stores.
+    // Enforcement controls diagnostics. Summaries are computed on every
+    // module's checking worker while its solved types are still alive.
     if (options.ownership) if (options.chain) |c| {
         session.enforce_ownership = options.ownership_everywhere or c.inPlace();
     };
-    if (session.enforce_ownership or options.pack_out != null) session.options.keep_type_stores = true;
     // A core read from `--core-root` is not the core the pack was checked
     // from, and a run that makes a pack reads only the rows it was handed.
     if (options.pack_out != null) {
@@ -2224,7 +2227,7 @@ fn checkSerial(session: *Session) RunError!void {
     // `solve` and `exhaustive` nested inside each.
     session.checked = try runCheckOnBigStack(session, quiet, cached, &cutoff);
     // Move installed facts before the cache entries are freed. Fresh modules'
-    // slots are filled by the ownership pass below, without rewriting BIR.
+    // slots were filled on their checking worker, without rewriting BIR.
     for (cached, 0..) |*slot, i| if (slot.*) |*l| {
         session.checked.hoists[i] = l.hoists;
         l.hoists = .empty;
@@ -2256,20 +2259,6 @@ fn checkSerial(session: *Session) RunError!void {
     // reaches the trace.
     inline for (@typeInfo(Check.Counters).@"struct".field_names) |field_name| {
         session.profile.addCounter(@field(Profile.Counter, field_name), @field(session.checked.counters, field_name));
-    }
-    // The ownership checker (`ownership-checker.md` §28.3): after the check,
-    // before its diagnostics are reported and its entries written, and only
-    // on a program the check found no error in.
-    if (session.enforce_ownership or session.options.pack_out != null) {
-        var clean = std.mem.indexOfScalar(bool, quiet, true) == null;
-        for (session.checked.diagnostics) |item| {
-            if (item.severity == .@"error") clean = false;
-        }
-        if (clean) {
-            const token = session.profile.begin();
-            try Enforce.run(session, cached);
-            session.profile.end(0, token, .ownership, Profile.Event.no_file, 0);
-        }
     }
     try session.reportCheckDiagnostics();
     try session.storeEntries(cached);
@@ -2536,11 +2525,22 @@ fn compilerBuildId(override: ?[]const u8) [16]u8 {
 pub const check_stack_size = Check.stack_size;
 
 fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEntry.Loaded, cutoff: *Check.Cutoff) RunError!Check {
+    var ins = try Enforce.inputs(session.gpa, session, cached);
+    defer ins.deinit(session.gpa);
+    session.freeOwnershipBlocks();
+    session.ownership_blocks = try session.gpa.alloc(?[]u8, session.graph.count());
+    @memset(session.ownership_blocks, null);
+    if (std.debug.runtime_safety and session.options.no_pack and session.options.keep_type_stores and session.options.pack_out == null) {
+        session.ownership_sites = try session.gpa.alloc(?[]const [6]u64, session.graph.count());
+        @memset(session.ownership_sites, null);
+    }
+    const ownership: Enforce.Context = .{ .session = session, .ins = &ins };
     const Runner = struct {
         session: *Session,
         quiet: []const bool,
         cached: []?CacheEntry.Loaded,
         cutoff: *Check.Cutoff,
+        ownership: *const Enforce.Context,
         result: Check.Error!Check = undefined,
 
         fn go(r: *@This()) void {
@@ -2554,6 +2554,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
                 r.session.resolution.provenance,
                 &r.session.interner,
                 .{
+                    .ownership = r.ownership,
                     .profile = &r.session.profile,
                     .keep_stores = r.session.options.keep_type_stores,
                     .informational = r.session.options.informational,
@@ -2571,7 +2572,7 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
             );
         }
     };
-    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff };
+    var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff, .ownership = &ownership };
     // A build with no threads checks here: its main stack is sized for it
     // (fast-compiler.md §10, *A build with no threads*).
     if (builtin.single_threaded) {

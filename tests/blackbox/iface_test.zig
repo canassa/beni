@@ -1138,6 +1138,31 @@ test "a vocabulary module's tables and markup primitives travel through the form
     try testing.expect(std.mem.indexOf(u8, base.stdout, " via targetValue\n") != null);
 }
 
+/// Read the published totality bit itself. Ownership now contributes to
+/// the whole interface hash, so equal type/effect/totality facts alone no
+/// longer imply equal hashes after a callback's call count changes.
+fn helperTotality(w: *World) !bool {
+    const result = try w.runWith(&.{ "check", "--jobs=1", "--cache-dir=totality-cache", "--cache-keys", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), result.exit_code);
+    try testing.expectEqualStrings("", result.stderr);
+    const key = try hashOf(result.stdout, "app:Helper");
+    var path: [80]u8 = undefined;
+    const entry = try w.read(try std.fmt.bufPrint(&path, "totality-cache/v1/{s}/{s}.bec", .{ key[0..2], key[2..] }));
+    try testing.expectEqualStrings("BENICAC\x00", entry[0..8]);
+    // Cache section 0 is the interface; its directory follows the 32-byte
+    // header. Interface column 3 holds 20-byte schemes (format 15 onward).
+    const base = std.mem.readInt(u32, entry[32..36], .little);
+    const len = std.mem.readInt(u32, entry[36..40], .little);
+    const iface = entry[base..][0..len];
+    try testing.expectEqualStrings("BENIIFC\x00", iface[0..8]);
+    const column = iface[16 + 3 * 8 ..][0..8];
+    const at = std.mem.readInt(u32, column[0..4], .little);
+    try testing.expectEqual(@as(u32, 1), std.mem.readInt(u32, column[4..8], .little));
+    const total = std.mem.readInt(u32, iface[at + 16 ..][0..4], .little);
+    try testing.expect(total <= 1);
+    return total == 1;
+}
+
 test "declaration totality changes the public hash when a pure body becomes recursive" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -1150,6 +1175,7 @@ test "declaration totality changes the public hash when a pure body becomes recu
     const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), before.exit_code);
     try testing.expectEqualStrings("", before.stderr);
+    try testing.expect(try helperTotality(&w));
     try w.write("src/Helper.beni",
         \\pub value : Int → Int
         \\value n = value n
@@ -1158,6 +1184,7 @@ test "declaration totality changes the public hash when a pure body becomes recu
     const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), after.exit_code);
     try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!try helperTotality(&w));
     try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
     try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Caller"), try hashOf(after.stdout, "app:Caller")));
 }
@@ -1263,6 +1290,7 @@ test "declaration totality does not infer an unknown callback to be acyclic" {
     const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), before.exit_code);
     try testing.expectEqualStrings("", before.stderr);
+    try testing.expect(!try helperTotality(&w));
     try w.write("src/Helper.beni",
         \\pub value : (Int → Int), Int → Int
         \\value f n = f (value f n)
@@ -1271,8 +1299,10 @@ test "declaration totality does not infer an unknown callback to be acyclic" {
     const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), after.exit_code);
     try testing.expectEqualStrings("", after.stderr);
-    // Both retain the same callback effect dependency; neither is total.
-    try testing.expectEqualStrings(try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper"));
+    try testing.expect(!try helperTotality(&w));
+    // Both remain non-total, while ownership changes the callback from
+    // one possible call to arbitrarily many calls.
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
 }
 
 test "declaration totality leaves unknown local function invocations unproven" {
@@ -1373,6 +1403,7 @@ test "declaration totality still checks formation of a Js.pure argument" {
     const before = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), before.exit_code);
     try testing.expectEqualStrings("", before.stderr);
+    try testing.expect(!try helperTotality(&w));
     try w.write("src/Helper.beni",
         \\import Js
         \\
@@ -1386,9 +1417,10 @@ test "declaration totality still checks formation of a Js.pure argument" {
     const after = try w.runWith(&.{ "check", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 0), after.exit_code);
     try testing.expectEqualStrings("", after.stderr);
+    try testing.expect(!try helperTotality(&w));
     // Unknown argument formation and the explicit recursive control both
-    // lack a proof, while publishing the same callback effect dependency.
-    try testing.expectEqualStrings(try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper"));
+    // lack a totality proof. The callback call count changes ownership.
+    try testing.expect(!std.mem.eql(u8, try hashOf(before.stdout, "app:Helper"), try hashOf(after.stdout, "app:Helper")));
 }
 
 test "declaration totality resolves a string primitive to its own declaration" {

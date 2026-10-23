@@ -89,6 +89,8 @@ events: []const VocabRow = &.{},
 /// exactly as `Bir` does it, so a remap is one loop and the cache can load the
 /// whole record without a fixup pass.
 symbols: []const Symbol,
+/// Versioned public ownership rows, hashed and loaded with this interface.
+ownership: []const u8 = &.{},
 
 /// Index into `values`.
 pub const ValueIndex = enum(u32) { _ };
@@ -910,6 +912,7 @@ pub fn deinit(iface: *Interface, gpa: Allocator) void {
     gpa.free(iface.attributes);
     gpa.free(iface.events);
     gpa.free(iface.symbols);
+    gpa.free(iface.ownership);
     iface.* = undefined;
 }
 

@@ -1490,12 +1490,8 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-checker.md` §28.4, rule 2. `Lib`'s edit moves no type and
-    // no effect bit, so its interface hash does not move; what moves is its
-    // summary block, which says it now writes `acc` in place. `App` reads
-    // `xs` after handing it over, so `App` must now fail. On an in-place
-    // build a module publishes its interface hash folded with its own key,
-    // so `App`'s key moves with `Lib`'s source and `App` is checked again.
+    // O2: changing Lib's writes moves its public summary and interface
+    // hash despite preserving its type and effect bits. App must re-check.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -1503,16 +1499,19 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     defer w.deinit();
     try w.write("src/Lib.beni", own_lib_copies);
     try w.write("src/App.beni", own_app);
-    const args = [_][]const u8{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--cache-dir=cache", "src" };
+    const args = [_][]const u8{ "build", "--library", "--out=out", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--cache-dir=cache", "src" };
     const cold = try runCounted(&w, arena, &args, "own-cold.json");
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    const before = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+    const hashes_before = try parseKeys(arena, before.stdout);
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
     try w.write("src/Lib.beni", own_lib_writes);
     const warm = try runCounted(&w, arena, &args, "own-warm.json");
-    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "build", "--library", "--out=plain", "--jobs=1", "--platform=browser-inline", "--diagnostics=json", "--no-cache", "src" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -1521,20 +1520,21 @@ test "on an in-place platform a body edit that makes a leaf write its argument f
     try testing.expect(std.mem.indexOf(u8, plain.stderr, "\"code\":\"list_still_used\"") != null);
     try testing.expectEqual(@as(u8, 1), warm.result.exit_code);
     try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
-    // Both checked: the edited leaf, and the importer whose key it moved.
+    const after = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 1), after.exit_code);
+    const hashes_after = try parseKeys(arena, after.stdout);
+    try testing.expect(!std.mem.eql(u8, lookup(hashes_before, "app:Lib").?, lookup(hashes_after, "app:Lib").?));
+    // Both checked: the edited leaf, and the importer whose summary it moved.
     try testing.expectEqual(@as(u64, 2), warm.counters.checked);
 }
 
-test "an in-place build after a build elsewhere reads no entry that lacks a summary block" {
+test "an in-place build reuses a clean summary from elsewhere and rechecks a rejected importer" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `ownership-checker.md` §28.4, rule 1. A `browser-tea` check writes
-    // entries with no summary block — nothing is summarised there — under
-    // keys an in-place check computes too, since nothing in a module's own
-    // terms says whether the run enforces. Read as hits, `Lib` would have no
-    // summary, its call would be taken to write nothing, and `App`'s error
-    // would be missed.
+    // O2 publishes summaries everywhere. Lib's report is clean and can be
+    // reused; App's previous report rejected the call, so enforcement must
+    // re-check App rather than silently install its non-enforcing entry.
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -1558,7 +1558,7 @@ test "an in-place build after a build elsewhere reads no entry that lacks a summ
     try testing.expectEqual(@as(u8, 1), plain.exit_code);
     try testing.expectEqual(@as(u8, 1), in_place.result.exit_code);
     try testing.expectEqualStrings(plain.stderr, in_place.result.stderr);
-    try testing.expectEqual(@as(u64, 2), in_place.counters.checked);
+    try testing.expectEqual(@as(u64, 1), in_place.counters.checked);
 }
 
 test "a dependency that comes to suspend makes its importer's sync error appear warm, and go again" {
@@ -1876,11 +1876,10 @@ test "a custom eq made private invalidates and rejects the importer that derives
 // function TYPE, so it is defined over its type's arity and called flat;
 // `Top` calls it, passes it to a fold, and defines its own point-free
 // `mine = Leaf.h`. Each edit rewrites `h` in another shape — a function of
-// two parameters, a lambda, a `let` whose body is `maxOf` again — which
-// changes no interface, so `Top` is NOT re-checked: its cached table (the
-// `convention` column included) and its reading of `Leaf`'s interface must
-// still agree with the definition `Leaf` now emits. The warm tree is
-// byte-compared with a `--no-cache` build and RUN.
+// two parameters, a lambda, a `let` whose body is `maxOf` again. A changed
+// ownership summary now invalidates Top even with an unchanged type; the
+// equivalent block still exercises its cached calling convention. Every
+// warm tree is byte-compared with a `--no-cache` build and RUN.
 
 const convention_leaf =
     \\pub maxOf : a, a → a
@@ -1931,9 +1930,9 @@ const convention_top =
 ;
 
 /// Build cold into a cache, rewrite `h`'s definition as `body`, and build
-/// warm over the cache and cold without one: `Leaf` alone is re-checked and
-/// the two trees are byte-identical, and the warm one runs.
-fn expectConventionEdit(body: []const u8) !void {
+/// warm over the cache and cold without one. Only a changed ownership
+/// summary crosses the firewall; the trees are byte-identical and run.
+fn expectConventionEdit(body: []const u8, checked: u64) !void {
     var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
     defer arena_state.deinit();
     const arena = arena_state.allocator();
@@ -1950,6 +1949,10 @@ fn expectConventionEdit(body: []const u8) !void {
     );
     try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
 
+    const hashes_before = try w.runWith(&.{ "check", "--platform=node", "--iface-hash", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), hashes_before.exit_code);
+    try testing.expectEqualStrings("", hashes_before.stderr);
+
     try w.write("src/Leaf.beni", try std.mem.replaceOwned(u8, arena, convention_leaf, "h =\n    maxOf\n", body));
     const warm = try runCounted(
         &w,
@@ -1965,22 +1968,28 @@ fn expectConventionEdit(body: []const u8) !void {
     );
     try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
     try testing.expectEqual(@as(u8, 0), oracle.result.exit_code);
-    // `Leaf` alone: its interface did not move, so `Top` is a hit.
-    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+    // An equivalent block keeps Top cached. An explicit parameter list or
+    // lambda changes the ownership summary published with Leaf's interface,
+    // so Top must be re-checked even though its ordinary type is unchanged.
+    try testing.expectEqual(checked, warm.counters.checked);
+    const hashes_after = try w.runWith(&.{ "check", "--platform=node", "--iface-hash", "--cache-dir=cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), hashes_after.exit_code);
+    try testing.expectEqualStrings("", hashes_after.stderr);
+    try expectMoved("a function definition's published ownership", try parseKeys(arena, hashes_before.stdout), try parseKeys(arena, hashes_after.stdout), if (checked == 1) &.{} else &.{"app:Leaf"});
     try expectSameTree(&w, arena, "oracle", "warm");
     try w.expectProgram("warm/_main.mjs", .{ .stdout = "2\nb\n5\n7\n9\n1\n" });
 }
 
-test "a constrained function constant rewritten with parameters keeps its importer's cached calling convention" {
-    try expectConventionEdit("h a b =\n    maxOf a b\n");
+test "a constrained function constant rewritten with parameters invalidates its importer through ownership" {
+    try expectConventionEdit("h a b =\n    maxOf a b\n", 2);
 }
 
-test "a constrained function constant rewritten as a lambda keeps its importer's cached calling convention" {
-    try expectConventionEdit("h =\n    λa b → maxOf a b\n");
+test "a constrained function constant rewritten as a lambda invalidates its importer through ownership" {
+    try expectConventionEdit("h =\n    λa b → maxOf a b\n", 2);
 }
 
 test "a constrained function constant rewritten as a block keeps its importer's cached calling convention" {
-    try expectConventionEdit("h =\n    f = maxOf\n    f\n");
+    try expectConventionEdit("h =\n    f = maxOf\n    f\n", 1);
 }
 
 test "a truncated or foreign .bef is a miss and is then overwritten" {
@@ -5666,4 +5675,182 @@ test "cached full-type casts specialize in a freshly checked consumer" {
     try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
     try testing.expect(warm.counters.hits > 0);
     try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+}
+
+test "an in-place body edit with the same ownership summary stops at the interface firewall" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // §16.10: the signature and the summary stay fixed. Folding the
+    // source key into the interface hash used to re-check App here.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni", own_lib_copies);
+    try w.write("src/App.beni", own_app);
+    const args = [_][]const u8{ "build", "--library", "--out=out", "--jobs=8", "--platform=browser-inline", "--cache-dir=cache", "src" };
+    const cold = try runCounted(&w, arena, &args, "own-stable-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqualStrings("", cold.result.stderr);
+    const before = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), before.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Lib.beni",
+        \\pub grow : List Int, Int → List Int
+        \\grow acc n = [ …List.copy acc, n + 1 ]
+        \\
+    );
+    const warm = try runCounted(&w, arena, &args, "own-stable-warm.json");
+    const plain = try w.runWith(&.{ "build", "--library", "--out=plain", "--jobs=1", "--platform=browser-inline", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", warm.result.stderr);
+    try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+    const after = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), after.exit_code);
+    try testing.expectEqualStrings(before.stdout, after.stdout);
+    const warm_js = try arena.dupe(u8, try w.read("out/Lib.mjs"));
+    try testing.expectEqualStrings(warm_js, try w.read("plain/Lib.mjs"));
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+}
+
+test "renaming a private callable behind a public alias preserves its ownership interface" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const leaf =
+        \\pub grow : List Int, Int → List Int
+        \\grow = helper
+        \\
+        \\
+        \\helper acc n = [ …List.copy acc, n ]
+        \\
+    ;
+    try w.write("src/Lib.beni", leaf);
+    try w.write("src/App.beni", own_app);
+    const args = [_][]const u8{ "check", "--platform=browser-inline", "--iface-hash", "--cache-dir=cache", "src" };
+    const cold = try runCounted(&w, arena, &args, "own-alias-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqualStrings("", cold.result.stderr);
+    try w.write("src/Lib.beni", try std.mem.replaceOwned(u8, arena, leaf, "helper", "other"));
+    const warm = try runCounted(&w, arena, &args, "own-alias-warm.json");
+    const plain = try w.runWith(&.{ "check", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", warm.result.stderr);
+    try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+    try testing.expectEqualStrings(cold.result.stdout, warm.result.stdout);
+    try testing.expectEqualStrings(plain.stdout, warm.result.stdout);
+    try testing.expectEqual(@as(u64, 1), warm.counters.checked);
+}
+
+test "an opaque type gaining an ownership slot moves its interface and warm importer" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // No exported value in Lib can move a value summary. Change 9's slot
+    // table itself must be part of the interface hash.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni", "pub opaque type Token = Token Int\n");
+    try w.write("src/App.beni",
+        \\import Lib
+        \\
+        \\
+        \\pub pass : Lib.Token → Lib.Token
+        \\pass x = x
+        \\
+    );
+    const args = [_][]const u8{ "check", "--jobs=8", "--platform=browser-inline", "--iface-hash", "--cache-dir=cache", "src" };
+    const cold = try runCounted(&w, arena, &args, "own-slot-cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqualStrings("", cold.result.stderr);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try w.write("src/Lib.beni", "pub opaque type Token = Token (List Int)\n");
+    const warm = try runCounted(&w, arena, &args, "own-slot-warm.json");
+    const plain = try w.runWith(&.{ "check", "--jobs=1", "--platform=browser-inline", "--iface-hash", "--no-cache", "src" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", warm.result.stderr);
+    try testing.expectEqualStrings(plain.stderr, warm.result.stderr);
+    try testing.expectEqualStrings(plain.stdout, warm.result.stdout);
+    const before = try parseKeys(arena, cold.result.stdout);
+    const after = try parseKeys(arena, warm.result.stdout);
+    try testing.expect(!std.mem.eql(u8, lookup(before, "app:Lib").?, lookup(after, "app:Lib").?));
+    try testing.expectEqual(@as(u64, 2), warm.counters.checked);
+}
+
+test "ownership summary interfaces are deterministic at --jobs=1 and --jobs=8" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A and B are ready together. Their public paths name opaque slots;
+    // each importer's interface must hash identically through the wire too.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const leaf =
+        \\pub opaque type Box = Box (List Int)
+        \\
+        \\
+        \\pub wrap : List Int → Box
+        \\wrap xs = Box xs
+        \\
+        \\
+        \\pub grow : Box → Box
+        \\grow (Box xs) = Box [ …xs, 1 ]
+        \\
+    ;
+    try w.write("src/A.beni", leaf);
+    try w.write("src/B.beni", leaf);
+    try w.write("src/App.beni",
+        \\import A
+        \\import B
+        \\
+        \\
+        \\pub first : List Int → A.Box
+        \\first xs = A.grow (A.wrap xs)
+        \\
+        \\
+        \\pub second : List Int → B.Box
+        \\second xs = B.grow (B.wrap xs)
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const jobs = [_][]const u8{ "--jobs=1", "--jobs=8", "--jobs=1", "--jobs=8" };
+    var out: [4][]const u8 = undefined;
+    for (jobs, &out, 0..) |j, *text, i| {
+        const result = try w.runWith(&.{ "check", j, if (i % 2 == 0) "--no-cache" else "--roundtrip-interfaces", "--no-cache", "--platform=browser-inline", "--iface-hash", "src" }, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), result.exit_code);
+        try testing.expectEqualStrings("", result.stderr);
+        text.* = result.stdout;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    for (out[1..]) |other| try testing.expectEqualStrings(out[0], other);
 }

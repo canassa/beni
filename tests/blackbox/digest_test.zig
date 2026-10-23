@@ -496,25 +496,14 @@ test "renaming a PRIVATE type a pub signature names moves both" {
     });
 }
 
-test "a PRIVATE type's payload becomes a function — the digest moves and the hash does NOT" {
-    // `plans/m4-3.md` §6.1, DEMONSTRATED. `Hidden` stops being `equatable`,
-    // `Mid`'s `Leaf.make x == Leaf.make y` goes from exit 0 to `not_equatable`,
-    // and the declaring module's record does not move by one byte: `Hidden` is
-    // private and has no `types` row, so nothing in the record states the bit.
-    //
-    // This row FAILS before the digest exists, which is what it is for.
+test "a private payload becoming a function moves the digest and removes tainted ownership facts" {
+    // Hidden becomes non-equatable, so Mid's annotated comparison fails.
+    // Leaf's hidden type facts change. Failed modules publish no ownership
+    // block, so Mid and its tainted dependents lose their previous facts.
     try runRow(.{
         .what = "a private type's payload becomes a function",
         .leaf = replace(leaf_source, "    | Extra Int", "    | Extra (Int → Int)"),
-        // Under v1 NOT ONE interface hash in the project moved, so the digest
-        // was the only thing in the build that could see this edit at all.
-        // The record DOES state it (checker-v2.md §14.2): `make`'s scheme names
-        // `Hidden`, so `Hidden` has a `hidden_types` row, and its derived
-        // `eq` and `compare` go from `present` to `function`. `Leaf`'s hash
-        // moves, and no other: `Mid`'s record is still its annotation, because
-        // `same` is annotated and an annotation's scheme is the annotation.
-        // The digest's wave is the same.
-        .hashes = &.{"app:Leaf"},
+        .hashes = &all_app,
         .digests = digest_wave_from_leaf,
         .errors = true,
     });
@@ -538,7 +527,7 @@ test "a pub type alias a pub scheme names moves both" {
     });
 }
 
-test "a pub type alias NO scheme names — the digest moves and the hash does NOT" {
+test "an alias no leaf scheme names moves the digest and removes failed importers ownership facts" {
     // `plans/m4-3.md` §6.2, DEMONSTRATED, and §4.2 finding 3 says no corpus in
     // the project reaches the code path at all: an `alias` term's range is its
     // arguments followed by the ACTUAL type, so an alias a `pub` value of the
@@ -549,16 +538,10 @@ test "a pub type alias NO scheme names — the digest moves and the hash does NO
     try runRow(.{
         .what = "an alias body no scheme names",
         .leaf = replace(leaf_source, "pub type alias Pair =\n    Int × Int", "pub type alias Pair =\n    Float × Int"),
-        // `Mid`'s OWN hash moves, because the `alias` term in its published
-        // `firstOf` scheme carries the expansion — and that is exactly why
-        // this is a miscompile and not a near miss: `Mid` is re-checked only
-        // when its KEY moves, and its key folds `Leaf`'s pair. `Leaf`'s hash
-        // does not move, so without the digest `Mid` HITS and the moved
-        // record is never produced at all.
-        // Declaration totality adds one legitimate hash change: Side.relayed
-        // still publishes its Int annotation, but its now-invalid body
-        // loses the total bit. Unaffected declarations retain their facts.
-        .hashes = &.{ "app:Mid", "app:Side" },
+        // Mid's firstOf scheme changes, and the failed check removes the
+        // ownership facts from Mid and its tainted dependents. Leaf still
+        // has no scheme that names Pair, so its own hash stays fixed.
+        .hashes = hash_wave_from_leaf,
         .digests = digest_wave_from_leaf,
         .errors = true,
     });
@@ -571,9 +554,9 @@ test "a constructor added to a pub type Mid matches exhaustively moves the HASH"
     try runRow(.{
         .what = "a constructor added to a pub type",
         .leaf = replace(leaf_source, "pub type Tag\n    = Red\n    | Blue", "pub type Tag\n    = Red\n    | Blue\n    | Green"),
-        // `Mid`'s own record does not move: `name` is annotated, so its scheme
-        // is the annotation whether or not the `case` is still exhaustive.
-        .hashes = &.{"app:Leaf"},
+        // Leaf publishes the constructor. Mid's missing-pattern error
+        // removes its ownership block and taints Side and Top as well.
+        .hashes = &all_app,
         .digests = hash_wave_from_leaf,
         .errors = true,
     });
@@ -897,8 +880,9 @@ test "a private record schema's field behind a pub alias moves the digest, and a
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // `S`'s record is unmoved (the schema is private, the alias row has no
-    // body); its digest moves, and `U`'s folds it.
-    try expectSet("a private schema's field", try movedBetween(arena, before.hashes, after.hashes), nothing);
+    // body); its digest moves, and `U`'s folds it. U's failed check
+    // also removes the ownership block its successful check published.
+    try expectSet("a private schema's field", try movedBetween(arena, before.hashes, after.hashes), &.{"app:U"});
     try expectSet("a private schema's field", try movedBetween(arena, before.digests, after.digests), &.{ "app:S", "app:U" });
     // The warm run re-checks `U` and says what a cold run says: `r.z` is
     // now a `String` where `field` promises an `Int`.

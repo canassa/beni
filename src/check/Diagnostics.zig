@@ -63,6 +63,10 @@ pub const Item = struct {
     /// §28.6). A message ABOUT a declaration points at its NAME.
     token: ?u32 = null,
     last_token: ?u32 = null,
+    /// Ownership reports are merged after the DAG with the serial pass's
+    /// diagnostic precedence: types first, one error per ownership limit.
+    ownership: bool = false,
+    ownership_consequence: bool = false,
     /// Owned by the session allocator.
     message: []const u8,
 };

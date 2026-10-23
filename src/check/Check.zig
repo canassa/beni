@@ -167,6 +167,7 @@ pub const Options = struct {
     /// Keep each module's store and variable tables alive after the check,
     /// for `dump --stage=types`.
     keep_stores: bool = false,
+    ownership: ?*const @import("../own/Enforce.zig").Context = null,
     /// Emit the informational `warning`s of static-dispatch-spike.md §10 —
     /// today only `ambiguous_method_receiver` (§10.9), and then only for a
     /// module of the ROOT package. Set by `check` and `build` (A.83); a
@@ -371,7 +372,7 @@ pub fn run(
         for (kept.items) |*m| m.release(gpa);
         kept.deinit(gpa);
     }
-    if (options.keep_stores) {
+    if (options.keep_stores or options.ownership != null) {
         try kept.ensureTotalCapacity(gpa, modules);
         for (0..modules) |_| kept.appendAssumeCapacity(.{
             .store = .init(std.heap.page_allocator),
@@ -405,7 +406,8 @@ pub fn run(
         .options = options,
         .per_module = per_module,
         .counters = counters,
-        .kept = if (options.keep_stores) kept.items else &.{},
+        .kept = kept.items,
+        .hoists = check.hoists,
         .dispatch = dispatch,
         .type_keys = type_keys,
         .plans = plans,
@@ -413,6 +415,29 @@ pub fn run(
     };
     try driver.go(scratch);
     if (driver.failure) |err| return err;
+
+    // The previous serial pass reported ownership only after a clean type
+    // check, and a declaration's limit suppressed the rejections it caused.
+    // Apply that same precedence after all workers finish, without making
+    // summary computation depend on another module's completion order.
+    var type_error = std.mem.indexOfScalar(bool, options.quiet, true) != null;
+    var own_limit = false;
+    for (per_module) |list| for (list.items) |item| {
+        if (!item.ownership and item.severity == .@"error") type_error = true;
+        if (item.code == .ownership_limit) own_limit = true;
+    };
+    for (per_module) |*list| {
+        var len: usize = 0;
+        for (list.items) |item| {
+            if (item.ownership and (type_error or (own_limit and item.ownership_consequence))) {
+                gpa.free(item.message);
+                continue;
+            }
+            list.items[len] = item;
+            len += 1;
+        }
+        list.shrinkRetainingCapacity(len);
+    }
 
     // Merge in the graph's order — the order the serial path produced them
     // in, and a function of the input alone.
@@ -437,7 +462,12 @@ pub fn run(
     for (counters) |c| check.counters = check.counters.add(c);
 
     check.diagnostics = try diagnostics.toOwnedSlice(gpa);
-    check.modules = try kept.toOwnedSlice(gpa);
+    if (options.keep_stores) {
+        check.modules = try kept.toOwnedSlice(gpa);
+    } else {
+        for (kept.items) |*m| m.release(gpa);
+        kept.deinit(gpa);
+    }
     return check;
 }
 
