@@ -4728,9 +4728,9 @@ bullet "Open: the context of a message that a body sends" of the amendment of 20
   `addFinalizer`, so it writes none of the cells that a build with no fiber folds away
   (`slotted`, `fibered`, `finalising`), not even in code that is not reached: one such write keeps
   the teardown in a release page that has no fiber. A development build folds nothing, so each
-  page ships the check and the run. Measured on 622 builds of the `browser/tea` and `browser/dom`
-  fixtures and the page examples: in release, only the 4 pages that set a slot change, +207 raw
-  bytes each; in development, a page grows by 784 to 1 188 raw bytes.
+  page ships the check and the run. Measured on 624 builds of the `browser/tea` and `browser/dom`
+  fixtures and the page examples: in release, only the 5 pages that set a slot change, by +335 to
+  +337 raw bytes; in development, a page grows by 1 344 to 1 748 raw bytes.
 - **Not covered:** `browser-inline` (#751).
 
 *Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
