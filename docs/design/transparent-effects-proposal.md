@@ -1507,6 +1507,11 @@ primitive, not an apparent BIR self-call such as `add a b = a + b`. Partial
 indexed reads and writes do not gain a total proof. A string-comparison
 primitive follows its actual core String.compare declaration, using an own
 declaration edge inside that module and the published fact elsewhere.
+A `key_compare` primitive is the same call on a string key. Totality reads
+only the interfaces of this module's transitive dependencies, which are final
+when it starts; any other may still be being published. A module that does not
+depend on `String` therefore has no String.compare proof, whatever order
+modules finish in (`fast-compiler.md` §10).
 
 A consumer may eagerly evaluate a saturated call only when the target's bit
 is true **and each argument expression is pure-total**. Arguments retain source
