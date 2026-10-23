@@ -1,0 +1,4 @@
+element "root"
+click [data-role=pour]
+click [data-role=sip]
+click [data-role=sip]

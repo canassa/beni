@@ -7496,6 +7496,22 @@ keeps nothing across renders.
    `run/RecordHoistValues`. The research's generated `beni-inline` apps pass `./rr check` (`unique-components`
    and `big-component`, `--lists none`, sizes 1, 16, 64 and 256, seeds 1–3).
 
+   *As built (2026-10-23, slice R7 of #315): the nested write in `browser-inline`.* Two stores of R6's are
+   no-ops, and they are not written:
+   - **The field's own object stored back.** In `{ m | c = { c | t = 4 } }`, where `c` is `m.c` (read
+     directly or through a `let` of it, `Lower.sameFieldObject`), the inner update writes the object `m.c`
+     already holds, so the outer update stores nothing for `c`. Under the sanitiser the inner update answers a
+     new object, and the store stays.
+   - **The model stored back.** An arm that answers the object it was given (an in-place write, or the model
+     unchanged) answers the `model` handle itself (`Context.programArmFields`), and `browser-inline`'s
+     handler then writes no `model = next`.
+
+   With the model no longer reassigned in a sandbox program whose arms all write in place, §9's optimiser
+   folds the handler's copy of the model and the bindings' reads into their uses, and the release handler is
+   the store itself: `k(g[3],()=>{e.a.b=4;i()})` (`emit/release/inline/NestedFieldWrite`, with its page
+   `browser/inline/NestedFieldWrite`). `OldValueAfterWrite` shows the hoist, `let b=e.a;e.a=e.a+1;e.b=b`. The
+   `./rr check` matrix above passes again.
+
 ### 31.13 Measured (2026-10-17): a static approximation, not the checker
 
 **The checker's count (2026-10-19, R2c of #315), which replaces the approximation below.** Over the same set,
