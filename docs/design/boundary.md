@@ -7237,7 +7237,8 @@ inside a handler queues it behind the events already waiting ((e.10)).
   calls `Task.sleep` and whose `tick` does not is accepted; one whose `tick` calls a function
   that sleeps is refused with `sync_boundary`; both written as `{ Object.none | request = …,
   tick = … }`, so the demand survives the record update. The diagnostic's span is the update
-  expression's `{`, not the field's value, which §15.2's table names for a record literal.* The
+  expression's `{`, not the field's value, which §15.4's table names for a record literal
+  (#839 asks for the field's value when an update writes the demanded field).* The
   sentence "a `tick` that waits parks the object" above describes what the platform did before
   the check, and no longer arises. `Just d` keeps one host timer of `d` armed — re-armed
   from the moment it fires, the same `d` not re-arming it — and `ticked` is an event of the
@@ -7414,7 +7415,9 @@ pub type AskError
 - **`tick`'s check is not placed** ((e.5)): `Js.maySuspend` on the record's field answers yes in
   `define`'s suspendable twin, which every program whose other handlers may wait reaches, so a
   pure `tick` was refused at load (*measured*, the probe (e.5) owed). The form is the owner's
-  (`cf-workers-q9`); until it comes, a `tick` that waits parks the object until it answers. The
+  (`cf-workers-q9`); until it comes, a `tick` that waits parks the object until it answers.
+  *Placed 2026-10-23, (e.5): the `sync` mark on `define`'s record; a `tick` that may wait is
+  refused at compile time.* The
   timer is one host `setTimeout`, re-armed as (e.5) says; under `--test-hooks` no host timer is
   armed and `/__beni/tick` is its firing ((k)).
 - **`post` and `ask` on the wire** ((e.10)): `post` to `self` goes into the mailbox with the ids of

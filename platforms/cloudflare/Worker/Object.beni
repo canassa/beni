@@ -47,8 +47,8 @@ pub foreign type Reply a
 
 --| The handlers an object answers events with. Each takes the context and
 --| the state, and returns the next state; `request` answers a response too.
---| `tick` reads the state and names the timer; a `tick` that waits parks
---| the object until it answers.
+--| `tick` reads the state and names the timer, and may not wait: `define`
+--| marks it `sync`, so one that may is refused at compile time.
 pub type alias Handlers state msg =
     request : Context msg, state, Request → state × Response
     message : Context msg, state, Socket, String → state
@@ -94,9 +94,10 @@ pub type AskError
 --| under `"exports"` and the Wrangler configuration binds — the schema of
 --| its protocol, the function that restores its state at each start, and
 --| its handlers, a `Handlers state msg`. The record is written out here so
---| that `tick` carries the `sync` mark: the platform calls it outside any
---| fiber, so a `tick` that may wait is refused at compile time
---| (`sync_boundary`; §9.12 (e.5), amended 2026-10-23).
+--| that `tick` carries the `sync` mark: the platform calls it after every
+--| event, in the consumer, and one that waited would hold the mailbox
+--| after each event (§9.12 (e.5), the owner's rule), so a `tick` that may
+--| wait is refused at compile time (`sync_boundary`; amended 2026-10-23).
 pub define :
       String
     , Schema e msg
@@ -697,9 +698,10 @@ carried instance askKey =
 
 -- ---- The timer and the alarm ------------------------------------------------
 
--- After `restore` and after every handler, outside any fiber: `tick` names
--- the timer ((e.5)). The same duration keeps the armed timer; a different
--- one re-arms from now; `Nothing` clears it.
+-- After `restore` and after every handler, in the consumer: `tick` names
+-- the timer ((e.5)); it is `sync`, so it never holds the mailbox. The same
+-- duration keeps the armed timer; a different one re-arms from now;
+-- `Nothing` clears it.
 retime : V, Handlers state msg → ⊤
 retime instance h =
     wanted = h.tick (Js.to (Js.get instance "state"))
