@@ -926,24 +926,36 @@ socketsTagged ctx tag =
 -- The host does not answer a peer's close frame on a hibernatable socket
 -- (§9.12 (g), amended 2026-10-23, #724): in `webSocketClose` the socket is
 -- still CLOSING and the client waits for the frame. So the platform answers
--- before `closed` is delivered — the peer's code and reason, or a bare
--- `close()` for a code the host refuses to send — and in the handler the
--- socket is CLOSED: `close` does nothing and `write` is `Err NotOpen`. A
--- socket this object closed is CLOSED already when the peer's answer comes.
+-- before `closed` is delivered — the peer's code and reason when the host
+-- lets a server send them, a bare `close()` otherwise — and in the handler
+-- the socket is CLOSED: `close` does nothing and `write` is `Err NotOpen`.
+-- A socket this object closed is CLOSED already when the peer's answer
+-- comes, and so is one the host answered itself: nothing is sent then.
 answerClose : V, V, V → ⊤
 answerClose ws code reason =
     if Js.to (Js.get ws "readyState") == 2 then
-        if hostRefuses (Js.to code) then
-            Js.to (Js.call ws "close" [])
-        else
+        if echoable (Js.to code) (Js.to reason) then
             Js.to (Js.call ws "close" [ code, reason ])
+        else
+            Js.to (Js.call ws "close" [])
 
 
--- The close codes workerd refuses to send (`src/workerd/api/web-socket.c++:636-643`;
--- measured: 1005, a peer's frame with no code, and 1006 throw
--- `InvalidAccessError`).
-hostRefuses : Int → Bool
-hostRefuses code = code == 1004 || code == 1005 || code == 1006 || code == 1015
+-- What the host's `close` accepts under the default flags
+-- (`src/workerd/api/web-socket.c++:633-652`): a code from 1000 to 4999 but
+-- 1004, 1005, 1006 and 1015, and a reason of at most 123 UTF-8 bytes. A
+-- peer's frame can carry any code, and a reason the host decoded with
+-- U+FFFD can be longer than it was on the wire, so both are tested here,
+-- in beni, and the host's throw inside `webSocketClose` — which would lose
+-- `closed` with no trace — is never reached (R7-1).
+echoable : Int, String → Bool
+echoable code reason =
+    code ≥ 1000
+        && code ≤ 4999
+        && code ≠ 1004
+        && code ≠ 1005
+        && code ≠ 1006
+        && code ≠ 1015
+        && utf8Bytes reason ≤ 123
 
 
 -- The host's close event as a `Close` (§9.12 (g)): an end with no close

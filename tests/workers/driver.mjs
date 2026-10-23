@@ -167,6 +167,18 @@ const mf = new Miniflare({
 const readyUrl = await mf.ready;
 const base = "http://127.0.0.1";
 
+// A hand-made close frame (`"frame"`: the payload in hex, the code's two
+// bytes then the reason's), for what the client library refuses to send —
+// a code outside 1000-4999, a reason that is not UTF-8. Masked, as a
+// client's frame must be (RFC 6455 §5.3), with a fixed key: the payload is
+// at most 125 bytes, so the short length form holds.
+const rawClose = (ws, hex) => {
+  const payload = Buffer.from(hex, "hex");
+  const key = Buffer.from([0x12, 0x34, 0x56, 0x78]);
+  const masked = Buffer.from(payload.map((byte, i) => byte ^ key[i % 4]));
+  ws._socket.write(Buffer.concat([Buffer.from([0x88, 0x80 | payload.length]), key, masked]));
+};
+
 // ---- The steps --------------------------------------------------------------
 
 const within = (work) =>
@@ -369,10 +381,15 @@ for (const step of steps) {
       await Promise.race([closed, new Promise((resolve) => setTimeout(resolve, stepLimit))]);
     }
   } else if (step.close !== undefined) {
-    say(`> (socket ${step.close}) close${step.code === undefined ? "" : ` ${step.code} ${JSON.stringify(step.reason ?? "")}`}`);
+    say(
+      step.frame !== undefined
+        ? `> (socket ${step.close}) close frame ${step.frame}`
+        : `> (socket ${step.close}) close${step.code === undefined ? "" : ` ${step.code} ${JSON.stringify(step.reason ?? "")}`}`,
+    );
     const entry = socketNamed(step.close);
     if (entry === undefined) {
-    } else if (step.code === undefined) entry.ws.close();
+    } else if (step.frame !== undefined) rawClose(entry.ws, step.frame);
+    else if (step.code === undefined) entry.ws.close();
     else entry.ws.close(step.code, step.reason ?? "");
   } else if (step.receive !== undefined && step.count !== undefined) {
     const entry = socketNamed(step.receive);

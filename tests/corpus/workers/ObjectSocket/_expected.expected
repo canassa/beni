@@ -74,6 +74,33 @@
 > (socket f) close
 | out: closed p7 1005 ; close again: Ok: ⊤
 < (socket f) close 1005 ""
+> (socket g) GET /arena/x/p8
+(socket g) < 101
+(socket g) < sec-websocket-accept: (the key)
+(socket g) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket g) < upgrade: websocket
+< (socket g) "welcome p8"
+> (socket g) close frame 03e7
+| out: closed p8 999 ; close again: Ok: ⊤
+< (socket g) close 1005 ""
+> (socket h) GET /arena/x/p9
+(socket h) < 101
+(socket h) < sec-websocket-accept: (the key)
+(socket h) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket h) < upgrade: websocket
+< (socket h) "welcome p9"
+> (socket h) close frame 1388
+| out: closed p9 5000 ; close again: Ok: ⊤
+< (socket h) close 1005 ""
+> (socket i) GET /arena/x/p10
+(socket i) < 101
+(socket i) < sec-websocket-accept: (the key)
+(socket i) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket i) < upgrade: websocket
+< (socket i) "welcome p10"
+> (socket i) close frame 03e8ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+| out: closed p10 1000 ������������������������������������������; close again: Ok: ⊤
+< (socket i) close 1005 ""
 > GET /arena/x/count
 < 200
 < content-type: text/plain; charset=utf-8
