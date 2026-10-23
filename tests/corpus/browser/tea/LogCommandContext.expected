@@ -17,7 +17,16 @@
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"0"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #perform
@@ -40,7 +49,16 @@ console.debug: a body that does not wait {"request":"p1"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"1"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -66,7 +84,16 @@ console.info: a keyed body that does not wait save=0ms {"request":"k1"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"2"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -94,7 +121,16 @@ console.info: a command of Done's update: the program's context
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"4"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #after
@@ -117,7 +153,16 @@ console.info: after the render {"request":"a1"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"5"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #mapped
@@ -140,7 +185,16 @@ console.info: a child's command {"parent":"x","child":"y"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"6"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #plain
@@ -163,7 +217,16 @@ console.info: a command made outside any context
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"7"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #sink
@@ -185,7 +248,16 @@ console.info: a command made outside any context
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"8"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #show
@@ -208,7 +280,16 @@ console.info: the sink kept: to update's sink
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"9"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #restart
@@ -230,7 +311,16 @@ console.info: the sink kept: to update's sink
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"10"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #restart
@@ -252,7 +342,16 @@ console.info: the sink kept: to update's sink
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"11"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -277,7 +376,16 @@ console.info: restart: a keyed body after a wait {"request":"r10"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"12"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #queue
@@ -299,7 +407,16 @@ console.info: restart: a keyed body after a wait {"request":"r10"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"13"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -327,7 +444,16 @@ console.info: queue: a keyed body after a wait {"request":"r12"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"14"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -353,7 +479,16 @@ console.info: behind: a body that does not wait, queued behind one {"request":"r
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"15"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #ignore
@@ -375,7 +510,16 @@ console.info: behind: a body that does not wait, queued behind one {"request":"r
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"16"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -400,7 +544,16 @@ console.info: ignore: a keyed body after a wait {"request":"r14"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"17"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #concurrent
@@ -422,7 +575,16 @@ console.info: ignore: a keyed body after a wait {"request":"r14"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"18"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -448,7 +610,16 @@ console.info: concurrent: a keyed body after a wait {"request":"r17"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"19"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 5
@@ -473,7 +644,16 @@ console.info: a command of Done's update: the program's context
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"20"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #mapafter
@@ -496,7 +676,16 @@ console.info: a child's after-render body {"request":"r20","child":"y"}
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"21"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- click #listen
@@ -519,8 +708,211 @@ console.info: a subscription body: the default context
     <button id="taskwait">"taskwait"</button>
     <button id="mapafter">"mapafter"</button>
     <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
     <p>"23"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
   </main>
 </body>
 -- advance 1
 (the DOM did not change)
+-- click #aftersend
+console.info: Got's update, sent by an after-render body: the program's context
+console.info: a command of Got's update, sent by an after-render body
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
+    <p>"25"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
+  </main>
+</body>
+-- click #mapsend
+console.info: Got's update, sent by a child's body, through Cmd.map: the program's context
+console.info: a command of Got's update, sent by a child's body, through Cmd.map
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
+    <p>"27"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
+  </main>
+</body>
+-- click #keyedsend
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
+    <p>"28"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
+  </main>
+</body>
+-- advance 5
+console.info: Got's update, sent by a keyed body after a wait: the program's context
+console.info: a command of Got's update, sent by a keyed body after a wait
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
+    <p>"29"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
+  </main>
+</body>
+-- click #focus-own
+console.info: Focused's update, from a focus that a body made, through Html.map
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="" :focus>
+    <p>"31"</p>
+    <div id="slot">
+      <input id="other" .value="">
+    </div>
+  </main>
+</body>
+-- click #focus-other
+console.info: the other program's update: the program's context
+<body>
+  <main>
+    <button id="perform">"perform"</button>
+    <button id="keyed">"keyed"</button>
+    <button id="task">"task"</button>
+    <button id="after">"after"</button>
+    <button id="mapped">"mapped"</button>
+    <button id="plain">"plain"</button>
+    <button id="sink">"sink"</button>
+    <button id="show">"show"</button>
+    <button id="restart">"restart"</button>
+    <button id="queue">"queue"</button>
+    <button id="behind">"behind"</button>
+    <button id="ignore">"ignore"</button>
+    <button id="concurrent">"concurrent"</button>
+    <button id="taskwait">"taskwait"</button>
+    <button id="mapafter">"mapafter"</button>
+    <button id="listen">"listen"</button>
+    <button id="aftersend">"aftersend"</button>
+    <button id="mapsend">"mapsend"</button>
+    <button id="keyedsend">"keyedsend"</button>
+    <button id="focus-own">"focus-own"</button>
+    <button id="focus-other">"focus-other"</button>
+    <input id="own" .value="">
+    <p>"32"</p>
+    <div id="slot">
+      <input id="other" .value="" :focus>
+    </div>
+  </main>
+</body>
