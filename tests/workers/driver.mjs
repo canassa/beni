@@ -13,6 +13,7 @@
 // in the transcript, and neither does anything that depends on it, on the
 // clock or on the machine.
 
+import crypto from "node:crypto";
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -170,13 +171,26 @@ const base = "http://127.0.0.1";
 // A hand-made close frame (`"frame"`: the payload in hex, the code's two
 // bytes then the reason's), for what the client library refuses to send —
 // a code outside 1000-4999, a reason that is not UTF-8. Masked, as a
-// client's frame must be (RFC 6455 §5.3), with a fixed key: the payload is
-// at most 125 bytes, so the short length form holds.
-const rawClose = (ws, hex) => {
+// client's frame must be (RFC 6455 §5.3), with a random key. A control
+// frame's payload is at most 125 bytes (§5.5), which is also the short
+// length form's bound; a longer one, or a payload that is not an even
+// count of hex digits, is a script error. The frame is written to the
+// `ws` library's private `_socket`, since the library has no way to send
+// a frame it would refuse; the library still reads the server's answer.
+const rawClose = (ws, name, hex) => {
+  if (!/^(?:[0-9a-fA-F]{2})*$/.test(hex)) scriptError(`close frame of socket ${name}: "${hex}" is not an even count of hex digits`);
   const payload = Buffer.from(hex, "hex");
-  const key = Buffer.from([0x12, 0x34, 0x56, 0x78]);
+  if (payload.length > 125) scriptError(`close frame of socket ${name}: ${payload.length} bytes, and a control frame holds at most 125`);
+  const key = crypto.randomBytes(4);
   const masked = Buffer.from(payload.map((byte, i) => byte ^ key[i % 4]));
   ws._socket.write(Buffer.concat([Buffer.from([0x88, 0x80 | payload.length]), key, masked]));
+};
+
+// A step the script wrote wrong: the run cannot mean anything, so the
+// driver stops with the usage errors' exit code, the step named.
+const scriptError = (what) => {
+  process.stderr.write(`workers driver: script error: ${what}\n`);
+  process.exit(2);
 };
 
 // ---- The steps --------------------------------------------------------------
@@ -388,7 +402,7 @@ for (const step of steps) {
     );
     const entry = socketNamed(step.close);
     if (entry === undefined) {
-    } else if (step.frame !== undefined) rawClose(entry.ws, step.frame);
+    } else if (step.frame !== undefined) rawClose(entry.ws, step.close, step.frame);
     else if (step.code === undefined) entry.ws.close();
     else entry.ws.close(step.code, step.reason ?? "");
   } else if (step.receive !== undefined && step.count !== undefined) {
