@@ -77,8 +77,8 @@ open Ownership.FlatFragment.RepresentsDepth Ownership.FlatFragment.FiniteReach O
 open Ownership.FlatFragment.IntegerCorrespondence Ownership.FlatFragment.Runtime Ownership.FlatFragment.Description
 open Ownership.FlatFragment.NamingFacts Ownership.FlatFragment.AtomPreservation Ownership.FlatFragment.Fields Ownership.FlatFragment.Observe
 
-/-- Every live projected value stays described in any flat heap that keeps
-its roots allocated, under any naming that keeps the old names. -/
+/-- Every live projected value stays described after an allocation or an
+integer write (`IntegerFrame`), under any naming that keeps the old names. -/
 theorem described_flat_frame {next : Heap} {w w' : Value} {o : Observation} {gamma : Naming} {gamma' : Naming} {p : Path}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (frame : IntegerFrame hs.heap next)
@@ -96,7 +96,8 @@ theorem described_flat_frame {next : Heap} {w w' : Value} {o : Observation} {gam
   exact describes_flat_frame shape' (flatAbstract_atPath shape0 at_p)
     (resultTags_project tags shape0 at_p valuePath) frame namingSame described
 
-/-- The immutable-path naming of every flat binding in any flat heap. -/
+/-- The immutable-path naming of every flat binding after an allocation or
+an integer write (`IntegerFrame`). -/
 theorem named_flat_frame {next : Heap} {w : Value} {o : Observation} {gamma : Naming} {gamma' : Naming}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (frame : IntegerFrame hs.heap next)
