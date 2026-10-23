@@ -1,8 +1,8 @@
 module BranchSoonEscapes
   17:17 construction old: accepted call
   24:9 construction old: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
-  summary choose: π2 R, π2[*] RAE; res .0 esc1{lost} fresh4, .0[*] ~condition(fresh3) ~esc2{lost} ~π2[*], .1 esc501◦ esc502◦, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w λr{lost} λr{lost}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇ esc1{lost}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇[*] ~condition(fresh3) ~esc2{lost} ~π2[*]
-  summary unsafe: π1 R, π1[*] RAE; res .0 esc1{lost}, .0[*] ~condition(fresh3) ~esc2{lost} ~π1[*], .1 esc501◦, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w λr{lost}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇ esc1{lost}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇[*] ~condition(fresh3) ~esc2{lost} ~π1[*], condition(fresh4){shared}r{lost}
+  summary choose: π2 R, π2[*] RAE; res .0 esc1{excl π2} fresh4, .0[*] ~condition(fresh3) ~esc2{excl π2} ~π2[*]{excl π2}, .1 esc501◦ esc502◦, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w λr{lost} λr{lost}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇ esc1{excl π2}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇[*] ~condition(fresh3) ~esc2{excl π2} ~π2[*]{excl π2}
+  summary unsafe: π1 R, π1[*] RAE; res .0 esc1{excl π1}, .0[*] ~condition(fresh3) ~esc2{excl π1} ~π1[*]{excl π1}, .1 esc501◦, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w λr{lost}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇ esc1{excl π1}, .1⟨as record(1:w=13:1:Js::Value()|2:{})⟩.w◇[*] ~condition(fresh3) ~esc2{excl π1} ~π1[*]{excl π1}, condition(fresh4){shared}r{lost}
   demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause escaped 1

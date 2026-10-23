@@ -3284,6 +3284,10 @@ fn recordTwins(o: *Ownership, s: Summary) Allocator.Error!Summary {
     var out = s;
     const res = try keep.dupe(ResEntry, s.res);
     for (res) |*r| {
+        // A row that states its record condition on its own keeps it
+        // (`append`'s, #420): an entry's `rxc` starts lost, so one that
+        // does not is the row's.
+        if (r.rxc.no == 0) continue;
         r.rxc = try o.recordTwin(r.xc);
         // A `foreign`'s `exclusive` word speaks of its list's lists
         // (`boundary.md` §4), not of records it may hold twice.
@@ -3866,10 +3870,20 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     } else if (std.mem.eql(u8, name, "append")) {
         // Copying in the elements of a list that lives on (thesis §3.8).
         uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R }, .{ .param = 1, .path = elem, .bits = A } };
-        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = lost }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, elem) } });
+        // Its records (#420, §31.4 item 6): the answer's positions are
+        // π₁'s and then π₂'s, so it holds no record twice when neither
+        // argument does and the two share none. That π₂ lives on is a
+        // holder of its elements, which a record demand's Dead reads.
+        const rmade = try keep.alloc(XAtom, 3);
+        rmade[0] = .{ .kind = .excl, .a = p(0, eps) };
+        rmade[1] = .{ .kind = .excl, .a = p(1, eps) };
+        rmade[2] = sepAtom(p(0, eps), p(1, eps));
+        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps), .xc = lost, .rxc = .{ .atoms = sortAtoms(rmade) } }, .{ .path = elem, .prov = p(0, elem) }, .{ .path = elem, .prov = p(1, elem) } });
     } else if (eqlAny(name, &.{ "copy", "sliceOf" })) {
         uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A } };
-        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = lost }, .{ .path = elem, .prov = p(0, elem) } });
+        // Its records (#420): each position is one of π₁'s, at most once.
+        const rwhole = try keep.dupe(XAtom, &.{.{ .kind = .excl, .a = p(0, eps) }});
+        res = try keep.dupe(ResEntry, &.{ .{ .path = eps, .prov = fresh, .xc = lost, .rxc = .{ .atoms = rwhole } }, .{ .path = elem, .prov = p(0, elem) } });
     } else if (eqlAny(name, &.{ "length", "offset" })) {
         uses = &.{.{ .param = 0, .path = eps, .bits = R }};
     } else if (eqlAny(name, &.{ "at", "unsafeGet" })) {
@@ -19830,25 +19844,33 @@ const Walker = struct {
         // later spread element by element when it is a temporary, and lost
         // when it is a list that lives on.
         var stored: std.ArrayList(AV) = .empty;
+        // A record's: a spread list that lives on is a holder of its
+        // elements, which a record demand's Dead reads (#420), so it is
+        // stored element by element as a temporary is.
+        var rstored: std.ArrayList(AV) = .empty;
         var spread_k = cond_yes;
         var rspread_k = cond_yes;
         for (items, avs, 0..) |it, av, i| {
             if (i == bi) continue;
             if (!it.spread) {
                 try stored.append(w.a, av);
-            } else if ((try w.refPath(it.inst)) != null) {
-                spread_k = cond_lost;
-                rspread_k = cond_lost;
+                try rstored.append(w.a, av);
             } else {
-                try stored.append(w.a, try w.elementsOf(av));
-                spread_k = try w.condAnd(spread_k, try w.deepCond(av));
+                const elems = try w.elementsOf(av);
+                if ((try w.refPath(it.inst)) != null) {
+                    spread_k = cond_lost;
+                } else {
+                    try stored.append(w.a, elems);
+                    spread_k = try w.condAnd(spread_k, try w.deepCond(av));
+                }
+                try rstored.append(w.a, elems);
                 rspread_k = try w.rcondAnd(rspread_k, try w.rdeepCond(av));
             }
         }
         const stored_k = try w.condAnd(spread_k, try w.storedCond(stored.items, try w.elementsOf(avs[bi])));
         for (avs[bi]) |e| if (e.path == eps) try w.lowerCond(e.cell, stored_k);
         // §31.4 item 6: a record stored twice, or one the list holds.
-        const rstored_k = try w.rcondAnd(rspread_k, try w.rstoredCond(stored.items, try w.elementsOf(avs[bi])));
+        const rstored_k = try w.rcondAnd(rspread_k, try w.rstoredCond(rstored.items, try w.elementsOf(avs[bi])));
         for (avs[bi]) |e| if (e.path == eps) try w.rlowerCond(e.cell, rstored_k);
         var parts: std.ArrayList(AV) = .empty;
         try parts.append(w.a, avs[bi]);

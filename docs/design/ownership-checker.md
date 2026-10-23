@@ -6956,6 +6956,32 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    instructions; a cheaper hash for the checker's memos pays for it, and the two tests that walk core count
    4 203 and 4 218 million.
 
+   *Revised 2026-10-23 (#420, R4 of #315): where core's rows lost the record condition.* Three changes,
+   each stating a record condition by where the answer's elements come from, none reading a list's:
+   - **`List.append`'s row** states its answer's record condition on its own, `rexcl π₁`, `rexcl π₂` and
+     `rsep π₁ π₂`, beside its list one, which stays `lost`. A row's `rxc` that is not `lost` is the row's,
+     and `recordTwins` keeps it. That π₂ lives on does not make the answer hold a record twice: it is a
+     holder of its elements, which a record demand's Dead reads (item 5). `List.copy` and `sliceOf`, and
+     so `List.take`, state `rexcl π₁`: each position is one of π₁'s, at most once.
+   - **`++` and a spread** (`appendChain`): a spread operand that is a variable lowers the base's record
+     condition element by element, as a temporary's does, for the same reason; its list condition is
+     still `lost`.
+   - **`List.filter` and `List.reverse`** read their argument with `traverseAt`, as `map` does: each loop
+     reads `a` only through it, once per index, at an index that moves one way, which is the primitive's
+     obligation. Their answers are then `excl π₁` in both domains, a list's included — a list's condition
+     only gains precision, and no list line of the comparison moves.
+
+   Over the comparison (1 593 programs and module sets), 20 rejected record lines go — the TodoMVCs' entries
+   and Bike Wars', and the keyed-row pages' (`Keyed`, `Selector`, `SvgRows`, `FilteredFor`, `RowBranch`,
+   `KeyedOriginal`, `TodoRouting`) — and lines that rested on a precise condition now say what they rest
+   on: `RecordContentsBuilt`'s and `RecordContentsCore`'s copies of one row are exact, and
+   `examples/todo/page` names the call that shares a todo with the model (`call`, `exclusive`). What still
+   loses it, each its own limit: `List.sortWith` (a merge that reads each element more than once, so
+   `sortBy` too), a callback that a function parameter answers through a lambda (`edit list f =
+   List.map list λrow → … f row …`: `rfreshAcross` reads the lambda's `cb` result as lost), an
+   `indexedMap` that swaps two rows by index (`swapRows`, `ExchangeRows`), and a decoder's issues
+   (`Schema`, #413). `ownership/RecordContentsRows` pins the accepted rows and `rows ++ rows`, refused.
+
    *Compared (2026-10-19); the owner chose the parallel domain.* The alternative is one lattice whose atoms carry a domain:
    `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
    instead of dropping it, a list's demand reading the list atoms, a record's reading both.

@@ -6,7 +6,7 @@ module RecordContentsCore
   35:8 update <call List.filterMap>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
   39:8 update <call List.concatMap>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
   43:8 update <call List.initialize>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
-  47:8 update <call List.take>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  47:8 update <call List.take>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) [copy]
   51:8 update <call List.drop>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) [copy]
   55:8 update <call List.sortBy>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
   59:8 update <call Dict.values>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
@@ -31,7 +31,7 @@ module RecordContentsCore
   summary c3: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary c4: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{excl π1} ~fresh503◦r{lost} ~π1◦, fresh1r{lost}
   summary c5: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
-  summary c6: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦, fresh1r{lost}
+  summary c6: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
   summary c7: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
   summary c8: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary c9: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦r{lost}, fresh1r{lost}

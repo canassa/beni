@@ -1151,7 +1151,7 @@ filter xs isGood = filterHelp (base xs) (offset xs) 0 (length xs) isGood (builde
 filterHelp : List a, Int, Int, Int, (a → Bool), Builder a, Int → List a
 filterHelp a o i n isGood b j =
     if i < n then
-        x = at a (o + i)
+        x = traverseAt a (o + i)
         if isGood x then
             filterHelp a o (i + 1) n isGood (put b j x) (j + 1)
         else
@@ -1197,7 +1197,7 @@ reverse xs = reverseHelp (base xs) (offset xs + length xs - 1) 0 (length xs) (bu
 reverseHelp : List a, Int, Int, Int, Builder a → List a
 reverseHelp a top i n b =
     if i < n then
-        reverseHelp a top (i + 1) n (put b i (at a (top - i)))
+        reverseHelp a top (i + 1) n (put b i (traverseAt a (top - i)))
     else
         done b n
 

@@ -1,0 +1,39 @@
+-- ownership: the record condition of what core's list functions answer
+-- (#420, `ownership-checker.md` §31.4 item 6). `flip` writes each row a
+-- destructive read hands it, so it relies on its list holding no record at
+-- two positions. A filtered, reversed or taken list holds each of its
+-- argument's rows at most once, and two lists appended hold no row twice
+-- when neither does and they share none: each caller's line is accepted,
+-- and the condition becomes its own requirement on its argument. Appending
+-- a list to itself holds every row twice, and is rejected exactly.
+type alias Row =
+    id : Int
+    done : Bool
+
+
+flip : List Row → List Row
+flip rows = List.map rows λr → { r | done = not r.done }
+
+
+pub viaFilter : List Row → List Row
+viaFilter rows = flip (List.filter rows λr → r.id > 0)
+
+
+pub viaReverse : List Row → List Row
+viaReverse rows = flip (List.reverse rows)
+
+
+pub viaTake : List Row → List Row
+viaTake rows = flip (List.take rows 2)
+
+
+pub viaCopy : List Row → List Row
+viaCopy rows = flip (List.copy rows)
+
+
+pub viaAppend : List Row, List Row → List Row
+viaAppend rows more = flip (rows ++ more)
+
+
+pub viaAppendSelf : List Row → List Row
+viaAppendSelf rows = flip (rows ++ rows)
