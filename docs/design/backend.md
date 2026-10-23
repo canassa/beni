@@ -10338,7 +10338,10 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `K(a,f);`. An object literal with a computed key or a spread is left as it is, and a
    conditional left as the one part is not made an `if` (item 8), which the decision of an outer
    `if`'s braces does not foresee. Fixtures: `emit/release/inline/RootClosures`, `PushAndTimer`,
-   `TickInPlace`, `emit/release/tea/HttpSendTracked`.
+   `TickInPlace`, `emit/release/tea/HttpSendTracked`. A name the lowering writes is always one it
+   declared before the read runs, so reading it never throws (no `ReferenceError`, no read before its
+   `let`), and leaving the read out changes nothing a development build would show; that is what
+   lets release drop it while it still behaves exactly as development does.
 
 And under all of them:
 

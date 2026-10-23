@@ -1,0 +1,46 @@
+--! The first widget: a number of cups, which it writes in place.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    cups : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = -1 }
+
+
+pub type Msg
+    = MakeFour
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        MakeFour →
+            { model | cups = 4 }
+
+
+--| One tick of the host's clock: one more cup, up to 6, as a new record.
+pub tick : Model → Model
+tick model =
+    if model.cups < 6 then
+        { cups = model.cups + 1 }
+    else
+        model
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model = Result.withDefault (Json.decodeValue state) model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="four" onClick={MakeFour}>Make it 4</button>
+        <p>{model.cups}</p>
+    </section>
