@@ -1,0 +1,11 @@
+element "root"
+event window poke
+click [data-role=toggle]
+event window poke
+click [data-role=inner]
+event window poke
+click [data-role=toggle]
+event window poke
+click [data-role=toggle]
+click [data-role=inner]
+event window poke

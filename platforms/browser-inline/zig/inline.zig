@@ -56,7 +56,7 @@ pub const lowering: m.Lowering = .{
         .{ .name = "text", .arity = 2 },
         .{ .name = "prop", .arity = 3 },
         .{ .name = "when", .arity = 2 },
-        .{ .name = "on", .arity = 3 },
+        .{ .name = "on", .arity = 4 },
         // `(node)`: a piece root's table of elements (§8.4).
         .{ .name = "part", .arity = 1 },
     },
@@ -266,13 +266,11 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
             listener = try js.arrow(&.{e}, blk);
         }
         const node = try pg.ref(ev.target);
-        const active = try pg.armActivity(ev.ctx);
-        if (active == null and !facts.prevent_default and !facts.stop_propagation) {
-            if (kind) |k| {
-                try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener, try js.string(k) }));
-            } else try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener }));
+        if (!facts.prevent_default and !facts.stop_propagation) {
+            try js.expression(wire, try pg.onCall(node, listener, kind, ev.ctx));
             continue;
         }
+        const active = try pg.armActivity(ev.ctx);
         const evn = try cx.fresh("event");
         const dom_blk = try js.block();
         if (facts.prevent_default or facts.stop_propagation) {
@@ -1091,13 +1089,11 @@ const Page = struct {
         // `on`, the event's name left out for a click.
         for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
-            const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else try pg.armActivity(evinfo.ctx);
-            if (active == null and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
-                if (pl.kind) |k| {
-                    try js.expression(body, try js.call(try js.name(try cx.runtime("on")), &.{ node, f, try js.string(k) }));
-                } else try js.expression(body, try js.call(try js.name(try cx.runtime("on")), &.{ node, f }));
+            if (evinfo.captures.len == 0 and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
+                try js.expression(body, try pg.onCall(node, f, pl.kind, evinfo.ctx));
                 continue;
             }
+            const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else try pg.armActivity(evinfo.ctx);
             // The guard retains one callback made during mount; dispatch
             // must not allocate a new handler closure.
             const listener = try cx.fresh("listener");
@@ -1362,6 +1358,43 @@ const Page = struct {
             active = if (active) |inner| try js.binary(.logical_and, selected, inner) else selected;
         }
         return active;
+    }
+
+    /// The runtime's `on` for a listener with neither flag and no captured
+    /// arguments: `on(node, f)`, the event's name left out for a click, and,
+    /// inside eager arms, the arms' elements outermost first, which `on`
+    /// asks before the event enters the guard (§8.2, #466; the same test
+    /// `armActivity` writes in place).
+    fn onCall(pg: *Page, node: m.Expr, f: m.Expr, kind: ?[]const u8, ctx: u32) m.Error!m.Expr {
+        const js = pg.cx.js;
+        const on = try js.name(try pg.cx.runtime("on"));
+        const arms = try pg.armElements(ctx);
+        if (arms.len == 0) {
+            if (kind) |k| return js.call(on, &.{ node, f, try js.string(k) });
+            return js.call(on, &.{ node, f });
+        }
+        const which = if (arms.len == 1) arms[0] else try js.array(arms);
+        return js.call(on, &.{ node, f, try js.string(kind orelse "click"), which });
+    }
+
+    /// The element of each eager arm around context `ctx`, outermost first:
+    /// the element whose `when` anchor (`$a`) stands in its place while the
+    /// arm is hidden (`armActivity`'s targets).
+    fn armElements(pg: *Page, ctx: u32) m.Error![]const m.Expr {
+        var inner_first: std.ArrayList(m.Expr) = .empty;
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            const context = pg.ctxs.items[c];
+            if (context.kind != .arm or context.parent == null) continue;
+            const target = for (pg.writes.items) |w| {
+                if (w.what != .when) continue;
+                const arm = w.what.when;
+                if (w.ctx == context.parent.? and arm.node == context.node and arm.shown == context.arm) break w.target;
+            } else unreachable;
+            try inner_first.append(pg.a(), try pg.ref(target));
+        }
+        std.mem.reverse(m.Expr, inner_first.items);
+        return inner_first.items;
     }
 
     fn within(pg: *Page, ctx: u32, ancestor: u32) bool {

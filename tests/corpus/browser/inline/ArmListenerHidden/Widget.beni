@@ -1,0 +1,16 @@
+import Html exposing (Html)
+
+
+pub type Msg
+    = Clicked
+
+
+pub view : Bool → Html Msg
+view shown =
+    <aside>
+        {if shown then
+            <button data-poke="piece" onClick={Clicked}>Piece</button>
+         else
+            <></>
+        }
+    </aside>

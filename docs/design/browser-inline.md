@@ -279,7 +279,7 @@ beni over `Js` in `Inline.beni`:
 | `text(node, value)` | `node.textContent`, `String(value)`, when it differs |
 | `prop(node, value, key = "value")` | the DOM property `key` when it differs: a control's `value`, `checked`, `selected`, and the boolean attributes whose property has their name (`disabled`, `hidden`, `multiple`, `open`, `required`) |
 | `when(node, hidden)` | the node, or the empty text node it keeps in its place while `hidden` |
-| `on(node, f, type = "click")` | a listener of `type` whose event enters the dispatch guard with `f` |
+| `on(node, f, type = "click", arms)` | a listener of `type` whose event enters the dispatch guard with `f`; while one of `arms` (an element, or an array of them outermost first) is hidden, the event does nothing |
 
 - **A text hole** is `text` on its element. An element whose children are texts and text holes —
   *mixed text* — is one binding writing its whole text as a template. A hole of `String`, `Char` or
@@ -360,6 +360,13 @@ beni over `Js` in `Inline.beni`:
   no active handler, including no `preventDefault` or `stopPropagation` effect from a host's
   programmatic event on a retained detached node. Hidden updates keep no stale argument binding;
   reentry evaluates current-model arguments freshly. Ownership guarantees are unchanged.
+  *Amended 2026-10-23 (#844):* for a handler with no captured argument and neither
+  `preventDefault` nor `stopPropagation`, the test lives in the runtime: the wiring is `on`
+  handed the element of each eager arm around the handler, outermost first (one element alone, or
+  an array), and `on`'s listener asks each element's `when` anchor before the event enters the
+  guard, as the listener written in place did. A handler with a flag or a captured argument keeps
+  its listener written in place (`browser/inline/ArmListenerHidden`,
+  `emit/release/inline/ArmListener`).
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as

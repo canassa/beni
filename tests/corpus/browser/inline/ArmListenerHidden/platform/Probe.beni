@@ -1,0 +1,49 @@
+-- Keep each button the page writes, so a `poke` clicks it from the host
+-- while its arm is hidden and the button is out of the page.
+import Html exposing (Html)
+import Js
+
+
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClick" delegated : Event
+
+
+pub keep : ⊤ → ⊤
+keep ⊤ =
+    root = Js.call (Js.global "document") "getElementById" [ Js.from "root" ]
+    insert = Js.get root "insertAdjacentHTML"
+    Js.set
+        root
+        "insertAdjacentHTML"
+        (Js.from λposition html →
+            _ = Js.call insert "call" [ root, position, html ]
+            Js.set
+                (Js.global "window")
+                "kept"
+                (Js.call root "querySelectorAll" [ Js.from "[data-poke]" ])
+            ⊤
+        )
+
+
+pub start : sync (Int → ⊤) → (⊤ → ⊤)
+start _ =
+    window = Js.global "window"
+    poke = Js.from λ_ →
+        Js.each (Js.get window "kept") λnode →
+            event =
+                Js.construct (Js.global "MouseEvent")
+                    [ Js.from "click", Js.from { bubbles = True, cancelable = True } ]
+            _ = Js.call node "dispatchEvent" [ event ]
+            ⊤
+    _ = Js.call window "addEventListener" [ Js.from "poke", poke ]
+    λ⊤ →
+        _ = Js.call window "removeEventListener" [ Js.from "poke", poke ]
+        ⊤
