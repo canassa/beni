@@ -23,7 +23,7 @@
 //! strings: u32, then per string: u32 length, bytes        field names
 //! cast types: u32, then per type: u32 length and portable structural node key
 //!        children reference earlier entries in this table
-//! paths: u32, then per path: steps u8, then per step: kind u8 and
+//! paths: u32, then per path: steps u32, then per step: kind u8 and
 //!        field: string index u32 · tuple: index u32 · ctor: module u32,
 //!        constructor u32, argument u32 · level: module u32, declaration
 //!        u32, where it stands u8 · cast, cast_level: type-table index u32;
@@ -115,7 +115,8 @@ pub const magic = "BENIOWN\x00";
 /// 34 adds the clean-report certificate and public rows, opaque slots and aliases.
 /// 35 marks a schema's `Encoded` endpoint in a level marker (§16.7, #820).
 /// 36 invalidates template-row reports: every entry word uses the direct protocol.
-pub const version: u32 = 36;
+/// 37 removes the path cut (§16.7 (c), #286): a path's length is a u32.
+pub const version: u32 = 37;
 
 /// A cache hit may skip enforcement only if its previous report was clean.
 /// Other platforms also compute reports, but can cache a rejected module.
@@ -239,8 +240,7 @@ fn writeRows(o: *Ownership, gpa: Allocator, rows: []const Row, public_module: ?u
         fn path(c: *@This(), p: u32) Allocator.Error!void {
             if ((try c.seen_path.getOrPut(c.arena, p)).found_existing) return;
             try c.paths.append(c.arena, p);
-            var buf: [Ownership.k_limit + 1]Ownership.Step = undefined;
-            const ss = c.o.steps(p, &buf);
+            const ss = c.o.steps(p);
             var si: usize = 0;
             while (si < ss.len) {
                 if (c.public) if (try c.o.opaquePrefix(ss[si..])) |slot| {
@@ -464,12 +464,12 @@ fn writeRows(o: *Ownership, gpa: Allocator, rows: []const Row, public_module: ?u
 
 /// A path's bytes in the table: its steps, each named by table indices.
 fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error![]const u8 {
-    var buf: [Ownership.k_limit + 1]Ownership.Step = undefined;
-    const s = o.steps(p, &buf);
+    const s = o.steps(p);
     var out: std.ArrayList(u8) = .empty;
-    try out.append(arena, @intCast(s.len));
+    // §16.7 (c): a path has no length limit, and its length is a u32.
+    try appendInt(arena, &out, 0);
     var si: usize = 0;
-    var count: u8 = 0;
+    var count: u32 = 0;
     while (si < s.len) {
         count += 1;
         if (w.public_module != null) if (try o.opaquePrefix(s[si..])) |slot| {
@@ -521,7 +521,7 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
             .elem, .env, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
     }
-    out.items[0] = count;
+    std.mem.writeInt(u32, out.items[0..4], count, .little);
     return out.items;
 }
 
@@ -1174,8 +1174,8 @@ pub fn open(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
     @memset(block.path_id, unread);
     for (block.path_at) |*slot| {
         slot.* = @intCast(r.at);
-        const n_steps = try r.byte();
-        if (n_steps > Ownership.k_limit) return error.Bad;
+        const n_steps = try r.int();
+        if (n_steps > r.bytes.len - r.at) return error.Bad;
         for (0..n_steps) |_| {
             const tag = try r.byte();
             if (block.public and tag == 255) {
@@ -1300,7 +1300,7 @@ pub fn aliasSummary(o: *Ownership, arena: Allocator, b: *Block, d: u32) Allocato
 /// The path at offset `at` of `b`'s table, interned into `o`'s table.
 fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
     var r: Reader = .{ .o = o, .arena = undefined, .bytes = b.bytes, .at = at, .block = b };
-    const n_steps = try r.byte();
+    const n_steps = try r.int();
     var id: u32 = Ownership.eps;
     for (0..n_steps) |_| {
         const tag = try r.byte();
@@ -1310,8 +1310,7 @@ fn readPath(o: *Ownership, b: *Block, at: u32) Error!u32 {
             const slots = try o.opaqueSlots(sm, sd);
             const k = try r.int();
             if (k >= slots.len) return error.Bad;
-            var buf: [Ownership.k_limit + 1]Ownership.Step = undefined;
-            for (o.steps(slots[k].path, &buf)) |step| id = try o.rawChild(id, step.kind, step.arg);
+            for (o.steps(slots[k].path)) |step| id = try o.rawChild(id, step.kind, step.arg);
             continue;
         }
         const kind = std.enums.fromInt(StepKind, tag) orelse return error.Bad;
@@ -1606,7 +1605,7 @@ test "a block naming a constructor field past the constructor's arity is refused
             try int(a, &out, 0);
             try int(a, &out, 0);
             try int(a, &out, 1);
-            try out.append(a, 1);
+            try int(a, &out, 1);
             try out.append(a, @backingInt(Ownership.StepKind.ctor));
             try int(a, &out, 0);
             try int(a, &out, 0);

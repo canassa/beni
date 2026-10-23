@@ -93,7 +93,9 @@ pub const magic = "BENIIFC\x00";
 /// 14: closed scalar-key kinds and published parameter domains.
 /// 15: schemes grow 16 → 20 bytes, publishing declaration totality.
 /// 16: public ownership summary rows and opaque slots (ownership-checker.md §16.10).
-pub const format_version: u32 = 16;
+/// 17: the ownership block's paths have no length limit (summary format 37,
+/// ownership-checker.md §16.7 (c)).
+pub const format_version: u32 = 17;
 
 /// The columns, in this order and no other (`hidden_types` since
 /// format 4, the vocabulary tables since format 8, `checker-v2.md` §14.2,
