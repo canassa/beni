@@ -12607,6 +12607,10 @@ programs, nested, under a user's click and a burst).
   - The handlers that run are those on the target and its ancestors, **innermost first**, each
     node's `$$<name>` once. A node whose `disabled` is true is passed over, its handler not run,
     and the walk goes on past it. A node with no handler is passed over.
+  - *Amended 2026-10-23* (`boundary.md` §9.8.20 (d), #557): while the walk calls a node's handler,
+    and its extractor, the event's `currentTarget` is that node: the walk defines it on the event.
+    The walk removes the definition when it ends, also when a handler throws, so a listener after
+    the walk reads the host's `currentTarget`.
   - A handler whose declaration says `preventDefault` calls it before the handler runs; one that
     says `stopPropagation` runs, calls it, and is **the last to run** â no ancestor's handler runs,
     in this program or a program around it.
