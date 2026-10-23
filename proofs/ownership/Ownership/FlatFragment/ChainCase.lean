@@ -145,10 +145,9 @@ theorem tail_post_invariant {declarations : List Decl} {vs : ValueSemantics.Stat
   refine ⟨gamma', ?_, (extension origin hs.heap.size).mpr (Or.inr ⟨rfl, rfl⟩), old⟩
   have heapEq : (heapAllocated hs integers).heap = hs.heap.push (heapInts integers) := rfl
   refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) ?_ ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
+    (fun _ member => member) ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
     (fun _ escaped => escaped)
-  · rw [heapEq]; exact flatHeap_after_allocation inv.heapInts integers
-  · rw [heapEq]; simp
+  · rw [heapEq]; exact integerFrame_after_allocation hs.heap integers
   · exact inv.links
   · intro c _ different
     rw [heapEq]
@@ -225,7 +224,7 @@ theorem chainCase_end_preserved {declarations : List Decl} {vs : ValueSemantics.
         · rw [heapObserved_heap]; exact size2
         · rw [heapObserved_heap]; exact paired2
         · rw [heapObserved_heap]
-          exact describes_join allocated inv2.heapInts shapeArm shapeOther (Or.inl ⟨described2, tags2⟩)
+          exact describes_join allocated shapeArm shapeOther (Or.inl ⟨described2, tags2⟩)
         · rw [heapObserved_heap]; exact typed2
   · intro message run
     rw [value_chainCase_end_equation vs (valueEnv env) valueInput] at run
@@ -344,7 +343,7 @@ theorem chainCase_link_preserved {declarations : List Decl} {vs : ValueSemantics
           exact Nat.le_trans (by simp [heapAllocated]) size2
         · rw [heapObserved_heap]; exact paired2
         · rw [heapObserved_heap]
-          exact describes_join allocated inv2.heapInts shapeOther shapeArm (Or.inr ⟨described2, tags2⟩)
+          exact describes_join allocated shapeOther shapeArm (Or.inr ⟨described2, tags2⟩)
         · rw [heapObserved_heap]; exact typed2
   · intro message run
     rw [value_chainCase_link_equation vs (valueEnv env) valueInputCons] at run

@@ -180,7 +180,6 @@ theorem flatInvariant_state_frame
       linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)
       linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (linksSame.trans inv.links)
     }
-    heapInts := by simpa only [heapSame] using inv.heapInts
     links := linksSame.trans inv.links
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
@@ -233,7 +232,6 @@ theorem flatInvariant_restrict_live
       linksValid := Soundness.linksValid_of_empty _ (inv.links)
       linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
     }
-    heapInts := inv.heapInts
     links := inv.links
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
@@ -566,16 +564,6 @@ namespace Ownership.FlatFragment.HeapPreservation
 
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Runtime
 
-theorem integers_of_flat_values (values : List Value)
-    (flat : ∀ value ∈ values, ∃ integer, value = .int integer) :
-    ∃ integers, values = heapInts integers := by
-  induction values with
-  | nil => exact ⟨[], rfl⟩
-  | cons value values ih =>
-    obtain ⟨integer, rfl⟩ := flat value (by simp)
-    obtain ⟨integers, rfl⟩ := ih (fun value member => flat value (by simp [member]))
-    exact ⟨integer :: integers, rfl⟩
-
 theorem integer_list_observation_typed (declarations : List Decl) (integers : List Int) :
     obsTyped declarations (.list (valueInts integers)) (.list .int) = true := by
   unfold obsTyped
@@ -611,13 +599,17 @@ theorem allocated_integer_chain_typed {heap : Heap} {root : Nat} {integers : Lis
     integer_chain_observation_typed declarations integers⟩
   exact .ref allocated (integers_represented integers (observationDepth - 2))
 
-/-- The runtime shape of a flat binding: an integer, an allocated array (a
-list or a chain), a record of such values, or a result as both interpreters
-build it: a success `[1, 0, x]` or an error `[0, x, 0]` over such a payload. -/
+/-- The runtime shape of a flat binding: an integer, an allocated array of
+integers (a list or a chain, its contents in the shape), a record of such
+values, or a result as both interpreters build it: a success `[1, 0, x]` or an
+error `[0, x, 0]` over such a payload. The shape says what the binding's own
+arrays hold; it says nothing about the other arrays of the heap. -/
 inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
   | int (integer : Int) : AllocatedFlatValue heap (.int integer) .int
-  | list (root : Nat) : root < heap.size → AllocatedFlatValue heap (.ref root) (.list .int)
-  | chain (root : Nat) : root < heap.size → AllocatedFlatValue heap (.ref root) (.chain .int)
+  | list (root : Nat) (integers : List Int) : heap[root]? = some (heapInts integers) →
+      AllocatedFlatValue heap (.ref root) (.list .int)
+  | chain (root : Nat) (integers : List Int) : heap[root]? = some (heapInts integers) →
+      AllocatedFlatValue heap (.ref root) (.chain .int)
   | record (ws : List Value) (ts : List Ty) : ws.length = ts.length →
       (∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → ts[i]? = some t →
         AllocatedFlatValue heap w t) →
@@ -627,34 +619,29 @@ inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
   | err (error success : Ty) (w : Value) : AllocatedFlatValue heap w error →
       AllocatedFlatValue heap (.record [.int 0, w, .int 0]) (.result error success)
 
-theorem flatHeap_after_write {heap : Heap} {root : Nat} (flat : FlatHeap heap) (allocated : root < heap.size)
-    (integers : List Int) : FlatHeap (heap.set! root (heapInts integers)) := by
-  intro address values lookup
+/-- The next heap keeps every address of this one, with its old contents or
+with new integer contents: what an allocation or an integer write does. A
+flat shape survives such a step (`allocated_frame`), since its arrays hold
+integers before and after. -/
+def IntegerFrame (heap next : Heap) : Prop :=
+  heap.size ≤ next.size ∧
+    ∀ address, address < heap.size →
+      next[address]? = heap[address]? ∨ ∃ integers, next[address]? = some (heapInts integers)
+
+theorem integerFrame_after_write (heap : Heap) (root : Nat) (allocated : root < heap.size)
+    (integers : List Int) : IntegerFrame heap (heap.set! root (heapInts integers)) := by
+  refine ⟨by simp, ?_⟩
+  intro address _
   by_cases same : address = root
   · subst address
-    have payload : heapInts integers = values := by simpa [allocated] using lookup
-    rw [← payload]
-    intro value member
-    obtain ⟨integer, _, equal⟩ := List.mem_map.mp member
-    exact ⟨integer, equal.symm⟩
-  · rw [lookup_set_other heap root (heapInts integers) same] at lookup
-    exact flat address values lookup
+    exact Or.inr ⟨integers, by simp [allocated]⟩
+  · exact Or.inl (lookup_set_other heap root (heapInts integers) same)
 
-theorem flatHeap_after_allocation {heap : Heap} (flat : FlatHeap heap) (integers : List Int) :
-    FlatHeap (heap.push (heapInts integers)) := by
-  intro address values lookup
-  by_cases old : address < heap.size
-  · have different : address ≠ heap.size := Nat.ne_of_lt old
-    have previous : heap[address]? = some values := by
-      simpa [Array.getElem?_push, old, different] using lookup
-    exact flat address values previous
-  · by_cases last : address = heap.size
-    · subst address
-      have payload : heapInts integers = values := by simpa using lookup
-      rw [← payload]
-      intro value member
-      obtain ⟨integer, _, equal⟩ := List.mem_map.mp member
-      exact ⟨integer, equal.symm⟩
-    · simp [Array.getElem?_push, old, last] at lookup
+theorem integerFrame_after_allocation (heap : Heap) (integers : List Int) :
+    IntegerFrame heap (heap.push (heapInts integers)) := by
+  refine ⟨by simp, ?_⟩
+  intro address old
+  have different : address ≠ heap.size := Nat.ne_of_lt old
+  exact Or.inl (by simp [Array.getElem?_push, old, different])
 
 end Ownership.FlatFragment.HeapPreservation

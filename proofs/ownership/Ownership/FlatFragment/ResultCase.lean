@@ -168,8 +168,8 @@ theorem resultCase_arm_preserved {declarations : List Decl} {vs : ValueSemantics
             · rw [join_bottom_right]; exact described2
             · rw [join_bottom_left]; exact described2
           · rcases joined with rfl | rfl
-            · exact describes_join allocated inv2.heapInts shapeArm shapeOther' (Or.inl ⟨described2, tags2⟩)
-            · exact describes_join allocated inv2.heapInts shapeOther' shapeArm (Or.inr ⟨described2, tags2⟩)
+            · exact describes_join allocated shapeArm shapeOther' (Or.inl ⟨described2, tags2⟩)
+            · exact describes_join allocated shapeOther' shapeArm (Or.inr ⟨described2, tags2⟩)
         have tagsJoin : ResultTags type result actual := by
           rcases shapeOther with rfl | shapeOther'
           · rcases joined with rfl | rfl
@@ -399,7 +399,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           have observedS : obsTyped declarations o2 a = true := by simpa [obsTyped] using observed
           have describedS : Describes gamma hs.heap aa wS := describes_field (i := 2) described rfl rfl
           have typedS : ValueTyped declarations hs.heap wS a :=
-            valueTyped_of_allocated allocatedS inv.heapInts
+            valueTyped_of_allocated allocatedS
           have bottomS : (aa == .bottom) = false := by
             cases h : (aa == .bottom)
             · rfl
@@ -447,7 +447,7 @@ theorem resultCase_preserved {declarations : List Decl} {input : Atom} {err ok :
           have observedE : obsTyped declarations o1 e = true := by simpa [obsTyped] using observed
           have describedE : Describes gamma hs.heap ae wE := describes_field (i := 1) described rfl rfl
           have typedE : ValueTyped declarations hs.heap wE e :=
-            valueTyped_of_allocated allocatedE inv.heapInts
+            valueTyped_of_allocated allocatedE
           have bottomE : (ae == .bottom) = false := by
             cases h : (ae == .bottom)
             · rfl

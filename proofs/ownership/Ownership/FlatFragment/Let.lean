@@ -87,7 +87,6 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       linksValid := Soundness.linksValid_of_empty _ (inv.links)
       linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
     }
-    heapInts := inv.heapInts
     links := inv.links
     abstractKeys := by simp [inv.abstractKeys]
     typeKeys := by simp [inv.typeKeys]
@@ -131,7 +130,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       rw [lookup_cons_same] at binding abstractBinding
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
-      exact named_cellsAt_of_covers shape flatAbstract inv.heapInts described.1.1 located
+      exact named_cellsAt_of_covers shape flatAbstract described.1.1 located
     · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
       exact inv.named key o w' a' binding abstractBinding q c immutable located
   · intro key ty' declared
@@ -232,7 +231,6 @@ theorem flatInvariant_unbind {declarations : List Decl} {vs : ValueSemantics.Sta
       linksValid := Soundness.linksValid_of_empty _ (inv.links)
       linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
     }
-    heapInts := inv.heapInts
     links := inv.links
     abstractKeys := abstractKeys
     typeKeys := typeKeys
