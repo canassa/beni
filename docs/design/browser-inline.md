@@ -1232,6 +1232,26 @@ which no factory writes, so reading them all before the first factory runs reads
 and `part` reads a root's own subtree, which no factory changes before the first pass
 (`browser/inline/RootRuns`, `emit/release/inline/RootRuns`). A page with one root ships no
 `roots`.
+*Amended 2026-10-24 (#915): one row per route, and `Object.assign`.* A route's row is no longer a
+constant of its own that a table and a site's list both name. It is written once, as data, in the
+table of the keyed site that names it: `[key, F, field]` — the source's key, the route's function
+and the model's field. A site of every field (`{ w1 = W1.replace widgets.w1 model.w1, … }`) or an
+update whose rows are exactly a keyed site's, in the same order, passes that table; any other site
+writes its rows where it stands, `0` for the key. Its raw values are passed as the one object they
+are each read from at their row's own field — `widgets` above, a field being spelled by its text in
+both records (`Fields`) — or, when there is no such object, as a record of them by field, evaluated
+in row order. `load(model, table, key, raw)` loads the first row whose key is `key`, and
+`loadAll(model, rows, raws)` each row with `raws` at its field: every row's function first, then
+each copy, as before. A copy is `Object.assign(old, next)` when no route of the program has a record
+field whose object the copy keeps. `next` is a record of the route's type, which a function of `x`
+alone made, so its own fields are exactly the type's, and the result is the plan's. When a route
+does have one, every row adds its plan, `[key, F, field, plan]`, and the program calls
+`loadPlanned` and `loadAllPlanned`, which walk it as before. Each loader hands the one function
+that loads rows a copy function of its own, so a page ships the walker only when it calls them,
+and the release optimiser writes the copy in place. So a page whose plans are all flat
+ships no walker (`emit/release/inline/ValidatedLoader`, `CaseLoader`, `ErrorUnreadWidgets`,
+`NestedStableLoad`). Validation, its order and the snapshot's all-or-nothing are unchanged: the
+functions are the source's own, and they all run before any copy.
 
 ### 8.5 Per-path passes
 

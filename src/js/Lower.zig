@@ -1357,8 +1357,8 @@ pub const Lowerer = struct {
     piece_pc: ProgramCall = undefined,
     /// The pieces' names, exported.
     piece_exports: std.ArrayList(JsIr.NameIndex) = .empty,
-    /// The route rows' and tables' constants this module hoisted, by
-    /// `program << 32 | row` (§8.4, amended 2026-10-22).
+    /// The route tables this module hoisted, by `program << 32 | 1 << 31 |
+    /// site` (§8.4, amended 2026-10-22 and 2026-10-24).
     route_consts: std.AutoHashMapUnmanaged(u64, JsIr.NameIndex) = .empty,
     /// Inside `cx.programInlineEnter` (version 1.9): the calls entered,
     /// innermost last, and their call path (`Direct.Hole.path`).
@@ -15132,10 +15132,10 @@ pub const Lowerer = struct {
         return out;
     }
 
-    /// A route site (§8.4, amended 2026-10-22, *Program-owned keys and
-    /// pushed state*): the loader's copy of what each route's function gives
-    /// into the model's object at its field, which keeps its identity, then
-    /// the model itself; null for any other instruction.
+    /// A route site (§8.4, amended 2026-10-22 and 2026-10-24, *Program-owned
+    /// keys and pushed state*): the loader's copy of what each route's
+    /// function gives into the model's object at its field, which keeps its
+    /// identity, then the model itself; null for any other instruction.
     fn routeSiteValue(l: *Lowerer, out: *StmtList, inst: Inst.Index) Allocator.Error!?Node.Index {
         const d = l.in.direct orelse return null;
         if (l.mk == null) return null;
@@ -15146,29 +15146,85 @@ pub const Lowerer = struct {
         const prog = &d.programs[pi];
         const p = l.pos(inst);
         const model = try l.localName(site.model);
+        const planned = routesPlanned(prog);
         switch (site.kind) {
             .keyed => {
                 const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
                 const key = try l.expr(out, scrutinee);
                 const raw = try l.expr(out, @fromBackingInt(site.raws[0]));
-                const table = try l.routeTable(prog, @intCast(pi), site);
-                const load = try l.ident(try l.routeRuntime("load"), p);
+                const table = try l.routeTable(prog, @intCast(pi), site, planned);
+                const load = try l.ident(try l.routeRuntime(if (planned) "loadPlanned" else "load"), p);
                 try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(load, &.{ try l.ident(model, p), try l.ident(table, p), key, raw }, p)).int(), Node.Data.unused));
             },
             .update, .record => {
-                const rows = try l.scratch.alloc(Node.Index, site.rows.len);
-                const raws = try l.scratch.alloc(Node.Index, site.rows.len);
-                for (rows, raws, site.rows, site.raws) |*r, *x, row, raw| {
-                    r.* = try l.ident(try l.routeRowConst(prog, @intCast(pi), row), p);
-                    x.* = try l.expr(out, @fromBackingInt(raw));
-                }
-                const all = try l.ident(try l.routeRuntime("loadAll"), p);
-                const rr = try l.b.addRange(rows);
-                const xr = try l.b.addRange(raws);
-                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, &.{ try l.ident(model, p), try l.add(.array, p, @backingInt(rr.start), @backingInt(rr.end)), try l.add(.array, p, @backingInt(xr.start), @backingInt(xr.end)) }, p)).int(), Node.Data.unused));
+                // The rows: a keyed site's table when it holds exactly this
+                // site's rows, in this order; written here otherwise.
+                const rows = rows: {
+                    for (prog.routes.sites) |other| {
+                        if (other.kind != .keyed or other.module != site.module or !sameRouteRows(prog, other.rows, site.rows)) continue;
+                        break :rows try l.ident(try l.routeTable(prog, @intCast(pi), other, planned), p);
+                    }
+                    const items = try l.scratch.alloc(Node.Index, site.rows.len);
+                    for (items, site.rows) |*x, row| x.* = try l.routeRowNode(prog, row, null, planned, p);
+                    const range = try l.b.addRange(items);
+                    break :rows try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+                };
+                // The raw values by field: the object every raw value is
+                // read from at its row's field, when there is one; a record
+                // of them otherwise, evaluated in row order.
+                const raws = raws: {
+                    if (l.routeRawsHolder(prog, site)) |holder| break :raws try l.expr(out, holder);
+                    const props = try l.scratch.alloc(Node.Index, site.rows.len);
+                    for (props, site.rows, site.raws) |*x, row, raw|
+                        x.* = try l.fieldProperty(prog.routes.rows[row].field, try l.expr(out, @fromBackingInt(raw)), p);
+                    break :raws try l.object(props, p);
+                };
+                const all = try l.ident(try l.routeRuntime(if (planned) "loadAllPlanned" else "loadAll"), p);
+                try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, &.{ try l.ident(model, p), rows, raws }, p)).int(), Node.Data.unused));
             },
         }
         return try l.ident(model, p);
+    }
+
+    /// Whether any route of `prog` has a record field whose object the copy
+    /// keeps: its rows then carry their plans, and the `…Planned` loaders walk
+    /// them; the loaders copy with `Object.assign` otherwise.
+    fn routesPlanned(prog: *const Direct.Program) bool {
+        for (prog.routes.rows) |r| for (r.plan) |item| if (item.sub != null) return true;
+        return false;
+    }
+
+    /// Whether two lists of route rows name the same fields and functions,
+    /// in the same order.
+    fn sameRouteRows(prog: *const Direct.Program, a: []const u32, b: []const u32) bool {
+        if (a.len != b.len) return false;
+        for (a, b) |x, y| {
+            const rx = prog.routes.rows[x];
+            const ry = prog.routes.rows[y];
+            if (rx.field != ry.field or rx.fn_module != ry.fn_module or rx.fn_decl != ry.fn_decl) return false;
+        }
+        return true;
+    }
+
+    /// The local every raw value of `site` is read from, each at its row's
+    /// own field — `{ w1 = W1.replace widgets.w1 model.w1, … }`'s `widgets`
+    /// — so the loader reads them there: null when there is none. A field
+    /// is spelled by its text in both records (`Fields`), so the read is
+    /// the same field.
+    fn routeRawsHolder(l: *Lowerer, prog: *const Direct.Program, site: Direct.RouteSite) ?Inst.Index {
+        var holder: ?Inst.Index = null;
+        for (site.rows, site.raws) |row, raw| {
+            const x: Inst.Index = @fromBackingInt(raw);
+            if (l.bir.instTag(x) != .field_access or l.hoist_prefix.contains(@as(u64, raw))) return null;
+            const fa = l.bir.instData(x);
+            const base: Inst.Index = @fromBackingInt(@intCast(fa.lhs));
+            if (l.bir.instTag(base) != .local) return null;
+            if (l.bir.symbols[fa.rhs] != prog.routes.rows[row].field) return null;
+            if (holder) |h| {
+                if (l.bir.instData(h).lhs != l.bir.instData(base).lhs) return null;
+            } else holder = base;
+        }
+        return holder;
     }
 
     /// A module-level name for a route constant, `Main$route$1`: taken as a
@@ -15197,30 +15253,21 @@ pub const Lowerer = struct {
         };
     }
 
-    /// The constant of route row `row` of program `pi`: `[F, field, plan]`,
-    /// hoisted once.
-    fn routeRowConst(l: *Lowerer, prog: *const Direct.Program, pi: u32, row: u32) Allocator.Error!JsIr.NameIndex {
+    /// Route row `row` of `prog` as data: `[key, F, field]`, the source's
+    /// key or `0`, the route's function and the model's field, and the
+    /// copy plan after them when the program's rows carry plans.
+    fn routeRowNode(l: *Lowerer, prog: *const Direct.Program, row: u32, key: ?[]const u8, planned: bool, p: u32) Allocator.Error!Node.Index {
         const r = prog.routes.rows[row];
-        // One constant per field and function: two sites that route a field
-        // through one function share its row.
-        const first: u32 = for (prog.routes.rows, 0..) |x, i| {
-            if (x.field == r.field and x.fn_module == r.fn_module and x.fn_decl == r.fn_decl) break @intCast(i);
-        } else row;
-        const key = (@as(u64, pi) << 32) | first;
-        if (l.route_consts.get(key)) |n| return n;
-        const st = l.mk.?;
-        const p = st.pos;
         const fm: Graph.Index = @fromBackingInt(@intCast(r.fn_module));
         const fb = l.in.birs[r.fn_module];
         const base = fb.symbol(fb.decls[r.fn_decl].name);
         try l.needName(.{ .module = fm, .base = base.toOptional() });
         const f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(fm).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
-        const parts = [_]Node.Index{ f, try l.fieldString(r.field, p), try l.planArray(r.plan, p) };
-        const range = try l.b.addRange(&parts);
-        const n = try l.routeName("route");
-        try st.hoisted.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), (try l.add(.array, p, @backingInt(range.start), @backingInt(range.end))).int()));
-        try l.route_consts.put(l.scratch, key, n);
-        return n;
+        const k = if (key) |bytes| try l.stringNode(bytes, p) else try l.numberNode("0", p);
+        var parts: [4]Node.Index = .{ k, f, try l.fieldString(r.field, p), undefined };
+        if (planned) parts[3] = try l.planArray(r.plan, p);
+        const range = try l.b.addRange(parts[0..if (planned) 4 else 3]);
+        return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
     }
 
     /// A copy plan as data: each field's name, or `[name, plan]` for a
@@ -15238,19 +15285,15 @@ pub const Lowerer = struct {
         return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
     }
 
-    /// A keyed site's table: `[[key, row], …]`, hoisted once.
-    fn routeTable(l: *Lowerer, prog: *const Direct.Program, pi: u32, site: Direct.RouteSite) Allocator.Error!JsIr.NameIndex {
+    /// A keyed site's table: its rows, `[key, F, field]` each, hoisted once.
+    fn routeTable(l: *Lowerer, prog: *const Direct.Program, pi: u32, site: Direct.RouteSite, planned: bool) Allocator.Error!JsIr.NameIndex {
         const key = (@as(u64, pi) << 32) | (@as(u64, 1) << 31) | site.inst;
         if (l.route_consts.get(key)) |n| return n;
         const st = l.mk.?;
         const p = st.pos;
-        const pairs = try l.scratch.alloc(Node.Index, site.rows.len);
-        for (pairs, site.rows, site.keys) |*x, row, k| {
-            const pair = [_]Node.Index{ try l.stringNode(k, p), try l.ident(try l.routeRowConst(prog, pi, row), p) };
-            const range = try l.b.addRange(&pair);
-            x.* = try l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
-        }
-        const range = try l.b.addRange(pairs);
+        const rows = try l.scratch.alloc(Node.Index, site.rows.len);
+        for (rows, site.rows, site.keys) |*x, row, k| x.* = try l.routeRowNode(prog, row, k, planned, p);
+        const range = try l.b.addRange(rows);
         const n = try l.routeName("routes");
         try st.hoisted.append(l.scratch, try l.add(.const_decl, p, @backingInt(n), (try l.add(.array, p, @backingInt(range.start), @backingInt(range.end))).int()));
         try l.route_consts.put(l.scratch, key, n);
