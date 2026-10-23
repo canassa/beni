@@ -773,6 +773,18 @@ function prelude() {
   } else {
     record.trust = null;
   }
+  // The delegated pointer events' walk defines `currentTarget` on the event
+  // while it calls a handler, and removes it when the walk ends
+  // (`boundary.md` §9.8.20 (d)). A listener on the window, after every
+  // listener of the page, records an error for an event whose walk left
+  // it: an own `currentTarget`, or one that is not the window.
+  for (const name of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
+    globalThis.addEventListener(name, (event) => {
+      if (Object.hasOwn(event, "currentTarget") || event.currentTarget !== document.defaultView) {
+        record.errors.push(`a \`${name}\` reached the window with \`currentTarget\` defined by the walk`);
+      }
+    });
+  }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
   // Every listener the page adds to the window or the document from here
