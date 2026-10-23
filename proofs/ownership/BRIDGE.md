@@ -149,10 +149,13 @@ The dump parser rejects unfamiliar lines. The in-place platform's `check`
 diagnostics must match exactly the dump's deduplicated rejected/pending source
 spans, with no unexpected diagnostic code or abnormal exit. The parser skips the
 record update demands (the `update` lines of #391) until #316 lands: the Lean
-oracle has no record field assignment, so it has no verdict for such a site, and
-the compiler reports a record demand without enforcing it, so a rejected one has
-no diagnostic to match. The parser checks that the skipped lines of a module
-equal its `records` count and the kept demand lines its `demands` count.
+oracle has no record field assignment, so it has no verdict for such a site.
+Since 2026-10-23 the compiler enforces a record line (§31.9's codes, `69abd4568`),
+so the batch check keeps the record codes' diagnostics (`record_still_used`,
+`top_level_record_changed`, `record_may_be_shared`) out of the site comparison
+the same way; they count only in the exit-code parity (#887). The parser checks
+that the skipped lines of a module equal its `records` count and the kept demand
+lines its `demands` count.
 
 ## Runtime boundary and historical minimization
 
