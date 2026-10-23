@@ -313,7 +313,6 @@ zig build fmt-check       # zig fmt --check
 zig build beni-fmt-check  # .beni formatting is gated: beni fmt --check, exemptions in tests/fmt-exempt.txt
 zig build test-pending    # red fixtures of open findings (tests/pending/); not a gate
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
-zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
 zig build test-workers    # the workers/ corpus under Miniflare (nix develop .#workers); not a gate
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
@@ -427,12 +426,21 @@ performance belongs to `test-perf` and `bench`, outside the gates.
 as well as Linux. Test binaries use the ordinary native target by default.
 
 **Node runs only on unverified JavaScript.** Each program a test runs has a
-recorded SHA-256 of its emitted output, its expected result and the Node
-version (`tests/corpus/run/*.run-hash`, `tests/blackbox/run-hashes.txt`);
-when it matches, Node is skipped, otherwise the program runs as before. After
-changing the emitter, the runtime, `core/`, a `run/` golden or an expected
-output, or upgrading Node, run `zig build test-run-hashes` and commit the
-updated hashes; the gates print a line when programs ran for want of one.
+digest: a SHA-256 of its emitted output, its expected result and the Node
+version (and, for a page, the DOM, the driver and the steps). The digests of
+the runs that passed live in a cache outside git — one empty file per digest
+in the directory `BENI_RUN_HASH_DIR` names; the dev shells set
+`~/.cache/beni-run-hashes`, one directory for every worktree, and empty
+means no cache. When a program's digest is there, Node is skipped; otherwise
+the program runs, and a run that exits as expected and matches its golden
+writes its digest. A run that fails writes nothing. Nothing is committed and
+nothing records on demand — there is no `test-run-hashes` and no
+`BENI_RUN_HASHES` (the owner, 2026-10-23, #875): after a change to the
+emitter, the runtime, `core/`, a golden or an expected output, or a Node
+upgrade, the affected programs run once, and the gates print a line saying
+how many did. CI keeps the directory in `actions/cache`, saved from master
+and restored into every run; a pull request writes only in its own scope
+(`tests/blackbox/run_hash.zig`).
 
 **Programs in a page** are `tests/corpus/browser/`: a program built for the
 `tests/platforms/page` test platform (or a platform of its own), loaded into
@@ -673,8 +681,7 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
 (`canassa/beni`); nothing is pushed to `master` directly.
 
 1. Branch from an up-to-date `origin/master`, one slice per branch, named for
-   what it does. Run `zig build gates` green before opening the PR (rule 4). A branch that
-   rebased past a run-hash change re-records its hashes first.
+   what it does. Run `zig build gates` green before opening the PR (rule 4).
 2. Open the PR with `gh pr create`. The body names its issue (`Closes #N` or
    `Part of #N`), says what changes and why, the
    measurements a claim rests on, any known debt accepted on purpose, and

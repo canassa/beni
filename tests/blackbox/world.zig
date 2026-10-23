@@ -486,7 +486,7 @@ pub const World = struct {
 
     /// Assert that `node <script>`, run in the project directory, does what
     /// `expected` says — or, when this exact output tree, expectation and
-    /// Node were verified together before, skip Node and take the recorded
+    /// Node were verified together before, skip Node and take the cached
     /// verdict (`run_hash.zig`, *Program runs*). The tree is the directory
     /// holding `script`. A script in the project directory has no tree of
     /// its own: the digest covers the emitted output there, and the

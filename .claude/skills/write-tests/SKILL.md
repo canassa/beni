@@ -170,15 +170,16 @@ Fixtures are one idea each and as small as the idea allows. Put the intent in a
 comment in the fixture itself. A `bad/` fixture without a `.diag` file is a
 failure, not a pass — that is the Elm gap, mechanically closed.
 
-**Run hashes.** A `run/` fixture also carries a `.run-hash`: per build (dev,
-release), a SHA-256 of the whole emitted output tree, the golden and the Node
-version, recorded only after that JavaScript ran and matched. The gates skip
-Node for a build whose digest is listed and run it otherwise, so they verify
-every change whether or not the hashes are current; stale ones only cost
-Node runs, reported as one line. After an emitter, runtime or `core/` change,
-a new or re-blessed `run/` fixture, or a Node upgrade, run `zig build
-test-run-hashes` (with `-Dcorpus=run/MyFixture` for one) and commit the rewritten files. It never records a hash for a
-build whose output does not match — that build is reported and gets none.
+**Run hashes.** Each build of a `run/` fixture (dev, release) has a digest: a
+SHA-256 of the whole emitted output tree, the golden and the Node version. The
+gates skip Node for a build whose digest is in the run-hash cache
+(`BENI_RUN_HASH_DIR`, `~/.cache/beni-run-hashes` in the dev shells, outside
+git) and run it otherwise, so they verify every change whether or not the
+cache is warm; a cold cache only costs Node runs, reported as one line. A
+build that ran and matched writes its digest; one whose output does not match
+is reported and writes nothing. There is nothing to commit and nothing to
+record by hand: after an emitter, runtime or `core/` change, a new or
+re-blessed `run/` fixture, or a Node upgrade, the affected programs run once.
 
 **Programs in a page: `browser/`.** Behaviour a browser program shows in
 the DOM — what a click renders, a controlled input reverting an edit,
@@ -211,15 +212,15 @@ Node run (`tests/corpus/README.md`, `browser/`).
 A black-box scenario that runs its program does it through
 `w.expectProgram(script, .{ .stdout = …, .exit_code = …, .stderr = … })` or
 `w.buildAndRun(args, expected)`, never `w.node` and assertions after it: the
-expectation is given up front because it is part of the run's hash, whose
-verified lines live in `tests/blackbox/run-hashes.txt`. The hash covers the
-emitted output tree and that expectation, as a `run/` hash does, and not the
-project directory: a script that sits there contributes its own bytes, and
+expectation is given up front because it is part of the run's digest, which
+goes to the same run-hash cache. The digest covers the emitted output tree
+and that expectation, as a `run/` digest does, and not the project
+directory: a script that sits there contributes its own bytes, and
 `.beni-cache` contributes nothing, so a compiler change that leaves the
-emitted JavaScript identical does not stale the line. `w.checkProgram`
-returns what the program did instead of failing, for a scenario that
-reports a mismatch itself. After adding or changing such a scenario, run
-`zig build test-run-hashes -Dtest-filter=<its name>` and commit the index.
+emitted JavaScript identical does not stale it. `w.checkProgram` returns
+what the program did instead of failing, for a scenario that reports a
+mismatch itself. A new or changed scenario runs its program once; there is
+nothing to record or commit.
 
 ## Golden output: narrow, normalized, blessable
 
