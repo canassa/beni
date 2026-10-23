@@ -1177,6 +1177,24 @@ three shapes back. Each is now left out, exactly where the store would change no
   The residue a `case` arm of the program leaves, `let c; … c=b`, the result's temporary nothing
   reads once the handler stores nothing, is not removed by this amendment.
 
+*Amended 2026-10-23 (#896): the runtime a page ships.* The runtime's group and loader functions are
+exports of `Inline.beni`, and dead-export removal already leaves out each one a page does not
+call: a page with one bucket per pass ships no `passes` and no sort, and a page with no route ships
+no loader and no copy (`emit/release/inline/CounterLocal`, `RootClosures`). S1's pages call them all,
+even at N = 1: a key that writes two fields selects two buckets, and the push selects every bucket.
+So what changes is what each one costs, and what a pass names. Every change gives the same result
+as before:
+- `entry(f, buckets)` gives `f` the count of entries once it is in as its ordinal. That is one more
+  than its place, so the order is the same. One loop adds it to its buckets, whether `buckets` is
+  one bucket or several.
+- `passes(buckets)` is `pass(Array.from(new Set(buckets.flat())).sort(byOrdinal))`. Each entry
+  runs once, in ordinal order. The pass stamp is gone.
+- `load` is `loadAll` of the one row its key finds. `loadAll` maps its rows to their functions'
+  results before it copies any of them, as before, and the separate `commit` is gone.
+- A pass that selects every bucket of one row passes that row, the array of its buckets. A pass that
+  selects every bucket of every row passes `table.flat()`. So the push of a program whose key writes
+  every widget is `passes(t.flat())`, not a list of every bucket, which grew with N.
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host
