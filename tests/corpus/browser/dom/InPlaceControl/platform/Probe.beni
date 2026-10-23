@@ -1,0 +1,29 @@
+import Js
+import Rt
+
+
+-- The fourth argument is deliberately passed through Js.apply: the same
+-- reduction runs against the old, three-argument runtime as a red test.
+pub verify : ⊤ → String
+verify ⊤ =
+    seen = Js.ref ""
+    stored = Js.ref Js.undefined
+    value = Js.from { count = 1 }
+    el = Js.call (Js.global "document") "createElement" [ Js.from "input" ]
+    Js.to
+        (Js.call (Js.global "Object") "defineProperty"
+            [ el
+            , Js.from "payload"
+            , Js.from
+                { get = λ⊤ → Js.read stored
+                , set =
+                    λnext →
+                        Js.write stored next
+                        Js.write seen (Js.read seen ++ String.fromInt (Js.to (Js.get next "count")))
+                }
+            ]
+        )
+    Js.to (Js.apply (Js.from Rt.control) [ el, Js.from "payload", value, Js.from False ])
+    Js.set value "count" (Js.from 2)
+    Js.to (Js.apply (Js.from Rt.control) [ el, Js.from "payload", value, Js.from False ])
+    Js.read seen

@@ -1,10 +1,9 @@
--- `browser/dom/ControlledUnseen`, rebuilt for `browser-direct` (its S4
--- amendment, item 2): a message that changes nothing a row reads visits no
--- row, and no control. What shows it is a value written with no event (the
--- driver's `set`, as a script outside beni would): nothing marks it, so a
--- dispatch leaves it. `pageshow`, which follows the browser's restoring of
--- form state, puts every control back. Rejected edits are still put back,
--- keyed and by position; an accepted one prints its row once.
+-- Record rows are visited on every render (backend.md §15.5, O3), so the
+-- row's Debug.log runs again. Its unchanged scalar control value must
+-- still leave an unmarked external DOM edit alone. `pageshow` reconciles
+-- every control; rejected input edits are put back at render end. The
+-- helper's String argument keeps its own scalar skip.
+
 import Html exposing (Html)
 import Tea
 

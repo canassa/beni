@@ -1,0 +1,18 @@
+-- An aggregate property must be written again after mutation through the
+-- same reference; the setter observes both values, not just its identity.
+import Browser
+import Html exposing (Html)
+import Probe
+
+
+type Msg
+    = Idle
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → 0
+        , update = λ_ n → n
+        , view = λ_ → <p>{Probe.verify ⊤}</p>
+        }

@@ -189,7 +189,7 @@ slot parent marker cx =
         , cx = cx
         , i = Js.null
         , u = Js.null
-        , b = Js.null
+        , v = False
         , x = Js.null
         , y = Js.null
         , z = Js.null
@@ -220,17 +220,11 @@ unit b cx =
 
 
 -- `b` shown where `i` is: `i` patched when `b` is of its kind, else a new
--- instance in its place. The instance now shown. Handed the very block it
--- shows, it is patched again only when the instance is live (`l`), as
--- `again` does (written in place, so that a page with no live instance
--- keeps none of it).
+-- instance in its place. Even the same block is patched: its values may
+-- contain a List or record written in place (backend.md §15.5).
 pub patch : V, V, V → V
 patch i b cx =
-    if Js.same b (Js.get i "b") then
-        if Js.to (Js.get (Js.get b "t") "l") && Js.to (Js.get i "l") then
-            Js.to (Js.call (Js.get b "t") "p" [ i, Js.get b "v" ])
-        i
-    else if Js.same (Js.get b "t") (Js.get i "t") then
+    if Js.same (Js.get b "t") (Js.get i "t") then
         _ = Js.call (Js.get b "t") "p" [ i, Js.get b "v" ]
         Js.set i "b" b
         i
@@ -750,19 +744,13 @@ elements list =
 -- `(slot, list)`: a `List Html` hole, its blocks matched by position.
 pub childList : V, V → ⊤
 childList s list =
-    if Js.same list (Js.get s "b") then
-        restate s
-    else
-        Js.set s "b" list
-        Js.set s "w" (Js.from False)
-
-        if Js.isNull (Js.get s "u") then
-            Js.set s "u" (Js.array [])
-
-        u = Js.get s "u"
-        a = elements list
-        childrenFrom s u a 0
-        dropPast u (Js.to (Js.get a "length"))
+    Js.set s "w" (Js.from False)
+    if Js.isNull (Js.get s "u") then
+        Js.set s "u" (Js.array [])
+    u = Js.get s "u"
+    a = elements list
+    childrenFrom s u a 0
+    dropPast u (Js.to (Js.get a "length"))
 
 
 -- Block `k` onwards of `a` shown by instance `k` onwards of `u`: patched,
@@ -795,7 +783,8 @@ dropPast u k =
 -- position, cx)` mounts an instance, `p(inst, item, position)` patches one
 -- — or `{ b, i, f }` for any other row, `b(item, position)` its block. `i`
 -- says whether the row reads its position; `f` is the fallback's block or
--- null. The row's inputs are an array compared by identity, or null.
+-- null. `o` permits immutable item comparisons; `h` marks immutable inputs.
+-- Mutable inputs are visited every render and never kept for comparison.
 --
 -- A row with `w` mounts through its patch (backend.md §15.5): `m` clones
 -- and walks, and `p`, meeting nothing written yet, writes every value — so
@@ -847,43 +836,46 @@ patchRow row i item position s =
         n
 
 
--- Whether two renders' inputs are the same, element by element.
-sameInputs : V, V → Bool
-sameInputs a b =
-    if Js.same a b then
-        True
-    else if Js.isNull a || Js.isNull b || not (Js.same (Js.get a "length") (Js.get b "length")) then
+-- Only immutable inputs are remembered. The array is a runtime-owned
+-- snapshot of scalar/function values, never the application's list.
+rememberInputs : V, V → V
+rememberInputs inputs mask =
+    if Js.isNull inputs then
+        Js.null
+    else
+        out = Js.array []
+        rememberFrom inputs mask out 0
+        out
+
+
+rememberFrom : V, V, V, Int → ⊤
+rememberFrom inputs mask out k =
+    if k < Js.to (Js.get inputs "length") then
+        Js.to (Js.call out "push" [ if Js.to (Js.at mask k) then Js.at inputs k else Js.undefined ])
+        rememberFrom inputs mask out (k + 1)
+
+
+sameInputs : V, V, V → Bool
+sameInputs a b mask = sameInputsBut a b mask (-1)
+
+
+sameInputsBut : V, V, V, Int → Bool
+sameInputsBut a b mask g =
+    if Js.isNull a || Js.isNull b then
+        Js.isNull a && Js.isNull b
+    else if not (Js.same (Js.get a "length") (Js.get b "length")) then
         False
     else
-        k = sameFrom a b 0
-        k == Js.to (Js.get a "length")
+        sameFromBut a b mask g 0 == Js.to (Js.get a "length")
 
 
--- Where `a` and `b` first differ from `k` on, or their length.
-sameFrom : V, V, Int → Int
-sameFrom a b k =
-    if k < Js.to (Js.get a "length") && Js.same (Js.at a k) (Js.at b k) then
-        sameFrom a b (k + 1)
-    else
-        k
-
-
--- Every input but the `g`th, a keyed list's selector, as last time.
-sameInputsBut : V, V, Int → Bool
-sameInputsBut a b g =
-    if Js.same a b then
-        True
-    else if Js.isNull a || Js.isNull b || not (Js.same (Js.get a "length") (Js.get b "length")) then
-        False
-    else
-        k = sameFromBut a b g 0
-        k == Js.to (Js.get a "length")
-
-
-sameFromBut : V, V, Int, Int → Int
-sameFromBut a b g k =
-    if k < Js.to (Js.get a "length") && (k == g || Js.same (Js.at a k) (Js.at b k)) then
-        sameFromBut a b g (k + 1)
+sameFromBut : V, V, V, Int, Int → Int
+sameFromBut a b mask g k =
+    if
+        k < Js.to (Js.get a "length")
+            && (k == g || (Js.to (Js.at mask k) && Js.same (Js.at a k) (Js.at b k)))
+    then
+        sameFromBut a b mask g (k + 1)
     else
         k
 
@@ -1074,9 +1066,9 @@ stamps = Js.ref 0
 -- pair of rows at the two ends that changed places, again until none does.
 -- Only what is left between them is looked up in the key map, so a
 -- selection, a label edit, a remove, an append and a swap of two rows
--- touch the map for the rows they add or remove and no others. An item
--- identical to its row's last item has that row's key, so its key is not
--- asked for. No row past the start is patched or moved until every key is
+-- touch the map for the rows they add or remove and no others. An immutable
+-- item identical to its row's last item has that row's key, so its key is not
+-- asked for. A mutable item always has its key recomputed. No row past the start is patched or moved until every key is
 -- known to be distinct: false, having patched only the rows at the start
 -- (which do not move) and mounted rows for new keys, when two items share
 -- a key; `forKeyed` then goes through the whole list, where a row already
@@ -1127,14 +1119,14 @@ trimmed s items keyOf row same was now =
             -- same key.
             hit =
                 λi b →
-                    Js.same (Js.get i "x") (Js.at xs (b - p))
+                    (Js.to (Js.get row "o") && Js.same (Js.get i "x") (Js.at xs (b - p)))
                         || Js.same (Js.get i "k") (keyAt b)
 
             next = Js.construct (Js.global "Array") [ Js.from n ]
             copyRows next old p 0
 
             -- The end, written out: it is most of a remove.
-            ( aOuter, bOuter ) = endRows old xs keyAt next p stamp m n
+            ( aOuter, bOuter ) = endRows old xs keyAt next p stamp m n (Js.to (Js.get row "o"))
             ( aStart, aEnd, bEnd ) = crossRows old hit next stamp p aOuter bOuter
 
             -- What is left: its keys looked up, a new key's row mounted
@@ -1207,7 +1199,7 @@ startRows s a old keyOf row same was now stamp m p =
     if p < Js.to (Js.get a "length") && p < m then
         i = Js.at old p
         item = Js.at a p
-        hit = Js.same (Js.get i "x") item
+        hit = Js.to (Js.get row "o") && Js.same (Js.get i "x") item
         if
             not hit
                 && not
@@ -1248,19 +1240,19 @@ copyRows next old p k =
 
 
 -- The rows at the end whose items or keys are where they were.
-endRows : V, V, sync (Int → V), V, Int, Int, Int, Int → Int × Int
-endRows old xs keyAt next p stamp aEnd bEnd =
+endRows : V, V, sync (Int → V), V, Int, Int, Int, Int, Bool → Int × Int
+endRows old xs keyAt next p stamp aEnd bEnd immutable =
     if p < aEnd && p < bEnd then
         i = Js.at old (aEnd - 1)
         if
-            not (Js.same (Js.get i "x") (Js.at xs (bEnd - 1 - p)))
+            not (immutable && Js.same (Js.get i "x") (Js.at xs (bEnd - 1 - p)))
                 && not (Js.same (Js.get i "k") (keyAt (bEnd - 1)))
         then
             ( aEnd, bEnd )
         else
             Js.set i "kv" (Js.from stamp)
             Js.setAt next (bEnd - 1) i
-            endRows old xs keyAt next p stamp (aEnd - 1) (bEnd - 1)
+            endRows old xs keyAt next p stamp (aEnd - 1) (bEnd - 1) immutable
     else
         ( aEnd, bEnd )
 
@@ -1350,6 +1342,7 @@ patchRows s old xs next row byKey p stamp unseen same was now n b =
             Js.set i "kv" (Js.from stamp)
         else if
             not same
+                || not (Js.to (Js.get row "o"))
                 || not (Js.same (Js.get i "x") item)
                 || (Js.to (Js.get row "i") && Js.to (Js.get i "y") ≠ b)
                 || Js.same (Js.get i "k") was
@@ -1410,14 +1403,14 @@ pub forKeyed : V, V, V, V, V → ⊤
 forKeyed s items keyOf row inputs =
     startPass s row
     g = Js.get row "g"
-    rendered = not (Js.isNull (Js.get s "b"))
+    rendered = Js.to (Js.get s "v")
 
     same =
         rendered
             && (if Js.isUndefined g then
-                   sameInputs (Js.get s "y") inputs
+                   sameInputs (Js.get s "y") inputs (Js.get row "h")
                 else
-                   sameInputsBut (Js.get s "y") inputs (Js.to g)
+                   sameInputsBut (Js.get s "y") inputs (Js.get row "h") (Js.to g)
                )
 
     moving = not (Js.isUndefined g) && rendered && not (Js.same (Js.get s "z") (Js.get row "z"))
@@ -1439,20 +1432,12 @@ forKeyed s items keyOf row inputs =
     else
         Js.set s "z" (Js.get row "z")
 
-    if Js.same items (Js.get s "b") && same then
-        if Js.same was now then
-            ⊤
-        else
-            Js.set s "y" inputs
-            reselect s row was
-            reselect s row now
+    Js.set s "v" (Js.from True)
+    Js.set s "y" (rememberInputs inputs (Js.get row "h"))
+    if Js.to (Js.get s "d") && trimmed s items keyOf row same was now then
+        ⊤
     else
-        Js.set s "b" items
-        Js.set s "y" inputs
-        if Js.to (Js.get s "d") && trimmed s items keyOf row same was now then
-            ⊤
-        else
-            keyedPass s items keyOf row same was now
+        keyedPass s items keyOf row same was now
     -- A live row function's rows are each patched again, whether this
     -- render ran them or not: a row may hold a controlled input.
     endPass s
@@ -1587,6 +1572,7 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
                 j
             else if
                 not same
+                    || not (Js.to (Js.get row "o"))
                     || not (Js.same (Js.get found "x") item)
                     || (Js.to (Js.get row "i") && Js.to (Js.get found "y") ≠ position)
                     || Js.same (Js.get found "k") was
@@ -1646,21 +1632,15 @@ keyedRows s a keyOf row same was now stamp old byKey next position distinct move
 pub forPosition : V, V, V, V → ⊤
 forPosition s items row inputs =
     startPass s row
-    same = not (Js.isNull (Js.get s "b")) && sameInputs (Js.get s "y") inputs
-
-    if Js.same items (Js.get s "b") && same then
-        ⊤
-    else
-        Js.set s "b" items
-        Js.set s "y" inputs
-
-        if Js.isNull (Js.get s "u") then
-            Js.set s "u" (Js.array [])
-
-        u = Js.get s "u"
-        a = elements items
-        positionsFrom s u a row same 0
-        dropPast u (Js.to (Js.get a "length"))
+    same = Js.to (Js.get s "v") && sameInputs (Js.get s "y") inputs (Js.get row "h")
+    Js.set s "v" (Js.from True)
+    Js.set s "y" (rememberInputs inputs (Js.get row "h"))
+    if Js.isNull (Js.get s "u") then
+        Js.set s "u" (Js.array [])
+    u = Js.get s "u"
+    a = elements items
+    positionsFrom s u a row same 0
+    dropPast u (Js.to (Js.get a "length"))
     endPass s
     childMaybe
         s
@@ -1680,7 +1660,7 @@ positionsFrom s u a row same k =
 
         if k < Js.to (Js.get u "length") then
             i = Js.at u k
-            if not same || not (Js.same (Js.get i "x") item) then
+            if not same || not (Js.to (Js.get row "o")) || not (Js.same (Js.get i "x") item) then
                 n = patchRow row i item k s
                 Js.setAt u k n
                 Js.set n "x" item
@@ -1736,23 +1716,30 @@ hide s f =
 
 -- ---- Controlled inputs (backend.md §15.3, *Controlled inputs*) ----------
 --
--- A controlled element keeps the model's value of each `stateful`
--- property it has as `$$s[prop]`. What may have changed one without the
--- model is marked — by the user, in a set of its program's (`$$e` on the
--- mount node), by a write of the runtime's, in `touched` — and put back
--- when its program's render ends.
+-- A control keeps its current model value and checked identity permission
+-- in `$$s[prop]`. User events mark controls in the program's `$$e` set;
+-- runtime DOM writes mark `touched`. Those marks reconcile at render end.
 
--- `(el, prop, v)`: a `stateful` attribute's value, kept on the element and
--- written when the page's is not it, so an edit the model took is not
--- written back. The first call listens for what changes a control
--- without the model.
-pub control : V, String, V → ⊤
-control el prop v =
+-- `(el, prop, v, immutable)`: aggregates are always assigned. Only a proven
+-- immutable value may compare with the previous value or the live DOM.
+-- An unchanged scalar leaves unmarked external edits alone, including
+-- when a record row is visited. The first call installs the edit watcher.
+pub control : V, String, V, Bool → ⊤
+control el prop v immutable =
+    previous =
+        if Js.isUndefined (Js.get el "$$s") then
+            Js.undefined
+        else
+            Js.get (Js.get el "$$s") prop
+    changed = not immutable || Js.isUndefined previous || not (Js.same (Js.get previous "v") v)
     if Js.isUndefined (Js.get el "$$s") then
         Js.set el "$$s" (Js.object [])
         if Js.read watching then ⊤ else watchEdits ⊤
-    Js.set (Js.get el "$$s") prop v
-    if Js.same (Js.get el prop) v then ⊤ else Js.set el prop v
+    Js.set (Js.get el "$$s") prop (Js.from { v = v, immutable = immutable })
+    if not immutable then
+        Js.set el prop v
+    else if changed && not (Js.same (Js.get el prop) v) then
+        Js.set el prop v
 
 
 -- The controls a write of the render under way may have changed.
@@ -1807,8 +1794,12 @@ putBack el =
         Js.each (Js.call (Js.global "Object") "keys" [ s ]) λk →
             key : String
             key = Js.to k
-            v = Js.get s key
-            if Js.same (Js.get el key) v then ⊤ else Js.set el key v
+            entry = Js.get s key
+            v = Js.get entry "v"
+            if not (Js.to (Js.get entry "immutable")) then
+                Js.set el key v
+            else if not (Js.same (Js.get el key) v) then
+                Js.set el key v
 
 
 -- `el` and what changes with it with no event of its own, each handed to
@@ -1980,16 +1971,12 @@ rawHtml el markup = Js.set el "innerHTML" markup
 
 
 -- `(el, list, previous)`: the element has exactly the classes the list
--- names; what only the previous list (null at the mount) held is removed.
-pub classes : V, V, V → ⊤
+-- names; what only the previous Set of written names held is removed.
+pub classes : V, V, V → V
 classes el list previous =
     next = classSet list
 
-    old =
-        if Js.isNull previous then
-            Js.null
-        else
-            classSet previous
+    old = previous
 
     if Js.isNull old then
         ⊤
@@ -2002,6 +1989,7 @@ classes el list previous =
     Js.each next λname →
         if Js.isNull old || not (Js.to (Js.call old "has" [ name ])) then
             Js.to (Js.call (Js.get el "classList") "add" [ name ])
+    next
 
 
 -- The names whose flag is `True`, a name holding whitespace being several.
@@ -2025,17 +2013,13 @@ spaces = Js.construct (Js.global "RegExp") [ Js.from "[\t\n\u{000C}\r ]+" ]
 
 
 -- `(el, list, previous)`: each property set to its last value in the list,
--- an empty value removing it; a property only the previous list (null at
--- the mount) set is removed.
-pub styles : V, V, V → ⊤
+-- an empty value removing it; a property only the previous Map of written
+-- properties held is removed.
+pub styles : V, V, V → V
 styles el list previous =
     next = styleMap list
 
-    old =
-        if Js.isNull previous then
-            Js.null
-        else
-            styleMap previous
+    old = previous
 
     style = Js.get el "style"
 
@@ -2050,6 +2034,7 @@ styles el list previous =
     Js.each next λentry →
         if Js.isNull old || not (Js.same (Js.call old "get" [ Js.at entry 0 ]) (Js.at entry 1)) then
             Js.to (Js.call style "setProperty" [ Js.at entry 0, Js.at entry 1 ])
+    next
 
 
 -- Each property's last value.

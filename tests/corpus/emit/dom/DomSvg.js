@@ -49,33 +49,29 @@ const DomSvg$b22 = { t: DomSvg$k22, v: null };
 const DomSvg$t39 = Rt$templateOf("<svg><rect></svg>", 2);
 const DomSvg$p41 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
-  const $x$4 = $input$3;
-  if ($x$4 !== $i$1.g0_0) {
-    $i$1.g0_0 = $x$4;
-    const $t$5 = (n$2) => n$2;
-    const $made$6 = { m: ($item$7, $position$8, $cx$9) => {
-      const $r$10 = DomSvg$t39();
-      return { s: $r$10, q: null, e: $r$10, w0: $r$10, a0: undefined, x: undefined };
-    }, p: ($i$11, $item$12, $position$13) => {
-      const $t$14 = String$fromInt($item$12);
-      if ($t$14 !== $i$11.a0) {
-        $i$11.w0.setAttribute("height", $t$14);
-        $i$11.a0 = $t$14;
+  {
+    const $t$4 = (n$2) => n$2;
+    const $made$5 = { o: true, h: [], m: ($item$6, $position$7, $cx$8) => {
+      const $r$9 = DomSvg$t39();
+      return { s: $r$9, q: null, e: $r$9, w0: $r$9, a0: undefined, x: undefined };
+    }, p: ($i$10, $item$11, $position$12) => {
+      const $t$13 = String$fromInt($item$11);
+      if ($t$13 !== $i$10.a0) {
+        $i$10.w0.setAttribute("height", $t$13);
+        $i$10.a0 = $t$13;
       }
     }, w: true, i: false, f: null };
-    Rt$forKeyed($i$1.c0, $input$3, $t$5, $made$6, null);
-  } else {
-    Rt$restate($i$1.c0);
+    Rt$forKeyed($i$1.c0, $input$3, $t$4, $made$5, null);
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
 const DomSvg$t41 = Rt$templateOf("<svg><g></svg>", 2);
-const DomSvg$k41 = { m: ($v$15, $cx$16) => {
-  const $r$17 = DomSvg$t41();
-  const $c$18 = Rt$slot($r$17, null, $cx$16);
-  const $i$19 = { s: $r$17, q: null, e: $r$17, c0: $c$18, g0_0: NaN };
-  DomSvg$p41($i$19, $v$15);
-  return $i$19;
+const DomSvg$k41 = { m: ($v$14, $cx$15) => {
+  const $r$16 = DomSvg$t41();
+  const $c$17 = Rt$slot($r$16, null, $cx$15);
+  const $i$18 = { s: $r$16, q: null, e: $r$16, c0: $c$17 };
+  DomSvg$p41($i$18, $v$14);
+  return $i$18;
 }, p: DomSvg$p41, l: true };
 const DomSvg$picture = (box$1, link$2) => ({ t: DomSvg$k10, v: [box$1, link$2] });
 const DomSvg$dot = (x$1) => ({ t: DomSvg$k18, v: [x$1] });

@@ -1,3 +1,3 @@
-dev v24.19.0 happy-dom-20.14.5 66bc10f9b900d86ab6136a5c12ccdd7ca1b337ef13a578fed75cb44d45cf8f08
-release v24.19.0 happy-dom-20.14.5 1a8679b9b726c4b1ec55c89add6d9f34e5b5396e6862f44978edeb03945f1efd
-fuzz v24.19.0 happy-dom-20.14.5 bffa0c3626cdd9dd3f393e26b57daed3fffa4216f404b7f038dfc4449462eee8
+dev v24.19.0 happy-dom-20.14.5 99c92f986af6f98fd68013f19b1bcc5b3fa6cd89e2721dfeacf6bc12acbdc95d
+release v24.19.0 happy-dom-20.14.5 24ded7c61eb58b2ace50d8a711efa6bb9e2a1f7cc7f1cde63aa25c1b3a6c9e94
+fuzz v24.19.0 happy-dom-20.14.5 1811c9b516f6f4ec693abd5288b8a5ccdbe56fba578a1d515e630d3c68d811c4

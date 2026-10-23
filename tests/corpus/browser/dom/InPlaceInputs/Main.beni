@@ -1,0 +1,93 @@
+-- Helper arguments, component props, row inputs and a Show value must all
+-- see writes through the same List and record references (backend.md §15.5).
+import Browser
+import Html exposing (Html)
+import Mutate
+import Piece
+
+
+type Numbers
+    = Numbers (List Int)
+
+
+type Box
+    = Box { id : Int, count : Int }
+
+
+type Msg
+    = Change
+
+
+type alias Model =
+    numbers : List Int
+    item :
+        id : Int
+        count : Int
+    ids : List Int
+    wrapped : Numbers
+    boxed : Box
+
+
+listText : List Int → Html msg
+listText numbers = <p id="list">{List.sum numbers}</p>
+
+
+recordText : { id : Int, count : Int } → Html msg
+recordText item = <p id="record">{item.count}</p>
+
+
+wrappedText : Numbers → Html msg
+wrappedText (Numbers numbers) = <p id="wrapped">{List.sum numbers}</p>
+
+
+boxedText : Box → Html msg
+boxedText (Box item) = <p id="boxed">{item.count}</p>
+
+
+update : Msg, Model → Model
+update _ model =
+    (Numbers numbers) = model.wrapped
+    (Box item) = model.boxed
+    { model
+        | numbers = Mutate.row model.numbers
+        , item = Mutate.record model.item
+        , wrapped = Numbers (Mutate.row numbers)
+        , boxed = Box (Mutate.record item)
+    }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="change" onClick={Change}>change</button>
+        {listText model.numbers}
+        {recordText model.item}
+        {wrappedText model.wrapped}
+        {boxedText model.boxed}
+        <Piece.box numbers={model.numbers} item={model.item} />
+        <ul id="captured-list">
+            <For each={model.ids}>{λid → <li>{id + List.sum model.numbers}</li>}</For>
+        </ul>
+        <ul id="captured-record">
+            <For each={model.ids}>{λid → <li>{id + Piece.count model.item}</li>}</For>
+        </ul>
+        <Show when={Just model.numbers} keyed={λ_ → 0}>
+            {λnumbers → <p id="shown">{List.sum numbers}</p>}
+        </Show>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init =
+            λ⊤ →
+                { numbers = [ 1 ]
+                , item = { id = 1, count = 1 }
+                , ids = [ 1 ]
+                , wrapped = Numbers [ 10 ]
+                , boxed = Box { id = 2, count = 10 }
+                }
+        , update = update
+        , view = view
+        }

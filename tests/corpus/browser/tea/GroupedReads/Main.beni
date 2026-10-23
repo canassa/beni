@@ -1,8 +1,7 @@
--- `browser/dom/GroupedReads`, re-stated for slice S1 (browser-direct.md
--- §5.3, §4.1): each key's handler calls only the groups its write set
--- conflicts with, and `Debug.log` on each value shows which ran. A group
--- runs when a key that may change what it reads arrives, and writes only
--- when its value differs. What each reads:
+-- A root computes values from their read paths (backend.md §15.4–§15.5).
+-- Scalar paths keep their skips; List and record paths run on every render
+-- under O3. In particular, the imported total reads the whole record, so
+-- a Noop also logs "total". Debug.log identifies each computation.
 --
 --   - "a": `model.a`; "a+b": two fields; "case": `model.pick`, through a
 --     `case`, which reads the tag `model.pick` holds and the field it binds.
@@ -13,10 +12,9 @@
 --   - "dice": `Random.value`, which may have an effect, runs on every
 --     message whatever it reads.
 --
--- `Noop` returns the model it was given: its key writes nothing, and only
--- the every-message group runs. `Set (Debug.log "message" model.a)` is read
--- when the click happens (Q1): `browser-direct` logs "message" at the
--- click, `browser-tea` when the view is rendered (`GroupedReads.tea-expected`).
+-- `Noop` returns its original record, but O3 still recomputes the total.
+-- `Set (Debug.log "message" model.a)` is read
+-- when the view is rendered; the event retains that message.
 import Html exposing (Html)
 import Random
 import Tea

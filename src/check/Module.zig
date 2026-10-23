@@ -391,6 +391,7 @@ pub fn check(in: Input) Error!Check.Counters {
     // name resolved and every obligation was decided.
     if (cx.markup) |view| if (!quiet and report.errors == 0) {
         in.dispatch.markup = try view.section(gpa, solver.markup_decisions.items);
+        if (in.dispatch.markup.len != 0) try @import("RenderIdentity.zig").build(gpa, scratch, store, in.types, inst_type, local_type, in.interner, in.dispatch);
     };
     // The effect answers (§16.2), for a module that checked clean.
     if (!quiet and report.errors == 0) {

@@ -1,12 +1,9 @@
--- `browser/dom/RowItemOnly` rebuilt for slice S2 (browser-direct.md §6, as
--- amended for S2): a row group runs only where a key's writes reach it.
--- `Debug.log` on each row's label shows when it is computed. A selection
--- reaches every row's class — a read of the model, not of the row's item —
--- and computes no label; each row's handler still sends its own row's
--- message after it. A relabelled item computes its label again and writes
--- it; the others do not. The original's relabel is a `List.map`, the
--- identity walk of slice S3; here it is `List.update`. The selection visits
--- every row: §6.4's selector, which visits two, is slice S3's.
+-- A record item no longer authorizes an item-only identity skip
+-- (backend.md §15.5, O3). Every visited row recomputes its label and scalar
+-- handler message, including on a selection. Scalar DOM writes still
+-- compare their values. Each handler sends its own row's message after
+-- the patch; relabelling changes only the intended row's visible text.
+
 import Browser
 import Html exposing (Html)
 import Tea

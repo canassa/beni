@@ -1,0 +1,62 @@
+-- T35–T37/T47: the list and both kinds of row item keep their identity
+-- after a write. The record keeps its key so its row must patch in place.
+import Browser
+import Html exposing (Html)
+import Mutate
+
+
+type Msg
+    = Change
+
+
+type alias Model =
+    items : List Int
+    rows : List (List Int)
+    records : List { id : Int, count : Int }
+    keys : List { id : Int, count : Int }
+
+
+update : Msg, Model → Model
+update msg model =
+    { model
+        | items = Mutate.grow model.items
+        , rows = List.map model.rows Mutate.row
+        , records = List.map model.records Mutate.record
+        , keys = List.map model.keys Mutate.rekey
+    }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="change" onClick={Change}>change</button>
+        <ul id="items"><For each={model.items}>{λn → <li>{n}</li>}</For></ul>
+        <ul id="lists">
+            <For each={model.rows} keyed={False}>
+                {λxs → <li>{String.fromInt (List.sum xs)}</li>}
+            </For>
+        </ul>
+        <ul id="records">
+            <For each={model.records} keyed={λr → r.id}>{λr → <li>{r.count}</li>}</For>
+        </ul>
+        <ul id="keys">
+            <For each={model.keys} keyed={λr → r.id}>
+                {λr → <li>{String.fromInt r.id ++ ":" ++ String.fromInt r.count}</li>}
+            </For>
+        </ul>
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init =
+            λ⊤ →
+                { items = [ 1 ]
+                , rows = [ [ 1 ] ]
+                , records = [ { id = 1, count = 1 } ]
+                , keys = [ { id = 10, count = 1 } ]
+                }
+        , update = update
+        , view = view
+        }

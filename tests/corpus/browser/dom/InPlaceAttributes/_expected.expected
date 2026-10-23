@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <p id="target" class="before" style="background-color: red;">"value"</p>
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <p id="target" class="after" style="color: blue;">"value"</p>
+  </main>
+</body>
+-- click #change
+<body>
+  <main>
+    <button id="change">"change"</button>
+    <p id="target" class="before" style="background-color: red;">"value"</p>
+  </main>
+</body>

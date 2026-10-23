@@ -43,7 +43,8 @@ const std = @import("std");
 /// groups of a key without the matrix (`programGroupsOf`;
 /// `browser-inline.md` §8.2) — the rest of 1.15 lands with the slices that
 /// use it (`boundary.md` §9.4.6).
-pub const version: Version = .{ .major = 1, .minor = 15 };
+/// Version 1.16 adds immutable-value facts for renderer identity guards.
+pub const version: Version = .{ .major = 1, .minor = 16 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -608,6 +609,8 @@ pub const Tree = struct {
     /// reads nothing but the row's item — no input, no capture, no position
     /// — so it is the same whenever the item is. Empty: none is known to.
     item_only: []const bool = &.{},
+    // 1.16: a value whose type permits identity skips; absent means unknown.
+    identity_safe: []const bool = &.{},
     /// 1.4: per value, whether it is the same JavaScript value every time
     /// it is evaluated — a literal, a constructor of no fields, a top-level
     /// value or function — so it need not be kept or compared from render
@@ -637,6 +640,11 @@ pub const Tree = struct {
     }
 
     /// Whether value `v` is the same on every evaluation (`constant`).
+    pub fn identitySafe(t: *const Tree, v: Value.Index) bool {
+        const at = @backingInt(v);
+        return at < t.identity_safe.len and t.identity_safe[at];
+    }
+
     pub fn isConstant(t: *const Tree, v: Value.Index) bool {
         const at = @backingInt(v);
         return at < t.constant.len and t.constant[at];

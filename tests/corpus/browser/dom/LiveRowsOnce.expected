@@ -33,6 +33,10 @@ console.log: position: "b"
   </main>
 </body>
 -- click #tick
+console.log: keyed: "a"
+console.log: keyed: "b"
+console.log: position: "a"
+console.log: position: "b"
 <body>
   <main>
     <button id="tick">"1"</button>
@@ -61,12 +65,22 @@ console.log: position: "b"
   </main>
 </body>
 -- input #k0 "abcdef"
+console.log: keyed: "a"
+console.log: keyed: "b"
+console.log: position: "a"
+console.log: position: "b"
 (the DOM did not change)
 -- input #p1 "abcdef"
+console.log: keyed: "a"
+console.log: keyed: "b"
+console.log: position: "a"
+console.log: position: "b"
 (the DOM did not change)
 -- input #k1 "xy"
+console.log: keyed: "a"
 console.log: keyed: "xy"
 console.log: cell: "xy"
+console.log: position: "a"
 console.log: position: "xy"
 <body>
   <main>
@@ -96,6 +110,10 @@ console.log: position: "xy"
   </main>
 </body>
 -- click #tick
+console.log: keyed: "a"
+console.log: keyed: "xy"
+console.log: position: "a"
+console.log: position: "xy"
 <body>
   <main>
     <button id="tick">"2"</button>

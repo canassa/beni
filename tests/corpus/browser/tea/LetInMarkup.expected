@@ -10,6 +10,7 @@ console.log: label: "few"
   <!---->
 </body>
 -- click #tick
+console.log: sorted: [1,2,3]
 console.log: label: "many"
 <body>
   <main>
@@ -41,6 +42,7 @@ console.log: sorted: [1,2,3,7]
   <!---->
 </body>
 -- click #tick
+console.log: sorted: [1,2,3,7]
 console.log: label: "many"
 <body>
   <main>

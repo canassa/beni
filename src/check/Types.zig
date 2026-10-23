@@ -119,6 +119,7 @@ pub const Entry = struct {
     /// with no markup type.
     holds_markup: bool = false,
     holds_collection: bool = false,
+    holds_mutable: bool = false,
     /// Compiler-generated endpoint identity owned by a schema declaration.
     /// These entries have no ordinary type declaration body for the
     /// equatability walk to inspect.
@@ -643,6 +644,7 @@ pub fn build(
         if (e.arity != 0) types.key_kinds[e.key_start] = .dict_key;
     };
     try TypeFacts.settle(&types, gpa, graph, artifacts);
+    try @import("MutableTypes.zig").settle(gpa, &types, graph, artifacts, interner);
     try Injective.settle(&types, gpa, graph, artifacts);
     return types;
 }

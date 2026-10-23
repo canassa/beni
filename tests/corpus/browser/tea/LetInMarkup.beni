@@ -1,9 +1,7 @@
--- `browser/dom/LetInMarkup` on `browser-direct` (§5.4; S4's amendment,
--- item 4), its `if` written in a hole of the markup, which a `view` must
--- be: a `let` read only by markup is a derived value, computed again by a
--- message that writes what it reads and by no other. `shown`, the items
--- sorted, is computed when a message writes `model.items`: a tick logs no
--- "sorted", an added item does, and the list's rows change only then.
+-- A let read only by markup is one of its values. `shown` reads a List,
+-- so backend.md §15.5 (O3) recomputes it on every render: a tick logs
+-- "sorted", as does an added item. The DOM does not change on a tick
+-- except where the model's scalar ticks already required it.
 -- `label` chooses between the two arms, so it is computed when a message
 -- writes the ticks: the first tick switches to the arm that shows the
 -- list. `Debug.log` shows each computation; both platforms log the same,

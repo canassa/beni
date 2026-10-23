@@ -95,7 +95,8 @@ pub const magic = "BENIDEP\x00";
 ///
 /// Version 2 (`checker-v2.md` §14.2): `arity` is a `u16`, with
 /// interface v3's `Type.arity`. Version 3: flag bit 4, `holds_markup`.
-pub const digest_version: u32 = 4;
+// Version 5 includes whether a nominal payload can hold mutable cells.
+pub const digest_version: u32 = 5;
 
 pub const Digest = [16]u8;
 
@@ -121,6 +122,7 @@ pub const Type = struct {
     /// Whether the body holds the build's markup type: what a dependent
     /// platform module's `markup_type_in_foreign` reads of a type it names.
     holds_markup: bool,
+    holds_mutable: bool = false,
     key_kinds: []const u8 = &.{},
     /// `type_body.zig`'s encoding of the alias's expansion, or empty.
     body: []const u8,
@@ -198,6 +200,7 @@ fn flags(ty: Type) u8 {
     if (ty.comparable) bits |= 4;
     if (ty.has_function) bits |= 8;
     if (ty.holds_markup) bits |= 16;
+    if (ty.holds_mutable) bits |= 32;
     return bits;
 }
 
@@ -346,6 +349,7 @@ pub fn collect(
             .comparable = e.comparable,
             .has_function = e.has_function,
             .holds_markup = e.holds_markup,
+            .holds_mutable = e.holds_mutable,
             .key_kinds = std.mem.sliceAsBytes(s.types.keyKinds(id)),
             .body = body,
         };
@@ -627,10 +631,10 @@ test "every term of the recipe moves the digest" {
     var base = sampleTerms();
     base.types = &.{sample_type};
     try expectDifferent(sampleTerms(), base);
-    // The five settled bits, one at a time. `equatable` is
+    // The six settled bits, one at a time. `equatable` is
     // `plans/m4-3.md` §6.1's demonstrated miscompile and `comparable` and
     // `has_function` are in the record for NO type at all.
-    inline for (.{ "is_opaque", "equatable", "comparable", "has_function", "holds_markup" }) |field| {
+    inline for (.{ "is_opaque", "equatable", "comparable", "has_function", "holds_markup", "holds_mutable" }) |field| {
         var moved = sample_type;
         @field(moved, field) = !@field(sample_type, field);
         var t = sampleTerms();

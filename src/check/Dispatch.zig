@@ -428,6 +428,29 @@ debug: []const DebugSite = &.{},
 /// What every `DebugSite.shape` ranges over.
 debug_nodes: []const DebugNode = &.{},
 
+// A renderer may compare this instruction or local path by identity.
+render_facts: []const RenderFact = &.{},
+render_links: []const u32 = &.{},
+
+pub const RenderFact = struct { local: bool, index: u32, path: Range };
+
+pub fn renderStable(d: *const Dispatch, local_: bool, index: u32, links: []const u32) bool {
+    var lo: usize = 0;
+    var hi = d.render_facts.len;
+    const key = (@as(u64, @intFromBool(local_)) << 32) | index;
+    while (lo < hi) {
+        const mid = lo + (hi - lo) / 2;
+        const f = d.render_facts[mid];
+        const at = (@as(u64, @intFromBool(f.local)) << 32) | f.index;
+        if (at < key) lo = mid + 1 else hi = mid;
+    }
+    for (d.render_facts[lo..]) |f| {
+        if (f.local != local_ or f.index != index) break;
+        if (std.mem.eql(u32, links, d.render_links[f.path.start..][0..f.path.len])) return true;
+    }
+    return false;
+}
+
 pub const empty: Dispatch = .{};
 
 pub fn deinit(d: *Dispatch, gpa: Allocator) void {
@@ -445,6 +468,8 @@ pub fn deinit(d: *Dispatch, gpa: Allocator) void {
     gpa.free(d.appends);
     gpa.free(d.symbols);
     gpa.free(d.markup);
+    gpa.free(d.render_facts);
+    gpa.free(d.render_links);
     gpa.free(d.effect_sites);
     gpa.free(d.effect_decls);
     gpa.free(d.boundary);

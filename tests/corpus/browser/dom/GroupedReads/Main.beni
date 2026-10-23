@@ -1,8 +1,7 @@
--- A root computes its own values, by what they read (language.md §11.11,
--- made precise 2026-10-04; backend.md §15.4, *A root computes its own
--- values*). `Debug.log` on each value shows when it is computed: a value
--- runs at mount and then only in a render in which one of the fields it
--- reads is not the one it saw last. What each reads:
+-- A root computes values from their read paths (backend.md §15.4–§15.5).
+-- Scalar paths keep their skips; List and record paths run on every render
+-- under O3. In particular, the imported total reads the whole record, so
+-- a Noop also logs "total". Debug.log identifies each computation.
 --
 --   - "a": `model.a`; "a+b": two fields; "case": `model.pick`, through a
 --     `case`, which reads the whole of what it is given.
