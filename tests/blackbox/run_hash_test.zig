@@ -288,6 +288,63 @@ test "a run that fails writes no digest, and the runs beside it that passed writ
     _ = try expectDigests(&w, 2);
 }
 
+fn expectReported(r: world.Result, text: []const u8) !void {
+    if (std.mem.indexOf(u8, r.stderr, text) == null) {
+        std.debug.print("the walker's report lacks:\n{s}\n--- stderr ---\n{s}\n", .{ text, r.stderr });
+        return error.NotReported;
+    }
+}
+
+test "a record file that comes back into the corpus fails the walk by name, with the fix" {
+    // The records left git for the cache (#881). A pull request from before
+    // the change, or a rebase that kept a modified record, brings one back
+    // with no conflict; every reader would ignore it. The walk refuses it.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Good.beni", hello);
+    try w.write("corpus/run/Good.expected", "hello\n");
+    try w.write("corpus/run/Good.run-hash", "dev abc\n");
+    const r = try walker(&w);
+    try expectExit(1, r);
+    try expectReported(r, "corpus/run/Good.run-hash: a run-hash record file; the records left git for the run-hash cache (#881): delete it");
+    // Nothing ran: no digest.
+    try testing.expect(!w.exists("cache"));
+}
+
+test "a page's old fuzz record is refused with the marker that replaces it" {
+    // A `browser/tea` page's `.fuzz-run-hash` also opted it into its value
+    // fuzz; one that comes back would silently stand where the page's
+    // `.value-fuzz` marker belongs. The project form is caught too.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Good.beni", hello);
+    try w.write("corpus/run/Good.expected", "hello\n");
+    try w.write("corpus/run/Good.fuzz-run-hash", "fuzz abc\n");
+    const r = try walker(&w);
+    try expectExit(1, r);
+    try expectReported(r, "corpus/run/Good.fuzz-run-hash: a run-hash record file");
+    try expectReported(r, "add an empty `<page>.value-fuzz` (`_expected.value-fuzz` in a project) beside the page");
+
+    try w.tmp.dir.deleteFile(w.io, "corpus/run/Good.fuzz-run-hash");
+    try w.write("corpus/run/Project/Main.beni", hello);
+    try w.write("corpus/run/Project/_expected", "hello\n");
+    try w.write("corpus/run/Project/_expected.release-run-hash", "release abc\n");
+    const p = try walker(&w);
+    try expectExit(1, p);
+    try expectReported(p, "corpus/run/Project/_expected.release-run-hash: a run-hash record file");
+}
+
+test "the old run-hash index beside the corpus fails the walk" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/run/Good.beni", hello);
+    try w.write("corpus/run/Good.expected", "hello\n");
+    try w.write("blackbox/run-hashes.txt", "# the index\n");
+    const r = try walker(&w);
+    try expectExit(1, r);
+    try expectReported(r, "blackbox/run-hashes.txt: the run-hash index; it left git for the run-hash cache (#881): delete it");
+}
+
 test "a blessed build looks nothing up and writes no digest; the pass compared with its golden is recorded" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
