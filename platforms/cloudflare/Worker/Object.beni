@@ -301,7 +301,8 @@ arrived instance request =
 -- The class's `$beni`, (e.11)'s one RPC method: the transport of `post`
 -- and `ask`. A promise: `null` for a post once `received` has run; for an
 -- ask a tagged result — a refused cycle at once, a message that did not
--- parse, `NoReply`, or the reply's text — read back by `answered`.
+-- parse, `NoReply`, a reply over the host's limit, or the reply's text —
+-- read back by `answered`.
 rpcArrived : V, V, V, V, V → V
 rpcArrived instance chain kind correlation text =
     d = Js.call (Js.global "Promise") "withResolvers" []
@@ -839,6 +840,15 @@ autoReply ctx request response =
         Ok ⊤
 
 
+-- The host's limit on one serialized RPC argument or result, 32 MiB ("The
+-- maximum serialized RPC limit is 32 MiB", the RPC page), less a margin of
+-- 64 KiB for the call's other arguments and the clone's framing. The
+-- printed text is measured against it in beni before the call ((e.11),
+-- R9-1): the host's refusal inside the call would be a defect.
+rpcLimit : Int
+rpcLimit = 33554432 - 65536
+
+
 -- The host's count of a text: its bytes of UTF-8.
 utf8Bytes : String → Int
 utf8Bytes text =
@@ -1010,11 +1020,19 @@ post ref message =
         Js.write printingTo Js.null
         case printed of
             Ok text →
-                -- Over the stub's RPC method, the chain id an argument ((e.11)).
-                _ =
-                    Js.call (Js.get r "stub") "$beni"
-                        [ Js.apply (Js.get r "chainNow") [], Js.from "post", Js.null, Js.from text ]
-                ⊤
+                if utf8Bytes text > rpcLimit then
+                    Log.warn
+                        "beni: a message to the object was dropped, it is over the host's 32 MiB RPC limit"
+                else
+                    -- Over the stub's RPC method, the chain id an argument ((e.11)).
+                    _ =
+                        Js.call (Js.get r "stub") "$beni"
+                            [ Js.apply (Js.get r "chainNow") []
+                            , Js.from "post"
+                            , Js.null
+                            , Js.from text
+                            ]
+                    ⊤
 
             Err issues →
                 why = String.join (List.map issues λissue → issue.message) "; "
@@ -1048,22 +1066,32 @@ ask ref schema wrap =
                 Err (Unprintable issues)
 
             Ok text →
-                sent =
-                    Js.call (Js.get r "stub") "$beni"
-                        [ Js.apply (Js.get r "chainNow") [], Js.from "ask", askId, Js.from text ]
-                case settle sent of
-                    Ok result →
-                        answered result schema
+                if utf8Bytes text > rpcLimit then
+                    Err
+                        (Unprintable
+                            [ Schema.issue "the message is over the host's 32 MiB RPC limit" ]
+                        )
+                else
+                    sent =
+                        Js.call (Js.get r "stub") "$beni"
+                            [ Js.apply (Js.get r "chainNow") []
+                            , Js.from "ask"
+                            , askId
+                            , Js.from text
+                            ]
+                    case settle sent of
+                        Ok result →
+                            answered result schema
 
-                    Err reason →
-                        if Js.to (Js.get reason "overloaded") == True then
-                            Err Overloaded
-                        else if Js.to (Js.get reason "durableObjectReset") == True then
-                            Err Reset
-                        else if Js.to (Js.get reason "retryable") == True then
-                            Err Transient
-                        else
-                            Js.throw reason
+                        Err reason →
+                            if Js.to (Js.get reason "overloaded") == True then
+                                Err Overloaded
+                            else if Js.to (Js.get reason "durableObjectReset") == True then
+                                Err Reset
+                            else if Js.to (Js.get reason "retryable") == True then
+                                Err Transient
+                            else
+                                Js.throw reason
 
 
 -- Park on a host promise: `Ok` its value, `Err` its reason, as the fiber's
@@ -1092,6 +1120,8 @@ answered result schema =
         Err (Unreadable [ Schema.issue "the message did not parse by the receiver's schema" ])
     else if kind == "none" then
         Err NoReply
+    else if kind == "large" then
+        Err (Unreadable [ Schema.issue "the reply is over the host's 32 MiB RPC limit" ])
     else
         case Schema.parse schema (Js.to (Js.get result "text")) of
             Ok value →
@@ -1129,10 +1159,15 @@ reply channel value =
         _ = Js.call (Js.get instance "asks") "delete" [ Js.get h "id" ]
         case Schema.print schema value of
             Ok text →
-                Js.to
-                    (Js.apply (Js.get entry "resolve")
-                        [ Js.from { kind = "reply", text = Js.from text } ]
-                    )
+                if utf8Bytes text > rpcLimit then
+                    Log.warn
+                        "beni: a reply from the object ${objectName instance} is over the host's 32 MiB RPC limit: the asker gets Unreadable"
+                    Js.to (Js.apply (Js.get entry "resolve") [ Js.from { kind = "large" } ])
+                else
+                    Js.to
+                        (Js.apply (Js.get entry "resolve")
+                            [ Js.from { kind = "reply", text = Js.from text } ]
+                        )
 
             Err _ →
                 Js.to (Js.apply (Js.get entry "resolve") [ Js.from { kind = "unparsed" } ])
