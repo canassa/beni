@@ -910,6 +910,26 @@ pub fn build(b: *std.Build) void {
     const compare_bb_step = bb.fileStep("tests/blackbox/compare_gen_test.zig");
     compare_bb_step.dependOn(&bb.run(compare_bb, .{ .root = "tests/corpus" }).step);
     bench_test_step.dependOn(compare_bb_step);
+    // The plain benchmark's generator, in `test-bench`: the corpus
+    // `bench --generate` writes, in both modes, must check with no
+    // diagnostic (#816).
+    const bench_gen_bb = b.addTest(.{
+        .name = "bench_gen_test",
+        .filters = test_filters,
+        .test_runner = testRunner(b),
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/blackbox/bench_gen_test.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{
+                .{ .name = "diagnostic", .module = diagnostic_mod },
+                .{ .name = "bench_gen", .module = b.createModule(.{ .root_source_file = b.path("bench/gen.zig"), .target = target, .optimize = optimize }) },
+            },
+        }),
+    });
+    const bench_gen_bb_step = bb.fileStep("tests/blackbox/bench_gen_test.zig");
+    bench_gen_bb_step.dependOn(&bb.run(bench_gen_bb, .{ .root = "tests/corpus" }).step);
+    bench_test_step.dependOn(bench_gen_bb_step);
     // The measurement instruments (`bench/size.mjs`, `bench/runtime.mjs`),
     // each run on one tiny program so its output cannot rot unnoticed.
     const bench_scripts_step = bb.fileStep("tests/blackbox/bench_test.zig");

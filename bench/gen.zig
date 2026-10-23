@@ -768,13 +768,15 @@ const Module = struct {
     /// it. Every call the generator writes is saturated: an accidental
     /// partial application is exactly the `too_few_args` of checker.md §8.3,
     /// and a corpus full of them would measure the error path.
-    const PreludeCall = struct { prefix: []const u8, arity: u8 };
+    /// Core is subject-first (language.md §12.4), so the constant
+    /// arguments of a one-atom call follow the atom, as `suffix`.
+    const PreludeCall = struct { prefix: []const u8, arity: u8, suffix: []const u8 = "" };
 
     const prelude_calls = [_]PreludeCall{
         .{ .prefix = "max", .arity = 2 },
         .{ .prefix = "min", .arity = 2 },
-        .{ .prefix = "clamp 0 10", .arity = 1 },
-        .{ .prefix = "modBy 3", .arity = 1 },
+        .{ .prefix = "clamp", .arity = 1, .suffix = " 0 10" },
+        .{ .prefix = "Int.mod", .arity = 1, .suffix = " 3" },
         .{ .prefix = "always 1", .arity = 1 },
     };
 
@@ -1188,7 +1190,7 @@ const Module = struct {
         switch (g.rng.uintLessThan(u8, 3)) {
             0 => try g.line(4, "n * {d} + {d}", .{ 1 + g.rng.uintLessThan(u32, 9), g.rng.uintLessThan(u32, 100) }),
             1 => try g.line(4, "max n {d} - min n {d}", .{ g.rng.uintLessThan(u32, 100), g.rng.uintLessThan(u32, 10) }),
-            else => try g.line(4, "modBy {d} (abs n)", .{2 + g.rng.uintLessThan(u32, 30)}),
+            else => try g.line(4, "Int.mod (abs n) {d}", .{2 + g.rng.uintLessThan(u32, 30)}),
         }
     }
 
@@ -1621,6 +1623,7 @@ const Module = struct {
                     try g.w.writeByte(' ');
                     try g.atom();
                 }
+                try g.w.writeAll(call.suffix);
             },
             4 => {
                 // Lambda applied through a prelude function.

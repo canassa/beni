@@ -179,6 +179,9 @@ generator still emits the removed name `modBy`; the existing name migration
 is applied to the generated input **before either binary measures it**, leaving
 the line count unchanged. It exits successfully with 85 argument-order warnings,
 identical between the binaries; it is not the generator's unmodified error path.
+*Since #816 the generator writes current beni (`Int.mod`, `clamp` subject
+first): the same 100,082 lines check with no diagnostic and need no migration,
+and `zig build test-bench` checks a generated corpus in both modes.*
 The small, handwritten `bench/corpus` is also measured separately in the retained
 JSON results.
 
