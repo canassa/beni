@@ -1032,6 +1032,21 @@ const Opt = struct {
                 const no = o.pureValue(c.alternate, depth + 1) orelse return null;
                 return if (yes == .primitive and no == .primitive) .primitive else .any;
             },
+            // A fresh object or array of such values (#916): making one
+            // runs no code — a key is a plain name, never a getter, and no
+            // spread reads another object — and cannot throw. Evaluated once
+            // wherever it is made, it is the one object its binding held.
+            .object => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |prop| {
+                    if (o.ir.tag(prop) != .property) return null;
+                    _ = o.pureValue(@fromBackingInt(@intCast(o.ir.data(prop).rhs)), depth + 1) orelse return null;
+                }
+                return .any;
+            },
+            .array => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| _ = o.pureValue(part, depth + 1) orelse return null;
+                return .any;
+            },
             .template => {
                 for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
                     if (o.ir.tag(part) == .template_chunk) continue;
