@@ -1473,7 +1473,13 @@ in a listener higher up — under `dom`, the document's (`backend.md` §15.3, *E
 `onInput`'s and `onChange`'s `targetValue` and `onCheck`'s `targetChecked` run — so it must not read
 `currentTarget`. An extractor may read what is true only during the dispatch — the pointer events'
 reads `currentTarget` and its box — so a lowering that queues an event and extracts later breaks it
-(issue #559).
+(issue #559). *Amended 2026-10-23* (§9.8.20 (d), #557): a lowering that runs a `delegated` event's
+extractor in a walk defines the event's `currentTarget` as the node whose handler runs, while that
+handler and its extractor run, and removes the definition when the walk ends. So under every
+lowering that runs the extractor during the dispatch, an extractor reads, in `currentTarget`, the
+element that has the handler. `dom`'s walk
+does (`backend.md` §15.11, *One walk finds the handlers and their program*). `browser-inline`
+attaches every listener to its element, where `currentTarget` is that element already.
 
 *As built, 2026-09-29, for §9.2–§9.3* (`platforms/html/`, `src/js/Emit.zig`, `src/platform.zig`).
 The smallest readings, and what waits for the lowering interface:
@@ -5109,7 +5115,7 @@ and each reader as the DOM names the property it reads.
 
 | | Is |
 |---|---|
-| `onPointerDown`, `onPointerMove`, `onPointerUp`, `onPointerCancel`, `onPointerEnter`, `onPointerLeave` | the DOM event of the lower-cased name, `via pointer : Pointer`, **not** `delegated` |
+| `onPointerDown`, `onPointerMove`, `onPointerUp`, `onPointerCancel`, `onPointerEnter`, `onPointerLeave` | the DOM event of the lower-cased name, `via pointer : Pointer`, **not** `delegated`. *Amended 2026-10-23* (#557, (d)): the first four are `delegated`, and `onPointerEnter` and `onPointerLeave` are not |
 | `Pointer` | `pub crossing foreign type`: the event, and its position in its handler's element, made by the extractor `pointer`, (d) |
 | `pointerId : Pointer → Int` | the pointer's identity, the same from its `pointerdown` to its `pointerup` or `pointercancel` |
 | `pointerType : Pointer → String` | `"mouse"`, `"pen"` or `"touch"`; `""` when the browser cannot say |
@@ -5162,6 +5168,32 @@ first render wrote. A delegated event's walk is one turn and one render. The `.s
 untrusted events, which are no turn, so no fixture sees the difference yet. #557 takes Solid's
 choice, or specifies the turn per listener.
 
+*Amended 2026-10-23* (#557): **the four pointer events that bubble are `delegated`, as Solid's
+are.** `onPointerDown`, `onPointerMove`, `onPointerUp` and `onPointerCancel` are `delegated`.
+`onPointerEnter` and `onPointerLeave` do not bubble, so each keeps a listener on its element. Each
+element's enter or leave is its own event and its own turn, so nested enter or leave handlers
+render once for each element, and an inner one runs with the view that the outer one's render
+wrote. A
+user's pointer event is then one walk, one turn and one render, as a click is (`backend.md` §15.11,
+*One walk finds the handlers and their program*): every handler of the walk runs with the view that
+was on the page when the event came, and nested handlers give one render. **While the walk calls a
+node's handler, the event's `currentTarget` is that node.** The `dom` runtime defines
+`currentTarget` on the event before it calls the handler, and removes the definition when the walk
+ends, so the listeners after the walk read the host's `currentTarget` again. Solid's walk defines
+it in the same way (dom-expressions `packages/runtime/src/client.js`, `eventHandler`). Solid also
+delegates `pointerover` and `pointerout`, which beni does not expose yet, and does not delegate
+`pointercancel`. beni delegates it, because it bubbles and a game ends a pointer's steering on it
+as on `pointerup` ((e)). Three consequences under `dom` (`browser-inline` attaches every listener to
+its element, as before):
+
+- A pointer handler on a node whose `disabled` is true does not run, as a delegated `onClick` there
+  does not. Before, the control's own listener called the handler for each event that the browser
+  dispatched to it.
+- A `For` of a thousand rows with a pointer handler on each row attaches no listener. The page has
+  one listener for each delegated name that its build uses.
+- Every `pointermove` that reaches the document is a walk from its target up, also where no element
+  has a handler. The *As built* note below has the measurement.
+
 The position is taken by `pointer`, the events' extractor and a `foreign` of `Html` (§9.3), while
 the event is dispatched. After the dispatch `currentTarget` is null and the box can have moved, so
 a reader that ran later — in `update`, on a `Pointer` that a message carries — would read nothing,
@@ -5179,9 +5211,13 @@ dispatched**, and `currentTarget` is that element (§9.3, amended here). `dom` d
 listener calls `fire`, which applies the extractor before it computes the message. `browser-inline`
 does on its usual path, but a send made while another send runs is queued with its raw event, and
 the extractor would run after the dispatch (issue #559; latent, because a host never dispatches a
-pointer event inside a send). **The type is the guarantee**, given that obligation: a `Pointer`
-comes only from the listener of a pointer event on its own element, so `localX` of every `Pointer`
-is a point in its handler's element, under every lowering and at any time after. The other readers
+pointer event inside a send). *Amended 2026-10-23* (#557): for a `delegated` pointer event, the
+lowering calls the extractor in the walk of its delegated listener, with `currentTarget` defined as
+the node whose handler runs. `dom` does: `bubble` defines it, then calls `fire`. `browser-inline`
+reads no `delegated` flag and attaches every listener to its element, as before. **The type is the
+guarantee**, given that obligation: a `Pointer` comes only from the listener of a pointer event on
+its own element, or from the walk's call for that element, so `localX` of every `Pointer` is a point
+in its handler's element, under every lowering and at any time after. The other readers
 read properties of the event, which do not change after the dispatch. **The second wall is `Js`**:
 `Js.to : Value → a` can make a value of any type, so a package that may import `Js` can make a
 `Dispatched` and call `pointer` on any event. *Amended 2026-10-22* (#696): only `Html` can call
@@ -5192,6 +5228,9 @@ import `Js` (`js_outside_platform`, §4.2), so only a platform package can, whic
 The cost is one listener for each element that has a pointer handler, not one for each page: a
 `For` of a thousand rows with a pointer handler on each row attaches a thousand listeners. A game
 surface is one element. A delegated form waits for a page that needs it and a measurement (rule 8).
+*Amended 2026-10-23* (#557): the four delegated events cost one listener for each name and a walk
+for each event, and `onPointerEnter` and `onPointerLeave` still cost one listener for each element.
+The *As built* note below has the measurement.
 The extractor also reads the element's box on every event. **Measured** (2026-10-20, the review of
 PR #548: headless Chrome, synthetic `pointermove` on an arena, the median of 5 × 2 000 events, µs per
 event):
@@ -5256,7 +5295,11 @@ the same under `browser`. `browser/tea/PointerSteer` is the demonstration: a dot
 pointer by animation frames. `check/bad/markup/PointerExtractor` and `PointerExtractorType` pin (d):
 a program that hands `pointer` an `Event` is refused, and so is one that names `Dispatched`.
 *Amended 2026-10-22* (#696): the first is refused with `private_name`, because `pointer` is not
-`pub`.
+`pub`. *Amended 2026-10-23* (#557): the `pointer` step's `trusted` sends a user's mouse move
+(Chrome: `Input.dispatchMouseEvent`), and `browser/dom/PointerNested` pins nested handlers under
+`press` and under a trusted move: one turn and one render for each event, with the outer handler
+running with the view of before the event. It also pins that a pointer handler on a disabled button
+does not run.
 
 *As built, 2026-10-20* (`platforms/html/Html.beni` and `Html.js`, `tests/browser/driver.mjs`), as
 specified, with these findings:
@@ -5287,6 +5330,62 @@ specified, with these findings:
   DOM Standard and MDN's compatibility data, and four were corrected — the events after a
   `pointercancel`, the mouse events a prevented `pointerdown` stops, Safari's `user-select`, and
   iOS's double-tap zoom.
+
+*As built, 2026-10-23* (#557; `platforms/html/Html.beni`, `platforms/browser/Rt.beni`,
+`tests/browser/driver.mjs`), as amended in (d), with these findings:
+
+- **`currentTarget`.** The walk's first handler defines `currentTarget` on the event, once, with
+  `Object.defineProperty`: configurable, and a getter over `at`, the walk's node, which `bubble`
+  writes before each handler, as Solid's walk does. A `Js.finally` around the walk removes it with
+  `Reflect.deleteProperty` when the walk defined it, and a walk that met no handler removes
+  nothing. Chrome and happy-dom 20.14.5 both keep `currentTarget` as an accessor on
+  `Event.prototype`, so the event's own property hides it, and the removal shows it again: a
+  listener on the window after the walk reads the window. *Amended 2026-10-23* (the review of
+  #862): the first version defined a value for each handler and removed it after every walk; the
+  measurement below has both.
+- **The removal is pinned.** The driver's prelude listens on the window, in both DOMs, for the
+  four delegated pointer events, and records an error for an event that reaches it with an own
+  `currentTarget` or with a `currentTarget` that is not the window. A runtime that does not remove
+  the definition fails `PointerNested` under happy-dom and in Chrome.
+- **Before and after.** `browser/dom/PointerNested` fails without the change, in both DOMs, with
+  the same lines: the outer handler of a `press` or of a trusted move reads the count that the
+  inner handler made (`the handler saw n=1, the model has n=1`), and the handler on the disabled
+  button runs. With the change, the outer handler reads the count of before the event
+  (`n=0`, `n=1`), and the disabled button's handler does not run. The untrusted steps give the
+  same lines before and after.
+- **The trusted move.** Chrome dispatches a mouse move at a frame, not when
+  `Input.dispatchMouseEvent` returns, so the step waits for the move's `mousemove` on the window,
+  for at most 5 s of the page's real clock.
+- **Measured** (`bench/ui/pointer.mjs` on `bench/ui/apps/pointer/Main.beni` and its Solid 2
+  twin `bench/ui/apps/solid2/src/pointer.jsx`; headless Chrome 153; 7 fresh pages for each build,
+  in turn; untrusted events, µs per event, the median of 7 × 5 samples of 2 000; the mount in ms,
+  the median of 7, to the end of the render):
+
+  | | before (a listener for each element) | the first walk | the walk as built | Solid 2 |
+  |---|---|---|---|---|
+  | a move on a target 8 elements below the handler's element | 5.70 | 7.15 | 7.16 | 8.37 |
+  | a move on a target 8 elements deep, no handler above it | 3.25 | 4.57 | 4.55 | 6.33 |
+  | a `pointerdown` on row 500 of 1 000 rows, its handler runs | 5.66 | 6.83 | 6.78 | 6.00 |
+  | a `pointermove` on row 500, no move handler on the rows | 3.05 | 4.14 | 4.08 | 5.64 |
+  | a click that renders the 1 000 rows, each with `onPointerDown` | 4.15 ms | 2.84 ms | 2.96 ms | 3.22 ms |
+
+  Per event, the walk costs 1.0 to 1.5 µs more than a listener on each element: the document's
+  listener, the walk to the document, and the definition and removal of `currentTarget`. A build
+  of the first walk without the removal gave 0.4 to 0.6 µs less when a handler ran, and about 0.1
+  µs less when none did (the review of #862). The walk as built is the same as the first walk
+  within the noise. Against Solid 2, whose walk is the same design, beni is faster on four of the
+  five shapes, and Solid 2 is faster on the `pointerdown` of a row that has a handler: 6.00 against
+  6.78 µs. Chrome sends `pointermove` at most once a frame for each pointer, so at 60 frames a
+  second 1.5 µs is less than 0.01 % of a frame. A page that renders many rows with a pointer handler
+  mounts faster, because no row adds a listener: 1.2 ms less for 1 000 rows. Untrusted events are
+  no turn in either beni build, so the table compares the listeners, not the turn. The owner
+  decides whether this cost is accepted (the question of #862).
+- **Size** (`bench/size.mjs --pages-only`, the compiler before and after the change). A page that
+  delegates an event carries the longer walk: 131 bytes raw more under `--release`, and 22 to 46
+  bytes brotli (TodoMVC 8 966 → 9 008, Conduit 27 910 → 27 949, `ApiAndRoutes` 14 484 → 14 506,
+  `sternhalma` 7 428 → 7 474). `examples/steer` delegated no event before, so its build had
+  `listen` and no walk. Now it has the walk and `delegate`: 405 bytes raw more, and 4 321 → 4 449
+  brotli. A page that delegates no event is the same bytes.
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 

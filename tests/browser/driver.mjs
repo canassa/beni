@@ -773,6 +773,18 @@ function prelude() {
   } else {
     record.trust = null;
   }
+  // The delegated pointer events' walk defines `currentTarget` on the event
+  // while it calls a handler, and removes it when the walk ends
+  // (`boundary.md` §9.8.20 (d)). A listener on the window, after every
+  // listener of the page, records an error for an event whose walk left
+  // it: an own `currentTarget`, or one that is not the window.
+  for (const name of ["pointerdown", "pointermove", "pointerup", "pointercancel"]) {
+    globalThis.addEventListener(name, (event) => {
+      if (Object.hasOwn(event, "currentTarget") || event.currentTarget !== document.defaultView) {
+        record.errors.push(`a \`${name}\` reached the window with \`currentTarget\` defined by the walk`);
+      }
+    });
+  }
   globalThis.addEventListener("error", (event) => record.errors.push(describe(event.error ?? event.message)));
   globalThis.addEventListener("unhandledrejection", (event) => record.errors.push(describe(event.reason)));
   // Every listener the page adds to the window or the document from here
@@ -1253,6 +1265,35 @@ function step(s) {
       const box = s.box === undefined ? target : document.querySelector(s.box);
       if (box === null) return `no element matches \`${s.box}\``;
       const r = box.getBoundingClientRect();
+      // A user's mouse move (`trusted`), at the point. Chrome's is the
+      // driver's to send, through `Input.dispatchMouseEvent`: this answers
+      // where the point is, refuses one where a user's mouse would be over
+      // an element outside the target, and arms a listener on the window
+      // that tells the driver when Chrome has dispatched the move, which it
+      // does at a frame and not when the command returns. happy-dom's is
+      // dispatched here, `isTrusted` as the prelude reads it, as Chrome
+      // makes it: `pointermove`, then `mousemove`. Neither logs whether a
+      // handler prevented its default. Chrome also sends the over, out,
+      // enter and leave events of the elements the mouse crosses, and
+      // happy-dom does not.
+      if (s.trusted) {
+        const x = r.left + s.x;
+        const y = r.top + s.y;
+        const trust = globalThis.__beniHarness.trust;
+        if (trust === null) {
+          const hit = document.elementFromPoint(x, y);
+          if (hit === null || !target.contains(hit)) {
+            const name = hit === null ? "nothing" : `<${hit.localName}${hit.id ? `#${hit.id}` : ""}>`;
+            return `\`${s.selector}\` cannot be moved over at ${s.x}, ${s.y}: a user's mouse there is over ${name}`;
+          }
+          globalThis.__beniHarness.moved = new Promise((done) => addEventListener("mousemove", () => done(), { once: true, capture: true }));
+          return { move: true, x, y };
+        }
+        const at = { ...init, clientX: x, clientY: y };
+        target.dispatchEvent(trust(new PointerEvent("pointermove", { ...at, pointerId: 1, pointerType: "mouse", isPrimary: true })));
+        target.dispatchEvent(trust(new MouseEvent("mousemove", at)));
+        return null;
+      }
       const bubbles = s.name !== "pointerenter" && s.name !== "pointerleave";
       const cancelable = s.name === "pointerdown" || s.name === "pointermove" || s.name === "pointerup" || s.name === "pointerover" || s.name === "pointerout";
       const event = new PointerEvent(s.name, {
@@ -1389,6 +1430,16 @@ function handshakes() {
 function fiberSubscriptions() {
   globalThis.__beniFiberSubscriptions = true;
   return null;
+}
+
+// Chrome's half of a trusted `pointer` move: wait for the `mousemove`
+// that follows the move's `pointermove`, which the step armed a listener
+// for. Chrome dispatches a mouse move at a frame, not when the command
+// that sent it returns. Resolves to null, or to why no move came; the
+// wait is on the page's real clock, which no step moves.
+function arrived() {
+  const late = new Promise((done) => globalThis.__beniHarness.clock.real(() => done("Chrome dispatched no `mousemove` within 5 s of the move"), 5000));
+  return Promise.race([globalThis.__beniHarness.moved.then(() => null), late]);
 }
 
 // The numbers of the requests no step answered and nothing aborted.
@@ -1799,8 +1850,10 @@ if (stepsPath !== undefined) {
       if (!/^mouse[a-z]+$/.test(argument ?? "")) usage(`${where}: \`mouse\` takes a selector and one mouse event name, such as \`mouseover\``);
       s.name = argument;
     } else if (command === "pointer") {
-      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>]`;
+      // `pointer <selector> <name> [<x> <y>] [id:<n>] [type:<t>] [secondary] [box:<selector>] [trusted]`;
       // `type:none` is a `pointerType` of "", a device the browser cannot name.
+      // `trusted` is a user's mouse move: Chrome sends one only as its own
+      // mouse, `pointerId` 1 and primary.
       const words = (argument ?? "").split(/\s+/).filter((w) => w !== "");
       const names = ["pointerdown", "pointermove", "pointerup", "pointercancel", "pointerenter", "pointerleave", "pointerover", "pointerout"];
       if (!names.includes(words[0])) usage(`${where}: \`pointer\` takes a selector and one pointer event name, such as \`pointermove\``);
@@ -1822,8 +1875,11 @@ if (stepsPath !== undefined) {
         else if (/^type:(mouse|pen|touch|none)$/.test(w)) s.type = w === "type:none" ? "" : w.slice("type:".length);
         else if (w === "secondary") s.primary = false;
         else if (/^box:\S+$/.test(w)) s.box = w.slice("box:".length);
-        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\` or \`box:<selector>\` after the name, not \`${w}\``);
+        else if (w === "trusted") s.trusted = true;
+        else usage(`${where}: \`pointer\` takes \`<x> <y>\`, \`id:<n>\`, \`type:<mouse|pen|touch|none>\`, \`secondary\`, \`box:<selector>\` or \`trusted\` after the name, not \`${w}\``);
       }
+      if (s.trusted && (s.name !== "pointermove" || s.type !== "mouse" || s.id !== 1 || !s.primary))
+        usage(`${where}: \`trusted\` is a user's mouse move: it goes with \`pointermove\`, the mouse, \`id:1\` and a primary pointer`);
     } else if (command === "drag") {
       if (!["dragstart", "drag", "dragenter", "dragover", "dragleave", "drop", "dragend"].includes(argument ?? "")) usage(`${where}: \`drag\` takes a selector and one drag event name: \`dragstart\`, \`drag\`, \`dragenter\`, \`dragover\`, \`dragleave\`, \`drop\` or \`dragend\``);
       s.name = argument;
@@ -2020,7 +2076,7 @@ async function chromePage(endpoint) {
   // The target opened at `about:blank`: its history begins at the page, as
   // happy-dom's does, so no traversal leaves the page's document.
   await send("Page.resetNavigationHistory", {}, sessionId);
-  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions};`;
+  const helpers = `const comments = ${comments}; const step = ${step}; const settle = ${settle}; const drain = ${drain}; const serialise = ${serialise}; const load = ${load}; const pendingRequests = ${pendingRequests}; const fiberSubscriptions = ${fiberSubscriptions}; const arrived = ${arrived};`;
   return {
     run: async (fn, arg) => {
       const expression = `(() => { ${helpers} return (${fn.name})(${JSON.stringify(arg) ?? ""}); })()`;
@@ -2030,9 +2086,10 @@ async function chromePage(endpoint) {
     },
     // Half of a trusted click at a point of the page, as a user's: the
     // button pressed or released, resolved once the renderer has handled
-    // it.
+    // it. Or a move to the point with no button down (`mouseMoved`).
     mouse: async (type, x, y) => {
-      await send("Input.dispatchMouseEvent", { type, x, y, button: "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: 1 }, sessionId);
+      const move = type === "mouseMoved";
+      await send("Input.dispatchMouseEvent", { type, x, y, button: move ? "none" : "left", buttons: type === "mousePressed" ? 1 : 0, clickCount: move ? 0 : 1 }, sessionId);
     },
     close: async () => {
       await send("Target.closeTarget", { targetId });
@@ -2171,7 +2228,12 @@ async function runPage(entry, fiber) {
           // A `press`: the button goes down, the page settles, and it comes
           // up — in Chrome as a user's would, under happy-dom as the step
           // dispatches it.
-          if (why !== null && typeof why === "object") why = await released(page, t, why);
+          // A trusted move in Chrome: the mouse goes to the point, and the
+          // step waits for the move's dispatch.
+          if (why !== null && typeof why === "object" && why.move) {
+            await page.mouse("mouseMoved", why.x, why.y);
+            why = await page.run(arrived);
+          } else if (why !== null && typeof why === "object") why = await released(page, t, why);
           if (why !== null) return `${s.where}: ${s.line}: ${why}`;
         }
         return null;

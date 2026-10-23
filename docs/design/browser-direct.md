@@ -218,7 +218,12 @@ the template, so:
   finished dispatching, when `preventDefault()` and `stopPropagation()` do nothing and
   `e.currentTarget` is `null`. Only the message part is ever queued. A payload extractor reads
   `e.target` and the event's own fields, which survive the dispatch; one that read
-  `currentTarget` would not, and `html`'s declare none. Pinned by `browser/direct/SubmitFromWrite`
+  `currentTarget` would not, and `html`'s declare none. *Amended 2026-10-23* (`boundary.md` §9.3
+  and §9.8.20 (d), #557): `html`'s pointer extractor reads `currentTarget` (since 2026-10-20,
+  #548), and its four events that bubble are `delegated`. So this platform runs that extractor in
+  the DOM listener, while the event is dispatched, never in a queued body (issue #559 is that fault
+  in `browser-inline`), and a row walk on a list's parent defines `currentTarget` as the node whose
+  handler runs, as §9.3 asks. Pinned by `browser/direct/SubmitFromWrite`
   (a `submit` with `preventDefault` fired synchronously by a handler's own DOM write — a button
   the handler enables and the browser's implicit submission — does not navigate).
 - **Read at the event, not captured** (*Elm differs here, and §15's Q1 is the owner's*). Elm's

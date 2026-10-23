@@ -119,16 +119,18 @@ preventDefault event = Js.to (Js.call (Js.from event) "preventDefault" [])
 pub crossing foreign type Pointer
 
 
--- What a pointer event's own listener hands its extractor: the event.
--- Not `pub`, and no event hands a handler one.
+-- What a pointer event's listener hands its extractor: the event, while
+-- its `currentTarget` is the element that has the handler. Not `pub`, and
+-- no event hands a handler one.
 foreign type Dispatched
 
 
 -- The extractor of every pointer event: the event, and its position in
--- the box of the element whose listener runs (`currentTarget`). Called on
--- another event, that element could be the document, which has no box,
--- so it is not `pub` and no program can call it. A `via` can name a value
--- that is not `pub` (`boundary.md` §9.3).
+-- the box of the element whose handler runs (`currentTarget`, which a
+-- delegated walk defines as that element: `boundary.md` §9.8.20 (d)).
+-- Called on another event, that element could be the document, which has
+-- no box, so it is not `pub` and no program can call it. A `via` can name
+-- a value that is not `pub` (`boundary.md` §9.3).
 foreign impure pointer : Dispatched → Pointer
 
 
@@ -1408,8 +1410,10 @@ pub attribute "accumulate" on "animate" "animateMotion" "animateTransform" : Str
 
 
 -- Events. A `delegated` event bubbles, so a lowering may listen for it once.
--- The pointer events bubble too, but are not `delegated`: their extractor
--- reads the box of the element whose own listener runs (§9.8.20).
+-- Four pointer events bubble and are `delegated`: the walk defines the
+-- event's `currentTarget` as the element whose handler runs, and their
+-- extractor reads that element's box. `pointerenter` and `pointerleave` do
+-- not bubble (§9.8.20 (d)).
 
 pub event "onBlur" : Event
 
@@ -1471,10 +1475,10 @@ pub event "onMouseOver" delegated : Event
 pub event "onMouseUp" delegated : Event
 
 
-pub event "onPointerCancel" via pointer : Pointer
+pub event "onPointerCancel" delegated via pointer : Pointer
 
 
-pub event "onPointerDown" via pointer : Pointer
+pub event "onPointerDown" delegated via pointer : Pointer
 
 
 pub event "onPointerEnter" via pointer : Pointer
@@ -1483,10 +1487,10 @@ pub event "onPointerEnter" via pointer : Pointer
 pub event "onPointerLeave" via pointer : Pointer
 
 
-pub event "onPointerMove" via pointer : Pointer
+pub event "onPointerMove" delegated via pointer : Pointer
 
 
-pub event "onPointerUp" via pointer : Pointer
+pub event "onPointerUp" delegated via pointer : Pointer
 
 
 pub event "onScroll" : Event

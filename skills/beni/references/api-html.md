@@ -442,12 +442,12 @@ module Html
   event "onMouseOut" delegated : Event
   event "onMouseOver" delegated : Event
   event "onMouseUp" delegated : Event
-  event "onPointerCancel" via pointer : Pointer
-  event "onPointerDown" via pointer : Pointer
+  event "onPointerCancel" delegated via pointer : Pointer
+  event "onPointerDown" delegated via pointer : Pointer
   event "onPointerEnter" via pointer : Pointer
   event "onPointerLeave" via pointer : Pointer
-  event "onPointerMove" via pointer : Pointer
-  event "onPointerUp" via pointer : Pointer
+  event "onPointerMove" delegated via pointer : Pointer
+  event "onPointerUp" delegated via pointer : Pointer
   event "onScroll" : Event
   event "onSubmit" on "form" delegated preventDefault : Event
 ```

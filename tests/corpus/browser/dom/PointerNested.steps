@@ -1,0 +1,12 @@
+# A user's press on the inner element: `pointerdown` and `mousedown`, then
+# `pointerup`, `mouseup` and `click`. Each pointer event is one turn.
+press #inner
+# A user's mouse move over the knob: one turn.
+pointer #knob pointermove 2 3 trusted
+# The same events, untrusted: no turn, and the same answer.
+pointer #inner pointerdown 2 3
+pointer #inner pointerup 2 3
+pointer #knob pointermove 2 3
+pointer #knob pointercancel 2 3
+# The walk passes over a disabled control.
+pointer #off pointerdown 2 3
