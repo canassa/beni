@@ -103,12 +103,22 @@ module Dom
     Box
   type Error
     NotFound
+  type FullscreenError
+    NoElement
+    Unsupported
+    NotActivated
+    Refused
   alias Viewport
     Viewport
   value blur : String → Result Error ⊤  -- impure
   value box : String → Result Error Box  -- impure
+  value eachFullscreenChange : (Maybe String → ⊤) → ⊤  -- suspends
+  value exitFullscreen : ⊤ → ⊤  -- suspends
   value focus : String → Result Error ⊤  -- impure
+  value fullscreenElement : ⊤ → Maybe String  -- impure
+  value onFullscreenChange : (Maybe String → msg) → Sub msg  -- impure
   value rendered : ⊤ → ⊤  -- suspends
+  value requestFullscreen : String → Result FullscreenError ⊤  -- suspends
   value scrollIntoView : String → Result Error ⊤  -- impure
   value scrollTo : String, Float, Float → Result Error ⊤  -- impure
   value viewport : ⊤ → Viewport  -- impure

@@ -1,0 +1,126 @@
+-- load
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">""</p>
+  </main>
+</body>
+-- click #enter
+(fullscreen: #arena)
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"arena"</p>
+    <p id="answer">"ok"</p>
+  </main>
+</body>
+-- fullscreen escape
+(fullscreen: none)
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">"ok"</p>
+  </main>
+</body>
+-- click #enter
+(fullscreen: #arena)
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"arena"</p>
+    <p id="answer">"ok"</p>
+  </main>
+</body>
+-- click #exit
+(fullscreen: none)
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">"ok"</p>
+  </main>
+</body>
+-- click #exit
+(the DOM did not change)
+-- fullscreen refuse
+(the DOM did not change)
+-- click #enter
+(fullscreen refused: #arena)
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">"refused: Permissions check failed"</p>
+  </main>
+</body>
+-- fullscreen inactive
+(the DOM did not change)
+-- click #enter
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">"not activated"</p>
+  </main>
+</body>
+-- fullscreen unsupported
+(the DOM did not change)
+-- click #enter
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">"unsupported"</p>
+  </main>
+</body>
+-- fullscreen allow
+(the DOM did not change)
+-- click #missing
+<body>
+  <main>
+    <section id="arena">
+      <button id="enter">"enter"</button>
+      <button id="exit">"exit"</button>
+      <button id="missing">"missing"</button>
+    </section>
+    <p id="shown">"none"</p>
+    <p id="answer">"no element: nowhere"</p>
+  </main>
+</body>
+-- listeners document fullscreenchange
+(listeners: 1)
+(the DOM did not change)

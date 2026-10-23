@@ -1,0 +1,86 @@
+-- Full screen (boundary.md §9.8.6, amended 2026-10-23), against the page
+-- driver's scripted Fullscreen API.
+--
+--   - "enter": a click's command asks for `#arena` in full screen; the
+--     body gets `Ok ⊤`, and the subscription reports `Just "arena"`.
+--   - `fullscreen escape`: the user leaves with Escape; the subscription
+--     reports `Nothing`, with no command of the page.
+--   - "exit": `Dom.exitFullscreen` leaves full screen; with nothing in
+--     full screen it returns at once and changes nothing.
+--   - Each refusal is a value, never a crash: the browser's `TypeError`
+--     is `Refused`, no user activation is `NotActivated`, a browser that
+--     cannot is `Unsupported`, and an id nothing rendered is `NoElement`.
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Enter String
+    | Exit
+    | Entered (Result Dom.FullscreenError ⊤)
+    | Changed (Maybe String)
+
+
+type alias Model =
+    shown : String
+    answer : String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Enter id →
+            ( model, Cmd.perform λsend → send (Entered (Dom.requestFullscreen id)) )
+
+        Exit →
+            ( model, Cmd.do λ⊤ → Dom.exitFullscreen ⊤ )
+
+        Entered result →
+            ( { model | answer = answered result }, Cmd.none )
+
+        Changed shown →
+            ( { model | shown = Maybe.withDefault shown "none" }, Cmd.none )
+
+
+answered : Result Dom.FullscreenError ⊤ → String
+answered result =
+    case result of
+        Ok ⊤ →
+            "ok"
+
+        Err (Dom.NoElement id) →
+            "no element: ${id}"
+
+        Err Dom.Unsupported →
+            "unsupported"
+
+        Err Dom.NotActivated →
+            "not activated"
+
+        Err (Dom.Refused reason) →
+            "refused: ${reason}"
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section id="arena">
+            <button id="enter" onClick={Enter "arena"}>enter</button>
+            <button id="exit" onClick={Exit}>exit</button>
+            <button id="missing" onClick={Enter "nowhere"}>missing</button>
+        </section>
+        <p id="shown">{model.shown}</p>
+        <p id="answer">{model.answer}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { shown = "none", answer = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Dom.onFullscreenChange Changed
+        }

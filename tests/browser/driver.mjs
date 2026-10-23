@@ -132,6 +132,14 @@
 //   store <local|session> "<key>" "<value>"
 //                               `setItem` on that storage
 //   storage <local|session>     log `(localStorage: {…})`, every item by key
+//   fullscreen <allow|refuse|unsupported|inactive>
+//                               how the page's scripted Fullscreen API
+//                               answers the next requests (default
+//                               `allow`): show the element, reject with a
+//                               `TypeError`, `fullscreenEnabled` false, or
+//                               no user activation
+//   fullscreen escape           leave full screen, as the user's Escape
+//                               key does
 //   timers                      log `(timers: <n>)`, the timers the virtual
 //                               clock holds that have not fired or been cleared
 //   listeners <window|document> [<name>]
@@ -467,6 +475,44 @@ function prelude() {
       if (signal.aborted) aborted();
       else signal.addEventListener("abort", aborted, { once: true });
     });
+  };
+  // The page's Fullscreen API is scripted (docs/design/boundary.md §9.8.6),
+  // in both DOMs: happy-dom has none, and headless Chrome refuses every
+  // request, as a page's click is untrusted. A `fullscreen` step sets how
+  // the host answers the next requests — `allow` (the default), `refuse`
+  // (the standard's `TypeError`), `unsupported` (`fullscreenEnabled` is
+  // false) or `inactive` (no user activation) — or, with `escape`, leaves
+  // full screen as the user's Escape key does. Each change is logged
+  // `(fullscreen: #<id>)` or `(fullscreen: none)`, and fires
+  // `fullscreenchange` at the element, bubbling, before the promise
+  // settles.
+  const screen = { mode: "allow", element: null };
+  record.screen = screen;
+  const fullscreenTo = (element) => {
+    const before = screen.element;
+    screen.element = element;
+    record.log.push(`(fullscreen: ${element === null ? "none" : `#${element.id}`})`);
+    const at = element ?? before;
+    (at.isConnected ? at : document).dispatchEvent(new Event("fullscreenchange", { bubbles: true, composed: true }));
+  };
+  screen.leave = () => fullscreenTo(null);
+  // On the page's `document` itself: happy-dom's is no instance of its
+  // `Document`.
+  Object.defineProperty(document, "fullscreenEnabled", { configurable: true, get: () => screen.mode !== "unsupported" });
+  Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => screen.element });
+  Object.defineProperty(globalThis.navigator, "userActivation", { configurable: true, value: { get isActive() { return screen.mode !== "inactive"; }, hasBeenActive: true } });
+  Element.prototype.requestFullscreen = function () {
+    if (screen.mode === "refuse" || screen.mode === "unsupported" || screen.mode === "inactive") {
+      record.log.push(`(fullscreen refused: #${this.id})`);
+      return Promise.reject(new TypeError("Permissions check failed"));
+    }
+    if (screen.element !== this) fullscreenTo(this);
+    return Promise.resolve(undefined);
+  };
+  document.exitFullscreen = function () {
+    if (screen.element === null) return Promise.reject(new TypeError("Not in fullscreen"));
+    fullscreenTo(null);
+    return Promise.resolve(undefined);
   };
   // The page's `WebSocket` is scripted too (docs/design/boundary.md §9.11
   // (l)): each socket is numbered and logged as it is made, and stays
@@ -1123,6 +1169,13 @@ function step(s) {
     document.body.append(at);
     return null;
   }
+  if (s.command === "fullscreen") {
+    const screen = globalThis.__beniHarness.screen;
+    if (s.selector !== "escape") screen.mode = s.selector;
+    else if (screen.element === null) return "`fullscreen escape`: no element is in full screen";
+    else screen.leave();
+    return null;
+  }
   if (s.command === "store") {
     (s.selector === "local" ? localStorage : sessionStorage).setItem(s.key, s.value);
     return null;
@@ -1652,6 +1705,10 @@ if (stepsPath !== undefined) {
       if ((selector !== "local" && selector !== "session") || kv === null) usage(`${where}: \`store\` takes \`local\` or \`session\` and two JSON strings`);
       s.key = JSON.parse(kv[1]);
       s.value = JSON.parse(kv[2]);
+    } else if (command === "fullscreen") {
+      if (!["allow", "refuse", "unsupported", "inactive", "escape"].includes(selector) || argument !== undefined) {
+        usage(`${where}: \`fullscreen\` takes \`allow\`, \`refuse\`, \`unsupported\`, \`inactive\` or \`escape\``);
+      }
     } else if (command === "storage") {
       if ((selector !== "local" && selector !== "session") || argument !== undefined) usage(`${where}: \`storage\` takes \`local\` or \`session\``);
     } else if (command === "timers") {

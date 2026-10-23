@@ -1,0 +1,14 @@
+click #enter
+fullscreen escape
+click #enter
+click #exit
+click #exit
+fullscreen refuse
+click #enter
+fullscreen inactive
+click #enter
+fullscreen unsupported
+click #enter
+fullscreen allow
+click #missing
+listeners document fullscreenchange
