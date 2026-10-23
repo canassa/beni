@@ -3,9 +3,9 @@
 //! `BENI_PROBE_SOURCE` as `Main.beni` and expects the program to print
 //! `BENI_PROBE_STDOUT`, through `World.buildAndRun`, the path every
 //! scenario's program run takes. So the parent drives the run hashes of a
-//! scenario program the way a black-box suite meets them — its own index
-//! (`BENI_RUN_HASH_INDEX`), its own mode (`BENI_RUN_HASHES`), its own
-//! report directory — and reads what happened from the files it leaves.
+//! scenario program the way a black-box suite meets them — its own cache
+//! (`BENI_RUN_HASH_DIR`), its own report directory — and reads what
+//! happened from the files it leaves.
 //!
 //! Not part of any step's test list: `build.zig` only installs it.
 

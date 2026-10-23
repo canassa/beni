@@ -74,6 +74,20 @@
       zigGlobalCache = ''
         export ZIG_GLOBAL_CACHE_DIR="''${ZIG_GLOBAL_CACHE_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/zig-beni}"
       '';
+      # The run-hash cache (tests/blackbox/run_hash.zig): one empty file
+      # per emitted program that ran under Node and matched its golden, so
+      # the tests skip Node for it next time. One directory serves every
+      # worktree, because a digest covers every input of its verdict.
+      # `build.zig` computes the same default when the variable is unset,
+      # so this export is what a shell shows and what a tool reads. A
+      # BENI_RUN_HASH_DIR that the caller set is kept: CI pins
+      # `~/.cache/beni-run-hashes`, the path its cache steps restore and
+      # save (.github/workflows/ci.yml). Empty means no cache. The shells
+      # that run the tests export it: `default` and the shells that build
+      # on it, and `ownership`, whose Zorg runs the same gates.
+      runHashCache = ''
+        export BENI_RUN_HASH_DIR="''${BENI_RUN_HASH_DIR-''${XDG_CACHE_HOME:-$HOME/.cache}/beni-run-hashes}"
+      '';
     in
     {
       # `nix build .#checks.<system>.browser-chromium`: the `chromium` that
@@ -108,8 +122,9 @@
             pkgs.jq
           ];
 
-          # `zigGlobalCache` says which Zig cache is shared and which is not.
-          shellHook = zigGlobalCache + ''
+          # `zigGlobalCache` says which Zig cache is shared and which is not;
+          # `runHashCache` where the verified run hashes live.
+          shellHook = zigGlobalCache + runHashCache + ''
             echo "beni: zig $(zig version) · node $(node --version)"
           '';
         };
@@ -161,6 +176,8 @@
               # tools still work there, and the bridge needs Zorg on PATH.
               ++ pkgs.lib.optional (builtins.hasAttr system zorgReleases) zorg
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.util-linux ];
+            # `zorg build gates` runs the same tests, on the same cache.
+            shellHook = runHashCache;
           };
 
         # `nix develop .#browser`: the default shell plus Chromium, for
