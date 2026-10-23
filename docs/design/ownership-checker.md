@@ -2674,11 +2674,12 @@ costs more than the scan does at that width. A value at least `wide_index` wide 
 `-Downership-full-cross-check` indexes every holder's value, and it asserts at each projection that every
 skipped position is one the scan does nothing with.
 
-*As built:* per-unit instructions on the research dashboard (ReleaseFast, `build --release --no-cache --jobs=1`):
-the entry protocol went from 2.20M to 1.55M at N = 16, from 18.05M to 5.91M at N = 64, and from 19.83M to 20.03M
-at N = 256. It now grows ×3.8 and then ×3.4. The ownership phase (callgrind, `Ownership.run`) went from 11.40M to
-10.77M at N = 16, from 53.74M to 41.64M at N = 64, from 53.41M to 41.31M on `nowd`, and from 186.86M to 187.19M
-at N = 256. Every output hash is unchanged, `test-records-lost` shows no difference in 1 168 programs, and
+*As built:* per-unit instructions on the research dashboard (ReleaseFast, `build --release --no-cache --jobs=1`,
+measured on `c79840a7c`): the entry protocol went from 2.20M to 1.55M at N = 16, from 18.05M to 5.91M at N = 64,
+and from 19.83M to 20.03M at N = 256. It now grows ×3.8 and then ×3.4. The ownership phase (callgrind,
+`Ownership.run`, on `ee53c404b`) went from 12.28M to 11.62M at N = 16, from 56.38M to 43.59M at N = 64, from
+56.09M to 43.29M on `nowd`, and from 208.28M to 208.66M at N = 256. Every output hash is unchanged,
+`test-records-lost` shows no difference in 1 174 programs, and
 `-Downership-full-cross-check` on `ownership/` fails only `RecordTree` (#427) and `LevelPlacesKinds` (#694).
 
 ### 16.8 The library
