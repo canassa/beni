@@ -1,0 +1,6 @@
+--! A schema another module reads: exposed, so its tags all stay.
+
+pub schema Mark tagged "m" of
+    On as "on"
+        at : Int
+    Off as "off"
