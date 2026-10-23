@@ -1,0 +1,58 @@
+-- The end tags the parser supplies (docs/design/browser-inline.md §8.2,
+-- amended 2026-10-24): an end tag of the `address` … `ul` list pops every
+-- element open above its own, so the elements its last child leaves open
+-- need no end tags — `<section><header><aside><p>…</section>` — when each
+-- is one a pop closes exactly. A formatting element (`b`) keeps its end tag,
+-- which the parser would open again after the pop; so do a `form`, a
+-- `table`, an element of the parent's own name, whose end tag the parent's
+-- would match, and anything inside a parent whose end tag pops nothing
+-- (`span`). Each case is followed by a sibling holding a binding: the
+-- string must give the tree the view says, which the gates check with
+-- parse5, and the click lands on its button.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | a = model.a + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section>
+            <h2>Head</h2>
+            <header><aside><p>{model.a}</p></aside></header>
+        </section>
+        <p>after the section {model.a}</p>
+        <div><span><em>x</em></span></div>
+        <p>after the span {model.a}</p>
+        <div><b>bold</b></div>
+        <p>after the b {model.a}</p>
+        <div><form><output>{model.a}</output></form></div>
+        <p>after the form {model.a}</p>
+        <div><table><tbody><tr><td>{model.a}</td></tr></tbody></table></div>
+        <p>after the table {model.a}</p>
+        <div><div>{model.a}</div></div>
+        <p>after the inner div {model.a}</p>
+        <section><div><section><p>{model.a}</p></section></div></section>
+        <p>after the inner section {model.a}</p>
+        <span><div>{model.a}</div></span>
+        <div><ul><li><button data-role="inc" onClick={Inc}>+</button></li></ul></div>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { a = 0 }, update = update, view = view }) "root"

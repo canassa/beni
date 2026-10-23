@@ -1,0 +1,129 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <h2>"Head"</h2>
+        <header>
+          <aside>
+            <p>"0"</p>
+          </aside>
+        </header>
+      </section>
+      <p>"after the section 0"</p>
+      <div>
+        <span>
+          <em>"x"</em>
+        </span>
+      </div>
+      <p>"after the span 0"</p>
+      <div>
+        <b>"bold"</b>
+      </div>
+      <p>"after the b 0"</p>
+      <div>
+        <form>
+          <output>"0"</output>
+        </form>
+      </div>
+      <p>"after the form 0"</p>
+      <div>
+        <table>
+          <tbody>
+            <tr>
+              <td>"0"</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>"after the table 0"</p>
+      <div>
+        <div>"0"</div>
+      </div>
+      <p>"after the inner div 0"</p>
+      <section>
+        <div>
+          <section>
+            <p>"0"</p>
+          </section>
+        </div>
+      </section>
+      <p>"after the inner section 0"</p>
+      <span>
+        <div>"0"</div>
+      </span>
+      <div>
+        <ul>
+          <li>
+            <button data-role="inc">"+"</button>
+          </li>
+        </ul>
+      </div>
+    </main>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <main>
+      <section>
+        <h2>"Head"</h2>
+        <header>
+          <aside>
+            <p>"1"</p>
+          </aside>
+        </header>
+      </section>
+      <p>"after the section 1"</p>
+      <div>
+        <span>
+          <em>"x"</em>
+        </span>
+      </div>
+      <p>"after the span 1"</p>
+      <div>
+        <b>"bold"</b>
+      </div>
+      <p>"after the b 1"</p>
+      <div>
+        <form>
+          <output>"1"</output>
+        </form>
+      </div>
+      <p>"after the form 1"</p>
+      <div>
+        <table>
+          <tbody>
+            <tr>
+              <td>"1"</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>"after the table 1"</p>
+      <div>
+        <div>"1"</div>
+      </div>
+      <p>"after the inner div 1"</p>
+      <section>
+        <div>
+          <section>
+            <p>"1"</p>
+          </section>
+        </div>
+      </section>
+      <p>"after the inner section 1"</p>
+      <span>
+        <div>"1"</div>
+      </span>
+      <div>
+        <ul>
+          <li>
+            <button data-role="inc">"+"</button>
+          </li>
+        </ul>
+      </div>
+    </main>
+  </div>
+</body>
