@@ -1,0 +1,98 @@
+-- A `case` on a tagged schema's read whose arms make functions, fused across
+-- the calls under `--release` (`backend.md` §9, *Slice 9 across a call*,
+-- amended 2026-10-24 for #946): `apply`'s read of an `Event` is written into
+-- it, each constructor's `return` that arm's body and the nested `Inner`
+-- read written there too, its argument `value.state` bound first. No
+-- `Set`, `Scale` or `Ok` is built, the fields are read in the order the
+-- schemas declare them, and each lambda reads what its arm bound. `kept`'s
+-- lambda reads the value its `case` bound whole, so `shape` stays a
+-- function and both its calls stay. `run/CaseAcrossClosure` runs the same
+-- program in both builds.
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Scale as "scale"
+        state : Inner
+
+
+schema Inner =
+    times : Int
+    plus : Int
+
+
+apply : Value, List Int → List Int
+apply value xs =
+    case Schema.read (Event.schema ⊤) value of
+        Ok (Event.Set event) →
+            List.map xs λx → x + event.value
+
+        Ok (Event.Scale event) →
+            inner = event.state
+            List.map xs λx → x * inner.times + inner.plus
+
+        Err _ →
+            xs
+
+
+type Shape
+    = Circle Int
+    | Square Int
+
+
+shape : Int → Shape
+shape n =
+    doubled = n * 2
+    if doubled > 4 then
+        Circle doubled
+    else
+        Square doubled
+
+
+describe : Shape → String
+describe s =
+    case s of
+        Circle r →
+            "circle ${String.fromInt r}"
+
+        Square w →
+            "square ${String.fromInt w}"
+
+
+kept : Int → List String
+kept n =
+    case shape n of
+        Circle r →
+            [ "round ${String.fromInt r}" ]
+
+        other →
+            List.map [ 1, 2 ] λk → "${describe other} ${String.fromInt k}"
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            String.join (List.map (apply v [ 1, 2, 3 ]) String.fromInt) ","
+
+        Err _ →
+            "not JSON"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        ([ line "{\"type\": \"set\", \"value\": 10}"
+         , line "{\"type\": \"scale\", \"state\": {\"times\": 2, \"plus\": 1}}"
+         , line "{\"type\": \"scale\", \"state\": {\"times\": 2}}"
+         , line "{\"type\": \"scale\", \"state\": 3}"
+         , line "{\"type\": \"other\"}"
+         , line "[]"
+         , describe (shape 7)
+         ]
+            ++ kept 5
+            ++ kept 1
+        )

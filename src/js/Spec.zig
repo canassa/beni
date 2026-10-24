@@ -5380,8 +5380,9 @@ const Spec = struct {
                         const c = ir.extraData(@fromBackingInt(@intCast(ir.data(v).rhs)), JsIr.Cond);
                         if (!s.producer(m, c.consequent, 0) or !s.producer(m, c.alternate, 0)) return false;
                         if (!try s.onlyInspected(m, top, x)) return false;
-                        // `R` is copied: small, holding no function, its
-                        // own declarations given names of their own.
+                        // `R` is copied: small, its own declarations and
+                        // its arrows' parameters given names of their own
+                        // (*A rest that makes a function*).
                         var owned: std.ArrayList(u32) = .empty;
                         var size: u32 = 0;
                         var stack = try s.takeStack();
@@ -5391,7 +5392,12 @@ const Spec = struct {
                             size += 1;
                             if (size > 96) return false;
                             switch (ir.tag(node)) {
-                                .arrow, .func_decl, .gen_decl, .import_stmt, .export_stmt => return false,
+                                .arrow => {
+                                    if (ir.data(node).rhs != Node.arrow_plain) return false;
+                                    const f = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Func);
+                                    for (ir.extraSlice(f.params(), NameIndex)) |n| if (n != .none) try owned.append(s.arena, n.int());
+                                },
+                                .func_decl, .gen_decl, .import_stmt, .export_stmt => return false,
                                 .const_decl, .let_decl, .for_of, .while_true, .block_stmt => {
                                     const n: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
                                     if (n != .none) try owned.append(s.arena, n.int());
@@ -9392,6 +9398,8 @@ const Spec = struct {
         x: NameIndex,
         at: usize,
         rest: []const Index,
+        /// The rest as written is over 96 units (`Cont.bounded`).
+        bounded: bool,
     };
 
     /// What a copy of `f`'s body hands each of its `return`s to: the site's
@@ -9407,6 +9415,11 @@ const Spec = struct {
         args: []const Index,
         /// Per whole-program name: whether the program assigns it.
         assigned: []const bool,
+        /// When the rest as written is over 96 units: each copy of it must
+        /// not be, and `over` is set at the first that is, after which no
+        /// other is made (*Each copy of the rest*).
+        bounded: bool = false,
+        over: ?*bool = null,
     };
 
     fn fuseAt(s: *Spec, g: u32, sites: []const CallSite, assigned: []const bool) Allocator.Error!bool {
@@ -9422,7 +9435,7 @@ const Spec = struct {
         const scan = try s.scanOf(fm, decl.stmt, value, f) orelse return false;
         for (params) |p| if (p.unwrap()) |i| if (scan.counts[i] > 1) return false;
         for (scan.assigns) |a| if (a) return false;
-        if (!try s.plainStmts(fm, body, true) or !allReturn(fm.ir, body, 0)) return false;
+        if (!try s.plainStmts(fm, body, true, false) or !allReturn(fm.ir, body, 0)) return false;
         const inspected = try s.arena.alloc(bool, params.len);
         for (params, inspected) |p, *insp| insp.* = try s.onlyInspectedIn(fm, body, p);
 
@@ -9439,26 +9452,25 @@ const Spec = struct {
             const at = std.mem.indexOfScalar(Index, list, place.stmt) orelse return false;
             const rest = try s.arena.dupe(Index, list[at + 1 ..]);
             if (rest.len == 0) return false;
-            if (!try s.plainStmts(cm, rest, false) or !allReturn(cm.ir, rest, 0)) return false;
+            if (!try s.plainStmts(cm, rest, false, true) or !allReturn(cm.ir, rest, 0)) return false;
             // An unlabelled `break` of the rest that leaves it would, copied in
             // place of a `return` inside a `switch` of `f`, leave that
             // `switch` instead.
             if (leavingBreak(cm.ir, rest, 0)) return false;
             var size: u32 = 0;
             for (rest) |r| size += try s.stmtSize(cm, @intCast(site.module), r);
-            if (size > 96) return false;
+            const bounded = size > 96;
             if (try declCount(s, cm, site.top, x) != 1) return false;
             if (!try s.onlyCased(cm, site.top, x, rest)) return false;
             if (try s.mentionsGlobal(cm, rest, g)) return false;
             const args = cm.ir.extraSlice(cm.ir.subRange(@fromBackingInt(@intCast(cm.ir.data(site.call).rhs))), Index);
             if (args.len != params.len) return false;
-            for (args) |a| if (!try s.atomArgument(cm, a, site.top, assigned)) return false;
             if (decl.module != site.module) for (scan.mentioned.items) |nm| {
                 if (nm < scan.counts.len and scan.counts[nm] != 0) continue;
                 const h = fm.globalOf(@fromBackingInt(@intCast(nm))) orelse return false;
                 if (!try s.canName(cm, h)) return false;
             };
-            try fits.append(s.arena, .{ .site = site, .place = place, .x = x, .at = at, .rest = rest });
+            try fits.append(s.arena, .{ .site = site, .place = place, .x = x, .at = at, .rest = rest, .bounded = bounded });
         }
         if (fits.items.len == 0) return false;
 
@@ -9475,7 +9487,8 @@ const Spec = struct {
             const list = listAt(cm, fit.place.owner.?);
             for (list[fit.at..]) |r| old_size += try s.stmtSize(cm, mi, r);
             const args = try s.arena.dupe(Index, cm.ir.extraSlice(cm.ir.subRange(@fromBackingInt(@intCast(cm.ir.data(fit.site.call).rhs))), Index));
-            const cont: Cont = .{ .x = fit.x, .rest = fit.rest, .top = fit.site.top, .call = fit.site.call, .inspected = inspected, .args = args, .assigned = assigned };
+            var over = false;
+            const cont: Cont = .{ .x = fit.x, .rest = fit.rest, .top = fit.site.top, .call = fit.site.call, .inspected = inspected, .args = args, .assigned = assigned, .bounded = fit.bounded, .over = &over };
             var c: Copy = .{
                 .s = s,
                 .src = fm,
@@ -9497,12 +9510,22 @@ const Spec = struct {
                 if (std.mem.indexOfScalar(NameIndex, params, @fromBackingInt(@intCast(nm))) != null) continue;
                 try c.fresh(nm, false);
             }
-            for (params, args) |p, a| if (p.unwrap()) |pi| {
-                c.subst[pi] = a.toOptional();
-            };
+            // An argument that is not an atom is bound first, in order, and
+            // its parameter reads the binding: the call evaluated its
+            // arguments once each, left to right, before the body.
             var out: std.ArrayList(u32) = .empty;
+            for (params, args) |p, a| {
+                if (try s.atomArgument(cm, a, fit.site.top, assigned)) {
+                    if (p.unwrap()) |pi| c.subst[pi] = a.toOptional();
+                    continue;
+                }
+                const bound = try s.freshLocal(cm);
+                try out.append(s.arena, (try cm.addNode(s.gpa, .const_decl, cm.ir.pos(a), bound.int(), (try c.dupDst(a)).int())).int());
+                if (p.unwrap()) |pi| c.subst[pi] = (try cm.addNode(s.gpa, .ident, Node.no_pos, bound.int(), 0)).toOptional();
+            }
             for (body) |stmt| try c.stmtsInto(stmt, &out, 0);
             for (out.items) |o| new_size += try s.stmtSize(cm, mi, @fromBackingInt(@intCast(o)));
+            if (over) return false;
             copy.* = out.items;
         }
         if (new_size >= old_size) return false;
@@ -9547,8 +9570,10 @@ const Spec = struct {
 
     /// Statements a copy may be made of: no function, no `continue`, no
     /// `try`, no loop; every `return` with a value when
-    /// `returns_valued`.
-    fn plainStmts(s: *Spec, m: *Mod, stmts: []const Index, returns_valued: bool) Allocator.Error!bool {
+    /// `returns_valued`. With `fns`, a plain arrow is allowed whose body is
+    /// such statements in turn, with no function of its own (*A rest that
+    /// makes a function*).
+    fn plainStmts(s: *Spec, m: *Mod, stmts: []const Index, returns_valued: bool, fns: bool) Allocator.Error!bool {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         for (stmts) |st| try JsIr.pushOperand(s.arena, &stack, st);
@@ -9557,7 +9582,13 @@ const Spec = struct {
             if (budget == 0) return false;
             budget -= 1;
             switch (m.ir.tag(node)) {
-                .arrow, .func_decl, .gen_decl, .continue_stmt, .try_stmt, .while_true, .for_of, .import_stmt, .export_stmt => return false,
+                .arrow => {
+                    if (!fns or m.ir.data(node).rhs != Node.arrow_plain) return false;
+                    const f = m.ir.extraData(@fromBackingInt(@intCast(m.ir.data(node).lhs)), JsIr.Func);
+                    if (!try s.plainStmts(m, try s.arena.dupe(Index, m.ir.extraSlice(f.body(), Index)), false, false)) return false;
+                    continue;
+                },
+                .func_decl, .gen_decl, .continue_stmt, .try_stmt, .while_true, .for_of, .import_stmt, .export_stmt => return false,
                 .return_stmt => if (returns_valued and @as(Node.OptionalIndex, @fromBackingInt(@intCast(m.ir.data(node).lhs))) == .none) return false,
                 else => {},
             }
@@ -9677,7 +9708,9 @@ const Spec = struct {
     }
 
     /// A statement's size in slice 8's model: each expression's
-    /// `nodeCount`, and 4 for each statement around them.
+    /// `nodeCount`, and 4 for each statement around them. A plain arrow
+    /// in an expression is 4 and a node per parameter, and its body's
+    /// statements by the same model (*A rest that makes a function*).
     fn stmtSize(s: *Spec, m: *Mod, mi: u32, stmt: Index) Allocator.Error!u32 {
         const ir = m.ir;
         var size: u32 = 0;
@@ -9686,7 +9719,12 @@ const Spec = struct {
         try JsIr.pushOperand(s.arena, &stack, stmt);
         while (JsIr.popOperand(&stack)) |node| {
             if (!ir.tag(node).isStatement() and ir.tag(node) != .switch_case) {
-                size += nodeCount(ir, node, &s.pts, mi);
+                var fns: FnsMet = .{};
+                size += countNodes(ir, node, &s.pts, mi, &fns);
+                for (fns.items[0..fns.len]) |arrow| {
+                    const f = ir.extraData(@fromBackingInt(@intCast(ir.data(arrow).lhs)), JsIr.Func);
+                    for (try s.arena.dupe(Index, ir.extraSlice(f.body(), Index))) |st| size += try s.stmtSize(m, mi, st);
+                }
                 continue;
             }
             size += 4;
@@ -9742,28 +9780,45 @@ const Spec = struct {
                     const nm: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
                     if (nm.unwrap()) |i| if (ir.name(nm).module == .none) try k.fresh(i, false);
                 },
+                // And a function's parameters (*A rest that makes a function*).
+                .arrow => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(ir.data(node).lhs)), JsIr.Func);
+                    for (try s.arena.dupe(NameIndex, ir.extraSlice(f.params(), NameIndex))) |nm| {
+                        if (nm.unwrap()) |i| try k.fresh(i, false);
+                    }
+                },
                 else => {},
             }
             try pushChildren(s.arena, ir, node, &stack);
         }
         if (known and try s.projectsToAtoms(m, cont, p)) {
+            // In place, when the copy, its decided branches gone, makes
+            // the object a read of `x` gives at most once (`Copy.made`).
             k.known = .{ .x = cont.x, .p = p, .cont = cont };
-        } else {
-            // Bound once, and the rest reads the binding.
-            const x2 = try s.freshLocal(m);
-            try out.append(s.arena, (try m.addNode(s.gpa, .const_decl, ir.pos(p), x2.int(), p.int())).int());
-            k.subst[cont.x.int()] = (try m.addNode(s.gpa, .ident, Node.no_pos, x2.int(), 0)).toOptional();
+            const start = out.items.len;
+            for (cont.rest) |r| {
+                try k.stmtsInto(r, out, 0);
+                // What follows a jump the copy decided is never reached.
+                if (out.items.len > start and allReturn(m.ir, &.{@fromBackingInt(out.items[out.items.len - 1])}, 0)) break;
+            }
+            if (k.made <= 1) return;
+            out.shrinkRetainingCapacity(start);
+            k.known = null;
         }
+        // Bound once, and the rest reads the binding.
+        const x2 = try s.freshLocal(m);
+        try out.append(s.arena, (try m.addNode(s.gpa, .const_decl, ir.pos(p), x2.int(), p.int())).int());
+        k.subst[cont.x.int()] = (try m.addNode(s.gpa, .ident, Node.no_pos, x2.int(), 0)).toOptional();
         for (cont.rest) |r| try k.stmtsInto(r, out, 0);
     }
 
     /// Whether every read of `cont.x` the rest makes, `x` known to be `p`,
-    /// ends at a name, a literal, or a chain on a value that is not an
-    /// object literal — so that no object is made twice where it was made
-    /// once.
+    /// has a value there: a chain that reads through `p`'s literals reads a
+    /// key each holds, and `x` compared is no array, function or template.
+    /// How often the copy makes an object is counted as it is made
+    /// (`Copy.made`): only the branches it keeps are counted.
     fn projectsToAtoms(s: *Spec, m: *Mod, cont: *const Cont, p: Index) Allocator.Error!bool {
         const ir = m.ir;
-        var made: u32 = 0;
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         for (cont.rest) |r| try JsIr.pushOperand(s.arena, &stack, r);
@@ -9771,15 +9826,7 @@ const Spec = struct {
             if (ir.tag(node) == .member) {
                 if (memberBase(ir, node)) |base| if (ir.data(base).lhs == cont.x.int()) {
                     // The outermost read of the chain: only it is asked.
-                    const v = project(ir, node, cont.x, p) orelse return false;
-                    switch (ir.tag(v)) {
-                        // A value made where it is read: once per copy at most.
-                        .object, .array, .arrow, .template => {
-                            made += 1;
-                            if (made > 1) return false;
-                        },
-                        else => {},
-                    }
+                    _ = project(ir, node, cont.x, p) orelse return false;
                     continue;
                 };
             }
@@ -9802,13 +9849,9 @@ const Spec = struct {
                     continue;
                 }
             }
-            // Read whole (`onlyCased`): `p` is written there, so an object
-            // literal is made there, once per copy at most.
+            // Read whole (`onlyCased`): `p` is written there; an object
+            // literal is made there (`Copy.made`).
             if (ir.tag(node) == .ident and ir.data(node).lhs == cont.x.int()) switch (ir.tag(p)) {
-                .object => {
-                    made += 1;
-                    if (made > 1) return false;
-                },
                 .array, .arrow, .template => return false,
                 else => {},
             };
@@ -9927,12 +9970,16 @@ const Spec = struct {
         if (dm.ir.tag(obj) != .object) return null;
         // Slice 9's test for a tag (`tagValue`): no program code writes
         // `$` on the object or under a key it cannot name, and nothing the
-        // pass cannot see writes one.
-        if (s.in.tag_prop == none or !s.pts.ok or s.pts.unknown_any) return null;
-        if (std.mem.indexOfScalar(u32, s.pts.unknown_props.items, s.in.tag_prop) != null) return null;
+        // pass cannot see writes one. A write through a value fact 3 does
+        // not know (`unknown_any`, `unknown_props`) reaches only an object
+        // it does not track or a site that escaped: a var that becomes ⊤
+        // escapes the sites it held (`makeTop`), and a value written into
+        // ⊤ escapes (`write`). So it is asked only of an escaped site.
+        if (s.in.tag_prop == none or !s.pts.ok) return null;
         const site = s.pts.siteAt(decl.module, obj) orelse return null;
         try s.readsSite(site);
         const st = &s.pts.sites.items[site];
+        if (st.escaped and (s.pts.unknown_any or std.mem.indexOfScalar(u32, s.pts.unknown_props.items, s.in.tag_prop) != null)) return null;
         if (st.kind != .object or st.prog_any) return null;
         if (std.mem.indexOfScalar(u32, st.prog_props.items, s.in.tag_prop) != null) return null;
         if (site >= s.spread_sites.len or s.spread_sites[site]) return null;
@@ -10008,6 +10055,19 @@ const Spec = struct {
         /// While the rest of a fused site's list is copied for one `return
         /// P`: its binding `x` is known to be `p`, a node of the module.
         known: ?Known = null,
+        /// With `x` known: how many objects, arrays, functions and templates
+        /// the copy has made where `x` or a chain on it was read; more than
+        /// one and the copy binds `x` instead (`Spec.continuation`).
+        made: u32 = 0,
+
+        /// Count `v`, a node of the destination written where `x` was read,
+        /// in `made` when it makes a value.
+        fn madeOf(c: *Copy, v: Index) void {
+            switch (c.dst.ir.tag(v)) {
+                .object, .array, .arrow, .template => c.made += 1,
+                else => {},
+            }
+        }
 
         fn gpa(c: *Copy) Allocator {
             return c.s.gpa;
@@ -10029,9 +10089,19 @@ const Spec = struct {
             const ir = c.src.ir;
             const d = ir.data(from);
             if (c.cont) |cont| if (ir.tag(from) == .return_stmt) {
+                if (cont.over) |o| if (o.*) return;
                 const v = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs)))).unwrap().?;
                 const p = try c.expr(v, depth + 1);
-                return c.s.continuation(c.dst, cont, p, out, 0);
+                const start = out.items.len;
+                try c.s.continuation(c.dst, cont, p, out, 0);
+                if (cont.bounded) {
+                    var size: u32 = 0;
+                    for (out.items[start..]) |o| size += try c.s.stmtSize(c.dst, c.dst.index, @fromBackingInt(@intCast(o)));
+                    if (size > 96) if (cont.over) |o| {
+                        o.* = true;
+                    };
+                }
+                return;
             };
             if (c.known != null) switch (ir.tag(from)) {
                 // A block of the rest: its declarations are named afresh in
@@ -10103,7 +10173,10 @@ const Spec = struct {
             const ir = c.src.ir;
             const d = ir.data(from);
             switch (ir.tag(from)) {
-                .ident => if (d.lhs == kn.x.int()) return try c.dupDst(kn.p),
+                .ident => if (d.lhs == kn.x.int()) {
+                    c.madeOf(kn.p);
+                    return try c.dupDst(kn.p);
+                },
                 .member => {
                     const base = memberBase(ir, from) orelse return null;
                     if (ir.data(base).lhs != kn.x.int()) return null;
@@ -10124,6 +10197,7 @@ const Spec = struct {
                         v = propertyOf(c.dst.ir, v, keys[len - 1]) orelse return null;
                         len -= 1;
                     }
+                    c.madeOf(v);
                     var e = try c.dupDst(v);
                     while (len > 0) {
                         len -= 1;
@@ -10589,6 +10663,19 @@ fn seq(parts: []const Use, acts: bool) Use {
 /// About how many bytes expression `root` prints in, short names one byte
 /// each (slice 8's size model), capped.
 fn nodeCount(ir: *const JsIr, root: Index, pts: *Pts, mi: u32) u32 {
+    return countNodes(ir, root, pts, mi, null);
+}
+
+/// The plain arrows `countNodes` met and did not walk, for the caller to
+/// count by their bodies (`Spec.stmtSize`).
+const FnsMet = struct {
+    items: [8]Index = undefined,
+    len: usize = 0,
+};
+
+/// `nodeCount`; with `fns`, a plain arrow counts 4 and one per parameter
+/// and is put in `fns` instead of counting as big.
+fn countNodes(ir: *const JsIr, root: Index, pts: *Pts, mi: u32, fns: ?*FnsMet) u32 {
     var stack: [64]Index = undefined;
     var len: usize = 1;
     stack[0] = root;
@@ -10670,8 +10757,15 @@ fn nodeCount(ir: *const JsIr, root: Index, pts: *Pts, mi: u32) u32 {
                 for (items, 0..) |a, i| children[i] = a;
                 n = items.len;
             },
-            // A function counts as big.
-            .arrow => return 4096,
+            // A function counts as big, but where the caller counts its
+            // body (`fns`).
+            .arrow => {
+                const met = fns orelse return 4096;
+                if (d.rhs != Node.arrow_plain or met.len == met.items.len) return 4096;
+                met.items[met.len] = node;
+                met.len += 1;
+                count += @intCast(ir.extraSlice(ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func).params(), NameIndex).len);
+            },
             else => {},
         }
         if (len + n > stack.len) return 4096;
@@ -17715,6 +17809,34 @@ fn casedOnly(arena: Allocator, ir: *const JsIr, top: Index, x: NameIndex, rest: 
             grew = true;
         }
     }
+    // A function of the rest may run later, and more than once: it may not
+    // read `x`, which a copy writes in place, and it reads an alias, a
+    // binding the copy makes once, only as the object of a property read
+    // (*A rest that makes a function*).
+    {
+        var walk: std.ArrayList(Index) = .empty;
+        var inner: std.ArrayList(Index) = .empty;
+        for (rest) |r| try JsIr.pushOperand(arena, &walk, r);
+        while (JsIr.popOperand(&walk)) |node| {
+            if (ir.tag(node) == .arrow) try inner.append(arena, node) else try pushChildren(arena, ir, node, &walk);
+        }
+        for (inner.items) |arrow| {
+            var objects: std.ArrayList(Index) = .empty;
+            try pushChildren(arena, ir, arrow, &walk);
+            while (JsIr.popOperand(&walk)) |node| {
+                switch (ir.tag(node)) {
+                    .member, .index_get => {
+                        const obj: Index = @fromBackingInt(@intCast(ir.data(node).lhs));
+                        if (ir.tag(obj) == .ident and ir.data(obj).lhs != x.int()) try objects.append(arena, obj);
+                    },
+                    .ident => if (std.mem.indexOfScalar(u32, names.items, ir.data(node).lhs) != null and
+                        std.mem.indexOfScalar(Index, objects.items, node) == null) return false,
+                    else => {},
+                }
+                try pushChildren(arena, ir, node, &walk);
+            }
+        }
+    }
     var whole: std.ArrayList(Index) = .empty;
     for (names.items) |n| try returnedWhole(arena, ir, rest, @fromBackingInt(@intCast(n)), &whole);
     try whole.appendSlice(arena, aliases.items);
@@ -17732,6 +17854,14 @@ fn casedOnly(arena: Allocator, ir: *const JsIr, top: Index, x: NameIndex, rest: 
             .member => {
                 const obj: Index = @fromBackingInt(@intCast(d.lhs));
                 if (held.is(ir, names.items, obj)) continue;
+            },
+            // A computed read: its key is walked, its object is read.
+            .index_get => {
+                const obj: Index = @fromBackingInt(@intCast(d.lhs));
+                if (held.is(ir, names.items, obj)) {
+                    try JsIr.pushOperand(arena, &stack, @fromBackingInt(@intCast(d.rhs)));
+                    continue;
+                }
             },
             .binary => {
                 const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
@@ -17761,7 +17891,7 @@ fn casedOnly(arena: Allocator, ir: *const JsIr, top: Index, x: NameIndex, rest: 
     return true;
 }
 
-const CasedCase = enum { property, alias_of_alias, compared_with_alias, handed, not_sole };
+const CasedCase = enum { property, alias_of_alias, compared_with_alias, handed, not_sole, fn_alias_read, fn_alias_index, fn_binding_read, fn_alias_compared, fn_alias_whole };
 
 /// `const z = x` and a use of it, as `casedOnly` is asked of them.
 fn casedCase(gpa: Allocator, case: CasedCase) !bool {
@@ -17791,6 +17921,23 @@ fn casedCase(gpa: Allocator, case: CasedCase) !bool {
             const args = try b.addRange(&.{try specTestNode(&b, .ident, z.int(), 0)});
             break :blk try specTestNode(&b, .call, (try specTestNode(&b, .ident, g.int(), 0)).int(), @backingInt(try b.addRecord(args)));
         },
+        // `() => …`, returned: a function of the rest.
+        .fn_alias_read, .fn_alias_index, .fn_binding_read, .fn_alias_compared, .fn_alias_whole => blk: {
+            const inner: Index = switch (case) {
+                .fn_alias_read => try specTestNode(&b, .member, (try specTestNode(&b, .ident, z.int(), 0)).int(), k.int()),
+                .fn_alias_index => try specTestNode(&b, .index_get, (try specTestNode(&b, .ident, z.int(), 0)).int(), (try specTestNode(&b, .ident, w.int(), 0)).int()),
+                .fn_binding_read => try specTestNode(&b, .member, (try specTestNode(&b, .ident, x.int(), 0)).int(), k.int()),
+                .fn_alias_compared => cmp: {
+                    const pair = try b.addRecord(JsIr.Binary{ .left = try specTestNode(&b, .ident, z.int(), 0), .right = try specTestNode(&b, .ident, w.int(), 0) });
+                    break :cmp try specTestNode(&b, .binary, @backingInt(pair), @backingInt(JsIr.BinaryOp.strict_eq));
+                },
+                else => try specTestNode(&b, .ident, z.int(), 0),
+            };
+            const fbody = try b.addRange(&.{try specTestNode(&b, .return_stmt, inner.int(), 0)});
+            const params = try b.addNames(&.{});
+            const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = fbody.start, .body_end = fbody.end });
+            break :blk try specTestNode(&b, .arrow, @backingInt(func), Node.arrow_plain);
+        },
     };
     try rest.append(gpa, try specTestNode(&b, .return_stmt, value.int(), 0));
     const body = try b.addRange(rest.items);
@@ -17818,12 +17965,28 @@ test "an alias of a fused site's binding is held to the binding's rules" {
     try testing.expect(!try casedCase(testing.allocator, .not_sole));
 }
 
+test "a function of a fused site's rest reads an alias of its binding only through a property" {
+    // `backend.md` §9, *Slice 9 across a call*, amended 2026-10-24 (#946):
+    // a function may run later and more than once, so it may not read `x`,
+    // which a copy writes in place, and it reads an alias, which a copy
+    // binds once, only as the object of a property read.
+    try testing.expect(try casedCase(testing.allocator, .fn_alias_read));
+    try testing.expect(try casedCase(testing.allocator, .fn_alias_index));
+    try testing.expect(!try casedCase(testing.allocator, .fn_binding_read));
+    try testing.expect(!try casedCase(testing.allocator, .fn_alias_compared));
+    // A `return` of the function is not the rest's: `z` returned there is
+    // read whole.
+    try testing.expect(!try casedCase(testing.allocator, .fn_alias_whole));
+}
+
 /// Every mention of `x` in `stmts` that a `return` gives whole: its value,
 /// or a branch of a conditional that is (`Spec.onlyCased`).
 fn returnedWhole(arena: Allocator, ir: *const JsIr, stmts: []const Index, x: NameIndex, out: *std.ArrayList(Index)) Allocator.Error!void {
     var stack: std.ArrayList(Index) = .empty;
     for (stmts) |st| try JsIr.pushOperand(arena, &stack, st);
     while (JsIr.popOperand(&stack)) |node| {
+        // A function's `return` is not the rest's.
+        if (ir.tag(node) == .arrow) continue;
         if (ir.tag(node) == .return_stmt) {
             var v = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).lhs)))).unwrap() orelse continue;
             var values: std.ArrayList(Index) = .empty;
