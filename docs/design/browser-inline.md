@@ -1292,6 +1292,46 @@ program's module imports. On the workers side of the fork the row keeps its func
 function too, and the loader could not tell it from the route's own (`emit/release/inline/
 ShapeLoader`, `browser/inline/ShapeLoader`, whose transcript is `CaseLoader`'s).
 
+*Amended 2026-10-24 (#946, E7 of the S1 hand-minify pass): a row holds the shape and the
+constants of a `case` that decodes or keeps.* A route's function whose body is exactly `case
+Json.decodeValue x of Ok new → { … }; Err _ → old` is "the decoded value with some constants, or
+the old one". Here `x` and `old` are its two parameters, `new` is the `Ok` pattern's variable,
+and each field of the record is either `new`'s field of the same name or a constant. A constant
+is an integer, float or string literal, or a constructor without arguments of a type that
+another module declares. A constructor of a schema, of the program's module or of the function's
+own module is not taken. When the run is a shape run, the decoded record's fields must be
+exactly the fields the record copies from `new`. Then the row holds the run's shape and a record
+of the constants after its field, `[key, shape, field, constants]`, or `[key, shape, field, plan,
+constants]` when the program's rows carry plans. The program then calls the `…ShapedConst`
+loaders. Their copy writes the decoded value's fields and then the constants into the object at
+the row's field: `Object.assign(old, next, constants)`, or the plan's copy and then
+`Object.assign(old, constants)`. A row without constants has nothing at that index, and
+`Object.assign` skips `undefined`. A row whose result is the old value is not copied, so the
+constants are written only with a decoded value, as the `Ok` arm writes them. Every route's
+`case` in the S1 benchmark is this one: a widget's typed-input field reset to `Nothing`.
+
+Why the change is exact:
+- The decoded record holds exactly the fields that the function's record copies, under the same
+  names. The object the copy writes therefore gets the same fields with the same values as the
+  function's record would give it.
+- The constants are made once, when the table is made, not at each call. Each is a literal or
+  the one object of a nullary constructor (`backend.md` §4, *A nullary constructor is one
+  object*), so every read sees the same value.
+- Validation and its order are the codec's.
+- A snapshot stays all or nothing: every row decodes before any copy, and the constants are
+  written in the copy.
+- The row's call of the function is not followed, as for a shape row of #915, so the function
+  is in the output only when something else names it.
+
+Fixtures:
+- `emit/release/inline/ShapeLoader` and `browser/inline/ShapeLoader`: `W2.replace`'s constant is
+  `seatsTyped = Nothing`.
+- `emit/release/inline/ShapeConstants` and `browser/inline/ShapeConstants`: constants of five
+  kinds (a string, an integer, a float, `False` and `Nothing`). A record that reads a field of
+  another name, and one that gives a constructor of its own module's type, keep their functions.
+  Pushes, a bad push and two snapshots behave as the source says. The expected transcript was
+  made with the compiler before this change.
+
 *Amended 2026-10-24 (#915): a snapshot's record of widgets is written from the route table.* A
 snapshot names each widget twice: once as a row of the keyed route table, and once as a field of the
 schema record that holds the widgets' raw states (`schema Widgets = w1 : Value as "w1" …`), whose
