@@ -168,6 +168,10 @@ const retired_deep_cap: usize = 256;
 /// `callbacks` limit).
 const inst_depth: u32 = 4;
 
+/// One callback of a callee summary asked whether it returns owned at a
+/// written place (`Walker.ro_guards`, `Walker.loan_chain`).
+const RoGuard = struct { s: *const Summary, j: u32, written: u32, extent: WriteExtent };
+
 pub const Position = struct { line: u32, col: u32 };
 
 pub const Positions = struct {
@@ -8084,6 +8088,16 @@ const Walker = struct {
     /// §30.9: the path of the class's result that is handed on, when only a
     /// part of it is (`cb_j.q`): its other paths are not looked at.
     ro_within: u32 = eps,
+    /// The callbacks `returnsOwned` is establishing, by callee summary, callback
+    /// and written place: a callee that hands one callback another's result
+    /// (`Dict.merge`'s steps share one accumulator) asks the same question
+    /// around the cycle, and the answer is the invariant: each returns owned
+    /// if every one handed to it does. A callback asked again on the way is
+    /// assumed, as `provOwned`'s `guard` assumes the one being established.
+    ro_guards: std.ArrayList(RoGuard) = .empty,
+    /// The callback results `callbackLoanDemands` is following, so a cycle
+    /// of callbacks handing each other their results is followed once.
+    loan_chain: std.ArrayList(RoGuard) = .empty,
     /// §18.2: the conditions, by index (`cond_yes`, `cond_lost` and
     /// `cond_shared` first), and the condition of each list cell that has
     /// one other than its kind's.
@@ -16306,7 +16320,34 @@ const Walker = struct {
         /// instantiation's maker keeps them (`projArg`). Checked against
         /// `avs` before it is used.
         args: ?*ArgIndex = null,
+        /// The other callbacks of this same call whose results are being
+        /// instantiated further out (§16.4 item 6). A callee may hand one
+        /// callback what another returned — `Dict.merge`'s three steps
+        /// share one accumulator — and then the system of their results is
+        /// one least fixpoint: an inner callback reads an outer one's
+        /// current approximation, as a fold reads its own (`self_av`),
+        /// rather than instantiating it again one level deeper.
+        outer: ?*const SelfLink = null,
     };
+
+    /// One callback result under instantiation, for `InstCtx.outer`.
+    const SelfLink = struct {
+        s: *const Summary,
+        inst: Inst.Index,
+        j: u32,
+        av: AV,
+        next: ?*const SelfLink,
+    };
+
+    /// The current approximation of callback `j` of this call, when its
+    /// result is being instantiated further out.
+    fn outerSelf(ctx: InstCtx, j: u32) ?AV {
+        var at = ctx.outer;
+        while (at) |link| : (at = link.next) {
+            if (link.s == ctx.s and link.inst == ctx.inst and link.j == j) return link.av;
+        }
+        return null;
+    }
 
     /// `s.res` instantiated at the call (§16.4 item 6).
     /// §31.7: the number record object `c` takes in this summary: the next
@@ -17605,7 +17646,7 @@ const Walker = struct {
                 // the enclosing lambda's own call of it (§30.9).
                 if (p.b == 1) return w.projPath(try w.single(.{ .kind = .cbres, .a = p.a, .b = ctx.inst.int() }), p.path, null);
                 if (!hasActual(ctx.s, ctx.avs.len, p.a)) return w.single(.{ .kind = .top, .a = 0 });
-                const whole = if (p.a == ctx.self_j) ctx.self_av else if (ctx.depth >= inst_depth) try w.chainLimit(ctx.depth + 1) else try w.instCb(p.a, ctx);
+                const whole = if (p.a == ctx.self_j) ctx.self_av else if (outerSelf(ctx, p.a)) |av| av else if (ctx.depth >= inst_depth) try w.chainLimit(ctx.depth + 1) else try w.instCb(p.a, ctx);
                 return w.projPath(whole, p.path, null);
             },
         }
@@ -17641,12 +17682,16 @@ const Walker = struct {
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.unknownCb(j, ctx);
         if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
+        // The callback whose result encloses this one keeps its place.
+        const link: SelfLink = .{ .s = ctx.s, .inst = ctx.inst, .j = ctx.self_j, .av = ctx.self_av, .next = ctx.outer };
+        const outer: ?*const SelfLink = if (ctx.self_j != none and ctx.self_j != j) &link else ctx.outer;
         var x: AV = &.{};
         var rounds: u32 = 0;
         while (rounds < round_cap) : (rounds += 1) {
             var inner = ctx;
             inner.self_j = j;
             inner.self_av = x;
+            inner.outer = outer;
             const grew = w.carry_grew;
             const y = try w.instCbOnce(j, classes, inner);
             const next = try w.unionOf(&.{ x, y });
@@ -17718,7 +17763,9 @@ const Walker = struct {
     fn instFold(w: *Walker, j: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!AV {
         var shape: AV = &.{};
         var made: std.ArrayList(u32) = .empty;
+        const link: SelfLink = .{ .s = ctx.s, .inst = ctx.inst, .j = ctx.self_j, .av = ctx.self_av, .next = ctx.outer };
         var inner = ctx;
+        inner.outer = if (ctx.self_j != none and ctx.self_j != j) &link else ctx.outer;
         inner.self_j = j;
         inner.conds = ctx.conds;
         inner.effects = ctx.effects;
@@ -19386,9 +19433,14 @@ const Walker = struct {
     /// demand. A supply of another callback's result asks the same of that
     /// callback's actual. §29's taken-item loans are the case it began with.
     fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, extent: WriteExtent, depth: u32) Allocator.Error!void {
+        // A callback result already followed on this chain: a cycle of
+        // callbacks handing each other their results, its demands made.
+        for (w.loan_chain.items) |g| if (g.s == callee.sum and g.j == j and g.written == written and g.extent == extent) return;
         // Past the limit a demand would be dropped: an error instead (§16.7).
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const actual = (try w.actualOf(callee.sum, avs, j)) orelse return;
+        try w.loan_chain.append(w.a, .{ .s = callee.sum, .j = j, .written = written, .extent = extent });
+        defer _ = w.loan_chain.pop();
         for (try w.classesOf(actual)) |cls| {
             const c = (try w.callbackSummary(cls, j, .{ .inst = inst, .s = callee.sum, .avs = avs, .depth = depth })) orelse continue;
             try w.returnedParamDemands(inst, callee, args, avs, c, j, written, deep, extent, depth);
@@ -19436,6 +19488,10 @@ const Walker = struct {
     fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32, extent: WriteExtent) Allocator.Error!bool {
         if (p.kind != .cb) return true;
         if (p.a == guard) return true;
+        // A callback asked around a cycle of callbacks: the invariant's
+        // assumption (`ro_guards`).
+        const at_written = if (written == none) none else try w.o.concat(p.path, written);
+        for (w.ro_guards.items) |g| if (g.s == s and g.j == p.a and g.written == at_written and g.extent == extent) return true;
         // Past §16.7's `callbacks` limit: an error at the declaration, as
         // `callbackLoanDemands` is; the answer is `ro_exact`, as for a
         // function the checker cannot place (not owned in the exact pass).
@@ -19857,6 +19913,8 @@ const Walker = struct {
     /// (`none`: every path). Aliases of those roots at any result path count.
     fn returnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32, written: u32, extent: WriteExtent) Allocator.Error!bool {
         if (c.limit != .none) return false;
+        try w.ro_guards.append(w.a, .{ .s = s, .j = j, .written = written, .extent = extent });
+        defer _ = w.ro_guards.pop();
         // A pessimistic callee's supply rows no longer say
         // where each parameter is supplied: nothing it hands back is owned.
         if (s.limit != .none) return false;

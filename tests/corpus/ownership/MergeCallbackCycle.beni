@@ -1,0 +1,47 @@
+-- #968: `Dict.merge` hands each of its three callbacks what the others
+-- returned (one accumulator), so their results and their ownership are one
+-- cycle. The cycle is followed once (`InstCtx.outer`, `ro_guards`,
+-- `loan_chain`) instead of one level deeper per lap, which hit §16.7's
+-- `callbacks` limit and refused `fine` and `collect`. A callback that returns
+-- a top-level list, and a top-level start, stay refused, exactly.
+import Dict exposing (Dict)
+
+
+shared : List Int
+shared = [ 0 ]
+
+
+onLeft : String, Int, List Int → List Int
+onLeft k v acc = List.push acc v
+
+
+onBoth : String, Int, Int, List Int → List Int
+onBoth k v w acc = shared
+
+
+onRight : String, Int, List Int → List Int
+onRight k v acc = acc
+
+
+pub sharedFromBoth : Dict String Int, Dict String Int → List Int
+sharedFromBoth a b = Dict.merge a b [] onLeft onBoth onRight
+
+
+pub sharedStart : Dict String Int, Dict String Int → List Int
+sharedStart a b = Dict.merge a b shared onLeft keepFirst onRight
+
+
+keepFirst : String, Int, Int, List Int → List Int
+keepFirst k v w acc = acc
+
+
+pub fine : Dict String Int, Dict String Int → List Int
+fine a b = Dict.merge a b [] onLeft keepFirst onRight
+
+
+onBothSum : String, Int, Int, List Int → List Int
+onBothSum k v w acc = List.push acc (v + w)
+
+
+pub collect : Dict String Int, Dict String Int → List Int
+collect a b = Dict.merge a b [] onLeft onBothSum onLeft
