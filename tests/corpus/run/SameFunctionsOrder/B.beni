@@ -1,0 +1,23 @@
+--! `pickB`, the same code as `A.pickA`, called while the modules are
+--! evaluated.
+
+pub offset : Int
+offset = 11
+
+
+pickB : Maybe Int, Int → Int
+pickB m d =
+    case m of
+        Just x →
+            x * 3 + offset
+
+        Nothing →
+            d * 7 - offset
+
+
+pub table : List Int
+table = [ pickB (Just 1) 0, pickB Nothing 2 ]
+
+
+pub pickTwice : Int → Int
+pickTwice n = pickB (Just n) 0 + pickB Nothing n

@@ -8779,16 +8779,32 @@ a function (the snapshot's `a => g[a[2]]`), which the rule does not copy.
 node tags in the same places, the same literals, operators and property names, and the same
 whole-program names, with each local of one in exactly the places of one local of the other,
 declared by the same parameter or declaration. Only the tags whose payload `sameCode` compares
-qualify, and a function holding any other tag is never merged. When the later of two such
-functions, by whole-program id, is mentioned only as the callee of a call, each of those calls
-names the earlier, where its module can name it, and reachability drops the later. Two such
+qualify, and a function holding any other tag is never merged. When one of two such
+functions is mentioned only as the callee of a call, each of those calls names the other, where
+its module can name it, and reachability drops the one merged. Two such
 functions do the same thing with the same arguments wherever they are called from, and a call
 cannot see which object it calls. A function whose value is taken (passed, stored, compared) is
 not merged, because its identity can be seen: a listener added twice, or a property set on it.
-Neither is one a file the pass cannot see names (`Input.escaping`). Candidates are grouped by a
-hash of their code (`codeHash`), so only functions with equal hashes are compared. Fixtures:
-`emit/release/app/SameFunctions` (two called functions merged, and one passed as a value kept
-apart) and `run/SameFunctions`. Measured (release, brotli 11): `inline/SnapshotFromTable`
+Neither is one a file the pass cannot see names (`Input.escaping`). Two more conditions keep the
+merge exact:
+- **No node either function holds is one lowering listed for the optimiser**: a binding kept for
+  its effect, a discarded value, or a function whose result nothing reads (`unobserved`). Such a
+  function is printed with no `return`, so it is not the code of an equal function whose result
+  is read.
+- **The kept function is bound whenever the merged one is called.** Either it is declared before
+  the merged one in the same module, or its module is one the merged one's module imports from
+  (directly or through others), which ES module evaluation order evaluates first. Otherwise no
+  top-level initialiser may reach the merged one (`startupReach`), so it runs only once every
+  module is evaluated. A call at start-up could otherwise meet the kept `const` before it is
+  initialised. Either of the two can be kept, whichever the order allows.
+
+Candidates are grouped by a hash of their code (`codeHash`), so only functions with equal hashes
+are compared. Fixtures: `emit/release/app/SameFunctions` (two called functions merged, and one
+passed as a value kept apart), `run/SameFunctions`, `run/SameFunctionsOrder` (a function called
+while the modules are evaluated, equal to one declared later, stays apart: merged, the release
+build threw a `ReferenceError`) and `run/SameFunctionsUnobserved` (a function whose result
+nothing reads, equal to one whose result is read, stays apart: merged, the release build printed
+`undefined`). Measured (release, brotli 11): `inline/SnapshotFromTable`
 1 751 → 1 725, `inline/ShapeLoader` 1 743 → 1 725, `inline/RootRuns` 825 → 819,
 `app/NullaryShared` 281 → 277. `SpecPlaceAfterEdit` is 172 → 177 after brotli but shorter raw:
 `inner` and a function equal to it merge, and the later names shift by one letter. On S1, one

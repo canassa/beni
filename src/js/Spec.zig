@@ -8950,24 +8950,41 @@ const Spec = struct {
     /// #934): two top-level `const f = (…) => …` that nothing assigns,
     /// whose code is the same (`sameCode`) — `Maybe.withDefault` and
     /// `Result.withDefault` once `Just` and `Ok` are both tag 0 — are one
-    /// function. Every mention of the later, by whole-program id, is the
-    /// earlier's where its module can name it, and reachability drops the
-    /// later — when every mention of the later is the callee of a call, so
-    /// that nothing can tell the two apart by identity. One that a file the
-    /// pass cannot see names keeps its own.
+    /// function. Every mention of one, the merged one, names the kept one where
+    /// its module can name it, and reachability drops the merged one — when
+    /// every mention of the merged one is the callee of a call, so that
+    /// nothing can tell the two apart by identity, and the kept one is bound
+    /// whenever the merged one is called (declared before it, in a module its
+    /// module imports from, or the merged one reached by no top-level
+    /// initialiser). One that a file the pass cannot see names keeps its own.
     /// True when a mention moved.
     fn mergeSame(s: *Spec) Allocator.Error!bool {
-        const Cand = struct { g: u32, module: u32, value: Index, hash: u64 };
+        const Cand = struct { g: u32, module: u32, at: u32, value: Index, hash: u64 };
         var cands: std.ArrayList(Cand) = .empty;
-        for (s.mods, 0..) |*m, mi| for (m.ir.extraSlice(m.ir.body, Index)) |stmt| {
-            if (m.ir.tag(stmt) != .const_decl) continue;
-            const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse continue;
-            if (g >= s.assigned.len or s.assigned[g]) continue;
-            const value: Index = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
-            if (m.ir.tag(value) != .arrow) continue;
-            const hash = try s.codeHash(m, value) orelse continue;
-            try cands.append(s.arena, .{ .g = g, .module = @intCast(mi), .value = value, .hash = hash });
-        };
+        for (s.mods, 0..) |*m, mi| {
+            // A node lowering listed for the optimiser — a binding kept for
+            // its effect, a discarded value, a function whose result nothing
+            // reads (printed with no `return`) — prints differently from
+            // the same node unlisted: a function holding one is never merged.
+            const t = m.tables orelse continue;
+            var listed: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, m.ir.nodes.len);
+            for ([_][]const Index{ t.keep.items, t.discards.items, t.unobserved.items }) |list| {
+                for (list) |node| if (node.int() < listed.bit_length) listed.set(node.int());
+            }
+            for (m.ir.extraSlice(m.ir.body, Index), 0..) |stmt, at| {
+                if (m.ir.tag(stmt) != .const_decl) continue;
+                const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse continue;
+                if (g >= s.assigned.len or s.assigned[g]) continue;
+                const value: Index = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
+                if (m.ir.tag(value) != .arrow) continue;
+                const hash = try s.codeHash(m, value, &listed) orelse continue;
+                try cands.append(s.arena, .{ .g = g, .module = @intCast(mi), .at = @intCast(at), .value = value, .hash = hash });
+            }
+        }
+        // Which modules each module reads names of: what is evaluated
+        // before it.
+        const deps = try s.moduleDeps();
+        const startup = try s.startupReach();
         std.mem.sort(Cand, cands.items, {}, struct {
             fn less(_: void, a: Cand, b: Cand) bool {
                 return a.hash < b.hash or (a.hash == b.hash and a.g < b.g);
@@ -9007,10 +9024,28 @@ const Spec = struct {
             for (group, 0..) |a, ai| {
                 if (to[a.g] != none) continue;
                 for (group[ai + 1 ..]) |b| {
-                    if (to[b.g] != none or isRoot(s.in, b.g) or mentions[b.g] != calls[b.g]) continue;
+                    if (to[b.g] != none) continue;
+                    // The kept one must be bound whenever the merged one is:
+                    // declared before it in its module, or in a module
+                    // evaluated before its module. Otherwise a call made at
+                    // start-up could meet the kept `const` before it is
+                    // initialised. The merged one is only ever called, and
+                    // named by no file the pass cannot see.
+                    const a_first = if (b.module == a.module) a.at < b.at else try s.dependsOn(deps, b.module, a.module);
+                    const b_first = if (b.module == a.module) b.at < a.at else try s.dependsOn(deps, a.module, b.module);
+                    // Or the merged one runs only once every module is
+                    // evaluated: no top-level initialiser reaches it.
+                    const drop_b = (a_first or !startup[b.g]) and !isRoot(s.in, b.g) and mentions[b.g] == calls[b.g];
+                    const drop_a = !drop_b and (b_first or !startup[a.g]) and !isRoot(s.in, a.g) and mentions[a.g] == calls[a.g];
+                    if (!drop_a and !drop_b) continue;
                     if (!try s.sameCode(&s.mods[a.module], a.value, &s.mods[b.module], b.value)) continue;
-                    to[b.g] = a.g;
                     any = true;
+                    if (drop_b) {
+                        to[b.g] = a.g;
+                    } else {
+                        to[a.g] = b.g;
+                        break;
+                    }
                 }
             }
         }
@@ -9024,7 +9059,12 @@ const Spec = struct {
                     if (m.ir.tag(node) != .ident) continue;
                     const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(node).lhs))) orelse continue;
                     if (g >= to.len or to[g] == none) continue;
-                    const name = try s.nameIn(m, to[g]) orelse continue;
+                    // A kept one may itself be merged into one before it:
+                    // each step goes to one evaluated earlier, so the chain
+                    // ends.
+                    var kept = to[g];
+                    while (to[kept] != none) kept = to[kept];
+                    const name = try s.nameIn(m, kept) orelse continue;
                     try hits.append(s.arena, .{ .node = node, .name = name });
                 }
                 if (hits.items.len == 0) continue;
@@ -9041,13 +9081,14 @@ const Spec = struct {
     /// tags in walk order, each literal's bytes, each property's name, each
     /// whole-program name's id and each operator; its locals not at all.
     /// Null for a function holding a node `sameCode` does not compare.
-    fn codeHash(s: *Spec, m: *Mod, value: Index) Allocator.Error!?u64 {
+    fn codeHash(s: *Spec, m: *Mod, value: Index, listed: *const std.DynamicBitSetUnmanaged) Allocator.Error!?u64 {
         const ir = m.ir;
         var h: std.hash.Wyhash = .init(0);
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         try JsIr.pushOperand(s.arena, &stack, value);
         while (JsIr.popOperand(&stack)) |node| {
+            if (node.int() < listed.bit_length and listed.isSet(node.int())) return null;
             const tag = ir.tag(node);
             const d = ir.data(node);
             h.update(std.mem.asBytes(&tag));
@@ -9062,6 +9103,88 @@ const Spec = struct {
             try pushChildren(s.arena, ir, node, &stack);
         }
         return h.final();
+    }
+
+    /// Per module, the modules it imports a name from: ES module evaluation
+    /// order evaluates each before it. A mention with no import — a body
+    /// copied from another module into one scope — orders nothing.
+    fn moduleDeps(s: *Spec) Allocator.Error![]const []const u32 {
+        const out = try s.arena.alloc([]const u32, s.mods.len);
+        for (s.mods, out, 0..) |*m, *o, mi| {
+            const seen = try s.arena.alloc(bool, s.mods.len);
+            @memset(seen, false);
+            var list: std.ArrayList(u32) = .empty;
+            const note = struct {
+                fn add(sp: *Spec, mm: *Mod, n: NameIndex, me: usize, sn: []bool, l: *std.ArrayList(u32)) Allocator.Error!void {
+                    const g = mm.globalOf(n) orelse return;
+                    const decl = sp.decl[g] orelse return;
+                    if (decl.module == me or sn[decl.module]) return;
+                    sn[decl.module] = true;
+                    try l.append(sp.arena, decl.module);
+                }
+            };
+            for (m.ir.extraSlice(m.ir.body, Index)) |top| {
+                if (m.ir.tag(top) == .import_stmt) {
+                    const imp = m.ir.extraData(@fromBackingInt(@intCast(m.ir.data(top).lhs)), JsIr.Import);
+                    for (m.ir.extraSlice(imp.specs(), JsIr.Specifier)) |spec| try note.add(s, m, spec.local, mi, seen, &list);
+                }
+            }
+            o.* = list.items;
+        }
+        return out;
+    }
+
+    /// Per whole-program name: whether evaluating the modules may run or
+    /// read it — mentioned by a top-level statement that is not a function's
+    /// declaration, or by the declaration of a name that is, every node of
+    /// it, a function made there included. A function no such statement
+    /// reaches runs only once every module is evaluated, called from what
+    /// the entry file starts.
+    fn startupReach(s: *Spec) Allocator.Error![]const bool {
+        const reach = try s.arena.alloc(bool, s.globals);
+        @memset(reach, false);
+        var work: std.ArrayList(u32) = .empty;
+        const visit = struct {
+            fn stmt(sp: *Spec, m: *Mod, top: Index, r: []bool, w: *std.ArrayList(u32)) Allocator.Error!void {
+                for (try sp.preorder(m, top)) |node| if (m.ir.tag(node) == .ident) {
+                    const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(node).lhs))) orelse continue;
+                    if (g >= r.len or r[g]) continue;
+                    r[g] = true;
+                    try w.append(sp.arena, g);
+                };
+            }
+        };
+        for (s.mods) |*m| for (m.ir.extraSlice(m.ir.body, Index)) |top| {
+            switch (m.ir.tag(top)) {
+                .import_stmt, .export_stmt, .func_decl, .gen_decl => continue,
+                .const_decl => if (m.ir.tag(@as(Index, @fromBackingInt(@intCast(m.ir.data(top).rhs)))) == .arrow) continue,
+                else => {},
+            }
+            try visit.stmt(s, m, top, reach, &work);
+        };
+        while (work.pop()) |g| {
+            const decl = s.decl[g] orelse continue;
+            try visit.stmt(s, &s.mods[decl.module], decl.stmt, reach, &work);
+        }
+        return reach;
+    }
+
+    /// Whether module `from` imports from module `to`, directly or through
+    /// the modules it imports from (`moduleDeps`): `to` is then evaluated
+    /// before it.
+    fn dependsOn(s: *Spec, deps: []const []const u32, from: u32, to: u32) Allocator.Error!bool {
+        const seen = try s.arena.alloc(bool, deps.len);
+        @memset(seen, false);
+        var work: std.ArrayList(u32) = .empty;
+        try work.append(s.arena, from);
+        seen[from] = true;
+        while (work.pop()) |m| for (deps[m]) |d| {
+            if (d == to) return true;
+            if (seen[d]) continue;
+            seen[d] = true;
+            try work.append(s.arena, d);
+        };
+        return false;
     }
 
     /// Whether arrows `a` of `ma` and `b` of `mb` are the same code: the same
