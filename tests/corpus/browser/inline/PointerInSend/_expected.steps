@@ -1,0 +1,4 @@
+click #go
+pointer #arena pointerdown 12 0
+pointer #inner pointerdown 13 0
+pointer #pad pointerdown 14 0

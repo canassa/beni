@@ -50,6 +50,7 @@ module Inline
   value roots : V, V, Int, V, Int → ⊤  -- impure
   value run : V → ⊤  -- impure
   value send : V, V → ⊤  -- impure
+  value sendVia : V, V, V → ⊤  -- impure
   value stop : ⊤ → ⊤  -- impure
   value stopped : ⊤ → Bool  -- impure
   value text : V, V → ⊤  -- impure

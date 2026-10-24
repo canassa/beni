@@ -44,6 +44,10 @@ pub const lowering: m.Lowering = .{
         // `(f, x)`: the dispatch guard, which every entry into program code
         // goes through.
         .{ .name = "send", .arity = 2 },
+        // `(f, event, read)`: `send` for a listener whose event has a `via`
+        // extractor `read`, which it calls while the event is dispatched,
+        // even when the send waits (boundary.md §9.8.20 (d), #559).
+        .{ .name = "sendVia", .arity = 3 },
         // `(f)`: what undoes the mount, run once by `stop`.
         .{ .name = "own", .arity = 1 },
         // `(id)`: the element a program mounts at.
@@ -341,23 +345,29 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         const h = try js.name(name);
         var listener = h;
         const own: ?*Local = if (local) |li| (if (inside(&locals.items[li])) &locals.items[li] else null) else null;
+        // An event's `via` extractor goes to the runtime with the listener,
+        // which takes what it reads: `sendVia` calls it while the event is
+        // dispatched, even when the send is queued (§9.8.20 (d), #559).
+        const read: ?m.Expr = if (ev.item.form == .payload) try cx.extractor(ev.index) else null;
         if (ev.item.form == .payload) {
-            const e = try cx.fresh("event");
+            const e = try cx.fresh(if (read != null) "value" else "event");
             const blk = try js.block();
-            const payload = if (try cx.extractor(ev.index)) |extract| try js.call(extract, &.{try js.name(e)}) else try js.name(e);
             if (own) |x| {
-                const value = try cx.fresh("value");
-                try js.constant(blk, value, payload);
+                const value = if (read != null) e else try cx.fresh("value");
+                if (read == null) try js.constant(blk, value, try js.name(e));
                 try localArm(pg, blk, x, &.{value});
-            } else try js.expression(blk, try js.call(h, &.{payload}));
-            listener = try js.arrow(&.{e}, blk);
+                listener = try js.arrow(&.{e}, blk);
+            } else if (read == null) {
+                try js.expression(blk, try js.call(h, &.{try js.name(e)}));
+                listener = try js.arrow(&.{e}, blk);
+            }
         } else if (own) |x| {
             const blk = try js.block();
             try localArm(pg, blk, x, &.{});
             listener = try js.arrow(&.{}, blk);
         }
         const node = try pg.ref(ev.target);
-        if (!facts.prevent_default and !facts.stop_propagation) {
+        if (read == null and !facts.prevent_default and !facts.stop_propagation) {
             try js.expression(body, try pg.onCall(node, listener, kind, ev.ctx));
             continue;
         }
@@ -376,7 +386,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
-        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), &.{ listener, try js.name(evn) }));
+        try js.expression(dom_blk, if (read) |rd| try js.call(try js.name(try cx.runtime("sendVia")), &.{ listener, try js.name(evn), rd }) else try js.call(try js.name(try cx.runtime("send")), &.{ listener, try js.name(evn) }));
         try js.expression(body, try js.call(try js.member(node, "addEventListener"), &.{ try js.string(kind orelse "click"), try js.arrow(&.{evn}, dom_blk) }));
     }
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
@@ -1291,7 +1301,7 @@ const Page = struct {
         // `on`, the event's name left out for a click.
         for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
-            if (evinfo.captures.len == 0 and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
+            if (evinfo.captures.len == 0 and pl.read == null and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
                 try js.expression(body, try pg.onCall(node, f, pl.kind, evinfo.ctx));
                 continue;
             }
@@ -1314,7 +1324,7 @@ const Page = struct {
             }
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
-            try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(listener), try js.name(ev) }));
+            try js.expression(dom, if (pl.read) |rd| try js.call(try js.name(try cx.runtime("sendVia")), &.{ try js.name(listener), try js.name(ev), rd }) else try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(listener), try js.name(ev) }));
             try js.expression(body, try js.call(try js.member(node, "addEventListener"), &.{
                 try js.string(pl.kind orelse "click"),
                 try js.arrow(&.{ev}, dom),
@@ -2517,14 +2527,15 @@ const Page = struct {
         const blk = try js.block();
         var event: ?m.Name = null;
         var payload: ?m.Expr = null;
+        // With a `via` extractor the listener takes what it reads, and the
+        // runtime's `sendVia` calls it while the event is dispatched, even
+        // when the send is queued (boundary.md §9.8.20 (d), #559).
+        var read: ?m.Expr = null;
         if (ev.item.form == .payload) {
-            const e = try cx.fresh("event");
+            read = try cx.extractor(ev.index);
+            const e = try cx.fresh(if (read != null) "payload" else "event");
             event = e;
-            if (try cx.extractor(ev.index)) |extract| {
-                const p = try cx.fresh("payload");
-                try js.constant(blk, p, try js.call(extract, &.{try js.name(e)}));
-                payload = try js.name(p);
-            } else payload = try js.name(e);
+            payload = try js.name(e);
         }
         var saved: std.ArrayList(CallArgs) = .empty;
         if (ev.captures.len != 0) {
@@ -2543,7 +2554,7 @@ const Page = struct {
         const message = try cx.programMessageFields(blk, v, payload);
         pg.leave(arms);
         return switch (message) {
-            .key => |kc| .{ .node = ev.node, .target = ev.target, .blk = blk, .event = event, .key = kc.key, .args = kc.args, .kind = kind, .flags = facts },
+            .key => |kc| .{ .node = ev.node, .target = ev.target, .blk = blk, .event = event, .read = read, .key = kc.key, .args = kc.args, .kind = kind, .flags = facts },
             .value => limit(cx, ev.node, "this event's handler value is not a constructor of the program's message whose key `browser-inline` can name, so its message would need a dispatcher"),
         };
     }
@@ -2634,6 +2645,9 @@ const Plan = struct {
     blk: m.Block,
     /// The listener's parameter, when it reads the event.
     event: ?m.Name,
+    /// The event's `via` extractor, which `sendVia` applies to the event
+    /// before the listener takes what it read.
+    read: ?m.Expr,
     key: u32,
     args: []const m.Expr,
     kind: ?[]const u8,

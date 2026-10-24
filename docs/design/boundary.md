@@ -5293,9 +5293,13 @@ interface, which holds only `pub` values, so `pointer` was `pub`.
 extractor **synchronously, in the listener of the element that has the handler, while the event is
 dispatched**, and `currentTarget` is that element (§9.3, amended here). `dom` does: `listen`'s
 listener calls `fire`, which applies the extractor before it computes the message. `browser-inline`
-does on its usual path, but a send made while another send runs is queued with its raw event, and
-the extractor would run after the dispatch (issue #559; latent, because a host never dispatches a
-pointer event inside a send). **The type is the guarantee**, given that obligation: a `Pointer`
+does too: a listener whose event has an extractor hands it to the runtime's `sendVia` beside the
+handler, which calls it at once when a send runs, so that only the send of what it read waits, and
+else inside the dispatch it starts. *Amended 2026-10-25 (#559):* until then
+the extractor was called inside the handler, so a send made while another ran was queued with its
+raw event and the extractor ran after the dispatch, where `pointer` threw `TypeError`. A command
+body that dispatches a pointer event shows it (`browser/inline/PointerInSend`). A throw of the
+extractor while its send waits stops the page, as any defect does. **The type is the guarantee**, given that obligation: a `Pointer`
 comes only from the listener of a pointer event on its own element, so `localX` of every `Pointer`
 is a point in its handler's element, under every lowering and at any time after. The other readers
 read properties of the event, which do not change after the dispatch. **The second wall is `Js`**:
