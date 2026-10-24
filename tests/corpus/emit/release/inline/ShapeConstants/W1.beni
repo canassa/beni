@@ -1,0 +1,61 @@
+--! The first widget: cups the host sends, and five fields its `replace`
+--! resets to constants, which a local edit changes.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    cups : Int
+    note : String
+    count : Int
+    ratio : Float
+    flag : Bool
+    mode : Maybe String
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = -1, note = "", count = 1, ratio = 1.5, flag = True, mode = Just "start" }
+
+
+pub type Msg
+    = Edit
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Edit →
+            { model | note = "edited", count = 9, ratio = 2.25, flag = True, mode = Just "edited" }
+
+
+--| The cups the host sent, every other field reset; or the model as it was
+--| when it sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { cups = new.cups
+            , note = "fresh"
+            , count = 0
+            , ratio = 0.5
+            , flag = False
+            , mode = Nothing
+            }
+
+        Err _ →
+            model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="edit1" onClick={Edit}>Edit</button>
+        <p>{model.cups}</p>
+        <p>{model.note}</p>
+        <p>{model.count}</p>
+        <p>{String.fromFloat model.ratio}</p>
+        <p>{if model.flag then "on" else "off"}</p>
+        <p>{Maybe.withDefault model.mode "none"}</p>
+    </section>

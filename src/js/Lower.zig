@@ -552,7 +552,13 @@ pub const Direct = struct {
         /// is a shape run: its codec, in `fn_module`'s plan, whose shape the
         /// row holds in place of `F` (§8.4, amended 2026-10-24).
         shape: ?u32 = null,
+        /// With `shape`, the constants `F`'s `case` writes beside the
+        /// decoded fields, each an instruction of `fn_module`: the row holds
+        /// them as a record after its field, or after its plan (§8.4,
+        /// amended 2026-10-24, #946).
+        consts: []const RowConst = &.{},
     };
+    pub const RowConst = struct { field: Symbol, value: u32 };
     pub const PlanItem = struct { field: Symbol, sub: ?[]const PlanItem = null };
     pub const RouteSite = struct {
         module: u32,
@@ -15188,13 +15194,16 @@ pub const Lowerer = struct {
         const shaped = for (prog.routes.rows) |r| {
             if (r.shape != null) break true;
         } else false;
+        const consts = for (prog.routes.rows) |r| {
+            if (r.consts.len != 0) break true;
+        } else false;
         switch (site.kind) {
             .keyed => {
                 const scrutinee: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(inst).lhs));
                 const key = try l.expr(out, scrutinee);
                 const raw = try l.expr(out, @fromBackingInt(site.raws[0]));
                 const table = try l.routeTable(prog, @intCast(pi), site, planned);
-                const load = try l.ident(try l.routeRuntime(loaderName(true, planned, shaped)), p);
+                const load = try l.ident(try l.routeRuntime(loaderName(true, planned, shaped, consts)), p);
                 var args: [5]Node.Index = .{ try l.ident(model, p), try l.ident(table, p), key, raw, undefined };
                 if (shaped) args[4] = try l.coreSchemaValue("validShape", p);
                 try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(load, args[0..if (shaped) 5 else 4], p)).int(), Node.Data.unused));
@@ -15222,7 +15231,7 @@ pub const Lowerer = struct {
                         x.* = try l.fieldProperty(prog.routes.rows[row].field, try l.expr(out, @fromBackingInt(raw)), p);
                     break :raws try l.object(props, p);
                 };
-                const all = try l.ident(try l.routeRuntime(loaderName(false, planned, shaped)), p);
+                const all = try l.ident(try l.routeRuntime(loaderName(false, planned, shaped, consts)), p);
                 var args: [4]Node.Index = .{ try l.ident(model, p), rows, raws, undefined };
                 if (shaped) args[3] = try l.coreSchemaValue("validShape", p);
                 try out.append(l.scratch, try l.add(.expr_stmt, p, (try l.call(all, args[0..if (shaped) 4 else 3], p)).int(), Node.Data.unused));
@@ -15240,12 +15249,20 @@ pub const Lowerer = struct {
     }
 
     /// The loader a route site calls: keyed or not, with plans or not, and
-    /// with rows that may hold a shape or not.
-    fn loaderName(keyed: bool, planned: bool, shaped: bool) []const u8 {
+    /// with rows that may hold a shape or not, and constants with it
+    /// (which only a shape's row holds).
+    fn loaderName(keyed: bool, planned: bool, shaped: bool, consts: bool) []const u8 {
         const names = [2][2][2][]const u8{
             .{ .{ "loadAll", "loadAllShaped" }, .{ "loadAllPlanned", "loadAllShapedPlanned" } },
             .{ .{ "load", "loadShaped" }, .{ "loadPlanned", "loadShapedPlanned" } },
         };
+        if (consts) {
+            const with = [2][2][]const u8{
+                .{ "loadAllShapedConst", "loadAllShapedPlannedConst" },
+                .{ "loadShapedConst", "loadShapedPlannedConst" },
+            };
+            return with[@intFromBool(keyed)][@intFromBool(planned)];
+        }
         return names[@intFromBool(keyed)][@intFromBool(planned)][@intFromBool(shaped)];
     }
 
@@ -15324,10 +15341,51 @@ pub const Lowerer = struct {
             break :f try l.ident(try l.name(.{ .module = l.in.graph.moduleName(fm).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
         };
         const k = if (key) |bytes| try l.stringNode(bytes, p) else try l.numberNode("0", p);
-        var parts: [4]Node.Index = .{ k, f, try l.fieldString(r.field, p), undefined };
-        if (planned) parts[3] = try l.planArray(r.plan, p);
-        const range = try l.b.addRange(parts[0..if (planned) 4 else 3]);
+        var parts: [5]Node.Index = .{ k, f, try l.fieldString(r.field, p), undefined, undefined };
+        var len: usize = 3;
+        if (planned) {
+            parts[3] = try l.planArray(r.plan, p);
+            len = 4;
+        }
+        if (r.consts.len != 0) {
+            parts[len] = try l.rowConsts(r, p);
+            len += 1;
+        }
+        const range = try l.b.addRange(parts[0..len]);
         return l.add(.array, p, @backingInt(range.start), @backingInt(range.end));
+    }
+
+    /// A shape row's constants as a record (§8.4, amended 2026-10-24,
+    /// #946): each a literal of the function's module, or the program
+    /// module's value of a nullary constructor of another module, its one
+    /// object when the type is tagged (`backend.md` §4).
+    fn rowConsts(l: *Lowerer, r: Direct.RouteRow, p: u32) !Node.Index {
+        const fb = l.in.birs[r.fn_module];
+        const props = try l.scratch.alloc(Node.Index, r.consts.len);
+        for (props, r.consts) |*x, c| {
+            const v: Inst.Index = @fromBackingInt(c.value);
+            const value = switch (fb.instTag(v)) {
+                .int, .float => try l.numberNode(fb.bytes(v), p),
+                .string => try l.stringNode(fb.bytes(v), p),
+                .ext_ctor => value: {
+                    const d = fb.instData(v);
+                    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+                    const rep = l.ctorRepExternal(module, d.rhs);
+                    const iface = &l.in.interfaces[d.lhs];
+                    const tag = iface.symbols[@backingInt(iface.ctors[d.rhs].name)];
+                    if (rep == .tagged) {
+                        const nk: NullaryKey = .{ .ext = true, .module = d.lhs, .ctor = d.rhs };
+                        l.askNullary(nk);
+                        break :value try l.ident(try l.putNullary(nk, rep, tag), p);
+                    }
+                    break :value try l.ctorValue(rep, tag, &.{}, p);
+                },
+                // `Emit.caseRowFits` holds every other row to its function.
+                else => unreachable,
+            };
+            x.* = try l.fieldProperty(c.field, value, p);
+        }
+        return l.object(props, p);
     }
 
     /// A copy plan as data: each field's name, or `[name, plan]` for a

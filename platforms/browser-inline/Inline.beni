@@ -476,6 +476,36 @@ pub loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤
 loadAllShapedPlanned model rows raws check = loadShapedRows model rows (atField raws) check planned
 
 
+-- A row that holds a shape may hold constants after it, `[key, shape,
+-- field, constants]` or `[key, shape, field, plan, constants]`: a record of
+-- the fields the route's `case` gives a constant beside the decoded ones
+-- (`browser-inline.md` §8.4, amended 2026-10-24, #946). The `…Const`
+-- loaders' copy writes them after the decoded fields.
+
+--| `loadShaped` for rows that may hold constants.
+pub loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤
+loadShapedConst model table key raw check =
+    loadShapedRows model (keyedRow table key) (λ_ → raw) check assignConst
+
+
+--| `loadAllShaped` for rows that may hold constants.
+pub loadAllShapedConst : V, V, V, (V, V → Result V V) → ⊤
+loadAllShapedConst model rows raws check =
+    loadShapedRows model rows (atField raws) check assignConst
+
+
+--| `loadShapedPlanned` for rows that may hold constants.
+pub loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤
+loadShapedPlannedConst model table key raw check =
+    loadShapedRows model (keyedRow table key) (λ_ → raw) check plannedConst
+
+
+--| `loadAllShapedPlanned` for rows that may hold constants.
+pub loadAllShapedPlannedConst : V, V, V, (V, V → Result V V) → ⊤
+loadAllShapedPlannedConst model rows raws check =
+    loadShapedRows model rows (atField raws) check plannedConst
+
+
 -- The row of `table` whose key is `key`, as a list of rows: empty when
 -- there is none. A keyed table's keys are the string patterns of one
 -- `case`, which differ, since a repeated one is `redundant_pattern`: so at
@@ -544,6 +574,23 @@ assign old next _ =
 
 planned : V, V, V → ⊤
 planned old next row = copy old next (Js.at row 3)
+
+
+-- `assign`, then the row's constants, when it has any: a row without them
+-- has nothing at that index, which `Object.assign` skips. A row whose
+-- result is the old value is not copied at all (`copyIn`), so the constants
+-- are written only with a decoded value, as the route's `Ok` arm gives them.
+assignConst : V, V, V → ⊤
+assignConst old next row =
+    _ = Js.call (Js.global "Object") "assign" [ old, next, Js.at row 3 ]
+    ⊤
+
+
+plannedConst : V, V, V → ⊤
+plannedConst old next row =
+    copy old next (Js.at row 3)
+    _ = Js.call (Js.global "Object") "assign" [ old, Js.at row 4 ]
+    ⊤
 
 
 -- `next`'s fields into `old`, as `plan` lists them: a name is written, a

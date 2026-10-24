@@ -1,0 +1,343 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"-1"</p>
+        <p></p>
+        <p>"1"</p>
+        <p>"1.5"</p>
+        <p>"on"</p>
+        <p>"start"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p></p>
+        <p>"1"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"big"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=edit1]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"-1"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p></p>
+        <p>"1"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"big"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=grow]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"-1"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p></p>
+        <p>"2"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"big"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"-1"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p></p>
+        <p>"2"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": 3}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"3"</p>
+        <p>"fresh"</p>
+        <p>"0"</p>
+        <p>"0.5"</p>
+        <p>"off"</p>
+        <p>"none"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p></p>
+        <p>"2"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=edit1]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"3"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p></p>
+        <p>"2"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": "x"}}
+(the DOM did not change)
+-- detail window rr-push {"type": "serverSet", "widget": "w2", "state": {"place": "Hall", "seats": 4}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"3"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"Hall"</p>
+        <p>"4"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"0"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w3", "state": {"level": 7}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"3"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"Hall"</p>
+        <p>"4"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"7"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=edit1]
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"3"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"Hall"</p>
+        <p>"4"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"7"</p>
+        <p>"big"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 8}, "w2": {"place": "West", "seats": 2}, "w3": {"level": 1}}}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"8"</p>
+        <p>"fresh"</p>
+        <p>"0"</p>
+        <p>"0.5"</p>
+        <p>"off"</p>
+        <p>"none"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"West"</p>
+        <p>"2"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"1"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=edit1]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"8"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"West"</p>
+        <p>"2"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"1"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 9}, "w2": {"place": "East", "seats": 5}, "w3": {"level": "no"}}}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"9"</p>
+        <p>"fresh"</p>
+        <p>"0"</p>
+        <p>"0.5"</p>
+        <p>"off"</p>
+        <p>"none"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"East"</p>
+        <p>"5"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"1"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=edit1]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="edit1">"Edit"</button>
+        <p>"9"</p>
+        <p>"edited"</p>
+        <p>"9"</p>
+        <p>"2.25"</p>
+        <p>"on"</p>
+        <p>"edited"</p>
+      </section>
+      <section data-role="w2">
+        <button data-role="grow">"Grow"</button>
+        <p>"East"</p>
+        <p>"5"</p>
+      </section>
+      <section data-role="w3">
+        <button data-role="toggle">"Toggle"</button>
+        <p>"1"</p>
+        <p>"small"</p>
+      </section>
+    </div>
+  </div>
+</body>

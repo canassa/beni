@@ -1,0 +1,47 @@
+--! The second widget: its `replace` gives `venue` from a field of another
+--! name, so its row keeps its function.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    venue : String
+    seats : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { venue = "", seats = 1 }
+
+
+pub type Msg
+    = Grow
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Grow →
+            { model | seats = model.seats + 1 }
+
+
+--| The state the host sent, its `place` as the venue; or the model as it
+--| was when it sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { venue = new.place, seats = new.seats }
+
+        Err _ →
+            model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w2">
+        <button data-role="grow" onClick={Grow}>Grow</button>
+        <p>{model.venue}</p>
+        <p>{model.seats}</p>
+    </section>

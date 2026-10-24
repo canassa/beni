@@ -1,0 +1,240 @@
+-- Routes whose functions are `case`s on a run (`docs/design/browser-inline.md`
+-- §8.4, amended 2026-10-24, #946), with enough runs below to take the
+-- shapes side of `schema.md` §6's fork. `W1.replace` gives the decoded
+-- fields and constants of five kinds (a string, an integer, a float, `False`
+-- and `Nothing`): its row holds the run's shape and a record of the
+-- constants, and the loader writes them after the decoded fields. `W2`'s
+-- record reads a field of another name and `W3`'s gives a constructor of
+-- its own module's type, so their rows keep their functions. A push to each
+-- widget, a bad one, and snapshots good and bad behave as the source says,
+-- after a local edit of every field; the expected transcript was made with
+-- the compiler before the change.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Json
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+import W1
+import W2
+import W3
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"
+
+
+type alias Model =
+    w1 : W1.Model
+    w2 : W2.Model
+    w3 : W3.Model
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { w1 = W1.init ⊤, w2 = W2.init ⊤, w3 = W3.init ⊤ }, Cmd.none )
+
+
+type Msg
+    = W1Msg W1.Msg
+    | W2Msg W2.Msg
+    | W3Msg W3.Msg
+    | Pushed Value
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model = ( step msg model, Cmd.none )
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        W2Msg sub →
+            { model | w2 = W2.update sub model.w2 }
+
+        W3Msg sub →
+            { model | w3 = W3.update sub model.w3 }
+
+        Pushed value →
+            pushed value model
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Push.onPush Pushed
+
+
+schema Event tagged "type" of
+    ServerSet as "serverSet"
+        widget : String
+        state : Value
+    Snapshot as "snapshot"
+        state : Snapshot
+
+
+schema Snapshot =
+    widgets : Widgets
+
+
+schema Widgets =
+    w1 : Value as "w1"
+    w2 : Value as "w2"
+    w3 : Value as "w3"
+
+
+pushed : Value, Model → Model
+pushed value model =
+    case Schema.read (Event.schema ⊤) value of
+        Ok (Event.ServerSet event) →
+            replaced event.widget event.state model
+
+        Ok (Event.Snapshot event) →
+            widgets = event.state.widgets
+            { w1 = W1.replace widgets.w1 model.w1
+            , w2 = W2.replace widgets.w2 model.w2
+            , w3 = W3.replace widgets.w3 model.w3
+            }
+
+        Err _ →
+            model
+
+
+replaced : String, Value, Model → Model
+replaced widget state model =
+    case widget of
+        "w1" →
+            { model | w1 = W1.replace state model.w1 }
+
+        "w2" →
+            { model | w2 = W2.replace state model.w2 }
+
+        "w3" →
+            { model | w3 = W3.replace state model.w3 }
+
+        _ →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        {Html.map (W2.view model.w2) W2Msg}
+        {Html.map (W3.view model.w3) W3Msg}
+    </div>
+
+
+-- ---- Shape runs: thirty runs in all take the program to the shapes side --
+
+pub pad1 : Value → Int
+pad1 v = (Result.withDefault (Json.decodeValue v) { n = 1 }).n
+
+
+pub pad2 : Value → Int
+pad2 v = (Result.withDefault (Json.decodeValue v) { n = 2 }).n
+
+
+pub pad3 : Value → Int
+pad3 v = (Result.withDefault (Json.decodeValue v) { n = 3 }).n
+
+
+pub pad4 : Value → Int
+pad4 v = (Result.withDefault (Json.decodeValue v) { n = 4 }).n
+
+
+pub pad5 : Value → Int
+pad5 v = (Result.withDefault (Json.decodeValue v) { n = 5 }).n
+
+
+pub pad6 : Value → Int
+pad6 v = (Result.withDefault (Json.decodeValue v) { n = 6 }).n
+
+
+pub pad7 : Value → Int
+pad7 v = (Result.withDefault (Json.decodeValue v) { n = 7 }).n
+
+
+pub pad8 : Value → Int
+pad8 v = (Result.withDefault (Json.decodeValue v) { n = 8 }).n
+
+
+pub pad9 : Value → Int
+pad9 v = (Result.withDefault (Json.decodeValue v) { n = 9 }).n
+
+
+pub pad10 : Value → Int
+pad10 v = (Result.withDefault (Json.decodeValue v) { n = 10 }).n
+
+
+pub pad11 : Value → Int
+pad11 v = (Result.withDefault (Json.decodeValue v) { n = 11 }).n
+
+
+pub pad12 : Value → Int
+pad12 v = (Result.withDefault (Json.decodeValue v) { n = 12 }).n
+
+
+pub pad13 : Value → Int
+pad13 v = (Result.withDefault (Json.decodeValue v) { n = 13 }).n
+
+
+pub pad14 : Value → Int
+pad14 v = (Result.withDefault (Json.decodeValue v) { n = 14 }).n
+
+
+pub pad15 : Value → Int
+pad15 v = (Result.withDefault (Json.decodeValue v) { n = 15 }).n
+
+
+pub pad16 : Value → Int
+pad16 v = (Result.withDefault (Json.decodeValue v) { n = 16 }).n
+
+
+pub pad17 : Value → Int
+pad17 v = (Result.withDefault (Json.decodeValue v) { n = 17 }).n
+
+
+pub pad18 : Value → Int
+pad18 v = (Result.withDefault (Json.decodeValue v) { n = 18 }).n
+
+
+pub pad19 : Value → Int
+pad19 v = (Result.withDefault (Json.decodeValue v) { n = 19 }).n
+
+
+pub pad20 : Value → Int
+pad20 v = (Result.withDefault (Json.decodeValue v) { n = 20 }).n
+
+
+pub pad21 : Value → Int
+pad21 v = (Result.withDefault (Json.decodeValue v) { n = 21 }).n
+
+
+pub pad22 : Value → Int
+pad22 v = (Result.withDefault (Json.decodeValue v) { n = 22 }).n
+
+
+pub pad23 : Value → Int
+pad23 v = (Result.withDefault (Json.decodeValue v) { n = 23 }).n
+
+
+pub pad24 : Value → Int
+pad24 v = (Result.withDefault (Json.decodeValue v) { n = 24 }).n
+
+
+pub pad25 : Value → Int
+pad25 v = (Result.withDefault (Json.decodeValue v) { n = 25 }).n
+
+
+pub pad26 : Value → Int
+pad26 v = (Result.withDefault (Json.decodeValue v) { n = 26 }).n
+
+
+pub pad27 : Value → Int
+pad27 v = (Result.withDefault (Json.decodeValue v) { n = 27 }).n

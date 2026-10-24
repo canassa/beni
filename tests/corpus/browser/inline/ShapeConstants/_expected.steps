@@ -1,0 +1,15 @@
+element "root"
+click [data-role=edit1]
+click [data-role=grow]
+click [data-role=toggle]
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": 3}}
+click [data-role=edit1]
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"cups": "x"}}
+detail window rr-push {"type": "serverSet", "widget": "w2", "state": {"place": "Hall", "seats": 4}}
+detail window rr-push {"type": "serverSet", "widget": "w3", "state": {"level": 7}}
+click [data-role=edit1]
+click [data-role=toggle]
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 8}, "w2": {"place": "West", "seats": 2}, "w3": {"level": 1}}}}
+click [data-role=edit1]
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"cups": 9}, "w2": {"place": "East", "seats": 5}, "w3": {"level": "no"}}}}
+click [data-role=edit1]
