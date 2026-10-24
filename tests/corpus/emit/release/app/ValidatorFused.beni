@@ -1,0 +1,64 @@
+-- A validator's worker called from one `Result.withDefault` whose value the
+-- function returns is written into it, each failure the default and its
+-- record the result (`backend.md` §9, *Slice 9 across a call*, amended
+-- 2026-10-24): no context is made and nothing is compared with its fail
+-- mark (`point`, called twice so that it stays a function). Where the run's value is held by a record instead of
+-- returned (`boxed`), it is compared first and the worker stays a call.
+-- `run/ValidatorFused` runs the same answers in both builds.
+import Json
+import Node
+import Schema exposing (Value)
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+type alias Pair =
+    left : String
+    right : String
+
+
+type alias Box =
+    pair : Pair
+
+
+origin : Point
+origin = { x = 0, y = 0 }
+
+
+point : Value → Point
+point v = Result.withDefault (Json.decodeValue v) origin
+
+
+boxed : Value → Box
+boxed v = { pair = Result.withDefault (Json.decodeValue v) { left = "", right = "" } }
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            pointText (point v)
+                ++ " "
+                ++ String.fromInt (point v).y
+                ++ " "
+                ++ (boxed v).pair.left
+                ++ (boxed v).pair.right
+
+        Err _ →
+            "not JSON"
+
+
+pointText : Point → String
+pointText p = "${String.fromInt p.x},${String.fromInt p.y}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ line "{\"x\": 1, \"y\": 2, \"left\": \"a\", \"right\": \"b\"}"
+        , line "{\"x\": 1}"
+        , line "[]"
+        ]

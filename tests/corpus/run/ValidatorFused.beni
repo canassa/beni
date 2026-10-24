@@ -1,0 +1,63 @@
+-- run: a validator fused into the one `Result.withDefault` whose value its
+-- function returns gives what the call gave (`backend.md` §9, *Slice 9
+-- across a call*, amended 2026-10-24): a decoded record, and the default for
+-- a missing field and for a value that is not an object. A run whose value a
+-- record holds stays a call and gives the same. `emit/release/app/
+-- ValidatorFused` pins the two shapes.
+import Json
+import Node
+import Schema exposing (Value)
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+type alias Pair =
+    left : String
+    right : String
+
+
+type alias Box =
+    pair : Pair
+
+
+origin : Point
+origin = { x = 0, y = 0 }
+
+
+point : Value → Point
+point v = Result.withDefault (Json.decodeValue v) origin
+
+
+boxed : Value → Box
+boxed v = { pair = Result.withDefault (Json.decodeValue v) { left = "", right = "" } }
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            pointText (point v)
+                ++ " "
+                ++ String.fromInt (point v).y
+                ++ " "
+                ++ (boxed v).pair.left
+                ++ (boxed v).pair.right
+
+        Err _ →
+            "not JSON"
+
+
+pointText : Point → String
+pointText p = "${String.fromInt p.x},${String.fromInt p.y}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ line "{\"x\": 1, \"y\": 2, \"left\": \"a\", \"right\": \"b\"}"
+        , line "{\"x\": 1}"
+        , line "[]"
+        ]
