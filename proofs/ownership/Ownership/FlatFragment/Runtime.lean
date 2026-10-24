@@ -186,6 +186,7 @@ theorem flatInvariant_state_frame
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    bindingsBounded := by simpa only [heapSame] using inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
     liveTyped := inv.liveTyped
@@ -237,7 +238,8 @@ theorem flatInvariant_restrict_live
     typeKeys := inv.typeKeys
     types := inv.types
     abstractShapes := inv.abstractShapes
-    bindingsTyped := inv.bindingsTyped
+    bindingsTyped := fun x p member => inv.bindingsTyped x p (included _ member)
+    bindingsBounded := inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
     liveTyped := fun x p ty member => inv.liveTyped x p ty (included _ member)
@@ -465,6 +467,20 @@ theorem value_primitive_push_run (s : ValueSemantics.State) (xs : List Int) (ite
       .ok (.list (valueInts (xs ++ [item])), s) := by
   simp [ValueSemantics.prim, valueInts, StateT.run, pure, StateT.pure, Except.pure]
 
+/-- The push of any value onto any allocated array (slice 2b of #522). -/
+theorem primitive_push_run_values (s : State) (xs : List Value) (item : Value)
+    (lookup : s.heap[root]? = some xs) (links : s.links = []) :
+    (prim .push [.ref root, item]).run s = .ok (.ref root,
+      {s with heap := s.heap.set! root (xs ++ [item]), writes := if xs == xs ++ [item] then s.writes else s.writes + 1}) := by
+  have written := writeCounted_empty_run (root := root) (stored := xs ++ [item]) s lookup links
+  simpa [prim, array, lookup, StateT.run, StateT.bind, StateT.get,
+    Option.toExcept, Except.bind, Except.pure, bind, pure, get, getThe,
+    MonadStateOf.get, StateT.pure, StateT.lift, liftM, monadLift, MonadLift.monadLift] using written
+
+theorem value_primitive_push_run_values (s : ValueSemantics.State) (os : List Observation) (o : Observation) :
+    (ValueSemantics.prim .push [.list os, o]).run s = .ok (.list (os ++ [o]), s) := by
+  simp [ValueSemantics.prim, StateT.run, pure, StateT.pure, Except.pure]
+
 /-- The receiver can have dead aliases. Only the complete permanent observer
 footprint must exclude this receiver at the actual checked write site. -/
 theorem primitive_push_observer_contract (s : State) (xs : List Int) (item : Int)
@@ -574,13 +590,6 @@ theorem integer_list_observation_typed (declarations : List Decl) (integers : Li
   rw [← equal]
   simp [obsTyped]
 
-theorem allocated_integer_list_typed {heap : Heap} {root : Nat} {integers : List Int} (declarations : List Decl)
-    (allocated : heap[root]? = some (heapInts integers)) :
-    ValueTyped declarations heap (.ref root) (.list .int) := by
-  refine ⟨observationDepth, .list (valueInts integers), [root], ?_,
-    integer_list_observation_typed declarations integers⟩
-  exact .ref allocated (integers_represented integers (observationDepth - 2))
-
 /-- A chain of integers is observed as a list of integers. -/
 theorem integer_chain_observation_typed (declarations : List Decl) (integers : List Int) :
     obsTyped declarations (.list (valueInts integers)) (.chain .int) = true := by
@@ -599,49 +608,65 @@ theorem allocated_integer_chain_typed {heap : Heap} {root : Nat} {integers : Lis
     integer_chain_observation_typed declarations integers⟩
   exact .ref allocated (integers_represented integers (observationDepth - 2))
 
-/-- The runtime shape of a flat binding: an integer, an allocated array of
-integers (a list or a chain, its contents in the shape), a record of such
-values, or a result as both interpreters build it: a success `[1, 0, x]` or an
-error `[0, x, 0]` over such a payload. The shape says what the binding's own
-arrays hold; it says nothing about the other arrays of the heap. -/
-inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
-  | int (integer : Int) : AllocatedFlatValue heap (.int integer) .int
-  | list (root : Nat) (integers : List Int) : heap[root]? = some (heapInts integers) →
-      AllocatedFlatValue heap (.ref root) (.list .int)
-  | chain (root : Nat) (integers : List Int) : heap[root]? = some (heapInts integers) →
-      AllocatedFlatValue heap (.ref root) (.chain .int)
-  | record (ws : List Value) (ts : List Ty) : ws.length = ts.length →
-      (∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → ts[i]? = some t →
-        AllocatedFlatValue heap w t) →
-      AllocatedFlatValue heap (.record ws) (.record ts)
-  | ok (error success : Ty) (w : Value) : AllocatedFlatValue heap w success →
-      AllocatedFlatValue heap (.record [.int 1, .int 0, w]) (.result error success)
-  | err (error success : Ty) (w : Value) : AllocatedFlatValue heap w error →
-      AllocatedFlatValue heap (.record [.int 0, w, .int 0]) (.result error success)
+/-- Every array a flat value reaches is allocated. -/
+theorem allocated_reach_bound {heap : Heap} {w : Value} {ty : Ty} {c : Nat}
+    (shape : AllocatedFlatValue heap w ty) (reach : Reaches heap w (.ref c)) : c < heap.size := by
+  induction shape with
+  | int integer => cases reach
+  | list root ws t lookup _ ih =>
+    cases reach with
+    | refl => exact (Array.getElem?_eq_some_iff.mp lookup).1
+    | element lookup' member inner =>
+      rw [lookup] at lookup'
+      cases lookup'
+      exact ih _ member inner
+  | chain root integers lookup =>
+    cases reach with
+    | refl => exact (Array.getElem?_eq_some_iff.mp lookup).1
+    | element lookup' member inner =>
+      rw [lookup] at lookup'
+      cases lookup'
+      obtain ⟨i, _, rfl⟩ := List.mem_map.mp member
+      cases inner
+  | record ws ts len _ ih =>
+    cases reach with
+    | field member inner =>
+      obtain ⟨i, ws_i⟩ := List.mem_iff_getElem?.mp member
+      have bound : i < ts.length := by
+        rw [← len]
+        exact (List.getElem?_eq_some_iff.mp ws_i).1
+      exact ih i _ ts[i] ws_i (List.getElem?_eq_getElem bound) inner
+  | ok e s w _ ih =>
+    cases reach with
+    | field member inner =>
+      simp at member
+      rcases member with rfl | rfl | rfl
+      · cases inner
+      · cases inner
+      · exact ih inner
+  | err e s w _ ih =>
+    cases reach with
+    | field member inner =>
+      simp at member
+      rcases member with rfl | rfl | rfl
+      · cases inner
+      · exact ih inner
+      · cases inner
 
-/-- The next heap keeps every address of this one, with its old contents or
-with new integer contents: what an allocation or an integer write does. A
-flat shape survives such a step (`allocated_frame`), since its arrays hold
-integers before and after. -/
-def IntegerFrame (heap next : Heap) : Prop :=
-  heap.size ≤ next.size ∧
-    ∀ address, address < heap.size →
-      next[address]? = heap[address]? ∨ ∃ integers, next[address]? = some (heapInts integers)
-
-theorem integerFrame_after_write (heap : Heap) (root : Nat) (allocated : root < heap.size)
-    (integers : List Int) : IntegerFrame heap (heap.set! root (heapInts integers)) := by
-  refine ⟨by simp, ?_⟩
-  intro address _
-  by_cases same : address = root
-  · subst address
-    exact Or.inr ⟨integers, by simp [allocated]⟩
-  · exact Or.inl (lookup_set_other heap root (heapInts integers) same)
-
-theorem integerFrame_after_allocation (heap : Heap) (integers : List Int) :
-    IntegerFrame heap (heap.push (heapInts integers)) := by
-  refine ⟨by simp, ?_⟩
-  intro address old
-  have different : address ≠ heap.size := Nat.ne_of_lt old
-  exact Or.inl (by simp [Array.getElem?_push, old, different])
+/-- A shape survives a heap change that touches no array the value reaches. -/
+theorem allocated_of_agree {heap next : Heap} {w : Value} {ty : Ty}
+    (shape : AllocatedFlatValue heap w ty)
+    (agree : ∀ c, Reaches heap w (.ref c) → next[c]? = heap[c]?) : AllocatedFlatValue next w ty := by
+  induction shape with
+  | int integer => exact .int integer
+  | list root ws t lookup _ ih =>
+    refine .list root ws t (by rw [agree root (.refl _)]; exact lookup) (fun w member => ih w member ?_)
+    exact fun c r => agree c (.element lookup member r)
+  | chain root integers lookup => exact .chain root integers (by rw [agree root (.refl _)]; exact lookup)
+  | record ws ts len _ ih =>
+    exact .record ws ts len (fun i w t ws_i ts_i => ih i w t ws_i ts_i
+      (fun c r => agree c (.field (List.mem_of_getElem? ws_i) r)))
+  | ok e s w _ ih => exact .ok e s w (ih (fun c r => agree c (.field (by simp) r)))
+  | err e s w _ ih => exact .err e s w (ih (fun c r => agree c (.field (by simp) r)))
 
 end Ownership.FlatFragment.HeapPreservation

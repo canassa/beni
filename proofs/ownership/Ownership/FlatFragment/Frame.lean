@@ -16,48 +16,19 @@ open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.Env Ownership.F
 open Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.IntegerCorrespondence Ownership.FlatFragment.NamingFacts
 open Ownership.FlatFragment.Runtime Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.Fields
 
-/-- Integer literal typing forces every operand type to `Int`. -/
-theorem primType_literal_int_success {types : List Ty} {type : Ty}
-    (run : primType (.literal .int) types = .ok type) :
-    type = .list .int ∧ ∀ ty ∈ types, ty = .int := by
+/-- Literal typing forces every operand type to the element type. -/
+theorem primType_literal_success {t : Ty} {types : List Ty} {type : Ty}
+    (run : primType (.literal t) types = .ok type) :
+    type = .list t ∧ ∀ ty ∈ types, Ty.equal ty t = true := by
   unfold primType at run
   simp only at run
   split at run
-  · rename_i allInt
+  · rename_i allT
     refine ⟨(Except.ok.inj run).symm, ?_⟩
     intro ty member
-    exact ty_equal_int (List.all_eq_true.mp allInt ty member)
+    exact List.all_eq_true.mp allT ty member
   · change Except.error _ = Except.ok type at run
     contradiction
-
-/-- Every integer-typed operand list runs to integers on both sides and
-to scalars in the checker. -/
-theorem flat_atoms_integers {args : List Atom} {types : List Ty} {tenv : Env Ty} {declarations : List Decl}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (typed : args.mapM (atomType tenv) = .ok types)
-    (ints : ∀ ty ∈ types, ty = .int)
-    (covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live) :
-    ∃ integers : List Int,
-      args.mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) = .ok (valueInts integers) ∧
-      args.mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) = .ok (heapInts integers) ∧
-      args.mapM (m := Except String) (abstractAtom aenv) = .ok (args.map fun _ => Abstract.scalar) := by
-  induction args generalizing types with
-  | nil =>
-    exact ⟨[], rfl, rfl, rfl⟩
-  | cons atom rest ih =>
-    obtain ⟨headType, restTypes, headTyped, restTyped, shape⟩ := except_mapM_cons_success typed
-    subst shape
-    have headInt : headType = .int := ints headType (by simp)
-    subst headInt
-    obtain ⟨integers, valueRest, heapRest, abstractRest⟩ :=
-      ih restTyped (fun ty member => ints ty (by simp [member]))
-        (fun atom member => covered atom (by simp [member]))
-    obtain ⟨integer, valueHead, heapHead, abstractHead⟩ :=
-      flat_atom_integer inv headTyped (covered atom (by simp))
-    refine ⟨integer :: integers, ?_, ?_, ?_⟩
-    · exact except_mapM_cons valueHead valueRest
-    · exact except_mapM_cons heapHead heapRest
-    · exact except_mapM_cons abstractHead abstractRest
 
 end Ownership.FlatFragment.Atoms
 
@@ -76,52 +47,51 @@ open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership
 open Ownership.FlatFragment.RepresentsDepth Ownership.FlatFragment.FiniteReach Ownership.FlatFragment.FiniteReachFrame
 open Ownership.FlatFragment.IntegerCorrespondence Ownership.FlatFragment.Runtime Ownership.FlatFragment.Description
 open Ownership.FlatFragment.NamingFacts Ownership.FlatFragment.AtomPreservation Ownership.FlatFragment.Fields Ownership.FlatFragment.Observe
+open Ownership.FlatFragment.VariableFacts
 
-/-- Every live projected value stays described after an allocation or an
-integer write (`IntegerFrame`), under any naming that keeps the old names. -/
+/-- Every live projected value stays described after an allocation or a
+write step, under any naming that keeps the old names. -/
 theorem described_flat_frame {next : Heap} {w w' : Value} {o : Observation} {gamma : Naming} {gamma' : Naming} {p : Path}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (frame : IntegerFrame hs.heap next)
+    (agree : ∀ c, Reaches hs.heap w' (.ref c) → next[c]? = hs.heap[c]?)
     (namingSame : ∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin))
     (use : (x, p) ∈ live)
     (binding : env.lookup x = some (o, w)) (abstractBinding : aenv.lookup x = some a)
     (valuePath : projectVal w p = some w') (described : Describes gamma hs.heap (a.atPath p) w') :
     Describes gamma' next (a.atPath p) w' := by
-  obtain ⟨ty, declared, _, actualTyped⟩ := inv.bindingsTyped x o w binding
-  have tags := inv.tags x ty a o w declared abstractBinding binding
-  have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped tags
-  obtain ⟨t, at_p⟩ := inv.liveTyped x p ty use declared
-  have shape' := allocated_project shape at_p valuePath
-  have shape0 := inv.abstractShapes x ty a declared abstractBinding
-  exact describes_flat_frame shape' (flatAbstract_atPath shape0 at_p)
-    (resultTags_project tags shape0 at_p valuePath) frame namingSame described
+  obtain ⟨ty, declared⟩ := lookup_exists_of_same_keys tenv env inv.typeKeys.symm binding
+  obtain ⟨t, o', w'', _, _, valuePath', _, shape'⟩ := inv.bindingsTyped x p use o w ty binding declared
+  rw [valuePath] at valuePath'
+  cases Option.some.inj valuePath'
+  have below : ∀ c, Reaches next w' (.ref c) → c < hs.heap.size :=
+    fun c r => allocated_reach_bound shape' (reaches_of_agree_rev agree r)
+  exact describes_naming_same (allocated_of_agree shape' agree) namingSame below
+    (describes_of_agree agree described)
 
-/-- The immutable-path naming of every flat binding after an allocation or
-an integer write (`IntegerFrame`). -/
+/-- The immutable-path naming of every flat binding after any heap step. -/
 theorem named_flat_frame {next : Heap} {w : Value} {o : Observation} {gamma : Naming} {gamma' : Naming}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (frame : IntegerFrame hs.heap next)
     (namingSame : ∀ origin cell, cell < hs.heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin))
     (binding : env.lookup x = some (o, w)) (abstractBinding : aenv.lookup x = some a)
-    (located : ArrayAt next w q c) :
+    (immutable : immutablePath q = true) (located : ArrayAt next w q c) :
     named gamma' (a.cellsAt q) c := by
-  obtain ⟨ty, declared, _, actualTyped⟩ := inv.bindingsTyped x o w binding
-  have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped
-    (inv.tags x ty a o w declared abstractBinding binding)
-  obtain ⟨_, immutable, everywhere⟩ := arrayAt_flat (allocated_frame shape frame) located
-  have old := inv.named x o w a binding abstractBinding q c immutable (everywhere hs.heap)
-  exact named_same_of_naming namingSame (arrayAt_flat shape (everywhere hs.heap)).1 old
+  have before : ArrayAt hs.heap w q c := arrayAt_immutable_everywhere immutable located hs.heap
+  have old := inv.named x o w a binding abstractBinding q c immutable before
+  exact named_same_of_naming namingSame (inv.bindingsBounded x o w binding c (reaches_of_atPath before)) old
 
 /-- The heap frame of the strengthened relation. The hole is the next
-address at an allocation, or the written receiver at a counted write. The
-live set must avoid bindings of the hole; everything else is derived. -/
+address at an allocation, or the written root at a write step. The live set
+must avoid bindings of the hole; everything else is derived. -/
 theorem flatInvariant_heap_frame {gamma : Naming}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     {vs' : ValueSemantics.State} {hs' : InPlaceSemantics.State} {gamma' : Naming}
     {live' : Live} {escapes' : List Origin} {hole : Nat} {footprint : List Nat}
     (liveSub : ∀ use ∈ live', use ∈ live)
-    (heapFrame : IntegerFrame hs.heap hs'.heap) (links : hs'.links = [])
-    (frame : ∀ c, c < hs.heap.size → c ≠ hole → hs'.heap[c]? = hs.heap[c]?)
+    (sizeMono : hs.heap.size ≤ hs'.heap.size)
+    (holeStored : ∃ xs, hs'.heap[hole]? = some xs ∧
+      ∀ x ∈ xs, ∀ d, Reaches hs'.heap x (.ref d) → d < hs'.heap.size)
+    (links : hs'.links = [])
+    (frame : ∀ c, c ≠ hole → hs'.heap[c]? = hs.heap[c]?)
     (liveApart : ∀ x p, (x, p) ∈ live' → ∀ o w w', env.lookup x = some (o, w) →
       projectVal w p = some w' → ∀ q c, ArrayAt hs.heap w' q c → c ≠ hole)
     (represented : RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint)
@@ -135,12 +105,32 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     FlatInvariant declarations vs' hs' env live' aenv tenv escapes' gamma' := by
   have footprintFrame : ∀ address ∈ footprint, hs'.heap[address]? = hs.heap[address]? := by
     intro address member
-    have bound := representsMany_bound represented address member
     have different : address ≠ hole := fun same => observersApart (same ▸ member)
-    exact frame address bound different
+    exact frame address different
   have framed : RepresentsMany hs'.heap observationDepth hs'.kept.toList vs'.kept.toList footprint := by
     rw [keptSame, valueKeptSame]
     exact representsMany_frame represented footprintFrame
+  have liveAgree : ∀ x p, (x, p) ∈ live' → ∀ o w w', env.lookup x = some (o, w) → projectVal w p = some w' →
+      ∀ c, Reaches hs.heap w' (.ref c) → hs'.heap[c]? = hs.heap[c]? := by
+    intro x p use o w w' binding valuePath c reach
+    obtain ⟨q, located⟩ := arrayAt_of_reaches reach
+    exact frame c (liveApart x p use o w w' binding valuePath q c located)
+  have bindingsTyped' : ∀ x p, (x, p) ∈ live' → ∀ o w ty, env.lookup x = some (o, w) →
+      tenv.lookup x = some ty →
+      ∃ t o' w', tyAt ty p = some t ∧ projectObs o p = some o' ∧ projectVal w p = some w' ∧
+        obsTyped declarations o' t = true ∧ AllocatedFlatValue hs'.heap w' t := by
+    intro x p use o w ty binding declared
+    obtain ⟨t, o', w', at_p, obsPath, valuePath, observed, shape⟩ :=
+      inv.bindingsTyped x p (liveSub _ use) o w ty binding declared
+    exact ⟨t, o', w', at_p, obsPath, valuePath, observed,
+      allocated_of_agree shape (liveAgree x p use o w w' binding valuePath)⟩
+  have bindingsBounded' : ∀ x o w, env.lookup x = some (o, w) →
+      ∀ c, Reaches hs'.heap w (.ref c) → c < hs'.heap.size := by
+    intro x o w binding c reach
+    obtain ⟨stored, holeAt, storedBounded⟩ := holeStored
+    rcases reaches_split_at_hole holeAt frame reach with before | ⟨z, zMember, zReach⟩
+    · exact Nat.lt_of_lt_of_le (inv.bindingsBounded x o w binding c before) sizeMono
+    · exact storedBounded z zMember c zReach
   refine {
     toInvariant := {
       reads := reads
@@ -161,7 +151,8 @@ theorem flatInvariant_heap_frame {gamma : Naming}
     typeKeys := inv.typeKeys
     types := inv.types
     abstractShapes := inv.abstractShapes
-    bindingsTyped := bindingsTyped_after_flat_heap inv heapFrame
+    bindingsTyped := bindingsTyped'
+    bindingsBounded := bindingsBounded'
     tags := inv.tags
     chains := inv.chains
     liveTyped := fun x p ty member declared => inv.liveTyped x p ty (liveSub _ member) declared
@@ -186,22 +177,12 @@ theorem flatInvariant_heap_frame {gamma : Naming}
   · intro x p use o w binding
     obtain ⟨o', w', observationPath, valuePath, paired⟩ :=
       inv.bindings x p (liveSub _ use) o w binding
-    obtain ⟨ty, declared, _, actualTyped⟩ := inv.bindingsTyped x o w binding
-    obtain ⟨a, abstractBinding⟩ :=
-      Ownership.FlatFragment.VariableFacts.lookup_exists_of_same_keys aenv env inv.abstractKeys.symm binding
-    have shape := allocated_shape_of_typed (inv.types x ty declared) actualTyped
-      (inv.tags x ty a o w declared abstractBinding binding)
-    obtain ⟨t, at_p⟩ := inv.liveTyped x p ty (liveSub _ use) declared
-    have shape' := allocated_project shape at_p valuePath
-    refine ⟨o', w', observationPath, valuePath, ?_⟩
-    refine corresponds_flat_frame shape' ?_ paired
-    intro q c located
-    have bound := (arrayAt_flat shape' located).1
-    exact frame c bound (liveApart x p use o w w' binding valuePath q c located)
+    exact ⟨o', w', observationPath, valuePath,
+      corresponds_of_agree (liveAgree x p use o w w' binding valuePath) paired⟩
   · intro x p use o w a w' binding abstractBinding valuePath
-    exact described_flat_frame inv heapFrame namingSame (liveSub _ use) binding abstractBinding
-      valuePath (inv.described x p (liveSub _ use) o w a w' binding abstractBinding valuePath)
-  · intro x o w a binding abstractBinding q c _ located
-    exact named_flat_frame inv heapFrame namingSame binding abstractBinding located
+    exact described_flat_frame inv (liveAgree x p use o w w' binding valuePath) namingSame (liveSub _ use)
+      binding abstractBinding valuePath (inv.described x p (liveSub _ use) o w a w' binding abstractBinding valuePath)
+  · intro x o w a binding abstractBinding q c immutable located
+    exact named_flat_frame inv namingSame binding abstractBinding immutable located
 
 end Ownership.FlatFragment.HeapFrame
