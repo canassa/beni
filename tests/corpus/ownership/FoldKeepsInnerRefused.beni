@@ -96,3 +96,50 @@ pub afterMap ⊤ =
 pub afterDirect ⊤ =
     rows = put (put [] 1) 2
     List.update rows 0 λl → List.push l 9
+
+
+-- A callee hands the next callback a part of what a callback returned:
+-- the write's place is that part's, below the result's root.
+viaRows : Table, (Table → Table), (List (List Int) → List (List Int)) → List (List Int)
+viaRows x f g = g (f x).rows
+
+
+keepTable : Table → Table
+keepTable t =
+    old = Maybe.withDefault (List.get t.rows 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    t
+
+
+pub projectedField ⊤ = viaRows { rows = [ [ 0 ] ], n = 1 } keepTable λr → bump r 1
+
+
+viaFirst :
+      List (List Int) × Int
+    , (List (List Int) × Int → List (List Int) × Int)
+    , (List (List Int) → List (List Int))
+    → List (List Int)
+viaFirst x f g =
+    ( a, _ ) = f x
+    g a
+
+
+keepPair : List (List Int) × Int → List (List Int) × Int
+keepPair p =
+    ( rows, _ ) = p
+    old = Maybe.withDefault (List.get rows 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    p
+
+
+pub projectedPair ⊤ = viaFirst ( [ [ 0 ] ], 1 ) keepPair λr → bump r 1
+
+
+keepAllPair : List (List Int) × Int → List (List Int) × Int
+keepAllPair p =
+    ( rows, _ ) = p
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length rows)) ⊤
+    p
+
+
+pub projectedWhole ⊤ = viaFirst ( [ [ 0 ] ], 1 ) keepAllPair λr → List.push r [ 1 ]

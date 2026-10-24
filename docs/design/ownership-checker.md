@@ -8019,7 +8019,14 @@ from `πₖ.q`, the write's place is `q` extended by the part of `w` below
 that result path. Only an escape at that place or above it refutes the
 returned value's ownership. An escape strictly below a storage write
 does not observe the write. A deep write, a send, and a supply with no
-written place keep the symmetric overlap.
+written place keep the symmetric overlap. The written place is named in the
+callback result's frame: a supply of `cb_j` at `p` written at `w` is the
+result's `p` extended by `w`, so a callee that hands the next callback a
+part of the last result (`(f x).rows`, the first of a pair) checks the
+escape at that part. Before, `w` alone was compared with result paths:
+the storage test missed `.rows[*]`, and a projected supply skipped the
+escape check altogether, so a callback keeping the whole list was accepted
+even on master.
 
 Soundness. A storage write changes the collection's slots and order and
 no value stored in them (#670). A kept value strictly below the written
