@@ -1,0 +1,8 @@
+element "root"
+click [data-role=add]
+click [data-role=rotate]
+click [data-role=add]
+click [data-role=rotate]
+click [data-role=toggle]
+click [data-role=note]
+click [data-role=toggle]

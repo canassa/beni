@@ -1,0 +1,48 @@
+--! The widget: an aside shown unless the size is brisk, which holds a
+--! count of cups and a warning shown while there are fewer than two.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    size : String
+    cups : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { size = "Calm", cups = 0 }
+
+
+pub type Msg
+    = Rotate
+    | AddCup
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rotate →
+            { model | size = if model.size == "Calm" then "Brisk" else "Calm" }
+
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w">
+        <button data-role="rotate" onClick={Rotate}>Rotate</button>
+        <button data-role="add" onClick={AddCup}>Add</button>
+        {if model.size ≠ "Brisk" then
+            <aside data-role="outer">
+                {if model.cups < 2 then
+                    <p data-role="warn">Too few cups</p>
+                 else
+                    <></>
+                }
+                <p>{model.cups}</p>
+            </aside>
+         else
+            <></>
+        }
+    </section>

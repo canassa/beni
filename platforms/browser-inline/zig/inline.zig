@@ -39,7 +39,7 @@ const parser = @import("platform_html").parser_table;
 
 pub const lowering: m.Lowering = .{
     .name = "inline",
-    .targets = .{ .major = 1, .minor = 18 },
+    .targets = .{ .major = 1, .minor = 19 },
     .runtime = &.{
         // `(f, x)`: the dispatch guard, which every entry into program code
         // goes through.
@@ -904,8 +904,12 @@ const Page = struct {
             const armRoot = br.arms[s].what.markup;
             try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = s, .arms = @intCast(br.arms.len), .root = armRoot, .group = facts.group });
             const inner: u32 = @intCast(pg.ctxs.items.len - 1);
-            // The `when` before the arm's own writes: document order.
-            try pg.writes.append(pg.a(), .{ .target = pg.count, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.group}), .what = .{ .when = .{ .node = n, .shown = s, .arms = @intCast(br.arms.len) } } });
+            // The `when` before the arm's own writes: document order. It
+            // reads what choosing the arm reads, and no more (§8.2, amended
+            // 2026-10-24): every value of the shown arm is a write of its
+            // own, in the groups of its own hole, and `when` only puts the
+            // element or its placeholder in the page.
+            try pg.writes.append(pg.a(), .{ .target = pg.count, .ctx = ctx, .groups = try sorted(pg.a(), &.{facts.selector_group orelse facts.group}), .what = .{ .when = .{ .node = n, .shown = s, .arms = @intCast(br.arms.len) } } });
             _ = try cx.programBranchEnter(null, n, s, false, null);
             defer cx.programInlineLeave();
             try out.append(pg.a(), try pg.element(tree.root(armRoot).node, scope, inner, false));

@@ -537,6 +537,13 @@ pub const Hole = struct {
     /// component node whose evaluation reached it, as `module << 32 |
     /// token`, outermost first.
     path: []const u64 = &.{},
+    /// A child hole whose value is a `case` (an `if` too) on every visit:
+    /// the anchored reads of choosing its arm alone — the scrutinee and the
+    /// facts each arm is taken under, not what the arms' values read
+    /// (`browser-inline.md` §8.2, amended 2026-10-24) — sorted, with their
+    /// bound depths in `selector_bound`. Null for any other hole.
+    selector: ?[]const u32 = null,
+    selector_bound: []const u8 = &.{},
 };
 
 /// Whether any view visit takes this body on this exact call path.
@@ -778,6 +785,11 @@ const HoleAcc = struct {
     key_path: u32 = unvisited,
     /// A hole per path's call path (`call_paths`).
     path: u32 = 0,
+    /// The reads of choosing a branch hole's arm (`Hole.selector`), while
+    /// every visit was a `case` the pass chose by an `Alt`.
+    sel_reads: std.ArrayList(u32) = .empty,
+    sel_bound: std.ArrayList(u8) = .empty,
+    sel: enum { unvisited, branch, other } = .unvisited,
 
     const unvisited: u32 = none - 2;
     const string_literal: u32 = none;
@@ -1003,6 +1015,8 @@ pub fn deinit(a: *Writes) void {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
         h.bound.deinit(gpa);
+        h.sel_reads.deinit(gpa);
+        h.sel_bound.deinit(gpa);
     }
     a.holes.deinit(gpa);
     a.hole_index.deinit(gpa);
@@ -1010,6 +1024,8 @@ pub fn deinit(a: *Writes) void {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
         h.bound.deinit(gpa);
+        h.sel_reads.deinit(gpa);
+        h.sel_bound.deinit(gpa);
     }
     a.vholes.deinit(gpa);
     a.vhole_index.deinit(gpa);
@@ -1017,6 +1033,8 @@ pub fn deinit(a: *Writes) void {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
         h.bound.deinit(gpa);
+        h.sel_reads.deinit(gpa);
+        h.sel_bound.deinit(gpa);
     }
     a.vedges.deinit(gpa);
     a.vedge_index.deinit(gpa);
@@ -1024,6 +1042,8 @@ pub fn deinit(a: *Writes) void {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
         h.bound.deinit(gpa);
+        h.sel_reads.deinit(gpa);
+        h.sel_bound.deinit(gpa);
     }
     a.vargs.deinit(gpa);
     a.varg_index.deinit(gpa);
@@ -1031,6 +1051,8 @@ pub fn deinit(a: *Writes) void {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
         h.bound.deinit(gpa);
+        h.sel_reads.deinit(gpa);
+        h.sel_bound.deinit(gpa);
     }
     a.vlets.deinit(gpa);
     a.vlet_index.deinit(gpa);
@@ -4712,6 +4734,25 @@ fn accumulate(a: *Writes, h: *HoleAcc, f: *Frame, kind: HoleKind, inst: Inst.Ind
             try h.bound.append(a.gpa, bd);
         }
     }
+    // A branch hole: what choosing its arm reads, apart from what the arms
+    // read (`Hole.selector`).
+    if (h.sel != .other) {
+        if (kind == .child and a.bir(f.m).instTag(inst) == .case and a.termTag(t) == .alt) {
+            h.sel = .branch;
+            reads.clearRetainingCapacity();
+            bounds.clearRetainingCapacity();
+            const sd = try a.selectorDeps(t, 0);
+            for (0..a.deps_t.len(sd)) |i| try a.anchorPathBound(a.deps_t.word(sd, i), &reads, &bounds, 0, 0);
+            for (reads.items, bounds.items) |r, bd| {
+                if (std.mem.indexOfScalar(u32, h.sel_reads.items, r)) |i| {
+                    h.sel_bound.items[i] = @min(h.sel_bound.items[i], bd);
+                } else {
+                    try h.sel_reads.append(a.gpa, r);
+                    try h.sel_bound.append(a.gpa, bd);
+                }
+            }
+        } else h.sel = .other;
+    }
     // The innermost `For` whose row holds it (an `each` hole is recorded
     // before its own row is walked, so this is the `For` around its own).
     if (h.list == HoleAcc.unvisited) h.list = each else if (h.list != each) h.list = none;
@@ -4741,6 +4782,23 @@ fn accumulate(a: *Writes, h: *HoleAcc, f: *Frame, kind: HoleKind, inst: Inst.Ind
     if (lp == none - 1) h.literal_ok = false;
     if (h.literal_path == HoleAcc.unvisited) h.literal_path = lp else if (h.literal_path != lp) h.literal_ok = false;
     if (a.ctx.row_key == none) h.in_row = false else if (std.mem.indexOfScalar(u32, h.key_paths.items, a.ctx.row_key) == null) try h.key_paths.append(a.gpa, a.ctx.row_key);
+}
+
+/// The deps of choosing an arm of `Alt` `t`: its scrutinee's (or the tag
+/// reads its patterns make) and the facts each alternative is taken under,
+/// and of an alternative that is itself an `Alt` — a join over a scrutinee's
+/// own alternatives — the same again; not what the alternatives' values
+/// read. Too deep is all of `t`'s deps, the safe answer.
+fn selectorDeps(a: *Writes, t: u32, depth: u32) Allocator.Error!u32 {
+    if (a.termTag(t) != .alt) return 0;
+    if (depth > 16) return a.deps(t);
+    var d = try a.altReadsOf(a.termWord(t, 1), a.termWord(t, 3));
+    for (0..a.altLen(t)) |i| {
+        const it = a.altItem(t, @intCast(i));
+        d = try a.depsUnion(d, try a.gammaDeps(it.gamma));
+        d = try a.depsUnion(d, try a.selectorDeps(it.term, depth + 1));
+    }
+    return d;
 }
 
 /// Call path `from` with one more entry, the node at `token` of module `m`
@@ -5153,6 +5211,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
         h.bound.deinit(a.gpa);
+        h.sel_reads.deinit(a.gpa);
+        h.sel_bound.deinit(a.gpa);
     }
     a.holes.clearRetainingCapacity();
     a.hole_index.clearRetainingCapacity();
@@ -5160,6 +5220,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
         h.bound.deinit(a.gpa);
+        h.sel_reads.deinit(a.gpa);
+        h.sel_bound.deinit(a.gpa);
     }
     a.vholes.clearRetainingCapacity();
     a.vhole_index.clearRetainingCapacity();
@@ -5167,6 +5229,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
         h.bound.deinit(a.gpa);
+        h.sel_reads.deinit(a.gpa);
+        h.sel_bound.deinit(a.gpa);
     }
     a.vedges.clearRetainingCapacity();
     a.vedge_index.clearRetainingCapacity();
@@ -5174,6 +5238,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
         h.bound.deinit(a.gpa);
+        h.sel_reads.deinit(a.gpa);
+        h.sel_bound.deinit(a.gpa);
     }
     a.vargs.clearRetainingCapacity();
     a.varg_index.clearRetainingCapacity();
@@ -5181,6 +5247,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
         h.bound.deinit(a.gpa);
+        h.sel_reads.deinit(a.gpa);
+        h.sel_bound.deinit(a.gpa);
     }
     a.vlets.clearRetainingCapacity();
     a.vlet_index.clearRetainingCapacity();
@@ -5363,6 +5431,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     if (prog.view_capped) for ([_][]Hole{ prog.holes, prog.vholes, prog.vlets }) |list| for (list) |*h| {
         h.reads = try a.arena().dupe(u32, &.{rho_path});
         h.bound = try a.arena().dupe(u8, &.{0});
+        h.selector = null;
         h.bake = false;
         h.key_paths = &.{};
         h.each_path = none;
@@ -6049,42 +6118,8 @@ fn initAt(a: *Writes, t0: u32, p: u32) Error!?u32 {
 fn finishHoles(a: *Writes, list: []HoleAcc, init_model: u32, per_path: bool) Error![]Hole {
     const out = try a.arena().alloc(Hole, list.len);
     for (list, out) |*h, *o| {
-        var resolved_reads: std.ArrayList(u32) = .empty;
-        defer resolved_reads.deinit(a.gpa);
-        var resolved_bounds: std.ArrayList(u8) = .empty;
-        defer resolved_bounds.deinit(a.gpa);
-        for (h.reads.items, h.bound.items) |r, bd| try a.anchorPathBound(r, &resolved_reads, &resolved_bounds, bd, 0);
-        h.reads.clearRetainingCapacity();
-        h.bound.clearRetainingCapacity();
-        try h.reads.appendSlice(a.gpa, resolved_reads.items);
-        try h.bound.appendSlice(a.gpa, resolved_bounds.items);
-        // A tag read under a whole read of its path or a prefix of it adds
-        // nothing: the whole read conflicts with every write the tag read does.
-        var n: usize = 0;
-        for (h.reads.items, h.bound.items) |r, bd| {
-            if (a.isTagRead(r) and a.wholeReadAbove(h.reads.items, a.pathParent(r))) continue;
-            h.reads.items[n] = r;
-            h.bound.items[n] = bd;
-            n += 1;
-        }
-        h.reads.shrinkRetainingCapacity(n);
-        h.bound.shrinkRetainingCapacity(n);
-        // Sorted, each read keeping its bound depth.
-        const order = try a.arena().alloc(u32, n);
-        for (order, 0..) |*slot, i| slot.* = @intCast(i);
-        std.mem.sort(u32, order, h.reads.items, struct {
-            fn less(reads: []const u32, x: u32, y: u32) bool {
-                return reads[x] < reads[y];
-            }
-        }.less);
-        const sorted_reads = try a.arena().alloc(u32, n);
-        const sorted_bound = try a.arena().alloc(u8, n);
-        for (order, sorted_reads, sorted_bound) |i, *r, *bd| {
-            r.* = h.reads.items[i];
-            bd.* = h.bound.items[i];
-        }
-        @memcpy(h.reads.items, sorted_reads);
-        @memcpy(h.bound.items, sorted_bound);
+        try a.finishReads(&h.reads, &h.bound);
+        if (h.sel == .branch) try a.finishReads(&h.sel_reads, &h.sel_bound);
         // Bake-eligible (§9.1 as amended — O8 widened, the owner,
         // 2026-10-09): a text hole alone under an allowlisted parent, or an
         // attribute, every visit's expression the same model path whose
@@ -6121,9 +6156,53 @@ fn finishHoles(a: *Writes, list: []HoleAcc, init_model: u32, per_path: bool) Err
             .key_path = if (h.key_path == HoleAcc.unvisited) none else h.key_path,
             .alone = h.alone,
             .path = if (per_path and h.path < a.call_paths.items.len) try a.arena().dupe(u64, a.call_paths.items[h.path]) else &.{},
+            .selector = if (h.sel == .branch) try a.arena().dupe(u32, h.sel_reads.items) else null,
+            .selector_bound = if (h.sel == .branch) try a.arena().dupe(u8, h.sel_bound.items) else &.{},
         };
     }
     return out;
+}
+
+/// A hole's reads (`Hole.reads`, `Hole.selector`) made final in place, each
+/// keeping its bound depth: anchored, a tag read under a whole read of its
+/// path or a prefix of it left out, and sorted.
+fn finishReads(a: *Writes, reads: *std.ArrayList(u32), bound: *std.ArrayList(u8)) Error!void {
+    var resolved_reads: std.ArrayList(u32) = .empty;
+    defer resolved_reads.deinit(a.gpa);
+    var resolved_bounds: std.ArrayList(u8) = .empty;
+    defer resolved_bounds.deinit(a.gpa);
+    for (reads.items, bound.items) |r, bd| try a.anchorPathBound(r, &resolved_reads, &resolved_bounds, bd, 0);
+    reads.clearRetainingCapacity();
+    bound.clearRetainingCapacity();
+    try reads.appendSlice(a.gpa, resolved_reads.items);
+    try bound.appendSlice(a.gpa, resolved_bounds.items);
+    // A tag read under a whole read of its path or a prefix of it adds
+    // nothing: the whole read conflicts with every write the tag read does.
+    var n: usize = 0;
+    for (reads.items, bound.items) |r, bd| {
+        if (a.isTagRead(r) and a.wholeReadAbove(reads.items, a.pathParent(r))) continue;
+        reads.items[n] = r;
+        bound.items[n] = bd;
+        n += 1;
+    }
+    reads.shrinkRetainingCapacity(n);
+    bound.shrinkRetainingCapacity(n);
+    // Sorted, each read keeping its bound depth.
+    const order = try a.arena().alloc(u32, n);
+    for (order, 0..) |*slot, i| slot.* = @intCast(i);
+    std.mem.sort(u32, order, reads.items, struct {
+        fn less(rs: []const u32, x: u32, y: u32) bool {
+            return rs[x] < rs[y];
+        }
+    }.less);
+    const sorted_reads = try a.arena().alloc(u32, n);
+    const sorted_bound = try a.arena().alloc(u8, n);
+    for (order, sorted_reads, sorted_bound) |i, *r, *bd| {
+        r.* = reads.items[i];
+        bd.* = bound.items[i];
+    }
+    @memcpy(reads.items, sorted_reads);
+    @memcpy(bound.items, sorted_bound);
 }
 
 /// `init`'s rows of the list at model path `p`, when `init` writes it as a

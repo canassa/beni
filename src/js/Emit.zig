@@ -3205,10 +3205,13 @@ const Emitter = struct {
                 go.* = group;
                 const file = e.graph().moduleFile(@fromBackingInt(@intCast(h.module)));
                 const at = e.tokenPosition(file, h.token);
+                // Version 1.19: a branch hole's selector, a group of its own.
+                const selector: u32 = if (prog.view_capped) group else if (h.selector) |sel| try groups.of(sel, h.selector_bound) else std.math.maxInt(u32);
                 o.* = .{
                     .module = h.module,
                     .token = h.token,
                     .group = group,
+                    .selector_group = selector,
                     .bake = if (h.bake) try a.dupe(u8, h.bake_text) else null,
                     .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
                     .path = try a.dupe(u64, h.path),

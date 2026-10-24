@@ -1,0 +1,63 @@
+-- An eager `when` reads what choosing its arm reads (`docs/design/
+-- browser-inline.md` §8.2, amended 2026-10-24): the outer `if` of the
+-- widget, on `size`, holds an inner one on `cups` and a text of `cups`,
+-- and is registered in `size`'s group alone, since each value of its arm
+-- has a binding of its own. The program's own `if`, on `open`, holds a text
+-- of `note` made by a call, so its arm is evaluated only while it is shown
+-- and stays one entry with its `when`, in both groups. Writing `cups` or
+-- `note` while the arm is hidden, then showing it, shows what was written.
+import Browser
+import Html exposing (Html)
+import Tea
+import W
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { w = W.init ⊤, open = True, note = 0 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
+
+
+type alias Model =
+    w : W.Model
+    open : Bool
+    note : Int
+
+
+type Msg
+    = WMsg W.Msg
+    | Toggle
+    | Note
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        WMsg sub →
+            { model | w = W.update sub model.w }
+
+        Toggle →
+            { model | open = not model.open }
+
+        Note →
+            { model | note = model.note + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W.view model.w) WMsg}
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+        <button data-role="note" onClick={Note}>Note</button>
+        {if model.open then
+            <p data-role="open">{"Note ${String.fromInt model.note}"}</p>
+         else
+            <></>
+        }
+    </div>
