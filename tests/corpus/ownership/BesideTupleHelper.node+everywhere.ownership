@@ -17,12 +17,24 @@ module BesideTupleHelper
   37:5 List.update l: accepted fresh
   37:5 List.update l[*].0: accepted fresh (<lambda> writes what List.update supplies it)
   37:28 List.push p.0: accepted callback-param (List.update supplies it owned)
+  45:9 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  45:41 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  46:5 List.update l: accepted fresh
+  46:5 List.update l[*].0: accepted fresh (BesideTupleHelper.grow writes what List.update supplies it)
+  46:5 value BesideTupleHelper.grow: rejected exclusive: List.update hands its parameter 1 an element of l, whose elements may share one list (approx)
+  51:9 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  51:41 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  52:5 List.update l: accepted fresh
+  52:5 List.update l[*].0: accepted call (BesideTupleHelper.grow writes what List.update supplies it)
+  52:5 value BesideTupleHelper.grow: accepted callback-param (List.update supplies it owned)
   summary grow: π1.0 RAW[storage], π1.0[*] A, π1.1 R; res .0 π1.0, .0[*] ~π1.0[*]
   summary add: π1 RAW[storage], π1[*] A, π2 RA; res [*] ~π1[*], [*].0 ~condition(fresh1) ~π2, π1{excl π2, sep π1[*] π2}
   summary shared: res [*].0 ~condition(fresh1) ~fresh1, fresh2{lost}
   summary fresh: res [*].0 ~condition(fresh2) ~fresh2, fresh1
   summary both: π1 RAW[storage], π1[*] A, π2 RA, π3 RA; res [*] ~condition(fresh1){sep π2 π3} ~π1[*], [*].0 ~condition(fresh2) ~π2, [*].1 ~condition(fresh3) ~π3, π1{excl π2, excl π3, sep π1[*] π2, sep π1[*] π3, sep π2 π3}
   summary otherField: res [*] ~condition(fresh4), [*].0 ~condition(fresh3) ~fresh3, [*].0[*] ~condition(fresh5), [*].1 ~condition(fresh1) ~fresh1, fresh2{lost}
-  demands 18: accepted 17 (fresh 12, call 0, param 3, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1
-total 18: accepted 17 (fresh 12, call 0, param 3, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 1
-cause exclusive 1
+  summary folded: res [*] ~condition(fresh3), [*].0 ~condition(fresh1) ~fresh1, [*].1 ~condition(fresh4), ~fresh2{lost}r{lost}
+  summary foldedFresh: res [*] ~condition(fresh4){shared}r{shared}, [*].0 ~fresh2, [*].0[*] ~condition(fresh3) ~fresh3, [*].1 ~condition(fresh5), ~fresh1{shared}r{shared}
+  demands 28: accepted 26 (fresh 17, call 1, param 3, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 28: accepted 26 (fresh 17, call 1, param 3, callback-param 5, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2

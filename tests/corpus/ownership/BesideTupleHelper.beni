@@ -35,3 +35,18 @@ otherField ⊤ =
     ys = [ 3 ]
     l = both (both [] [ 1 ] ys) [ 2 ] ys
     List.update l 0 λp → ( List.push p.0 9, p.1 )
+
+
+-- `folded` builds the list in a fold whose callback pushes one list twice;
+-- `foldedFresh` pushes a fresh list each step.
+pub folded : ⊤ → List (List Int × Int)
+folded ⊤ =
+    xs = [ 1 ]
+    l = List.foldl [ 1, 2 ] [] λn acc → List.push acc ( xs, n )
+    List.update l 0 grow
+
+
+pub foldedFresh : ⊤ → List (List Int × Int)
+foldedFresh ⊤ =
+    l = List.foldl [ 1, 2 ] [] λn acc → List.push acc ( [ n ], n )
+    List.update l 0 grow
