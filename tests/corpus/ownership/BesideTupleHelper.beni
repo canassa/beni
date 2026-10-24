@@ -1,0 +1,37 @@
+-- ownership: a helper stores a tuple whose list sits below what the list
+-- already holds at `[*]` (#474). `add` pushes `( xs, 0 )`: its list is at
+-- `[*].0`, beside the old elements' `.0`, so the push's guard must compare
+-- the two there. `shared` puts one list in two tuples and edits one in
+-- place: rejected `exclusive`. `fresh` stores two fresh lists: accepted.
+-- `otherField` shares a list only in a field that is not written: the
+-- written lists are distinct, so the edit is accepted.
+grow : List Int × Int → List Int × Int
+grow p = ( List.push p.0 9, p.1 )
+
+
+add : List (List Int × Int), List Int → List (List Int × Int)
+add l xs = List.push l ( xs, 0 )
+
+
+pub shared : ⊤ → List (List Int × Int)
+shared ⊤ =
+    xs = [ 1 ]
+    l = add (add [] xs) xs
+    List.update l 0 grow
+
+
+pub fresh : ⊤ → List (List Int × Int)
+fresh ⊤ =
+    l = add (add [] [ 1 ]) [ 2 ]
+    List.update l 0 grow
+
+
+both : List (List Int × List Int), List Int, List Int → List (List Int × List Int)
+both l a b = List.push l ( a, b )
+
+
+pub otherField : ⊤ → List (List Int × List Int)
+otherField ⊤ =
+    ys = [ 3 ]
+    l = both (both [] [ 1 ] ys) [ 2 ] ys
+    List.update l 0 λp → ( List.push p.0 9, p.1 )

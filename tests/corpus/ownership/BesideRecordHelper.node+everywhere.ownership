@@ -1,0 +1,24 @@
+module BesideRecordHelper
+  11:12 List.push l: accepted param
+  17:9 call BesideRecordHelper.add <call BesideRecordHelper.add>: accepted fresh (BesideRecordHelper.add writes π1)
+  17:14 call BesideRecordHelper.add <literal>: accepted fresh (BesideRecordHelper.add writes π1)
+  18:5 List.update l: accepted fresh
+  18:5 List.update l[*].items: accepted fresh (<lambda> writes what List.update supplies it)
+  18:5 update l[*]: accepted call (List.update writes it)
+  18:26 update p: accepted callback-param (List.update supplies it owned)
+  18:40 List.push p.items: rejected exclusive: List.update hands its parameter 1 an element of l, whose elements may share one list (approx)
+  23:9 call BesideRecordHelper.add <call BesideRecordHelper.add>: accepted fresh (BesideRecordHelper.add writes π1)
+  23:14 call BesideRecordHelper.add <literal>: accepted fresh (BesideRecordHelper.add writes π1)
+  24:5 List.update l: accepted fresh
+  24:5 List.update l[*].items: accepted fresh (<lambda> writes what List.update supplies it)
+  24:5 update l[*]: accepted call (List.update writes it)
+  24:26 update p: accepted callback-param (List.update supplies it owned)
+  24:40 List.push p.items: accepted callback-param (List.update supplies it owned)
+  summary add: π1 RAW[storage], π1[*] A, π2 RA; res [*] ~fresh501◦ ~π1[*], [*].items ~condition(fresh1) ~π2, π1{excl π2, sep π1[*] π2}
+  summary shared: res [*] ~fresh501◦ ~fresh502◦, [*].items ~condition(fresh1) ~fresh1, fresh2{lost}
+  summary fresh: res [*] ~fresh501◦ ~fresh502◦, [*].items ~condition(fresh2) ~fresh2, fresh1
+  demands 11: accepted 10 (fresh 8, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 11: accepted 10 (fresh 8, call 0, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+cause exclusive 1

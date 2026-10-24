@@ -10,7 +10,7 @@ module SelfSpreads
   summary chainBack: π1 RAW, π1[*] A, π2 R, π2[*] A; res [*] condition(fresh1) π1[*] π2[*], π1{lost}r{lost}
   summary renamed: π1 RAW, π1[*] A; res [*] π1[*], π1{lost}r{lost}
   summary spreadsView: π1 RAW, π1[*] A; res [*] π1[*], fresh1 π1{lost}r{lost}
-  summary otherList: π1 RAW, π2 R, π2[*] A; res [*] π2[*], π1{lost}r{excl π2[*], sep π1[*] π2[*]}
+  summary otherList: π1 RAW, π2 R, π2[*] A; res [*] condition(fresh1) π2[*], π1{lost}r{excl π2[*], sep π1[*] π2[*]}
   demands 6: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 total 6: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause disjoint 5

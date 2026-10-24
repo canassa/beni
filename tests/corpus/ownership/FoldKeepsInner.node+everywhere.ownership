@@ -35,14 +35,14 @@ module FoldKeepsInner
   summary direct: res [*] ~esc2 ~fresh3, fresh1
   summary right: res [*] ~esc2, ~fresh1
   summary nested: res [*] ~esc2, ~fresh1
-  summary inline: res [*] ~esc2, ~fresh1
+  summary inline: res [*] ~esc2, [*][*] ~condition(fresh3), ~fresh1
   summary replaced: res [*] ~condition(fresh3) ~esc2, ~fresh1
-  summary spawned: res [*] ~esc2, ~fresh1
-  summary record: res .n ~condition(fresh4), .rows ~condition(fresh1) ~fresh1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh5), ~fresh501◦
+  summary spawned: res [*] ~esc2, [*][*] ~condition(fresh3), ~fresh1
+  summary record: res .n ~condition(fresh5), .rows ~condition(fresh1) ~fresh1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh4), ~fresh501◦
   summary grow: π1 RAW[storage], π1[*] RAE; res [*] ~fresh1 ~π1[*], π1
   summary mapped: res [*] ~condition(fresh2) ~fresh2, [*][*] ~condition(fresh4) ~esc1 ~fresh4, fresh3
   summary indexed: res [*] ~condition(fresh2) ~fresh2, [*][*] ~condition(fresh4) ~esc1 ~fresh4, fresh3
-  summary grandchild: res [*] ~fresh1, [*][*] ~esc3, ~fresh2{lost}r{lost}
+  summary grandchild: res [*] ~fresh1, [*][*] ~esc3, [*][*][*] ~condition(fresh4), ~fresh2{lost}r{lost}
   demands 30: accepted 30 (fresh 13, call 0, param 2, callback-param 15, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 30: accepted 30 (fresh 13, call 0, param 2, callback-param 15, once 0, entry 0; assumed 0), pending 0, rejected 0

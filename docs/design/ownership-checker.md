@@ -5524,6 +5524,17 @@ condition (§31.4 item 6). Before, a failing record condition made the
 annotation a second choice, and the list lines of four corpus programs
 moved under `--ownership-records-lost`.
 
+*Amended 2026-10-25 (#474).* "Separated from another operand's containers"
+includes what the other operand holds at the path, not only its entries at that
+exact path. An operand whose entry stands above the path (an element of a
+parameter's list at `[*]`, beside a tuple stored with a list at `[*].0`; the
+list a spread `…acc` adds at the root) is projected to the path and compared
+there. Before, the pair was skipped as nested, so `List.push l ( xs, 0 )` in a
+helper, or `[ …acc, y ]`, made no guard at the stored list's path, and an edit
+of one position was accepted while another position held the same list. A
+projection that holds nothing at the path (a construction made here, a field a
+record update replaced) or that is the entry itself adds no guard.
+
 The dictionary's existing asserted focus row (§20.8) states the tree algorithm's
 structural separation itself. Construction annotations made inside that
 algorithm are not additional arrivals or results of the primitive: the row

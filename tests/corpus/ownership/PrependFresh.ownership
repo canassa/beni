@@ -9,7 +9,7 @@ module PrependFresh
   summary literalFront: π2 R, π2[*] R
   summary make: res fresh1
   summary calledFront: π2 R, π2[*] R
-  summary omitLast: π1 RA, π1[*] RA, π1[*][*] RA; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*]{excl π1}, [*][*] π1[*][*]{excl π1}, fresh2{lost} π1
+  summary omitLast: π1 RA, π1[*] RA, π1[*][*] RA; res [*] ~condition(fresh1) ~fresh1{excl π1} ~π1[*]{excl π1}, [*][*] ~condition(fresh3) π1[*][*]{excl π1}, fresh2{lost} π1
   summary bikeWars: π2 R, π2[*] R, π2[*][*] R, π3 R, π3[*] R
   summary storedBefore: unused
   summary holdIn: π1 RA, π2 RA, π2[*] A; res [*] fresh1 ~condition(fresh3) π1 π2[*], fresh2{excl π1, excl π2, sep π1 π2[*]} ~π2

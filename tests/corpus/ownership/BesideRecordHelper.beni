@@ -1,0 +1,24 @@
+-- ownership: a helper stores a record whose list field sits below what
+-- the list already holds at `[*]` (#474). `shared` puts one list in two
+-- records and edits one record's list in place: rejected `exclusive`.
+-- `fresh` stores two fresh lists: accepted.
+type alias P =
+    items : List Int
+    n : Int
+
+
+add : List P, List Int → List P
+add l xs = List.push l { items = xs, n = 0 }
+
+
+pub shared : ⊤ → List P
+shared ⊤ =
+    xs = [ 1 ]
+    l = add (add [] xs) xs
+    List.update l 0 λp → { p | items = List.push p.items 9 }
+
+
+pub fresh : ⊤ → List P
+fresh ⊤ =
+    l = add (add [] [ 1 ]) [ 2 ]
+    List.update l 0 λp → { p | items = List.push p.items 9 }

@@ -69,8 +69,8 @@ module FoldKeepsInnerRefused
   summary keepAll: π1 RAEW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
   summary right: res [*] ~esc2, ~esc1
   summary nested: res [*] ~esc2, ~esc1
-  summary spawned: res [*] ~esc2, ~esc1
-  summary record: res .n ~condition(fresh5), .rows ~condition(fresh4) ~esc1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh6), ~fresh501◦
+  summary spawned: res [*] ~esc2, [*][*] ~condition(fresh3), ~esc1
+  summary record: res .n ~condition(fresh6), .rows ~condition(fresh5) ~esc1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh4), ~fresh501◦
   summary keepRow: π1 RAEW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
   summary mapped: res [*] ~condition(fresh4) ~esc2 ~fresh4, [*][*] ~condition(fresh5) ~esc1 ~fresh5, fresh3
   summary indexed: res [*] ~condition(fresh4) ~esc2 ~fresh4, [*][*] ~condition(fresh5) ~esc1 ~fresh5, fresh3
