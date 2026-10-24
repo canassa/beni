@@ -1,8 +1,10 @@
--- run: a validator's required `Value` field is tested for presence alone
--- (`schema.md` §6, *One failure, so fewer tests*, amended 2026-10-24): it
--- holds every value the host gives, `null`, `false`, `0`, `""`, an array and
--- an object among them, and fails only where the key is absent. Each run's
--- error is unread, so each is a validator, written where it stands.
+-- run: a validator's required field has no presence test of its own
+-- (`schema.md` §6, *One failure, so fewer tests*, amended 2026-10-24). A
+-- `Value` field holds every value the host gives, `null`, `false`, `0`, `""`,
+-- an array and an object among them, and fails only where the key is absent;
+-- a record's or a list's field fails where the key is absent as its own
+-- object or array test fails. Each run's error is unread, so each is a
+-- validator, written where it stands.
 import Node
 import Schema exposing (Value)
 
@@ -15,6 +17,10 @@ schema Box =
 
 schema Outer =
     box : Box
+
+
+schema Listed =
+    items : List Int
 
 
 boxText : Box.Type → String
@@ -46,6 +52,16 @@ readOuter text =
             "not json"
 
 
+listed : String → String
+listed text =
+    case Schema.parse (Listed.schema ⊤) text of
+        Ok l →
+            "listed ${String.fromInt (List.length l.items)}"
+
+        Err _ →
+            "listed fail"
+
+
 inputs : List String
 inputs =
     [ "{\"tag\": \"null\", \"payload\": null, \"x-extra\": null}"
@@ -68,5 +84,13 @@ main =
             [ List.map inputs parseBox
             , List.map inputs λt → readOuter "{\"box\": ${t}}"
             , [ readOuter "{}" ]
+            , List.map
+                [ "{\"items\": [1, 2]}"
+                , "{\"items\": []}"
+                , "{}"
+                , "{\"items\": null}"
+                , "{\"items\": [\"a\"]}"
+                ]
+                listed
             ]
         )
