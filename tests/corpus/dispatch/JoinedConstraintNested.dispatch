@@ -25,15 +25,15 @@ module JoinedConstraintNested
   site 76
     evidence ext List compare
       primitive num_compare
-  site 121
+  site 125
     evidence top compare
       primitive num_compare
-  site 126
+  site 130
     evidence top compare
       primitive num_compare
-  site 139
+  site 143
     evidence ext List eq
       primitive strict_eq
-  site 142
+  site 146
     evidence ext List eq
       primitive strict_eq

@@ -1,0 +1,17 @@
+-- A live old collection requires an explicit copy of its storage.
+import Dict
+import Set
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                old = Dict.singleton 1 2
+                changed = Dict.insert old 3 4
+                Dict.size old + Dict.size changed
+        , update = λ_ model → model
+        , view = λmodel → <p>{model}</p>
+        }

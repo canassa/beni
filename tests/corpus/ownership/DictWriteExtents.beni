@@ -1,0 +1,36 @@
+-- #670: storage permutations retain borrowed values, while a write to the
+-- kept value and a keeper of the dictionary itself remain refused.
+import Dict exposing (Dict)
+
+
+borrowThenSwap : Dict Int (List Int), (List Int → List Int) → Dict Int (List Int) × Maybe (List Int)
+borrowThenSwap d f =
+    kept = Maybe.map (Dict.get d 1) f
+    ( Dict.swap d 1 2, kept )
+
+
+pub borrowedPermutation : Dict Int (List Int) → Dict Int (List Int) × Maybe (List Int)
+borrowedPermutation d = borrowThenSwap d λv → v
+
+
+borrowThenEdit : Dict Int (List Int), (List Int → List Int) → Dict Int (List Int) × Maybe (List Int)
+borrowThenEdit d f =
+    kept = Maybe.map (Dict.get d 1) f
+    ( Dict.update d 1 λm → Maybe.map m λv → List.push v 9, kept )
+
+
+pub keptValueWritten : Dict Int (List Int) → Dict Int (List Int) × Maybe (List Int)
+keptValueWritten d = borrowThenEdit d λv → v
+
+
+keepStorage :
+      Dict Int (List Int)
+    , (Dict Int (List Int) → Dict Int (List Int))
+    → Dict Int (List Int) × Dict Int (List Int)
+keepStorage d f =
+    kept = f d
+    ( Dict.swap d 1 2, kept )
+
+
+pub keptStorage : Dict Int (List Int) → Dict Int (List Int) × Dict Int (List Int)
+keptStorage d = keepStorage d λv → v

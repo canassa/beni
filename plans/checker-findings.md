@@ -6298,6 +6298,11 @@ red. This records the existing, explicitly deferred case; it does not extend
 the exception to a different safe program or bless the refusal. The fixture
 now names its finding and its checked red signature in `tests/pending/RED`.
 
+**As built (2026-10-25, #294).** Dict is ordered entries plus a `Map` index, with
+precise primitive rows, so no folded tree position merges the two values. The
+callback write is accepted and the fixture is promoted to
+`tests/corpus/ownership/DictFocusGrow.beni`.
+
 ## CK-268 — a generic callback keep edge forgets its writer (2026-10-22)
 
 **Issue:** #210. **Fixture:** `tests/pending/ownership/ScalarCallbackSlots.beni`.
@@ -6345,3 +6350,22 @@ stay accepted.
 The same pull request fixed the general half of #474 (construction guards
 skipped an operand that stands above the stored path; `BesideTupleHelper`,
 `BesideRecordHelper`, `BesideLiteralHelper`, `BesideSpreadHelper`).
+
+## CK-271 — a write to a live old Dict builds on node (2026-10-25)
+
+**Issue:** #681; waits on #320. **Fixture:** `tests/pending/build/bad/DictLiveOldNode/`.
+With ordered Dict storage edited in place, `changed = Dict.insert old 2 2`
+followed by a read of `old` is refused by the ownership checker
+(`list_still_used`, with a `Dict.copy` fix), but a default `node` build does
+not enforce it: it exits 0 and prints `2/2`. `--ownership-everywhere` gives
+the expected refusal. Enforcement must not depend on the platform's `lists`
+setting.
+
+## CK-272 — a fold over `List ⊤` loses its result (2026-10-25)
+
+**Issue:** #952. **Fixture:** `tests/pending/ownership/FoldUnitTopLevel.beni`.
+`List.foldl xs [] λx d → List.push d x` at `List ⊤` has the summary `π1 R`
+with no `res`, so a top-level list it built holds no shared cell and a push
+onto it is accepted as `fresh`. The `List Int` twin keeps `res ~fresh1` and
+is refused `top-level`. Ordered `Set t` is `Dict t ⊤`, so every set built by
+`Set.fromList` has this shape.

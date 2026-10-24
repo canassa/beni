@@ -4,9 +4,10 @@
 -- in it, and removing one that never was ("If the value is not found, no
 -- changes are made").
 --
--- `toList` is documented "sorted from lowest to highest", so every line
--- here is also an assertion about ORDER, and the inputs are deliberately
--- given out of order.
+-- `toList` follows insertion order (`language.md` §6.8, *Ordered
+-- dictionaries and sets*), so every line here is also an assertion about
+-- ORDER, and the inputs are deliberately not sorted. A set is edited in
+-- place, so a write to the shared `left` copies it first with `Set.copy`.
 import Node exposing (Program)
 import Set exposing (Set)
 import String
@@ -35,26 +36,26 @@ right = Set.fromList [ "c", "b" ]
 main : Program
 main =
     Node.printLines
-        [ show Set.empty
+        [ show (Set.empty ⊤)
         , show (Set.singleton "Tom")
-        , flag (Set.isEmpty Set.empty)
+        , flag (Set.isEmpty (Set.empty ⊤))
         , flag (Set.isEmpty (Set.singleton "Tom"))
         , flag (Set.member left "a")
         , flag (Set.member left "z")
-        , flag (Set.member Set.empty "a")
-        , String.fromInt (Set.size Set.empty)
+        , flag (Set.member (Set.empty ⊤) "a")
+        , String.fromInt (Set.size (Set.empty ⊤))
         , String.fromInt (Set.size left)
         , show (Set.fromList [ "c", "a", "b", "a", "c" ])
         , String.fromInt (Set.size (Set.fromList [ "a", "a", "a" ]))
-        , show (Set.insert left "a")
-        , String.fromInt (Set.size (Set.insert left "a"))
-        , show (Set.remove left "z")
-        , show (Set.remove left "a")
-        , show (Set.remove Set.empty "z")
+        , show (Set.insert (Set.copy left) "a")
+        , String.fromInt (Set.size (Set.insert (Set.copy left) "a"))
+        , show (Set.remove (Set.copy left) "z")
+        , show (Set.remove (Set.copy left) "a")
+        , show (Set.remove (Set.empty ⊤) "z")
         , show (Set.union left right)
-        , show (Set.union left Set.empty)
+        , show (Set.union left (Set.empty ⊤))
         , show (Set.intersect left right)
-        , show (Set.intersect left Set.empty)
+        , show (Set.intersect left (Set.empty ⊤))
         , show (Set.diff left right)
         , show (Set.diff right left)
         , show (Set.diff left left)

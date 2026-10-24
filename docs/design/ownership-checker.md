@@ -2232,7 +2232,7 @@ reached apart from the level it started at, with a step of its own:
   for several places (under `[*]` or a marker), is two of them only if the argument is exclusive at the place
   before the step that makes it stand for several, and the demand relies on that (§18.4): `viaLeft` records
   `xreq excl π1#Node.0`, and a caller whose subtree holds one list at two levels is refused there. Any other cell
-  there is one list at two places. core `Dict`'s tree, under its exemption, is not compared so.
+  there is one list at two places. Dict has no exemption from this comparison (§32, 2026-10-22).
   The argument's *other paths* (§16.4 item 3, `disjoint`) are operands only where the callee uses them: a path
   under none of its uses, or under one that only reads a place above it (a read of a node is not a read of what
   is below it), it never reaches, so a list there is not another operand. Before the marker every level's list was
@@ -2258,43 +2258,16 @@ reached apart from the level it started at, with a step of its own:
   (`ownership/EnvPrefix` pins the shape that made F1's `◇q` unsound: one list in a closure's environment and
   in the closure that environment holds.)
 
-*Scope (the owner, 2026-10-18).* Two folds keep their form from before this amendment:
+*Scope (the owner, 2026-10-18; amended 2026-10-22 for #294).* The nonrecursive fold keeps its form:
 
 - **Folds of a type that does not reach itself are unchanged from `master`.** A path into such a type twice was
   cast through `Js.Value` and read again, and it folds onto where it first entered the type, with no marker;
   F2, the cast marker with the full type and a check made to scale (the owner's option iii), is where those
   folds change. Markers there were measured: `Schema`'s `ctorArgs`, `fieldsFrom` and `printWith` went past
   `value-cells`, F2's finding again, so this amendment does not touch them.
-- **core `Dict`'s tree keeps the merged fold, until #294** (the dictionary on a `Map`, which removes the tree),
-  and with it #341's projection rule (a step into the tree keeps the entries of its other fields, at their own
-  path or at `⋆`), and its paths are representatives (`representative()` is true for every path through the
-  tree, so a demand or a holder there stays approximate). Why #379's hole cannot occur there: the hole is a
-  write of a list at one exact level, which the fold merged with another, while a holder of the other level is
-  read afterwards. In `core/Dict` no function writes a key or a value (they are `k` and `v`, which no writer
-  applies to); a value is written only by a callback the module hands it to, as a call-site demand on the
-  dictionary at `#Dict.0#Node.2`, the one place of every value, which a caller outside the module cannot split,
-  since it cannot name a level. Inside, what keeps a write from being seen at another position is §20.9's
-  one-position obligation — no function of `core/Dict` places one value at two positions of a tree — read for
-  callbacks: **no function of `core/Dict` hands a callback, or writes, a value that a position it reads afterwards
-  holds.** A traversal meets it because a position read later is another position. The audit, function by
-  function:
-  - `mapTree` binds one node's `value`, reads `left` before `func` and `right` after, neither of which holds it;
-    `foldlTree`/`foldrTree` hand `value` to `func` and then read the other subtree, which does not hold it.
-  - `filter` and `partition` go through `foldlTree`: `isGood key value`, then `insert dict key value`. The value
-    is then in the input tree and in the result, which is a result's provenance like any other (`res` names `π1`'s
-    values), checked at the caller, and no position the traversal reads later holds it.
-  - `union` is `foldl t1` inserting into `t2`, `diff` is `foldl t2` removing from `t1` (no value reaches a
-    callback), and `merge` makes `toList leftDict`, then `foldl rightDict` and `List.foldl` hand `lValue`, `rValue`
-    and the leftovers to the caller's callbacks, each once, from a list position or a tree position no later read
-    holds: the callbacks' writes are supplies of `π1`'s and `π2`'s values, call-site demands at the caller.
-  - `focus` is the asserted destructive read of §20.8.
-
-  The exemption protects precision as much as safety: under the marker, the tree's levels came apart and
-  `browser-direct`'s `Tea.want` was refused, approximately, because rebalancing moves a value from one region to
-  another, so `Dict.insert`'s result held one input cell at two result paths. #294 is its only exit, and its work
-  list includes: delete `dictTree`, the `unmarked` branch of `Walker.proj` and the other-places exception in
-  `callSiteDemandDeep`, and remove the obligation's clause above. `ownership/DictValueWritten` pins the
-  exemption: a dictionary's value written while the dictionary is still read is refused.
+The ordered representation (§32) removes the tree, its merged fold, unmarked projection rule,
+representative-path special case and other-place exemption. Dict's storage and values follow the
+ordinary collection rules; only its precise primitive rows are trusted.
 
 *Amended 2026-10-19 (issue #286): the bound argument — why four sources of growth, and no fifth.* Removing the
 path cut `k` (c) is sound only if every path the checker builds is bounded without it. The paragraph above
@@ -3579,12 +3552,9 @@ the focus relies on:
   there. So `Dict.insert`'s inferred result says `π3{sep π3 π1#Dict.0#Node.2}`, and one list inserted at two keys
   fails `exclusive`, exactly (thesis §7: insert "keeps `excl` only if both were stored exclusively, disjoint from
   each other and from the rest").
-- **The positions of one arrival.** A cell that arrived from outside (a parameter, a capture, a callback's
-  result) at a folded path of core `Dict`'s tree stands for the values at all of its positions, so `sep` of it
-  with itself is its own condition: distinct positions of an exclusive dictionary share no cell. This rests on
-  an obligation on `core/Dict` that the trusted surface lists (§20.9): **no function of `core/Dict` places one
-  value at two positions of a tree.** Every other folded path keeps §18.2's rule: a cell that stands for many is
-  not separated from itself, approximately.
+*Amended 2026-10-22 (#294):* the tree's arrival self-separation rule is withdrawn.
+Dict now uses the ordinary representative and separation rules at `[*]`, and its
+focus always demands a storage write. §32 replaces the tree contract above.
 
 ### 20.9 The trusted surface
 
@@ -3597,9 +3567,8 @@ What the checker takes on trust, each item privileged code whose error is a corr
 - `core/List`'s asserted primitive rows (§16.8, §18.5);
 - `traverseAt`'s obligation, met by `foldlFrom`, `foldrFrom`, `mapHelp`, `indexedMapHelp` and `filterMapHelp`,
   the only functions that call it, core-private and audited (§19 item 3);
-- `Dict.focus`'s destructive read, and `core/Dict`'s obligation that no function places one value at two
-  positions of a tree (§20.8); *amended 2026-10-18 (§16.7's level marker, until #294):* read for callbacks:
-  no function of `core/Dict` hands a callback, or writes, a value that a position it reads afterwards holds;
+- Dict's precise primitive rows (§32.2), including `focus`'s conditional destructive read. The tree's
+  one-position and callback obligations are withdrawn with the ordered representation (2026-10-22);
 - the entry rows (§20.2): the template rows are what browser-tea and browser do today; the direct row is what
   browser-direct must meet — P1's hand-over, and P2–P4 and P7, which the checker does not see — before slice 5
   writes a list in place (thesis §7, *The obligation a future slice must meet*).
@@ -7998,6 +7967,16 @@ case in #579 must now refuse. An unexpected safe refusal or an instruction
 budget failure is a stop condition, not a reason to weaken the rows or tests.
 This section adds no keyed For, Dict write-set positions (O3), or recogniser
 for List.map keyed updates. Those belong to the rendering work.
+
+*As built, 2026-10-25 (#294, draft):* `core/Dict` is `{ entries, index }` with
+its rows in `Ownership.dictRow`. `dictTree`, `dictTreePath`, `inCoreDict`, the
+`unmarked` projection branch, the tree's representative and root-separation
+cases, the call-site other-place skip and the focus supply's tree scope are
+deleted. `DictFocusGrow` is accepted and back in the corpus. Two gaps remain
+before this lands: a default `node` or `browser-tea` build does not enforce
+the rows (#681, waits on #320), and a fold over a `⊤`-valued collection drops
+its result, so a top-level `Set` built by `Set.fromList` is written in place
+without a refusal (#952).
 
 ### *Amended 2026-10-22 (#670):* a write's extent
 

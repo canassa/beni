@@ -13,8 +13,9 @@
 -- opposite orders; four is the smallest number of keys whose two trees
 -- differ — and prints, in order: the two sizes, whether the two
 -- dictionaries are `==`, whether their `toList`s are `==`, and whether a
--- dictionary equals itself. Module `Dict` now declares `pub eq`, which
--- compares the pairs in key order, so lines three and four agree.
+-- dictionary equals itself. Module `Dict` declares `pub eq`, which compares
+-- the pairs in insertion order (`language.md` §6.8, *Ordered dictionaries and
+-- sets*), so the two differ and lines three and four agree.
 -- `run/DictSetEquality` covers every spelling and `Set`.
 import Dict
 import Node exposing (Program)

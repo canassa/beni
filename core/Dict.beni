@@ -1,433 +1,195 @@
---! A dictionary with Int or String keys. Keys are constrained by the type;
---! callers supply no comparison evidence. Dict has no compare method.
+--! An ordered dictionary with Int or String keys. Iteration follows insertion
+--! order. Replacing a value keeps its position; removing and reinserting a key
+--! moves it to the end. Equality includes order. There is no compare method.
 --!
---!     scores : Dict String Int
---!     scores =
---!         Dict.fromList [ ( "Alice", 3 ), ( "Bob", 5 ) ]
---!
---! Argument order here is **subject first and function last**: the dictionary
---! comes first, so `scores ▷ Dict.insert "Carol" 7` is
---! `Dict.insert scores "Carol" 7` — `▷` is pipe-first, it inserts its left
---! operand as the callee's first argument. A function argument comes last, so
---! a lambda you write inline is the final one. The functions that build a
---! dictionary from nothing compare nothing on the way: `empty` is a constant
---! and `singleton` needs no method evidence. Both still require scalar keys.
---!
---! Insert, remove and query take *O(log n)* time. The implementation is the
---! left-leaning red-black tree of Elm's `Dict`, translated function by
---! function, with the key's own `compare` in the places Elm used `compare`.
---!
---! Nothing here is `foreign`.
+--! Lookup and replacement take expected O(1), and insertion at the end takes
+--! amortised O(1). Iteration takes O(n). Removal and insertAt take O(n).
+--! A write edits in place when ownership permits it. Use Dict.copy to retain
+--! an old version. A copy is shallow: values keep their identity.
 
 import List
 
 
---| A dictionary of keys and values, ordered by the key type's own `compare`.
---| So a `Dict String User` is a dictionary that lets you look up a `String`
---| (such as a user name) and find the associated `User`.
-pub opaque type Dict k v
-    = Dict (Tree k v)
+--| An ordered keyed collection. Keys must be Int or String.
+pub equatable foreign type Dict k v
 
 
---| The tree itself. Every recursive helper works on this; the ones that
---| compare keys take method evidence supplied internally for Int or String.
-type Tree k v
-    = Node NColor k v (Tree k v) (Tree k v)
-    | Leaf
+--| A fresh empty dictionary. Ownership: result ε fresh, exclusive.
+--| Each call constructs its own storage, including calls through a function value.
+pub foreign pure empty : ⊤ → fresh exclusive Dict k v
 
 
-type NColor
-    = Red
-    | Black
+--| A dictionary with one entry. Ownership: fresh ε, argument 2 at [*].
+pub foreign pure singleton : k, aliased v → fresh Dict k v
 
 
---| The empty dictionary. It compares nothing, so it needs no `compare` and
---| is a constant rather than a function.
---|
---|     Dict.empty
-pub empty : Dict k v
-empty = Dict Leaf
+--| Number of entries. Ownership: π1 ε R, no value use.
+pub foreign pure size : borrowed Dict k v → Int
 
 
---| Create a dictionary with one key-value pair. One pair needs no ordering
---| either, so this one needs no method evidence.
---|
---|     Dict.singleton "Tom" 42
-pub singleton : k, v → Dict k v
-singleton key value = Dict (Node Black key value Leaf Leaf)
-
-
---| Get the value associated with a key. If the key is not found, return
---| `Nothing`. This is useful when you are not sure if a key will be in the
---| dictionary.
---|
---|     get (fromList [ ( "Tom", "cat" ) ]) "Tom" == Just "cat"
---|     get (fromList [ ( "Tom", "cat" ) ]) "Jerry" == Nothing
-pub get : Dict k v, k → Maybe v
-get (Dict tree) targetKey = getHelp tree targetKey
-
-
-getHelp : Tree k v, k → Maybe v
-    where k.compare : k, k → Order
-getHelp tree targetKey =
-    case tree of
-        Leaf →
-            Nothing
-
-        Node _ key value left right →
-            case targetKey.compare key of
-                LT →
-                    getHelp left targetKey
-
-                EQ →
-                    Just value
-
-                GT →
-                    getHelp right targetKey
-
-
---| Determine if a key is in a dictionary.
---|
---|     member (fromList [ ( "Tom", "cat" ) ]) "Tom" == True
---|     member (fromList [ ( "Tom", "cat" ) ]) "Jerry" == False
-pub member : Dict k v, k → Bool
-member dict key =
-    case get dict key of
-        Just _ →
-            True
-
-        Nothing →
-            False
-
-
---| Determine the number of key-value pairs in the dictionary.
-pub size : Dict k v → Int
-size (Dict tree) = sizeHelp 0 tree
-
-
-sizeHelp : Int, Tree k v → Int
-sizeHelp n tree =
-    case tree of
-        Leaf →
-            n
-
-        Node _ _ _ left right →
-            sizeHelp (sizeHelp (n + 1) right) left
-
-
---| Determine if a dictionary is empty.
---|
---|     isEmpty empty == True
+--| Whether the dictionary has no entries.
 pub isEmpty : Dict k v → Bool
-isEmpty (Dict tree) =
-    case tree of
-        Leaf →
-            True
-
-        Node _ _ _ _ _ →
-            False
+isEmpty d = size d == 0
 
 
---| Insert a key-value pair into a dictionary. Replaces the value when there
---| is a collision.
---|
---|     insert empty "Tom" 42
-pub insert : Dict k v, k, v → Dict k v
-insert (Dict tree) key value = Dict (blacken (insertHelp tree key value))
+--| Index of a key, or -1. Ownership: π1 ε R; keys cross.
+foreign pure position : borrowed Dict k v, k → Int
 
 
--- The root node is always black.
-blacken : Tree k v → Tree k v
-blacken tree =
-    case tree of
-        Node Red key value left right →
-            Node Black key value left right
-
-        _ →
-            tree
+--| Read a key by index. Private: the caller checks the bounds.
+foreign pure keyAt : borrowed Dict k v, Int → k
 
 
-insertHelp : Tree k v, k, v → Tree k v
-    where k.compare : k, k → Order
-insertHelp tree key value =
-    case tree of
-        -- New nodes are always red. If it violates the rules, it will be
-        -- fixed when balancing.
-        Leaf →
-            Node Red key value Leaf Leaf
-
-        Node nColor nKey nValue nLeft nRight →
-            case key.compare nKey of
-                LT →
-                    balance nColor nKey nValue (insertHelp nLeft key value) nRight
-
-                EQ →
-                    Node nColor nKey value nLeft nRight
-
-                GT →
-                    balance nColor nKey nValue nLeft (insertHelp nRight key value)
+--| Read a value by index. Ownership: result aliases π1[*], borrowed.
+foreign pure valueAt : aliased Dict k v, Int → v
 
 
-balance : NColor, k, v, Tree k v, Tree k v → Tree k v
-balance color key value left right =
-    case right of
-        Node Red rK rV rLeft rRight →
-            case left of
-                Node Red lK lV lLeft lRight →
-                    Node
-                        Red
-                        key
-                        value
-                        (Node Black lK lV lLeft lRight)
-                        (Node Black rK rV rLeft rRight)
-
-                _ →
-                    Node color rK rV (Node Red key value left rLeft) rRight
-
-        _ →
-            case left of
-                Node Red lK lV (Node Red llK llV llLeft llRight) lRight →
-                    Node
-                        Red
-                        lK
-                        lV
-                        (Node Black llK llV llLeft llRight)
-                        (Node Black key value lRight right)
-
-                _ →
-                    Node color key value left right
+--| Read a value once during a walk, as List.traverseAt does. Ownership:
+--| result π1[*], taken; callers walk each position once, in entry order.
+foreign pure traverseAt : aliased Dict k v, Int → v
 
 
---| Remove a key-value pair from a dictionary. If the key is not found, no
---| changes are made.
---|
---|     remove animals "Tom"
-pub remove : Dict k v, k → Dict k v
-remove (Dict tree) key = Dict (blacken (removeHelp tree key))
+--| Scalar key equality, with no method evidence.
+foreign pure keySame : borrowed k, borrowed k → Bool
 
 
--- The easiest thing to remove from the tree, other than a red node, is a
--- black node with a red child. So the deletion walks down rearranging as it
--- goes, so that the node it finally removes is one of those.
-removeHelp : Tree k v, k → Tree k v
-    where k.compare : k, k → Order
-removeHelp tree targetKey =
-    case tree of
-        Leaf →
-            Leaf
-
-        Node color key value left right →
-            case targetKey.compare key of
-                LT →
-                    case left of
-                        Node Black _ _ lLeft _ →
-                            case lLeft of
-                                Node Red _ _ _ _ →
-                                    Node color key value (removeHelp left targetKey) right
-
-                                _ →
-                                    case moveRedLeft tree of
-                                        Node nColor nKey nValue nLeft nRight →
-                                            balance
-                                                nColor
-                                                nKey
-                                                nValue
-                                                (removeHelp nLeft targetKey)
-                                                nRight
-
-                                        Leaf →
-                                            Leaf
-
-                        _ →
-                            Node color key value (removeHelp left targetKey) right
-
-                _ →
-                    removeHelpEQGT
-                        (removeHelpPrepEQGT tree color key value left right)
-                        targetKey
+--| Header identity, used before the ordered equality walk.
+foreign pure same : borrowed Dict k v, borrowed Dict k v → Bool
 
 
--- Rearrange the node so that the `EQ` and `GT` cases can proceed: either
--- rotate a red left child up, or borrow from the right.
-removeHelpPrepEQGT : Tree k v, NColor, k, v, Tree k v, Tree k v → Tree k v
-removeHelpPrepEQGT tree color key value left right =
-    case left of
-        Node Red lK lV lLeft lRight →
-            Node color lK lV lLeft (Node Red key value lRight right)
-
-        _ →
-            case right of
-                Node Black _ _ (Node Black _ _ _ _) _ →
-                    moveRedRight tree
-
-                Node Black _ _ Leaf _ →
-                    moveRedRight tree
-
-                _ →
-                    tree
+--| Find a value, or Nothing. The result borrows the stored value.
+pub get : Dict k v, k → Maybe v
+get d k =
+    i = position d k
+    if i < 0 then Nothing else Just (valueAt d i)
 
 
--- When we find the node to delete, we replace it with the minimum of its
--- right subtree and then delete that minimum instead.
-removeHelpEQGT : Tree k v, k → Tree k v
-    where k.compare : k, k → Order
-removeHelpEQGT tree targetKey =
-    case tree of
-        Node color key value left right →
-            case targetKey.compare key of
-                EQ →
-                    case getMin right of
-                        Node _ minKey minValue _ _ →
-                            balance color minKey minValue left (removeMin right)
-
-                        Leaf →
-                            Leaf
-
-                _ →
-                    balance color key value left (removeHelp right targetKey)
-
-        Leaf →
-            Leaf
+--| Whether a key is present.
+pub member : Dict k v, k → Bool
+member d k = position d k ≥ 0
 
 
-getMin : Tree k v → Tree k v
-getMin tree =
-    case tree of
-        Node _ _ _ ((Node _ _ _ _ _) as left) _ →
-            getMin left
-
-        _ →
-            tree
+--| Replace a value at its current position, or append a new key.
+--| Ownership: π1 ε W, result π1 with π3 stored at [*]; no value write.
+pub foreign pure insert : consumed returned Dict k v, k, aliased v → Dict k v
 
 
-removeMin : Tree k v → Tree k v
-removeMin tree =
-    case tree of
-        Node color key value ((Node lColor _ _ lLeft _) as left) right →
-            case lColor of
-                Black →
-                    case lLeft of
-                        Node Red _ _ _ _ →
-                            Node color key value (removeMin left) right
-
-                        _ →
-                            case moveRedLeft tree of
-                                Node nColor nKey nValue nLeft nRight →
-                                    balance nColor nKey nValue (removeMin nLeft) nRight
-
-                                Leaf →
-                                    Leaf
-
-                _ →
-                    Node color key value (removeMin left) right
-
-        _ →
-            Leaf
+--| Remove a key. Retained entries keep their relative order.
+--| Ownership: π1 ε W, result π1 and its retained values; no value write.
+pub foreign pure remove : consumed returned Dict k v, k → Dict k v
 
 
--- Borrow a key from the right sibling when the left child and its own left
--- child are both black. Elm writes this as two top-level patterns; the inner
--- `case` here is the same three cases with lines short enough to read, and
--- the colour of the node itself does not affect the result.
-moveRedLeft : Tree k v → Tree k v
-moveRedLeft tree =
-    case tree of
-        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) →
-            case rLeft of
-                Node Red rlK rlV rlL rlR →
-                    Node
-                        Red
-                        rlK
-                        rlV
-                        (Node Black k v (Node Red lK lV lLeft lRight) rlL)
-                        (Node Black rK rV rlR rRight)
-
-                _ →
-                    Node Black k v (Node Red lK lV lLeft lRight) (Node Red rK rV rLeft rRight)
-
-        _ →
-            tree
+--| Copy storage and private entry pairs, keeping the same values and order.
+--| Ownership: fresh ε; result [*] aliases π1[*], including deep conditions.
+pub foreign pure copy : aliased Dict k v → fresh Dict k v
 
 
--- The mirror of `moveRedLeft`: rotate the left child up when it already has
--- a red child of its own, otherwise recolour.
-moveRedRight : Tree k v → Tree k v
-moveRedRight tree =
-    case tree of
-        Node _ k v (Node _ lK lV lLeft lRight) (Node _ rK rV rLeft rRight) →
-            case lLeft of
-                Node Red llK llV llLeft llRight →
-                    Node
-                        Red
-                        lK
-                        lV
-                        (Node Black llK llV llLeft llRight)
-                        (Node Black k v lRight (Node Red rK rV rLeft rRight))
-
-                _ →
-                    Node Black k v (Node Red lK lV lLeft lRight) (Node Red rK rV rLeft rRight)
-
-        _ →
-            tree
+--| Exchange two keys' positions. Missing or equal keys leave it unchanged.
+--| Ownership: π1 ε W, result π1; a permutation preserves its conditions.
+pub foreign pure swap : consumed returned Dict k v, k, k → Dict k v
 
 
---| Update the value of a dictionary for a specific key with a given function.
---| The function is last, so the one you write inline reads after the key it
---| applies to.
---|
---|     update animals "Tom" λ_ → Just Cat
+--| Remove any old occurrence, then insert at the clamped zero-based index
+--| in the remaining entries. Ownership: π1 ε W, π4 stored at [*].
+pub foreign pure insertAt : consumed returned Dict k v, Int, k, aliased v → Dict k v
+
+
+--| Apply a permutation of this dictionary's keys. Only sortBy calls this.
+--| Ownership: π1 ε W; result π1 with unchanged values; π2 borrowed.
+foreign pure permute : consumed returned Dict k v, borrowed List k → Dict k v
+
+
+--| Update one key. Just replaces or appends, Nothing removes the key.
+--| The callback runs once and may suspend.
 pub update : Dict k v, k, (Maybe v → Maybe v) → Dict k v
-update dict targetKey alter = focus dict targetKey alter
+update d k alter = focus d k alter
 
 
---| The focus primitive of a dictionary (`ownership-checker.md` §20.8): the
---| value at `targetKey` taken out of the tree, handed to `alter`, and what
---| it makes put back, or the key removed. Its ownership row is asserted:
---| the value is handed out while no other position holds it, so `alter`
---| may edit it in place when the dictionary is unique, exclusive and dead
---| after the call. `update` is this.
---|
---| That rests on an obligation every function of this module meets, which
---| the checker takes on trust (`ownership-checker.md` §20.9): no function
---| here places one value at two positions of a tree.
+--| Ownership: π1 ε W; supply π1[*] at argument 3's #Just.0, taken and
+--| owned under excl π1. Write back its Just payload or remove the key.
+--| The storage write is required even when the callback only reads.
 focus : Dict k v, k, (Maybe v → Maybe v) → Dict k v
-    where k.compare : k, k → Order
-focus dict targetKey alter =
-    case alter (get dict targetKey) of
-        Just value →
-            insert dict targetKey value
-
+focus d k alter =
+    case alter (get d k) of
+        Just v →
+            insert d k v
         Nothing →
-            remove dict targetKey
+            remove d k
 
 
---| Combine two dictionaries. If there is a collision, preference is given to
---| the first dictionary.
+--| Fold from first entry to last. Values are borrowed; the accumulator
+--| follows the usual fold ownership protocol.
+pub foldl : Dict k v, b, (k, v, b → b) → b
+foldl d initial f = foldlFrom d 0 initial f
+
+
+foldlFrom : Dict k v, Int, b, (k, v, b → b) → b
+foldlFrom d i acc f =
+    if i < size d then
+        next = f (keyAt d i) (valueAt d i) acc
+        foldlFrom d (i + 1) next f
+    else
+        acc
+
+
+--| Fold from last entry to first.
+pub foldr : Dict k v, b, (k, v, b → b) → b
+foldr d initial f = foldrFrom d (size d - 1) initial f
+
+
+foldrFrom : Dict k v, Int, b, (k, v, b → b) → b
+foldrFrom d i acc f =
+    if i ≥ 0 then
+        next = f (keyAt d i) (valueAt d i) acc
+        foldrFrom d (i - 1) next f
+    else
+        acc
+
+
+--| Build fresh storage from callback results, in the same order.
+pub map : Dict k a, (k, a → b) → Dict k b
+map d f = mapFrom d 0 (empty ⊤) f
+
+
+mapFrom : Dict k a, Int, Dict k b, (k, a → b) → Dict k b
+mapFrom d i out f =
+    if i < size d then
+        k = keyAt d i
+        v = f k (traverseAt d i)
+        mapFrom d (i + 1) (insert out k v) f
+    else
+        out
+
+
+--| Keep entries that pass the test, in fresh storage and the same order.
+pub filter : Dict k v, (k, v → Bool) → Dict k v
+filter d f = foldl d (empty ⊤) λk v out → if f k v then insert out k v else out
+
+
+--| Build two dictionaries, preserving order within each.
+pub partition : Dict k v, (k, v → Bool) → Dict k v × Dict k v
+partition d f =
+    step k v ( yes, no ) = if f k v then ( insert yes k v, no ) else ( yes, insert no k v )
+    foldl d ( empty ⊤, empty ⊤ ) step
+
+
+--| Keep the left's order and values, then append right-only entries.
 pub union : Dict k v, Dict k v → Dict k v
-union t1 t2 = foldl t1 t2 λkey value dict → insert dict key value
+union left right = foldl right (copy left) λk v out → if member out k then out else insert out k v
 
 
---| Keep a key-value pair when its key appears in the second dictionary.
+--| Keep left entries whose keys occur in right, in fresh storage.
 pub intersect : Dict k v, Dict k v → Dict k v
-intersect t1 t2 = filter t1 λkey _ → member t2 key
+intersect left right = filter left λk _ → member right k
 
 
---| Keep a key-value pair when its key does not appear in the second
---| dictionary.
+--| Keep left entries whose keys do not occur in right, in fresh storage.
 pub diff : Dict k a, Dict k b → Dict k a
-diff t1 t2 = foldl t2 t1 λkey _ t → remove t key
+diff left right = filter left λk _ → not (member right k)
 
 
---| The most general way of combining two dictionaries. The two dictionaries
---| come first and the accumulator after them, exactly as in `foldl`, and then
---| the three functions that say what to do when a given key appears:
---|
---|   1. Only in the left dictionary.
---|   2. In both dictionaries.
---|   3. Only in the right dictionary.
---|
---| You then traverse all the keys from lowest to highest, building up
---| whatever you want.
+--| Visit left keys in left order, then right-only keys in right order.
+--| Call leftStep, bothStep or rightStep once for each distinct key.
 pub merge :
       Dict k a
     , Dict k b
@@ -436,207 +198,59 @@ pub merge :
     , (k, a, b, result → result)
     , (k, b, result → result)
     → result
-merge leftDict rightDict initialResult leftStep bothStep rightStep =
-    stepState rKey rValue ( list, result ) =
-        case list of
-            [] →
-                ( list, rightStep rKey rValue result )
-
-            [ ( lKey, lValue ), …rest ] →
-                case lKey.compare rKey of
-                    LT →
-                        stepState rKey rValue ( rest, leftStep lKey lValue result )
-
-                    GT →
-                        ( list, rightStep rKey rValue result )
-
-                    EQ →
-                        ( rest, bothStep lKey lValue rValue result )
-
-    ( leftovers, intermediateResult ) = foldl rightDict ( toList leftDict, initialResult ) stepState
-    List.foldl leftovers intermediateResult λ( key, value ) result → leftStep key value result
+merge left right initial leftStep bothStep rightStep =
+    step k v acc =
+        case get right k of
+            Nothing →
+                leftStep k v acc
+            Just other →
+                bothStep k v other acc
+    afterLeft = foldl left initial step
+    foldl right afterLeft λk v acc → if member left k then acc else rightStep k v acc
 
 
---| Apply a function to all values in a dictionary. The keys, and therefore
---| the ordering, are untouched.
---|
---|     map (fromList [ ( "a", 1 ) ]) λ_ value → value + 1
---|
---| `func` is called in ascending key order (`checker.md` Appendix B), which
---| is what `mapTree` binds its three pieces in order to get.
-pub map : Dict k a, (k, a → b) → Dict k b
-map (Dict tree) func = Dict (mapTree tree func)
-
-
-mapTree : Tree k a, (k, a → b) → Tree k b
-mapTree tree func =
-    case tree of
-        Leaf →
-            Leaf
-
-        Node color key value left right →
-            newLeft = mapTree left func
-            newValue = func key value
-            newRight = mapTree right func
-            Node color key newValue newLeft newRight
-
-
---| Fold over the key-value pairs in a dictionary from lowest key to highest
---| key.
---|
---|     foldl (fromList [ ( "a", 1 ), ( "b", 2 ) ]) 0 (λ_ _ count → count + 1) == 2
-pub foldl : Dict k v, b, (k, v, b → b) → b
-foldl (Dict tree) acc func = foldlTree tree acc func
-
-
-foldlTree : Tree k v, b, (k, v, b → b) → b
-foldlTree tree acc func =
-    case tree of
-        Leaf →
-            acc
-
-        Node _ key value left right →
-            foldlTree right (func key value (foldlTree left acc func)) func
-
-
---| Fold over the key-value pairs in a dictionary from highest key to lowest
---| key.
---|
---|     foldr (fromList [ ( "b", 2 ), ( "a", 1 ) ]) [] (λkey _ names → [ key, …names ]) == [ "a", "b" ]
-pub foldr : Dict k v, b, (k, v, b → b) → b
-foldr (Dict tree) acc func = foldrTree tree acc func
-
-
-foldrTree : Tree k v, b, (k, v, b → b) → b
-foldrTree tree acc func =
-    case tree of
-        Leaf →
-            acc
-
-        Node _ key value left right →
-            foldrTree left (func key value (foldrTree right acc func)) func
-
-
---| Keep only the key-value pairs that pass the given test.
---|
---|     filter animals (λ_ animal → animal == Cat)
-pub filter : Dict k v, (k, v → Bool) → Dict k v
-filter (Dict tree) isGood = foldlTree tree empty λkey value dict →
-    if isGood key value then
-        insert dict key value
-    else
-        dict
-
-
---| Partition a dictionary according to some test. The first dictionary
---| contains all key-value pairs which passed the test, and the second
---| contains the pairs that did not.
---|
---|     partition animals (λ_ animal → animal == Cat)
-pub partition : Dict k v, (k, v → Bool) → Dict k v × Dict k v
-partition (Dict tree) isGood =
-    step key value ( trues, falses ) =
-        if isGood key value then
-            ( insert trues key value, falses )
-        else
-            ( trues, insert falses key value )
-    foldlTree tree ( empty, empty ) step
-
-
---| Get all of the keys in a dictionary, sorted from lowest to highest.
---|
---|     keys (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ "a", "b" ]
+--| Keys in insertion order, in a fresh list.
 pub keys : Dict k v → List k
-keys dict = foldl dict [] λkey _ keyList → List.push keyList key
+keys d = foldl d [] λk _ out → List.push out k
 
 
---| Get all of the values in a dictionary, in the order of their keys.
---|
---|     values (fromList [ ( "b", 1 ), ( "a", 0 ) ]) == [ 0, 1 ]
+--| Values in insertion order, in a fresh list. Values themselves are shared.
 pub values : Dict k v → List v
-values dict = foldl dict [] λ_ value valueList → List.push valueList value
+values d = foldl d [] λ_ v out → List.push out v
 
 
---| Convert a dictionary into an association list of key-value pairs, sorted
---| by keys.
---|
---|     toList (fromList [ ( "b", 1 ), ( "a", 0 ) ])
---|         == [ ( "a", 0 ), ( "b", 1 ) ]
+--| Fresh key/value tuples in insertion order, in a fresh list.
 pub toList : Dict k v → List (k × v)
-toList dict = foldl dict [] λkey value list → List.push list ( key, value )
+toList d = foldl d [] λk v out → List.push out ( k, v )
 
 
---| Convert an association list into a dictionary, ordered by the key type's
---| own `compare`.
---|
---|     fromList [ ( "a", 0 ), ( "b", 1 ) ]
+--| Build in list order. First occurrence sets position; last sets value.
 pub fromList : List (k × v) → Dict k v
-fromList assocs = List.foldl assocs empty λ( key, value ) dict → insert dict key value
+fromList pairs = List.foldl pairs (empty ⊤) λ( k, v ) out → insert out k v
 
 
---| Whether two dictionaries hold the same pairs: the same keys, by the key
---| type's `compare`, each with an equal value, by the value type's own `eq`.
---| This is what `==` and `≠` on a dictionary mean (`static-dispatch-spike.md`
---| §3.3), and it stays callable by name.
---|
---|     eq (fromList [ ( 1, "a" ), ( 2, "b" ) ]) (fromList [ ( 2, "b" ), ( 1, "a" ) ]) == True
---|
---| It is written here because the derived `eq` would compare the TREES, and
---| two dictionaries holding the same pairs are not always the same tree: the
---| shape depends on the order the keys went in. The two are walked together
---| in key order, and the first pair that differs ends the walk. O(n).
+--| Stable ascending sort. Evaluate the callback once per entry, in current
+--| order. It may suspend. The dictionary storage is edited in place.
+pub sortBy : Dict k v, (k, v → a) → Dict k v
+    where a.compare : a, a → Order
+sortBy d f =
+    scored = foldl d [] λk v out → List.push out ( f k v, k )
+    ordered = List.sortBy scored λ( score, _ ) → score
+    permute d (List.map ordered λ( _, k ) → k)
+
+
+--| Equal keys and values in the same order, with an identity shortcut.
 pub eq : Dict k v, Dict k v → Bool
     where v.eq : v, v → Bool
-eq (Dict left) (Dict right) = eqCursor (descend left End) (descend right End)
+eq left right = same left right || (size left == size right && eqFrom left right 0)
 
 
--- A walk of a tree in key order, one pair at a time: the next pair, the
--- right subtree still to visit after it, and the rest of the walk. Built
--- by `descend`, so a step costs O(1) amortised, and the walk holds at most
--- one step per level of the tree: no list of the pairs is ever made.
-type Cursor k v
-    = Step k v (Tree k v) (Cursor k v)
-    | End
-
-
--- Push the left spine of `tree` onto the walk: its leftmost pair ends up
--- first.
-descend : Tree k v, Cursor k v → Cursor k v
-descend tree rest =
-    case tree of
-        Leaf →
-            rest
-
-        Node _ key value left right →
-            descend left (Step key value right rest)
-
-
-eqCursor : Cursor k v, Cursor k v → Bool
-    where
-        k.compare : k, k → Order
-        , v.eq : v, v → Bool
-eqCursor left right =
-    case left of
-        End →
-            case right of
-                End →
-                    True
-
-                Step _ _ _ _ →
-                    False
-
-        Step lKey lValue lTree lRest →
-            case right of
-                End →
-                    False
-
-                Step rKey rValue rTree rRest →
-                    case lKey.compare rKey of
-                        EQ →
-                            if lValue == rValue then
-                                eqCursor (descend lTree lRest) (descend rTree rRest)
-                            else
-                                False
-
-                        _ →
-                            False
+eqFrom : Dict k v, Dict k v, Int → Bool
+    where v.eq : v, v → Bool
+eqFrom left right i =
+    if i < size left then
+        keySame (keyAt left i) (keyAt right i)
+            && valueAt left i == valueAt right i
+            && eqFrom left right (i + 1)
+    else
+        True

@@ -1,0 +1,10 @@
+module DictFocusGrow
+  8:9 call Dict.insert <call Dict.insert>: accepted call
+  8:22 call Dict.insert <call Dict.empty>: accepted call
+  9:5 call Dict.update d: accepted call (Dict.update writes π1)
+  9:5 call Dict.update d[*]: accepted call (<lambda> writes what Dict.update supplies it)
+  9:26 call Maybe.map m#Just.0: accepted callback-param (Dict.update supplies it owned)
+  9:43 List.push v: accepted callback-param (Maybe.map supplies it owned)
+  summary grow: res [*] ~condition(fresh2) ~fresh2, [*][*] ~fresh3, fresh1
+  demands 6: accepted 6 (fresh 0, call 4, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 6: accepted 6 (fresh 0, call 4, param 0, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 0

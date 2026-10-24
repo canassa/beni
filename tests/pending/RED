@@ -111,8 +111,6 @@
 # and DefectInTurnRender differed from browser-tea only for reasons of that platform;
 # their browser/tea/ originals stay green in the corpus.
 
-
-
 # CK-255 (2026-10-17): browser-inline's slice S1 — holes and handlers inlined per
 # key, across modules (docs/design/browser-inline.md §8, issue #297). Every
 # golden and refusal of the slice, written before the slice; each moves into
@@ -134,9 +132,6 @@ tests/pending/ownership/RecordForItem.beni exit=0 browser-inline.ownership-diffe
 # as apart from it, for records as for lists. Golden: the verdict with the fix.
 tests/pending/ownership/RecordSplitPushBack.beni exit=0 ownership-differs
 
-# CK-267 (#663): two fresh dictionary values, deferred to #294.
-tests/pending/ownership/DictFocusGrow.beni exit=0 ownership-differs
-
 # CK-269 (#856): a deep tuple's summary lists 2^16 places; building them to the
 # `entries` limit (1 276 786) takes past the 20 s case timeout.
 tests/pending/ownership/DeepTupleDag.beni timeout
@@ -146,3 +141,8 @@ tests/pending/ownership/DeepTupleDag.beni timeout
 tests/pending/ownership/DictHelperAlias.beni exit=0 node+everywhere.ownership-differs
 tests/pending/ownership/DictRecordAlias.beni exit=0 node+everywhere.ownership-differs
 tests/pending/ownership/DictTupleAlias.beni exit=0 node+everywhere.ownership-differs
+# CK-271 (#681): a default node build accepts a write to a live old Dict;
+# waits on #320's enforcement on every platform.
+tests/pending/build/bad/DictLiveOldNode BuildDidNotFail
+# CK-272 (#952): a fold over List ⊤ drops its result's provenance.
+tests/pending/ownership/FoldUnitTopLevel.beni exit=0 node+everywhere.ownership-differs

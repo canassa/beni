@@ -72,11 +72,12 @@ pick seed n =
 
 
 empty : Model
-empty = { start = 0, len = 0, items = Dict.empty }
+empty = { start = 0, len = 0, items = Dict.empty ⊤ }
 
 
 modelPush : Model, Int → Model
-modelPush m x = { Record.copy m | len = m.len + 1, items = Dict.insert m.items (m.start + m.len) x }
+modelPush m x =
+    { Record.copy m | len = m.len + 1, items = Dict.insert (Dict.copy m.items) (m.start + m.len) x }
 
 
 modelPrepend : Model, Int → Model
@@ -84,7 +85,7 @@ modelPrepend m x =
     { Record.copy m
         | start = m.start - 1
         , len = m.len + 1
-        , items = Dict.insert m.items (m.start - 1) x
+        , items = Dict.insert (Dict.copy m.items) (m.start - 1) x
     }
 
 
@@ -101,7 +102,7 @@ modelPop m = { Record.copy m | len = max 0 (m.len - 1) }
 modelSet : Model, Int, Int → Model
 modelSet m i x =
     if 0 ≤ i && i < m.len then
-        { Record.copy m | items = Dict.insert m.items (m.start + i) x }
+        { Record.copy m | items = Dict.insert (Dict.copy m.items) (m.start + i) x }
     else
         m
 
@@ -316,7 +317,7 @@ main =
 
     start =
         { seed = 4711
-        , versions = Dict.empty
+        , versions = Dict.empty ⊤
         , count = 0
         , bad = []
         , checks = 0

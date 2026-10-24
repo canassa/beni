@@ -69,7 +69,7 @@ reachableByHops start board =
         board
         (Set.singleton (coordKey start.coord))
         [ start.coord ]
-        Set.empty
+        (Set.empty ⊤)
 
 
 bfsHops : Board, Set String, List Coord, Set String → Set String

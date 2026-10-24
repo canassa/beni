@@ -3,7 +3,7 @@ import Dict
 import Tea
 
 
-shared = Dict.insert Dict.empty 1 [ 0 ]
+shared = Dict.insert (Dict.empty ⊤) 1 [ 0 ]
 
 
 main : Tea.Program

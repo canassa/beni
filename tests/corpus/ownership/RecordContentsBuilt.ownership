@@ -17,7 +17,9 @@ module RecordContentsBuilt
   69:8 update <call RecordContentsBuilt.mk2>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsBuilt.flip writes it) [copy]
   75:5 update <call List.push>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsBuilt.flip writes it) [copy]
   75:11 List.push xs: accepted fresh
-  79:72 update r: rejected supply: Dict.map supplies its parameter 2 borrowed (π1#Dict.0#Node.2) [copy]
+  79:19 call Dict.insert <call Dict.insert>: accepted call
+  79:32 call Dict.insert <call Dict.empty>: accepted call
+  79:76 update r: rejected exclusive: Dict.map hands its parameter 2 a position of a list that may hold one record at two positions (approx) [copy]
   83:23 update o: rejected later-use: o is read again at 83:18 [copy]
   83:44 update x: rejected exclusive: List.map hands its parameter 1 a position of a list that may hold one record at two positions [copy]
   87:16 update os[*]: accepted param (List.map writes it)
@@ -43,7 +45,7 @@ module RecordContentsBuilt
   summary mk2: π1 R; res [*] π1, fresh1{shared}r{shared}
   summary a8: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
   summary a9: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~π1◦, fresh1r{shared}
-  summary a10: π1 R; res #Dict.0 condition(fresh3){lost}r{lost}, #Dict.0#Node.1 condition(fresh2) ~condition(fresh1){lost}r{lost}, #Dict.0#Node.2 condition(fresh4) ~π1◦r{lost}, #Dict.0#Node.3 ~condition(fresh5) ~condition(fresh7){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh6) ~condition(fresh7){lost}r{lost}
+  summary a10: π1 R; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦, fresh1r{lost}
   summary a11: π1 RW{n}, π1.inner R; res [*] ~condition(fresh2) ~fresh2r{shared} ~π1◦, [*].inner ~fresh501◦, fresh1r{shared}
   summary flipInner: π1 R, π1[*] W{inner}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, [*].inner ~fresh501◦, fresh1r{excl π1}; rxreq excl π1
   summary a12: π1 R; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦ ~fresh502◦, [*].inner ~π1, fresh1r{shared}
@@ -54,8 +56,8 @@ module RecordContentsBuilt
   summary a17: π1 RA, π1[*] RW{done}; res .0 fresh1r{excl π1}, .0[*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, .1 π1, condition(fresh3)r{lost}; rxreq excl π1
   summary a18: π1 R, π1[*] W{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1[*]◦, fresh1r{lost}
   summary a19: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~fresh502◦r{shared} ~π1◦, fresh1r{shared}
-  demands 8: accepted 7 (fresh 5, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  demands 10: accepted 9 (fresh 5, call 2, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
   records 24: accepted 4, pending 0, rejected 20 (copy 20, restructure 0); hoisted 0, eager reads 0
-total 8: accepted 7 (fresh 5, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 10: accepted 9 (fresh 5, call 2, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 records 24: accepted 4, pending 0, rejected 20 (copy 20, restructure 0); hoisted 0, eager reads 0
 cause disjoint 1

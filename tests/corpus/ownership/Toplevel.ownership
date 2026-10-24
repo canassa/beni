@@ -5,18 +5,21 @@ module Toplevel
   40:5 update model: accepted call
   40:25 construction model.todos: accepted call
   44:19 ++ <literal>: accepted fresh
-  51:31 construction xs: rejected element: d#Dict.0#Node.2 holds it and is read at 51:13 (approx)
-  58:15 call Toplevel.bump Dict.empty#Dict.0#Node.2: accepted fresh (Toplevel.bump writes π1#Dict.0#Node.2)
+  51:13 call Dict.insert d: accepted param
+  51:31 construction xs: rejected element: d[*] holds it and is read at 51:13 (approx)
+  54:13 call Dict.insert d: accepted param
+  58:15 call Toplevel.bump <call Dict.empty>: accepted call (Toplevel.bump writes π1)
+  58:15 call Toplevel.bump <call Dict.empty>[*]: accepted call (Toplevel.bump writes π1[*])
   summary addSeed: res shared(Toplevel.seed)
   summary addModel: res .todos shared(Toplevel.seed), shared(Toplevel.initialModel)◦
   summary init: res .todos fresh1, fresh501◦
   summary addFresh: res .todos fresh1, fresh501◦
   summary reading: res fresh1
-  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0 ~condition(fresh1){lost}, #Dict.0#Node.1 condition(fresh2) ~condition(fresh10){excl π1#Dict.0#Node.1} ~condition(fresh8){lost} ~π1#Dict.0#Node.1r{lost}, #Dict.0#Node.2 condition(fresh3) ~condition(fresh11){lost} ~condition(fresh8){lost} ~fresh11{lost} ~π1#Dict.0#Node.2{lost}r{lost}, #Dict.0#Node.3 condition(fresh6) ~condition(fresh4){lost} ~condition(fresh8){lost} ~condition(fresh9){lost} ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}, #Dict.0#Node.4 condition(fresh7) ~condition(fresh5){lost} ~condition(fresh8){lost} ~condition(fresh9){lost} ~π1#Dict.0#Node.3{lost}r{lost} ~π1#Dict.0#Node.4{lost}r{lost}
-  summary fromEmpty: res #Dict.0 ~condition(fresh1){lost}, #Dict.0#Node.1 condition(fresh2) ~condition(fresh10) ~condition(fresh8){lost}, #Dict.0#Node.2 condition(fresh3) ~condition(fresh11){lost} ~condition(fresh8){lost} ~fresh11{lost}, #Dict.0#Node.3 condition(fresh6) ~condition(fresh4){lost} ~condition(fresh8){lost} ~condition(fresh9){lost}, #Dict.0#Node.4 condition(fresh7) ~condition(fresh5){lost} ~condition(fresh8){lost} ~condition(fresh9){lost}
-  demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+  summary bump: π1 RAW[storage], π1[*] RAW; res [*] ~condition(fresh1) ~fresh1 ~π1[*], π1{lost}
+  summary fromEmpty: res [*] ~condition(fresh2) ~fresh2{lost}, fresh1{lost}
+  demands 9: accepted 6 (fresh 1, call 3, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
   records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
-total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 9: accepted 6 (fresh 1, call 3, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
 cause top-level 2
 cause element 1

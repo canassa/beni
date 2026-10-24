@@ -148,7 +148,7 @@ orderDecoder =
         (Decode.field "customer" customerDecoder)
         (Decode.field "items" (Decode.list lineItemDecoder))
         (Decode.field "status" statusDecoder)
-        (optionalField "notes" (Decode.dict Decode.string) Dict.empty)
+        (optionalField "notes" (Decode.dict Decode.string) (Dict.empty ⊤))
         (Decode.field "placed_at" Decode.int)
         Order
 
@@ -291,4 +291,4 @@ summarize json =
 
             Cancelled _ →
                 "cancelled"
-    Ok (List.foldl orders Dict.empty λorder counts → bump counts (statusKey order))
+    Ok (List.foldl orders (Dict.empty ⊤) λorder counts → bump counts (statusKey order))

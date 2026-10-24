@@ -57,7 +57,7 @@ pub type Msg
 
 pub init : Int → Model
 init now =
-    { notes = Dict.empty
+    { notes = Dict.empty ⊤
     , nextId = 1
     , selected = Nothing
     , query = ""
@@ -77,7 +77,7 @@ update msg model =
                 { id = model.nextId
                 , title = "Untitled"
                 , body = ""
-                , tags = Set.empty
+                , tags = Set.empty ⊤
                 , pinned = False
                 , updatedAt = model.now
                 }
@@ -258,7 +258,7 @@ allTags model =
         else
             String.compare tag1 tag2
     Dict.values model.notes
-        ▷ List.foldl Dict.empty countNote
+        ▷ List.foldl (Dict.empty ⊤) countNote
         ▷ Dict.toList
         ▷ List.sortWith commonestFirst
 

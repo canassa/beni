@@ -56,7 +56,7 @@ c8 t = flip (List.sortBy [ t, t ] λr → r.id)
 
 
 c9 : Row → List Row
-c9 t = flip (Dict.values (Dict.insert (Dict.insert Dict.empty 1 t) 2 t))
+c9 t = flip (Dict.values (Dict.insert (Dict.insert (Dict.empty ⊤) 1 t) 2 t))
 
 
 c10 : Row → List Row
@@ -64,7 +64,7 @@ c10 t = flip (List.foldl [ 1, 2 ] [] λ_ acc → List.push acc t)
 
 
 c11 : Row → Dict Int Row
-c11 t = Dict.update (Dict.insert (Dict.insert Dict.empty 1 t) 2 t) 1 λm →
+c11 t = Dict.update (Dict.insert (Dict.insert (Dict.empty ⊤) 1 t) 2 t) 1 λm →
     Maybe.map m λr → { r | done = not r.done }
 
 

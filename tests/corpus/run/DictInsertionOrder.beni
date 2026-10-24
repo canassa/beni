@@ -1,0 +1,27 @@
+-- Insertion order is part of a dictionary's value (#294).
+import Dict
+import List
+import Node exposing (Program)
+import String
+
+
+pairs : Dict.Dict String Int → String
+pairs d = Dict.toList d ▷ List.map (λ( k, v ) → "${k}:${String.fromInt v}") ▷ String.join ","
+
+
+main : Program
+main =
+    d = Dict.fromList [ ( "b", 2 ), ( "a", 1 ), ( "b", 4 ), ( "c", 3 ) ]
+    forward = Dict.foldl d "" λk _ acc → acc ++ k
+    backward = Dict.foldr d "" λk _ acc → acc ++ k
+    left = Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]
+    right = Dict.fromList [ ( 2, "b" ), ( 1, "a" ) ]
+    Node.printLines
+        [ pairs d
+        , String.join (Dict.keys d) ","
+        , String.join (List.map (Dict.values d) String.fromInt) ","
+        , forward
+        , backward
+        , if left == right then "equal" else "different"
+        , pairs (Dict.insert (Dict.remove (Dict.fromList [ ( "b", 2 ), ( "a", 1 ) ]) "b") "b" 5)
+        ]

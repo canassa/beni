@@ -276,7 +276,7 @@ fn diagnostics(session: *Session, reports: []const Ownership.ModuleReport, dest:
 /// reason.
 fn sameCause(a: Ownership.Demand, b: Ownership.Demand) bool {
     // `.record` too: a list writer may be named `update` as well.
-    return a.record == b.record and a.position.line == b.position.line and a.position.col == b.position.col and
+    return a.storage_kind == b.storage_kind and a.record == b.record and a.position.line == b.position.line and a.position.col == b.position.col and
         std.mem.eql(u8, a.op, b.op) and std.meta.eql(a.verdict, b.verdict) and a.approx == b.approx and
         std.mem.eql(u8, a.detail, b.detail);
 }

@@ -414,7 +414,7 @@ calculate env input = eval env (parse input?)
 
 show : String → String
 show input =
-    env = Dict.insert (Dict.insert Dict.empty "x" 3.0) "y" 4.0
+    env = Dict.insert (Dict.insert (Dict.empty ⊤) "x" 3.0) "y" 4.0
     case calculate env input of
         Ok value →
             input ++ " = " ++ String.fromFloat value

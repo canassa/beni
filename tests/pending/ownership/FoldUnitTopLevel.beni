@@ -1,0 +1,15 @@
+-- CK-272: (#952) a fold over `List ⊤` keeps its result's provenance, so a
+-- write to a top-level list it built is refused as `top-level`. master
+-- drops the fold's `res` and accepts the push as `fresh`; the `List Int`
+-- twin is refused. With ordered Dict storage this is every `Set` built by
+-- `Set.fromList`, which is `Dict t ⊤` inside.
+lfold : List ⊤ → List ⊤
+lfold xs = List.foldl xs [] λx d → List.push d x
+
+
+top : List ⊤
+top = lfold [ ⊤ ]
+
+
+pub grow : ⊤ → List ⊤
+grow ⊤ = List.push top ⊤

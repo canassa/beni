@@ -76,7 +76,7 @@ a9 t =
 
 
 a10 : Row → Dict Int Row
-a10 t = Dict.map (Dict.insert (Dict.insert Dict.empty 1 t) 2 t) λ_ r → { r | done = not r.done }
+a10 t = Dict.map (Dict.insert (Dict.insert (Dict.empty ⊤) 1 t) 2 t) λ_ r → { r | done = not r.done }
 
 
 a11 : Outer → List Outer

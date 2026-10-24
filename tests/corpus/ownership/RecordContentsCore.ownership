@@ -10,9 +10,14 @@ module RecordContentsCore
   51:8 update <call List.drop>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) [copy]
   55:8 update <call List.sortBy>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
   59:8 update <call Dict.values>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
+  59:27 call Dict.insert <call Dict.insert>: accepted call
+  59:40 call Dict.insert <call Dict.empty>: accepted call
   63:9 update <call List.foldl>[*]: rejected exclusive: the callee needs the list's elements to hold no record at two positions, and they may (RecordContentsCore.flip writes it) (approx) [copy]
   63:15 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
   63:47 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  67:9 call Dict.update <call Dict.insert>: accepted call (Dict.update writes π1)
+  67:22 call Dict.insert <call Dict.insert>: accepted call
+  67:35 call Dict.insert <call Dict.empty>: accepted call
   68:5 update m#Just.0: rejected exclusive: Dict.update hands its parameter 1 a position of a list that may hold one record at two positions (approx) [copy]
   68:22 update r: accepted callback-param (Maybe.map supplies it owned)
   72:9 List.update <literal>: accepted fresh
@@ -34,9 +39,9 @@ module RecordContentsCore
   summary c6: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
   summary c7: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~π1◦, fresh1r{shared}
   summary c8: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
-  summary c9: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~π1◦r{lost}, fresh1r{lost}
+  summary c9: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary c10: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~π1◦, fresh1r{lost}
-  summary c11: π1 R; res #Dict.0#Node.1 ~condition(fresh1){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh2){lost}r{lost} ~condition(fresh4){lost}r{lost} ~π1r{lost} ~π1◦r{lost}, #Dict.0#Node.3 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh3){lost}r{lost} ~condition(fresh4){lost}r{lost}
+  summary c11: π1 R; res [*] ~fresh501◦r{lost} ~π1 ~π1◦, fresh1{lost}r{lost}
   summary c12: π1 R; res [*] ~π1◦ π1, fresh1{shared}r{shared}
   summary c13: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, fresh1r{lost}
   summary c14: π1 RW{done}; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦r{shared} ~fresh502◦r{shared} ~π1◦, fresh1r{shared}
@@ -44,7 +49,7 @@ module RecordContentsCore
   summary c15: π1 R; res [*] ~condition(fresh2) ~fresh2r{shared} ~fresh501◦ ~fresh502◦, [*].inner ~fresh503◦, fresh1r{shared}
   summary writeInner: π1 R, π1[*] W{n}; res [*] ~condition(fresh2) ~fresh2r{excl π1} ~π1[*]◦, [*].inner ~π1[*].inner, fresh1r{excl π1}; rxreq excl π1
   summary c16: π1 RW{n}; res [*] ~condition(fresh2) ~fresh2r{lost} ~fresh501◦r{lost} ~fresh502◦r{lost} ~π1◦, [*].inner ~fresh503◦r{lost} ~fresh504◦r{lost} ~π1.inner, fresh1r{lost}
-  demands 3: accepted 3 (fresh 2, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+  demands 8: accepted 8 (fresh 2, call 5, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 23: accepted 7, pending 0, rejected 16 (copy 16, restructure 0); hoisted 0, eager reads 0
-total 3: accepted 3 (fresh 2, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 8: accepted 8 (fresh 2, call 5, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 0
 records 23: accepted 7, pending 0, rejected 16 (copy 16, restructure 0); hoisted 0, eager reads 0

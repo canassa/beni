@@ -55,4 +55,4 @@ bump d k =
 
 
 pub fromEmpty : Int → Dict.Dict Int (List Int)
-fromEmpty k = bump Dict.empty k
+fromEmpty k = bump (Dict.empty ⊤) k

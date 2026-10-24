@@ -9,8 +9,10 @@ list True
 value False
 key False
 longer False False
+order False True
 empty True
 own eq True
 set == True ≠ False Basics.eq True
 set record True
+set order False
 set unequal False False

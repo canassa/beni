@@ -1,6 +1,7 @@
--- run: `Dict` and `Set` walk in ascending key order when they call a
--- callback (`checker.md` Appendix B), and `Dict.merge` visits the union of
--- both key sets lowest first.
+-- run: `Dict` and `Set` walk in insertion order when they call a callback,
+-- and `Dict.merge` visits every left key in left order, then the right-only
+-- keys in right order (`language.md` §6.8, *Ordered dictionaries and sets*).
+-- The keys are inserted ascending, so insertion order is also key order here.
 --
 -- `Dict.map` was the second defect, independent of `List.map`'s: `mapTree`
 -- built `Node color key (func key value) (mapTree left) (mapTree right)`, and

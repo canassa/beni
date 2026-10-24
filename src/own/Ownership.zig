@@ -348,6 +348,8 @@ pub const Verdict = union(enum) {
 };
 
 /// One line of the report (§9.1, §16.11).
+pub const StorageKind = enum { list, dict, set };
+
 pub const Demand = struct {
     position: Position,
     /// `construction`, `++`, `List.<writer>`, `call M.f`, or `value`.
@@ -384,6 +386,7 @@ pub const Demand = struct {
     /// §31.3: a record update's demand, reported and never enforced until
     /// §31.9's codes land (#315, R4).
     record: bool = false,
+    storage_kind: StorageKind = .list,
     /// §31.12: what a record rejection's fix is: `copy` or `restructure`.
     fix: Fix = .none,
     /// §31.14: an accepted record demand's later reads of a written field,
@@ -1371,7 +1374,7 @@ fn checkMatch(o: *Ownership, m: u32) Allocator.Error!void {
     for (bir.decls, 0..) |decl, di| {
         if (decl.kind != .type or decl.type_params_start != decl.type_params_end) continue;
         const ty = (@as(u64, m) << 32) | di;
-        if (!try o.typeRecursive(ty) or try o.dictTree(ty)) continue;
+        if (!try o.typeRecursive(ty)) continue;
         var arena: std.heap.ArenaAllocator = .init(o.in.gpa);
         defer arena.deinit();
         const a = arena.allocator();
@@ -1499,12 +1502,12 @@ fn concreteExpr(o: *Ownership, a: Allocator, ty: u64, prefix: []const Step, m: u
                 break :blk o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
             } else o.in.types.headId(graph_m, tag, data);
             if (id == .none or id.int() >= o.in.types.entries.len) return out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
-            if (id == o.in.types.well_known.list) {
+            if (o.containerIndex(id)) |value_index| {
                 try out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
                 if (prefix.len >= diff_depth or tag != .type_app) return;
                 const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
-                if (args.len != 1) return;
-                return o.concreteExpr(a, ty, try std.mem.concat(a, Step, &.{ prefix, &.{.{ .kind = .elem, .arg = 0 }} }), m, args[0], levels, out);
+                if (value_index >= args.len) return;
+                return o.concreteExpr(a, ty, try std.mem.concat(a, Step, &.{ prefix, &.{.{ .kind = .elem, .arg = 0 }} }), m, args[value_index], levels, out);
             }
             const e = o.in.types.entries[id.int()];
             const key = (@as(u64, e.module.int()) << 32) | e.decl.int();
@@ -1726,7 +1729,7 @@ fn dedupe(items: []Demand) Allocator.Error![]const Demand {
         if (n > 0) {
             const p = items[n - 1];
             // `.record` too: a list writer may be named `update` as well.
-            if (p.record == d.record and p.position.line == d.position.line and p.position.col == d.position.col and
+            if (p.storage_kind == d.storage_kind and p.record == d.record and p.position.line == d.position.line and p.position.col == d.position.col and
                 std.mem.eql(u8, p.op, d.op) and std.mem.eql(u8, p.base, d.base) and
                 std.meta.eql(p.verdict, d.verdict) and std.mem.eql(u8, p.detail, d.detail)) continue;
         }
@@ -3820,6 +3823,7 @@ fn hitLimit(o: *Ownership, why: Limit, at: u32) Allocator.Error!void {
 // ---------------------------------------------------------------------------
 
 fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
+    if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Dict")) return o.dictRow(m, d);
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Schema")) return o.schemaRunRow(m, d);
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Record")) return o.recordRow(m, d);
     if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "List")) return null;
@@ -3926,6 +3930,95 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         .funs = funs,
         .asserted = true,
     });
+}
+
+/// The precise rows declared beside Dict's primitives (§32). Storage writes
+/// touch ε, while values occupy [*]; a deep `consumed` row would conflate them.
+fn dictRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
+    const bir = o.in.birs[m];
+    const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
+    const a = o.keep.allocator();
+    const elem = try o.child(eps, .elem, 0);
+    const p = struct {
+        fn at(i: u32, path: u32) Prov {
+            return .{ .kind = .param, .a = i, .path = path };
+        }
+    }.at;
+    const R = bit_r;
+    const A = bit_a;
+    const W = bit_w | bit_x;
+    var uses: []const UseEntry = &.{};
+    var res: []const ResEntry = &.{};
+    var supply: []const SupplyEntry = &.{};
+    var funs: []const FunFacts = &.{};
+    if (std.mem.eql(u8, name, "empty")) {
+        // Fresh storage at every call, with nothing in it.
+        res = try a.dupe(ResEntry, &.{.{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 } }});
+    } else if (std.mem.eql(u8, name, "same")) {
+        // Header identity: reads both headers, keeps nothing.
+        uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 1, .path = eps, .bits = R } };
+    } else if (std.mem.eql(u8, name, "keySame")) {
+        // Two scalar keys: no cell to read or keep.
+    } else if (std.mem.eql(u8, name, "singleton")) {
+        uses = &.{.{ .param = 1, .path = eps, .bits = A }};
+        const owned = try a.dupe(XAtom, &.{.{ .kind = .excl, .a = p(1, eps) }});
+        res = try a.dupe(ResEntry, &.{
+            .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .atoms = owned } },
+            .{ .path = elem, .prov = p(1, eps) },
+        });
+    } else if (eqlAny(name, &.{ "insert", "insertAt" })) {
+        const v: u32 = if (std.mem.eql(u8, name, "insert")) 2 else 3;
+        uses = try a.dupe(UseEntry, &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = v, .path = eps, .bits = A } });
+        res = try a.dupe(ResEntry, &.{
+            .{ .path = eps, .prov = p(0, eps), .xc = try o.stores(0, v, elem) },
+            .{ .path = elem, .prov = p(0, elem) },
+            .{ .path = elem, .prov = p(v, eps) },
+        });
+    } else if (eqlAny(name, &.{ "remove", "swap", "permute" })) {
+        uses = if (std.mem.eql(u8, name, "permute"))
+            &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 1, .path = eps, .bits = R } }
+        else
+            &.{.{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }};
+        res = try a.dupe(ResEntry, &.{ .{ .path = eps, .prov = p(0, eps) }, .{ .path = elem, .prov = p(0, elem) } });
+    } else if (std.mem.eql(u8, name, "copy")) {
+        uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A } };
+        const owned = try a.dupe(XAtom, &.{.{ .kind = .excl, .a = p(0, eps) }});
+        res = try a.dupe(ResEntry, &.{
+            .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .atoms = owned } },
+            .{ .path = elem, .prov = p(0, elem) },
+        });
+    } else if (eqlAny(name, &.{ "size", "position", "keyAt" })) {
+        uses = &.{.{ .param = 0, .path = eps, .bits = R }};
+    } else if (eqlAny(name, &.{ "valueAt", "traverseAt" })) {
+        uses = &.{ .{ .param = 0, .path = eps, .bits = R }, .{ .param = 0, .path = elem, .bits = A } };
+        var value = p(0, elem);
+        value.taken = std.mem.eql(u8, name, "traverseAt");
+        res = try a.dupe(ResEntry, &.{.{ .path = eps, .prov = value }});
+    } else if (std.mem.eql(u8, name, "focus")) {
+        const maybe = o.in.types.entry(o.in.types.well_known.maybe);
+        const mb = o.in.birs[maybe.module.int()];
+        var just: u32 = eps;
+        for (mb.ctors, 0..) |c, i| {
+            if (c.decl != maybe.decl or !std.mem.eql(u8, o.in.interner.slice(mb.symbol(c.name)), "Just")) continue;
+            just = try o.child(eps, .ctor, try o.ctorStep(try o.ctorId(maybe.module.int(), @intCast(i)), 0));
+            break;
+        }
+        std.debug.assert(just != eps);
+        uses = &.{ .{ .param = 0, .path = eps, .extent = .storage, .bits = R | A | W }, .{ .param = 0, .path = elem, .bits = A } };
+        const callback: Prov = .{ .kind = .cb, .a = 2, .path = just };
+        const kept = try a.dupe(XAtom, &.{.{ .kind = .keep, .a = callback, .b = p(0, eps) }});
+        res = try a.dupe(ResEntry, &.{
+            .{ .path = eps, .prov = p(0, eps), .xc = .{ .atoms = kept } },
+            .{ .path = elem, .prov = p(0, elem) },
+            .{ .path = elem, .prov = callback },
+        });
+        const whole = try a.dupe(XAtom, &.{.{ .kind = .excl, .a = p(0, eps) }});
+        var selected = p(0, elem);
+        selected.taken = true;
+        supply = try a.dupe(SupplyEntry, &.{.{ .fun = 2, .k = 0, .path = just, .prov = selected, .owned = true, .xc = .{ .atoms = whole } }});
+        funs = try a.dupe(FunFacts, &.{.{ .param = 2, .calls = .once }});
+    } else return null;
+    return try o.normalize(.{ .params = bir.decls[d].params, .uses = try a.dupe(UseEntry, uses), .res = res, .supply = supply, .funs = funs, .asserted = true });
 }
 
 /// `core/Record`'s row (§31.15): `copy r` reads `r` and aliases its
@@ -4155,7 +4248,7 @@ fn partTracked(o: *Ownership, store: *TypeStore, v: Var, path: u32) Allocator.Er
     for (o.steps(path)) |st| {
         const next: ?Var = switch (store.resolvedContent(t)) {
             .structure => |sc| switch (sc) {
-                .app => |a| if (st.kind == .elem and a.type == o.in.types.well_known.list and store.vars(a.args).len == 1) store.vars(a.args)[0] else null,
+                .app => |a| if (st.kind == .elem) o.containerValue(store, a.type, store.vars(a.args)) else null,
                 .record => |r| if (st.kind == .field) for (store.fields(r.fields)) |f| {
                     if (@backingInt(f.name) == st.arg) break f.value;
                 } else null else null,
@@ -5415,12 +5508,6 @@ fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Erro
             // has two different constructor places. Cast cycles now fold
             // at complete-type boundaries instead of these type heads.
             if (!try o.typeRecursive(ty)) return o.rawChild(parent, kind, arg);
-            // Core Dict's folded tree remains one place under its trusted
-            // representation rule (§20.9).
-            if (try o.dictTree(ty)) return o.rawChild(switch (r) {
-                .first => |f| o.paths.parent.items[f],
-                .marker => |m| m,
-            }, kind, arg);
             return o.rawChild(try o.markerAt(r, ty, parent), kind, arg);
         },
         .level => if (try o.regionOf(parent, o.markerType(arg))) |r| return o.markerAt(r, o.markerType(arg), parent),
@@ -5555,24 +5642,6 @@ pub fn markerType(o: *const Ownership, arg: u32) u64 {
 /// approximate fact. A level's own field (`#Node.1`) is one place.
 fn representative(o: *Ownership, p: u32) Allocator.Error!bool {
     return o.paths.representative.items[p];
-}
-
-/// Whether a path goes through core Dict's recursive tree (§20.8).
-fn dictTreePath(o: *Ownership, p: u32) Allocator.Error!bool {
-    var at = p;
-    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
-        if (o.paths.kind.items[at] != .ctor) continue;
-        const t = o.ctorType(o.stepCtor(o.paths.arg.items[at])) orelse continue;
-        if (try o.dictTree(t)) return true;
-    }
-    return false;
-}
-
-/// Whether `t` is core Dict's recursive tree (§20.8).
-fn dictTree(o: *Ownership, t: u64) Allocator.Error!bool {
-    const m: u32 = @intCast(t >> 32);
-    if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) return false;
-    return o.typeRecursive(t);
 }
 
 /// Whether the type `(module, declaration)` reaches itself through its own
@@ -5913,7 +5982,7 @@ fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, s
             if (key == t) return .here;
             // A `foreign type`'s arguments are not where a path goes, but
             // a `List`'s elements are.
-            if (typed and e.kind == .foreign and id != o.in.types.well_known.list) return .none;
+            if (typed and e.kind == .foreign and o.containerIndex(id) == null) return .none;
             if (tag == .type_app) {
                 for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| {
                     if (try o.exprLevel(m, bir, arg, t, seen, typed) != .none) return .below;
@@ -6176,8 +6245,7 @@ pub fn rawChild(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.
     try o.paths.any.append(o.in.gpa, o.paths.any.items[parent] or kind == .any or kind == .level or kind == .cast_level or uncertain);
     try o.paths.casts.append(o.in.gpa, o.paths.casts.items[parent] or kind == .cast or kind == .cast_level);
     try o.paths.holds.append(o.in.gpa, kind == .ctor and try o.levelOf(arg) != .none);
-    const dict = if (kind == .ctor) if (o.ctorType(o.stepCtor(arg))) |t| try o.dictTree(t) else false else false;
-    try o.paths.representative.append(o.in.gpa, o.paths.representative.items[parent] or kind == .elem or kind == .level or kind == .cast_level or uncertain or dict);
+    try o.paths.representative.append(o.in.gpa, o.paths.representative.items[parent] or kind == .elem or kind == .level or kind == .cast_level or uncertain);
     return id;
 }
 
@@ -6553,6 +6621,7 @@ const NominalFacts = struct {
     /// §31.2: a record is reachable in the body without going through a
     /// type parameter, so a value of the type carries a record cell.
     record: bool = false,
+    storage_kind: StorageKind = .list,
 };
 
 fn isPrimitive(o: *const Ownership, id: TypeId) bool {
@@ -6728,7 +6797,8 @@ fn nominalFactsOf(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
     } else switch (e.kind) {
         .foreign => {
             facts.own = id == o.in.types.well_known.list or !o.isPrimitive(id);
-            facts.list = id == o.in.types.well_known.list;
+            facts.list = o.containerIndex(id) != null;
+            facts.params = id == o.in.types.well_known.dict;
             // `crossing foreign type` (§24.2): it holds no cell.
             if (e.module.int() < o.in.birs.len) {
                 const bir = o.in.birs[e.module.int()];
@@ -6867,10 +6937,11 @@ fn birHoldsOnlyRecords(o: *Ownership, path_steps: []const Step) Allocator.Error!
             .elem => {
                 if (bir.instTag(at) != .type_app) return false;
                 const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
-                if (o.in.types.headId(@fromBackingInt(@intCast(m)), bir.instTag(head), bir.instData(head)) != o.in.types.well_known.list) return false;
+                const id = o.in.types.headId(@fromBackingInt(@intCast(m)), bir.instTag(head), bir.instData(head));
+                const vi = o.containerIndex(id) orelse return false;
                 const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
-                if (args.len != 1) return false;
-                at = args[0];
+                if (vi >= args.len) return false;
+                at = args[vi];
             },
             // Another constructor's field: its own declaration's.
             .ctor => return o.birHoldsOnlyRecords(path_steps[si..]),
@@ -6882,6 +6953,19 @@ fn birHoldsOnlyRecords(o: *Ownership, path_steps: []const Step) Allocator.Error!
 }
 fn joinFacts(a: NominalFacts, b: NominalFacts) NominalFacts {
     return .{ .own = a.own or b.own, .params = a.params or b.params, .list = a.list or b.list, .record = a.record or b.record };
+}
+
+fn containerIndex(o: *const Ownership, id: TypeId) ?usize {
+    if (id == .none) return null;
+    if (id == o.in.types.well_known.list) return 0;
+    if (id == o.in.types.well_known.dict) return 1;
+    return null;
+}
+
+fn containerValue(o: *const Ownership, store: *TypeStore, id: TypeId, args: []const Var) ?Var {
+    _ = store;
+    const i = o.containerIndex(id) orelse return null;
+    return if (i < args.len) args[i] else null;
 }
 
 /// §23.4: whether a value of this type may hold a list that beni code can
@@ -6903,7 +6987,8 @@ fn holdsListContent(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Alloca
     switch (store.resolvedContent(v)) {
         // A type variable may be anything; an alias `resolvedContent` left
         // unexpanded is taken to hold one rather than walked.
-        .flex, .rigid, .err, .alias => return true,
+        .flex, .rigid => |f| return !f.kind.isKey(),
+        .err, .alias => return true,
         .structure => |s| switch (s) {
             .unit, .empty_record, .func => return false,
             .tuple => |r| {
@@ -6940,7 +7025,8 @@ fn holdsRecord(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.E
 
 fn holdsRecordContent(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
     switch (store.resolvedContent(v)) {
-        .flex, .rigid, .err, .alias => return true,
+        .flex, .rigid => |f| return !f.kind.isKey(),
+        .err, .alias => return true,
         .structure => |s| switch (s) {
             .unit, .empty_record, .func => return false,
             .record => return true,
@@ -6949,7 +7035,7 @@ fn holdsRecordContent(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allo
                 return false;
             },
             .app => |a| {
-                if (a.type == o.in.types.well_known.list) {
+                if (o.containerIndex(a.type) != null) {
                     for (store.vars(a.args)) |arg| if (try o.holdsRecord(store, arg, depth + 1)) return true;
                     return false;
                 }
@@ -6995,7 +7081,8 @@ fn trackedIn(o: *Ownership, store: *TypeStore, v: Var, depth: u32, records: bool
 
 fn trackedContent(o: *Ownership, store: *TypeStore, v: Var, depth: u32, records: bool) Allocator.Error!bool {
     switch (store.resolvedContent(v)) {
-        .flex, .rigid, .err => return true,
+        .flex, .rigid => |f| return !f.kind.isKey(),
+        .err => return true,
         .alias => return true,
         .structure => |s| switch (s) {
             .unit, .empty_record => return false,
@@ -7219,7 +7306,7 @@ fn mayHold(o: *Ownership, store: *TypeStore, r: Var, t: Var, depth: u32) Allocat
                 return o.tracked(store, rc.ext, depth + 1);
             },
             .app => |a| {
-                if (a.type == o.in.types.well_known.list) {
+                if (o.containerIndex(a.type) != null) {
                     for (store.vars(a.args)) |arg| if (try o.mayHold(store, arg, t, depth + 1)) return true;
                     return false;
                 }
@@ -7245,6 +7332,7 @@ fn ownMayHold(o: *Ownership, store: *TypeStore, id: TypeId, t: Var, depth: u32) 
     for (o.holding.items) |x| if (x == id) return false;
     const e = o.in.types.entries[id.int()];
     if (e.schema_endpoint) return true;
+    if (o.containerIndex(id) != null) return false;
     switch (e.kind) {
         // A `foreign type`'s insides are not beni's to read.
         .foreign => return true,
@@ -7300,7 +7388,7 @@ fn birMayHold(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: I
             const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
             const id = o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
             const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
-            if (id == o.in.types.well_known.list) {
+            if (o.containerIndex(id) != null) {
                 for (args) |arg| if (try o.birMayHold(store, m, bir, arg, t, depth + 1)) return true;
                 return false;
             }
@@ -7695,6 +7783,7 @@ const DemandRec = struct {
     /// §23.2: a send's demand, on every cell of its base; read off as `S`.
     deep: bool = false,
     extent: WriteExtent = .deep,
+    storage_kind: StorageKind = .list,
     /// §28.6: the edit's and the base's tokens, the top-level value a
     /// `top-level` rejection names, the call or operand a `call` or
     /// `held-operand` one does, and the function a `need` one names.
@@ -8322,10 +8411,7 @@ const Walker = struct {
                 },
                 .elem => switch (st) {
                     .app => |a| {
-                        if (a.type != w.o.in.types.well_known.list) return false;
-                        const args = w.store.vars(a.args);
-                        if (args.len != 1) return false;
-                        v = args[0];
+                        v = w.o.containerValue(w.store, a.type, w.store.vars(a.args)) orelse return false;
                     },
                     else => return false,
                 },
@@ -8588,20 +8674,13 @@ const Walker = struct {
         if (s.kind == .cast) return w.readCast(av, s.arg);
         if (s.kind == .cast_level) return w.readCastLevel(av, s.arg);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
-        // A type that folds with no marker (core Dict's tree) keeps what
-        // folding put at its levels below, as #341 did: at the same path
-        // when the field is a value of the type itself, anywhere when it is
-        // further down (§16.7).
-        const unmarked: ?u64 = if (s.kind == .ctor) if (w.o.ctorType(w.o.stepCtor(s.arg))) |t| (if (try w.o.dictTree(t) and try w.o.levelOf(s.arg) != .none) t else null) else null else null;
-        const here = unmarked != null and try w.o.levelOf(s.arg) == .here;
-        const any = if (unmarked != null and !here) try w.o.child(eps, .any, 0) else eps;
         var out: std.ArrayList(Entry) = .empty;
-        for (av) |e| try w.projEntry(&out, e, s, ty, unmarked, here, any);
+        for (av) |e| try w.projEntry(&out, e, s, ty);
         return w.norm(out.items);
     }
 
     /// `proj`'s work on one entry `e` of the value.
-    inline fn projEntry(w: *Walker, out: *std.ArrayList(Entry), e: Entry, s: Step, ty: ?Var, unmarked: ?u64, here: bool, any: u32) Allocator.Error!void {
+    inline fn projEntry(w: *Walker, out: *std.ArrayList(Entry), e: Entry, s: Step, ty: ?Var) Allocator.Error!void {
         if (e.path == eps) {
             if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
             return;
@@ -8629,10 +8708,6 @@ const Walker = struct {
         if (first.kind == s.kind and first.arg == s.arg) {
             try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = gDropGuard(e.grown, w.o.paths.depth.items[e.path]) });
         }
-        if (unmarked) |t| if (first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t) {
-            try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
-            return;
-        };
         if (first.kind == s.kind and first.arg == s.arg) return;
         if (first.kind == .level) {
             try w.underMarker(out, e, first, s);
@@ -8675,7 +8750,7 @@ const Walker = struct {
                 j += 1;
                 break :blk keyed[j - 1];
             };
-            try w.projEntry(&out, idx.av[at], s, null, null, false, eps);
+            try w.projEntry(&out, idx.av[at], s, null);
         }
         if (wide_ways) {
             // What the merge skipped is what the scan does nothing with.
@@ -9562,11 +9637,6 @@ const Walker = struct {
 
     fn sepSpines(w: *Walker, x: u32, y: u32, exact: bool) Allocator.Error!u32 {
         if (w.cells.items[x].condition_only or w.cells.items[y].condition_only) return cond_yes;
-        const cx = w.cells.items[x];
-        if (x == y and w.inCoreDict()) switch (cx.kind) {
-            .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellSpine(x),
-            .site, .result, .shared, .top, .closure, .func, .taken, .payload, .except => {},
-        };
         return w.spineOfSep(try w.sepCells(x, y, exact));
     }
 
@@ -9718,10 +9788,6 @@ const Walker = struct {
         return w.cell(b);
     }
 
-    fn inCoreDict(w: *const Walker) bool {
-        return w.o.in.packages[w.m] == .core and std.mem.eql(u8, w.o.in.module_names[w.m], "Dict");
-    }
-
     fn madeHere(k: CellKind) bool {
         return k == .site or k == .result;
     }
@@ -9732,13 +9798,6 @@ const Walker = struct {
         const cx = w.cells.items[x];
         const cy = w.cells.items[y];
         if (cx.kind == .closure or cx.kind == .func or cy.kind == .closure or cy.kind == .func) return cond_yes;
-        // §20.8: inside core/Dict, one cell that arrived from outside at a
-        // folded path of its tree stands for distinct positions, which the
-        // module never makes share (the trusted surface, §20.9).
-        if (x == y and w.inCoreDict()) switch (cx.kind) {
-            .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellCond(x),
-            .site, .result, .shared, .top, .closure, .func, .taken, .payload, .except => {},
-        };
         if (x == y or (try w.covers(x, y)) != null or (try w.covers(y, x)) != null) {
             // Exact only when the text shows it: one place, not a list's
             // elements or a folded level standing for many (§8.4).
@@ -10016,7 +10075,6 @@ const Walker = struct {
     }
 
     fn pairwiseApartOnce(w: *Walker, groups: []const AV, fl: Fl) Allocator.Error!u32 {
-        if (fl == .list and w.inCoreDict()) return w.pairwiseApartByPairs(groups, fl);
         const Ent = struct { e: Entry, g: u32 };
         var ents: std.ArrayList(Ent) = .empty;
         const per = try w.a.alloc(u32, groups.len);
@@ -13047,10 +13105,7 @@ const Walker = struct {
                 },
                 .elem => switch (st) {
                     .app => |a| {
-                        if (a.type != w.o.in.types.well_known.list) return false;
-                        const args = w.store.vars(a.args);
-                        if (args.len != 1) return false;
-                        v = args[0];
+                        v = w.o.containerValue(w.store, a.type, w.store.vars(a.args)) orelse return false;
                     },
                     else => return false,
                 },
@@ -17764,6 +17819,38 @@ const Walker = struct {
         return w.norm(out.items);
     }
 
+    /// Diagnostic names follow the actual written type, including a Set's
+    /// private Dict storage. A write below a container names that value's type.
+    fn storageKindAt(w: *Walker, v: ?Var, path: u32) Allocator.Error!StorageKind {
+        var ty: TyRef = .{ .store = v orelse return .list };
+        const steps_at = w.o.steps(path);
+        for (steps_at, 0..) |step, i| {
+            ty = switch (try w.tyShape(ty)) {
+                .app => |app| blk: {
+                    if (app.id == w.o.in.types.well_known.set and step.kind == .ctor and i + 1 == steps_at.len) return .set;
+                    if (step.kind == .elem) {
+                        const ix = w.o.containerIndex(app.id) orelse return .list;
+                        if (ix >= app.args.len) return .list;
+                        break :blk app.args[ix];
+                    }
+                    if (step.kind == .ctor) break :blk (try w.ctorFieldTy(app.id, app.args, w.o.stepCtor(step.arg), w.o.stepField(step.arg))) orelse return .list;
+                    return .list;
+                },
+                .tuple => |fields| if (step.kind == .tuple and step.arg < fields.len) fields[step.arg] else return .list,
+                .record => |record| blk: {
+                    if (step.kind != .field) return .list;
+                    for (record.names, record.types) |name, field| if (name == step.arg) break :blk field;
+                    return .list;
+                },
+                else => return .list,
+            };
+        }
+        return switch (try w.tyShape(ty)) {
+            .app => |app| if (app.id == w.o.in.types.well_known.dict) .dict else if (app.id == w.o.in.types.well_known.set) .set else .list,
+            else => .list,
+        };
+    }
+
     /// A call-site demand (§16.4 item 3): argument `i`'s cells at `q`,
     /// Disjoint against every other argument and every other path of `i`.
     fn callSiteDemand(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely) Allocator.Error!void {
@@ -17774,6 +17861,7 @@ const Walker = struct {
     /// on no cell gives nothing up and is no line.
     fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail_in: ?Rely, deep: bool, extent: WriteExtent) Allocator.Error!void {
         const at = try w.projPath(avs[i], q, null);
+        const storage_kind = if (w.mode == .report and !deep and extent == .storage) try w.storageKindAt(w.instType(args[i]), q) else .list;
         // §16.7: a written place under a marker is the lists of every level
         // it stands for, written one by one; they are distinct lists only
         // if the argument is exclusive where the marker's region begins.
@@ -17821,12 +17909,8 @@ const Walker = struct {
         // apart only if the argument is exclusive where that cell begins to
         // stand for several, and the demand relies on it; any other is
         // another holder of the cell, approximately.
-        // core Dict's tree keeps the merged fold, its levels trusted apart
-        // (§20.9): its places are not compared so.
-        const in_dict = try w.o.dictTreePath(q);
         for (w.call_uses) |u| {
-            if (in_dict or over.items.len == 0 or u.param != i or noUse(u.bits) or w.o.overlap(u.path, q)) continue;
-            if (try w.o.dictTreePath(u.path)) continue;
+            if (over.items.len == 0 or u.param != i or noUse(u.bits) or w.o.overlap(u.path, q)) continue;
             var there: std.ArrayList(Entry) = .empty;
             for (try w.projPath(over.items, u.path, null)) |e| {
                 const same = for (base) |b| {
@@ -17858,7 +17942,8 @@ const Walker = struct {
             .xfail = xfail,
             .deep = deep,
             .extent = extent,
-            .base_inst = if (q == eps) args[i] else null,
+            .storage_kind = storage_kind,
+            .base_inst = if (q == eps or (storage_kind == .set and w.o.paths.depth.items[q] == 1)) args[i] else null,
         });
     }
 
@@ -18982,7 +19067,7 @@ const Walker = struct {
                     var supply_cond = try w.instXSum(e.xc, ictx);
                     // A focus may require only the written array's
                     // own exclusivity. This does not authorise a deep write.
-                    if (s.limit == .none and c.limit == .none and e.prov.taken and u.bits & bit_d == 0 and e.prov.kind == .param and ((u.extent == .storage and w.o.isPrefix(e.path, u.path)) or try w.o.dictTreePath(e.prov.path))) {
+                    if (s.limit == .none and c.limit == .none and e.prov.taken and u.bits & bit_d == 0 and e.prov.kind == .param and u.extent == .storage and w.o.isPrefix(e.path, u.path)) {
                         const tail = (try w.o.suffix(e.path, u.path)) orelse eps;
                         var p = e.prov;
                         p.path = try w.o.concat(p.path, tail);
@@ -20030,19 +20115,8 @@ const Walker = struct {
         };
     }
 
-    /// A folded Dict tree's arrival names separate positions under the
-    /// existing trusted no-duplication obligation (§20.8–§20.9). Keep the
-    /// selected position's container requirement: expanding two structural
-    /// paths can name the same incoming value as alternatives, which is not
-    /// a value retained twice. Caller construction guards still establish
-    /// that requirement; distinct arrivals still require separation.
+    /// The root array of `x` apart from everything `y` holds.
     fn rootSeparation(w: *Walker, x: u32, y: u32) Allocator.Error!u32 {
-        const a = w.cells.items[x];
-        const b = w.cells.items[y];
-        if (w.inCoreDict() and a.kind == b.kind and a.scope == b.scope and a.a == b.a and a.b == b.b) switch (a.kind) {
-            .param, .env, .cbres => if (try w.o.dictTreePath(a.path) and try w.o.dictTreePath(b.path)) return w.atomCond(.{ .kind = .spine, .a = x }),
-            else => {},
-        };
         return w.atomCond(.{ .kind = .sep_root, .a = x, .b = y });
     }
 
@@ -20576,6 +20650,7 @@ const Walker = struct {
         /// §23.2: a send's demand, its base already flattened.
         deep: bool = false,
         extent: WriteExtent = .deep,
+        storage_kind: StorageKind = .list,
         /// §28.6: the base's instruction, when the source writes it.
         base_inst: ?Inst.Index = null,
         /// §31.3: a record update's demand on its base's object, and the
@@ -20614,6 +20689,10 @@ const Walker = struct {
             if (!erased) if (spec.base_ty) |bt| if (c.ty.unwrap()) |ct| if (!try w.o.mayShare(w.store, bt, ct, 0)) continue;
             try cells.append(w.a, e);
         }
+        const storage_kind = if (w.mode == .report and spec.kind == .creation and spec.extent == .storage and spec.base_ref != null)
+            try w.storageKindAt(w.localType(spec.base_ref.?.local), spec.base_ref.?.path)
+        else
+            spec.storage_kind;
         var rec: DemandRec = .{
             .inst = spec.inst,
             .kind = spec.kind,
@@ -20636,6 +20715,7 @@ const Walker = struct {
             .entry = spec.entry,
             .deep = spec.deep,
             .extent = spec.extent,
+            .storage_kind = storage_kind,
             .fields = spec.fields,
             .use_mark = @intCast(w.uses.items.len),
         };
@@ -21318,6 +21398,7 @@ const Walker = struct {
             .top = rec.top,
             .via_token = rec.via,
             .record = rec.fields != null,
+            .storage_kind = rec.storage_kind,
         };
         if (rec.accept == .call and rec.assumed.len > 0) {
             d.assumed = true;

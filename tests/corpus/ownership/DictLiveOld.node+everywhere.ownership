@@ -1,0 +1,8 @@
+module DictLiveOld
+  10:15 call Dict.insert old: rejected later-use: old is read again at 11:7
+  17:15 call Dict.insert <call Dict.copy>: accepted call
+  summary sizes: unused
+  summary copied: unused
+  demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1

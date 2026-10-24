@@ -1,0 +1,22 @@
+module DictWriteExtents
+  9:7 call Dict.swap d: accepted param
+  13:25 call DictWriteExtents.borrowThenSwap d: accepted param (DictWriteExtents.borrowThenSwap writes π1)
+  19:7 call Dict.update d: accepted param (Dict.update writes π1)
+  19:7 call Dict.update d[*]: accepted param (<lambda> writes what Dict.update supplies it)
+  19:28 call Maybe.map m#Just.0: accepted callback-param (Dict.update supplies it owned)
+  19:45 List.push v: accepted callback-param (Maybe.map supplies it owned)
+  23:22 call DictWriteExtents.borrowThenEdit d: accepted param (DictWriteExtents.borrowThenEdit writes π1)
+  23:22 call DictWriteExtents.borrowThenEdit d[*]: accepted param (DictWriteExtents.borrowThenEdit writes π1[*])
+  23:39 value <lambda>: rejected supply: DictWriteExtents.borrowThenEdit changes what it hands this function (π1[*]) after the call, itself or through another function, and the function's result may keep it (approx)
+  32:7 call Dict.swap d: accepted param
+  36:17 call DictWriteExtents.keepStorage d: accepted param (DictWriteExtents.keepStorage writes π1)
+  36:31 value <lambda>: rejected supply: DictWriteExtents.keepStorage changes what it hands this function (π1) after the call, itself or through another function, and the function's result may keep it (approx)
+  summary borrowThenSwap: π1 RAW[storage], π1[*] RA, π2 R; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1#Just.0 cb2{excl cb2}r{excl cb2} condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2}r{sep π1[*] cb2}; π2 calls ≤1, supply 1 π1[*] borrowed{excl π1[*]}r{excl π1[*]}
+  summary borrowedPermutation: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1#Just.0 condition(fresh4) π1[*], condition(fresh1){lost}
+  summary borrowThenEdit: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A, π2 R; res .0 condition(fresh2) π1{excl π1[*]}, .0[*] ~condition(fresh3) ~π1[*], .0[*][*] ~condition(fresh5) ~π1[*][*], .1#Just.0 cb2{excl cb2}r{excl cb2} ~condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2, sep π1[*][*] cb2}r{sep π1[*] cb2, sep π1[*][*] cb2}; π2 calls ≤1, supply 1 π1[*] borrowed{excl π1[*]}r{excl π1[*]}; xreq spine π1[*]
+  summary keptValueWritten: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] RA; res .0 condition(fresh2) π1{excl π1[*]}, .0[*] ~condition(fresh3) ~π1[*], .0[*][*] ~condition(fresh5) ~π1[*][*], .1#Just.0 ~condition(fresh4) π1[*], condition(fresh1){lost}; xreq spine π1[*]
+  summary keepStorage: π1 RAW[storage], π1[*] A, π2 R; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1 cb2{excl cb2} condition(fresh4), condition(fresh1){sep π1 cb2, sep π1[*] cb2}; π2 calls ≤1, supply 1 π1 borrowed{excl π1}
+  summary keptStorage: π1 RAW[storage], π1[*] RA; res .0 condition(fresh2) π1, .0[*] condition(fresh3) π1[*], .1 condition(fresh4) π1, condition(fresh1){shared}
+  demands 12: accepted 10 (fresh 0, call 0, param 8, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 12: accepted 10 (fresh 0, call 0, param 8, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause supply 2

@@ -15,7 +15,7 @@
     <button id="ok">"ok"</button>
     <button id="missing">"missing"</button>
     <ol>
-      <li>"good 200 [] /ok {content-type=text/plain; x-empty=; x-tag=a, b} fine"</li>
+      <li>"good 200 [] /ok {content-type=text/plain; x-tag=a, b; x-empty=} fine"</li>
     </ol>
   </main>
 </body>
@@ -28,7 +28,7 @@
     <button id="ok">"ok"</button>
     <button id="missing">"missing"</button>
     <ol>
-      <li>"good 200 [] /ok {content-type=text/plain; x-empty=; x-tag=a, b} fine"</li>
+      <li>"good 200 [] /ok {content-type=text/plain; x-tag=a, b; x-empty=} fine"</li>
       <li>"bad 404 [] /missing {content-type=text/plain} not here"</li>
     </ol>
   </main>

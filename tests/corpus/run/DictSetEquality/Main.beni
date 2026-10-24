@@ -1,5 +1,8 @@
--- Equality keeps comparing the pairs while the tree representation remains.
--- Dict and Set keys and ordering are refused by separate build fixtures.
+-- Equality compares the pairs in insertion order, with every spelling of
+-- `==` agreeing (`language.md` §6.8, *Ordered dictionaries and sets*):
+-- `same` holds forwards' pairs in the same order but was built another
+-- way, and `backwards` holds them in the reverse order, so it differs.
+-- Writes to the shared top-level values copy them first.
 import Bag exposing (Bag)
 import Dict exposing (Dict)
 import List
@@ -23,12 +26,17 @@ forwards : Dict Int String
 forwards = Dict.fromList [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ), ( 4, "d" ), ( 5, "e" ), ( 6, "f" ) ]
 
 
+same : Dict Int String
+same =
+    Dict.insert (Dict.fromList [ ( 1, "a" ), ( 2, "b" ), ( 3, "c" ), ( 4, "d" ), ( 5, "e" ) ]) 6 "f"
+
+
 backwards : Dict Int String
 backwards = Dict.fromList [ ( 6, "f" ), ( 5, "e" ), ( 4, "d" ), ( 3, "c" ), ( 2, "b" ), ( 1, "a" ) ]
 
 
 removed : Dict Int String
-removed = Dict.remove (Dict.insert backwards 0 "z") 0
+removed = Dict.remove (Dict.insert (Dict.copy same) 0 "z") 0
 
 
 up : Set Int
@@ -36,38 +44,43 @@ up = Set.fromList [ 1, 2, 3, 4, 5, 6 ]
 
 
 down : Set Int
-down = Set.fromList [ 6, 5, 4, 3, 2, 1 ]
+down = Set.insert (Set.fromList [ 1, 2, 3, 4, 5 ]) 6
+
+
+reversed : Set Int
+reversed = Set.fromList [ 6, 5, 4, 3, 2, 1 ]
 
 
 main : Program
 main =
     bags = Dict.fromList [ ( 1, Bag [ 1, 2, 3 ] ), ( 2, Bag [ 4, 5 ] ) ]
-    shuffled = Dict.fromList [ ( 2, Bag [ 5, 4 ] ), ( 1, Bag [ 3, 1, 2 ] ) ]
+    shuffled = Dict.fromList [ ( 1, Bag [ 3, 1, 2 ] ), ( 2, Bag [ 5, 4 ] ) ]
     Node.printLines
-        [ "dict == " ++ yes (forwards == backwards) ++ " " ++ yes (forwards == removed)
-        , "dict ≠ " ++ yes (forwards ≠ backwards)
+        [ "dict == " ++ yes (forwards == same) ++ " " ++ yes (forwards == removed)
+        , "dict ≠ " ++ yes (forwards ≠ same)
         , "Basics.eq "
-            ++ yes (Basics.eq forwards backwards)
+            ++ yes (Basics.eq forwards same)
             ++ " "
-            ++ yes (apply Basics.eq forwards backwards)
+            ++ yes (apply Basics.eq forwards same)
         , "Basics.neq "
-            ++ yes (Basics.neq forwards backwards)
+            ++ yes (Basics.neq forwards same)
             ++ " "
-            ++ yes (apply Basics.neq forwards backwards)
+            ++ yes (apply Basics.neq forwards same)
         , "(==) "
-            ++ yes (apply (==) forwards backwards)
+            ++ yes (apply (==) forwards same)
             ++ " Dict.eq "
-            ++ yes (Dict.eq forwards backwards)
-        , "record " ++ yes ({ d = forwards, n = 1 } == { d = backwards, n = 1 })
-        , "maybe " ++ yes (Just forwards == Just backwards)
-        , "list " ++ yes ([ forwards, backwards ] == [ backwards, forwards ])
-        , "value " ++ yes (Dict.insert forwards 3 "x" == backwards)
-        , "key " ++ yes (Dict.insert (Dict.remove forwards 3) 7 "c" == backwards)
+            ++ yes (Dict.eq forwards same)
+        , "record " ++ yes ({ d = forwards, n = 1 } == { d = same, n = 1 })
+        , "maybe " ++ yes (Just forwards == Just same)
+        , "list " ++ yes ([ forwards, same ] == [ same, forwards ])
+        , "value " ++ yes (Dict.insert (Dict.copy forwards) 3 "x" == same)
+        , "key " ++ yes (Dict.insert (Dict.remove (Dict.copy forwards) 3) 7 "c" == same)
         , "longer "
-            ++ yes (Dict.insert forwards 7 "g" == backwards)
+            ++ yes (Dict.insert (Dict.copy forwards) 7 "g" == same)
             ++ " "
-            ++ yes (backwards == Dict.insert forwards 7 "g")
-        , "empty " ++ yes (Dict.empty == Dict.remove (Dict.singleton 1 "a") 1)
+            ++ yes (same == Dict.insert (Dict.copy forwards) 7 "g")
+        , "order " ++ yes (forwards == backwards) ++ " " ++ yes (forwards ≠ backwards)
+        , "empty " ++ yes ((Dict.empty ⊤) == Dict.remove (Dict.singleton 1 "a") 1)
         , "own eq " ++ yes (bags == shuffled)
         , "set == "
             ++ yes (up == down)
@@ -76,5 +89,6 @@ main =
             ++ " Basics.eq "
             ++ yes (apply Basics.eq up down)
         , "set record " ++ yes ({ s = up } == { s = down })
+        , "set order " ++ yes (up == reversed)
         , "set unequal " ++ yes (Set.insert up 7 == down) ++ " " ++ yes (Set.remove up 1 == down)
         ]

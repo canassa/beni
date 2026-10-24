@@ -101,9 +101,10 @@ module Deferred
   value poll : Deferred a → Maybe a  -- impure
   value wait : Deferred a → a  -- suspends
 module Dict
-  opaque type Dict a b
+  type Dict a b
+  value copy : Dict key v → Dict key v
   value diff : Dict key a, Dict key b → Dict key a
-  value empty : Dict key v
+  value empty : ⊤ → Dict key v
   value eq : Dict key v, Dict key v → Bool where v.eq : v, v → Bool
   value filter : Dict key v, (key, v → Bool) → Dict key v
   value foldl : Dict key v, b, (key, v, b → b) → b
@@ -111,6 +112,7 @@ module Dict
   value fromList : List (key × v) → Dict key v
   value get : Dict key v, key → Maybe v
   value insert : Dict key v, key, v → Dict key v
+  value insertAt : Dict key v, Int, key, v → Dict key v
   value intersect : Dict key v, Dict key v → Dict key v
   value isEmpty : Dict key v → Bool
   value keys : Dict key v → List key
@@ -121,6 +123,8 @@ module Dict
   value remove : Dict key v, key → Dict key v
   value singleton : key, v → Dict key v
   value size : Dict key v → Int
+  value sortBy : Dict key v, (key, v → a) → Dict key v where a.compare : a, a → Order
+  value swap : Dict key v, key, key → Dict key v
   value toList : Dict key v → List (key × v)
   value union : Dict key v, Dict key v → Dict key v
   value update : Dict key v, key, (Maybe v → Maybe v) → Dict key v
@@ -507,14 +511,16 @@ module Schema
   value writeWith : Schema e a, Options, a → Result (List Issue) Value  -- impure
 module Set
   opaque type Set a
+  value copy : Set key → Set key
   value diff : Set key, Set key → Set key
-  value empty : Set key
+  value empty : ⊤ → Set key
   value eq : Set key, Set key → Bool
   value filter : Set key, (key → Bool) → Set key
   value foldl : Set key, b, (key, b → b) → b
   value foldr : Set key, b, (key, b → b) → b
   value fromList : List key → Set key
   value insert : Set key, key → Set key
+  value insertAt : Set key, Int, key → Set key
   value intersect : Set key, Set key → Set key
   value isEmpty : Set key → Bool
   value map : Set key, (key → key2) → Set key2
@@ -523,6 +529,8 @@ module Set
   value remove : Set key, key → Set key
   value singleton : key → Set key
   value size : Set key → Int
+  value sortBy : Set key, (key → a) → Set key where a.compare : a, a → Order
+  value swap : Set key, key, key → Set key
   value toList : Set key → List key
   value union : Set key, Set key → Set key
 module String

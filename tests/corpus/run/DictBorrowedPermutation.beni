@@ -1,0 +1,24 @@
+-- #670: scoring and retaining borrowed List values writes only dictionary storage.
+import Dict exposing (Dict)
+import Node exposing (Program)
+
+
+borrowThenSort : Dict Int (List Int), (List Int → List Int) → Dict Int (List Int) × Maybe (List Int)
+borrowThenSort d f =
+    kept = Maybe.map (Dict.get d 1) f
+    ( Dict.sortBy d λ_ v → v, kept )
+
+
+main : Program
+main =
+    ( sorted, kept ) = borrowThenSort (Dict.fromList [ ( 1, [ 2 ] ), ( 2, [ 1 ] ) ]) λv → v
+    Node.print
+        (if
+            Dict.keys sorted == [ 2, 1 ]
+                && Dict.values sorted == [ [ 1 ], [ 2 ] ]
+                && kept == Just [ 2 ]
+         then
+            "ok"
+         else
+            "bad"
+        )

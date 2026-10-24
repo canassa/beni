@@ -12,19 +12,19 @@ want k kind t d = Dict.update d k λcurrent →
 
 
 pub listLeft : List (k × kind × tap) → Dict k (kind × List tap)
-listLeft declared = List.foldl declared Dict.empty λ( k, kind, t ) d → want k kind t d
+listLeft declared = List.foldl declared (Dict.empty ⊤) λ( k, kind, t ) d → want k kind t d
 
 
 pub listRight : List (k × kind × tap) → Dict k (kind × List tap)
-listRight declared = List.foldr declared Dict.empty λ( k, kind, t ) d → want k kind t d
+listRight declared = List.foldr declared (Dict.empty ⊤) λ( k, kind, t ) d → want k kind t d
 
 
 pub dictLeft : Dict a (k × kind × tap) → Dict k (kind × List tap)
-dictLeft declared = Dict.foldl declared Dict.empty λ_ ( k, kind, t ) d → want k kind t d
+dictLeft declared = Dict.foldl declared (Dict.empty ⊤) λ_ ( k, kind, t ) d → want k kind t d
 
 
 pub dictRight : Dict a (k × kind × tap) → Dict k (kind × List tap)
-dictRight declared = Dict.foldr declared Dict.empty λ_ ( k, kind, t ) d → want k kind t d
+dictRight declared = Dict.foldr declared (Dict.empty ⊤) λ_ ( k, kind, t ) d → want k kind t d
 
 
 pub subscribed ⊤ =
@@ -45,13 +45,13 @@ pub captured xs = List.foldr xs { values = [], readers = [] } λx acc →
 
 
 -- One grown list is placed at two dictionary keys.
-pub duplicated xs = List.foldl xs Dict.empty λx acc →
+pub duplicated xs = List.foldl xs (Dict.empty ⊤) λx acc →
     grown = Dict.update acc 1 λold → Just (List.append (Maybe.withDefault old []) [ x ])
     taps = Maybe.withDefault (Dict.get grown 1) []
     Dict.insert grown 2 taps
 
 
-shared = Dict.insert Dict.empty 1 [ 0 ]
+shared = Dict.insert (Dict.empty ⊤) 1 [ 0 ]
 
 
 pub sharedStart xs = List.foldr xs shared λx acc →

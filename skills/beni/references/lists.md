@@ -122,6 +122,29 @@ snapshot xs =
     ( xs, after )
 ```
 
+## Dict and Set
+
+`Dict k v` and `Set t` keep insertion order. `keys`, `values`, `toList` and the folds use that
+order. Insert of a key that is there already keeps its position; remove and insert again puts it
+at the end. Equality includes order: `Dict.fromList [ ( 1, "a" ), ( 2, "b" ) ]` is not equal to
+`Dict.fromList [ ( 2, "b" ), ( 1, "a" ) ]`. Sort explicitly when you need key order:
+`Dict.sortBy d λk _ → k`. `Dict.swap` and `Dict.insertAt` change positions. `Dict.empty ⊤` and
+`Set.empty ⊤` make new empty storage at each call.
+
+`insert`, `remove`, `update`, `swap`, `insertAt` and `sortBy` edit the collection in place. The
+ownership checker applies the same rules as for a list. The fix for a write to a collection that
+is read again is `Dict.copy d` or `Set.copy s`. A copy is shallow: the values stay shared.
+
+```beni platform=browser-inline
+import Dict exposing (Dict)
+
+
+pub keep : Dict Int String → Dict Int String × Dict Int String
+keep d =
+    before = Dict.copy d
+    ( before, Dict.insert d 1 "one" )
+```
+
 A record update `{ p | x = 1 }` is checked where list writes are. A later read of a field of the
 old `p` is accepted: the compiler reads the old value first. A later use of the old `p` whole is
 the error `record_still_used`. An update of a top-level record is `top_level_record_changed`. An

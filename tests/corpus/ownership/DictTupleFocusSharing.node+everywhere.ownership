@@ -1,8 +1,10 @@
 module DictTupleFocusSharing
-  11:5 call Dict.update d#Dict.0#Node.2.1: rejected call: another operand may be it, through the call at 10:9 (<lambda> writes what Dict.update supplies it) (approx)
+  10:9 call Dict.insert <call Dict.empty>: accepted call
+  11:5 call Dict.update d: accepted call (Dict.update writes π1)
+  11:5 call Dict.update d[*].1: rejected call: another operand may be it, through the call at 10:9 (<lambda> writes what Dict.update supplies it) (approx)
   13:22 List.append taps: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list
-  summary sharedFields: res #Dict.0#Node.1 ~condition(fresh5)r{lost} ~condition(fresh7){shared}r{shared}, #Dict.0#Node.2 ~condition(fresh2){shared}r{shared} ~condition(fresh7){shared}r{shared}, #Dict.0#Node.2.0 ~condition(fresh3) ~fresh1{lost} ~fresh3, #Dict.0#Node.2.1 ~condition(fresh4){lost} ~fresh1{lost} ~fresh4{lost}, #Dict.0#Node.2.1[*] ~condition(fresh8), #Dict.0#Node.3 ~condition(fresh6){lost}r{lost} ~condition(fresh7){shared}r{shared}, #Dict.0#Node.4 ~condition(fresh6){lost}r{lost} ~condition(fresh7){shared}r{shared}
-  demands 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
-total 2: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+  summary sharedFields: res [*] ~condition(fresh3){shared}r{shared} ~fresh3{shared}r{shared}, [*].0 ~condition(fresh4) ~fresh1{lost} ~fresh4{shared}r{shared}, [*].1 ~condition(fresh5){lost} ~fresh1{lost} ~fresh5{shared}r{shared}, [*].1[*] ~condition(fresh6) ~fresh6{shared}r{shared}, fresh2{shared}r{shared}
+  demands 4: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 cause call 1
 cause exclusive 1

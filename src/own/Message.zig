@@ -179,6 +179,7 @@ pub fn limit(a: Allocator, src: Src, m: u32, h: Ownership.LimitLine) Allocator.E
 pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Error![]const u8 {
     if (lines[0].record) return buildRecord(a, src, m, lines);
     const d = lines[0];
+    if (d.storage_kind != .list) return storageMessage(a, src, m, d);
     const cause: ?Cause = switch (d.verdict) {
         .rejected => |c| c,
         else => null,
@@ -718,10 +719,47 @@ fn copyLine(a: Allocator, src: Src, m: u32, d: Demand) error{ NoBase, OutOfMemor
     // the call's, so the line does not gain a second pair.
     const enclosed = lo > 0 and hi < ln.len and ln[lo - 1] == '(' and ln[hi] == ')';
     const wrapped = if (spread or left_of_append or enclosed)
-        try std.fmt.allocPrint(a, "List.copy {s}", .{arg})
+        try std.fmt.allocPrint(a, "{s} {s}", .{ copyName(d.storage_kind), arg })
     else
-        try std.fmt.allocPrint(a, "(List.copy {s})", .{arg});
+        try std.fmt.allocPrint(a, "({s} {s})", .{ copyName(d.storage_kind), arg });
     var out: std.ArrayList(u8) = .empty;
     try out.print(a, "{d}|{s}{s}{s}", .{ s.line, ln[0..lo], wrapped, ln[hi..] });
     return out.items;
+}
+
+fn copyName(kind: Ownership.StorageKind) []const u8 {
+    return switch (kind) {
+        .list => "List.copy",
+        .dict => "Dict.copy",
+        .set => "Set.copy",
+    };
+}
+
+/// Collection storage has its own copy operation; copying it leaves values shared.
+fn storageMessage(a: Allocator, src: Src, m: u32, d: Demand) Allocator.Error![]const u8 {
+    const noun: []const u8 = if (d.storage_kind == .dict) "dictionary" else "set";
+    const operation = if (std.mem.startsWith(u8, d.op, "call ")) d.op[5..] else d.op;
+    const base = if (d.storage_kind == .set and std.mem.endsWith(u8, d.base, "#Set.0")) d.base[0 .. d.base.len - 6] else d.base;
+    var out: std.ArrayList(u8) = .empty;
+    try out.print(a, "`{s}` changes the {s} `{s}` in place, and another use {s} its storage.\n\n", .{ operation, noun, base, if (d.approx) "may still hold" else "still holds" });
+    var places: std.ArrayList(Place) = .empty;
+    if (d.span[0] != none) try places.append(a, .{ .m = m, .first = d.span[0], .last = d.span[1], .label = "the storage is changed here" });
+    if (d.keep_token != none) try places.append(a, .{ .m = m, .first = d.keep_token, .last = d.keep_token, .label = "this binding keeps the old storage" });
+    if (d.read_span[0] != none) try places.append(a, .{ .m = m, .first = d.read_span[0], .last = d.read_span[1], .label = "this use still needs the old storage" });
+    std.mem.sort(Place, places.items, src, placeLess);
+    try writePlaces(a, &out, src, m, places.items);
+    if (d.top) |top| {
+        const tok = src.vtable.decl_token(src.ctx, top[0], top[1]);
+        if (tok != none) try writePlaces(a, &out, src, top[0], &.{.{ .m = top[0], .first = tok, .last = tok, .label = "the shared top-level collection is defined here" }});
+    }
+    try out.print(a, "\nChanging the slots or order would also change what the old {s} observes.\n\nMake an explicit storage copy with `{s}` before this write. Stored values\nremain shared; copy a stored value too if you need to change that value.\n\n", .{ noun, copyName(d.storage_kind) });
+    const line = copyLine(a, src, m, d) catch |err| switch (err) {
+        error.NoBase => null,
+        error.OutOfMemory => return error.OutOfMemory,
+    };
+    if (line) |ln| try out.print(a, "To keep the old storage unchanged, copy it at this use:\n\n{s}\n\n", .{ln});
+    const detail = try plain(a, d.detail);
+    const visible_detail = if (d.storage_kind == .set) try std.mem.replaceOwned(u8, a, detail, "#Set.0", "") else detail;
+    try out.print(a, "{s}: {s}", .{ if (d.approx) "This is a limit of the checker, not proof of sharing" else "This is sharing the code shows", visible_detail });
+    return out.toOwnedSlice(a);
 }

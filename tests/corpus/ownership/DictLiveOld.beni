@@ -1,0 +1,18 @@
+-- #681: an ordered Dict is edited in place, so a write while the old value
+-- is still read is refused, with `Dict.copy` as the fix. The node case is
+-- under `+everywhere` until ownership is enforced on every build (#320).
+import Dict exposing (Dict)
+
+
+sizes : ⊤ → Int × Int
+sizes ⊤ =
+    old = Dict.singleton 1 1
+    changed = Dict.insert old 2 2
+    ( Dict.size old, Dict.size changed )
+
+
+copied : ⊤ → Int × Int
+copied ⊤ =
+    old = Dict.singleton 1 1
+    changed = Dict.insert (Dict.copy old) 2 2
+    ( Dict.size old, Dict.size changed )

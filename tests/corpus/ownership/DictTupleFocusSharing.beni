@@ -7,7 +7,7 @@ import Dict exposing (Dict)
 pub sharedFields : ⊤ → Dict Int ((List Int) × List Int)
 sharedFields ⊤ =
     xs = [ 1 ]
-    d = Dict.insert Dict.empty 1 ( xs, xs )
+    d = Dict.insert (Dict.empty ⊤) 1 ( xs, xs )
     Dict.update d 1 λcurrent →
         ( kept, taps ) = Maybe.withDefault current ( [], [] )
         Just ( kept, List.append taps [ 2 ] )

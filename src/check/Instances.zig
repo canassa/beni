@@ -190,8 +190,9 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
     if (Resolve.derives(w)) {
         // A `foreign type` that does not derive (`Derivable.foreignDerives`)
         // falls through to `unknown_method`. Every other type asks
-        // `derivability`.
-        const foreign_refused = entry.kind == .foreign and !Derivable.foreignDerives(entry, Contexts.kindOf(w.method));
+        // `derivability`, and so does core's foreign Dict, whose missing
+        // compare is the collection rule's (language.md §6.8).
+        const foreign_refused = entry.kind == .foreign and a.type != cx.types.well_known.dict and !Derivable.foreignDerives(entry, Contexts.kindOf(w.method));
         if (!foreign_refused) {
             if (!try Derivable.derivable(s, id, root)) return;
             if (!try Resolve.unifyWellKnown(s, id, root)) return Resolve.reject(s, id, false);

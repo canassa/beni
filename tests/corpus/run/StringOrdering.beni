@@ -12,10 +12,9 @@
 -- sorts ABOVE `\u{E000}` here, which JavaScript's own `Array.sort` would
 -- not do.
 --
--- The last two lines are §5.3: `Dict.empty` is a constant and `Dict.insert`
--- carries `where k.compare`, so a dictionary keyed by `String` needs no
--- `String.compare` argument threaded into it and `Dict.keys` still comes
--- back in key order.
+-- The last two lines are §5.3: a dictionary keyed by `String` needs no
+-- `String.compare` argument threaded into it, and `Dict.keys` comes back in
+-- insertion order (`language.md` §6.8, *Ordered dictionaries and sets*).
 import Dict
 import List
 import Node exposing (Program)

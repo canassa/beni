@@ -1,5 +1,5 @@
 module UnknownCallee
-  30:5 List.push <call>: rejected unknown: it came from a call of a function value that may be one of several functions, and the checker does not join what each returns (approx)
+  30:5 List.push <call>: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
   38:10 List.push <call>: accepted call
   42:14 value <lambda>: rejected need: UnknownCallee.load edits what it returns, which may be a list it does not own
   53:13 List.push <call>: accepted call
@@ -8,7 +8,7 @@ module UnknownCallee
   86:14 List.push <call UnknownCallee.make>: accepted call
   90:15 List.push <call UnknownCallee.apply>: accepted call
   96:5 List.push <call>: accepted call
-  summary badDict: res [*] ~⊤call{lost}r{lost}, [*]⋆ ~condition(shared(UnknownCallee.handlers)#Dict.0#Node.2){lost}, ⊤call{lost}r{lost}, ⋆ ~condition(shared(UnknownCallee.handlers)#Dict.0#Node.2){lost}
+  summary badDict: res [*] ~condition(fresh1) ~⊤call{lost}r{lost}, [*]⋆ ~condition(shared(UnknownCallee.handlers)[*]) ~shared(UnknownCallee.handlers)[*], ⊤call{lost}r{lost}, ⋆ ~condition(fresh2) ~condition(shared(UnknownCallee.handlers)[*]) ~shared(UnknownCallee.handlers)[*]
   summary load: π1.load R; res [*] ~cb(π1.load)[*]{excl cb(π1.load)[*]}r{excl cb(π1.load)[*]}, cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1, need owned
   summary badField: res [*] ~shared(UnknownCallee.shared)[*], shared(UnknownCallee.shared)
   summary goodField: res [*] ~fresh2, fresh1

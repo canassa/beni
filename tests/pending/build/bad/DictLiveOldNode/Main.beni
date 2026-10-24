@@ -1,0 +1,14 @@
+-- CK-271: (#681) a write to a Dict whose old value is still read is refused on
+-- every platform. Today a default node build accepts it and prints 2/2,
+-- because enforcement still depends on the platform's "lists" setting; #320
+-- makes ownership enforced on every build. Expected: the refusal that
+-- `--ownership-everywhere` gives today, with its `Dict.copy` fix.
+import Dict
+import Node exposing (Program)
+
+
+main : Program
+main =
+    old = Dict.singleton 1 1
+    changed = Dict.insert old 2 2
+    Node.print "${Dict.size old}/${Dict.size changed}"

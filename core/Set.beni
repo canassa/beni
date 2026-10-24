@@ -1,159 +1,130 @@
---! A set of unique Int or String values. The member constraint belongs to
---! the type; callers supply no comparison evidence. Set has no compare method.
+--! An ordered set of Int or String values, backed by Dict.
+--! Iteration follows insertion order and equality includes that order.
+--! Inserting an existing member keeps its position. Removing and then
+--! reinserting it appends it. There is no compare method.
 --!
---!     names : Set String
---!     names =
---!         Set.fromList [ "Alice", "Bob" ]
---!
---! Argument order here is **subject first and function last**, as it is
---! everywhere in core: the set comes first, so `names ▷ Set.insert "Carol"`
---! is `Set.insert names "Carol"` — `▷` is pipe-first, it inserts its left
---! operand as the callee's first argument. A function argument comes last, so
---! a lambda you write inline is the final one, and `map` now has only the
---! one to place.
---!
---! Insert, remove and query take *O(log n)* time. A `Set` is a `Dict` whose
---! values are all `⊤`, which is how Elm builds it too.
---!
---! Nothing here is `foreign`.
+--! Writes edit the underlying dictionary in place. Use Set.copy to retain
+--! an old version. Lookup takes expected O(1); iteration takes O(n).
 
 import Dict exposing (Dict)
 import List
 
 
---| Represents a set of unique values. So `Set Int` is a set of integers and
---| `Set String` is a set of strings.
+--| An ordered collection of unique Int or String members.
 pub opaque type Set t
     = Set (Dict t ⊤)
 
 
---| The empty set. It compares nothing, so it needs no `compare` and is a
---| constant rather than a function.
---|
---|     Set.empty
-pub empty : Set t
-empty = Set Dict.empty
+--| A fresh empty set.
+pub empty : ⊤ → Set t
+empty ⊤ = Set (Dict.empty ⊤)
 
 
---| Create a set with one value. One value needs no ordering either, so this
---| one needs no method evidence.
---|
---|     Set.singleton "Tom"
+--| A set with one member.
 pub singleton : t → Set t
-singleton value = Set (Dict.singleton value ⊤)
+singleton x = Set (Dict.singleton x ⊤)
 
 
---| Insert a value into a set.
---|
---|     Set.insert Set.empty "Tom"
+--| Insert a member without moving an existing one.
 pub insert : Set t, t → Set t
-insert (Set dict) value = Set (Dict.insert dict value ⊤)
+insert (Set d) x = Set (Dict.insert d x ⊤)
 
 
---| Remove a value from a set. If the value is not found, no changes are made.
---|
---|     Set.remove names "Tom"
+--| Remove a member; retain the order of the others.
 pub remove : Set t, t → Set t
-remove (Set dict) value = Set (Dict.remove dict value)
+remove (Set d) x = Set (Dict.remove d x)
 
 
---| Determine if a set is empty.
---|
---|     isEmpty empty == True
+--| Copy the dictionary storage.
+pub copy : Set t → Set t
+copy (Set d) = Set (Dict.copy d)
+
+
+--| Exchange two members' positions. Leave it unchanged if either is absent.
+pub swap : Set t, t, t → Set t
+swap (Set d) a b = Set (Dict.swap d a b)
+
+
+--| Remove any old occurrence, then insert at the clamped index in the rest.
+pub insertAt : Set t, Int, t → Set t
+insertAt (Set d) i x = Set (Dict.insertAt d i x ⊤)
+
+
+--| Stable ascending sort by the callback result. The callback runs once
+--| per member, in current order, and may suspend.
+pub sortBy : Set t, (t → a) → Set t
+    where a.compare : a, a → Order
+sortBy (Set d) f = Set (Dict.sortBy d λk _ → f k)
+
+
+--| Whether there are no members.
 pub isEmpty : Set t → Bool
-isEmpty (Set dict) = Dict.isEmpty dict
+isEmpty (Set d) = Dict.isEmpty d
 
 
---| Determine if a value is in a set.
---|
---|     member (fromList [ "Alice", "Bob" ]) "Alice" == True
---|     member (fromList [ "Alice", "Bob" ]) "Carol" == False
+--| Whether a member is present.
 pub member : Set t, t → Bool
-member (Set dict) value = Dict.member dict value
+member (Set d) x = Dict.member d x
 
 
---| Determine the number of elements in a set.
+--| Number of members.
 pub size : Set t → Int
-size (Set dict) = Dict.size dict
+size (Set d) = Dict.size d
 
 
---| Get the union of two sets. Keep all values.
+--| Keep the left's order, then append right-only members.
 pub union : Set t, Set t → Set t
-union (Set d1) (Set d2) = Set (Dict.union d1 d2)
+union (Set left) (Set right) = Set (Dict.union left right)
 
 
---| Get the intersection of two sets. Keeps values that appear in both sets.
+--| Keep left members that occur in right, in fresh storage and left order.
 pub intersect : Set t, Set t → Set t
-intersect (Set d1) (Set d2) = Set (Dict.intersect d1 d2)
+intersect (Set left) (Set right) = Set (Dict.intersect left right)
 
 
---| Get the difference between the first set and the second. Keeps values
---| that do not appear in the second set.
+--| Keep left members absent from right, in fresh storage and left order.
 pub diff : Set t, Set t → Set t
-diff (Set d1) (Set d2) = Set (Dict.diff d1 d2)
+diff (Set left) (Set right) = Set (Dict.diff left right)
 
 
---| Convert a set into a list, sorted from lowest to highest.
+--| Members in insertion order, in a fresh list.
 pub toList : Set t → List t
-toList (Set dict) = Dict.keys dict
+toList (Set d) = Dict.keys d
 
 
---| Convert a list into a set, removing any duplicates. The values are
---| ordered by their own `compare`.
---|
---|     Set.fromList [ "a", "b", "a" ]
+--| Keep the first occurrence of each member, in list order.
 pub fromList : List t → Set t
-fromList list = List.foldl list empty λvalue set → insert set value
+fromList xs = Set (List.foldl xs (Dict.empty ⊤) λx d → Dict.insert d x ⊤)
 
 
---| Map a function onto a set, creating a new set with no duplicates. The
---| result holds values of a NEW type, so the constraint is on that type's
---| `compare` and not on the one the set came in with.
---|
---|     Set.map names String.length
+--| Map in insertion order and keep the first occurrence of each result.
+--| Callback results must be Int or String.
 pub map : Set a, (a → b) → Set b
-map set func = fromList (List.map (toList set) func)
+map set f = fromList (List.map (toList set) f)
 
 
---| Fold over the values in a set, in order from lowest to highest.
---|
---|     Set.foldl numbers 0 λn total → n + total
+--| Fold from first member to last.
 pub foldl : Set t, b, (t, b → b) → b
-foldl (Set dict) initial func = Dict.foldl dict initial λkey _ acc → func key acc
+foldl (Set d) initial f = Dict.foldl d initial λk _ acc → f k acc
 
 
---| Fold over the values in a set, in order from highest to lowest.
---|
---|     foldr (fromList [ "b", "a" ]) [] (λname acc → [ name, …acc ]) == [ "a", "b" ]
+--| Fold from last member to first.
 pub foldr : Set t, b, (t, b → b) → b
-foldr (Set dict) initial func = Dict.foldr dict initial λkey _ acc → func key acc
+foldr (Set d) initial f = Dict.foldr d initial λk _ acc → f k acc
 
 
---| Only keep elements that pass the given test.
---|
---|     Set.filter numbers λn → n > 0
+--| Keep members that pass the test, in fresh storage and the same order.
 pub filter : Set t, (t → Bool) → Set t
-filter (Set dict) isGood = Set (Dict.filter dict λkey _ → isGood key)
+filter (Set d) f = Set (Dict.filter d λk _ → f k)
 
 
---| Create two new sets. The first contains all the elements that passed the
---| given test, and the second contains all the elements that did not.
---|
---|     Set.partition numbers λn → n > 0
+--| Build two sets, preserving order within each.
 pub partition : Set t, (t → Bool) → Set t × Set t
-partition (Set dict) isGood =
-    ( trues, falses ) = Dict.partition dict λkey _ → isGood key
-    ( Set trues, Set falses )
+partition (Set d) f =
+    ( yes, no ) = Dict.partition d λk _ → f k
+    ( Set yes, Set no )
 
 
---| Whether two sets hold the same values, by the value type's `compare`.
---| This is what `==` and `≠` on a set mean (`static-dispatch-spike.md`
---| §3.3), and it stays callable by name.
---|
---|     eq (fromList [ 1, 2, 3 ]) (fromList [ 3, 2, 1 ]) == True
---|
---| It is written here because the derived `eq` would compare the trees
---| underneath, and two sets holding the same values are not always the same
---| tree. It is `Dict.eq` on the dictionaries. O(n).
+--| Equal members in the same order, with the dictionary identity shortcut.
 pub eq : Set t, Set t → Bool
 eq (Set left) (Set right) = Dict.eq left right

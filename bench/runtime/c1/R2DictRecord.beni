@@ -56,7 +56,7 @@ points = List.concatMap (List.range 0 (blocks - 1)) λblock →
 
 main : Program
 main =
-    dict = List.foldl points Dict.empty λp d → Dict.insert d p (weight p)
+    dict = List.foldl points (Dict.empty ⊤) λp d → Dict.insert d p (weight p)
 
     total = List.foldl points 0 λp acc → acc + Maybe.withDefault (Dict.get dict p) 0
     Node.print (String.join [ String.fromInt (Dict.size dict), String.fromInt total ] " ")

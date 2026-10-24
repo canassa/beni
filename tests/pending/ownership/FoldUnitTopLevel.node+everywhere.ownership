@@ -1,0 +1,9 @@
+module FoldUnitTopLevel
+  7:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  7:36 List.push d: accepted callback-param (List.foldl supplies it owned)
+  15:10 List.push FoldUnitTopLevel.top: rejected top-level: FoldUnitTopLevel.top is a top-level value
+  summary lfold: π1 R; res ~fresh1
+  summary grow: res ~shared(FoldUnitTopLevel.top)
+  demands 3: accepted 2 (fresh 1, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 3: accepted 2 (fresh 1, call 0, param 0, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause top-level 1

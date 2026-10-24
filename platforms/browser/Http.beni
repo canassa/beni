@@ -1034,14 +1034,14 @@ received response text =
 -- twice its values joined with ", ".
 headersFrom : Js.Value → Dict String String
 headersFrom headers =
-    all = Js.ref Dict.empty
-    Js.each headers λpair →
+    pairs : List Js.Value
+    pairs = Js.to (Js.call (Js.global "Array") "from" [ headers ])
+    List.foldl pairs (Dict.empty ⊤) λpair all →
         name : String
         name = Js.to (Js.call (Js.at pair 0) "toLowerCase" [])
         value : String
         value = Js.to (Js.at pair 1)
-        Js.write all (Dict.update (Js.read all) name λold → Just (joined old value))
-    Js.read all
+        Dict.update all name λold → Just (joined old value)
 
 
 joined : Maybe String, String → String

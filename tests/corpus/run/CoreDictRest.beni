@@ -7,7 +7,9 @@
 -- preference to the first dictionary", `intersect` keeps the LEFT pair when
 -- the key is in the right, and `diff` keeps what the right does not have. A
 -- collision is therefore an assertion and not an incidental, so every one
--- of them here has an overlapping key whose values differ.
+-- of them here has an overlapping key whose values differ. A dictionary is
+-- edited in place, so each write to the shared `left` copies it first with
+-- `Dict.copy` (`language.md` §6.8, *Ordered dictionaries and sets*).
 import Dict exposing (Dict)
 import List
 import Node exposing (Program)
@@ -37,27 +39,27 @@ right = Dict.fromList [ ( "b", 20 ), ( "c", 30 ) ]
 main : Program
 main =
     Node.printLines
-        [ "[" ++ pairs Dict.empty ++ "]"
+        [ "[" ++ pairs (Dict.empty ⊤) ++ "]"
         , pairs (Dict.singleton "Tom" 42)
-        , flag (Dict.isEmpty Dict.empty)
+        , flag (Dict.isEmpty (Dict.empty ⊤))
         , flag (Dict.isEmpty (Dict.singleton "Tom" 42))
         , flag (Dict.member left "a")
         , flag (Dict.member left "z")
-        , flag (Dict.member Dict.empty "a")
-        , pairs (Dict.insert left "a" 99)
-        , String.fromInt (Dict.size (Dict.insert left "a" 99))
-        , pairs (Dict.remove left "z")
-        , String.fromInt (Dict.size (Dict.remove Dict.empty "z"))
-        , pairs (Dict.update left "a" λ_ → Just 7)
-        , pairs (Dict.update left "a" λ_ → Nothing)
-        , pairs (Dict.update left "z" λ_ → Just 7)
-        , pairs (Dict.update left "z" λ_ → Nothing)
-        , pairs (Dict.update left "a" λv → v)
+        , flag (Dict.member (Dict.empty ⊤) "a")
+        , pairs (Dict.insert (Dict.copy left) "a" 99)
+        , String.fromInt (Dict.size (Dict.insert (Dict.copy left) "a" 99))
+        , pairs (Dict.remove (Dict.copy left) "z")
+        , String.fromInt (Dict.size (Dict.remove (Dict.empty ⊤) "z"))
+        , pairs (Dict.update (Dict.copy left) "a" λ_ → Just 7)
+        , pairs (Dict.update (Dict.copy left) "a" λ_ → Nothing)
+        , pairs (Dict.update (Dict.copy left) "z" λ_ → Just 7)
+        , pairs (Dict.update (Dict.copy left) "z" λ_ → Nothing)
+        , pairs (Dict.update (Dict.copy left) "a" λv → v)
         , pairs (Dict.union left right)
         , pairs (Dict.union right left)
-        , pairs (Dict.union left Dict.empty)
+        , pairs (Dict.union left (Dict.empty ⊤))
         , pairs (Dict.intersect left right)
-        , "[" ++ pairs (Dict.intersect left Dict.empty) ++ "]"
+        , "[" ++ pairs (Dict.intersect left (Dict.empty ⊤)) ++ "]"
         , pairs (Dict.diff left right)
         , pairs (Dict.diff right left)
         , "[" ++ pairs (Dict.diff left left) ++ "]"

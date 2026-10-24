@@ -18,26 +18,26 @@ import Dict exposing (Dict)
 
 
 groups : List Int → Dict Int (List Int)
-groups xs = List.foldl xs Dict.empty λx d →
+groups xs = List.foldl xs (Dict.empty ⊤) λx d →
     Dict.update d (Int.mod x 3) λg → Just [ …Maybe.withDefault g [], x ]
 
 
 twice : ⊤ → Dict Int (List Int)
 twice ⊤ =
     xs = [ 1 ]
-    d = Dict.insert (Dict.insert Dict.empty 1 xs) 2 xs
+    d = Dict.insert (Dict.insert (Dict.empty ⊤) 1 xs) 2 xs
     Dict.update d 1 λm → Maybe.map m λv → List.push v 9
 
 
 readLater : ⊤ → Int
 readLater ⊤ =
-    d = Dict.insert Dict.empty 1 [ 1 ]
+    d = Dict.insert (Dict.empty ⊤) 1 [ 1 ]
     after = Dict.update d 1 λm → Maybe.map m λv → List.push v 9
     Dict.size d + Dict.size after
 
 
 reads : ⊤ → Int
 reads ⊤ =
-    d = Dict.insert Dict.empty 1 [ 1 ]
+    d = Dict.insert (Dict.empty ⊤) 1 [ 1 ]
     after = Dict.update d 1 λm → Just [ Maybe.withDefault (Maybe.map m List.length) 0 ]
     Dict.size d + Dict.size after

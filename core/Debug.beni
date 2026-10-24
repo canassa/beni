@@ -140,11 +140,11 @@ showApplied t defs env value =
         "[${commas (listItems (Js.at t 1) defs env value)}]"
     else if Js.same head (Js.from "D") then
         pairs = Js.array []
-        dictPairs (Js.at t 1) (Js.at t 2) defs env (Js.get value "a") pairs
+        dictPairs (Js.at t 1) (Js.at t 2) defs env value pairs
         "Dict.fromList [${commas pairs}]"
     else if Js.same head (Js.from "S") then
         keys = Js.array []
-        dictPairs (Js.at t 1) (Js.from "?") defs env (Js.get (Js.get value "a") "a") keys
+        dictPairs (Js.at t 1) (Js.from "?") defs env (Js.get value "a") keys
         "Set.fromList [${commas keys}]"
     else
         showType (Js.at defs (Js.at t 1)) (bindArgs t env) defs value
@@ -218,22 +218,19 @@ listItems t defs env value =
     parts
 
 
--- A `Dict`'s tree in key order, `(k,v)` pushed onto `out` for each node;
--- the key alone when `v` is `"?"`, which is how a `Set` is read. Core's
--- `Dict` is `Dict (Tree k v)`, and a tree node is `Node color key value
--- left right` or `Leaf` (`core/Dict.beni`).
+-- Private Dict entries carry key and value in insertion order. Never expose
+-- the host array or entry pairs to the caller.
 dictPairs : Js.Value, Js.Value, Js.Value, Js.Value, Js.Value, Js.Value → ⊤
-dictPairs k v defs env tree out =
-    if Js.same (Js.get tree "$") (Js.from "Node") then
-        dictPairs k v defs env (Js.get tree "d") out
-        key = show k defs env (Js.get tree "b")
+dictPairs k v defs env dict out =
+    entries = Js.get dict "entries"
+    Js.each entries λpair →
+        key = show k defs env (Js.at pair 0)
         entry =
             if Js.same v (Js.from "?") then
                 key
             else
-                "(${key},${show v defs env (Js.get tree (slot 2))})"
+                "(${key},${show v defs env (Js.at pair 1)})"
         push out entry
-        dictPairs k v defs env (Js.get tree "e") out
 
 
 -- A value read by its representation alone (`backend.md` §4). `seen` holds
