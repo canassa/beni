@@ -7990,3 +7990,45 @@ the storage itself, or send the value. Existing verdicts stay unchanged.
 The Lean model's write paths need the same extent and overlap distinction;
 #316 tracks that oracle work alongside #165, in Jayson's files. This amendment
 makes no new theorem claim for rules the oracle does not yet judge.
+
+### *Amended 2026-10-25 (#749):* what a callback keeps of its supply
+
+Amends §16.4 items 4 and 5, under the #670 amendment above. A callback's
+escape at `πₖ.q` escapes the cells the callee supplies at `q` and nothing
+above them: for a callee's supply at `q′` overlapping `q`, the cells are
+the supply's cells at the rest of `q` below `q′`, or all of them when `q`
+is at or above `q′`. This is the rule item 4 already applies to a callee's
+own `E`, and a symbolic cell's escape still covers every cell below it.
+Before, a callback that kept a part below its supply escaped the whole
+supply as a list's fact. A fold whose callback kept a list stored in its
+accumulator then refused every write of the accumulator, though the
+direct call `put (put [] 1) 2` accepted the same writes.
+
+The supplied cells are those the caller holds. When a supply is what a
+callback returned before (`cb_j`), its cells are that result as the
+call's own result names it, instantiated at the call's depth. One depth
+further, the cells that result makes would be another namespace's, which
+the caller never holds: the escape of a list below the accumulator's root
+was lost, and only the whole-value escape refused a later write of the
+kept list. Now the kept list is the caller's `rows[*]`, so writing it
+after the traversal is refused, as it is after the direct calls.
+
+Item 5's "that the class does not escape" uses the write's extent. When
+the callee makes a storage write at `w` of a callback result returned
+from `πₖ.q`, the write's place is `q` extended by the part of `w` below
+that result path. Only an escape at that place or above it refutes the
+returned value's ownership. An escape strictly below a storage write
+does not observe the write. A deep write, a send, and a supply with no
+written place keep the symmetric overlap.
+
+Soundness. A storage write changes the collection's slots and order and
+no value stored in them (#670). A kept value strictly below the written
+place is never changed by it. A later write of the kept value is a
+demand on that value's own cells, which now carry the escape. Keeping
+the collection itself, or a write of the kept value in the same step, a
+later step or after the traversal, stays refused. `FoldKeepsInner` pins
+the accepted traversals: `foldl`, `foldr`, nested folds, an inline
+callback, a replaced slot, a fiber, a record accumulator, `map`,
+`indexedMap` and a kept grandchild. `FoldKeepsInnerRefused` pins the
+twins. Its three writes after the traversal were accepted at `rows[*]`
+before this amendment. Summary blocks advance to version 38.

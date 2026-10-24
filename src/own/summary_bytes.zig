@@ -116,7 +116,8 @@ pub const magic = "BENIOWN\x00";
 /// 35 marks a schema's `Encoded` endpoint in a level marker (§16.7, #820).
 /// 36 invalidates template-row reports: every entry word uses the direct protocol.
 /// 37 removes the path cut (§16.7 (c), #286): a path's length is a u32.
-pub const version: u32 = 37;
+/// 38 escapes only what a callback keeps of its supply, in the caller's cells (#749).
+pub const version: u32 = 38;
 
 /// A cache hit may skip enforcement only if its previous report was clean.
 /// Other platforms also compute reports, but can cache a rejected module.

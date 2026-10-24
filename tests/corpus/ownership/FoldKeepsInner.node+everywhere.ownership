@@ -1,0 +1,49 @@
+module FoldKeepsInner
+  15:5 List.push rows: accepted param
+  20:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  20:46 call FoldKeepsInner.put acc: accepted callback-param (List.foldl supplies it owned)
+  24:16 call FoldKeepsInner.put <call FoldKeepsInner.put>: accepted fresh (FoldKeepsInner.put writes π1)
+  24:21 call FoldKeepsInner.put <literal>: accepted fresh (FoldKeepsInner.put writes π1)
+  27:15 call List.foldr <literal>: accepted fresh (<lambda> writes what List.foldr supplies it)
+  27:49 call FoldKeepsInner.put acc: accepted callback-param (List.foldr supplies it owned)
+  30:16 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  31:5 call List.foldl outer: accepted callback-param (List.foldl supplies it owned)
+  31:42 call FoldKeepsInner.put acc: accepted callback-param (List.foldl supplies it owned)
+  34:16 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  37:5 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  41:18 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  41:52 List.set <call FoldKeepsInner.put>: accepted callback-param (List.foldl supplies it owned)
+  41:62 call FoldKeepsInner.put acc: accepted callback-param (List.foldl supplies it owned)
+  45:17 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  48:5 List.push acc: accepted callback-param (List.foldl supplies it owned)
+  57:16 call List.foldl <record>.rows: accepted fresh (<lambda> writes what List.foldl supplies it)
+  57:16 update <record>: accepted fresh (List.foldl writes it)
+  60:5 update t: accepted callback-param (List.foldl supplies it owned)
+  60:18 List.push t.rows: accepted callback-param (List.foldl supplies it owned)
+  67:5 List.push row: accepted param
+  71:16 call List.map <literal>[*]: accepted fresh (<lambda> writes what List.map supplies it)
+  71:57 call FoldKeepsInner.grow row: accepted callback-param (List.map supplies it owned)
+  74:17 call List.indexedMap <literal>[*]: accepted fresh (<lambda> writes what List.indexedMap supplies it)
+  74:67 List.push <call FoldKeepsInner.grow>: accepted callback-param (List.indexedMap supplies it owned)
+  74:78 call FoldKeepsInner.grow row: accepted callback-param (List.indexedMap supplies it owned)
+  79:20 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  79:20 call List.foldl <literal>[*]: accepted fresh (<lambda> writes what List.foldl supplies it)
+  82:5 List.update acc: accepted callback-param (List.foldl supplies it owned)
+  82:5 List.update acc[*]: accepted callback-param (List.foldl supplies it owned)
+  82:32 List.push inner: accepted callback-param (List.update supplies it owned)
+  summary put: π1 RAW[storage], π1[*] RAE; res [*] ~fresh1 ~π1[*], π1
+  summary direct: res [*] ~esc2 ~fresh3, fresh1
+  summary right: res [*] ~esc2, ~fresh1
+  summary nested: res [*] ~esc2, ~fresh1
+  summary inline: res [*] ~esc2, ~fresh1
+  summary replaced: res [*] ~condition(fresh3) ~esc2, ~fresh1
+  summary spawned: res [*] ~esc2, ~fresh1
+  summary record: res .n ~condition(fresh4), .rows ~condition(fresh1) ~fresh1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh5), ~fresh501◦
+  summary grow: π1 RAW[storage], π1[*] RAE; res [*] ~fresh1 ~π1[*], π1
+  summary mapped: res [*] ~condition(fresh2) ~fresh2, [*][*] ~condition(fresh4) ~esc1 ~fresh4, fresh3
+  summary indexed: res [*] ~condition(fresh2) ~fresh2, [*][*] ~condition(fresh4) ~esc1 ~fresh4, fresh3
+  summary grandchild: res [*] ~fresh1, [*][*] ~esc3, ~fresh2{lost}r{lost}
+  demands 30: accepted 30 (fresh 13, call 0, param 2, callback-param 15, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+total 30: accepted 30 (fresh 13, call 0, param 2, callback-param 15, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

@@ -1,0 +1,79 @@
+module FoldKeepsInnerRefused
+  14:5 List.push rows: accepted param
+  20:5 List.push rows: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  25:12 call List.foldl <literal>: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  25:46 call FoldKeepsInnerRefused.keepAll acc: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  29:15 call List.foldr <literal>: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldr supplies it) (approx)
+  29:49 call FoldKeepsInnerRefused.keepAll acc: rejected supply: List.foldr hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  32:16 call List.foldl <literal>: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  33:5 call List.foldl outer: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  33:42 call FoldKeepsInnerRefused.keepAll acc: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  36:17 call List.foldl <literal>: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  38:5 List.push acc: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  46:16 call List.foldl <record>.rows: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  46:16 update <record>: accepted fresh (List.foldl writes it)
+  48:5 update t: accepted callback-param (List.foldl supplies it owned)
+  48:18 List.push t.rows: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  54:5 List.push row: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  57:16 call List.map <literal>[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.map supplies it) (approx)
+  57:57 call FoldKeepsInnerRefused.keepRow row: accepted callback-param (List.map supplies it owned)
+  60:17 call List.indexedMap <literal>[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.indexedMap supplies it) (approx)
+  60:67 List.push <call FoldKeepsInnerRefused.keepRow>: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  60:78 call FoldKeepsInnerRefused.keepRow row: accepted callback-param (List.indexedMap supplies it owned)
+  64:18 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  64:18 call List.foldl <literal>[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  67:5 List.update acc: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  67:5 List.update acc[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.update supplies it) (approx)
+  67:28 List.push l: accepted callback-param (List.update supplies it owned)
+  71:17 List.update rows: accepted param
+  71:17 List.update rows[*]: accepted param (<lambda> writes what List.update supplies it)
+  71:41 List.push l: accepted callback-param (List.update supplies it owned)
+  75:19 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  75:19 call List.foldl <literal>[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  75:60 call FoldKeepsInnerRefused.bump <call FoldKeepsInnerRefused.put>: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  75:60 call FoldKeepsInnerRefused.bump <call FoldKeepsInnerRefused.put>[*]: rejected escaped: it was given to JavaScript, or kept by a callee (FoldKeepsInnerRefused.bump writes π1[*]) (approx)
+  75:66 call FoldKeepsInnerRefused.put acc: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  81:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  81:46 call FoldKeepsInnerRefused.put acc: accepted callback-param (List.foldl supplies it owned)
+  82:5 List.update rows: accepted fresh
+  82:5 List.update rows[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.update supplies it) (approx)
+  82:29 List.push l: accepted callback-param (List.update supplies it owned)
+  86:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  86:46 call FoldKeepsInnerRefused.put acc: accepted callback-param (List.foldl supplies it owned)
+  87:5 call List.foldl rows: accepted fresh (<lambda> writes what List.foldl supplies it)
+  87:5 call List.foldl rows[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.foldl supplies it) (approx)
+  87:36 List.update acc: accepted callback-param (List.foldl supplies it owned)
+  87:36 List.update acc[*]: accepted callback-param (List.foldl supplies it owned)
+  87:59 List.push l: accepted callback-param (List.update supplies it owned)
+  91:12 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  91:46 call FoldKeepsInnerRefused.put acc: accepted callback-param (List.foldl supplies it owned)
+  92:5 call List.map rows[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.map supplies it) (approx)
+  92:24 List.push l: accepted callback-param (List.map supplies it owned)
+  97:12 call FoldKeepsInnerRefused.put <call FoldKeepsInnerRefused.put>: accepted fresh (FoldKeepsInnerRefused.put writes π1)
+  97:17 call FoldKeepsInnerRefused.put <literal>: accepted fresh (FoldKeepsInnerRefused.put writes π1)
+  98:5 List.update rows: accepted fresh
+  98:5 List.update rows[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.update supplies it) (approx)
+  98:29 List.push l: accepted callback-param (List.update supplies it owned)
+  capture t.rows: read 47:64; before 47:19
+  summary put: π1 RAW[storage], π1[*] RAE; res [*] ~fresh1 ~π1[*], π1
+  summary keepAll: π1 RAEW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
+  summary right: res [*] ~esc2, ~esc1
+  summary nested: res [*] ~esc2, ~esc1
+  summary spawned: res [*] ~esc2, ~esc1
+  summary record: res .n ~condition(fresh5), .rows ~condition(fresh4) ~esc1, .rows[*] ~condition(fresh3) ~esc2, .rows[*][*] ~condition(fresh6), ~fresh501◦
+  summary keepRow: π1 RAEW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
+  summary mapped: res [*] ~condition(fresh4) ~esc2 ~fresh4, [*][*] ~condition(fresh5) ~esc1 ~fresh5, fresh3
+  summary indexed: res [*] ~condition(fresh4) ~esc2 ~fresh4, [*][*] ~condition(fresh5) ~esc1 ~fresh5, fresh3
+  summary sameStep: res [*] ~esc1, [*][*] ~condition(fresh3), ~fresh2{lost}r{lost}
+  summary bump: π1 RAW[storage], π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*], [*][*] ~π1[*][*], π1{excl π1[*]}; xreq spine π1[*]
+  summary laterStep: res [*] ~esc1, [*][*] ~esc3, ~fresh2
+  summary afterUpdate: res [*] ~esc2, [*][*] ~esc3, ~fresh1
+  summary afterFold: res [*] ~esc2, [*][*] ~esc3, ~fresh1
+  summary afterMap: res [*] ~condition(fresh4) ~esc1 ~fresh4, [*][*] ~condition(fresh5) ~esc2, fresh3
+  summary afterDirect: res [*] ~esc2 ~fresh4, [*][*] ~esc3 ~fresh5, fresh1
+  demands 53: accepted 26 (fresh 10, call 0, param 3, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 27
+  records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+total 53: accepted 26 (fresh 10, call 0, param 3, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 27
+records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+cause escaped 21
+cause supply 6

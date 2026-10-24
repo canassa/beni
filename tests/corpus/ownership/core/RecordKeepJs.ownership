@@ -26,10 +26,10 @@ module RecordKeepJs
   summary twice: π1 REW{count}, π1.count R, π1.scope RAE; res .scope π1.scope, π1◦
   summary folded: π1 R, π2 RAEW{count}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
   summary foldedField: π1 R, π2 RAEW{count}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
-  summary scoped: π1 R, π2 RAEW{count, scope}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
+  summary scoped: π1 R, π2 RAW{count, scope}, π2.scope AE; res .scope ~π2.scope, ~π2 ~π2◦
   summary keepInner: π2 W{n}, π2.inner RAE, π2.n R; res .inner π2.inner, π2◦
-  summary foldInner: π1 R, π2 RAEW{inner, n}, π2.inner AE; res .inner ~π2.inner, ~π2 ~π2◦
-  summary afterInner: π1 REW{inner, n}, π1.inner REW{count}, π1.inner.scope RA; res .scope ~π1.inner.scope, ~π1.inner◦
+  summary foldInner: π1 R, π2 RAW{inner, n}, π2.inner AE; res .inner ~π2.inner, ~π2 ~π2◦
+  summary afterInner: π1 RW{inner, n}, π1.inner REW{count}, π1.inner.scope RA; res .scope ~π1.inner.scope, ~π1.inner◦
   summary keepCount: π2 W{n}, π2.inner RE, π2.n R; res .inner π2.inner, π2◦
   summary foldCount: π1 R, π2 RW{inner, n}, π2.inner E; res .inner ~π2.inner, ~π2 ~π2◦
   summary afterCount: π1 RW{inner, n}, π1.inner REW{count}; res ~π1.inner◦
