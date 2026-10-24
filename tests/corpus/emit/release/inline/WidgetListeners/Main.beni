@@ -1,0 +1,39 @@
+-- A widget's listeners (`docs/design/browser-inline.md` §8.4, amended
+-- 2026-10-24): a key one event sends is written inside that event's
+-- listener — `Cups`, whose payload its arm reads twice, and `Flip`, which
+-- has none — and a key two events send, `Venue`, keeps one named handler
+-- both listeners call. Each payload is read before the arm runs, inside
+-- `on`'s dispatch guard.
+import Browser
+import Html exposing (Html)
+import Tea
+import W
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { w = W.init ⊤ }, update = update, view = view })
+        "root"
+
+
+type alias Model =
+    w : W.Model
+
+
+type Msg
+    = WMsg W.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        WMsg sub →
+            { model | w = W.update sub model.w }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W.view model.w) WMsg}
+    </div>

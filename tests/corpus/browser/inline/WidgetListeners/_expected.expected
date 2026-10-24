@@ -1,0 +1,106 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="">
+        <p>"0 from "</p>
+        <input data-role="venue" .value="">
+        <input data-role="venue2" .value="">
+        <p></p>
+        <button data-role="flip">"off"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=cups] "12"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="12">
+        <p>"12 from 12"</p>
+        <input data-role="venue" .value="">
+        <input data-role="venue2" .value="">
+        <p></p>
+        <button data-role="flip">"off"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=cups] "x"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="x">
+        <p>"12 from x"</p>
+        <input data-role="venue" .value="">
+        <input data-role="venue2" .value="">
+        <p></p>
+        <button data-role="flip">"off"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue] "Hall"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="x">
+        <p>"12 from x"</p>
+        <input data-role="venue" .value="Hall">
+        <input data-role="venue2" .value="">
+        <p>"Hall"</p>
+        <button data-role="flip">"off"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue2] "Park"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="x">
+        <p>"12 from x"</p>
+        <input data-role="venue" .value="Hall">
+        <input data-role="venue2" .value="Park">
+        <p>"Park"</p>
+        <button data-role="flip">"off"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=flip]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="x">
+        <p>"12 from x"</p>
+        <input data-role="venue" .value="Hall">
+        <input data-role="venue2" .value="Park">
+        <p>"Park"</p>
+        <button data-role="flip">"on"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=flip]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <input data-role="cups" .value="x">
+        <p>"12 from x"</p>
+        <input data-role="venue" .value="Hall">
+        <input data-role="venue2" .value="Park">
+        <p>"Park"</p>
+        <button data-role="flip">"off"</button>
+      </section>
+    </div>
+  </div>
+</body>
