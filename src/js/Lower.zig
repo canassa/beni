@@ -18631,8 +18631,8 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(try l.markupComponentCall(n, if (children) |c| node(c) else null));
     }
 
-    /// An event's payload extractor, as a `foreign` of the vocabulary
-    /// module. A `pub` one is an interface value. One that is not `pub` is
+    /// An event's payload extractor, a `foreign` or a beni declaration of
+    /// the vocabulary module (#883). A `pub` one is an interface value. One that is not `pub` is
     /// found by the vocabulary row (`Reach.privateExtractor`) and imported
     /// by its name, the way a core-private value is (`checker-v2.md` §25.8,
     /// amended 2026-10-21). In the vocabulary module itself, either is
@@ -18651,7 +18651,7 @@ const markup_vtable: beni_markup.VTable = struct {
             return expr(try l.ident(try l.externalName(module, extractor_value), pos(l)));
         }
         const vbir = if (module == l.in.module) l.bir else l.in.birs[module.int()];
-        // The event has a `via`, and the checker bound it to a `foreign` of
+        // The event has a `via`, and the checker bound it to a declaration of
         // the vocabulary module (§25.8), so finding no declaration is a
         // compiler bug. The identity a lowering writes for a null hands the
         // handler the event instead of the extractor's result.

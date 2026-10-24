@@ -3,9 +3,10 @@
 //! (`language.md` §11.14).
 //!
 //! Each is checked once, as a declaration, after P2 has read every
-//! annotated value's scheme — a `via` extractor is a `foreign` value, whose
-//! annotation is all it needs, and a markup primitive's scheme is P2's — and
-//! before any value group, so nothing here waits on inference. An
+//! annotated value's scheme — a `via` extractor is a `foreign` value or an
+//! annotated beni declaration (checker-v2.md §25.8, amended 2026-10-23),
+//! whose annotation is all it needs, and a markup primitive's scheme is
+//! P2's — and before any value group, so nothing here waits on inference. An
 //! attribute's value type and an event's payload type are read here, into
 //! the declaration's `decl_scheme` slot, which is what publication writes
 //! (§25.8).
@@ -15,8 +16,8 @@
 //! never reads a half-checked row. The language gives these faults no codes
 //! of their own: a type that is not one the form admits is `type_mismatch`,
 //! a fact written twice or two declarations that answer the same names are
-//! `duplicate_declaration`, and a `via` that names no `foreign` value of the
-//! module is `unbound_variable`.
+//! `duplicate_declaration`, and a `via` that names no `foreign` or annotated
+//! value of the module is `unbound_variable`.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -134,13 +135,23 @@ fn checkOne(cx: *const Context, report: *Report, decl_scheme: []Var.Optional, ma
                 if (f.word == .via and f.arg != .none) break bir.symbol(f.arg);
             } else null;
             if (via) |extractor| {
-                const scheme = extractorScheme(cx, decl_scheme, extractor) orelse return fail(cx, report, i, .unbound_variable,
-                    \\The event `{s}` takes its payload `via {s}`, which is not a `foreign` value of
-                    \\this module.
-                    \\
-                    \\A payload extractor is a `foreign` value declared beside the event
-                    \\(`docs/design/boundary.md` §9.3).
-                , .{ name, text(cx, extractor) });
+                const scheme = extractorScheme(cx, decl_scheme, extractor) orelse {
+                    if (unannotatedValue(cx, extractor)) return fail(cx, report, i, .unbound_variable,
+                        \\The event `{s}` takes its payload `via {s}`, which is declared with no
+                        \\annotation.
+                        \\
+                        \\A payload extractor written in beni carries its type, `{s} : Event → String`
+                        \\say, since the vocabulary is checked before any value is inferred
+                        \\(`docs/design/boundary.md` §9.3).
+                    , .{ name, text(cx, extractor), text(cx, extractor) });
+                    return fail(cx, report, i, .unbound_variable,
+                        \\The event `{s}` takes its payload `via {s}`, which is not a `foreign` or an
+                        \\annotated value of this module.
+                        \\
+                        \\A payload extractor is a `foreign` value, or a beni declaration with an
+                        \\annotation, declared beside the event (`docs/design/boundary.md` §9.3).
+                    , .{ name, text(cx, extractor) });
+                };
                 if (!extractorFits(cx, scheme, payload)) return fail(cx, report, i, .type_mismatch,
                     \\The event `{s}` takes its payload `via {s}`, whose type does not fit.
                     \\
@@ -224,13 +235,26 @@ fn isForeignType(cx: *const Context, v: Var) bool {
     return cx.types.entries[app.type.int()].kind == .foreign;
 }
 
-/// The P2 scheme of this module's `foreign` value `name`, or null.
+/// The P2 scheme of this module's value `name` — a `foreign`, or an
+/// annotated beni declaration (checker-v2.md §25.8, amended 2026-10-23): P2
+/// has read the annotation's scheme either way, and a declaration with no
+/// annotation has no scheme here — or null.
 fn extractorScheme(cx: *const Context, decl_scheme: []const Var.Optional, name: Symbol) ?Var {
     for (cx.bir.decls, 0..) |d, j| {
-        if (d.kind != .foreign_value or cx.bir.symbol(d.name) != name) continue;
+        if (cx.bir.symbol(d.name) != name) continue;
+        if (d.kind != .foreign_value and d.kind != .value) continue;
         return decl_scheme[j].unwrap();
     }
     return null;
+}
+
+/// Whether `name` is a beni value of this module declared with no
+/// annotation: the one way an extractor can be named and have no scheme.
+fn unannotatedValue(cx: *const Context, name: Symbol) bool {
+    for (cx.bir.decls) |d| {
+        if (d.kind == .value and d.annotation == .none and cx.bir.symbol(d.name) == name) return true;
+    }
+    return false;
 }
 
 /// `E -> P`, `E` a `foreign type` and `P` the declared payload.
