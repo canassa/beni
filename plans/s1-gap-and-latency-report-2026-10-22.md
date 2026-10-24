@@ -328,6 +328,28 @@ the mean of three seeds.
 - The local fixes together (#1–#6) are worth single digits per widget as built. The bar needs about
   60 B per widget more. Only #7 reaches it, and only as a whole.
 
+### S1 closed by the owner, 2026-10-24
+
+The owner closed S1 at `2556986c6` without meeting the bar, and accepted the residual as the cost of
+beni's guarantees.
+
+| | beni | tea-inline | beni ÷ tea | beni ÷ bar (1.1 × tea) |
+|---|---|---|---|---|
+| N = 1 | 1 383 | 1 235 | 1.12 | 1.02 |
+| N = 256 | 45 321 | 38 961 | 1.16 | 1.06 |
+| Slope (B/widget) | 168.0 | 145.0 | 1.16 | 1.05 |
+
+The slope was 241.0 on 2026-10-23 morning. The ~23 B/widget left above tea-inline is mostly what
+tea-inline does not do:
+
+- pushed-state validation (shape tables, all-or-nothing snapshots): about 10;
+- `cupsTyped` (a number input keeps its typed text): about 4–6;
+- route names: about 3.7.
+
+The scheduler with the defect rule, and envelope validation, are fixed costs and most of the N = 1
+residual. No remaining planned item closes the gap without weakening a guarantee. E6 (about −2 B/widget
+above 64 widgets) stays dropped: only a benchmark-tuned threshold could pick it.
+
 ### Status, 2026-10-23 (end of day)
 
 The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
@@ -342,4 +364,4 @@ Since 2026-10-23 morning: 241.0 → 170.7, with the steps in the table above.
 - **N = 1 got worse: 1 446 → 1 732 B.** Fix 7 added a fixed runtime (group runner, ordinal sort,
   copy-plan walker, loader) that a one-widget page pays in full. It is about +290 B once against −24 B
   per widget, so it breaks even at about 12 widgets. #909 made them smaller (1 732 → 1 667 B).
-- **Still needed for the bar:** about 11 B/widget on the slope (fit), about 115 B on the N = 1 page, and about 3 200 B at N = 256. In flight: #946 (step B, E7, E6). #915 and #916 are done; their ledgers are on the issues, with the items measured and dropped.
+- **At close (`2556986c6`):** about 8.5 B/widget on the slope, about 25 B on the N = 1 page and about 2 460 B at N = 256 above the bar. #946 (step B, E7; E6 dropped), #915 and #916 are done; their ledgers are on the issues, with the items measured and dropped.
