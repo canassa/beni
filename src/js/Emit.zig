@@ -4441,8 +4441,19 @@ const Emitter = struct {
                 const fm: Graph.Index = @fromBackingInt(@intCast(row.fn_module));
                 const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, false, true);
                 const k = sites.shapeCodecOfCall(row.decode) orelse continue;
-                if (row.case_form and !e.caseRowFits(in, sg, birs[row.fn_module], fm, k, row)) continue;
+                if (row.case_form and !caseRowFits(in, sg, birs[row.fn_module], fm, k, row)) continue;
                 row.shape = k;
+                // The row's constructors are built where the table is made,
+                // not by the function, whose call is not followed: so they
+                // are roots (`backend.md` §9, *A `case` arm on a
+                // constructor nothing builds*).
+                for (row.consts) |c| {
+                    const v: Bir.Inst.Index = @fromBackingInt(c.value);
+                    if (birs[row.fn_module].instTag(v) != .ext_ctor) continue;
+                    const d = birs[row.fn_module].instData(v);
+                    const index = in.provenance[d.lhs].ctorIndex(d.rhs) orelse continue;
+                    try pinned.append(e.scratch, .{ .module = @fromBackingInt(@intCast(d.lhs)), .kind = .ctor, .index = index });
+                }
                 const callee = birs[row.module].instData(@fromBackingInt(row.call)).lhs;
                 try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(row.module)), .lo = callee, .hi = callee });
                 try pinned.append(e.scratch, Reach.schemaNode(sg.codecTarget(fm, k), .shape));
@@ -4461,8 +4472,7 @@ const Emitter = struct {
     /// fields are exactly those the record copies from `new`, and each
     /// constant is a literal or a nullary constructor of a `type`, not a
     /// schema's.
-    fn caseRowFits(e: *Emitter, in: *const Reach.Input, sg: *const SchemaGraph, fb: *const Bir, fm: Graph.Index, k: u32, row: *const Writes.RouteRow) bool {
-        _ = e;
+    fn caseRowFits(in: *const Reach.Input, sg: *const SchemaGraph, fb: *const Bir, fm: Graph.Index, k: u32, row: *const Writes.RouteRow) bool {
         const target = sg.codecTarget(fm, k);
         const def = sg.definition(fm, target.decl) orelse return false;
         const plan = sg.planOf(fm);

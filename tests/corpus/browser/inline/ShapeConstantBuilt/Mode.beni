@@ -1,0 +1,5 @@
+--! What the first widget is doing.
+
+pub type Mode
+    = Idle
+    | Busy

@@ -1,0 +1,56 @@
+--! The first widget: cups the host sends, and a mode its `replace` resets
+--! to `Idle`, which nothing else builds.
+
+import Html exposing (Html)
+import Json
+import Mode exposing (Mode)
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    cups : Int
+    mode : Mode
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = -1, mode = Mode.Busy }
+
+
+pub type Msg
+    = Work
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Work →
+            { model | mode = Mode.Busy }
+
+
+--| The cups the host sent, the mode reset; or the model as it was when it
+--| sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { cups = new.cups, mode = Mode.Idle }
+
+        Err _ →
+            model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <button data-role="work" onClick={Work}>Work</button>
+        <p>{model.cups}</p>
+        <p>
+            {case model.mode of
+                Mode.Idle →
+                    "idle"
+
+                Mode.Busy →
+                    "busy"
+            }
+        </p>
+    </section>

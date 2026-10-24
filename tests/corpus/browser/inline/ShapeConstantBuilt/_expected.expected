@@ -1,0 +1,51 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="work">"Work"</button>
+        <p>"-1"</p>
+        <p>"busy"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"widget": "w1", "state": {"cups": 3}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="work">"Work"</button>
+        <p>"3"</p>
+        <p>"idle"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=work]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="work">"Work"</button>
+        <p>"3"</p>
+        <p>"busy"</p>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"widget": "w1", "state": {"cups": "x"}}
+(the DOM did not change)
+-- detail window rr-push {"widget": "w1", "state": {"cups": 5}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="work">"Work"</button>
+        <p>"5"</p>
+        <p>"idle"</p>
+      </section>
+    </div>
+  </div>
+</body>

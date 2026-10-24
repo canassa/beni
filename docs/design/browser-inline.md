@@ -1322,6 +1322,9 @@ Why the change is exact:
   written in the copy.
 - The row's call of the function is not followed, as for a shape row of #915, so the function
   is in the output only when something else names it.
+- A constructor constant is built where the table is made, so it is a root of reachability. An
+  arm on it is kept (`backend.md` §9, *A `case` arm on a constructor nothing builds*), even
+  where the function was the constructor's only maker.
 
 Fixtures:
 - `emit/release/inline/ShapeLoader` and `browser/inline/ShapeLoader`: `W2.replace`'s constant is
@@ -1331,6 +1334,9 @@ Fixtures:
   another name, and one that gives a constructor of its own module's type, keep their functions.
   Pushes, a bad push and two snapshots behave as the source says. The expected transcript was
   made with the compiler before this change.
+- `emit/release/inline/ShapeConstantBuilt` and `browser/inline/ShapeConstantBuilt`: a program
+  with no `schema` whose route resets a field to a third module's constructor that nothing else
+  builds. The arm of the view on it is kept, and a push shows it.
 
 *Amended 2026-10-24 (#915): a snapshot's record of widgets is written from the route table.* A
 snapshot names each widget twice: once as a row of the keyed route table, and once as a field of the

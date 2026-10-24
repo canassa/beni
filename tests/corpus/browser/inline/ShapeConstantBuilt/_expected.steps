@@ -1,0 +1,5 @@
+element "root"
+detail window rr-push {"widget": "w1", "state": {"cups": 3}}
+click [data-role=work]
+detail window rr-push {"widget": "w1", "state": {"cups": "x"}}
+detail window rr-push {"widget": "w1", "state": {"cups": 5}}

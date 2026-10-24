@@ -5805,7 +5805,8 @@ fn decodeOrKeep(a: *const Writes, m: u32, d: u32) u32 {
 /// these constants, or the old one when it does not decode" (§8.4, amended
 /// 2026-10-24, #946); null otherwise. A constant is an integer, float or
 /// string literal, or a constructor of another module than `program`'s
-/// and `m`, which the emitter asks further (`Emit.shapeRoutes`).
+/// and `m` (one of `m`'s own is a `.ctor`, and refused), which the emitter
+/// asks further (`Emit.shapeRoutes`).
 fn decodeOrKeepCase(a: *Writes, program: u32, m: u32, d: u32) Error!?struct { decode: u32, consts: []const RowConst, copied: []const u32 } {
     const b = a.bir(m);
     const decl = b.decls[d];
@@ -5861,7 +5862,7 @@ fn decodeOrKeepCase(a: *Writes, program: u32, m: u32, d: u32) Error!?struct { de
             .int, .float, .string => try consts.append(a.arena(), .{ .field = name, .value = v.int() }),
             .ext_ctor => {
                 const owner = b.instData(v).lhs;
-                if (owner == program or owner == m) return null;
+                if (owner == program) return null;
                 try consts.append(a.arena(), .{ .field = name, .value = v.int() });
             },
             else => return null,
