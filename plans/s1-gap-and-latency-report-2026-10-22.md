@@ -292,6 +292,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #914 (`51157f712`; a binding's single read is written at its use again in root factories, #896) | 201.7 | | 1 655 | 54 225 | 1.22 | 1.27 |
 | after #920 (`6ad86777d`; a run of roots is one table and one runtime call, and the slice literals are written in the model record, #916) | 193.9 | | 1 654 | 52 213 | 1.22 | 1.22 |
 | after #922 + #919 (`3fbf44e61`; end tags a popping end tag supplies are left out, #916; one route table read by the keyed and snapshot loaders, `Object.assign` for flat copies, #915) | 183.4 | | 1 607 | 49 488 | 1.18 | 1.15 |
+| after #928 (`e0c94a91b`; a route row holds the shape of a `replace` that decodes or keeps, without a wrapper, at N ≥ 29, #915) | 180.1 | | 1 610 | 48 672 | 1.19 | 1.14 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
@@ -324,8 +325,8 @@ the mean of three seeds.
 
 The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
 
-`3fbf44e61` (2026-10-24): slope **183.4** B/widget, N = 1 **1 607** (1.18× the bar), N = 256 **49 488** (1.15×).
-Since 2026-10-23 morning: 241.0 → 183.4, with the steps in the table above.
+`e0c94a91b` (2026-10-24): slope **180.1** B/widget, N = 1 **1 610** (1.19× the bar), N = 256 **48 672** (1.14×).
+Since 2026-10-23 morning: 241.0 → 180.1, with the steps in the table above.
 
 - **Fix 7 delivered −24, not −65.** The estimate came from hand-editing the output into tea-inline's
   shape, and the built shape still differs from tea-inline's. #896 will list where the remaining bytes
@@ -333,4 +334,4 @@ Since 2026-10-23 morning: 241.0 → 183.4, with the steps in the table above.
 - **N = 1 got worse: 1 446 → 1 732 B.** Fix 7 added a fixed runtime (group runner, ordinal sort,
   copy-plan walker, loader) that a one-widget page pays in full. It is about +290 B once against −24 B
   per widget, so it breaks even at about 12 widgets. #909 made them smaller (1 732 → 1 667 B).
-- **Still needed for the bar:** about 24 B/widget on the slope, and about 250 B on the N = 1 page. In flight: #915 (route table and generic loader) and #916 (smaller shapes), from the comparison.
+- **Still needed for the bar:** about 21 B/widget on the slope, and about 250 B on the N = 1 page. In flight: #915 (route table and generic loader) and #916 (smaller shapes), from the comparison.
