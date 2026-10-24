@@ -289,3 +289,32 @@ data that the guarantees or the benchmark source own.
 Scratch (local only): `edits.cjs` (E1–E5, F*, S1, S2 and the 12-build table), `tables.cjs` (E6, E7,
 combinations), `n1trials.cjs` / `n1gen.cjs` (steps B and C per seed), `cost.cjs` (deletion costing),
 kept in ~/worktree-evidence/s1-hand/ on dagon; `~/s1-hand` on dagon was deleted.
+
+---
+
+## 6. E6, measured again after step B and E7 (2026-10-24, #946)
+
+I applied E6 by script to the real outputs of `master` at `2556986c6`, after step B (#948) and E7 (#949). The script is `~/worktree-evidence/s1-946/e6/e6.cjs` on dagon.
+
+What the script does:
+- It builds one table of `[fn, key, shape, field, init, groups, constants, holders…]`.
+- It builds the model, the groups, the route rows and the wiring from that table at load.
+- Each route reader moves one index.
+- A widget wired by a direct call takes the uniform parameter list.
+
+Every output passes `node --check`. No behaviour test was run.
+
+| N | seed 1 | seed 2 | seed 3 |
+|---|--:|--:|--:|
+| 16 | 5 802 → 5 818 (+16) | 5 793 → 5 821 (+28) | 5 623 → 5 636 (+13) |
+| 64 | 15 036 → 15 013 (−23) | 15 010 → 14 958 (−52) | 14 929 → 14 859 (−70) |
+| 256 | 44 650 → 44 291 (−359) | 45 233 → 44 722 (−511) | 46 080 → 45 594 (−486) |
+
+On the 64→256 slope this is −1.75 / −2.39 / −2.17 B/widget (mean −2.1). E6 grows the page at N = 16 and saves only from about 64 widgets. At N = 1 there is nothing to merge.
+
+**Dropped.** No size rule picks E6 only where it pays:
+- The raw bytes shrink at every size (at N = 16, 22 362 → 22 196, 22 241 → 22 055 and 21 876 → 21 697). So a raw-size proxy would pick E6 at N = 16, where brotli grows.
+- Brotli-compressing both forms in the compiler would cost more than the build-time budget allows (`fast-compiler.md` §2).
+- What is left is a widget-count threshold tuned to this benchmark's brotli behaviour. That is a cap that special-cases a benchmark, and the brief rules it out.
+
+If the owner wants that threshold anyway, it is the owner's decision. The cost of not taking E6 is about 2 B/widget above 64 widgets.
