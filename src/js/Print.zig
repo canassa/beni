@@ -1974,20 +1974,24 @@ const Printer = struct {
     /// host global written bare: the same read as `globalThis.x`, which a
     /// compact build would print it as (`dottedKey`). This is the form
     /// `Js.global` takes when its name reaches it as a value, as a
-    /// parameter's argument does once inlined (`Listen.on "window"`).
+    /// parameter's argument does once inlined (`Listen.on "window"`). Only
+    /// for a chain that runs in a page: elsewhere the form stays as it was,
+    /// so a page-only name of `bare_globals` it reads by value (`document`)
+    /// is not made bare where it may be missing (#941).
     fn bareIndex(p: *Printer, node: Index) ?[]const u8 {
-        if (!p.bare_globals) return null;
+        if (!p.bare_globals or !p.page) return null;
         if (p.ir.tag(@fromBackingInt(@intCast(p.ir.data(node).lhs))) != .global_this) return null;
         const key = p.dottedKey(@fromBackingInt(@intCast(p.ir.data(node).rhs))) orelse return null;
         return if (p.bareName(key)) key else null;
     }
 
-    /// Whether `node` is `globalThis[k]`. The recursive printer hands it to
+    /// Whether `node` is `globalThis[k]` in a build for a chain that runs in a
+    /// page (`bareIndex`). The recursive printer hands it to
     /// `run`, whose `expand` writes it bare when `bareIndex` says so: the
     /// check is kept out of `rawRecursive`, whose frame is paid once per
     /// level and has no room left for it (`deep_chain`).
     fn globalIndex(p: *Printer, node: Index) bool {
-        return p.ir.tag(node) == .index_get and
+        return p.page and p.ir.tag(node) == .index_get and
             p.ir.tag(@fromBackingInt(@intCast(p.ir.data(node).lhs))) == .global_this;
     }
 

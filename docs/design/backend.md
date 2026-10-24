@@ -10385,9 +10385,11 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `Rename.page_globals`, apart from the list above. Where there is no window, a bare `window`
    throws `ReferenceError` and `globalThis.window` reads `undefined`, so a build for any other
    chain keeps `globalThis.window`; the rule writes a bare name only where both read the same
-   value. And `globalThis["x"]` — `Js.global`'s form when its name reaches it as a value, as
-   `Listen.on "window"`'s does once its argument is inlined — is `x` on the same terms as
-   `globalThis.x`, because the two are one read. Fixtures: `emit/release/inline/PushAndTimer`
+   value. And in a build for such a chain, `globalThis["x"]` — `Js.global`'s form when its name
+   reaches it as a value, as `Listen.on "window"`'s does once its argument is inlined — is `x`
+   on the same terms as `globalThis.x`, because the two are one read; for any other chain the
+   index form is unchanged, so a page-only name of `bare_globals` read by value is not made bare
+   where it may be missing (#941). Fixtures: `emit/release/inline/PushAndTimer`
    (`f=window`, on `browser-inline`), `emit/release/core/GlobalWindow` (`globalThis.window`, on
    `node`).
 
