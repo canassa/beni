@@ -689,6 +689,19 @@ fresh one except a platform's reference check, which is the point.
   `Bool` is still `true`/`false`; the empty list is still built at each use (Â§4's list row, a
   separate representation); a record alias's constructor still builds its record.
 
+*Amended 2026-10-24 (#916): one constant for the one file.* "Per module" was decided for files:
+one object for the whole program would need a file to import it from. A release application is
+one scope-hoisted file (§9), where there is no import to pay for, so there each imported
+nullary constructor's constant is declared once. Each module that builds one still declares its
+`<Module>$<Declaring$Module>$<Ctor>`; the link step (`Emit.shareNullaries`) keeps the first
+declaration in the file's order and drops every later one, whose name is numbered as the first's.
+The first is evaluated before every later module, and every one is the same object literal of
+constants, so each use reads an equal value, and the render loop's rule above still holds: the
+same expression yields the same object every time it runs. A constant of a module's own
+constructor (`<Module>$<Ctor>`), a multi-file build and a development build are as before. On
+S1 seed 1 this is one `{$:1,a:null}` in place of one per widget module: −2.6 B per widget from
+N = 64 to 256 (`emit/release/app/NullaryShared`).
+
 Fixtures: `emit/NullaryConstant` (local and imported constants, a top-level use, uses inside
 functions), `run/NullaryIdentity/` (`refEq` through a test platform, dev and `--release`, as Â§15.8's),
 `browser/dom/NullaryHelperSkip` (`button "run" Run` called once, at mount).

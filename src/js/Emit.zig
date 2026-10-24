@@ -6767,6 +6767,7 @@ const Emitter = struct {
     /// (research 41 §8).
     fn numberHoisted(e: *Emitter, slots: []ModuleSlot, h: *Hoist) !void {
         e.globals.skip = &h.skip;
+        const shared = try e.shareNullaries(slots, h);
         var avoid: std.AutoHashMapUnmanaged(Rename.Globals.Key, *const Rename.Globals.Spellings) = .empty;
         for (h.files) |*f| {
             if (f.declined) continue;
@@ -6786,6 +6787,12 @@ const Emitter = struct {
                 const slot = &slots[i];
                 for (slot.met) |n| {
                     const name = try e.poolName(slot, n);
+                    // A nullary constant another module declared first is
+                    // that constant (`shareNullaries`): its name's ordinal.
+                    if (shared.get(Rename.Globals.key(name))) |first| {
+                        try e.globals.map.put(e.scratch, Rename.Globals.key(name), e.globals.lookup(first).?);
+                        continue;
+                    }
                     _ = try e.globals.internAvoiding(e.scratch, name, avoid.get(Rename.Globals.key(name)));
                 }
             },
@@ -6810,6 +6817,51 @@ const Emitter = struct {
                 }
             },
         };
+    }
+
+    /// `backend.md` §4, *A nullary constructor is one object*, amended
+    /// 2026-10-24 (#916): in the one scope-hoisted file, the constant of an
+    /// imported nullary constructor — `<Module>$<Declaring$Module>$<Ctor>`,
+    /// which each module that builds one declares — is declared once, by the
+    /// first module in the file's order that keeps it, and every later
+    /// module's declaration of it is dropped and its name is the first one's.
+    /// Each is the same object literal of constants (the constructor's one
+    /// representation), the first is evaluated before every later module,
+    /// and values are immutable, so each use reads an equal value, as one
+    /// module's uses already share one. The answer maps each dropped name's
+    /// key to the first declaration's name.
+    fn shareNullaries(e: *Emitter, slots: []ModuleSlot, h: *const Hoist) !std.AutoHashMapUnmanaged(Rename.Globals.Key, JsIr.Name) {
+        const interner = &e.session.interner;
+        var first: std.StringHashMapUnmanaged(JsIr.Name) = .empty;
+        var shared: std.AutoHashMapUnmanaged(Rename.Globals.Key, JsIr.Name) = .empty;
+        for (h.order) |p| switch (p) {
+            .file => {},
+            .module => |i| {
+                const slot = &slots[i];
+                const lowered = &(slot.lowered orelse continue);
+                const ir = &lowered.ir;
+                for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                    if (ir.tag(stmt) != .const_decl or slot.plan.isDropped(stmt)) continue;
+                    const d = ir.data(stmt);
+                    if (!nullaryLiteral(ir, @fromBackingInt(@intCast(d.rhs)))) continue;
+                    const name = try e.poolName(slot, @fromBackingInt(@intCast(d.lhs)));
+                    if (name.module == .none or !importedNullaryBase(interner.slice(name.base))) continue;
+                    const text = interner.slice(name.base);
+                    const got = try first.getOrPut(e.scratch, text);
+                    if (!got.found_existing) {
+                        got.value_ptr.* = name;
+                        continue;
+                    }
+                    // The plan has a bit for every node it ran on (`Opt.run`);
+                    // a module with none keeps its declaration and its name.
+                    const words: []u32 = @constCast(slot.plan.dropped);
+                    if (stmt.int() / 32 >= words.len) continue;
+                    try shared.put(e.scratch, Rename.Globals.key(name), got.value_ptr.*);
+                    words[stmt.int() / 32] |= @as(u32, 1) << @intCast(stmt.int() % 32);
+                }
+            },
+        };
+        return shared;
     }
 
     /// The table's key for a hand-written top-level binding nothing imports:
@@ -8303,6 +8355,34 @@ pub const insts_per_edge_builder = 128 * 1024;
 /// Output files one writing thread is worth, under the same rule: a file is
 /// an open, a write and a close, some 20 µs.
 pub const files_per_writer = 64;
+
+/// The base of an imported nullary constructor's constant,
+/// `<Declaring$Module>$<Ctor>` (`Lower.coreCtorApplied`, `nullaryDecls`):
+/// two segments or more, each an upper-case name, so no declaration
+/// (lower-case), derived function or piece (`$$`) is spelled so.
+fn importedNullaryBase(base: []const u8) bool {
+    var segments: u32 = 0;
+    var it = std.mem.splitScalar(u8, base, '$');
+    while (it.next()) |seg| {
+        if (seg.len == 0 or !std.ascii.isUpper(seg[0])) return false;
+        segments += 1;
+    }
+    return segments >= 2;
+}
+
+/// Whether `value` is an object literal of plain properties whose values
+/// are literals: what a padded nullary constructor's constant is.
+fn nullaryLiteral(ir: *const JsIr, value: JsIr.Node.Index) bool {
+    if (ir.tag(value) != .object) return false;
+    for (ir.extraSlice(JsIr.inlineRange(ir.data(value)), JsIr.Node.Index)) |prop| {
+        if (ir.tag(prop) != .property) return false;
+        switch (ir.tag(@fromBackingInt(@intCast(ir.data(prop).rhs)))) {
+            .null_lit, .number, .string, .true_lit, .false_lit => {},
+            else => return false,
+        }
+    }
+    return true;
+}
 
 /// Whether `name` is a legal entry file name (§2's rule 1, `boundary.md`
 /// §5.2's `"entry"`): one path segment, a leading `_`, a trailing `.mjs`,
