@@ -71,6 +71,11 @@ of, in order: `batch` concatenates, `map` composes its function onto each declar
 
 Each declaration compiles to the start applied to a send that enters the dispatch guard with the
 key's handler; what it returns, the remover, is one of the program's disposers (`stop`).
+*Amended 2026-10-24 (#936, c7):* the remover is handed to `own` where the start returns it, with no
+name of its own, and the send of a key one declaration starts is the runtime's `send` call as the
+send's value — `own(start(v => send(handler, v)))`. `send` gives `undefined`, as the block did, and
+no start reads what its send gives; a key two declarations share keeps one statement per
+declaration, in declaration order.
 
 ## 4. Commands
 
@@ -1255,7 +1260,10 @@ writes its rows where it stands, `0` for the key. Its raw values are passed as t
 are each read from at their row's own field — `widgets` above, a field being spelled by its text in
 both records (`Fields`) — or, when there is no such object, as a record of them by field, evaluated
 in row order. `load(model, table, key, raw)` loads the first row whose key is `key`, and
-`loadAll(model, rows, raws)` each row with `raws` at its field: every row's function first, then
+`loadAll(model, rows, raws)` each row with `raws` at its field (*amended 2026-10-24, #936, F6:* a
+keyed table's keys are its `case`'s string patterns, which differ — a repeated one is
+`redundant_pattern` — so `load` keeps every row whose key is `key`, of which there is at most one,
+and no longer cuts the list to its first): every row's function first, then
 each copy, as before. A copy is `Object.assign(old, next)` when no route of the program has a record
 field whose object the copy keeps. `next` is a record of the route's type, which a function of `x`
 alone made, so its own fields are exactly the type's, and the result is the plan's. When a route

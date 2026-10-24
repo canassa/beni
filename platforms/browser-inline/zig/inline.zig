@@ -1399,17 +1399,25 @@ const Page = struct {
             if (s.first != i) continue;
             const v = try cx.fresh("v");
             const sends = try js.block();
+            var declarations: usize = 0;
+            for (subs) |t| {
+                if (t.first == i) declarations += 1;
+            }
             for (subs) |t| {
                 if (t.first != i) continue;
                 // A message with no payload passes none: `send`'s argument is
                 // `undefined` either way.
                 const handler_ = try js.name(try pg.handler(t.handler));
-                try js.expression(sends, try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) }));
+                const call = try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler_} else &.{ handler_, try js.name(v) });
+                // One declaration's send is the runtime's `send` itself, whose
+                // result is `undefined` and which no start reads (§3, amended
+                // 2026-10-24).
+                if (declarations == 1) try js.@"return"(sends, call) else try js.expression(sends, call);
             }
             const send = try js.arrow(if (s.fields == 0) &.{} else &.{v}, sends);
-            const remove = try cx.fresh("remove");
-            try js.constant(body, remove, try cx.programSubscriptionStart(body, @intCast(i), send));
-            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.name(remove)}));
+            // What the start returns, the remover, is owned where it is made.
+            const start = try cx.programSubscriptionStart(body, @intCast(i), send);
+            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{start}));
         }
         // `init`'s command, after the mount's writes.
         if (element_ and cx.programCommand(null) == .runs) {
