@@ -757,6 +757,9 @@ pub const Direct = struct {
         /// `module << 32 | token` of a markup hole or component node,
         /// outermost first (write-sets.md, *a hole's facts per call*).
         path: []const u64 = &.{},
+        /// Version 1.19: the group of choosing a branch hole's arm
+        /// (`Writes.Hole.selector`), or `maxInt` when it has none.
+        selector_group: u32 = std.math.maxInt(u32),
     };
 
     /// The order of holes and lists: module, token, then call path.
@@ -14601,7 +14604,8 @@ pub const Lowerer = struct {
             }
         }
         const static = h.group < d.written.len and !d.written[h.group];
-        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where, .entry_groups = entry_groups.items };
+        const selector: ?u32 = if (producer or h.selector_group == std.math.maxInt(u32)) null else h.selector_group;
+        return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where, .entry_groups = entry_groups.items, .selector_group = selector };
     }
 
     /// The pass's hole at `token` of this module on the current call path

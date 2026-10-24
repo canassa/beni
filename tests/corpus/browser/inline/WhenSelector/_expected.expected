@@ -1,0 +1,110 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <button data-role="rotate">"Rotate"</button>
+        <button data-role="add">"Add"</button>
+        <aside data-role="outer">
+          <p data-role="warn">"Too few cups"</p>
+          <p>"0"</p>
+        </aside>
+      </section>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="note">"Note"</button>
+      <p data-role="open">"Note 0"</p>
+    </div>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <button data-role="rotate">"Rotate"</button>
+        <button data-role="add">"Add"</button>
+        <aside data-role="outer">
+          <p data-role="warn">"Too few cups"</p>
+          <p>"1"</p>
+        </aside>
+      </section>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="note">"Note"</button>
+      <p data-role="open">"Note 0"</p>
+    </div>
+  </div>
+</body>
+-- click [data-role=rotate]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <button data-role="rotate">"Rotate"</button>
+        <button data-role="add">"Add"</button>
+        ""
+      </section>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="note">"Note"</button>
+      <p data-role="open">"Note 0"</p>
+    </div>
+  </div>
+</body>
+-- click [data-role=add]
+(the DOM did not change)
+-- click [data-role=rotate]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <button data-role="rotate">"Rotate"</button>
+        <button data-role="add">"Add"</button>
+        <aside data-role="outer">
+          ""
+          <p>"2"</p>
+        </aside>
+      </section>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="note">"Note"</button>
+      <p data-role="open">"Note 0"</p>
+    </div>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <button data-role="rotate">"Rotate"</button>
+        <button data-role="add">"Add"</button>
+        <aside data-role="outer">
+          ""
+          <p>"2"</p>
+        </aside>
+      </section>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="note">"Note"</button>
+      ""
+    </div>
+  </div>
+</body>
+-- click [data-role=note]
+(the DOM did not change)
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w">
+        <button data-role="rotate">"Rotate"</button>
+        <button data-role="add">"Add"</button>
+        <aside data-role="outer">
+          ""
+          <p>"2"</p>
+        </aside>
+      </section>
+      <button data-role="toggle">"Toggle"</button>
+      <button data-role="note">"Note"</button>
+      <p data-role="open">"Note 1"</p>
+    </div>
+  </div>
+</body>

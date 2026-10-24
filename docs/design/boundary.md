@@ -2415,6 +2415,12 @@ another object — no key's `Key.replaced` holds a prefix of the model, the proo
 hold its slice — so a handler need not store the arm's model back. A lowering that targets 1.17
 sees what it saw.
 
+**Version 1.19** (*added 2026-10-24*, additive, gated on nothing; `browser-inline.md` §8.2,
+amended 2026-10-24, #936): `Program.HoleFacts.selector_group`, of a hole whose value is an `if` or
+a `case`, the read set of choosing its arm alone — its scrutinee and the tag facts each arm is
+taken under, not what the arms' values read (`write-sets.md` §3.6, amended 2026-10-24) — as a
+group number, or null when the pass has none. A lowering that targets 1.18 sees what it saw.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

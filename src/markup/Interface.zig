@@ -51,7 +51,10 @@ const std = @import("std");
 /// `pieceRootArg`, `programRootRow`, `programModelCell`).
 /// Version 1.18 adds `programModelKept` (`browser-inline.md` §8.4, amended
 /// 2026-10-23, #896).
-pub const version: Version = .{ .major = 1, .minor = 18 };
+/// Version 1.19 adds a branch hole's selector group
+/// (`Program.HoleFacts.selector_group`; `browser-inline.md` §8.2, amended
+/// 2026-10-24, #936).
+pub const version: Version = .{ .major = 1, .minor = 19 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -368,6 +371,12 @@ pub const Program = struct {
         /// Where the hole is written, `Main.beni:12:9`, for a message that
         /// names it; empty when the pass did not see it.
         where: []const u8 = "",
+        /// 1.19: of a hole whose value is an `if` or a `case`, the anchored
+        /// read set of choosing its arm alone — its scrutinee and the facts
+        /// each arm is taken under, not what the arms' values read — as a
+        /// group number, as `group` is. Null when the pass has none: then
+        /// choosing the arm is taken to read all of `group`.
+        selector_group: ?u32 = null,
     };
 
     /// 1.8: what `Context.programList` says of one `For` of the program's

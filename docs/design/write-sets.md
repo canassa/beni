@@ -610,6 +610,13 @@ holes) is analysed with `env = { model ↦ Same(ρ) }`, pattern-bound locals ref
   the choice read. `label = if model.on then "On" else "Off"` anchors to `ρ.on`, and a `case
   model.status of Loading → "…"; _ → "…"` anchors to `ρ.status`, though every arm is a literal.
   `deps` follows the same rule: `deps(Alt(s, alts)) = deps(s) ∪ paths(Γᵢ) ∪ ⋃ deps(aᵢ)`.
+  *Amended 2026-10-24 (#936):* a child hole whose value is a `case` (an `if` is one) and whose
+  value is an `Alt` on every visit also carries the anchors of choosing the alternative alone,
+  its **selector** (`Writes.Hole.selector`): `sel(Alt(s, alts)) = deps(s) ∪ paths(Γᵢ) ∪ ⋃ sel(aᵢ)`,
+  where `sel` of any value that is not an `Alt` is `∅` — an alternative that is itself an `Alt`
+  is a join over the scrutinee's own alternatives, whose choice is the choice too. It is a subset
+  of the hole's reads and changes nothing the pass decides; `browser-inline` registers a `when` by
+  it (`browser-inline.md` §8.2, amended 2026-10-24).
 
 A row variable of a `For` over a list at `q` anchors to `q[*]` (slice B binds it to the item;
 `language.md` §11.9). A local anchored at ρ itself — `view model` used whole — reads everything,

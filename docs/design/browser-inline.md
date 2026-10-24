@@ -327,6 +327,20 @@ beni over `Js` in `Inline.beni`:
   of the whole value, arm included: the `when` runs again on a write its arm's text reads, and writes
   nothing then. A guarded arm shares that whole-branch group, including its selector, so a reveal
   after hidden data updates prepares current values and its visibility together.
+  *Amended 2026-10-24 (#936, E5): a `when` reads what choosing its arm reads.* When no arm of the
+  branch is guarded, each `when`'s group is the hole's **selector** group
+  (`Program.HoleFacts.selector_group`, version 1.19): the reads of choosing the arm — the scrutinee
+  and the tag facts each arm is taken under (`write-sets.md` §3.6, amended 2026-10-24) — and not
+  what the arms' values read. This is exact because every value of an unguarded arm is a write of
+  its own, in the groups of its own hole, evaluated in its own binding function whether the arm is
+  shown or hidden; and `when` only puts the arm's element, or the empty text node it keeps in its
+  place, in the page, which a write the arm's values read does not change. So a write the arm reads
+  runs the arm's own bindings, a write the choice reads runs the `when`, and a `when` that runs
+  with the arm it already shows writes nothing, as before. A guarded arm is unchanged: its values
+  are evaluated only while it is shown, by the one function its `when` is in, so that function
+  keeps the whole value's group. A hole the pass has no selector for — a value that is not a `case`
+  on every visit, or a view past a cap — keeps its whole group (`emit/release/inline/WhenSelector`,
+  `browser/inline/WhenSelector`, whose transcript was made with the compiler before this change).
 - **A `view` `let`** read by one hole is that hole's value, substituted (D-d); one read by several
   holes is a memo node, S3's, and refused as a limit of the compiler until then.
   *As built 2026-10-18 (S1, #351 and its correction):* the `let` is evaluated in the binding function
