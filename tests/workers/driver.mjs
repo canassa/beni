@@ -39,6 +39,12 @@ const { Miniflare } = await import(miniflarePath);
 // How long one step may take, in milliseconds: a bound a correct fixture
 // never reaches, since no fixture waits for real.
 const stepLimit = 5000;
+// The one step that waits for real: `idle` lets the host act on its own
+// clock — hibernate an object after its delay (§9.12 (e.5), #593) — and
+// may take longer than a step. A script's idle steps sum to at most this
+// bound, under the case's 120 s hang guard and the 70 s after which
+// workerd erases an idle container.
+const idleLimit = 60000;
 
 const out = path.resolve(outArg);
 const say = (line) => process.stdout.write(`${line}\n`);
@@ -70,6 +76,27 @@ for (const raw of fs.readFileSync(script, "utf8").split("\n")) {
   const line = raw.trim();
   if (line.length === 0 || line.startsWith("#")) continue;
   steps.push(JSON.parse(line));
+}
+
+// A step the script wrote wrong: the run cannot mean anything, so the
+// driver stops with the usage errors' exit code, the step named.
+const scriptError = (what) => {
+  process.stderr.write(`workers driver: script error: ${what}\n`);
+  process.exit(2);
+};
+
+// Every `idle` step is checked before anything runs: a count of
+// milliseconds, 0 or more, alone in its step, and the script's idles sum
+// to at most the bound.
+let idled = 0;
+for (const step of steps) {
+  if (step.idle === undefined) continue;
+  if (!Number.isInteger(step.idle) || step.idle < 0) {
+    scriptError(`idle of ${JSON.stringify(step.idle)}: a count of milliseconds, 0 or more, is wanted`);
+  }
+  if (Object.keys(step).length !== 1) scriptError(`an idle step holds no other key: ${JSON.stringify(step)}`);
+  idled += step.idle;
+  if (idled > idleLimit) scriptError(`the script's idle steps sum to ${idled} ms, and at most ${idleLimit} are allowed`);
 }
 
 // ---- The Worker -------------------------------------------------------------
@@ -184,13 +211,6 @@ const rawClose = (ws, name, hex) => {
   const key = crypto.randomBytes(4);
   const masked = Buffer.from(payload.map((byte, i) => byte ^ key[i % 4]));
   ws._socket.write(Buffer.concat([Buffer.from([0x88, 0x80 | payload.length]), key, masked]));
-};
-
-// A step the script wrote wrong: the run cannot mean anything, so the
-// driver stops with the usage errors' exit code, the step named.
-const scriptError = (what) => {
-  process.stderr.write(`workers driver: script error: ${what}\n`);
-  process.exit(2);
 };
 
 // ---- The steps --------------------------------------------------------------
@@ -375,6 +395,11 @@ for (const step of steps) {
     controller.abort();
     const outcome = await pending;
     say(outcome.error ? `< (aborted: ${outcome.error.name})` : outcome.late ? `< (no response in ${stepLimit} ms)` : `< ${outcome.value.status} (answered before the abort)`);
+  } else if (step.idle !== undefined) {
+    // No event for `idle` milliseconds: what hibernation needs. Checked
+    // above, with the script.
+    say(`> (idle ${step.idle} ms)`);
+    await new Promise((resolve) => setTimeout(resolve, step.idle));
   } else if (step.socket !== undefined) {
     await openSocket(step);
   } else if (step.send !== undefined && step.binary !== undefined) {

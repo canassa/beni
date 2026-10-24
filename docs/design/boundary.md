@@ -7310,7 +7310,20 @@ inside a handler queues it behind the events already waiting ((e.10)).
   probe's source under the pinned Miniflare and saw a new instance after 15 s and again after 25 s
   on the same socket (the probe's own dry run idled 2 s and saw nothing), so the corpus can hold
   this fact once the driver has a step that idles 15 s, past (k)'s 5 s step limit — that fixture
-  is what #593 stays open for.
+  is what #593 stays open for. ***Measured in the corpus 2026-10-23 (#593 closed):***
+  `workers/ObjectHibernate`, with the driver's `idle` step (16 s, past the 5 s step limit; (k)):
+  workerd evicts an idle object after a fixed 10 s of inactivity (`server.c++:2766`), and the
+  review of #905 measured the turn between 9.5 and 10 s, so 16 s is about 6 s past it.
+  Two objects of one class, one hibernatable socket each with a seat in its attachment, each
+  counting its requests in memory. After 16 s with no event, the object with no live fiber
+  answered as a new instance: `restore` ran again with the two sockets the host kept, its count
+  started at 1 again, one socket's attachment read back its seat and the other's its own id, the
+  same as `WebSocket.id` after the wake, and `/__beni/hold` said `free` before and after. The
+  object whose handler had parked a fiber on a `Deferred` — a gate no host
+  timer backs, so the platform's live-fiber timer alone kept it — answered as the same instance,
+  its count continued at 3, `held` before and after, and `free` once the gate opened and the
+  fiber ended. A peer's close after the wake reached the new instance's `closed`. Both builds,
+  under the pinned Miniflare (workerd 1.20260518.1).
 - **`tick` may not wait.** It reads the state and names the timer; the platform calls it after
   `restore` and after every handler, outside any fiber. The owner wrote "checked to be sync". A
   marker cannot stand on an alias field, so the check is at `define`, with `Js.maySuspend` on the
@@ -7852,7 +7865,22 @@ fixture `workers/ObjectSocket`).*
   `dispatchFetch` with `upgrade: websocket` answers a `Response` whose `webSocket` is the client's
   end, accepted and listened to; the steps are `socket`, `send`, `close` and `receive`
   (`tests/corpus/README.md`, *A Worker*). The `sec-websocket-accept` answers Miniflare's random
-  key and is shown as `(the key)`. Hibernation itself is not driven: #593.
+  key and is shown as `(the key)`. Hibernation itself is not driven: #593. *2026-10-23: it is,
+  by the `idle` step ((k)), and `ObjectHibernate` holds what follows.*
+- **After hibernation** (*measured 2026-10-23, `workers/ObjectHibernate`; #724 closed*): the
+  sockets accepted here stay open while the object is gone. At the next event the new instance's
+  `restore` sees them in `Object.sockets ctx` (two, where two were accepted), a message on one
+  reaches `message` with the socket's attachment, id, tags and protocol as they were — the id
+  attached before the idle equals `WebSocket.id` after it, the subprotocol `v1` answers
+  `protocol`, the tag names the room in `closed` — and a peer's close after the wake reaches
+  `closed` with its code and reason. The done-when of #724 is complete: the upgrade with tags and
+  a subprotocol, one refused, messages both ways, a close with a code and a reason from each
+  side, the attachment read back after a restart, `autoReply` without an event, the sockets
+  closed by a defect, and the client steps the platform's fixtures needed — `socket` with
+  protocols, `send` of text and binary, `close` with a code or a raw frame, `drop`, `receive`
+  one or a count, `idle`. Of §9.11 (l)'s list the raw frame for each fault of (f), stop reading,
+  ping and the flow-control steps drive workerd's own frame parser, not the platform, and are
+  not built: #917.
 
 **(h) `Worker.Storage`: the key-value store, through schemas.** The object's storage is the
 SQLite-backed synchronous API, `ctx.storage.kv` ([storage](https://developers.cloudflare.com/durable-objects/api/storage-api/)):
@@ -8041,7 +8069,11 @@ Cesar's to review and goes in a PR of its own. *Amended 2026-10-20 (M8, L3), the
   hibernation needs more than the 10 s delay, and a step is limited to 5 s. *2026-10-23: the fact
   is measured by a deployed probe, (e.5), and local workerd hibernates an idle object too (the
   review of #860: a new instance after 15 s and 25 s under Miniflare), so the corpus can hold it
-  once the driver has a step that idles 15 s; #593 stays open for that fixture. `wrangler dev
+  once the driver has a step that idles 15 s; #593 stays open for that fixture. 2026-10-23: the
+  driver has it, `{"idle": <ms>}`, no event, a script's idles summing to at most 60 000 ms under
+  the case's 120 s hang guard, and `workers/ObjectHibernate` holds the fact ((e.5), #593 closed):
+  workerd's eviction is a fixed 10 s of inactivity (`server.c++:2766`), measured by the review of
+  #905 as a turn between 9.5 and 10 s. `wrangler dev
   --remote` refuses a Worker with Durable Objects (wrangler 4.93.0), so a fact of the edge is
   measured by a deployed probe Worker on the owner's account, deleted after the measurement, where
   the local host differs — the client's disconnect, (d) — and by the corpus where it does not.*

@@ -1,0 +1,88 @@
+> (socket p) GET /room/plain/ws
+(socket p) < 101
+(socket p) < sec-websocket-accept: (the key)
+(socket p) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket p) < upgrade: websocket
+| out: restore of plain: 0 sockets: ⊤
+> (socket p) "attach:seat 4"
+< (socket p) "attached"
+> GET /room/plain/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< plain served 2
+> (socket q) GET /room/plain/ws ["v1"]
+(socket q) < 101
+(socket q) < sec-websocket-accept: (the key)
+(socket q) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket q) < sec-websocket-protocol: v1
+(socket q) < upgrade: websocket
+> (socket q) "attach-id"
+< (socket q) "attached the id"
+> (socket h) GET /room/held/ws
+(socket h) < 101
+(socket h) < sec-websocket-accept: (the key)
+(socket h) < sec-websocket-extensions: permessage-deflate; client_max_window_bits=15
+(socket h) < upgrade: websocket
+| out: restore of held: 0 sockets: ⊤
+> (socket h) "attach:seat 9"
+< (socket h) "attached"
+> GET /room/held/park
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< parked in held
+> GET /room/held/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
+> GET /room/plain/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
+> (idle 16000 ms)
+> GET /room/plain/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< plain served 1
+| out: restore of plain: 2 sockets: ⊤
+> (socket p) "seat?"
+< (socket p) "plain served 1, attachment seat 4"
+> (socket q) "id?"
+< (socket q) "id kept, protocol v1"
+> GET /room/plain/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
+> GET /room/held/count
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< held served 3
+> (socket h) "seat?"
+< (socket h) "held served 3, attachment seat 9"
+> GET /room/held/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< held
+> GET /room/held/finish
+< 200
+< content-type: text/plain; charset=utf-8
+<
+< finished in held
+> GET /room/held/__beni/hold
+< 200
+< content-type: text/plain;charset=UTF-8
+<
+< free
+> (socket p) close 4000 "bye"
+| out: closed plain 4000 bye: ⊤
+> (socket q) close 4001 "bye too"
+| out: closed plain 4001 bye too: ⊤
+> (socket h) close 4000 "bye"
+| out: closed held 4000 bye: ⊤
