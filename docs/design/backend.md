@@ -5722,16 +5722,20 @@ field read, an index read, or a function made there. Two cases differ:
   an element that a read before it would see.
 
 The read must be one that is always evaluated: never a branch of a conditional or the right side
-of `&&` or `||`. An operator, a template or a call evaluated before it stops the rule, since each
-may run code. An assignment `t.p = v` reads `t`, then `v`, then stores, so a value read in `v` is
+of `&&` or `||`. An operator, a call, or a template part that is not a literal evaluated before it
+stops the rule, since each may run code (a template converts each part before the next). An assignment `t.p = v` reads `t`, then `v`, then stores, so a value read in `v` is
 taken, and the store still comes after it. A sequence `(x, y)` is its parts in turn. The statement a value
-that calls anything moves into is kept from then on as its binding was: no later rule drops it
-unread or moves it as if it were pure. A binding a specialisation pass made can hold a call with
+kept for an effect moves into is kept from then on as its binding was: no later rule drops it
+unread or moves it as if it were pure. One any other value that calls something moves into is
+never dropped unread. A binding a specialisation pass made can hold a call with
 an effect and not be listed (#944, `run/QuestionOrder`, whose `chain.2` log a first version lost). And a
 value is not written at its read when the two together could be taller than `JsIr.nesting.spill`,
 the height at which lowering binds an expression to a name to bound its nesting (*Nesting*,
 above): a chain lowering spilled is not folded back (`abuse_wide_test`'s widest `++` chain, which a
-first version folded into one expression that Node could not parse). So the view binding `let c=fa(b.b,b.d);n(a[5],c)` is
+first version folded into one expression that Node could not parse). The
+atom-and-chain rule judges a name an earlier fold wrote a value at as that value, so an alias of
+a moved call is never moved again as if it were a chain, into a branch or past a call (the review
+of #945). So the view binding `let c=fa(b.b,b.d);n(a[5],c)` is
 `n(a[5],fa(b.b,b.d))`, and the handler `a=>{let c=t(a);b.a=c;…}` is `a=>{b.a=t(a);…}`.
 `Html.targetValue` is `foreign impure`, and `b` is a name. Pinned by `Opt`'s unit test *a value
 read once in the next statement after reads alone is written at its read*. It covers a call, a

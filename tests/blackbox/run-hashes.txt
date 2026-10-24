@@ -35,7 +35,7 @@ build_id_test.test.a core read with --core-root and the embedded core share a ca
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 88a3f71f483eb2814941ea9ae0ba5bafaf7bfe5b7b09d26dfe365d4fce78242a
 build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a3692dda89a021c229b843a0e0ea6ca2e1f8d1ef1d5ed68a466daacb9a327e37
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 cd4a11990c06f2e548ff898221617fc4513a8197341ceddef8e0c982396be440
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 51485411627dfae0f4eadd374432d4f2678903523cd316112e6a693104f49af1
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 fec6776c295e175a35fbb53664c5fbaa9ad4dfc4c2aeaf175716614a24d114f3
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
