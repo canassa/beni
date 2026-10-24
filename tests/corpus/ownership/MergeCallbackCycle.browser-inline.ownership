@@ -1,0 +1,25 @@
+module MergeCallbackCycle
+  15:18 List.push acc: accepted param
+  27:22 call Dict.merge <literal>: accepted fresh (MergeCallbackCycle.onLeft writes what Dict.merge supplies it)
+  27:22 value MergeCallbackCycle.onLeft: rejected supply: Dict.merge hands its parameter 3 what the callback returned before, which may be a list the callback does not own
+  31:19 call Dict.merge MergeCallbackCycle.shared: rejected top-level: MergeCallbackCycle.shared is a top-level value (MergeCallbackCycle.onLeft writes what Dict.merge supplies it)
+  31:19 value MergeCallbackCycle.onLeft: accepted callback-param (Dict.merge supplies it owned)
+  39:12 call Dict.merge <literal>: accepted fresh (MergeCallbackCycle.onLeft writes what Dict.merge supplies it)
+  39:12 value MergeCallbackCycle.onLeft: accepted callback-param (Dict.merge supplies it owned)
+  43:23 List.push acc: accepted param
+  47:15 call Dict.merge <literal>: accepted fresh (MergeCallbackCycle.onLeft writes what Dict.merge supplies it)
+  47:15 value MergeCallbackCycle.onBothSum: accepted callback-param (Dict.merge supplies it owned)
+  47:15 value MergeCallbackCycle.onLeft: accepted callback-param (Dict.merge supplies it owned)
+  summary onLeft: π3 RAW[storage], π3[*] A; res [*] ~π3[*], π3
+  summary onBoth: res shared(MergeCallbackCycle.shared)
+  summary onRight: π3 RA; res π3
+  summary sharedFromBoth: res [*] ~shared(MergeCallbackCycle.shared)[*], ~condition(fresh1) ~fresh1 ~shared(MergeCallbackCycle.shared)
+  summary sharedStart: res ~condition(fresh1) ~shared(MergeCallbackCycle.shared)
+  summary keepFirst: π4 RA; res π4
+  summary fine: res ~condition(fresh1) ~fresh1
+  summary onBothSum: π4 RAW[storage], π4[*] A; res [*] ~π4[*], π4
+  summary collect: res ~condition(fresh1) ~fresh1
+  demands 11: accepted 9 (fresh 3, call 0, param 2, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 11: accepted 9 (fresh 3, call 0, param 2, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause top-level 1
+cause supply 1
