@@ -296,6 +296,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #926 + #929 (`c5aec1ced`; a tag no run tells from a failure leaves the validator and the dispatch, #916; the snapshot's widget record is built from the route table, #915) | 176.9 | | 1 557 | 47 824 | 1.15 | 1.12 |
 | after #931 (`cb8f0662f`; one `Nothing` per scope-hoisted file, #916) | 174.6 | | 1 551 | 47 229 | 1.14 | 1.10 |
 | after #935 + #937 + #938 (`3e9b91c80`; a required `Value` field is one presence test, #934; a single-use widget handler is written in its listener, and a `when` reads what choosing its arm reads, #936) | 172.0 | | 1 512 | 46 493 | 1.11 | **0.99** |
+| after #940 + #939 (`e5bdc5a9f`; no `.slice(0,1)` after a keyed filter, #936; a validator is fused into its decode-or-keep, #934, closing #930) | 172.1 | | 1 489 | 46 459 | 1.10 | **0.99** |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
@@ -329,8 +330,8 @@ the mean of three seeds.
 The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
 A hand-minify pass on the output only (2026-10-24), with a plan: [`s1-hand-minify-2026-10-24.md`](s1-hand-minify-2026-10-24.md).
 
-`3e9b91c80` (2026-10-24): slope **172.0** B/widget, N = 1 **1 512** (1.11× the bar), N = 256 **46 493**, **under the bar** of 46 857 (0.99×).
-Since 2026-10-23 morning: 241.0 → 172.0, with the steps in the table above.
+`e5bdc5a9f` (2026-10-24): slope **172.1** B/widget, N = 1 **1 489** (1.10× the bar), N = 256 **46 493**, **under the bar** of 46 857 (0.99×).
+Since 2026-10-23 morning: 241.0 → 172.1, with the steps in the table above.
 
 - **Fix 7 delivered −24, not −65.** The estimate came from hand-editing the output into tea-inline's
   shape, and the built shape still differs from tea-inline's. #896 will list where the remaining bytes
@@ -338,4 +339,4 @@ Since 2026-10-23 morning: 241.0 → 172.0, with the steps in the table above.
 - **N = 1 got worse: 1 446 → 1 732 B.** Fix 7 added a fixed runtime (group runner, ordinal sort,
   copy-plan walker, loader) that a one-widget page pays in full. It is about +290 B once against −24 B
   per widget, so it breaks even at about 12 widgets. #909 made them smaller (1 732 → 1 667 B).
-- **Still needed for the bar:** about 12.5 B/widget on the slope (fit) and about 155 B on the N = 1 page; N = 256 is met. #915 and #916 are done; their ledgers are on the issues, with the items measured and dropped.
+- **Still needed for the bar:** about 12.5 B/widget on the slope (fit) and about 130 B on the N = 1 page; N = 256 is met. #915 and #916 are done; their ledgers are on the issues, with the items measured and dropped.
