@@ -373,6 +373,22 @@ generators change to `Dict`. D5, D6 and D7 remain open.
 - *Compiler limits* are temporary, labelled as limits of the compiler, and each is closed by the slice in its area. Examples: a suspending command before S6, a model-dependent subscription set before S4, `lazy` before D5, an analysis cap.
 - *Language rules* are permanent: they are the decision to depart from Elm, not gaps waiting for a slice. Examples: a structural write to a `List` of rows, an opaque `update`, a markup site that cannot be numbered, a `*` key that is not a declared `replace`. Their text never says "not yet".
 
+*Amended 2026-10-25 (the owner, #966).* **`browser-inline` replaces `browser`'s renderer and
+`browser-tea`.**
+- From now on, `browser-tea` and `browser`'s `dom` lowering and `Rt` get correctness fixes only,
+  and only where a fix is cheap. Nothing else is built for them: no new features, no byte work, and
+  no checker precision that only they need.
+- Records stay spreads on these two platforms. O6's identity amendments (`ownership-checker.md`
+  §30.7, #322) are not made for their renderers.
+- `browser`'s capability modules (`Http`, `Time`, `Storage`, `WebSocket`, `Random`, `Dom`,
+  `Hosted`) become a base with no renderer, and `browser-inline` layers on that base in S6.
+- The retirement gate:
+  1. S6's bars are met.
+  2. The `tea/` and `dom/` page coverage moves to `browser-inline`, and an independent oracle
+     takes over `browser-tea`'s place in differential tests.
+  3. Then `browser-tea`, the `dom` lowering and `Rt` are deleted, and `browser-inline` takes the
+     name `browser`.
+
 ## 10. How this plan is tracked
 
 The parent issue holds the slices as sub-issues (S0–S6) and the parallel core work (#294 and the
