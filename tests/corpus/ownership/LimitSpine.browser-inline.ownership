@@ -4,6 +4,6 @@ module LimitSpine
   285:15 List.push a: accepted call
   summary first: π1 R, π1[*] RAW[storage], π1[*][*] A; res [*] ~π1[*][*]{excl π1}, fresh1 π1[*]{excl π1}; xreq excl π1
   summary wide: res fresh1
-  summary mapped: π1 R; res [*] fresh ~condition(fresh2) ~fresh2, [*][*] ~fresh, fresh1{lost}r{lost}
+  summary mapped: π1 R; res [*] fresh ~condition(fresh2) ~fresh2, [*][*] ~condition(fresh3) ~fresh, fresh1{lost}r{lost}
   demands 3: accepted 3 (fresh 1, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 3: accepted 3 (fresh 1, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

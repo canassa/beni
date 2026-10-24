@@ -1,0 +1,26 @@
+module BesideSpreadHelper
+  8:16 construction acc: accepted param
+  14:5 List.update <call BesideSpreadHelper.snoc>: accepted fresh
+  14:5 List.update <call BesideSpreadHelper.snoc>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  14:18 call BesideSpreadHelper.snoc <literal>: accepted fresh (BesideSpreadHelper.snoc writes π1)
+  14:41 List.push v: rejected exclusive: List.update hands its parameter 1 an element of <call BesideSpreadHelper.snoc>, whose elements may share one list
+  18:11 List.update <call BesideSpreadHelper.snoc>: accepted fresh
+  18:11 List.update <call BesideSpreadHelper.snoc>[*]: accepted fresh (<lambda> writes what List.update supplies it)
+  18:24 call BesideSpreadHelper.snoc <literal>: accepted fresh (BesideSpreadHelper.snoc writes π1)
+  18:53 List.push v: accepted callback-param (List.update supplies it owned)
+  24:5 List.update <call BesideSpreadHelper.snoc>: accepted fresh
+  24:5 List.update <call BesideSpreadHelper.snoc>[*].0: accepted fresh (<lambda> writes what List.update supplies it)
+  24:18 call BesideSpreadHelper.snoc <literal>: accepted fresh (BesideSpreadHelper.snoc writes π1)
+  24:57 List.push p.0: rejected exclusive: List.update hands its parameter 1 an element of <call BesideSpreadHelper.snoc>, whose elements may share one list
+  28:16 List.update <call BesideSpreadHelper.snoc>: accepted fresh
+  28:16 List.update <call BesideSpreadHelper.snoc>[*].0: accepted fresh (<lambda> writes what List.update supplies it)
+  28:29 call BesideSpreadHelper.snoc <literal>: accepted fresh (BesideSpreadHelper.snoc writes π1)
+  28:74 List.push p.0: accepted callback-param (List.update supplies it owned)
+  summary snoc: π1 RAW, π2 RA; res [*] condition(fresh1) π2, π1{excl π2, sep π1[*] π2}r{excl π2, sep π1[*] π2}
+  summary shared: res [*] condition(fresh1) fresh1, fresh2{shared}
+  summary fresh: res [*] condition(fresh1) fresh1, fresh2
+  summary sharedTuple: res [*] condition(fresh3), [*].0 condition(fresh1) fresh1, fresh2{shared}
+  summary freshTuple: res [*] condition(fresh3), [*].0 fresh1, fresh2
+  demands 17: accepted 15 (fresh 12, call 0, param 1, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 17: accepted 15 (fresh 12, call 0, param 1, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2

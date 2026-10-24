@@ -1,0 +1,28 @@
+-- ownership: a spread `[ …acc, y ]` stores `y` beside what `acc` holds at
+-- its elements (#474). The literal's guard at `[*]` compares `y` with
+-- `acc`'s elements, and at `[*].0` with their `.0`. `shared` and
+-- `sharedTuple` add a list that is already an element and edit one
+-- element in place: rejected `exclusive`. `fresh` and `freshTuple` add
+-- a fresh list: accepted.
+snoc : List a, a → List a
+snoc acc y = [ …acc, y ]
+
+
+pub shared : ⊤ → List (List Int)
+shared ⊤ =
+    xs = [ 1 ]
+    List.update (snoc [ xs ] xs) 0 λv → List.push v 9
+
+
+pub fresh : ⊤ → List (List Int)
+fresh ⊤ = List.update (snoc [ [ 1 ] ] [ 2 ]) 0 λv → List.push v 9
+
+
+pub sharedTuple : ⊤ → List (List Int × Int)
+sharedTuple ⊤ =
+    xs = [ 1 ]
+    List.update (snoc [ ( xs, 0 ) ] ( xs, 0 )) 0 λp → ( List.push p.0 9, p.1 )
+
+
+pub freshTuple : ⊤ → List (List Int × Int)
+freshTuple ⊤ = List.update (snoc [ ( [ 1 ], 0 ) ] ( [ 2 ], 0 )) 0 λp → ( List.push p.0 9, p.1 )

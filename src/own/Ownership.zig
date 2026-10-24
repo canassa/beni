@@ -13472,10 +13472,10 @@ const Walker = struct {
                 if (i == j) continue;
                 for (other) |f| {
                     if (f.approx != 0) approximate = f.approx;
-                    if (e.path != f.path and try w.nested(e, f)) continue;
-                    const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                    const g = (try w.besideCell(e, f)) orelse continue;
+                    const separation = try w.sepSpines(e.cell, g, e.approx == 0 and f.approx == 0);
                     if (separation == cond_yes) continue;
-                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, f.cell) else separation);
+                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, g) else separation);
                 }
             }
             const k = try w.condAndAll(&acc);
@@ -20185,6 +20185,30 @@ const Walker = struct {
         return w.norm(out.items);
     }
 
+    /// What another operand's entry `f` holds at `e`'s place, for a
+    /// construction's separation per path: `f`'s own cell, or, when `f`
+    /// stands above `e` (an element of a parameter's list, beside a tuple
+    /// pushed with a list at its `.0`), `f`'s cell projected to `e`'s
+    /// place, since what it holds there is stored beside `e` (#474). Null
+    /// when the pair needs no separation at `e`'s place.
+    fn besideCell(w: *Walker, e: Entry, f: Entry) Allocator.Error!?u32 {
+        if (e.path == f.path or !try w.nested(e, f)) return f.cell;
+        if (e.cell == f.cell or !w.o.startsWith(e.path, f.path)) return null;
+        var c = f.cell;
+        const rest = w.o.steps((try w.o.suffix(f.path, e.path)).?);
+        // The place's type is `e`'s, which the last step reaches.
+        for (rest, 0..) |s, i| c = (try w.projCell(c, s, if (i + 1 == rest.len) w.cells.items[e.cell].ty.unwrap() else null)) orelse return null;
+        if (w.cells.items[c].condition_only or w.listFacing(c) == null) return null;
+        // `e` itself, which `f` holds at its place (a row that names a
+        // parameter and its elements): one position, not two.
+        var x = w.cells.items[c];
+        var y = w.cells.items[e.cell];
+        x.ty = .none;
+        y.ty = .none;
+        if (std.meta.eql(x, y)) return null;
+        return c;
+    }
+
     /// A construction's container conditions, one guard per result path.
     /// The guard belongs to the containing value, never to an allocation:
     /// sharing keys at one path must not poison fresh values at another.
@@ -20201,10 +20225,10 @@ const Walker = struct {
                 for (other) |f| {
                     if (w.cells.items[f.cell].condition_only or w.listFacing(f.cell) == null) continue;
                     if (f.approx != 0) approximate = f.approx;
-                    if (e.path != f.path and try w.nested(e, f)) continue;
-                    const separation = try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0);
+                    const g = (try w.besideCell(e, f)) orelse continue;
+                    const separation = try w.sepSpines(e.cell, g, e.approx == 0 and f.approx == 0);
                     if (separation == cond_yes) continue;
-                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, f.cell) else separation);
+                    try acc.add(w, if (w.symbolicSpine(e.cell)) try w.rootSeparation(e.cell, g) else separation);
                 }
             }
             const k = try w.condAndAll(&acc);

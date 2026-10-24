@@ -1,0 +1,21 @@
+-- ownership: a list literal stores a parameter's tuple beside a tuple
+-- built around another parameter's list (#474). The literal's guard at
+-- `[*].0` compares `xs` with what `p` holds at `.0`. `shared` hands both
+-- one list and edits one element in place: rejected `exclusive`. `fresh`
+-- hands two fresh lists: accepted.
+grow : List Int × Int → List Int × Int
+grow p = ( List.push p.0 9, p.1 )
+
+
+lit : List Int × Int, List Int → List (List Int × Int)
+lit p xs = [ p, ( xs, 0 ) ]
+
+
+pub shared : ⊤ → List (List Int × Int)
+shared ⊤ =
+    xs = [ 1 ]
+    List.update (lit ( xs, 0 ) xs) 0 grow
+
+
+pub fresh : ⊤ → List (List Int × Int)
+fresh ⊤ = List.update (lit ( [ 1 ], 0 ) [ 2 ]) 0 grow

@@ -41,9 +41,9 @@ module BridgeReturnedParameter
   summary passedOn: res .grown condition(fresh3) fresh1, .old condition(fresh4) fresh1, condition(fresh2){shared}r{shared} fresh501◦
   summary pushBoxed: π1 R, π2 R; res [*] ~cb2#Box.0[*]{excl cb2#Box.0[*]}r{excl cb2#Box.0[*]}, cb2#Box.0{excl cb2#Box.0}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}r{excl π1}
   summary tagger: res .grown condition(fresh3) fresh1, .old condition(fresh4) fresh1, condition(fresh2){shared}r{shared} fresh501◦
-  summary pushFolded: π1 R, π2 RAw[storage], π2[*] A, π3 R; res [*] ~cb3[*]{excl cb3[*]}r{excl cb3[*]} ~π2[*], ~cb3{excl cb3}r{excl cb3} ~π2; π3 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}, supply 2 cb3 owned{excl cb3}r{excl cb3}, supply 2 π2 owned{excl π2}r{excl π2}
-  summary foldReturnsAccumulator: res .grown ~condition(fresh3) ~fresh1, .old fresh1 ~condition(fresh4), condition(fresh2){lost}r{lost} fresh501◦
-  summary foldReturnsAccumulatorDead: res ~fresh1
+  summary pushFolded: π1 R, π2 RAw[storage], π2[*] A, π3 R; res [*] ~cb3[*]{excl cb3[*]}r{excl cb3[*]} ~condition(fresh1) ~π2[*], ~cb3{excl cb3}r{excl cb3} ~π2; π3 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}, supply 2 cb3 owned{excl cb3}r{excl cb3}, supply 2 π2 owned{excl π2}r{excl π2}
+  summary foldReturnsAccumulator: res .grown ~condition(fresh4) ~fresh1, .grown[*] ~condition(fresh2), .old fresh1 ~condition(fresh5), condition(fresh3){lost}r{lost} fresh501◦
+  summary foldReturnsAccumulatorDead: res [*] ~condition(fresh2), ~fresh1
   summary pushFirst: π1 R, π2 R; res [*] ~cb2[*]{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2} ~condition(fresh1) ~fresh{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}, fresh2 ~cb2{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}r{excl cb2, sep cb2 cb2}; π2 calls many, need owned, supply 1 π1[*] owned taken{excl π1}r{excl π1}; xreq excl cb2, sep cb2 cb2
   summary mapReturnsElement: res .grown ~condition(fresh5) ~fresh1 ~fresh3 ~fresh5, .grown[*] ~condition(fresh4) ~fresh3, .old fresh2, .old[*] fresh1 ~condition(fresh7), condition(fresh6){lost}r{lost} fresh501◦
   summary mapReturnsElementDead: res [*] ~condition(fresh3) ~fresh2, ~fresh1 ~fresh2

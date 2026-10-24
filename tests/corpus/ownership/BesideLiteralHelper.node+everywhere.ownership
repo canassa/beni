@@ -1,0 +1,15 @@
+module BesideLiteralHelper
+  7:12 List.push p.0: accepted param
+  17:5 List.update <call BesideLiteralHelper.lit>: accepted call
+  17:5 List.update <call BesideLiteralHelper.lit>[*].0: accepted call (BesideLiteralHelper.grow writes what List.update supplies it)
+  17:5 value BesideLiteralHelper.grow: rejected exclusive: List.update hands its parameter 1 an element of <call BesideLiteralHelper.lit>, whose elements may share one list
+  21:11 List.update <call BesideLiteralHelper.lit>: accepted call
+  21:11 List.update <call BesideLiteralHelper.lit>[*].0: accepted call (BesideLiteralHelper.grow writes what List.update supplies it)
+  21:11 value BesideLiteralHelper.grow: accepted callback-param (List.update supplies it owned)
+  summary grow: π1.0 RAW[storage], π1.0[*] A, π1.1 R; res .0 π1.0, .0[*] ~π1.0[*]
+  summary lit: π1 RA, π2 RA; res [*] π1, [*].0 condition(fresh2) π2, fresh1{excl π1, excl π2, sep π1 π2}
+  summary shared: res [*] ~fresh3{shared}, [*].0 condition(fresh1) fresh1 ~fresh4{shared}, [*].0[*] ~fresh5{shared}, fresh2{shared}
+  summary fresh: res [*] ~fresh3, [*].0 condition(fresh1) fresh1 ~fresh4, [*].0[*] ~fresh5, fresh2
+  demands 7: accepted 6 (fresh 0, call 4, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 7: accepted 6 (fresh 0, call 4, param 1, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1
