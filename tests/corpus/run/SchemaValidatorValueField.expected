@@ -1,0 +1,21 @@
+ok null
+ok false
+ok empty
+ok object
+fail
+fail
+fail
+fail
+fail
+fail
+outer ok null
+outer ok false
+outer ok empty
+outer ok object
+outer fail
+outer fail
+outer fail
+outer fail
+outer fail
+outer fail
+outer fail
