@@ -299,6 +299,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #940 + #939 (`e5bdc5a9f`; no `.slice(0,1)` after a keyed filter, #936; a validator is fused into its decode-or-keep, #934, closing #930) | 172.1 | | 1 489 | 46 459 | 1.10 | 1.08 |
 | after #943 + #942 + #945 (`23010bf2a`; plain `window` on page platforms, #936; identical functions merged, and a value read next after reads alone is written at its read, #934) | 170.7 | | 1 475 | 46 080 | 1.09 | 1.08 |
 | after #948 (`f37935efd`; step B: the pushed-event, snapshot and widgets decoders fused into the dispatcher, #946) | 171.0 | | 1 383 | 46 062 | 1.02 | 1.07 |
+| after #949 (`2556986c6`; E7: a route's constant fields held in its row and applied by the generic loader, #946) | 168.0 | | 1 383 | 45 321 | 1.02 | 1.06 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
@@ -332,7 +333,7 @@ the mean of three seeds.
 The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
 A hand-minify pass on the output only (2026-10-24), with a plan: [`s1-hand-minify-2026-10-24.md`](s1-hand-minify-2026-10-24.md).
 
-`f37935efd` (2026-10-24, after step B): slope **171.0** B/widget, N = 1 **1 383** (1.02× the bar of 1 358.5), N = 256 **46 062** (1.07× the bar of 42 857). Step B is a fixed cost: −92 B at N = 1, slope +0.3 (noise). Before it, `23010bf2a` (2026-10-24): slope **170.7** B/widget, N = 1 **1 475** (1.09× the bar), N = 256 **46 080** (1.08× the bar of 42 857). *Correction:* rows from `cb8f0662f` to `3e9b91c80` first gave the N = 256 bar as 46 857, a slip for 42 857; N = 256 was never under the bar.
+`2556986c6` (2026-10-24, after E7; the last planned item): slope **168.0** B/widget, N = 1 **1 383** (1.02× the bar of 1 358.5), N = 256 **45 321** (1.06× the bar of 42 857). E6 was dropped: it shrinks N ≥ 64 but grows brotli at N = 16 while raw shrinks, so only a benchmark-tuned widget-count threshold could pick it. Before it, `f37935efd` (2026-10-24, after step B): slope **171.0** B/widget, N = 1 **1 383** (1.02× the bar of 1 358.5), N = 256 **46 062** (1.07× the bar of 42 857). Step B is a fixed cost: −92 B at N = 1, slope +0.3 (noise). Before it, `23010bf2a` (2026-10-24): slope **170.7** B/widget, N = 1 **1 475** (1.09× the bar), N = 256 **46 080** (1.08× the bar of 42 857). *Correction:* rows from `cb8f0662f` to `3e9b91c80` first gave the N = 256 bar as 46 857, a slip for 42 857; N = 256 was never under the bar.
 Since 2026-10-23 morning: 241.0 → 170.7, with the steps in the table above.
 
 - **Fix 7 delivered −24, not −65.** The estimate came from hand-editing the output into tea-inline's
