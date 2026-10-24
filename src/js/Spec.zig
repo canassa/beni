@@ -9324,85 +9324,15 @@ const Spec = struct {
     /// writes a property of it. A whole read is the last thing done with
     /// `x`, so nothing holds it before a comparison reads it.
     fn onlyCased(s: *Spec, m: *Mod, top: Index, x: NameIndex, rest: []const Index) Allocator.Error!bool {
-        const ir = m.ir;
-        // `x` and its aliases: a `const z = x` of the rest, `z` declared
-        // once and never assigned — a `case`'s pattern binding the value
-        // its constructor fold left (`const new = x`). Each is held to
-        // what `x` is.
-        var names: std.ArrayList(u32) = .empty;
-        try names.append(s.arena, x.int());
-        var aliases: std.ArrayList(Index) = .empty;
-        var decls: std.ArrayList(Index) = .empty;
-        {
-            var walk = try s.takeStack();
-            defer s.giveStack(&walk);
-            for (rest) |r| try JsIr.pushOperand(s.arena, &walk, r);
-            while (JsIr.popOperand(&walk)) |node| {
-                if (ir.tag(node) == .const_decl) try decls.append(s.arena, node);
-                try pushChildren(s.arena, ir, node, &walk);
-            }
-        }
-        var grew = true;
-        while (grew) {
-            grew = false;
-            for (decls.items) |node| {
-                if (ir.tag(node) != .const_decl) continue;
-                const from = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).rhs)))).unwrap() orelse continue;
-                if (ir.tag(from) != .ident or std.mem.indexOfScalar(u32, names.items, ir.data(from).lhs) == null) continue;
-                if (std.mem.indexOfScalar(Index, aliases.items, from) != null) continue;
-                const z: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
-                if (z == .none or ir.name(z).module != .none) return false;
-                if (try declCount(s, m, top, z) != 1 or try s.assignedInTop(m, top, z)) return false;
-                try aliases.append(s.arena, from);
-                if (std.mem.indexOfScalar(u32, names.items, z.int()) == null) try names.append(s.arena, z.int());
-                grew = true;
-            }
-        }
-        var whole: std.ArrayList(Index) = .empty;
-        for (names.items) |n| try returnedWhole(s.arena, ir, rest, @fromBackingInt(@intCast(n)), &whole);
-        try whole.appendSlice(s.arena, aliases.items);
-        const held = struct {
-            fn is(r: *const JsIr, list: []const u32, node: Index) bool {
-                return r.tag(node) == .ident and std.mem.indexOfScalar(u32, list, r.data(node).lhs) != null;
+        const Sole = struct {
+            s: *Spec,
+            m: *Mod,
+            top: Index,
+            pub fn once(c: @This(), z: NameIndex) Allocator.Error!bool {
+                return try declCount(c.s, c.m, c.top, z) == 1 and !try c.s.assignedInTop(c.m, c.top, z);
             }
         };
-        var stack = try s.takeStack();
-        defer s.giveStack(&stack);
-        try JsIr.pushOperand(s.arena, &stack, top);
-        while (JsIr.popOperand(&stack)) |node| {
-            const d = ir.data(node);
-            switch (ir.tag(node)) {
-                .ident => if (held.is(ir, names.items, node) and std.mem.indexOfScalar(Index, whole.items, node) == null) return false,
-                .member => {
-                    const obj: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (held.is(ir, names.items, obj)) continue;
-                },
-                .binary => {
-                    const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
-                    if (op == .strict_eq or op == .strict_ne) {
-                        const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
-                        // `x === z` of an alias would be decided `false`
-                        // of an object literal: refused.
-                        if (held.is(ir, names.items, b.left) and held.is(ir, names.items, b.right)) return false;
-                        for ([_]Index{ b.left, b.right }) |side| {
-                            if (held.is(ir, names.items, side)) continue;
-                            try JsIr.pushOperand(s.arena, &stack, side);
-                        }
-                        continue;
-                    }
-                },
-                .assign_stmt, .assign => {
-                    const target: Index = @fromBackingInt(@intCast(d.lhs));
-                    if (ir.tag(target) == .member) {
-                        const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
-                        if (held.is(ir, names.items, obj)) return false;
-                    }
-                },
-                else => {},
-            }
-            try pushChildren(s.arena, ir, node, &stack);
-        }
-        return true;
+        return casedOnly(s.arena, m.ir, top, x, rest, Sole{ .s = s, .m = m, .top = top });
     }
 
     fn mentionsGlobal(s: *Spec, m: *Mod, stmts: []const Index, g: u32) Allocator.Error!bool {
@@ -17416,8 +17346,148 @@ fn project(ir: *const JsIr, node: Index, x: NameIndex, p: Index) ?Index {
     return v;
 }
 
-/// The value object literal `obj` holds at `key`; null when it holds none
-/// or a spread may hold it.
+/// `Spec.onlyCased` over statement `top` (the site's function), the rest
+/// `rest` after the site and its binding `x`: whether every mention of `x`
+/// and of its aliases is a property read, a comparison with something else,
+/// or a return's whole value (`returnedWhole`), and no property of one is
+/// written. `sole.once(z)` says whether alias `z` is declared once and never
+/// assigned.
+fn casedOnly(arena: Allocator, ir: *const JsIr, top: Index, x: NameIndex, rest: []const Index, sole: anytype) Allocator.Error!bool {
+    // `x` and its aliases: a `const z = x` of the rest, `z` declared
+    // once and never assigned — a `case`'s pattern binding the value
+    // its constructor fold left (`const new = x`). Each is held to
+    // what `x` is.
+    var names: std.ArrayList(u32) = .empty;
+    try names.append(arena, x.int());
+    var aliases: std.ArrayList(Index) = .empty;
+    var decls: std.ArrayList(Index) = .empty;
+    {
+        var walk: std.ArrayList(Index) = .empty;
+        for (rest) |r| try JsIr.pushOperand(arena, &walk, r);
+        while (JsIr.popOperand(&walk)) |node| {
+            if (ir.tag(node) == .const_decl) try decls.append(arena, node);
+            try pushChildren(arena, ir, node, &walk);
+        }
+    }
+    var grew = true;
+    while (grew) {
+        grew = false;
+        for (decls.items) |node| {
+            if (ir.tag(node) != .const_decl) continue;
+            const from = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(node).rhs)))).unwrap() orelse continue;
+            if (ir.tag(from) != .ident or std.mem.indexOfScalar(u32, names.items, ir.data(from).lhs) == null) continue;
+            if (std.mem.indexOfScalar(Index, aliases.items, from) != null) continue;
+            const z: NameIndex = @fromBackingInt(@intCast(ir.data(node).lhs));
+            if (z == .none or ir.name(z).module != .none) return false;
+            if (!try sole.once(z)) return false;
+            try aliases.append(arena, from);
+            if (std.mem.indexOfScalar(u32, names.items, z.int()) == null) try names.append(arena, z.int());
+            grew = true;
+        }
+    }
+    var whole: std.ArrayList(Index) = .empty;
+    for (names.items) |n| try returnedWhole(arena, ir, rest, @fromBackingInt(@intCast(n)), &whole);
+    try whole.appendSlice(arena, aliases.items);
+    const held = struct {
+        fn is(r: *const JsIr, list: []const u32, node: Index) bool {
+            return r.tag(node) == .ident and std.mem.indexOfScalar(u32, list, r.data(node).lhs) != null;
+        }
+    };
+    var stack: std.ArrayList(Index) = .empty;
+    try JsIr.pushOperand(arena, &stack, top);
+    while (JsIr.popOperand(&stack)) |node| {
+        const d = ir.data(node);
+        switch (ir.tag(node)) {
+            .ident => if (held.is(ir, names.items, node) and std.mem.indexOfScalar(Index, whole.items, node) == null) return false,
+            .member => {
+                const obj: Index = @fromBackingInt(@intCast(d.lhs));
+                if (held.is(ir, names.items, obj)) continue;
+            },
+            .binary => {
+                const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
+                if (op == .strict_eq or op == .strict_ne) {
+                    const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                    // `x === z` of an alias would be decided `false`
+                    // of an object literal: refused.
+                    if (held.is(ir, names.items, b.left) and held.is(ir, names.items, b.right)) return false;
+                    for ([_]Index{ b.left, b.right }) |side| {
+                        if (held.is(ir, names.items, side)) continue;
+                        try JsIr.pushOperand(arena, &stack, side);
+                    }
+                    continue;
+                }
+            },
+            .assign_stmt, .assign => {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                if (ir.tag(target) == .member) {
+                    const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
+                    if (held.is(ir, names.items, obj)) return false;
+                }
+            },
+            else => {},
+        }
+        try pushChildren(arena, ir, node, &stack);
+    }
+    return true;
+}
+
+const CasedCase = enum { property, alias_of_alias, compared_with_alias, handed, not_sole };
+
+/// `const z = x` and a use of it, as `casedOnly` is asked of them.
+fn casedCase(gpa: Allocator, case: CasedCase) !bool {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const x = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const z = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const w = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const k = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const g = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    var rest: std.ArrayList(Index) = .empty;
+    defer rest.deinit(gpa);
+    try rest.append(gpa, try specTestNode(&b, .const_decl, z.int(), (try specTestNode(&b, .ident, x.int(), 0)).int()));
+    const value: Index = switch (case) {
+        .property, .not_sole => try specTestNode(&b, .member, (try specTestNode(&b, .ident, z.int(), 0)).int(), k.int()),
+        .alias_of_alias => blk: {
+            try rest.append(gpa, try specTestNode(&b, .const_decl, w.int(), (try specTestNode(&b, .ident, z.int(), 0)).int()));
+            break :blk try specTestNode(&b, .ident, w.int(), 0);
+        },
+        .compared_with_alias => blk: {
+            const pair = try b.addRecord(JsIr.Binary{ .left = try specTestNode(&b, .ident, x.int(), 0), .right = try specTestNode(&b, .ident, z.int(), 0) });
+            break :blk try specTestNode(&b, .binary, @backingInt(pair), @backingInt(JsIr.BinaryOp.strict_eq));
+        },
+        .handed => blk: {
+            const args = try b.addRange(&.{try specTestNode(&b, .ident, z.int(), 0)});
+            break :blk try specTestNode(&b, .call, (try specTestNode(&b, .ident, g.int(), 0)).int(), @backingInt(try b.addRecord(args)));
+        },
+    };
+    try rest.append(gpa, try specTestNode(&b, .return_stmt, value.int(), 0));
+    const body = try b.addRange(rest.items);
+    const top = try specTestNode(&b, .block_stmt, @backingInt(NameIndex.none), @backingInt(try b.addRecord(body)));
+    var ir = try b.toOwned(try b.addRange(&.{}));
+    defer ir.deinit(gpa);
+    const Stub = struct {
+        yes: bool,
+        pub fn once(c: @This(), _: NameIndex) Allocator.Error!bool {
+            return c.yes;
+        }
+    };
+    return casedOnly(arena_state.allocator(), &ir, top, x, rest.items, Stub{ .yes = case != .not_sole });
+}
+
+test "an alias of a fused site's binding is held to the binding's rules" {
+    // `backend.md` §9, *Slice 9 across a call*, amended 2026-10-24 (#934).
+    try testing.expect(try casedCase(testing.allocator, .property));
+    try testing.expect(try casedCase(testing.allocator, .alias_of_alias));
+    // `x === z` would be decided `false` of an object literal `P`.
+    try testing.expect(!try casedCase(testing.allocator, .compared_with_alias));
+    // Handed to a call, the alias could be held before a comparison.
+    try testing.expect(!try casedCase(testing.allocator, .handed));
+    // An alias declared twice or assigned is not the binding.
+    try testing.expect(!try casedCase(testing.allocator, .not_sole));
+}
+
 /// Every mention of `x` in `stmts` that a `return` gives whole: its value,
 /// or a branch of a conditional that is (`Spec.onlyCased`).
 fn returnedWhole(arena: Allocator, ir: *const JsIr, stmts: []const Index, x: NameIndex, out: *std.ArrayList(Index)) Allocator.Error!void {
@@ -17445,6 +17515,8 @@ fn returnedWhole(arena: Allocator, ir: *const JsIr, stmts: []const Index, x: Nam
     }
 }
 
+/// The value object literal `obj` holds at `key`; null when it holds none
+/// or a spread may hold it.
 fn propertyOf(ir: *const JsIr, obj: Index, key: NameIndex) ?Index {
     const want = ir.name(key);
     var found: ?Index = null;
