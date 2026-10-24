@@ -35,14 +35,14 @@ build_id_test.test.a core read with --core-root and the embedded core share a ca
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 88a3f71f483eb2814941ea9ae0ba5bafaf7bfe5b7b09d26dfe365d4fce78242a
 build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a3692dda89a021c229b843a0e0ea6ca2e1f8d1ef1d5ed68a466daacb9a327e37
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 cd4a11990c06f2e548ff898221617fc4513a8197341ceddef8e0c982396be440
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 909dc495858cdfb900f5f7ebeb2c7d96174a5666476d8e342e1af93f0e1cb77a
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 51485411627dfae0f4eadd374432d4f2678903523cd316112e6a693104f49af1
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 6e2f9659f0284f33b706fc6342235b5bc9bf1df6926bd0a9792adcb0e7867a1d
-build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 2e220ff2dce10e87a7de453348c78da7f8a8a7fd3c838a8533afea7b69af5b44
+build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 ab66fa8d0a82c2517a68e5595e41e0168fb9c7d40802dd3f5678ab2131e125fd
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 e95abd5d029ed232bffae0fbf2ee6c8fdb6913c380e5c3f39aa01b4dbea1f2d4
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 dfc36b2c18b6b109587cca1f27d7fad84ba5b81a2926ee12615804b00176330e
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 daf37a1fa19ec2fdcbb3d87937ddb72eb308d948166d1bd200fd0daf9a32bc1a
@@ -70,7 +70,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 2f6b2f02a23133274475ad6bacc645c9394b527014686e73aa24a056382eef5a
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 14032c172f4d0fc3b7d068730c265d60ae91b0da47fee24aa0849da93e0cf2d0
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 98cf233f8f7ebe6853aa8e078dd8220cd57d9f63d3ef95d64fdff9fcbc9f2fde
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675

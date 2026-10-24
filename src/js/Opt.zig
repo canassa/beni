@@ -203,7 +203,7 @@ const Opt = struct {
     /// One bit per node: a binding never dropped for want of a use
     /// (`runKeeping`). A bitset rather than the list, because a module may
     /// hold one per effectful `let`.
-    kept: []const u32,
+    kept: []u32,
     /// Where `stack` grows. The plan's own arena: nothing here is freed early.
     arena: Allocator,
     /// The explicit stack every expression walk shares: each walk
@@ -263,6 +263,9 @@ const Opt = struct {
     /// (`list`'s next-statement rule): a name written through, or rebound,
     /// elsewhere in the declaration is not written between the two.
     next_statement: bool = false,
+    /// While `readsBefore` asks for a value that may have an effect: only
+    /// names and literals may be evaluated before its read.
+    names_only: bool = false,
     /// `copy`'s use sites, found by `ownUsesInto`.
     found_all: std.ArrayList(Index) = .empty,
 
@@ -617,6 +620,43 @@ const Opt = struct {
                 o.inlined[at.int()] = o.compress(value).toOptional();
                 continue;
             }
+            // A value lowering does not keep for an effect, read once in the
+            // very next statement's own expressions, where everything
+            // evaluated before the read is a name nothing rebinds, a literal,
+            // a field read or an index read (`backend.md` §9 item 1, amended
+            // 2026-10-24, #934): it writes nothing, so those reads answer
+            // the same after it, and nothing it could throw past is a write.
+            // A read in a conditional's branch or a logical operator's right
+            // side is not taken: it would not always be evaluated.
+            // A value lowering keeps for an effect, or one that writes a
+            // record in place, moves past names and literals alone: no
+            // effect rebinds a name `unchangedName` takes, but one may write
+            // a field or an element that a read before it would see.
+            if (i + 1 < stmts.len) reads: {
+                const after = stmts[i + 1];
+                o.found = .none;
+                if (try o.ownUses(after, n) != 1) break :reads;
+                const at = o.found.unwrap() orelse break :reads;
+                o.names_only = listed or try o.ir.holdsStore(o.arena, &o.stack, stmt);
+                defer o.names_only = false;
+                if (!o.readsBefore(after, at)) break :reads;
+                // No taller than lowering lets an expression grow before it
+                // binds it to a name (`JsIr.nesting.spill`): a value lowering
+                // spilled to bound a chain's nesting is not folded back.
+                if (o.height(value, 0) + o.stmtHeight(after) > JsIr.nesting.spill) break :reads;
+                // Its read must stay: not in a statement already dropped (a
+                // discarded value), and, for a value that calls anything, in
+                // one that is now kept as the binding was, so no later rule
+                // drops or moves what the call does as if the statement were
+                // pure. A binding a specialisation pass made can hold a call
+                // with an effect and not be listed (#944).
+                const ai = after.int();
+                if (o.dropped[ai / 32] & (@as(u32, 1) << @intCast(ai % 32)) != 0) break :reads;
+                if (o.names_only or o.mayWriteIn(value, null, 0) != .clean) o.kept[ai / 32] |= @as(u32, 1) << @intCast(ai % 32);
+                o.drop(stmt);
+                o.inlined[at.int()] = o.compress(value).toOptional();
+                continue;
+            }
             // A value made only of beni field reads, names and literals
             // (`backend.md` §9 item 1, amended 2026-10-18). It does nothing
             // and cannot throw, but a write of the record it reads would
@@ -946,6 +986,220 @@ const Opt = struct {
             else => false,
         };
         return if (dirty or writes) .dirty else .clean;
+    }
+
+    /// Whether `site` is reached in statement `stmt`'s own expressions, in
+    /// evaluation order, having evaluated only reads before it (`readsTo`)
+    /// and in a position that is always evaluated. An assignment's target is
+    /// a name or a field of one: its object is read first, and the store
+    /// comes after the right-hand side.
+    fn readsBefore(o: *Opt, stmt: Index, site: Index) bool {
+        const d = o.ir.data(stmt);
+        switch (o.ir.tag(stmt)) {
+            .assign_stmt => {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                switch (o.ir.tag(target)) {
+                    .ident => if (target == site or !o.unchangedName(target)) return false,
+                    .member => switch (o.readsTo(@fromBackingInt(@intCast(o.ir.data(target).lhs)), site, 0)) {
+                        .clean => {},
+                        .found, .bad => return false,
+                    },
+                    else => return false,
+                }
+                return o.readsTo(@fromBackingInt(@intCast(d.rhs)), site, 0) == .found;
+            },
+            .const_decl => return o.readsTo(@fromBackingInt(@intCast(d.rhs)), site, 0) == .found,
+            .let_decl, .return_stmt => {
+                const raw = if (o.ir.tag(stmt) == .let_decl) d.rhs else d.lhs;
+                const root = @as(Node.OptionalIndex, @fromBackingInt(@intCast(raw))).unwrap() orelse return false;
+                return o.readsTo(root, site, 0) == .found;
+            },
+            .if_stmt, .switch_stmt, .expr_stmt, .throw_stmt => return o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, 0) == .found,
+            else => return false,
+        }
+    }
+
+    const Reads = enum { clean, found, bad };
+
+    /// Walk `node` in evaluation order toward `site`: `found` when it is
+    /// reached having evaluated nothing but reads (`unchangedName`, a literal,
+    /// a field read, an index read, a function made), always; `clean` when
+    /// `node` holds no `site` and is all reads; `bad` otherwise — a call, an
+    /// operator that may convert, or `site` where it may not be evaluated.
+    fn readsTo(o: *Opt, node: Index, site: Index, depth: u32) Reads {
+        if (node == site) return .found;
+        if (depth > 128) return .bad;
+        const d = o.ir.data(node);
+        switch (o.ir.tag(node)) {
+            .field_name, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit, .template_chunk => return .clean,
+            .ident => return if (o.inlined[node.int()] == .none and o.unchangedName(node)) .clean else .bad,
+            .arrow => return .clean,
+            .member => {
+                const r = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
+                if (r != .clean) return r;
+                return if (o.ir.isFieldRead(node) and !o.names_only) .clean else .bad;
+            },
+            .index_get => {
+                const r = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
+                if (r != .clean) return r;
+                const k = o.readsTo(@fromBackingInt(@intCast(d.rhs)), site, depth + 1);
+                // The element is read once the index is: after a site in
+                // the index, before one that comes later.
+                if (k != .clean or !o.names_only) return k;
+                return .bad;
+            },
+            // The call itself runs after its callee and arguments: a site
+            // among them is reached first, and a call that holds none is a
+            // call made before it.
+            .call, .new_call => {
+                const callee = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
+                if (callee != .clean) return callee;
+                for (o.ir.extraSlice(o.ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |a| {
+                    const r = o.readsTo(a, site, depth + 1);
+                    if (r != .clean) return r;
+                }
+                return .bad;
+            },
+            // `t = v`: the target's object is read, then `v`, then the store.
+            // A site in `v` is reached before the store; an assignment that
+            // holds none is a write made before it.
+            .assign => {
+                const target: Index = @fromBackingInt(@intCast(d.lhs));
+                switch (o.ir.tag(target)) {
+                    .ident => if (target == site or !o.unchangedName(target)) return .bad,
+                    .member => {
+                        const r = o.readsTo(@fromBackingInt(@intCast(o.ir.data(target).lhs)), site, depth + 1);
+                        if (r != .clean) return r;
+                    },
+                    else => return .bad,
+                }
+                const v = o.readsTo(@fromBackingInt(@intCast(d.rhs)), site, depth + 1);
+                return if (v == .found) .found else .bad;
+            },
+            // `(x, y)`: each part in turn, its value dropped.
+            .sequence => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
+                    const r = o.readsTo(part, site, depth + 1);
+                    if (r != .clean) return r;
+                }
+                return .clean;
+            },
+            .array, .template => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
+                    const r = o.readsTo(part, site, depth + 1);
+                    if (r != .clean) return r;
+                }
+                // A template converts its parts; one made before the site
+                // may run a `toString`.
+                return if (o.ir.tag(node) == .array) .clean else .bad;
+            },
+            .object => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |prop| {
+                    if (o.ir.tag(prop) != .property) return .bad;
+                    const r = o.readsTo(@fromBackingInt(@intCast(o.ir.data(prop).rhs)), site, depth + 1);
+                    if (r != .clean) return r;
+                }
+                return .clean;
+            },
+            .binary => {
+                const b = o.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                const op: JsIr.BinaryOp = @fromBackingInt(@intCast(d.rhs));
+                const left = o.readsTo(b.left, site, depth + 1);
+                if (left != .clean) return left;
+                const right = o.readsTo(b.right, site, depth + 1);
+                switch (op) {
+                    // The right side is evaluated only on one answer.
+                    .logical_and, .logical_or => return if (right == .found) .bad else right,
+                    else => {
+                        if (right != .clean) return right;
+                        // An operator made before the site may convert an
+                        // object, running its `valueOf`.
+                        return if (op == .strict_eq or op == .strict_ne) .clean else .bad;
+                    },
+                }
+            },
+            .unary => {
+                const r = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
+                if (r != .clean) return r;
+                return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                    .not, .type_of => .clean,
+                    else => .bad,
+                };
+            },
+            .cond => {
+                const c = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                const t = o.readsTo(@fromBackingInt(@intCast(d.lhs)), site, depth + 1);
+                if (t != .clean) return t;
+                // A branch is evaluated only on one answer.
+                const yes = o.readsTo(c.consequent, site, depth + 1);
+                const no = o.readsTo(c.alternate, site, depth + 1);
+                if (yes == .found or no == .found) return .bad;
+                return if (yes == .clean and no == .clean) .clean else .bad;
+            },
+            else => return .bad,
+        }
+    }
+
+    /// An upper bound of how tall `node` prints, in `JsIr.nesting`'s units,
+    /// a name an earlier fold wrote a value at counted as that value; past
+    /// `nesting.spill` it stops counting. Every operand is counted at its
+    /// construct's weight (a same-precedence chain's left operand too), so
+    /// it is never less than what `Builder.measure` would find.
+    fn height(o: *Opt, node: Index, depth: u32) u32 {
+        const n = JsIr.nesting;
+        if (depth > n.spill) return n.spill + 1;
+        const tag = o.ir.tag(node);
+        if (tag == .ident) if (o.inlined[node.int()].unwrap()) |v| return o.height(v, depth + 1);
+        if (tag == .arrow) return n.arrow;
+        const weight: u32 = switch (tag) {
+            .call, .new_call => n.call,
+            .object, .property => n.object,
+            .array => n.array,
+            .member, .index_get, .unary, .template => n.member,
+            .binary, .assign, .sequence => n.operand,
+            .cond => n.cond,
+            else => 1,
+        };
+        var kids: std.ArrayList(Index) = .empty;
+        o.ir.pushOperands(o.arena, &kids, node) catch return n.spill + 1;
+        var most: u32 = 0;
+        for (kids.items) |k| {
+            most = @max(most, o.height(k, depth + 1));
+            if (most > n.spill) break;
+        }
+        return weight + most;
+    }
+
+    /// `height` of statement `stmt`'s own expressions, the tallest.
+    fn stmtHeight(o: *Opt, stmt: Index) u32 {
+        const d = o.ir.data(stmt);
+        var roots: [2]?Index = .{ null, null };
+        switch (o.ir.tag(stmt)) {
+            .const_decl => roots[0] = @fromBackingInt(@intCast(d.rhs)),
+            .let_decl => roots[0] = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap(),
+            .return_stmt => roots[0] = @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap(),
+            .assign_stmt => roots = .{ @fromBackingInt(@intCast(d.lhs)), @fromBackingInt(@intCast(d.rhs)) },
+            .if_stmt, .switch_stmt, .expr_stmt, .throw_stmt => roots[0] = @fromBackingInt(@intCast(d.lhs)),
+            else => return JsIr.nesting.spill + 1,
+        }
+        var most: u32 = 0;
+        for (roots) |r| if (r) |x| {
+            most = @max(most, o.height(x, 0));
+        };
+        return most;
+    }
+
+    /// Whether name `node` holds the same binding wherever it is read in
+    /// the declaration: a local no statement of it rebinds (`rebound`: a write
+    /// through it is not one), or a top-level
+    /// name, neither a `Js.Ref` written as a `let` (`mutable`, the only
+    /// top-level binding beni rebinds, and only in its own module).
+    fn unchangedName(o: *Opt, node: Index) bool {
+        const n: NameIndex = @fromBackingInt(@intCast(o.ir.data(node).lhs));
+        if (std.mem.indexOfScalar(NameIndex, o.mutable, n) != null) return false;
+        const i = n.unwrap() orelse return false;
+        if (o.ir.name(n).module != .none) return true;
+        return !(i < o.rebound.len and o.stamp[i] == o.current and o.rebound[i]);
     }
 
     /// A value the next-statement rule takes: a member chain of a name
@@ -1295,4 +1549,94 @@ test "a read of a name written through folds into the next statement, and only b
     try testing.expect(!try nextStatementCase(testing.allocator, true, false));
     // `g(); return k(d)`: the read is two statements away — kept.
     try testing.expect(!try nextStatementCase(testing.allocator, false, true));
+}
+
+const ReadsShape = enum { index_then_use, call_then_use, in_branch, assigned, name_then_use, sequence_first, sequence_after_write, into_unread_binding };
+
+/// `d = h(c)` and the next statement reading `d`, as `ReadsShape` says, with
+/// `d`'s binding listed in `keep` (an effect) or not.
+fn readsCase(gpa: std.mem.Allocator, shape: ReadsShape, listed: bool) !bool {
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const c = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const g = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const k = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const d = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const h = try b.intern(.local(@fromBackingInt(@intCast(5))));
+    const e = try b.intern(.local(@fromBackingInt(@intCast(6))));
+    const t = try b.intern(.local(@fromBackingInt(@intCast(7))));
+    const a = try b.intern(.local(@fromBackingInt(@intCast(8))));
+    const call = struct {
+        fn of(bb: *JsIr.Builder, callee: JsIr.NameIndex, args: []const Index) !Index {
+            const record = try bb.addRecord(try bb.addRange(args));
+            return testNode(bb, .call, (try testNode(bb, .ident, callee.int(), 0)).int(), @backingInt(record));
+        }
+    }.of;
+    const bind = try testNode(&b, .const_decl, d.int(), (try call(&b, h, &.{try testNode(&b, .ident, c.int(), 0)})).int());
+    const d_use = try testNode(&b, .ident, d.int(), 0);
+    const one = try testNode(&b, .number, 0, 0);
+    const next: Index = switch (shape) {
+        // `return k(e[0], d)`
+        .index_then_use => try testNode(&b, .return_stmt, (try call(&b, k, &.{ try testNode(&b, .index_get, (try testNode(&b, .ident, e.int(), 0)).int(), one.int()), d_use })).int(), 0),
+        // `return k(g(), d)`
+        .call_then_use => try testNode(&b, .return_stmt, (try call(&b, k, &.{ try call(&b, g, &.{}), d_use })).int(), 0),
+        // `return k(t ? d : 0)`
+        .in_branch => blk: {
+            const branches = try b.addRecord(JsIr.Cond{ .consequent = d_use, .alternate = try testNode(&b, .number, 0, 0) });
+            const cond = try testNode(&b, .cond, (try testNode(&b, .ident, t.int(), 0)).int(), @backingInt(branches));
+            break :blk try testNode(&b, .return_stmt, (try call(&b, k, &.{cond})).int(), 0);
+        },
+        // `c.a = d`
+        .assigned => try testNode(&b, .assign_stmt, (try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), a.int())).int(), d_use.int()),
+        // `return k(e, d)`
+        .name_then_use => try testNode(&b, .return_stmt, (try call(&b, k, &.{ try testNode(&b, .ident, e.int(), 0), d_use })).int(), 0),
+        // `const u = k(e, d)`, `u` read nowhere.
+        .into_unread_binding => try testNode(&b, .const_decl, a.int(), (try call(&b, k, &.{ try testNode(&b, .ident, e.int(), 0), d_use })).int()),
+        // `c.a = d, c.t = 0;` and `c.t = 0, c.a = d;`
+        .sequence_first, .sequence_after_write => blk: {
+            const use = try testNode(&b, .assign, (try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), a.int())).int(), d_use.int());
+            const other = try testNode(&b, .assign, (try testNode(&b, .member, (try testNode(&b, .ident, c.int(), 0)).int(), t.int())).int(), (try testNode(&b, .number, 0, 0)).int());
+            const parts = try b.addRange(if (shape == .sequence_first) &.{ use, other } else &.{ other, use });
+            const seq = try testNode(&b, .sequence, @backingInt(parts.start), @backingInt(parts.end));
+            break :blk try testNode(&b, .expr_stmt, seq.int(), 0);
+        },
+    };
+    const params = try b.addNames(&.{ c, g, k, h, e, t });
+    const stmts = try b.addRange(&.{ bind, next });
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try runKeeping(arena_state.allocator(), &ir, if (listed) &.{bind} else &.{}, &.{}, &.{});
+    // A statement a call was moved into is never dropped for want of a read.
+    if (plan.isDropped(bind) and plan.isDropped(next)) return error.TestUnexpectedResult;
+    return plan.isDropped(bind);
+}
+
+test "a value read once in the next statement after reads alone is written at its read" {
+    // `backend.md` §9 item 1, amended 2026-10-24 (#934): `d = h(c)` may
+    // throw, but it writes nothing, and nothing evaluated before its read
+    // can be written or can throw past a write.
+    try testing.expect(try readsCase(testing.allocator, .index_then_use, false));
+    try testing.expect(try readsCase(testing.allocator, .name_then_use, false));
+    // An assignment's target is read first, the store made after `d`.
+    try testing.expect(try readsCase(testing.allocator, .assigned, false));
+    // Into a binding nothing reads, which then stays for the call (#944).
+    try testing.expect(try readsCase(testing.allocator, .into_unread_binding, false));
+    // In a sequence, the first part, but not one after a write.
+    try testing.expect(try readsCase(testing.allocator, .sequence_first, false));
+    try testing.expect(!try readsCase(testing.allocator, .sequence_after_write, false));
+    // A call before the read may write what `h` reads, or throw first.
+    try testing.expect(!try readsCase(testing.allocator, .call_then_use, false));
+    // A branch would not always evaluate it.
+    try testing.expect(!try readsCase(testing.allocator, .in_branch, false));
+    // A value kept for its effect moves past names alone: its effect may
+    // write the element an index read would see.
+    try testing.expect(!try readsCase(testing.allocator, .index_then_use, true));
+    try testing.expect(try readsCase(testing.allocator, .name_then_use, true));
+    try testing.expect(try readsCase(testing.allocator, .assigned, true));
 }

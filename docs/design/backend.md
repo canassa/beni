@@ -5710,6 +5710,38 @@ made and where it is read, so it reads the same there. This is what a root facto
 read was refused, and an entry was `let d=c.a;k(b[3],`Cups = ${d}`)` where the old binding function
 had `k(b[3],`Cups = ${c.a}`)`. Fixtures: `emit/release/inline/*`, `emit/release/tea/HttpSendTracked`.
 
+*Amended 2026-10-24 (#934, the S1 hand-minify pass's E1): any value, past reads.* A value of any
+kind, calls included, read once in the very next statement's own expressions is written at that
+read when everything evaluated before the read is a read (`Opt.readsBefore`, `readsTo`): a name
+that nothing in the declaration rebinds and no `Js.Ref` holds (`unchangedName`), a literal, a beni
+field read, an index read, or a function made there. Two cases differ:
+- **A value lowering does not keep for an effect** writes nothing. So none of those reads answers
+  differently after it, and whatever it throws, it throws before any write, as it did.
+- **A value lowering keeps for an effect, or one that writes a record in place** (`holdsStore`),
+  moves past names and literals alone. No effect rebinds such a name, but one may write a field or
+  an element that a read before it would see.
+
+The read must be one that is always evaluated: never a branch of a conditional or the right side
+of `&&` or `||`. An operator, a template or a call evaluated before it stops the rule, since each
+may run code. An assignment `t.p = v` reads `t`, then `v`, then stores, so a value read in `v` is
+taken, and the store still comes after it. A sequence `(x, y)` is its parts in turn. The statement a value
+that calls anything moves into is kept from then on as its binding was: no later rule drops it
+unread or moves it as if it were pure. A binding a specialisation pass made can hold a call with
+an effect and not be listed (#944, `run/QuestionOrder`, whose `chain.2` log a first version lost). And a
+value is not written at its read when the two together could be taller than `JsIr.nesting.spill`,
+the height at which lowering binds an expression to a name to bound its nesting (*Nesting*,
+above): a chain lowering spilled is not folded back (`abuse_wide_test`'s widest `++` chain, which a
+first version folded into one expression that Node could not parse). So the view binding `let c=fa(b.b,b.d);n(a[5],c)` is
+`n(a[5],fa(b.b,b.d))`, and the handler `a=>{let c=t(a);b.a=c;…}` is `a=>{b.a=t(a);…}`.
+`Html.targetValue` is `foreign impure`, and `b` is a name. Pinned by `Opt`'s unit test *a value
+read once in the next statement after reads alone is written at its read*. It covers a call, a
+branch, a write earlier in a sequence and a kept value past an index read (refused), and a
+name, an assignment and a sequence's first part (taken). Measured on S1, one file, seeds 1–3, against master after *Identical functions are
+one*: N = 1 1 459 / 1 387 / 1 608 → 1 442 / 1 382 / 1 600, N = 16 5 960 / 5 964 / 5 776 → 5 914 /
+5 893 / 5 722, slope 64→256 −1.2 / −0.8 / −1.3 B per widget. The 61 `emit/` goldens it moved are
+all shorter raw (315 229 → 314 545 bytes in all) and −32 B after brotli in all; the ones that
+grow after brotli (by 1 to 14 B, `inline/SpreadCopies` by 70) only renamed a local.
+
 The atom-and-chain rule above keeps its scan, and a member chain it folds now passes
 `cleanBefore` too: before, its use's statement was not asked, so a chain of a program object that
 specialisation had stopped listing could be written after a call in the same statement that wrote
