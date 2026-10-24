@@ -6797,8 +6797,13 @@ const Emitter = struct {
                     const name = try e.poolName(slot, n);
                     // A nullary constant another module declared first is
                     // that constant (`shareNullaries`): its name's ordinal.
+                    // The first module may meet it after a name of the
+                    // module it was copied from, when a copy across modules
+                    // (`backend.md` §9, *Slice 9 across a call*) wrote that
+                    // module's constant into it (#947): numbered then.
                     if (shared.get(Rename.Globals.key(name))) |first| {
-                        try e.globals.map.put(e.scratch, Rename.Globals.key(name), e.globals.lookup(first).?);
+                        const ordinal = try e.globals.internAvoiding(e.scratch, first, avoid.get(Rename.Globals.key(first)));
+                        try e.globals.map.put(e.scratch, Rename.Globals.key(name), ordinal);
                         continue;
                     }
                     _ = try e.globals.internAvoiding(e.scratch, name, avoid.get(Rename.Globals.key(name)));
