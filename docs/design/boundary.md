@@ -925,6 +925,18 @@ a list on a chain that declares no `"exports"` is the warning `exports_ignored`.
 does not declare it reads no list, and `run`'s result is not read, as before. §9.12 (c) has the
 contract whole.
 
+**Whether the chain always runs in a page is part of that shape, and it is `"host"`** (*added
+2026-10-24*, the owner's decision on #936). `"host": "page"` says that every program built for
+the chain runs in a page, where `window` is a global, so a release build writes `Js.global
+"window"` as plain `window` (`backend.md` §9, item 8, amended the same day). No other value is
+accepted, and a chain that does not say it gets `globalThis.window`, because a bare `window`
+throws `ReferenceError` where there is no window — under Node, in Workers, in a Web Worker.
+Inherited first-found down the chain like every field (§9.1). `browser` and `browser-inline`
+declare it, so a platform layered on either does as well; `node`, `cloudflare`, `html` and the
+test platforms `page`, `toy`, `entry` and `entry-shape` do not. It is a promise about the host,
+which nothing checks: a chain that declares it and is loaded where there is no window fails at
+the first such read.
+
 ### 5.3 One project, several platforms
 
 The full-stack case is a first-class requirement, not an afterthought: a browser client and a server

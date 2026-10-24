@@ -129,6 +129,10 @@ pub const Options = struct {
     /// *Compact statements*, item 8).
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
+    /// The chain always runs in a page (`"host": "page"`, `boundary.md`
+    /// §5.2): `Rename.page_globals` are written bare too (`backend.md` §9,
+    /// item 8, amended 2026-10-24).
+    page: bool = false,
     /// `--release`: a record field's short spelling, by the field's text
     /// (`backend.md` §9, *Item 4, taken up*; `Fields.Table`). A field name
     /// with no entry is pinned and printed as its text. Null prints every
@@ -165,6 +169,7 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
         .unobserved = options.unobserved,
         .bare_globals = options.bare_globals,
         .bare_blocked = options.bare_blocked,
+        .page = options.page,
         .fields = options.fields,
         .marks = options.marks,
         .spelled = scratch,
@@ -510,9 +515,10 @@ const Printer = struct {
     /// The last statement of the function body being printed, its own and
     /// not a nested function's (`whileLoop`).
     fn_last: Node.OptionalIndex = .none,
-    /// `Options.bare_globals` and `Options.bare_blocked`.
+    /// `Options.bare_globals`, `Options.bare_blocked` and `Options.page`.
     bare_globals: bool = false,
     bare_blocked: []const []const u8 = &.{},
+    page: bool = false,
     /// `Options.marks`.
     marks: ?*SourceMap.Marks = null,
     /// Each name's entry in the map's `names` (`mapName`), by `NameIndex`;
@@ -1961,8 +1967,37 @@ const Printer = struct {
         if (!p.bare_globals) return false;
         if (p.ir.tag(@fromBackingInt(@intCast(p.ir.data(node).lhs))) != .global_this) return false;
         const key: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(node).rhs));
-        const text = p.names.text(p.ir.name(key).base);
+        return p.bareName(p.names.text(p.ir.name(key).base));
+    }
+
+    /// The key of `node`, an `index_get`, when it is `globalThis["x"]` for a
+    /// host global written bare: the same read as `globalThis.x`, which a
+    /// compact build would print it as (`dottedKey`). This is the form
+    /// `Js.global` takes when its name reaches it as a value, as a
+    /// parameter's argument does once inlined (`Listen.on "window"`).
+    fn bareIndex(p: *Printer, node: Index) ?[]const u8 {
+        if (!p.bare_globals) return null;
+        if (p.ir.tag(@fromBackingInt(@intCast(p.ir.data(node).lhs))) != .global_this) return null;
+        const key = p.dottedKey(@fromBackingInt(@intCast(p.ir.data(node).rhs))) orelse return null;
+        return if (p.bareName(key)) key else null;
+    }
+
+    /// Whether `node` is `globalThis[k]`. The recursive printer hands it to
+    /// `run`, whose `expand` writes it bare when `bareIndex` says so: the
+    /// check is kept out of `rawRecursive`, whose frame is paid once per
+    /// level and has no room left for it (`deep_chain`).
+    fn globalIndex(p: *Printer, node: Index) bool {
+        return p.ir.tag(node) == .index_get and
+            p.ir.tag(@fromBackingInt(@intCast(p.ir.data(node).lhs))) == .global_this;
+    }
+
+    /// Whether this build writes the host global `text` bare: one of
+    /// `Rename.bare_globals`, or of `Rename.page_globals` in a build for a
+    /// chain that always runs in a page, and in neither case one a
+    /// hand-written file binds (`bare_blocked`).
+    fn bareName(p: *Printer, text: []const u8) bool {
         if (!Rename.isBareGlobal(text)) return false;
+        if (!p.page and Rename.isPageGlobal(text)) return false;
         for (p.bare_blocked) |b| {
             if (std.mem.eql(u8, b, text)) return false;
         }
@@ -2189,7 +2224,7 @@ const Printer = struct {
     /// few percent of the emit phase when used for everything (measured)
     /// and nothing in stack depth.
     fn expression(p: *Printer, node: Index, min_prec: u8, level: u32) Allocator.Error!void {
-        if (p.depth >= p.recursion_limit) return p.run(.expr(node, min_prec), level);
+        if (p.depth >= p.recursion_limit or p.globalIndex(p.resolve(node))) return p.run(.expr(node, min_prec), level);
         p.depth += 1;
         defer p.depth -= 1;
         // §9 item 1's substitution happens BEFORE the precedence is read, so
@@ -2204,7 +2239,7 @@ const Printer = struct {
     /// Print `node` as it is, with neither §9 item 1's substitution nor a
     /// bracket: an object property, and an object returned concisely.
     fn raw(p: *Printer, node: Index, level: u32) Allocator.Error!void {
-        if (p.depth >= p.recursion_limit) return p.run(.{ .kind = .raw, .value = node.int() }, level);
+        if (p.depth >= p.recursion_limit or p.globalIndex(node)) return p.run(.{ .kind = .raw, .value = node.int() }, level);
         p.depth += 1;
         defer p.depth -= 1;
         try p.rawRecursive(node, level);
@@ -2612,7 +2647,11 @@ const Printer = struct {
             },
             .index_get => {
                 // object `[` index `]`, or, compact, `.` key for a string
-                // key that is an identifier name.
+                // key that is an identifier name, or the host global itself.
+                if (p.bareIndex(node)) |key| {
+                    try p.push(key);
+                    return null;
+                }
                 if (p.dottedKey(@fromBackingInt(@intCast(d.rhs))) != null) {
                     try p.later(.rest(.dotted_rest, node));
                     return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);

@@ -82,6 +82,15 @@ pub const Chain = struct {
         return false;
     }
 
+    /// Whether the chain always runs in a page (`boundary.md` §5.2, added
+    /// 2026-10-24): its first `"host"`, down the chain.
+    pub fn inPage(chain: *const Chain) bool {
+        for (chain.layers) |layer| {
+            if (layer.manifest.host) |h| return h == .page;
+        }
+        return false;
+    }
+
     /// The first layer, in chain order, whose manifest declares `"exports"`
     /// (§5.2, amended 2026-10-20): the mode it declares, or the fact that it
     /// declared a list, which a platform may not.
@@ -480,6 +489,7 @@ pub fn load(arena: Allocator, session: *Session, chain: *const Chain, needs_prog
             .html_root = if (html) |h| chain.layers[h.layer].root else chain.top().root,
             .exports = if (exports) |x| x.decl else .none,
             .exports_root = if (exports) |x| chain.layers[x.layer].root else chain.top().root,
+            .page = chain.inPage(),
         },
         .embedded = try collectEmbedded(arena, session, chain),
     };

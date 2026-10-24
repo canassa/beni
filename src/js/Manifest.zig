@@ -55,6 +55,9 @@
 //!   `ownership-checker.md` §28.2): the chain's code may write a list's
 //!   array in place, so `check` and `build` run the ownership checker and
 //!   its rejections are errors. No other value; inherited first-found.
+//! - `host` — `"page"`, since 2026-10-24 (`boundary.md` §5.2): the chain's
+//!   code always runs in a page, so a release build writes `window` bare
+//!   (`backend.md` §9, item 8). No other value; inherited first-found.
 //! - `build` — an app's defaults for `build` and `serve` (`frontend.md`
 //!   §10.1): `platform`, `paths` and `out`, each used when the command line
 //!   does not say. A platform package's is ignored.
@@ -87,6 +90,7 @@ reexports: []const []const u8 = &.{},
 markup: Markup = .{},
 html: ?[]const u8 = null,
 lists: ?Lists = null,
+host: ?Host = null,
 build: Build = .{},
 exports: Exports = .none,
 
@@ -114,6 +118,10 @@ pub const Build = struct {
 /// `"lists"` (`boundary.md` §5.2): what the chain's code may do with a
 /// list's array. One value; any other is a malformed manifest.
 pub const Lists = enum { @"in-place" };
+
+/// `"host"` (`boundary.md` §5.2, added 2026-10-24): where the chain's code
+/// always runs. One value, `"page"`; any other is a malformed manifest.
+pub const Host = enum { page };
 
 /// `"markup"`'s four fields (`boundary.md` §9.2), each absent unless written.
 pub const Markup = struct {
@@ -144,6 +152,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         markup: ?Markup = null,
         html: ?[]const u8 = null,
         lists: ?Lists = null,
+        host: ?Host = null,
         build: ?Build = null,
         exports: ?std.json.Value = null,
     };
@@ -177,6 +186,7 @@ pub fn parse(arena: Allocator, bytes: []const u8) ParseError!Manifest {
         .markup = parsed.markup orelse .{},
         .html = parsed.html,
         .lists = parsed.lists,
+        .host = parsed.host,
         .build = parsed.build orelse .{},
         .exports = exports,
     };
@@ -321,6 +331,22 @@ test "a platform that edits lists in place says so, in one word" {
     ));
     try testing.expectError(error.Malformed, parse(arena.allocator(),
         \\{ "lists": true }
+    ));
+}
+
+test "a platform that always runs in a page says so, in one word" {
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const m = try parse(arena.allocator(),
+        \\{ "platform": true, "name": "page", "host": "page" }
+    );
+    try testing.expectEqual(Host.page, m.host.?);
+    try testing.expectEqual(@as(?Host, null), (try parse(arena.allocator(), "{}")).host);
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "host": "node" }
+    ));
+    try testing.expectError(error.Malformed, parse(arena.allocator(),
+        \\{ "host": true }
     ));
 }
 

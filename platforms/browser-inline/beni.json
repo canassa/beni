@@ -4,6 +4,7 @@
   "platforms": ["html"],
   "program": "Browser.Program",
   "html": "index.html",
+  "host": "page",
   "lists": "in-place",
   "markup": { "lowering": "inline", "module": "Inline" },
   "zig": "zig/root.zig",
