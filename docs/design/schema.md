@@ -1416,16 +1416,26 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Object.prototype` holds keeps its `Object.hasOwn` test. Measured (brotli 11):
   `emit/release/inline/PushAndTimer` 670 → 628, `app/ValidatorRun` 685 → 655, before
   `backend.md` §9's *A short `switch` is its `if`s* took the tag's `switch`.
-  *Amended 2026-10-24 (#934): a `Value` field too.* A required `Value` field is read and tested
-  the same way, its test the presence test alone, `x === undefined`: `Value` holds every host value
-  but `undefined`, so a present key always succeeds, and the slot, its assignment on each path and
-  the comparison with `c.fail` afterwards go. The comparison could never hold for a present key:
-  `c.fail` is an array the context makes for itself, which no host value is. So a required
-  `Value` field costs `let d=b.w1;if(d===undefined)return a.a;` in place of
-  `let c,d=b.w1;if(d!==undefined)c=d;else c=a.a;if(c===a.a)return a.a;`, in every event decoder
-  and in a snapshot's record of widgets (`run/SchemaValidatorValueField`; the `emit/release/inline`
-  loaders' goldens). S1 `unique-components`, seed 1, one file, brotli 11: N = 1 1 522 → 1 500, N = 16
-  6 266 → 6 129; on the shapes side (N = 64, 256) a shape reads the field, and nothing moves.
+  *Amended 2026-10-24 (#934): no presence test where the read fails for `undefined`.* A required
+  `Value` field is read and tested the same way, its test the presence test alone,
+  `x === undefined`: `Value` holds every host value but `undefined`, so a present key always
+  succeeds, and the slot, its assignment on each path and the comparison with `c.fail` afterwards
+  go. The comparison could never hold for a present key: `c.fail` is an array the context makes
+  for itself, which no host value is. A required field whose own read fails for `undefined` by its
+  first test — a record's or a tagged union's object test, a list's or a tuple's array test, any
+  other primitive's, or that of a check, an annotation, a conversion's source or a declaration or
+  derived codec of the same module it reads through — has no presence test at all: the key is
+  read, the depth bound tested, and the read one level down made, its failure stopping the record.
+  An absent key fails there, as it failed before, and the reads are the same and in the same
+  order. A field that may hold `undefined` or is not known not to — a parameter, a `Maybe`, a
+  nullable, a custom type's constructors, another module's declaration, a module's `codec` — keeps
+  the test. So a `Value` field costs `let c=b.w1;if(c===undefined)return a.a;` and a record field
+  `let c=b.widgets,d=C(a,c);if(d===a.a)return a.a;`, in place of
+  `let c,d=b.w1;if(d!==undefined)c=d;else c=a.a;if(c===a.a)return a.a;` and its record form, in
+  every event decoder and in a snapshot's record of widgets (`run/SchemaValidatorValueField`; the
+  `emit/release/inline` loaders' goldens). S1 `unique-components`, seed 1, one file, brotli 11:
+  N = 1 1 522 → 1 482, N = 16 6 266 → 6 107; on the shapes side (N = 64, 256) a shape reads the
+  field, and nothing moves.
 - **A validator run calls its worker where it stands** *(amended 2026-10-19, the owner's
   decision)*. A direct run — `read` or `parse` of `S.schema ⊤` of a nongeneric declaration, or a
   `Json` run of a nongeneric derived codec — calls no shared runner. It is written at its call:

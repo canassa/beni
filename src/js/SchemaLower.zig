@@ -1340,6 +1340,44 @@ const Gen = struct {
         return false;
     }
 
+    /// Whether node `n`'s read of a host value fails for `undefined` by its
+    /// own first test: a record's or a tagged union's object test, a list's
+    /// or a tuple's array test, every primitive's but `Value`'s, or the test
+    /// of what it reads through — a check, an annotation, a conversion's
+    /// source, a declaration or derived codec of this module. Anything else
+    /// — `Value`, a parameter, a `Maybe`, a nullable, a custom type's
+    /// constructors, another module's declaration, a module's `codec` — is
+    /// not known to (`decodeRecord`).
+    fn undefinedFails(g: *Gen, start: PNode) !bool {
+        const plan = g.plan;
+        var n = start;
+        var seen: std.ArrayList(u32) = .empty;
+        while (true) {
+            const tag = SchemaGraph.tag(plan, n);
+            switch (tag) {
+                .record, .tagged, .list, .tuple => return true,
+                .primitive => {
+                    const kind = std.enums.fromInt(SchemaPlan.Primitive, SchemaGraph.lhs(plan, n)) orelse return false;
+                    return kind != .value;
+                },
+                .check, .annotation, .conversion => n = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))),
+                .reference, .codec_ref => {
+                    const t = if (tag == .reference)
+                        g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return false
+                    else
+                        g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n));
+                    // Another module's plan is not this unit's input.
+                    if (t.module != g.ref.module) return false;
+                    for (seen.items) |d| if (d == t.decl) return false;
+                    try seen.append(g.l.scratch, t.decl);
+                    const def = g.sg.definition(t.module, t.decl) orelse return false;
+                    n = def.root;
+                },
+                else => return false,
+            }
+        }
+    }
+
     /// The worker `name` for node `n`.
     fn emitWorker(g: *Gen, out: *Stmts, op: Op, n: PNode, name: NameIndex) !void {
         const ps = try g.workerParams();
@@ -1921,6 +1959,35 @@ const Fn = struct {
                 slot.* = x;
                 continue;
             };
+            // A validator's required field whose own read fails for
+            // `undefined` (`undefinedFails`): an absent key fails as the
+            // read of it would, so there is no presence test. The key's read,
+            // then the depth bound, then the read one level down, whose
+            // failure stops the record (amended 2026-10-24).
+            if (w.op == .valid and !f.optional and !SchemaGraph.isMaybeField(g.plan, f) and w.readsByValue(key) and try g.undefinedFails(f.child)) {
+                const x = try g.fresh("$x");
+                try g.constDecl(out, x, try g.indexOf(try g.id(v), try g.str(key)));
+                var stop: Stmts = .empty;
+                try g.ret(&stop, try w.failMark());
+                try g.ifElse(out, try g.id(deep), stop.items, &.{});
+                // A read that is one assignment of the field's value is its
+                // `const`.
+                var read: Stmts = .empty;
+                try w.into(&read, f.child, x, offset + 1, at, value);
+                const b = g.l.b;
+                const one = read.items.len == 1 and b.tagOf(read.items[0]) == .assign_stmt and one: {
+                    const lhs: Node.Index = @fromBackingInt(@intCast(b.dataOf(read.items[0]).lhs));
+                    break :one b.tagOf(lhs) == .ident and b.dataOf(lhs).lhs == @backingInt(value);
+                };
+                if (one) {
+                    try g.constDecl(out, value, @fromBackingInt(@intCast(b.dataOf(read.items[0]).rhs)));
+                } else {
+                    try g.letDecl(out, value);
+                    try out.appendSlice(g.l.scratch, read.items);
+                }
+                try w.stopOnFailure(out, value);
+                continue;
+            }
             // A required primitive field of a JSON object, where the build
             // shares its failure branch (`SchemaShare`): the key read and
             // every test written here, as one condition, and one call that
