@@ -8825,18 +8825,21 @@ becomes the `Err` arm, and no fail mark is compared. Each is exact:
   the statements of its body, where it counted it as big. Slice 9's `const x = c ? A : B; R` takes
   the same functions in `R`, their parameters named afresh in `R'`.
 - **A computed read is a property read.** `x[e]`, or `z[e]` of an alias, is a read of `x` like
-  `x.k`. Its key is any expression and is walked as one.
+  `x.k`. Its key is any expression and is walked as one. A computed write, `x[e] = v` or `z[e] =
+  v`, refuses the site, as a named one does.
 - **An argument that is not an atom is bound first.** The copy of `f`'s body begins with `const
   p′ = a` for each argument `a` that is not an atom, in order, and the parameter reads `p′`; an
   atom is still written in place. That is the call's own order: each argument once, from left to
-  right, then the body. The snapshot's worker is called with `v.state`, the widgets' with
-  `v.widgets`.
-- **Each copy of `R` is bounded, not `R` as written.** `R` may be over 96 units when each copy of
-  it is at most 96: what one `return` of `f` gets, with what its value is known to be applied and
-  the branches that decides removed. A dispatcher's rest holds every arm, but each constructor's
-  `return` gets its own. The copies are made in `return` order, and the first that is over 96
-  refuses the site; no other copy is made. The size proxy is unchanged, and so is the work
-  bound: `R` is at most `max_inline_nodes`, as before.
+  right, then the body. A binding whose value may do something is kept by the optimiser, as slice
+  9's bound arguments are, even when its parameter is never read (`run/CaseAcrossArgEffect`). The
+  snapshot's worker is called with `v.state`, the widgets' with `v.widgets`.
+- **When `R` is over 96 units, each copy of it is bounded instead.** `R` may then be taken when
+  each copy of it is at most 96: what one `return` of `f` gets, with what its value is known to be
+  applied and the branches that decides removed. A dispatcher's rest holds every arm, but each
+  constructor's `return` gets its own. The copies are made in `return` order, and the first that
+  is over 96 refuses the site; no other copy is made. An `R` of at most 96 is taken as before. The
+  size proxy is unchanged, and so is the work bound: `R`, its arrows' bodies included, is at most
+  `max_inline_nodes`.
 - **What follows a decided jump is not copied, and a made value is counted where the copy makes
   it.** In a copy of `R`, a statement that ends in a jump, once a decided `if` or `switch` is its
   chosen statements, is the last: what follows it is never reached. *At most once per copy* is
@@ -8861,10 +8864,12 @@ N = 1 dispatcher
 `D=(a,b)=>{let c={a:[]},d=C(c,a);if(d===c.a)return b;if(d.$==="ServerSet"){…}let g=d.a.a.a;t(b,y,a=>g[a[2]]);return b}`
 and the three workers it called become
 `z=(a,b)=>{if(typeof a!=="object"||a===null||Array.isArray(a))return b;let c=a.type;if(c==="serverSet"){…}if(c==="snapshot"){let f=a.state;if(typeof f!=="object"||…)return b;let g=f.widgets;if(…)return b;let h=g.w1;if(h===undefined)return b;let i={a:h};t(b,y,a=>i[a[2]]);return b}return b}`.
-Pinned by `Spec`'s unit test *a function of a fused site's rest reads an alias of its binding
-only through a property*; by `emit/release/app/CaseAcrossClosure` (an event read and its nested
-record read fused into a `case` whose arms make functions, and a `case` whose function reads its
-value whole, which keeps its call) and `run/CaseAcrossClosure`; and by the dispatchers of
+Pinned by `Spec`'s unit tests *a function of a fused site's rest reads an alias of its binding
+only through a property* and *an alias of a fused site's binding is held to the binding's rules*
+(a computed write refuses); by `run/CaseAcrossArgEffect`; by `emit/release/app/CaseAcrossClosure`
+(an event read and its nested record read fused into a `case` whose arms make functions, and a
+`case` whose function reads its value whole, which keeps its call) and `run/CaseAcrossClosure`;
+and by the dispatchers of
 `emit/release/inline/CaseLoader`, `NestedStableLoad`, `RouteCalledElsewhere`, `TickFresh`,
 `TickInPlace` and `ValidatedLoader`. `app/CaseAcrossCall`'s `command` is now written at its site,
 as its intent comment says: the copies were over the function by the dead statements after each

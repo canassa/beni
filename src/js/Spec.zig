@@ -9520,7 +9520,12 @@ const Spec = struct {
                     continue;
                 }
                 const bound = try s.freshLocal(cm);
-                try out.append(s.arena, (try cm.addNode(s.gpa, .const_decl, cm.ir.pos(a), bound.int(), (try c.dupDst(a)).int())).int());
+                const held = try c.dupDst(a);
+                const bind = try cm.addNode(s.gpa, .const_decl, cm.ir.pos(a), bound.int(), held.int());
+                try out.append(s.arena, bind.int());
+                // Kept by the optimiser when it may do something, as
+                // slice 9's bound arguments are (`bodyAt`).
+                if (!inert(cm.ir, held)) if (cm.tables) |tb| try tb.keep.append(s.arena, bind);
                 if (p.unwrap()) |pi| c.subst[pi] = (try cm.addNode(s.gpa, .ident, Node.no_pos, bound.int(), 0)).toOptional();
             }
             for (body) |stmt| try c.stmtsInto(stmt, &out, 0);
@@ -9574,18 +9579,23 @@ const Spec = struct {
     /// such statements in turn, with no function of its own (*A rest that
     /// makes a function*).
     fn plainStmts(s: *Spec, m: *Mod, stmts: []const Index, returns_valued: bool, fns: bool) Allocator.Error!bool {
+        var budget: u32 = max_inline_nodes;
+        return s.plainWalk(m, stmts, returns_valued, fns, &budget);
+    }
+
+    /// `plainStmts`, its node budget shared with the arrows' bodies.
+    fn plainWalk(s: *Spec, m: *Mod, stmts: []const Index, returns_valued: bool, fns: bool, budget: *u32) Allocator.Error!bool {
         var stack = try s.takeStack();
         defer s.giveStack(&stack);
         for (stmts) |st| try JsIr.pushOperand(s.arena, &stack, st);
-        var budget: u32 = max_inline_nodes;
         while (JsIr.popOperand(&stack)) |node| {
-            if (budget == 0) return false;
-            budget -= 1;
+            if (budget.* == 0) return false;
+            budget.* -= 1;
             switch (m.ir.tag(node)) {
                 .arrow => {
                     if (!fns or m.ir.data(node).rhs != Node.arrow_plain) return false;
                     const f = m.ir.extraData(@fromBackingInt(@intCast(m.ir.data(node).lhs)), JsIr.Func);
-                    if (!try s.plainStmts(m, try s.arena.dupe(Index, m.ir.extraSlice(f.body(), Index)), false, false)) return false;
+                    if (!try s.plainWalk(m, try s.arena.dupe(Index, m.ir.extraSlice(f.body(), Index)), false, false, budget)) return false;
                     continue;
                 },
                 .func_decl, .gen_decl, .continue_stmt, .try_stmt, .while_true, .for_of, .import_stmt, .export_stmt => return false,
@@ -17879,7 +17889,8 @@ fn casedOnly(arena: Allocator, ir: *const JsIr, top: Index, x: NameIndex, rest: 
             },
             .assign_stmt, .assign => {
                 const target: Index = @fromBackingInt(@intCast(d.lhs));
-                if (ir.tag(target) == .member) {
+                // A write of a property of one, named or computed.
+                if (ir.tag(target) == .member or ir.tag(target) == .index_get) {
                     const obj: Index = @fromBackingInt(@intCast(ir.data(target).lhs));
                     if (held.is(ir, names.items, obj)) return false;
                 }
@@ -17891,7 +17902,7 @@ fn casedOnly(arena: Allocator, ir: *const JsIr, top: Index, x: NameIndex, rest: 
     return true;
 }
 
-const CasedCase = enum { property, alias_of_alias, compared_with_alias, handed, not_sole, fn_alias_read, fn_alias_index, fn_binding_read, fn_alias_compared, fn_alias_whole };
+const CasedCase = enum { property, alias_of_alias, compared_with_alias, handed, not_sole, index_written, fn_alias_read, fn_alias_index, fn_binding_read, fn_alias_compared, fn_alias_whole };
 
 /// `const z = x` and a use of it, as `casedOnly` is asked of them.
 fn casedCase(gpa: Allocator, case: CasedCase) !bool {
@@ -17920,6 +17931,13 @@ fn casedCase(gpa: Allocator, case: CasedCase) !bool {
         .handed => blk: {
             const args = try b.addRange(&.{try specTestNode(&b, .ident, z.int(), 0)});
             break :blk try specTestNode(&b, .call, (try specTestNode(&b, .ident, g.int(), 0)).int(), @backingInt(try b.addRecord(args)));
+        },
+        // `z[w] = null`, then `return z.k`: a computed write of the alias.
+        .index_written => blk: {
+            const target = try specTestNode(&b, .index_get, (try specTestNode(&b, .ident, z.int(), 0)).int(), (try specTestNode(&b, .ident, w.int(), 0)).int());
+            const one = try specTestNode(&b, .null_lit, 0, 0);
+            try rest.append(gpa, try specTestNode(&b, .assign_stmt, target.int(), one.int()));
+            break :blk try specTestNode(&b, .member, (try specTestNode(&b, .ident, z.int(), 0)).int(), k.int());
         },
         // `() => …`, returned: a function of the rest.
         .fn_alias_read, .fn_alias_index, .fn_binding_read, .fn_alias_compared, .fn_alias_whole => blk: {
@@ -17963,6 +17981,8 @@ test "an alias of a fused site's binding is held to the binding's rules" {
     try testing.expect(!try casedCase(testing.allocator, .handed));
     // An alias declared twice or assigned is not the binding.
     try testing.expect(!try casedCase(testing.allocator, .not_sole));
+    // A computed write of one is a write, as a named one is.
+    try testing.expect(!try casedCase(testing.allocator, .index_written));
 }
 
 test "a function of a fused site's rest reads an alias of its binding only through a property" {
