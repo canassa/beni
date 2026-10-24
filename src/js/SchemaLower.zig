@@ -1477,9 +1477,13 @@ const Fn = struct {
         return w.fail(at, code, try g.str(message), input, written);
     }
 
-    /// The primitive a validator's field test is written for, or null:
-    /// `SchemaShare.fieldHelper`'s primitives.
-    fn validFieldTest(w: *Fn, child: PNode) !?SchemaShare.Helper {
+    /// The one test a validator's required field of `child`'s primitive
+    /// fails on (`decodeRecord`): the primitive's own, or, for a `Value`,
+    /// the presence test alone.
+    const ValidTest = enum { string, int, bool, float, finite, value };
+
+    /// The test a validator's field of `child` is written with, or null.
+    fn validFieldTest(w: *Fn, child: PNode) !?ValidTest {
         const g = w.g;
         if (SchemaGraph.tag(g.plan, child) != .primitive) return null;
         return switch (std.enums.fromInt(SchemaPlan.Primitive, SchemaGraph.lhs(g.plan, child)) orelse return null) {
@@ -1488,7 +1492,8 @@ const Fn = struct {
             .bool => .bool,
             .float => .float,
             .finite_float => .finite,
-            .null, .value, .char, .int32, .never => null,
+            .value => .value,
+            .null, .char, .int32, .never => null,
         };
     }
 
@@ -1892,7 +1897,10 @@ const Fn = struct {
             // failure is `c.fail` alike, so the key's read, the depth bound
             // and the primitive's test are one condition that returns it,
             // and the field's value is what was read. Each test answers false
-            // for `undefined`, so it is the presence test too.
+            // for `undefined`, so it is the presence test too. A `Value`'s
+            // test is the presence test alone (amended 2026-10-24): it holds
+            // any host value but `undefined`, and `c.fail`, the context's own
+            // array, is none a host hands it.
             if (w.op == .valid and !f.optional and !SchemaGraph.isMaybeField(g.plan, f) and w.readsByValue(key)) if (try w.validFieldTest(f.child)) |kind| {
                 const x = try g.fresh("$x");
                 try g.constDecl(out, x, try g.indexOf(try g.id(v), try g.str(key)));
@@ -1905,7 +1913,7 @@ const Fn = struct {
                     // false for anything that is not a number.
                     .int => try g.not(try g.globalCall("Number", "isSafeInteger", &.{try g.id(x)})),
                     .finite => try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})),
-                    .deep, .missing => unreachable,
+                    .value => try g.bin(.strict_eq, try g.id(x), try g.lit(.undefined_lit)),
                 };
                 var stop: Stmts = .empty;
                 try g.ret(&stop, try w.failMark());

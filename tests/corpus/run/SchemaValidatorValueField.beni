@@ -1,0 +1,72 @@
+-- run: a validator's required `Value` field is tested for presence alone
+-- (`schema.md` §6, *One failure, so fewer tests*, amended 2026-10-24): it
+-- holds every value the host gives, `null`, `false`, `0`, `""`, an array and
+-- an object among them, and fails only where the key is absent. Each run's
+-- error is unread, so each is a validator, written where it stands.
+import Node
+import Schema exposing (Value)
+
+
+schema Box =
+    tag : String
+    payload : Value
+    extra : Value as "x-extra"
+
+
+schema Outer =
+    box : Box
+
+
+boxText : Box.Type → String
+boxText b = "ok ${b.tag}"
+
+
+parseBox : String → String
+parseBox text =
+    case Schema.parse (Box.schema ⊤) text of
+        Ok b →
+            boxText b
+
+        Err _ →
+            "fail"
+
+
+readOuter : String → String
+readOuter text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            case Result.toMaybe (Schema.read (Outer.schema ⊤) v) of
+                Just o →
+                    "outer ${boxText o.box}"
+
+                Nothing →
+                    "outer fail"
+
+        Err _ →
+            "not json"
+
+
+inputs : List String
+inputs =
+    [ "{\"tag\": \"null\", \"payload\": null, \"x-extra\": null}"
+    , "{\"tag\": \"false\", \"payload\": false, \"x-extra\": 0}"
+    , "{\"tag\": \"empty\", \"payload\": \"\", \"x-extra\": []}"
+    , "{\"tag\": \"object\", \"payload\": {}, \"x-extra\": {\"a\": 1}}"
+    , "{\"tag\": \"no payload\", \"x-extra\": 1}"
+    , "{\"tag\": \"no extra\", \"payload\": 1}"
+    , "{\"tag\": \"wrong name\", \"payload\": 1, \"extra\": 1}"
+    , "{\"payload\": 1, \"x-extra\": 1}"
+    , "[1, 2]"
+    , "null"
+    ]
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.concat
+            [ List.map inputs parseBox
+            , List.map inputs λt → readOuter "{\"box\": ${t}}"
+            , [ readOuter "{}" ]
+            ]
+        )
