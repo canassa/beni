@@ -19341,6 +19341,9 @@ const Walker = struct {
         if (try w.deferLambdaNeed(actual, s, p.a, avs, ictx.inst)) return true;
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.ro_exact;
+        // `written` is relative to what the supply hands, `cb_j` at `p.path`;
+        // the callback's result names it at `p.path` extended (#749).
+        const at = if (written == none) none else try w.o.concat(p.path, written);
         for (classes) |cls| {
             const c = (try w.callbackSummary(cls, p.a, ictx)) orelse return w.ro_exact;
             const saved = w.ro_closure;
@@ -19351,7 +19354,7 @@ const Walker = struct {
                 w.ro_closure = saved;
                 w.ro_within = saved_within;
             }
-            if (!try w.returnsOwned(c, s, avs, ictx, p.a, depth + 1, written, extent)) return false;
+            if (!try w.returnsOwned(c, s, avs, ictx, p.a, depth + 1, at, extent)) return false;
         }
         return true;
     }

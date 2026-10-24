@@ -54,6 +54,16 @@ module FoldKeepsInnerRefused
   98:5 List.update rows: accepted fresh
   98:5 List.update rows[*]: rejected escaped: it was given to JavaScript, or kept by a callee (<lambda> writes what List.update supplies it) (approx)
   98:29 List.push l: accepted callback-param (List.update supplies it owned)
+  114:24 call FoldKeepsInnerRefused.viaRows <record>: accepted fresh (FoldKeepsInnerRefused.viaRows writes what its callback returns, and the callback returns this argument)
+  114:24 call FoldKeepsInnerRefused.viaRows <record>[*]: accepted fresh (FoldKeepsInnerRefused.viaRows writes what its callback returns, and the callback returns this argument)
+  114:75 call FoldKeepsInnerRefused.bump r: rejected supply: FoldKeepsInnerRefused.viaRows hands its parameter 1 what the callback returned before, which may be a list the callback does not own
+  114:75 call FoldKeepsInnerRefused.bump r[*]: rejected supply: FoldKeepsInnerRefused.viaRows hands its parameter 1 what the callback returned before, which may be a list the callback does not own
+  135:23 call FoldKeepsInnerRefused.viaFirst <tuple>: accepted fresh (FoldKeepsInnerRefused.viaFirst writes what its callback returns, and the callback returns this argument)
+  135:23 call FoldKeepsInnerRefused.viaFirst <tuple>[*]: accepted fresh (FoldKeepsInnerRefused.viaFirst writes what its callback returns, and the callback returns this argument)
+  135:63 call FoldKeepsInnerRefused.bump r: rejected supply: FoldKeepsInnerRefused.viaFirst hands its parameter 1 what the callback returned before, which may be a list the callback does not own
+  135:63 call FoldKeepsInnerRefused.bump r[*]: rejected supply: FoldKeepsInnerRefused.viaFirst hands its parameter 1 what the callback returned before, which may be a list the callback does not own
+  145:24 call FoldKeepsInnerRefused.viaFirst <tuple>: accepted fresh (FoldKeepsInnerRefused.viaFirst writes what its callback returns, and the callback returns this argument)
+  145:67 List.push r: rejected supply: FoldKeepsInnerRefused.viaFirst hands its parameter 1 what the callback returned before, which may be a list the callback does not own
   capture t.rows: read 47:64; before 47:19
   summary put: π1 RAW[storage], π1[*] RAE; res [*] ~fresh1 ~π1[*], π1
   summary keepAll: π1 RAEW[storage], π1[*] A; res [*] ~fresh1 ~π1[*], π1
@@ -71,9 +81,17 @@ module FoldKeepsInnerRefused
   summary afterFold: res [*] ~esc2, [*][*] ~esc3, ~fresh1
   summary afterMap: res [*] ~condition(fresh4) ~esc1 ~fresh4, [*][*] ~condition(fresh5) ~esc2, fresh3
   summary afterDirect: res [*] ~esc2 ~fresh4, [*][*] ~esc3 ~fresh5, fresh1
-  demands 53: accepted 26 (fresh 10, call 0, param 3, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 27
+  summary viaRows: π1 R, π2 R, π3 R; res cb3{excl cb3}; π2 calls ≤1, supply 1 π1 owned{excl π1}r{excl π1}; π3 calls ≤1, supply 1 cb2.rows owned{excl cb2.rows}
+  summary keepTable: π1 RA, π1.rows R, π1.rows[*] RE; res π1
+  summary projectedField: res [*] esc1, fresh2
+  summary viaFirst: π1 R, π2 R, π3 R; res cb3{excl cb3}; π2 calls ≤1, supply 1 π1 owned{excl π1}; π3 calls ≤1, supply 1 cb2.0 owned{excl cb2.0}
+  summary keepPair: π1 RA, π1.0 R, π1.0[*] RE; res π1
+  summary projectedPair: res [*] esc1, fresh2
+  summary keepAllPair: π1 RA, π1.0 RE; res π1
+  summary projectedWhole: res [*] esc1 ~fresh3, esc2
+  demands 63: accepted 31 (fresh 15, call 0, param 3, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 32
   records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
-total 53: accepted 26 (fresh 10, call 0, param 3, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 27
+total 63: accepted 31 (fresh 15, call 0, param 3, callback-param 13, once 0, entry 0; assumed 0), pending 0, rejected 32
 records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 cause escaped 21
-cause supply 6
+cause supply 11
