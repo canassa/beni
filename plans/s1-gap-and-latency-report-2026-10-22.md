@@ -326,6 +326,7 @@ the mean of three seeds.
 ### Status, 2026-10-23 (end of day)
 
 The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
+A hand-minify pass on the output only (2026-10-24), with a plan: [`s1-hand-minify-2026-10-24.md`](s1-hand-minify-2026-10-24.md).
 
 `cb8f0662f` (2026-10-24): slope **174.6** B/widget, N = 1 **1 551** (1.14× the bar), N = 256 **47 229** (1.102×, 372 B over the bar of 46 857).
 Since 2026-10-23 morning: 241.0 → 174.6, with the steps in the table above.
