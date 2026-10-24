@@ -14,23 +14,40 @@ operation. They do not replace its test with an external permission oracle. -/
 
 namespace Ownership.FlatFragment.State
 
-/-- The binding types of the flat fragment: integers, integer lists, integer
-chains, records of them and results over them, nested. A result's two types
-are flat, so a case on it binds a flat payload; a chain case binds an integer
-and a chain. -/
+/-- The element types of a list in the fragment: integers, records of element
+types and lists of element types, nested. A result or a chain is not one: the
+checker reads an element's result tag and chain emptiness from the list's
+element abstract, and the invariant has no clause for the tags of an array's
+elements yet (a slice of its own, #522). -/
+inductive ElementType : Ty → Prop where
+  | int : ElementType .int
+  | record (ts : List Ty) : (∀ t ∈ ts, ElementType t) → ElementType (.record ts)
+  | list (t : Ty) : ElementType t → ElementType (.list t)
+
+/-- The binding types of the flat fragment: integers, lists of element types
+(lists of lists included, since slice 2b of #522), integer chains, records of
+them and results over them, nested. A result's two types are flat, so a case
+on it binds a flat payload; a chain case binds an integer and a chain. -/
 inductive FlatType : Ty → Prop where
   | int : FlatType .int
-  | listInt : FlatType (.list .int)
+  | list (t : Ty) : ElementType t → FlatType (.list t)
   | chainInt : FlatType (.chain .int)
   | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
   | result (error success : Ty) : FlatType error → FlatType success →
       FlatType (.result error success)
 
+/-- An element type is a flat type. -/
+theorem elementType_flat {t : Ty} (element : ElementType t) : FlatType t := by
+  induction element with
+  | int => exact .int
+  | record ts _ ih => exact .record ts ih
+  | list t element _ => exact .list t element
+
 end Ownership.FlatFragment.State
 
 namespace Ownership.FlatFragment.Fields
 
-/-- The type at a field path. -/
+/-- The type at a field path: the type of a projection. -/
 def tyAt : Ty → Path → Option Ty
   | t, [] => some t
   | .record ts, .field i :: rest => match ts[i]? with
@@ -67,9 +84,11 @@ theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (si
   cases sop <;> (unfold primitive; rfl)
 
 /-- The expression fragment. Every operand is any atom; accepted typing fixes
-each to an integer, a variable or a variable under a field path, the literal
-elements, the push item and the branch condition to `Int`, the length and
-push receivers to `List Int`. The push receiver may be a field path: a write
+each to an integer, a variable or a variable under a field path, the push item
+and the branch condition to `Int`, the length and push receivers to `List Int`.
+A literal builds a list of an element type (slice 2b of #522): its operands
+are typed at that element type, which may itself be a list or a record of
+element types. The push receiver may be a field path: a write
 through a field is in the fragment. A `branch` runs one of two fragment
 expressions on an integer condition. `ok` and `err` build a result whose
 other type is flat, and a `resultCase` binds the payload of a result to one
@@ -83,7 +102,7 @@ receivers to `List Int` and the items to `Int`. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
-  | literal : FlatANF0 (.prim (.literal .int) args)
+  | literal (t : Ty) : Ownership.FlatFragment.State.ElementType t → FlatANF0 (.prim (.literal t) args)
   | push : FlatANF0 (.prim .push [receiver, item])
   | length : FlatANF0 (.prim .length [receiver])
   | shared : FlatANF0 (.prim .shared [value])
@@ -563,16 +582,17 @@ a skipped case; a runtime binding never holds one where its value is (the
 tags, `ResultTags`, say so). List descriptions retain bottom or scalar
 elements. Dead aliases keep their old element description after a write.
 The relation does not require uniqueness of a root or prohibit sharing
-between runtime bindings. A record is described field by field. A result is
+between runtime bindings. A list's roots hold no unknown origin (the join of
+mismatched shapes, which two abstracts of one flat type never make): what a
+list names below an element step is then what its element names. A record is described field by field. A result is
 a record of a scalar tag and two payload slots, each the shape of its type
 or bottom. -/
 inductive FlatAbstract : Ty → Abstract → Prop where
   | bottom (ty : Ty) : FlatAbstract ty .bottom
   | int : FlatAbstract .int .scalar
-  | listBottom (roots : List Origin) (certificate : Certificate) :
-      FlatAbstract (.list .int) (.list roots .bottom certificate)
-  | listScalar (roots : List Origin) (certificate : Certificate) :
-      FlatAbstract (.list .int) (.list roots .scalar certificate)
+  | list (t : Ty) (roots : List Origin) (element : Abstract) (certificate : Certificate) :
+      Origin.unknown ∉ roots → FlatAbstract t element →
+      FlatAbstract (.list t) (.list roots element certificate)
   | chainBottom (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.chain .int) (.list roots .bottom certificate)
   | chainScalar (roots : List Origin) (certificate : Certificate) :
@@ -595,8 +615,8 @@ slot that is not bottom, through records and through the live payload. The
 relation reads no heap, so a write keeps it. -/
 inductive ResultTags : Ty → Abstract → Value → Prop where
   | int (n : Int) : ResultTags .int .scalar (.int n)
-  | listInt (roots : List Origin) (element : Abstract) (certificate : Certificate) (w : Value) :
-      ResultTags (.list .int) (.list roots element certificate) w
+  | list (t : Ty) (roots : List Origin) (element : Abstract) (certificate : Certificate) (w : Value) :
+      ResultTags (.list t) (.list roots element certificate) w
   | chainInt (roots : List Origin) (element : Abstract) (certificate : Certificate) (w : Value) :
       ResultTags (.chain .int) (.list roots element certificate) w
   | record (ts : List Ty) (as : List Abstract) (ws : List Value) : ts.length = as.length →
@@ -619,7 +639,7 @@ abstract, so the relation says that an arm the runtime takes binds a scalar.
 The relation reads no heap, so a write keeps it. -/
 inductive ChainTags : Ty → Abstract → Observation → Prop where
   | int (a : Abstract) (o : Observation) : ChainTags .int a o
-  | listInt (a : Abstract) (o : Observation) : ChainTags (.list .int) a o
+  | list (t : Ty) (a : Abstract) (o : Observation) : ChainTags (.list t) a o
   | chainScalar (roots : List Origin) (certificate : Certificate) (o : Observation) :
       ChainTags (.chain .int) (.list roots .scalar certificate) o
   | chainBottom (roots : List Origin) (certificate : Certificate) :
@@ -644,6 +664,43 @@ theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership
     | (change Except.ok Ty.int = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl⟩)
     | (cases run; exact ⟨rfl, rfl, rfl⟩)
 
+end Ownership.FlatFragment.State
+
+namespace Ownership.FlatFragment.HeapPreservation
+
+open InPlaceSemantics HeapProof Soundness
+
+/-- The runtime shape of a flat binding: an integer, an allocated array whose
+elements have the element type's shape (a list of flat values, slice 2b of
+#522), an allocated array of integers (a chain), a record of such values, or a
+result as both interpreters build it: a success `[1, 0, x]` or an error
+`[0, x, 0]` over such a payload. The shape is a finite derivation, so no array
+reaches itself through it. It says what the binding's own arrays hold; it says
+nothing about the other arrays of the heap. Since slice 2b the relation keeps
+it as a clause (`FlatInvariant.bindingsTyped`): a typed observation leaves a result's
+dead slot open, so the shape of a list's elements cannot be read off the
+types. -/
+inductive AllocatedFlatValue (heap : Heap) : Value → Ty → Prop where
+  | int (integer : Int) : AllocatedFlatValue heap (.int integer) .int
+  | list (root : Nat) (ws : List Value) (t : Ty) : heap[root]? = some ws →
+      (∀ w ∈ ws, AllocatedFlatValue heap w t) → AllocatedFlatValue heap (.ref root) (.list t)
+  | chain (root : Nat) (integers : List Int) : heap[root]? = some (integers.map Value.int) →
+      AllocatedFlatValue heap (.ref root) (.chain .int)
+  | record (ws : List Value) (ts : List Ty) : ws.length = ts.length →
+      (∀ (i : Nat) (w : Value) (t : Ty), ws[i]? = some w → ts[i]? = some t →
+        AllocatedFlatValue heap w t) →
+      AllocatedFlatValue heap (.record ws) (.record ts)
+  | ok (error success : Ty) (w : Value) : AllocatedFlatValue heap w success →
+      AllocatedFlatValue heap (.record [.int 1, .int 0, w]) (.result error success)
+  | err (error success : Ty) (w : Value) : AllocatedFlatValue heap w error →
+      AllocatedFlatValue heap (.record [.int 0, w, .int 0]) (.result error success)
+
+end Ownership.FlatFragment.HeapPreservation
+
+namespace Ownership.FlatFragment.State
+
+open InPlaceSemantics HeapProof Soundness
+
 /-- Every address in the naming already exists in the concrete heap. This
 local definition has the same statement as the checked naming support.
  -/
@@ -664,6 +721,10 @@ theorem emptyNaming_bound (bound : Nat) : NamingBound emptyNaming bound := by
 dead bindings. The value observation retains its type, but its contents need
 not match the current heap contents. `ValueTyped` supplies a complete finite
 expansion of the current runtime value and therefore excludes dangling roots.
+Every live use has the runtime shape of its type (`bindingsTyped`, per live
+path since slice 2b of #522): the shape of a list's elements is kept, since a
+typed observation leaves a result's dead slot open. A dead alias of a written
+array keeps no type, only the bound of its arrays (`bindingsBounded`).
 
 The abstract and type environments have the exact runtime key sequence.
 Their descriptions have the flat shapes that real primitive inference needs
@@ -691,11 +752,16 @@ structure FlatInvariant (declarations : List Decl)
   abstractShapes : ∀ x ty abstract,
     tenv.lookup x = some ty → aenv.lookup x = some abstract →
       FlatAbstract ty abstract
-  bindingsTyped : ∀ x observation actual,
+  bindingsTyped : ∀ x p, (x, p) ∈ live → ∀ observation actual ty,
+    env.lookup x = some (observation, actual) → tenv.lookup x = some ty →
+      ∃ t observation' actual',
+        Ownership.FlatFragment.Fields.tyAt ty p = some t ∧
+        projectObs observation p = some observation' ∧ projectVal actual p = some actual' ∧
+        obsTyped declarations observation' t = true ∧
+        Ownership.FlatFragment.HeapPreservation.AllocatedFlatValue hs.heap actual' t
+  bindingsBounded : ∀ x observation actual,
     env.lookup x = some (observation, actual) →
-      ∃ ty, tenv.lookup x = some ty ∧
-        obsTyped declarations observation ty = true ∧
-        ValueTyped declarations hs.heap actual ty
+      ∀ c, Reaches hs.heap actual (.ref c) → c < hs.heap.size
   tags : ∀ x ty abstract observation actual,
     tenv.lookup x = some ty → aenv.lookup x = some abstract →
       env.lookup x = some (observation, actual) → ResultTags ty abstract actual
@@ -751,10 +817,7 @@ theorem FlatInvariant.binding_allocated
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (binding : env.lookup x = some (observation, .ref address)) :
     address < hs.heap.size := by
-  obtain ⟨ty, _, _, typed⟩ := inv.bindingsTyped x observation (.ref address) binding
-  obtain ⟨depth, current, footprint, represented, _⟩ := typed
-  cases represented with
-  | ref allocated _ => exact (Array.getElem?_eq_some_iff.mp allocated).1
+  exact inv.bindingsBounded x observation (.ref address) binding address (.refl _)
 
 /-- The complete observer witness gives the executable snapshot equation.
 No empty-observer premise enters this theorem. -/
@@ -789,6 +852,7 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
     types := ?_
     abstractShapes := ?_
     bindingsTyped := ?_
+    bindingsBounded := ?_
     tags := ?_
     chains := ?_
     liveTyped := ?_
@@ -798,6 +862,8 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
   · intro x ty present
     simp at present
   · intro x ty abstract present
+    simp at present
+  · intro x p _ observation actual ty present
     simp at present
   · intro x observation actual present
     simp at present

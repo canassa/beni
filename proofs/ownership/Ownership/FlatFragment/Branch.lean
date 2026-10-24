@@ -98,7 +98,7 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         obtain ⟨p2, armValueRun, run⟩ := except_bind_success run
         rcases p2 with ⟨y, s2⟩
         obtain ⟨actual, hs2, gamma2, armHeapRun, inv2, size2, paired2, described2, observed2, typed2,
-          tags2, chains2⟩ := armPreserved.success y s2 armValueRun
+          shaped2, tags2, chains2⟩ := armPreserved.success y s2 armValueRun
         try dsimp only at run
         obtain ⟨p3, observeRun, run⟩ := except_bind_success run
         rcases p3 with ⟨u, s3⟩
@@ -116,11 +116,11 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         have valueEq : value = y := (congrArg Prod.fst final).symm
         subst vsEq
         subst valueEq
-        have allocated := allocated_of_typed flatType typed2 tags2
+        have allocated := shaped2
         have describedJoin : Describes gamma2 hs2.heap result actual := by
           rcases joined with rfl | rfl
-          · exact describes_join allocated shapeArm shapeOther (Or.inl ⟨described2, tags2⟩)
-          · exact describes_join allocated shapeOther shapeArm (Or.inr ⟨described2, tags2⟩)
+          · exact describes_join allocated shapeArm shapeOther (Or.inl described2)
+          · exact describes_join allocated shapeOther shapeArm (Or.inr described2)
         have tagsJoin : ResultTags type result actual := by
           rcases joined with rfl | rfl
           · exact resultTags_join tags2 shapeArm shapeOther
@@ -129,7 +129,7 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
           rcases joined with rfl | rfl
           · exact chainTags_join chains2 shapeArm shapeOther
           · exact chainTags_join_right chains2 shapeOther shapeArm
-        refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_,
+        refine ⟨actual, heapObserved hs2 s2.kept.toList, gamma2, ?_, inv3, ?_, ?_, ?_, observed2, ?_, ?_,
           tagsJoin, chainsJoin⟩
         · rw [heap_branch_eval_equation hs (heapEnv env) heapCond, taken]
           rw [if_neg noDepth, if_neg heapFuel]
@@ -138,6 +138,7 @@ theorem branch_arm_preserved {declarations : List Decl} {vs : ValueSemantics.Sta
         · rw [heapObserved_heap]; exact paired2
         · rw [heapObserved_heap]; exact describedJoin
         · rw [heapObserved_heap]; exact typed2
+        · rw [heapObserved_heap]; exact shaped2
   · intro message run
     rw [value_branch_eval_equation vs (valueEnv env) valueCond, taken] at run
     by_cases noDepth : depth = 0
