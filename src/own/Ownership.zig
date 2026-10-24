@@ -7477,9 +7477,7 @@ const Req = struct { frame: u32, atom: WAtom };
 /// by §18.6's rule only (`js`, with the call as `why`).
 const EscAt = struct { gen: u32 = none, js: u32 = none, why: u32 = 0 };
 
-/// `list_only`: an escape a list's facts take, which is no record's object's
-/// (`callbackEscapes`: a callback that keeps part of what it is handed).
-const Escape = struct { grown: Grown = 0, cell: u32, point: u32, why: u32, ctx: u32, prev: u32, list_only: bool = false };
+const Escape = struct { grown: Grown = 0, cell: u32, point: u32, why: u32, ctx: u32, prev: u32 };
 
 const Entry = struct {
     path: u32,
@@ -8110,8 +8108,6 @@ const Walker = struct {
     use_destructure: bool = false,
     /// The use being recorded reads no field (`Use.reads_none`).
     use_reads_none: bool = false,
-    /// The escapes being noted are a list's only (`Escape.list_only`).
-    escaping_list_only: bool = false,
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
     hoist_table: Hoists.Builder = .{},
@@ -11524,7 +11520,7 @@ const Walker = struct {
         const head = try w.esc_heads.getOrPut(w.a, key);
         const previous = if (head.found_existing) head.value_ptr.* else none;
         const event: u32 = @intCast(w.escaped.items.len);
-        try w.escaped.append(w.a, .{ .cell = c, .point = at, .why = why, .ctx = w.ctx, .prev = previous, .list_only = w.escaping_list_only, .grown = gJoin(grown, w.use_grown) });
+        try w.escaped.append(w.a, .{ .cell = c, .point = at, .why = why, .ctx = w.ctx, .prev = previous, .grown = gJoin(grown, w.use_grown) });
         head.value_ptr.* = event;
         const gop = try w.esc_index.getOrPut(w.a, escKey(w.cells.items[c], w.cells.items[c].path));
         if (!gop.found_existing) gop.value_ptr.* = .{};
@@ -11567,11 +11563,6 @@ const Walker = struct {
     /// Unescaped at a demand: an alternative arm cannot retain its cell.
     /// Summary read-off deliberately keeps escapeOf's union of every arm.
     fn escapeBefore(w: *Walker, c: u32) Allocator.Error!EscAt {
-        return w.escapeBeforeOf(c, false);
-    }
-
-    /// `escapeBefore` for a record's object: a list's escapes left out.
-    fn escapeBeforeOf(w: *Walker, c: u32, record: bool) Allocator.Error!EscAt {
         var out: EscAt = .{};
         for ([_]u32{ c, try w.takenBase(c) }) |cc| {
             const x = w.cells.items[cc];
@@ -11584,7 +11575,7 @@ const Walker = struct {
                 var event = w.esc_heads.get(escKey(x, path)) orelse none;
                 while (event != none) {
                     const e = w.escaped.items[event];
-                    if (e.point < w.point and w.compatible(e.ctx, w.ctx) and !(record and e.list_only)) {
+                    if (e.point < w.point and w.compatible(e.ctx, w.ctx)) {
                         if (e.why == 0) {
                             out.gen = @min(out.gen, e.point);
                         } else if (e.point < out.js) {
@@ -15995,25 +15986,19 @@ const Walker = struct {
                 // after; a field kept keeps the field's, not the record's.
                 if (u.bits & (bit_k | bit_e | bit_j) != 0) for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                     if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
-                    const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
+                    const cells = try w.keptCells(e.prov, inst, s, avs);
                     const at = if (try w.o.suffix(e.path, u.path)) |rest| try w.projPath(cells, rest, null) else cells;
                     try w.escapeObjects(at, w.point - 1);
                 };
                 if (u.bits & (bit_e | bit_j) == 0) continue;
                 for (s.supply) |e| {
                     if (e.prov.condition_only or e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
-                    const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
-                    // A callback that keeps a part below what it is handed: a
-                    // list's facts take the whole value as kept, as they always
-                    // have; a record's object is not kept, only the part, so
-                    // the whole is a list's escape alone (§31.4 item 2).
-                    const below = if (try w.o.suffix(e.path, u.path)) |rest| rest != eps else false;
-                    if (below) {
-                        w.escaping_list_only = true;
-                        defer w.escaping_list_only = false;
-                        try w.escape(cells, w.point - 1);
-                    } else try w.escape(cells, w.point - 1);
-                    if (below) try w.escape(try w.projPath(cells, (try w.o.suffix(e.path, u.path)).?, null), w.point - 1);
+                    const cells = try w.keptCells(e.prov, inst, s, avs);
+                    // A callback that keeps a part below what it is handed
+                    // keeps that part, not the whole: a callee's own `E` is
+                    // read the same way (§16.4 item 4, amended for #749).
+                    const rest = (try w.o.suffix(e.path, u.path)) orelse eps;
+                    try w.escape(if (rest == eps) cells else try w.projPath(cells, rest, null), w.point - 1);
                 }
             }
             if (cls == .closure) try w.escapeCaptures(cls.closure, w.point - 1);
@@ -16129,6 +16114,20 @@ const Walker = struct {
     fn supplyCells(w: *Walker, p: Prov, own: InstCtx, deeper: InstCtx) Allocator.Error!AV {
         if ((p.kind == .fresh or p.kind == .esc) and p.a != 0) return w.instProv(p, own);
         return w.instProv(p, deeper);
+    }
+
+    /// What a callback handed to the call at `inst` keeps of a supply, as the
+    /// cells the caller holds after the call (`callbackEscapes`). A supply of
+    /// what a callback returned before is that callback's result as the
+    /// call's own result names it: instantiated at the call's depth, so its
+    /// cells are the ones the caller gets back, with the cells it made at
+    /// the callback's depth. Instantiated one depth further, its made cells
+    /// would be another namespace's, which the caller never holds, and an
+    /// escape of a value below its root would be lost (#749).
+    fn keptCells(w: *Walker, p: Prov, inst: Inst.Index, s: *const Summary, avs: []const AV) Allocator.Error!AV {
+        const own: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
+        if (p.kind == .cb) return w.instProv(p, own);
+        return w.supplyCells(p, own, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
     }
 
     /// What a lambda escaped of the cells it captured, joined to Esc where
@@ -18112,7 +18111,7 @@ const Walker = struct {
         const previous = w.ro_exact;
         w.ro_exact = true;
         defer w.ro_exact = previous;
-        return w.returnsOwned(c, s, avs, ictx, j, 0, none);
+        return w.returnsOwned(c, s, avs, ictx, j, 0, none, .deep);
     }
 
     /// §30.3, §30.9: a function the runtime calls with crossing arguments
@@ -18129,7 +18128,7 @@ const Walker = struct {
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return w.needLine(tok, name, unknown, true, false, null);
             const ictx: InstCtx = .{ .inst = inst, .s = &runtime_row, .avs = &.{}, .closure = if (cls == .closure) cls.closure else none, .depth = 0 };
-            if (try w.returnsOwned(c, &runtime_row, &.{}, ictx, 0, 0, none)) continue;
+            if (try w.returnsOwned(c, &runtime_row, &.{}, ictx, 0, 0, none, .deep)) continue;
             const approx = try w.ownedButApprox(c, &runtime_row, &.{}, ictx, 0);
             const shown = switch (cls) {
                 .closure => "<lambda>",
@@ -18512,7 +18511,7 @@ const Walker = struct {
                 reported = true;
                 continue;
             };
-            if (try w.returnsOwned(c, s, avs, ictx, j, 0, none)) {
+            if (try w.returnsOwned(c, s, avs, ictx, j, 0, none, .deep)) {
                 try w.returnedParamDemands(inst, slot_callee, args, avs, c, j, eps, true, .deep, 0);
                 continue;
             }
@@ -18745,14 +18744,14 @@ const Walker = struct {
         if (ff.send != none) try w.checkSender(inst, callee, args[j], classes, ff.send);
         // §23.5: a constructor handed as a tagger returns what it is given.
         if (ff.need) if (try w.ctorClass(args[j])) |c| {
-            if (!try w.returnsOwned(c, s, avs, ictx, j, 0, none)) {
+            if (!try w.returnsOwned(c, s, avs, ictx, j, 0, none, .deep)) {
                 // Approximate when only an approximate step made it so: a
                 // value from JavaScript, a conservative call's result.
                 const approx = blk: {
                     const previous = w.ro_exact;
                     w.ro_exact = true;
                     defer w.ro_exact = previous;
-                    break :blk try w.returnsOwned(c, s, avs, ictx, j, 0, none);
+                    break :blk try w.returnsOwned(c, s, avs, ictx, j, 0, none, .deep);
                 };
                 const why = if (approx)
                     try std.fmt.allocPrint(arena, "{s} sends what it returns, and it returns what {s} hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5)", .{ callee.name, callee.name })
@@ -18948,7 +18947,7 @@ const Walker = struct {
                     if (e.owned and e.prov.kind == .cb) {
                         try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, u.bits & bit_d != 0, u.extent, 0);
                     }
-                    const owned = e.owned and try w.provOwned(e.prov, s, avs, ictx, none, 0, written);
+                    const owned = e.owned and try w.provOwned(e.prov, s, avs, ictx, none, 0, written, if (u.bits & bit_d != 0) .deep else u.extent);
                     if (!owned) {
                         // The first reason, unless a later one is exact and
                         // it was not: an exact reason labels the rejection.
@@ -19028,7 +19027,7 @@ const Walker = struct {
             // The callee edits what the callback returns (§16.2's need).
             var need_bad = false;
             if (ff.need) {
-                if (!(if (ff.sends) try w.taggerReturnsOwned(c, s, avs, j, cls, ictx) else try w.returnsOwned(c, s, avs, ictx, j, 0, none)))
+                if (!(if (ff.sends) try w.taggerReturnsOwned(c, s, avs, j, cls, ictx) else try w.returnsOwned(c, s, avs, ictx, j, 0, none, .deep)))
                     need_bad = true
                 else
                     try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, .deep, 0);
@@ -19316,7 +19315,7 @@ const Walker = struct {
     /// Whether a supply of provenance `p` is owned once its guard is
     /// decided: a `cb_j′` supply needs the actual for πⱼ′ to return owned,
     /// except while that is the guard being established (`guard`).
-    fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32) Allocator.Error!bool {
+    fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32, extent: WriteExtent) Allocator.Error!bool {
         if (p.kind != .cb) return true;
         if (p.a == guard) return true;
         // Past §16.7's `callbacks` limit: an error at the declaration, as
@@ -19352,7 +19351,7 @@ const Walker = struct {
                 w.ro_closure = saved;
                 w.ro_within = saved_within;
             }
-            if (!try w.returnsOwned(c, s, avs, ictx, p.a, depth + 1, written)) return false;
+            if (!try w.returnsOwned(c, s, avs, ictx, p.a, depth + 1, written, extent)) return false;
         }
         return true;
     }
@@ -19417,7 +19416,7 @@ const Walker = struct {
                 const saved = w.ro_closure;
                 w.ro_closure = if (cls == .closure) cls.closure else none;
                 defer w.ro_closure = saved;
-                if (try w.returnsOwned(c, n.s, n.avs, ictx, n.j, 0, none)) continue;
+                if (try w.returnsOwned(c, n.s, n.avs, ictx, n.j, 0, none, .deep)) continue;
                 ok = false;
                 approx = try w.ownedButApprox(c, n.s, n.avs, ictx, n.j);
                 failed = cls;
@@ -19524,7 +19523,7 @@ const Walker = struct {
     /// required to contain no cell at callers (sep p p); cb self-separation
     /// instead means fresh across calls, so cannot encode that requirement.
     fn taggerReturnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, j: u32, cls: Class, ictx: InstCtx) Allocator.Error!bool {
-        if (try w.returnsOwned(c, s, avs, ictx, j, 0, none)) return true;
+        if (try w.returnsOwned(c, s, avs, ictx, j, 0, none, .deep)) return true;
         var res: std.ArrayList(ResEntry) = .empty;
         for (c.res) |r| {
             if (r.prov.kind == .cb and r.prov.b == 1) {
@@ -19573,7 +19572,7 @@ const Walker = struct {
         }
         var conditional = c.*;
         conditional.res = res.items;
-        return w.returnsOwned(&conditional, s, avs, ictx, j, 0, none);
+        return w.returnsOwned(&conditional, s, avs, ictx, j, 0, none, .deep);
     }
 
     /// §31.5: whether what class `c` returns of records is owned by the
@@ -19735,7 +19734,7 @@ const Walker = struct {
     /// returns owned.
     /// Ownership is required at the written roots, not at their contents
     /// (`none`: every path). Aliases of those roots at any result path count.
-    fn returnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32, written: u32) Allocator.Error!bool {
+    fn returnsOwned(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32, written: u32, extent: WriteExtent) Allocator.Error!bool {
         if (c.limit != .none) return false;
         // A pessimistic callee's supply rows no longer say
         // where each parameter is supplied: nothing it hands back is owned.
@@ -19761,7 +19760,16 @@ const Walker = struct {
             switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
-                    for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j) != 0 and w.o.overlap(u.path, r.prov.path)) return false;
+                    // What the callback keeps of the parameter it returns.
+                    // Under a storage write (#670), only a kept place at or
+                    // above the written collection observes the write: a
+                    // value kept strictly below it does not (#749).
+                    const kept_place = if (written != none and extent == .storage)
+                        try w.o.concat(r.prov.path, (try w.o.suffix(r.path, written)) orelse eps)
+                    else
+                        none;
+                    for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j) != 0 and
+                        (if (kept_place != none) w.o.writeOverlap(kept_place, u.path, .storage) else w.o.overlap(u.path, r.prov.path))) return false;
                     for (s.supply) |e| {
                         if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
                         // §28.5: an approximate supply is a limit, not proven sharing.
@@ -19779,7 +19787,7 @@ const Walker = struct {
                             .exact => return false,
                             .approx, .limit => if (!w.ro_exact) return false,
                         };
-                        if (!try w.provOwned(e.prov, s, avs, ictx, j, depth, none)) return false;
+                        if (!try w.provOwned(e.prov, s, avs, ictx, j, depth, none, .deep)) return false;
                     }
                 },
                 // §30.9: a carried lambda's call of a function the caller
@@ -19790,7 +19798,7 @@ const Walker = struct {
                     const supplied = try w.a.alloc(AV, c.params);
                     for (supplied, 0..) |*arg, k| arg.* = try w.suppliedParam(@intCast(k), .{ .s = s, .j = j, .ictx = ictx });
                     const inner: InstCtx = .{ .inst = ictx.inst, .s = c, .avs = supplied, .closure = w.ro_closure, .depth = ictx.depth + 1 };
-                    if (!try w.provOwned(r.prov, c, supplied, inner, none, depth, none)) return false;
+                    if (!try w.provOwned(r.prov, c, supplied, inner, none, depth, none, .deep)) return false;
                 },
                 else => return false,
             }
@@ -20691,14 +20699,14 @@ const Walker = struct {
                 .site, .param, .result, .closure, .func, .taken, .except => {},
             }
             // A real escape names itself before §18.6's conservative one.
-            var esc = if (spec.fields != null) try w.escapeBeforeOf(e.cell, true) else try w.escapeBefore(e.cell);
+            var esc = try w.escapeBefore(e.cell);
             // §31.2: a record demand on a whole record's cell is a demand on
             // its object, which escapes on its own (the object alone, an
             // `except` cell over it) where a capture or a result keeps it.
             if (spec.fields != null) {
                 const k = w.cells.items[base].kind;
                 if (k != .site and k != .top and k != .closure and k != .func and k != .except) {
-                    const obj = try w.escapeBeforeOf(try w.exceptCell(base, &.{}, true), true);
+                    const obj = try w.escapeBefore(try w.exceptCell(base, &.{}, true));
                     esc.gen = @min(esc.gen, obj.gen);
                     if (obj.js < esc.js) {
                         esc.js = obj.js;

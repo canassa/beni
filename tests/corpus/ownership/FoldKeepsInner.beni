@@ -1,0 +1,82 @@
+-- #749: a traversal's callback that keeps a value stored inside its
+-- accumulator, and not the accumulator, leaves the accumulator owned. The
+-- callback keeps the inner list in queued work; a storage write changes
+-- only the outer array's slots, never the kept list (§32 amendment, #670).
+-- Each traversal answers as the direct call `put (put [] 1) 2` does.
+import List
+import Node
+import Task
+
+
+put : List (List Int), Int → List (List Int)
+put rows key =
+    old = Maybe.withDefault (List.get rows 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    List.push rows [ key ]
+
+
+main : Node.Program
+main =
+    rows = List.foldl [ 1, 2 ] [] λkey acc → put acc key
+    Node.print (String.fromInt (List.length rows))
+
+
+pub direct ⊤ = put (put [] 1) 2
+
+
+pub right ⊤ = List.foldr [ 1, 2 ] [] λkey acc → put acc key
+
+
+pub nested ⊤ = List.foldl [ 1, 2 ] [] λi outer →
+    List.foldl [ 3, 4 ] outer λkey acc → put acc (key + i)
+
+
+pub inline ⊤ = List.foldl [ 1, 2 ] [] λkey acc →
+    old = Maybe.withDefault (List.get acc 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    List.push acc [ key ]
+
+
+-- A slot replaced while the list it held is kept.
+pub replaced ⊤ = List.foldl [ 1, 2 ] [] λkey acc → List.set (put acc key) 0 [ key ]
+
+
+-- A fiber keeps the inner list.
+pub spawned ⊤ = List.foldl [ 1, 2 ] [] λkey acc →
+    old = Maybe.withDefault (List.get acc 0) []
+    _ = Task.spawn λ⊤ → List.length old
+    List.push acc [ key ]
+
+
+type alias Table =
+    rows : List (List Int)
+    n : Int
+
+
+-- The accumulator is a record; the kept list is inside its field.
+pub record ⊤ = List.foldl [ 1, 2 ] { rows = [], n = 0 } λkey t →
+    old = Maybe.withDefault (List.get t.rows 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    { t | rows = List.push t.rows [ key ] }
+
+
+grow : List (List Int) → List (List Int)
+grow row =
+    old = Maybe.withDefault (List.get row 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    List.push row [ 1 ]
+
+
+-- `map` and `indexedMap` hand each element owned.
+pub mapped ⊤ = List.map [ [ [ 1 ] ], [ [ 2 ] ] ] λrow → grow row
+
+
+pub indexed ⊤ = List.indexedMap [ [ [ 1 ] ], [ [ 2 ] ] ] λi row → List.push (grow row) [ i ]
+
+
+-- A storage write of the middle level while a list one level further
+-- down is kept.
+pub grandchild ⊤ = List.foldl [ 1, 2 ] [ [] ] λkey acc →
+    old = Maybe.withDefault (List.get (Maybe.withDefault (List.get acc 0) []) 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    List.update acc 0 λinner → List.push inner [ key ]

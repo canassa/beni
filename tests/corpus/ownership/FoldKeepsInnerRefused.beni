@@ -1,0 +1,98 @@
+-- #749's unsafe twins: a callback that keeps the accumulator itself, or a
+-- kept inner list written later, by the callback, by a later step or after
+-- the traversal, stays refused. The kept list is the one the caller gets
+-- back (`rows[*]`), as it is after the direct call `put (put [] 1) 2`.
+import List
+import Node
+import Task
+
+
+put : List (List Int), Int → List (List Int)
+put rows key =
+    old = Maybe.withDefault (List.get rows 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    List.push rows [ key ]
+
+
+keepAll : List (List Int), Int → List (List Int)
+keepAll rows key =
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length rows)) ⊤
+    List.push rows [ key ]
+
+
+main : Node.Program
+main =
+    rows = List.foldl [ 1, 2 ] [] λkey acc → keepAll acc key
+    Node.print (String.fromInt (List.length rows))
+
+
+pub right ⊤ = List.foldr [ 1, 2 ] [] λkey acc → keepAll acc key
+
+
+pub nested ⊤ = List.foldl [ 1, 2 ] [] λi outer →
+    List.foldl [ 3, 4 ] outer λkey acc → keepAll acc (key + i)
+
+
+pub spawned ⊤ = List.foldl [ 1, 2 ] [] λkey acc →
+    _ = Task.spawn λ⊤ → List.length acc
+    List.push acc [ key ]
+
+
+type alias Table =
+    rows : List (List Int)
+    n : Int
+
+
+pub record ⊤ = List.foldl [ 1, 2 ] { rows = [], n = 0 } λkey t →
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length t.rows)) ⊤
+    { t | rows = List.push t.rows [ key ] }
+
+
+keepRow : List (List Int) → List (List Int)
+keepRow row =
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length row)) ⊤
+    List.push row [ 1 ]
+
+
+pub mapped ⊤ = List.map [ [ [ 1 ] ], [ [ 2 ] ] ] λrow → keepRow row
+
+
+pub indexed ⊤ = List.indexedMap [ [ [ 1 ] ], [ [ 2 ] ] ] λi row → List.push (keepRow row) [ i ]
+
+
+-- The kept inner list is written in the same step.
+pub sameStep ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λkey acc →
+    old = Maybe.withDefault (List.get acc 0) []
+    _ = Task.soon λ⊤ → Debug.log (String.fromInt (List.length old)) ⊤
+    List.update acc 0 λl → List.push l key
+
+
+bump : List (List Int), Int → List (List Int)
+bump rows key = List.update rows 0 λl → List.push l key
+
+
+-- A later step writes the list an earlier step's work keeps.
+pub laterStep ⊤ = List.foldl [ 1, 2 ] [ [ 0 ] ] λkey acc → bump (put acc key) key
+
+
+-- After the traversal, the kept list is written: by an update, by a
+-- second fold and by `map`.
+pub afterUpdate ⊤ =
+    rows = List.foldl [ 1, 2 ] [] λkey acc → put acc key
+    List.update rows 0 λl → List.push l 9
+
+
+pub afterFold ⊤ =
+    rows = List.foldl [ 1, 2 ] [] λkey acc → put acc key
+    List.foldl [ 3 ] rows λk acc → List.update acc 0 λl → List.push l k
+
+
+pub afterMap ⊤ =
+    rows = List.foldl [ 1, 2 ] [] λkey acc → put acc key
+    List.map rows λl → List.push l 7
+
+
+-- The same, after the direct calls.
+pub afterDirect ⊤ =
+    rows = put (put [] 1) 2
+    List.update rows 0 λl → List.push l 9
