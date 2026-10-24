@@ -109,7 +109,8 @@ fn reserved(ordinal: u32) bool {
 /// (`backend.md` §9, *Compact statements*, item 8): `Js.global "document"`
 /// is `document`. None is ever an ordinal's spelling (`reserved`), and a
 /// scope-hoisted build writes one bare only when no hand-written file binds
-/// it as written (`Emit.bareBlocked`).
+/// it as written (`Emit.bareBlocked`). `page_globals` are bare only in a
+/// build for a chain that always runs in a page.
 pub const bare_globals = [_][]const u8{
     "AbortController",    "Array",                "Boolean",               "CustomEvent",
     "DOMException",       "Date",                 "DocumentFragment",      "Element",
@@ -125,14 +126,32 @@ pub const bare_globals = [_][]const u8{
     "isFinite",           "isNaN",                "localStorage",          "location",
     "matchMedia",         "navigator",            "parseFloat",            "parseInt",
     "performance",        "queueMicrotask",       "requestAnimationFrame", "sessionStorage",
-    "setInterval",        "setTimeout",           "structuredClone",       "window",
+    "setInterval",        "setTimeout",           "structuredClone",
 };
 
+/// The host globals written bare only in a build for a chain that says it
+/// always runs in a page (`"host": "page"`, `boundary.md` §5.2, added
+/// 2026-10-24). Where there is no window, a bare `window` throws
+/// `ReferenceError` and `globalThis.window` reads `undefined`, so a build
+/// for any other chain keeps `globalThis.` (`backend.md` §9, item 8,
+/// amended 2026-10-24).
+pub const page_globals = [_][]const u8{"window"};
+
+/// Whether some release build writes `text` bare: one of `bare_globals` or
+/// `page_globals`.
 pub fn isBareGlobal(text: []const u8) bool {
     // Every ordinal below 3 510 spells one or two characters: the common
     // case asks nothing more.
     if (text.len < 3) return false;
     for (bare_globals) |g| {
+        if (std.mem.eql(u8, g, text)) return true;
+    }
+    return isPageGlobal(text);
+}
+
+/// Whether `text` is one of `page_globals`.
+pub fn isPageGlobal(text: []const u8) bool {
+    for (page_globals) |g| {
         if (std.mem.eql(u8, g, text)) return true;
     }
     return false;

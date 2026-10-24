@@ -5,6 +5,8 @@
 -- push decoded in its arm by a `read` whose `Err` payload nothing reads —
 -- a validator (`schema.md` §6) — and the one text binding written in the
 -- dispatch's write pass. No message, no `core/Task`, no `core/Dict`.
+-- `Listen.on "window"`'s target is `f=window`, as `browser-inline` says
+-- `"host": "page"` (`backend.md` §9, item 8, amended 2026-10-24).
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)

@@ -10380,6 +10380,17 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `if(c)f()` for `c?f():null`, and a concise body so shaped is a block, `()=>{if(g)j()}`, which is
    no longer. Fixture: `emit/release/core/StatementShapes`.
 
+   *Amended 2026-10-24 (the owner, #936).* `window` is bare only in a build for a chain that
+   says it always runs in a page (`"host": "page"`, `boundary.md` §5.2): it is
+   `Rename.page_globals`, apart from the list above. Where there is no window, a bare `window`
+   throws `ReferenceError` and `globalThis.window` reads `undefined`, so a build for any other
+   chain keeps `globalThis.window`; the rule writes a bare name only where both read the same
+   value. And `globalThis["x"]` — `Js.global`'s form when its name reaches it as a value, as
+   `Listen.on "window"`'s does once its argument is inlined — is `x` on the same terms as
+   `globalThis.x`, because the two are one read. Fixtures: `emit/release/inline/PushAndTimer`
+   (`f=window`, on `browser-inline`), `emit/release/core/GlobalWindow` (`globalThis.window`, on
+   `node`).
+
 4. **A for-each is a `forâ¦of`.** `Js.each xs f` (`boundary.md` Â§4.2) is the statement
    `for (const x of xs) â¦` (JsIr's `for_of`): with a lambda of one parameter that cannot suspend,
    the lambda's body, discarded, is the loop's body and its parameter the loop variable â

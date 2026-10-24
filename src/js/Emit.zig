@@ -216,6 +216,10 @@ pub const Platform = struct {
     /// reported. Checked by `checkEntryExports` before anything is built.
     exports: ExportsDecl = .none,
     exports_root: []const u8 = "",
+    /// The chain always runs in a page: its first `"host"`, down the chain
+    /// (`boundary.md` §5.2, added 2026-10-24). A release build then writes
+    /// `Rename.page_globals` bare (§9, item 8).
+    page: bool = false,
     /// The app manifest's `"exports"` list (`frontend.md` §10.1): the entry
     /// file's named exports, in this order, each the answer of the runtime's
     /// `exports(name)`. Empty when the app lists none; `app_root` is the
@@ -5598,6 +5602,7 @@ const Emitter = struct {
                 .hoisted = e.hoisted,
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
+                .page = e.options.platform.page,
                 .fields = if (e.field_table) |*table| table else null,
                 .marks = if (mapped) &marks else null,
                 .footer = if (mapped and !e.hoisted) slot.map_footer else "",

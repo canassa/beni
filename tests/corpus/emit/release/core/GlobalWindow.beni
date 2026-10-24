@@ -1,0 +1,21 @@
+-- emit: `Js.global "window"` under `--release` for a chain that does not
+-- say it always runs in a page (`--core` builds for `node`): it stays
+-- `globalThis.window`, because a bare `window` throws `ReferenceError`
+-- where there is no window (`backend.md` §9, item 8, amended 2026-10-24;
+-- `boundary.md` §5.2, `"host"`). A global of `Rename.bare_globals` is
+-- still bare: `queueMicrotask`. On `browser-inline`, which says
+-- `"host": "page"`, the same read is `window`
+-- (`emit/release/inline/PushAndTimer`).
+import Js
+
+
+pub onResize : Js.Value → ⊤
+onResize handler =
+    Js.to
+        (Js.call (Js.global "window") "addEventListener"
+            [ Js.from "resize", handler ]
+        )
+
+
+pub soon : Js.Value → ⊤
+soon f = Js.to (Js.apply (Js.global "queueMicrotask") [ f ])
