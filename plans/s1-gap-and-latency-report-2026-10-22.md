@@ -297,6 +297,7 @@ Measured state of `master` after #1 and #4 (`4adbf7bbc`):
 | after #931 (`cb8f0662f`; one `Nothing` per scope-hoisted file, #916) | 174.6 | | 1 551 | 47 229 | 1.14 | 1.10 |
 | after #935 + #937 + #938 (`3e9b91c80`; a required `Value` field is one presence test, #934; a single-use widget handler is written in its listener, and a `when` reads what choosing its arm reads, #936) | 172.0 | | 1 512 | 46 493 | 1.11 | 1.08 |
 | after #940 + #939 (`e5bdc5a9f`; no `.slice(0,1)` after a keyed filter, #936; a validator is fused into its decode-or-keep, #934, closing #930) | 172.1 | | 1 489 | 46 459 | 1.10 | 1.08 |
+| after #943 + #942 + #945 (`23010bf2a`; plain `window` on page platforms, #936; identical functions merged, and a value read next after reads alone is written at its read, #934) | 170.7 | | 1 475 | 46 080 | 1.09 | 1.08 |
 | tea-inline | 145.0 | 2 185 | 1 235 | 38 961 | — | — |
 
 Ratios are against tea-inline × 1.1, the bar (`plans/direct-rewrite.md` §4); N = 1 and N = 256 are
@@ -330,8 +331,8 @@ the mean of three seeds.
 The output against tea-inline, byte by byte, with the code: [`s1-output-comparison-2026-10-23.md`](s1-output-comparison-2026-10-23.md).
 A hand-minify pass on the output only (2026-10-24), with a plan: [`s1-hand-minify-2026-10-24.md`](s1-hand-minify-2026-10-24.md).
 
-`e5bdc5a9f` (2026-10-24): slope **172.1** B/widget, N = 1 **1 489** (1.10× the bar), N = 256 **46 459** (1.08× the bar of 42 857). *Correction:* rows from `cb8f0662f` to `3e9b91c80` first gave the N = 256 bar as 46 857, a slip for 42 857; N = 256 was never under the bar.
-Since 2026-10-23 morning: 241.0 → 172.1, with the steps in the table above.
+`23010bf2a` (2026-10-24): slope **170.7** B/widget, N = 1 **1 475** (1.09× the bar), N = 256 **46 080** (1.08× the bar of 42 857). *Correction:* rows from `cb8f0662f` to `3e9b91c80` first gave the N = 256 bar as 46 857, a slip for 42 857; N = 256 was never under the bar.
+Since 2026-10-23 morning: 241.0 → 170.7, with the steps in the table above.
 
 - **Fix 7 delivered −24, not −65.** The estimate came from hand-editing the output into tea-inline's
   shape, and the built shape still differs from tea-inline's. #896 will list where the remaining bytes
@@ -339,4 +340,4 @@ Since 2026-10-23 morning: 241.0 → 172.1, with the steps in the table above.
 - **N = 1 got worse: 1 446 → 1 732 B.** Fix 7 added a fixed runtime (group runner, ordinal sort,
   copy-plan walker, loader) that a one-widget page pays in full. It is about +290 B once against −24 B
   per widget, so it breaks even at about 12 widgets. #909 made them smaller (1 732 → 1 667 B).
-- **Still needed for the bar:** about 12.5 B/widget on the slope (fit), about 130 B on the N = 1 page, and about 3 600 B at N = 256. #915 and #916 are done; their ledgers are on the issues, with the items measured and dropped.
+- **Still needed for the bar:** about 11 B/widget on the slope (fit), about 115 B on the N = 1 page, and about 3 200 B at N = 256. In flight: #946 (step B, E7, E6). #915 and #916 are done; their ledgers are on the issues, with the items measured and dropped.
