@@ -1,0 +1,24 @@
+-- CK-270: a helper inserts a tuple built around its list parameter, and a
+-- callback helper edits the payload's list (#474). `shared` inserts one
+-- list at two keys: rejected `exclusive`. Master accepts it, as it does
+-- DictTupleAlias. `fresh` inserts two distinct fresh lists and stays
+-- accepted. Red until #294's representation replaces the folded tree.
+import Dict exposing (Dict)
+
+
+put : Dict Int (List Int × Int), Int, List Int → Dict Int (List Int × Int)
+put d k xs = Dict.insert d k ( xs, 0 )
+
+
+grow : Maybe (List Int × Int) → Maybe (List Int × Int)
+grow m = Maybe.map m λp → ( List.push p.0 9, p.1 )
+
+
+pub shared : ⊤ → Dict Int (List Int × Int)
+shared ⊤ =
+    xs = [ 1 ]
+    Dict.update (put (put Dict.empty 1 xs) 2 xs) 1 grow
+
+
+pub fresh : ⊤ → Dict Int (List Int × Int)
+fresh ⊤ = Dict.update (put (put Dict.empty 1 [ 1 ]) 2 [ 2 ]) 1 grow

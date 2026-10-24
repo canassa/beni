@@ -1,0 +1,14 @@
+module DictTupleAlias
+  12:12 List.push p.0: accepted param
+  19:5 call Dict.update d#Dict.0#Node.2.0: accepted fresh (<lambda> writes what Dict.update supplies it)
+  19:26 call Maybe.map m#Just.0.0: rejected exclusive: Dict.update hands its parameter 1 an element of d, whose elements may share one list (approx)
+  19:26 value DictTupleAlias.grow: accepted callback-param (Maybe.map supplies it owned)
+  25:5 call Dict.update d#Dict.0#Node.2.0: accepted fresh (<lambda> writes what Dict.update supplies it)
+  25:26 call Maybe.map m#Just.0.0: accepted callback-param (Dict.update supplies it owned)
+  25:26 value DictTupleAlias.grow: accepted callback-param (Maybe.map supplies it owned)
+  summary grow: π1.0 RAW[storage], π1.0[*] A, π1.1 R; res .0 π1.0, .0[*] ~π1.0[*]
+  summary shared: res #Dict.0#Node.1 ~condition(fresh2){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh3){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.2.0 ~fresh1, #Dict.0#Node.3 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost}
+  summary fresh: res #Dict.0#Node.1 ~condition(fresh2){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.2 ~condition(fresh3){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.2.0 ~fresh1, #Dict.0#Node.3 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost}, #Dict.0#Node.4 ~condition(fresh4){lost}r{lost} ~condition(fresh5){lost}r{lost}
+  demands 7: accepted 6 (fresh 2, call 0, param 1, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 7: accepted 6 (fresh 2, call 0, param 1, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1
