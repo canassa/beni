@@ -7972,7 +7972,8 @@ tag test folds and its fields are read where they are written:
 - **`const x = c ? A : B`, then one statement `R` ending the list**, `x` only inspected, `A` and
   `B` producers, `R` small with no function in it: `if (c) { const x = A; R } else { const x' = B;
   R' }`, `R'` a copy of `R` reading `x'` and declaring names of its own â `R` runs once on either
-  path, as it did.
+  path, as it did. *Amended 2026-10-24 (#946):* `R` may hold plain arrows, whose parameters `R'`
+  names afresh too (*Slice 9 across a call*, *a rest that makes a function*).
 - **`const x = e; return R`**, `x` read once in its declaration, by `R`, first, and not only
   inspected: `return R[x := e]` â the field binding scalar replacement leaves behind.
 
@@ -8806,6 +8807,77 @@ above). S1 `unique-components`, one file, seeds 1–3: N = 1 1 482 / 1 424 / 1 6
 1 643, N = 16 6 107 / 6 135 / 5 910 → 6 042 / 6 049 / 5 851; N = 64 and 256 are on the shapes side
 and do not move. The event decoder is not fused into the push's dispatcher: the rest there makes
 a function (the snapshot's `a => g[a[2]]`), which the rule does not copy.
+
+*Amended 2026-10-24 (#946, the S1 hand-minify pass's step B): a rest that makes a function.* A
+push's dispatcher, `case Schema.read (Event.schema ⊤) value of …`, is a call of the event
+schema's worker and a rest that tests and reads what it returns. Its `Snapshot` arm hands the
+generic loader a function (`a => g[a[2]]`), and the rule refused a rest that holds one, so the
+worker, and the snapshot's and the widgets' workers it calls, stayed, each making a constructor
+or a record only for its caller to test and read. Six extensions take the site. With them each
+constructor's `return` of the worker becomes the body of its arm, the failure mark's `return`
+becomes the `Err` arm, and no fail mark is compared. Each is exact:
+- **A rest that makes a function.** `R` may hold a plain arrow (not `Js.method`'s) whose body is
+  statements of the same kind as `R`'s, with no function of its own. A copy names its parameters
+  and its declarations afresh. Such a function may run later, and more than once, so it may not
+  mention `x`, which a copy writes in place. It may mention an alias of `x`, which a copy binds
+  once, only as the object of a property read. A `return` inside it is its own: it is not a
+  whole read of `x` by the rest. The size model counts an arrow as 4, one for each parameter, and
+  the statements of its body, where it counted it as big. Slice 9's `const x = c ? A : B; R` takes
+  the same functions in `R`, their parameters named afresh in `R'`.
+- **A computed read is a property read.** `x[e]`, or `z[e]` of an alias, is a read of `x` like
+  `x.k`. Its key is any expression and is walked as one.
+- **An argument that is not an atom is bound first.** The copy of `f`'s body begins with `const
+  p′ = a` for each argument `a` that is not an atom, in order, and the parameter reads `p′`; an
+  atom is still written in place. That is the call's own order: each argument once, from left to
+  right, then the body. The snapshot's worker is called with `v.state`, the widgets' with
+  `v.widgets`.
+- **Each copy of `R` is bounded, not `R` as written.** `R` may be over 96 units when each copy of
+  it is at most 96: what one `return` of `f` gets, with what its value is known to be applied and
+  the branches that decides removed. A dispatcher's rest holds every arm, but each constructor's
+  `return` gets its own. The copies are made in `return` order, and the first that is over 96
+  refuses the site; no other copy is made. The size proxy is unchanged, and so is the work
+  bound: `R` is at most `max_inline_nodes`, as before.
+- **What follows a decided jump is not copied, and a made value is counted where the copy makes
+  it.** In a copy of `R`, a statement that ends in a jump, once a decided `if` or `switch` is its
+  chosen statements, is the last: what follows it is never reached. *At most once per copy* is
+  counted on the copy as it is made (`Copy.made`): a read of `x`, or of a chain on it, that writes
+  an object, an array, a function or a template counts one, and a branch the copy decided is not
+  written and counts nothing. Over one, the copy binds `const x′ = P` instead, which is always
+  exact. `projectsToAtoms` keeps its other refusals: a chain through a literal that lacks the key,
+  and `x` compared when `P` is an array, a function or a template.
+- **A declared object's tag, past a write fact 3 cannot place.** `declaredTag` refused every
+  declared object once some program code wrote under a key it cannot name on a value fact 3 does
+  not know (`unknown_any`, or the tag in `unknown_props`). Such a write reaches only an object fact
+  3 does not track, or a site that escaped: a var that becomes ⊤ escapes every site it held
+  (`makeTop`), and a value written into ⊤ escapes (`write`). So that refusal is now asked of an
+  escaped site only; the site's own writes (`prog_any`, `prog_props`) are asked as before. A
+  dispatcher's `Tick` arm returns the declared `{$: "Tick"}`, and a page's DOM setters
+  (`a[c] = b`) are such writes.
+
+Order is the rule's: the arguments that are not atoms, then `f`'s body, then at each `return` the
+rest. Every host read the workers make happens in the order it did, every read of a snapshot
+completes before the loader writes, and every arm runs where its constructor was made. S1's
+N = 1 dispatcher
+`D=(a,b)=>{let c={a:[]},d=C(c,a);if(d===c.a)return b;if(d.$==="ServerSet"){…}let g=d.a.a.a;t(b,y,a=>g[a[2]]);return b}`
+and the three workers it called become
+`z=(a,b)=>{if(typeof a!=="object"||a===null||Array.isArray(a))return b;let c=a.type;if(c==="serverSet"){…}if(c==="snapshot"){let f=a.state;if(typeof f!=="object"||…)return b;let g=f.widgets;if(…)return b;let h=g.w1;if(h===undefined)return b;let i={a:h};t(b,y,a=>i[a[2]]);return b}return b}`.
+Pinned by `Spec`'s unit test *a function of a fused site's rest reads an alias of its binding
+only through a property*; by `emit/release/app/CaseAcrossClosure` (an event read and its nested
+record read fused into a `case` whose arms make functions, and a `case` whose function reads its
+value whole, which keeps its call) and `run/CaseAcrossClosure`; and by the dispatchers of
+`emit/release/inline/CaseLoader`, `NestedStableLoad`, `RouteCalledElsewhere`, `TickFresh`,
+`TickInPlace` and `ValidatedLoader`. `app/CaseAcrossCall`'s `command` is now written at its site,
+as its intent comment says: the copies were over the function by the dead statements after each
+decided `return`. Measured (release, brotli 11, raw in brackets, each golden that moved):
+`app/CaseAcrossCall` 1 630 → 1 603, `app/SchemaDeadTags` 644 → 581, `app/ValidatorNoPath` 594 →
+582, `inline/CaseLoader` 1 338 → 1 257 (3 383 → 3 084), `inline/FormLocal` 1 066 → 1 053,
+`inline/NestedStableLoad` 1 259 → 1 188, `inline/RouteCalledElsewhere` 1 109 → 1 015,
+`inline/TickFresh` 1 207 → 1 089, `inline/TickInPlace` 1 224 → 1 117, `inline/ValidatedLoader`
+1 169 → 1 086. S1 `unique-components`, one file, seeds 1–3: N = 1 1 442 / 1 382 / 1 600 →
+1 365 / 1 272 / 1 512, N = 16 5 914 / 5 893 / 5 722 → 5 802 / 5 793 / 5 623. N = 64 and 256 read pushed
+state through shape tables; they move only by a typed number input's parse, fused into its
+validator as in `inline/FormLocal`: N = 64 15 217 / 15 222 / 15 121 → 15 177 / 15 170 / 15 117,
+N = 256 45 409 / 45 791 / 47 041 → 45 464 / 45 703 / 47 020 (seed 1 grows after brotli only).
 
 **Identical functions are one** (*added 2026-10-24*, #934; `Spec.mergeSame`). In a release build,
 `Maybe.withDefault` and `Result.withDefault` are the same code once `Just` and `Ok` are both tag 0
