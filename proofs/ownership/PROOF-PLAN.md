@@ -588,3 +588,33 @@ of #884). No statement of `flat_preserved`, of a case theorem or of
 theorems have a weaker hypothesis, the public theorem starts from the empty
 heap and admits no new heap; no program is admitted or refused that was not
 before.
+
+As built (2026-10-24, #522, slice 2b): `ElementType` (an integer, a record of
+element types or a list of element types) and `FlatType.list t` over it
+(`Support.lean`); `FlatAbstract.list` holds no unknown root;
+`AllocatedFlatValue.list root ws t` types the elements; `FlatANF0.literal t`
+over an element type, since no other fragment form builds a list of lists (the
+plan's "literal stays at `Int`" would have left the slice without a program).
+Lists of results and lists of chains are #932: the checker reads an element's
+result tag from the list's element abstract, and the invariant has no clause
+for an element's tags. The invariant types and shapes a binding at its live
+paths (`bindingsTyped`, with the shape) and bounds the arrays of every binding
+(`bindingsBounded`); the plan's `shaped` over every binding, its `arrayTypes`
+and the write step are not needed, since a dead alias of a written array keeps
+no type. `flatInvariant_heap_frame` takes the hole's contents with their bound
+(`reaches_split_at_hole`); `Preserved.success` and every case theorem conclude
+the result's shape, and `flatInvariant_bind` takes it. The list forms over
+values: `at` (the join with the fallback; the result's tags from the
+fallback's, `resultTags_element` and `chainTags_element`), `length`, `shared`,
+`copy`, `prepend`, `push`, `set` and the literal (`Primitives.lean`). The
+certificate after a store, the first proved one: `inserted_footprint_nodup` and
+`inserted_footprint_once` (an item inserted into `as ++ mid ++ bs`: a push, a
+set, a prepend), `fresh_footprint_nodup` and `fresh_footprint_once` (a literal),
+from `storeExclusive_facts`, `storeSpines_facts` and their many-items forms,
+`nodup_of_deepExclusive` (a deeply exclusive, path-separated item repeats no
+array), `once_of_separated` (a container array once:
+`count_le_one_of_container_unique`), `mem_namesAt_of_arrayAt`,
+`demand_success_disjoint` and `list_described_of_elements` (`Fields.lean`).
+`accepted_flat_anf_traces_agree` keeps its statement; `flat_preserved` and the
+case theorems conclude one more fact (the shape). Probes `nestedPush`,
+`nestedAlias`, `nestedSet`, `nestedItemAlias` and `nestedRecord` (`Trace.lean`).

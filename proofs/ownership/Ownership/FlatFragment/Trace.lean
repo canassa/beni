@@ -98,7 +98,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     have covered : ∀ use ∈ atomUses a, use ∈ live :=
       fun use member => usesLive use (by simpa [uses, usesArms] using member)
     obtain ⟨o, w, abs, valueAtom, heapAtom, abstractRun, paired, described, observed, valueTyped,
-      _, _, _, tags, chains⟩ := flat_atom_values inv atomTyped covered
+      _, _, allocated, tags, chains⟩ := flat_atom_values inv atomTyped covered
     obtain ⟨atomRun, checkerState⟩ := infer_atom_success defaultConfig accepted
     subst checkerState
     rw [abstractRun] at atomRun
@@ -118,10 +118,11 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
           refine ⟨w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
             Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
             Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), ?_, ?_,
-            observed, ?_, tags, chains⟩
+            observed, ?_, ?_, tags, chains⟩
           · rw [heapAtomPost_heap]; exact paired
           · rw [heapAtomPost_heap]; exact described
           · rw [heapAtomPost_heap]; exact valueTyped
+          · rw [heapAtomPost_heap]; exact allocated
     · intro message failed
       exact atom_failure inv valueAtom heapAtom failed
   | @letE rhs rest v rhsFlat restFlat ihRhs ihRest =>
@@ -134,7 +135,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
     exact branch_preserved yesFlat noFlat ihYes ihNo inv typed shadow boundKeys usesLive afterSub
       defaultConfig accepted
-  | @literal args =>
+  | @literal args t elemT =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live := by
@@ -143,14 +144,14 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨atom, member, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      literal_preserved (depth := depth) inv typed covered defaultConfig accepted
+      literal_preserved (depth := depth) elemT inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @push receiver item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -182,10 +183,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @scalar op a b sop =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -208,10 +209,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @shared value =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -226,10 +227,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value' vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value' vs' run
+        shaped, tags, chains⟩ := success value' vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
 
   | @record args =>
@@ -246,10 +247,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
 
   | @ok error x flatError =>
@@ -266,10 +267,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @err success x flatSuccess =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -285,10 +286,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success' value vs' run
+        shaped, tags, chains⟩ := success' value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @resultCase onError onSuccess input err ok errorFlat successFlat ihError ihSuccess =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -303,10 +304,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @link head tail =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -328,10 +329,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @chainCase onEnd onLink input head tail endFlat linkFlat ihEnd ihLink =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -364,10 +365,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @set receiver index item =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -407,10 +408,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
   | @prepend item receiver =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -432,10 +433,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped,
-        tags, chains⟩ := success value vs' run
+        shaped, tags, chains⟩ := success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
-        described, observed, valueTyped, tags, chains⟩
+        described, observed, valueTyped, shaped, tags, chains⟩
     · exact failure
 
 /-- The public trace corollary for the fragment, with the exact conclusion
@@ -535,7 +536,7 @@ def every : Program := { main :=
   (.atom (.var 5)))))))) }
 
 theorem every_flat : FlatANF0 every.main :=
-  .letE .literal (.letE .shared (.letE .atom (.letE .literal
+  .letE (.literal .int .int) (.letE .shared (.letE .atom (.letE (.literal .int .int)
     (.letE .push (.letE .length .atom)))))
 
 /-- The push target still live afterwards: rejected by the Dead test. -/
@@ -546,7 +547,7 @@ def liveAlias : Program := { main :=
   (.atom (.var 1))))) }
 
 theorem liveAlias_flat : FlatANF0 liveAlias.main :=
-  .letE .literal (.letE .push (.letE .length .atom))
+  .letE (.literal .int .int) (.letE .push (.letE .length .atom))
 
 /-- A push onto an observed array: rejected by the Unescaped test. -/
 def observed : Program := { main :=
@@ -556,7 +557,7 @@ def observed : Program := { main :=
   (.prim .length [.var 2])))) }
 
 theorem observed_flat : FlatANF0 observed.main :=
-  .letE .literal (.letE .shared (.letE .push .length))
+  .letE (.literal .int .int) (.letE .shared (.letE .push .length))
 
 /-- `[2]`, its length 1, `1 + 7`, `8 - 3`, `5 == 5`, `1 < 5`, and a push of
     the last result onto the list: the four integer primitives, accepted, one
@@ -571,7 +572,7 @@ def arith : Program := { main :=
   (.prim .push [.var 0, .var 5]))))))) }
 
 theorem arith_flat : FlatANF0 arith.main :=
-  .letE .literal (.letE .length (.letE (.scalar .add) (.letE (.scalar .sub)
+  .letE (.literal .int .int) (.letE .length (.letE (.scalar .add) (.letE (.scalar .sub)
     (.letE (.scalar .eq) (.letE (.scalar .lt) .push)))))
 
 /-- `[1]`, `[2, 3]`, the record `{xs, 7, ys}`, the length of `r.0`, `r.1`
@@ -588,7 +589,7 @@ def recordOps : Program := { main :=
   (.prim .push [.var 5, .var 4]))))))) }
 
 theorem recordOps_flat : FlatANF0 recordOps.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .length
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .record (.letE .length
     (.letE (.scalar .add) (.letE .atom .push)))))
 
 /-- `[1]`, `[2, 3]`, `inner = {xs, 7}`, `outer = {inner, ys}`, a push of
@@ -604,7 +605,7 @@ def fieldWrite : Program := { main :=
   (.prim .record [.var 4, .field (.var 3) 1])))))) }
 
 theorem fieldWrite_flat : FlatANF0 fieldWrite.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .record (.letE .record (.letE .push .record))))
 
 /-- The same write with the written field's record live afterwards: rejected
     by the Dead test, and the two runs differ. -/
@@ -617,7 +618,7 @@ def fieldWriteLive : Program := { main :=
   (.prim .record [.var 4, .field (.var 3) 0])))))) }
 
 theorem fieldWriteLive_flat : FlatANF0 fieldWriteLive.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .record (.letE .record (.letE .push .record))))
 
 /-- `[1]`, `[2]`, the length of the first, a branch on it between the two
     lists (the length is 1, so the second), and a push onto the branch's
@@ -632,7 +633,7 @@ def branchOps : Program := { main :=
   (.prim .push [.var 3, .int 9]))))) }
 
 theorem branchOps_flat : FlatANF0 branchOps.main :=
-  .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom) .push)))
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .length (.letE (.branch .atom .atom) .push)))
 
 /-- The same push with the second list still live afterwards: rejected by
     the Dead test, because the branch's result names both lists; the two
@@ -646,7 +647,7 @@ def branchAlias : Program := { main :=
   (.prim .length [.var 1])))))) }
 
 theorem branchAlias_flat : FlatANF0 branchAlias.main :=
-  .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom)
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE .length (.letE (.branch .atom .atom)
     (.letE .push .length))))
 
 /-- `[1]`, a branch on the condition `0` whose both arms push onto it (the
@@ -656,7 +657,7 @@ def bothWrite : Program := { main :=
   (.branch (.int 0) (.prim .push [.var 0, .int 5]) (.prim .push [.var 0, .int 7]))) }
 
 theorem bothWrite_flat : FlatANF0 bothWrite.main :=
-  .letE .literal (.branch .push .push)
+  .letE (.literal .int .int) (.branch .push .push)
 
 /-- The same branch with the list read afterwards: rejected by the Dead test;
     the two runs differ. -/
@@ -666,7 +667,7 @@ def bothWriteLive : Program := { main :=
   (.prim .length [.var 0]))) }
 
 theorem bothWriteLive_flat : FlatANF0 bothWriteLive.main :=
-  .letE .literal (.letE (.branch .push .push) .length)
+  .letE (.literal .int .int) (.letE (.branch .push .push) .length)
 
 /-- `[1]`, `ok` of it, a result case that binds the list in the success arm
     (the error arm builds `[2]`), and a push onto the case's result: accepted,
@@ -679,7 +680,7 @@ def resultOps : Program := { main :=
   (.prim .push [.var 2, .int 9])))) }
 
 theorem resultOps_flat : FlatANF0 resultOps.main :=
-  .letE .literal (.letE (.ok .int) (.letE (.resultCase .literal .atom) .push))
+  .letE (.literal .int .int) (.letE (.ok .int) (.letE (.resultCase (.literal .int .int) .atom) .push))
 
 /-- The same push with the list read afterwards: rejected by the Dead test;
     the two runs differ. -/
@@ -691,7 +692,7 @@ def resultAlias : Program := { main :=
   (.prim .length [.var 0]))))) }
 
 theorem resultAlias_flat : FlatANF0 resultAlias.main :=
-  .letE .literal (.letE (.ok .int) (.letE (.resultCase .literal .atom) (.letE .push .length)))
+  .letE (.literal .int .int) (.letE (.ok .int) (.letE (.resultCase (.literal .int .int) .atom) (.letE .push .length)))
 
 /-- `[3]`, `err` of it, and a result case that pushes onto the list in the
     error arm (the success arm builds a list of its integer payload):
@@ -703,7 +704,7 @@ def errOps : Program := { main :=
   (.resultCase (.var 1) 2 3 (.prim .push [.var 2, .int 4]) (.prim (.literal .int) [.var 3])))) }
 
 theorem errOps_flat : FlatANF0 errOps.main :=
-  .letE .literal (.letE (.err .int) (.resultCase .push .literal))
+  .letE (.literal .int .int) (.letE (.err .int) (.resultCase .push (.literal .int .int)))
 
 /-- An empty chain, `1` and `2` linked onto it, and a chain case that binds
     the head `2` and the copied tail in the link arm (the end arm builds
@@ -717,7 +718,7 @@ def chainOps : Program := { main :=
     (.letE 5 (.prim (.literal .int) [.var 3]) (.prim .push [.var 5, .int 7])))))) }
 
 theorem chainOps_flat : FlatANF0 chainOps.main :=
-  .letE .endChain (.letE .link (.letE .link (.chainCase .literal (.letE .literal .push))))
+  .letE .endChain (.letE .link (.letE .link (.chainCase (.literal .int .int) (.letE (.literal .int .int) .push))))
 
 /-- A chain case on an empty chain: the end arm builds `[9]` and pushes `1`
     onto it; the link arm, which the checker infers with a bottom head, builds
@@ -729,7 +730,7 @@ def chainEnd : Program := { main :=
     (.prim (.literal .int) [.var 1]))) }
 
 theorem chainEnd_flat : FlatANF0 chainEnd.main :=
-  .letE .endChain (.chainCase (.letE .literal .push) .literal)
+  .letE .endChain (.chainCase (.letE (.literal .int .int) .push) (.literal .int .int))
 
 /-- `[1]`, a chain of `5`, a chain case whose link arm pushes the head onto
     the list, and a length read of the list afterwards: rejected by the Dead
@@ -742,7 +743,7 @@ def chainAlias : Program := { main :=
   (.prim .length [.var 0]))))) }
 
 theorem chainAlias_flat : FlatANF0 chainAlias.main :=
-  .letE .literal (.letE .endChain (.letE .link (.letE (.chainCase .literal .push) .length)))
+  .letE (.literal .int .int) (.letE .endChain (.letE .link (.letE (.chainCase (.literal .int .int) .push) .length)))
 
 /-- A chain of `3` wrapped in `ok`, a result case that binds it in the
     success arm, and a chain case on the payload whose link arm builds a list
@@ -758,7 +759,7 @@ def chainResult : Program := { main :=
 
 theorem chainResult_flat : FlatANF0 chainResult.main :=
   .letE .endChain (.letE .link (.letE (.ok .int)
-    (.resultCase .literal (.chainCase .literal (.letE .literal .push)))))
+    (.resultCase (.literal .int .int) (.chainCase (.literal .int .int) (.letE (.literal .int .int) .push)))))
 
 /-- `[4, 5]`, the element at `1` (fallback `0`), at `7` (out of range, so
     the fallback `0`) and at `-1` (negative, so the fallback `3`), their sum
@@ -774,7 +775,7 @@ def atOps : Program := { main :=
   (.prim .push [.var 0, .var 5]))))))) }
 
 theorem atOps_flat : FlatANF0 atOps.main :=
-  .letE .literal (.letE .atRead (.letE .atRead (.letE .atRead
+  .letE (.literal .int .int) (.letE .atRead (.letE .atRead (.letE .atRead
     (.letE (.scalar .add) (.letE (.scalar .add) .push)))))
 
 /-- `[1, 2]`, `9` written at `0`, `7` at `5` (out of range: unchanged) and
@@ -787,7 +788,7 @@ def setOps : Program := { main :=
   (.prim .set [.var 2, .int (-1), .int 6])))) }
 
 theorem setOps_flat : FlatANF0 setOps.main :=
-  .letE .literal (.letE .set (.letE .set .set))
+  .letE (.literal .int .int) (.letE .set (.letE .set .set))
 
 /-- The written list read after the write: rejected by the Dead test; the
     two runs differ. -/
@@ -797,7 +798,7 @@ def setAlias : Program := { main :=
   (.prim .at [.var 0, .int 0, .int 0]))) }
 
 theorem setAlias_flat : FlatANF0 setAlias.main :=
-  .letE .literal (.letE .set .atRead)
+  .letE (.literal .int .int) (.letE .set .atRead)
 
 /-- `[1]`, a copy of it, a push onto the copy, and the length of the
     original: accepted, one in-place write, final value `1`. -/
@@ -808,7 +809,7 @@ def copyOps : Program := { main :=
   (.prim .length [.var 0])))) }
 
 theorem copyOps_flat : FlatANF0 copyOps.main :=
-  .letE .literal (.letE .copy (.letE .push .length))
+  .letE (.literal .int .int) (.letE .copy (.letE .push .length))
 
 /-- `[2]`, `1` prepended, and a push onto the result: accepted, one in-place
     write, final value `[1, 2, 9]`, the read of the base `[2]` on both sides. -/
@@ -818,7 +819,7 @@ def prependOps : Program := { main :=
   (.prim .push [.var 1, .int 9]))) }
 
 theorem prependOps_flat : FlatANF0 prependOps.main :=
-  .letE .literal (.letE .prepend .push)
+  .letE (.literal .int .int) (.letE .prepend .push)
 
 /-- The base read after that push: rejected by the Dead test, because the
     result is named by the base's origins. -/
@@ -829,7 +830,7 @@ def prependAlias : Program := { main :=
   (.prim .length [.var 0])))) }
 
 theorem prependAlias_flat : FlatANF0 prependAlias.main :=
-  .letE .literal (.letE .prepend (.letE .push .length))
+  .letE (.literal .int .int) (.letE .prepend (.letE .push .length))
 
 set_option maxRecDepth 100000
 
@@ -1001,5 +1002,137 @@ set_option maxRecDepth 100000
 #guard match ValueSemantics.run prependAlias 100, InPlaceSemantics.run prependAlias 100 with
   | .ok t, .ok t' => t.reads == t'.reads && t.finalValue == t'.finalValue && t.finalValue == .int 1
   | _, _ => false
+
+/-! ### Lists of lists (slice 2b of #522)
+
+`nestedPush` stores two integer lists in a list of lists, reads the first back
+with a list fallback and pushes onto it: accepted, one in-place write, both runs
+end at the length `2`. `nestedAlias` reads the list of lists after that push and
+is rejected (the Dead test), and its two runs differ: the value run still sees
+`[1]`, the heap run `[1, 7]`. `nestedSet` writes a fresh list at an index of the
+list of lists and reads it back: accepted, one counted write, both runs end at
+`1`. `nestedItemAlias` pushes onto a list after storing it in a list of lists
+that stays live, and is rejected (the Dead test); the value run's element stays
+`[9]`, the heap run's is `[9, 1]`. `nestedRecord` stores a record holding a list
+in a list of records, reads it back and pushes through its field: accepted, one
+write, both runs end at the push result's length `2`. -/
+
+/-- `[1]`, `[2]`, the list of both, its first element with the fallback `[]`,
+    a push onto it, and its length: accepted, one in-place write, `2`. -/
+def nestedPush : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal (.list .int)) [.var 0, .var 1])
+  (.letE 3 (.prim (.literal .int) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim .push [.var 4, .int 7])
+  (.prim .length [.var 5]))))))) }
+
+theorem nestedPush_flat : FlatANF0 nestedPush.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int))
+    (.letE (.literal .int .int) (.letE .atRead (.letE .push .length)))))
+
+/-- The list of lists read after that push: rejected by the Dead test; the
+    value run reads the length `1`, the heap run `2`. -/
+def nestedAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal (.list .int)) [.var 0, .var 1])
+  (.letE 3 (.prim (.literal .int) [])
+  (.letE 4 (.prim .at [.var 2, .int 0, .var 3])
+  (.letE 5 (.prim .push [.var 4, .int 7])
+  (.letE 6 (.prim .at [.var 2, .int 0, .var 3])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedAlias_flat : FlatANF0 nestedAlias.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int))
+    (.letE (.literal .int .int) (.letE .atRead (.letE .push (.letE .atRead .length))))))
+
+/-- `[[1], [2]]`, a fresh `[9]` written at index `1`, and the length of the
+    element read back: accepted, one counted write, `1`. -/
+def nestedSet : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim (.literal (.list .int)) [.var 0, .var 1])
+  (.letE 3 (.prim (.literal .int) [.int 9])
+  (.letE 4 (.prim .set [.var 2, .int 1, .var 3])
+  (.letE 5 (.prim (.literal .int) [])
+  (.letE 6 (.prim .at [.var 4, .int 1, .var 5])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedSet_flat : FlatANF0 nestedSet.main :=
+  .letE (.literal .int .int) (.letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int))
+    (.letE (.literal .int .int) (.letE .set (.letE (.literal .int .int) (.letE .atRead .length))))))
+
+/-- A push onto `[9]` after it was stored in a list of lists that stays live:
+    rejected by the Dead test; the value run's element stays `[9]`, the heap
+    run's is `[9, 1]`. -/
+def nestedItemAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal (.list .int)) [.var 0])
+  (.letE 2 (.prim (.literal .int) [.int 9])
+  (.letE 3 (.prim .push [.var 1, .var 2])
+  (.letE 4 (.prim .push [.var 2, .int 1])
+  (.letE 5 (.prim (.literal .int) [])
+  (.letE 6 (.prim .at [.var 3, .int 1, .var 5])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedItemAlias_flat : FlatANF0 nestedItemAlias.main :=
+  .letE (.literal .int .int) (.letE (.literal (.list .int) (.list .int .int)) (.letE (.literal .int .int)
+    (.letE .push (.letE .push (.letE (.literal .int .int) (.letE .atRead .length))))))
+
+/-- `{5, [1]}` in a list of records, read back with a record fallback, a push
+    through its list field, and the length of the push's result: accepted, one
+    write, `2`. -/
+def nestedRecord : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim .record [.int 5, .var 0])
+  (.letE 2 (.prim (.literal (.record [.int, .list .int])) [.var 1])
+  (.letE 3 (.prim (.literal .int) [])
+  (.letE 4 (.prim .record [.int 0, .var 3])
+  (.letE 5 (.prim .at [.var 2, .int 0, .var 4])
+  (.letE 6 (.prim .push [.field (.var 5) 1, .int 7])
+  (.prim .length [.var 6])))))))) }
+
+theorem nestedRecord_flat : FlatANF0 nestedRecord.main :=
+  .letE (.literal .int .int) (.letE .record
+    (.letE (.literal (.record [.int, .list .int]) (.record _ (by
+      intro t member
+      simp only [List.mem_cons, List.mem_nil_iff, or_false] at member
+      rcases member with rfl | rfl
+      · exact .int
+      · exact .list .int .int)))
+    (.letE (.literal .int .int) (.letE .record (.letE .atRead (.letE .push .length))))))
+
+#guard (check nestedPush).isOk
+#guard match ValueSemantics.run nestedPush 100, InPlaceSemantics.run nestedPush 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 2
+  | _, _ => false
+#guard InPlaceSemantics.writeCount nestedPush 100 == 1
+#guard match check nestedAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run nestedAlias 100, InPlaceSemantics.run nestedAlias 100 with
+  | .ok t, .ok t' => t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
+#guard (check nestedSet).isOk
+#guard match ValueSemantics.run nestedSet 100, InPlaceSemantics.run nestedSet 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 1
+  | _, _ => false
+#guard InPlaceSemantics.writeCount nestedSet 100 == 1
+#guard match check nestedItemAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run nestedItemAlias 100, InPlaceSemantics.run nestedItemAlias 100 with
+  | .ok t, .ok t' => t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
+#guard (check nestedRecord).isOk
+#guard match ValueSemantics.run nestedRecord 100, InPlaceSemantics.run nestedRecord 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 2
+  | _, _ => false
+#guard InPlaceSemantics.writeCount nestedRecord 100 == 1
 
 end Ownership.FlatFragment.Preservation
