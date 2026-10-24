@@ -6326,3 +6326,22 @@ the summary states each place, and `--ownership-everywhere` needs 1 276 786
 entries, past the `entries` limit; master accepted it only because the cut
 merged every place past eight steps. The fix is a summary form that shares
 identical sub-summaries, not a cap. It blocks O4 (#320, #681).
+
+## CK-270 — one list in the payloads at two dictionary keys is edited in place (2026-10-25)
+
+**Issue:** #474. **Fixtures:** `tests/pending/ownership/DictTupleAlias.beni`,
+`DictRecordAlias.beni`, `DictHelperAlias.beni`. `Dict.insert` of `( xs, 0 )`
+(or `{ items = xs, n = 0 }`) at two keys, then `Dict.update` at one key with a
+callback that pushes onto the payload's list, is accepted under
+`--ownership-everywhere`; the bare-list twin, DictFocus.twice, is refused. The
+§20.8 separation of what `Dict.insert` stores lowers the spine condition of
+the argument's root only, so the list at `#Node.2.0` has none, and the focus
+reads that path alone. Applying the condition to every list of the argument
+refuses the case but also refuses DictFocus.groups, DictTupleFocus (CK-266)
+and a FoldAccumulators case. The fix is deferred to #294 (decided on #474),
+which replaces the folded tree; each fixture keeps a fresh control that must
+stay accepted.
+
+The same pull request fixed the general half of #474 (construction guards
+skipped an operand that stands above the stored path; `BesideTupleHelper`,
+`BesideRecordHelper`, `BesideLiteralHelper`, `BesideSpreadHelper`).
