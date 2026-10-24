@@ -826,6 +826,133 @@ sets by inclusion (the lower order: a set is stored by its elements, and `⊤` a
 `owned ⊑ borrowed`; `calls` `0 ⊑ ≤1 ⊑ many`; `need` `nothing ⊑ owned`; `seen` `yes ⊑ no`; a `limit` above
 everything. The join is pointwise.
 
+*Amended 2026-10-25 (issue #856; specified, not built): an abstract value and a summary's tables are a
+hash-consed graph of places.* The entry sets above are sets of `(path, cell)` and are stored one entry per path.
+A value that fills a tuple `n` levels deep with one argument has `2ⁿ` places, so its summary has as many entries:
+
+```beni
+w1 x = ( x, x )
+w2 x = w1 (w1 x)
+w3 x = w2 (w2 x)
+```
+
+With `w4 x = w3 (w3 x)` and `w5 x = w4 (w4 x)` added, the result paths are 5, 29 and 509 for `w2`, `w3` and `w4`.
+The cells placed at them are 18, 114 and 2 930. `w5` needs 1 276 786 entries, past §16.7's `entries` limit of
+262 144. With the path cut, master merged every place past eight steps without saying so. Since #855 the program is
+refused (`run/EvidenceDagBuildDepth32`, `check/good/OwnershipAnnotationDag`, `check/good/RequirementBelowDepth512`,
+`tests/pending/ownership/DeepTupleDag`). §16.7 forbids the two quick answers: a larger limit, and a merge of
+places to fit. So the size must follow the program, and the form changes.
+
+**Why it grows, measured.** The places are not the only cause. A summary also places condition cells, the
+`condition(freshk)` of §18.3's annotations, and these are made per composed entry: instantiating `res .0
+condition(freshA)` against an argument with `m` entries makes `m` cells. So `w2`'s `.0.0` holds
+`condition(fresh2) condition(fresh6)` and `.1.0` holds `condition(fresh2) condition(fresh9)`. The two subtrees
+`.0` and `.1` stand for one run-time object (the inner tuple, which `w1` places twice), but they differ in their
+condition cells. Hash-consing the paths alone would not share them. The renumbering is the second half of the
+blow-up, and the representation has to fix it too.
+
+**The form.**
+
+- A **node** is the facts at one place, and the nodes below it: a sorted list of `(cell, approx, grown)` for the
+  place itself, and a sorted list of `(step, node)`. Nodes are interned for the run in a table keyed by their
+  contents (hash-consing), so two equal descriptions are one node, and node equality is id equality. An abstract
+  value (`AV`) is a node, and so is each of a summary's tables, at the root, keyed by parameter and function
+  where they have one (`res`, `objs`, `supply`, `rsupply`, `use`'s paths and bits).
+- **What a graph means is its expansion.** The expansion of a graph is the entry set of §16.2: every root-to-node
+  path, with that node's cells. Every operation is defined to give the graph of what the enumerated operation
+  gives on the expansions. Join is a union per node pair. Projection by `p` is the node at `p`, in time linear
+  in `|p|` and with no copy. Placement under `r` adds a node chain above. Composition at a call grafts, per
+  node. Every operation of more than one node is memoised per node or node pair for one call, BDD-style, so
+  its cost follows the nodes, not the places. Because the meaning is defined by expansion, soundness is the
+  enumerated domain's, and verdicts are equal by construction wherever the operations commute with expansion.
+  §16.7's `entries` limit then counts nodes and edges, not expanded entries.
+- **Condition cells are made per node.** An annotation of a summary node, instantiated at an argument node, makes
+  one condition cell per `(summary node, argument node)` pair, memoised for the call, not one per composed path.
+  This is what lets `w2`'s `.0` and `.1` be one node, and `w5` a chain of 17 nodes. **This is the one point where
+  the form could change a verdict.** Two places that today hold two condition cells would hold one, and
+  §16.7's merged-pair rule reads one cell at two places as one list at two places (`foldedPairs`, `sepCells`).
+  The argument that this moves nothing: the cells come from one summary atom applied to one argument cell, so
+  they get the same atoms and the same lowering, and the places really are one object. That has to be measured,
+  not assumed (*Verdicts*, below).
+- **What a shared node is, and what it is not.** A node shared by two parents says that the two places have
+  equal abstract facts. It is not a new aliasing fact. Aliasing stays where §16.2 and §18 put it: in the cells,
+  and in the conditions on them. Two places that hold one cell are one list at two places whether or not their
+  nodes are shared, and two fresh cells are two lists even when their descriptions would be equal, because they
+  differ in their cells. So nothing is merged that the expansion keeps apart, and nothing the `{shared}`
+  conditions say is lost: they are on cells, and cells are untouched (the #474 case).
+
+**Cycles.** A node may have a back edge, so a graph may be rational instead of finite. Back edges are made only
+at a fold, and only by **tying the knot**. At a fixpoint round, when the node a round makes at `r X` equals,
+node for node, the node of the previous round at `X`, the step into it is pointed back at the existing node. The
+knot is tied only on equality, so where it fires it is exact: the back-edge node stands for every unrolling, and
+the least fixpoint is their union. It replaces #955's composed-path fold (§16.7, the amendment of 2026-10-25),
+where `r⋆` stands for any step below `r`, with a cycle that stands for exactly `[*]`, `[*][*]`, …. The
+`ownership/CyclicAccumulator` verdicts are kept. Where it is not exact, or does not help:
+
+- **Named recursive types keep §16.7's region markers.** A marker `⟨T⟩` already merges a type's levels into one
+  place, and a cycle node that unrolls the levels would only be more precise where the levels' facts differ
+  periodically. So markers are not rewritten here. A later slice may replace them with cycles and measure.
+- **A growth that is not periodic** (each round adds a layer that differs from the one below it) never ties
+  the knot. It reaches the round limit as today: loud, never silent. With finitely many cells this needs a
+  layer pattern that never repeats in 32 rounds; the corpus has none.
+- **Walks must stop on cycles.** Every graph walk keeps a visited set of node ids, and expansion is never
+  computed. The dump prints a back edge as a label (`#n=` at the node, `#n` at the edge, as Lisp's reader
+  labels do).
+
+**The block, the cache and the dump.**
+
+- The summary block writes the node table of a module's summaries: each node once, its edges by node index, and
+  each table by its root node. Block version 39. An older block is absent (§28.4) and is written again, so the
+  first build after the change re-summarises. The cache entry format and the interface format (O2 puts the block
+  in the interface record) both bump. A module's interface hash covers the block, so every importer's key moves
+  once.
+- The dump keeps today's text: a summary prints its expansion, sorted as now. A node shared by more than one
+  parent where the expansion would print its subtree twice is printed once with a label, and referred to by the
+  label after that. A summary with no shared node prints byte for byte as today. The goldens then change only
+  where a subtree is shared. In the corpus that is the deep-tuple fixtures, and few others, which the slice lists.
+
+**What it costs.** The abstract domain is in `src/own/Ownership.zig`. 272 of its 771 functions read or build entry
+sets or paths (`AV`, `Entry`, `ResEntry`, `SupplyEntry`, `.res`, `.supply`, `steps`), and they are the large ones:
+the walker's evaluation of every instruction, instantiation (`instRes`, `composeRes`, `composeSupply`,
+`instCbOnce`, `instFold`), the read-off of a summary (§16.3), the canonical form (`memberPaths`,
+`canonicalSplit`), normalisation, the overlap and reach queries and the demand checks. The estimate is that more
+than half of the file's 22 500 lines change, with all of `summary_bytes.zig` (1 600 lines) and the path printing of
+`Message.zig`. `Enforce.zig` and `Hoists.zig` change only at their interfaces. It is not a slice of a few days.
+
+**The Lean oracle** (`proofs/ownership/`, #316) models the analysis's semantics over values and paths, not the
+compiler's representation, and its bridge compares verdicts black-box. A representation change that keeps
+verdicts does not touch it, and the bridge is one more check that verdicts are kept. Nothing there is edited.
+
+**Verdicts, and the order of building.** The acceptance is a corpus-wide verdict difference of zero: #210's audit
+driver run with `--ownership-everywhere` over every root (1 599 today), every list and record line compared,
+before and after each step; `tests/corpus/ownership/` goldens unchanged but for the labels above; and
+`-Downership-full-cross-check`'s results unchanged. The steps, each one gated and kept green:
+
+1. **The node table and graph values behind today's entry-set interface.** `AV` gets a graph form with an
+   expansion. Under `std.debug.runtime_safety`, every graph operation is checked against the enumerated
+   operation on the expansion, for values below a size the check can afford: a differential test inside the
+   compiler, and not a limit on any program. No verdict can move.
+2. **Condition cells per node** (the one semantic risk), measured on its own: the audit's diff must be zero.
+   If it is not, the cases are reported, and this document is not bent to fit them (CLAUDE.md rule 10).
+3. **Summaries stored and published as graphs**: block v39, the cache and interface bumps.
+4. **The walker's operations native on graphs**: projection by node, memoised join and composition. The
+   enumerated forms are deleted, and the safety cross-check goes with them.
+5. **Cycles by tying the knot**, replacing #955's fold.
+
+The deep-tuple fixtures check clean once step 4 lands, and `DeepTupleDag` leaves `tests/pending/` for
+`tests/corpus/ownership/`. Each step is measured on Conduit, Bike Wars, `bench/corpus` and the 100 000-line
+benchmark against `fast-compiler.md` §2. Hash-consing costs a table lookup for every node made, and the target is
+no regression past noise on those programs, with `w5`'s summary at 17 nodes.
+
+**Smaller forms considered.**
+
+- *A choice step* `.{0,1}`, which stands for siblings with equal subtrees. It fixes `w5` alone, and only together
+  with per-node condition cells. It does not fix `t′ = ( t, ( t, 0 ) )` iterated, which places one subtree at `.0`
+  and `.1.0` and is just as exponential. A choice of segments `{.0 | .1.0}` is a regular expression of paths,
+  which is the graph again.
+- *Interning summaries per declaration* without changing values: the blow-up is in the walker's values during
+  instantiation, before any summary is stored, so this does not help.
+
 ### 16.3 Reading a summary off a body
 
 After the walk (§5, §7) and the resolution of its demands (§8):
