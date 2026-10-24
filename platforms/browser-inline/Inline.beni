@@ -476,12 +476,12 @@ pub loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤
 loadAllShapedPlanned model rows raws check = loadShapedRows model rows (atField raws) check planned
 
 
--- The first row of `table` whose key is `key`, as a list of rows: empty
--- when there is none.
+-- The row of `table` whose key is `key`, as a list of rows: empty when
+-- there is none. A keyed table's keys are the string patterns of one
+-- `case`, which differ, since a repeated one is `redundant_pattern`: so at
+-- most one row has the key (`browser-inline.md` §8.4, amended 2026-10-24).
 keyedRow : V, V → V
-keyedRow table key =
-    Js.call (Js.call table "filter" [ Js.from λr → Js.same (Js.at r 0) key ]) "slice"
-        [ Js.from 0, Js.from 1 ]
+keyedRow table key = Js.call table "filter" [ Js.from λr → Js.same (Js.at r 0) key ]
 
 
 atField : V → (V → V)
