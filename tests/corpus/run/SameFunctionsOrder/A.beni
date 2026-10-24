@@ -1,0 +1,13 @@
+--! `pickA`, the same code as `B.pickB`.
+
+import B
+
+
+pub pickA : Maybe Int, Int → Int
+pickA m d =
+    case m of
+        Just x →
+            x * 3 + B.offset
+
+        Nothing →
+            d * 7 - B.offset

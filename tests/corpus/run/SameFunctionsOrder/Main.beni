@@ -1,0 +1,22 @@
+-- run: two functions that are the same code are one in a release build
+-- (`backend.md` §9, *Identical functions are one*) only where the one kept is
+-- bound whenever the other is called. `A.pickA` and `B.pickB` are the same
+-- code; `B`'s `table` calls `pickB` while the modules are evaluated, and `B`
+-- is evaluated before `A`, so `pickB` is not made `pickA` (whose `const`
+-- would not yet be initialised); the program prints the same in both builds.
+import A
+import B
+import Node
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map
+            [ A.pickA (Just 1) 0
+            , A.pickA Nothing 2
+            , List.sum B.table
+            , B.pickTwice 5
+            ]
+            String.fromInt
+        )

@@ -1,0 +1,25 @@
+-- run: a function whose result nothing reads is printed with no `return`
+-- (`unobserved`), so it is not the same function as one whose code is the
+-- same but whose result is read (`backend.md` §9, *Identical functions are
+-- one*): `note` and `keep` stay apart, and `keep` answers its value in both
+-- builds. When they were merged, the release build printed `undefined`.
+import Node
+
+
+note : Int → Int
+note n =
+    _ = Debug.log "seen" n
+    n * 3 + 1
+
+
+keep : Int → Int
+keep n =
+    _ = Debug.log "seen" n
+    n * 3 + 1
+
+
+main : Node.Program
+main =
+    _ = note 1
+    _ = note 2
+    Node.printLines (List.map [ keep 3, keep 4 ] String.fromInt)
