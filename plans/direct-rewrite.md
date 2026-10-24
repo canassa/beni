@@ -244,7 +244,7 @@ order of the gaps by bytes, with the boundary first because every scenario dispa
     1.09× at N = 256 and 1.29× at N = 1, the fixed cost being core's `Dict`, the row list, LIS and
     typed pushes (`browser-inline.md` §9.7).
   - **The slices** are S2a–S2e of `browser-inline.md` §9.9. **Depends on**: #294's ordered storage
-    (#681, after #320), the owner's questions on #298 (`For` over a `Dict`, `Dict.keyAt`, the
+    (#681, after #320), O5 (#321), the owner's questions on #298 (`For` over a `Dict`, `Dict.keyAt`, the
     index representation, the bar at N = 1), #879's schema-run cause, and the research generators
     moved from `List` rows to `Dict` rows by the owner's research session (`browser-inline.md` §9.8).
 

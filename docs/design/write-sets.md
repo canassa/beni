@@ -2342,7 +2342,7 @@ the path, written as `{κ}` or `{*}` writes, as a list's elements are.
 | tag | promise about the result `D'` of the old dictionary `D` |
 |---|---|
 | `kept` | `D'` has `D`'s keys in `D`'s order; a value differs only where a write below names it |
-| `at κ` | `D'` is `D` with key κ removed, or inserted at some position, or both, or its value replaced; every other key keeps its value and its order relative to the others |
+| `at κ k` | `D'` is `D` changed at key κ only, and κ does not move: κ removed, or appended after every other key if it was absent, or its value replaced in place; every other key keeps its value and its position. The **kind** `k` says which of these may happen: `ins` (append or replace), `del` (remove, or nothing for an absent key), `any` |
 | `swap κ₁ κ₂` | `D'` is `D` with the positions of κ₁ and κ₂ exchanged, or `D` itself |
 | `grow` | `D'` keeps `D`'s keys in `D`'s order, values at any of them may be replaced, and new keys follow them |
 | `prune` | `D'`'s keys are a subsequence of `D`'s, in `D`'s order, with `D`'s values |
@@ -2350,24 +2350,31 @@ the path, written as `{κ}` or `{*}` writes, as a list's elements are.
 | `clear` | `D'` is empty |
 | `replaced` | nothing: `D'` is another dictionary |
 
-**Joins and sequences.** Equal tags stay; `kept` joined or sequenced with any tag is that tag;
-`at κ` with `at κ` (the same symbol, §2.3's equality) is `at κ`; `at ?` is `grow` when every
-alternative only inserts, `prune` when every alternative only removes, and `replaced` otherwise;
-`grow` with `grow` is `grow`, `prune` with `prune` or `clear` is `prune`, `swap` with `swap` or
-`permute` is `permute`; any other pair is `replaced`. A sequence of edits in one arm (`remove` then
-`insert`) uses the same table, which is sound because each tag's promise is closed under repeating
-it. As for lists, the join removes no entry below the path: a `value d{κ}.f` stays beside the tag.
+**Joins.** Equal tags stay; `kept` joined with any tag is that tag; `at κ k₁` joined with `at κ k₂`
+(the same symbol, §2.3's equality) is `at κ` of the joined kind (`ins` with `del` is `any`); `at ?`
+is `grow` for kind `ins`, `prune` for kind `del`, and `replaced` for `any`; `grow` with `grow` is
+`grow`, `prune` with `prune` or `clear` is `prune`, `swap` with `swap` or `permute` is `permute`;
+any other pair is `replaced`.
+
+**Sequences** (two edits one after the other in one arm) are stricter, because a removal followed
+by an insertion of the same key moves it to the end: `kept` followed or preceded by a tag is that
+tag; `at κ ins` followed by `at κ ins` is `at κ ins`, `at κ del` by `at κ del` is `at κ del`; `grow`
+by `grow` is `grow`, `prune` by `prune` is `prune`; every other sequence is `replaced`, which a
+consumer reconciles. As for lists, neither a join nor a sequence removes an entry below the path:
+a `value d{κ}.f` stays beside the tag, and a consumer edits it whatever the tag (*corrected
+2026-10-25, the review of #973*: the first text let `at` move a key and sequenced `at κ ; at κ` to
+`at κ`, which a remove-then-insert breaks).
 
 **The core rows** (§3.7), replacing the `Dict.*` line of the table. `p` is the dictionary's path
 when the argument is `Same(p)`; a dictionary that is `Fresh` gives `Fresh` as before.
 
 | call | abstract result |
 |---|---|
-| `Dict.insert d κ v` | `Dkt(p, at κ)` with `value p{κ}` = ⟦v⟧; κ = `?` gives `grow` |
-| `Dict.remove d κ` | `Dkt(p, at κ)`; κ = `?` gives `prune` |
-| `Dict.update d κ f` | `f` bound to `Alt([Con(Just, [Same(p{κ})]), Lit Nothing])`: when `f`'s result is `Con(Just, …)` under every alternative, `Dkt(p, kept)` with the value's writes below `p{κ}` (so `Maybe.map λr → { r \| done = … }` is `node p{κ}; value p{κ}.done`, the rebasing of `List.update`'s row); otherwise `Dkt(p, at κ)` with the same writes; κ = `?` as for `insert` and `remove` |
+| `Dict.insert d κ v` | `Dkt(p, at κ ins)` with `value p{κ}` = ⟦v⟧; κ = `?` gives `grow` |
+| `Dict.remove d κ` | `Dkt(p, at κ del)`; κ = `?` gives `prune` |
+| `Dict.update d κ f` | `f` is applied to each alternative of its argument, `Con(Just, [Same(p{κ})])` (κ present) and `Lit Nothing` (κ absent), separately. When the present alternative gives `Con(Just, …)` and the absent one gives `Lit Nothing` — `Maybe.map g`, whose `Nothing ↦ Nothing` writes nothing — the result is `Dkt(p, kept)` with the value's writes below `p{κ}` (so `Maybe.map λr → { r \| done = … }` is `node p{κ}; value p{κ}.done`, the rebasing of `List.update`'s row), whatever κ is. Otherwise `Dkt(p, at κ k)`, `k` `ins` when every result is `Con(Just, …)` or the absent alternative's is, `del` when every result is `Lit Nothing`, `any` else, with the same writes; κ = `?` as for `at ?` |
 | `Dict.swap d κ₁ κ₂` | `Dkt(p, swap κ₁ κ₂)` |
-| `Dict.insertAt d i κ v` | `Dkt(p, at κ)`, `value p{κ}` = ⟦v⟧ |
+| `Dict.insertAt d i κ v` | `Dkt(p, replaced)`: it may move κ; `value p{κ}` = ⟦v⟧ |
 | `Dict.sortBy d f` | `Dkt(p, permute)` |
 | `Dict.filter d f` | `Dkt(p, prune)`: fresh storage holding `D`'s values (`ownership-checker.md` §32.3), so a consumer reads it as a new object with old values |
 | `Dict.empty ⊤` | `Fresh`; written at a path that held a dictionary, `Dkt(p, clear)` |

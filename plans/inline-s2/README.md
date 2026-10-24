@@ -44,4 +44,4 @@ S2=gdlyvhcwp node tools/check.mjs big-table "$PWD/emit/bt-s2.js" 16 1 rows=40
 ```
 
 `-` is tea-inline's output unchanged (the copy reproduces it within ±6 B of HTML noise, the asset
-name). The research project was at `87677ae`, Node 24.19.0, its pinned Vite.
+name). The research project was at `87677ae` (the review rechecked three numbers at `1012209`, within 3 B), Node 24.19.0, its pinned Vite. Keep `S2DIR` off `/tmp`, which is RAM-backed here: `~/.cache/beni-agents/…`.
