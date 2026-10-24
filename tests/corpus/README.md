@@ -317,6 +317,11 @@ line, `#` for a comment:
                                 even count of hex digits, is a script error:
                                 the driver stops with exit 2 and names the step
     {"drop": "a"}               end the connection with no close frame
+    {"idle": 16000}             no event for 16 s, past the 5 s step limit,
+                                for what the host does on its own clock:
+                                hibernate an idle object; `> (idle 16000
+                                ms)`; a count over 60 000 ms, or not an
+                                integer, is a script error
     {…, "until": "closed p2"}   any step: wait for a console line of the
                                 Worker that holds the text before the step
                                 ends, since a line an object writes from a
