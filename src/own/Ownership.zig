@@ -7093,6 +7093,58 @@ fn occursBelow(store: *TypeStore, v: Var, t: Var, depth: u32) bool {
     };
 }
 
+/// Whether `v` reaches itself through structure alone: a cycle of the
+/// unifier's graph, which no type name stands for (checker-v2.md §7.3), as
+/// `List (List …)`. A named recursive type reaches itself through its
+/// declaration, not its graph, and is §16.7's regions'.
+fn cyclicVar(a: Allocator, store: *TypeStore, v: Var) Allocator.Error!bool {
+    // A type is small, so the walk keeps its roots in lists, not in a map
+    // keyed by a dense id (fast-compiler.md §5 rule 5): `stack` is the
+    // walk's path, `done` the roots it has finished.
+    const WalkFrame = struct { v: Var, kids: std.ArrayList(Var) = .empty, next: usize = 0 };
+    var stack: std.ArrayList(WalkFrame) = .empty;
+    var done: std.ArrayList(Var) = .empty;
+    try stack.append(a, .{ .v = store.resolved(v)[0] });
+    try children(a, store, stack.items[0].v, &stack.items[0].kids);
+    while (stack.items.len > 0) {
+        const top = &stack.items[stack.items.len - 1];
+        if (top.next == top.kids.items.len) {
+            try done.append(a, top.v);
+            _ = stack.pop();
+            continue;
+        }
+        const k = store.resolved(top.kids.items[top.next])[0];
+        top.next += 1;
+        for (stack.items) |f| if (f.v == k) return true;
+        if (std.mem.indexOfScalar(Var, done.items, k) != null) continue;
+        try stack.append(a, .{ .v = k });
+        const fresh = &stack.items[stack.items.len - 1];
+        try children(a, store, k, &fresh.kids);
+    }
+    return false;
+}
+
+/// The variables a type's structure names, for `cyclicVar`.
+fn children(a: Allocator, store: *TypeStore, v: Var, out: *std.ArrayList(Var)) Allocator.Error!void {
+    _, const c = store.resolved(v);
+    switch (c) {
+        .structure => |s| switch (s) {
+            .unit, .empty_record => {},
+            .func => |f| {
+                try out.appendSlice(a, store.vars(f.params));
+                try out.append(a, f.result);
+            },
+            .tuple => |r| try out.appendSlice(a, store.vars(r)),
+            .record => |r| {
+                for (store.fields(r.fields)) |f| try out.append(a, f.value);
+                try out.append(a, r.ext);
+            },
+            .app => |ap| try out.appendSlice(a, store.vars(ap.args)),
+        },
+        else => {},
+    }
+}
+
 fn isVar(store: *TypeStore, v: Var) ?Var {
     const root, const c = store.resolved(v);
     return switch (c) {
@@ -17626,10 +17678,14 @@ const Walker = struct {
         inner.effects = ctx.effects;
         inner.callback_fresh = &made;
         var stable = false;
+        // §16.7, the amendment of 2026-10-25 (#955): an accumulator of an
+        // unnamed cyclic type takes the composed-path fold.
+        const cyclic = try w.cyclicAccumulator(j, ctx);
         for (0..round_cap) |_| {
             inner.self_av = shape;
             const grew = w.carry_grew;
-            const next = try w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
+            var next = try w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
+            if (cyclic) next = try w.foldNesting(shape, next);
             if (next.len == shape.len and w.carry_grew == grew) {
                 stable = true;
                 break;
@@ -17693,6 +17749,61 @@ const Walker = struct {
         }
         inner.effects = ctx.effects;
         return w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
+    }
+
+    /// Whether the fold's callback answers a value of an unnamed cyclic
+    /// type (§16.7, the amendment of 2026-10-25): `List.intersperse` as
+    /// `List.foldr`'s callback answers `List (List …)`, which only
+    /// instantiation makes and no type name stands for.
+    fn cyclicAccumulator(w: *Walker, j: u32, ctx: InstCtx) Allocator.Error!bool {
+        const fn_ref = (try w.callbackType(j, ctx)) orelse return false;
+        const parts = switch (try w.tyShape(fn_ref)) {
+            .func => |all| all,
+            else => return false,
+        };
+        return switch (parts[parts.len - 1]) {
+            .store => |v| cyclicVar(w.a, w.store, v),
+            else => false,
+        };
+    }
+
+    /// One round of an accumulator fixpoint whose type is an unnamed cycle,
+    /// folded on the composed path (§16.7, the amendment of 2026-10-25): an
+    /// entry new this round whose cell `shape` holds at a proper, nonempty
+    /// suffix `X` of its path `r X` is the accumulator nested once more,
+    /// and goes to `r⋆`. The first nesting stays exact, as F3's first
+    /// composition does; a fold only merges places, and `foldedPairs`
+    /// judges the pairs it merges.
+    fn foldNesting(w: *Walker, shape: AV, next: AV) Allocator.Error!AV {
+        var out: ?[]Entry = null;
+        for (next, 0..) |e, i| {
+            const known = for (shape) |s| {
+                if (s.path == e.path and s.cell == e.cell) break true;
+            } else false;
+            if (known) continue;
+            const st = w.o.steps(e.path);
+            const depth_r = for (shape) |s| {
+                if (s.cell != e.cell or s.path == eps or s.path == e.path) continue;
+                const sx = w.o.steps(s.path);
+                if (sx.len >= st.len) continue;
+                const tail = st[st.len - sx.len ..];
+                const same = for (tail, sx) |x, y| {
+                    if (x.kind != y.kind or x.arg != y.arg) break false;
+                } else true;
+                if (same) break st.len - sx.len;
+            } else null;
+            const r = depth_r orelse continue;
+            const o = out orelse blk: {
+                const copy = try w.a.dupe(Entry, next);
+                out = copy;
+                break :blk copy;
+            };
+            o[i].path = try w.cutAt(e.path, r);
+            if (o[i].approx == 0) o[i].approx = approx_place;
+        }
+        const folded = out orelse return next;
+        try w.foldedPairs(next, folded);
+        return w.norm(folded);
     }
 
     fn instCbOnce(w: *Walker, j: u32, classes: []const Class, ctx: InstCtx) Allocator.Error!AV {

@@ -2989,6 +2989,34 @@ holds the cast), so it stands after the region's first step, where any step may 
 The note *Stopped 2026-10-23* is withdrawn. The path cut's row in the audit table above now reads **conservative**:
 there is no cut, every source of unbounded paths has a fold, and each fold only merges places.
 
+*Amended 2026-10-25 (issue #955): an accumulator of an unnamed cyclic type takes the composed-path fold.* A type the
+checker unifies coinductively (checker-v2.md §7.3) can be a cycle of the unifier's graph that no type name stands
+for. `List.foldr [] [] List.intersperse` instantiates `intersperse : List a, a → List a` as `List.foldr`'s callback,
+so its accumulator is `List (List …)`. No binder can hold such a value (the checker refuses one as `INFINITE TYPE`),
+but an expression can make one, and none of §16.7's folds saw it: a region marker needs a constructor of a named
+recursive type (`regionOf`), and F3's fold needs a call inside the recursive group being solved. The growth was in
+`instFold`, the fixpoint of a callback whose answer is its next accumulator. Each round put the accumulator one `[*]`
+deeper (`[*]`, `[*][*]`, …), and the fixpoint reached the round limit: `check/good/CyclicArgumentsUnify` was `limit
+n: fixpoint, unsettled after 32`.
+
+- **The rule.** When the callback's answer has a type that reaches itself through the unifier's graph alone
+  (`cyclicVar`), each round of the accumulator fixpoint is folded on the composed path (`foldNesting`). An entry new
+  in the round, whose cell the previous round held at a proper, nonempty suffix `X` of its path `r X`, is the
+  accumulator nested once more. It goes to `r⋆`. The first nesting stays exact, as F3's first composition does. The
+  pairs the fold merges are judged by `foldedBeside`'s rule (`foldedPairs`), as F3's are.
+- **Soundness.** `r⋆` stands for every place at or below `r`, so it covers `r X`. The fold only merges places.
+- **Finite.** After the fold, the next nesting composes `r` with `r⋆`, which folds to `r⋆` again. The round adds
+  nothing, and the fixpoint settles. The rule never fires for a type that does not reach itself in the unifier's
+  graph, and never for a named recursive type, whose recursion is in its declaration. So no other summary changes.
+- **Delta.** `check/good/CyclicArgumentsUnify` has no limit line. `ownership/CyclicAccumulator` pins the rule:
+  - `count` settles;
+  - a write of the fold's fresh answer is accepted;
+  - `twice`, which nests one list at two positions, is refused `exclusive` at a callee that needs the elements
+    apart;
+  - `once`, which nests one list per position, is accepted.
+
+  No other verdict or summary line in `tests/corpus/ownership/` changes.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:

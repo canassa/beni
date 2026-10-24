@@ -1,0 +1,11 @@
+module CyclicAccumulator
+  27:27 List.push inner: accepted param
+  34:26 List.push <call List.foldl>: accepted call
+  38:14 call CyclicAccumulator.pushHead <call List.foldl>[*]: rejected exclusive: the callee needs the list's elements not to share, and they may (CyclicAccumulator.pushHead writes π1[*])
+  42:14 call CyclicAccumulator.pushHead <call List.foldl>[*]: accepted call (CyclicAccumulator.pushHead writes π1[*])
+  summary once: π2 RA; res [*] π2, fresh1{excl π2}r{excl π2}
+  summary twice: π2 RA; res [*] condition(fresh2) π2, fresh1{shared}r{shared}
+  summary pushHead: π1 R, π1[*] RW[storage], π2 R; xreq excl π1
+  demands 4: accepted 3 (fresh 0, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 4: accepted 3 (fresh 0, call 2, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

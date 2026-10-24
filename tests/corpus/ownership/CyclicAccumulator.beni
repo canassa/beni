@@ -1,0 +1,42 @@
+-- ownership: a fold whose accumulator has an unnamed cyclic type (#955;
+-- ownership-checker.md §16.7, the amendment of 2026-10-25). A callback that
+-- puts the accumulator into the list it returns makes it `List (List …)`, a
+-- type no binder can hold and no type name stands for, and each round of the
+-- callback's fixpoint put it one `[*]` deeper. Now the first nesting stays
+-- exact and a later one goes to `⋆`, so the fixpoint settles: `count` has no
+-- limit line. Lists built so are still judged: `freshPush` writes the fold's
+-- fresh answer, accepted; `sharedHead` hands `pushHead` one list at two
+-- positions (`twice`), refused; `singleHead` hands it one list per position
+-- (`once`).
+count : Int
+count = List.length (List.foldr [] [] List.intersperse)
+
+
+once : b, a → List a
+once _ acc = [ acc ]
+
+
+twice : b, a → List a
+twice _ acc = [ acc, acc ]
+
+
+pushHead : List (List b), b → Int
+pushHead xs x =
+    case xs of
+        [ inner, …rest ] →
+            List.length [ List.push inner x, …rest ]
+
+        [] →
+            0
+
+
+freshPush : Int
+freshPush = List.length (List.push (List.foldl [ 1, 2 ] [] twice) [])
+
+
+sharedHead : Int
+sharedHead = pushHead (List.foldl [ 1, 2 ] [] twice) []
+
+
+singleHead : Int
+singleHead = pushHead (List.foldl [ 1, 2 ] [] once) []
