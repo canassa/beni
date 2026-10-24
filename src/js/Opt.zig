@@ -172,6 +172,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .rebound = try arena.alloc(bool, ir.names.len),
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
+        .pinned = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .inlined = try arena.alloc(Node.OptionalIndex, ir.nodes.len),
         .repeated = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .mutable = mutable,
@@ -179,6 +180,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
     @memset(o.stamp, 0);
     @memset(o.repeated, 0);
     @memset(o.dropped, 0);
+    @memset(o.pinned, 0);
     @memset(o.inlined, .none);
     // A statement that runs a store of a record update written in place
     // is the update, never an unused pure value (`ownership-checker.md`
@@ -243,6 +245,10 @@ const Opt = struct {
     /// property of a binding's object leaves the binding the same name.
     rebound: []bool,
     dropped: []u32,
+    /// One bit per node: a statement a call was moved into (`readsBefore`'s
+    /// rule), never dropped for want of a read, though, unlike a `kept` one,
+    /// judged by what it does like any other.
+    pinned: []u32,
     inlined: []Node.OptionalIndex,
     /// `Plan.repeated`.
     repeated: []u32,
@@ -575,7 +581,8 @@ const Opt = struct {
 
             if (o.readOf(idx, "uses") == 0) {
                 const at = stmt.int();
-                if (o.kept[at / 32] & (@as(u32, 1) << @intCast(at % 32)) == 0 and !try o.ir.holdsStore(o.arena, &o.stack, stmt)) o.drop(stmt);
+                const held = (o.kept[at / 32] | o.pinned[at / 32]) & (@as(u32, 1) << @intCast(at % 32)) != 0;
+                if (!held and !try o.ir.holdsStore(o.arena, &o.stack, stmt)) o.drop(stmt);
                 continue;
             }
             if (try o.copy(stmts[i + 1 ..], stmt, n, idx)) continue;
@@ -645,14 +652,16 @@ const Opt = struct {
                 // spilled to bound a chain's nesting is not folded back.
                 if (o.height(value, 0) + o.stmtHeight(after) > JsIr.nesting.spill) break :reads;
                 // Its read must stay: not in a statement already dropped (a
-                // discarded value), and, for a value that calls anything, in
-                // one that is now kept as the binding was, so no later rule
-                // drops or moves what the call does as if the statement were
-                // pure. A binding a specialisation pass made can hold a call
+                // discarded value). A value kept for an effect makes the one
+                // it moves into kept as the binding was, so no later rule
+                // drops or moves the effect as if the statement were pure; any
+                // other value that calls something pins it, never dropped
+                // unread. A binding a specialisation pass made can hold a call
                 // with an effect and not be listed (#944).
                 const ai = after.int();
                 if (o.dropped[ai / 32] & (@as(u32, 1) << @intCast(ai % 32)) != 0) break :reads;
-                if (o.names_only or o.mayWriteIn(value, null, 0) != .clean) o.kept[ai / 32] |= @as(u32, 1) << @intCast(ai % 32);
+                const bit = @as(u32, 1) << @intCast(ai % 32);
+                if (o.names_only) o.kept[ai / 32] |= bit else if (o.mayWriteIn(value, null, 0) != .clean) o.pinned[ai / 32] |= bit;
                 o.drop(stmt);
                 o.inlined[at.int()] = o.compress(value).toOptional();
                 continue;
@@ -693,7 +702,9 @@ const Opt = struct {
                     continue;
                 }
             }
-            const base = o.chainBase(value) orelse continue;
+            // An alias of a value an earlier fold moved here is judged as that
+            // value: a call is no chain (the review of #945).
+            const base = o.chainBase(o.compress(value)) orelse continue;
             if (base.unwrap()) |b| {
                 if (b < o.assigned.len and o.stamp[b] == o.current and o.assigned[b]) continue;
                 if (std.mem.indexOfScalar(NameIndex, o.mutable, base) != null) continue;
@@ -1085,13 +1096,23 @@ const Opt = struct {
                 return .clean;
             },
             .array, .template => {
+                const template = o.ir.tag(node) == .template;
                 for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
                     const r = o.readsTo(part, site, depth + 1);
                     if (r != .clean) return r;
+                    // A template converts each part before it evaluates the
+                    // next: a part made before the site may run a
+                    // `toString`, unless it is a literal or a beni field
+                    // read — a beni value a template holds is a string or a
+                    // number, which converts running no code. A name may
+                    // hold a host value.
+                    if (template) switch (o.ir.tag(part)) {
+                        .template_chunk, .number, .string => {},
+                        .member => if (!o.ir.isFieldRead(part)) return .bad,
+                        else => return .bad,
+                    };
                 }
-                // A template converts its parts; one made before the site
-                // may run a `toString`.
-                return if (o.ir.tag(node) == .array) .clean else .bad;
+                return if (template) .bad else .clean;
             },
             .object => {
                 for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |prop| {
@@ -1316,7 +1337,7 @@ const Opt = struct {
     /// statement the scan walks past.
     fn isPureReadConst(o: *Opt, stmt: Index) bool {
         if (o.ir.tag(stmt) != .const_decl) return false;
-        return o.chainBase(@fromBackingInt(@intCast(o.ir.data(stmt).rhs))) != null;
+        return o.chainBase(o.compress(@fromBackingInt(@intCast(o.ir.data(stmt).rhs)))) != null;
     }
 
     /// Reads of `n` in a statement's OWN expressions: everything evaluated
@@ -1639,4 +1660,37 @@ test "a value read once in the next statement after reads alone is written at it
     try testing.expect(!try readsCase(testing.allocator, .index_then_use, true));
     try testing.expect(try readsCase(testing.allocator, .name_then_use, true));
     try testing.expect(try readsCase(testing.allocator, .assigned, true));
+}
+
+test "an alias of a moved call is not moved again where the call may not go" {
+    // The review of #945: `const d = log(c); const u = d; return t ? u : 0;`
+    // with `d` kept for its effect. `d` moves into `u`; `u`, now the call,
+    // must not move into the branch, where it would run only on one answer.
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const c = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const h = try b.intern(.local(@fromBackingInt(@intCast(1))));
+    const d = try b.intern(.local(@fromBackingInt(@intCast(2))));
+    const u = try b.intern(.local(@fromBackingInt(@intCast(3))));
+    const t = try b.intern(.local(@fromBackingInt(@intCast(4))));
+    const f = try b.intern(.local(@fromBackingInt(@intCast(5))));
+    const args = try b.addRecord(try b.addRange(&.{try testNode(&b, .ident, c.int(), 0)}));
+    const made = try testNode(&b, .call, (try testNode(&b, .ident, h.int(), 0)).int(), @backingInt(args));
+    const bind = try testNode(&b, .const_decl, d.int(), made.int());
+    const alias = try testNode(&b, .const_decl, u.int(), (try testNode(&b, .ident, d.int(), 0)).int());
+    const branches = try b.addRecord(JsIr.Cond{ .consequent = try testNode(&b, .ident, u.int(), 0), .alternate = try testNode(&b, .number, 0, 0) });
+    const cond = try testNode(&b, .cond, (try testNode(&b, .ident, t.int(), 0)).int(), @backingInt(branches));
+    const ret = try testNode(&b, .return_stmt, cond.int(), 0);
+    const params = try b.addNames(&.{ c, h, t });
+    const stmts = try b.addRange(&.{ bind, alias, ret });
+    const func = try b.addRecord(JsIr.Func{ .params_start = params.start, .params_end = params.end, .body_start = stmts.start, .body_end = stmts.end });
+    const decl = try testNode(&b, .func_decl, f.int(), @backingInt(func));
+    var ir = try b.toOwned(try b.addRange(&.{decl}));
+    defer ir.deinit(gpa);
+    try ir.verify();
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const plan = try runKeeping(arena_state.allocator(), &ir, &.{bind}, &.{}, &.{});
+    try testing.expect(!plan.isDropped(alias));
 }
