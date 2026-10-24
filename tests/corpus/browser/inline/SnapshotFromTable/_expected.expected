@@ -1,0 +1,175 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <input data-role="seats" .value="1">
+        <span>"1"</span>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=seats] "x"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="">
+        <p></p>
+        <input data-role="seats" .value="x">
+        <span>"1"</span>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "amy", "state": {"venue": "Hall", "seats": 3}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"-1"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="Hall">
+        <p>"Hall"</p>
+        <input data-role="seats" .value="3">
+        <span>"3"</span>
+        <output>"-1"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "amy", "state": {"venue": "Hall"}}
+(the DOM did not change)
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"zed": {"cups": 2}, "amy": {"venue": "West", "seats": 7}}}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"2"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="West">
+        <p>"West"</p>
+        <input data-role="seats" .value="7">
+        <span>"7"</span>
+        <output>"2"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"zed": {"cups": 3}, "amy": {"venue": 5}}}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"3"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="West">
+        <p>"West"</p>
+        <input data-role="seats" .value="7">
+        <span>"7"</span>
+        <output>"3"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=seats] "9"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"3"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="West">
+        <p>"West"</p>
+        <input data-role="seats" .value="9">
+        <span>"9"</span>
+        <output>"3"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=venue] "East"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"3"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="East">
+        <p>"East"</p>
+        <input data-role="seats" .value="9">
+        <span>"9"</span>
+        <output>"3"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=four]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"4"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="East">
+        <p>"East"</p>
+        <input data-role="seats" .value="9">
+        <span>"9"</span>
+        <output>"4"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"zed": {"cups": 8}}}}
+(the DOM did not change)
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"amy": {"venue": "North", "seats": 2}}}}
+(the DOM did not change)
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": null}}
+(the DOM did not change)
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": [{"cups": 8}]}}
+(the DOM did not change)
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"amy": {"venue": "South", "seats": 4}, "zed": {"cups": 6}, "extra": 1}}}
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <button data-role="four">"Make it 4"</button>
+        <p>"6"</p>
+      </section>
+      <section data-role="w2">
+        <input data-role="venue" .value="South">
+        <p>"South"</p>
+        <input data-role="seats" .value="4">
+        <span>"4"</span>
+        <output>"6"</output>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "__proto__", "state": {"cups": 1}}
+(the DOM did not change)
