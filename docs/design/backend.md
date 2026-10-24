@@ -8717,6 +8717,60 @@ which keeps the call), `emit/release/inline/PushAndTimer` (the validator's worke
 program's `read`: no `Set` and no `Ok` is built), and `run/CaseAcrossCall`, the same program run in
 both builds.
 
+*Amended 2026-10-24 (#934, the S1 hand-minify pass's S2): a validator fused into the decode-or-keep
+that calls it.* A schema validator run whose value its function returns,
+`Result.withDefault (Json.decodeValue v) d`, is lowered `const c = validContext(); const x = W(c,
+…, v); return x === c.fail ? d : x`. The rule above refused it twice: the rest reads `x` whole,
+and `c` is made by a call, not by an object literal. So every route's `replace` kept a wrapper
+round its worker, and a context, and the comparison. Three extensions take it, each exact:
+- **`x` read whole, only as what a `return` gives.** A mention of `x` that is the value of a
+  `return` of the rest, or a branch of a conditional that is (`returnedWhole`), is allowed beside
+  the property reads and comparisons. Such a read is the last thing done with `x`, so nothing has
+  stored `x` before a comparison reads it, and `x === y` of an object literal stays `false`: the
+  literal makes an object nothing else holds. In a copy it is `P`; an object literal `P` is made
+  there, at most once per copy (`projectsToAtoms`), so no object is made twice, and making an
+  `inert` literal later than the `return` cannot be seen. Any other whole read — an argument of a
+  call, a field of a record — refuses the site, as before.
+- **An alias of `x` is `x`.** A `const z = x` of the rest, `z` declared once and never assigned —
+  what slice 9 leaves of a `case` on the run, its `Ok new` pattern bound to the value — is held to
+  every rule `x` is held to, and so is an alias of an alias. A comparison of `x` with one of its
+  aliases, which an object literal `P` would decide `false`, refuses the site.
+- **A stable chain through a call that makes a fresh object.** `y`'s initialiser may be a call,
+  with no arguments, of a top-level `const f = () => {…}` that nothing assigns and nothing the
+  pass cannot see names, whose body is `const`s of object and array literals of atoms and then a
+  `return` of an object literal whose value at `k` is an object or array literal or one of those
+  `const`s (`makesFreshAt`). Each call makes its own object and its own value at `k`, which only
+  `y` holds, so two reads of `y.k` give one object, never `NaN`, and `y.k === y.k` is `true` —
+  the same rule as an object literal's, under the same conditions on every other mention of `y`.
+  `validContext` is such a function once specialisation has folded it to `() => ({a: []})`.
+- **A parameter handed on is still only inspected.** A parameter that `f`'s body passes to a
+  top-level function (one nothing assigns and nothing the pass cannot see names, called with all
+  its arguments) counts as a property read when that function only reads properties of the
+  parameter it takes, by the same rule, taken to be true while it is being asked (`inspectedIn`).
+  A worker hands its context to the worker of a nested record, which only reads `c.fail` and
+  passes it on.
+
+Order is the rule's: the arguments, then `f`'s body, then the rest written at each `return`. The
+rest is evaluated where it was, after everything `f` did on that path, and nothing of it is moved
+before anything `f` does that could throw. Then `x === c.fail` is decided at each `return`, the
+default is what each failure returns, and the context is read by nothing, so the optimiser drops
+it. S1's N = 1 wrapper `x=(a,b)=>{let c=u(),d=w(c,a);return d===c.a?b:d}` and its worker become
+`v=(a,b)=>{if(typeof a!=="object"||a===null||Array.isArray(a))return b;…;return{d:c,a:d,c:e,b:f}}`,
+the route row holds `v`, and `u` goes from the page. Pinned by `Spec`'s unit tests *a call's
+object is fresh, with its own value at a key, only for a function of literals* (a number, a
+parameter, a value a call made and a missing key refuse) and *a fused site's binding may be read
+whole only as what a return gives*; by `emit/release/app/ValidatorFused` (one function fused, one
+whose run a record holds kept); and by `run/ValidatorFused`. Measured (release, brotli 11, against
+the goldens before): `app/ValidatorRun` 591 → 537, `app/ValidatorWorker` 637 → 588,
+`app/ValidatorNoPath` 635 → 599, `app/PayloadUnreadField` 689 → 635, `inline/ValidatedLoader`
+1 218 → 1 195, `inline/CaseLoader` 1 409 → 1 367, `inline/ErrorUnreadWidgets` 1 167 → 1 117;
+`inline/NestedStableLoad` 1 272 → 1 282 grows after brotli only, its raw bytes 3 352 → 3 256 (the
+copied worker leaves the run of similar workers it compressed against, as `direct/ListScripts` did
+above). S1 `unique-components`, one file, seeds 1–3: N = 1 1 482 / 1 424 / 1 655 → 1 461 / 1 410 /
+1 643, N = 16 6 107 / 6 135 / 5 910 → 6 042 / 6 049 / 5 851; N = 64 and 256 are on the shapes side
+and do not move. The event decoder is not fused into the push's dispatcher: the rest there makes
+a function (the snapshot's `a => g[a[2]]`), which the rule does not copy.
+
 **A function that only calls a function is that function** (*added 2026-10-17*; `Spec.etaIn`, in
 the last sweep). `() => g()` is `g` where `g` is a local an earlier statement of the same list
 declares, once, as an arrow of no parameters, and nothing assigns it. Neither function takes a
