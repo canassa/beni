@@ -1,0 +1,65 @@
+--! The third widget: its `replace` resets `size` to a constructor of its
+--! own type, so its row keeps its function.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type Size
+    = Small
+    | Big
+
+
+pub type alias Model =
+    level : Int
+    size : Size
+
+
+pub init : ⊤ → Model
+init ⊤ = { level = 0, size = Big }
+
+
+pub type Msg
+    = Toggle
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            case model.size of
+                Small →
+                    { model | size = Big }
+
+                Big →
+                    { model | size = Small }
+
+
+--| The level the host sent, the size reset; or the model as it was when it
+--| sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { level = new.level, size = Small }
+
+        Err _ →
+            model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w3">
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+        <p>{model.level}</p>
+        <p>
+            {case model.size of
+                Small →
+                    "small"
+
+                Big →
+                    "big"
+            }
+        </p>
+    </section>

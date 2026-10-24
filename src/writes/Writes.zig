@@ -657,9 +657,17 @@ pub const RouteRow = struct {
     module: u32 = none,
     call: u32 = none,
     /// When `F`'s body is exactly `Result.withDefault (Json.decodeValue x)
-    /// old`: the `decodeValue` call, an instruction of `fn_module`; `none`
-    /// otherwise (§8.4, amended 2026-10-24).
+    /// old`, or `case Json.decodeValue x of Ok new → { … }; Err _ → old`
+    /// (`case_form`): the `decodeValue` call, an instruction of
+    /// `fn_module`; `none` otherwise (§8.4, amended 2026-10-24).
     decode: u32 = none,
+    /// The `case` form's record (§8.4, amended 2026-10-24, #946): the
+    /// fields it gives a constant, each with the constant's instruction of
+    /// `fn_module`, and the fields it copies from `new` under their own
+    /// names, as symbols.
+    case_form: bool = false,
+    consts: []const RowConst = &.{},
+    copied: []const u32 = &.{},
     /// Set by the emitter once the program's shapes are decided: the codec,
     /// in `fn_module`'s plan, of a `decode` that is a shape run, whose
     /// shape the row holds in place of `F`; `none` otherwise.
@@ -667,6 +675,7 @@ pub const RouteRow = struct {
 };
 
 pub const PlanItem = struct { field: u32, sub: ?[]const PlanItem = null };
+pub const RowConst = struct { field: u32, value: u32 };
 
 pub const RouteSite = struct {
     module: u32,
@@ -5742,7 +5751,14 @@ fn routeRow(a: *Writes, w: *RouteWalk, m: u32, model: u32, field: u32, given: In
     if (t.m == m or !try a.routeFunction(t.m, t.d)) return null;
     const at = try a.mkPath(rho_path, .field, field, 0);
     const plan = (try a.copyPlan(at, 0)) orelse return null;
-    try w.rows.append(a.arena(), .{ .field = field, .fn_module = t.m, .fn_decl = t.d, .plan = plan, .module = m, .call = given.int(), .decode = a.decodeOrKeep(t.m, t.d) });
+    var row: RouteRow = .{ .field = field, .fn_module = t.m, .fn_decl = t.d, .plan = plan, .module = m, .call = given.int(), .decode = a.decodeOrKeep(t.m, t.d) };
+    if (row.decode == none) if (try a.decodeOrKeepCase(m, t.m, t.d)) |form| {
+        row.decode = form.decode;
+        row.case_form = true;
+        row.consts = form.consts;
+        row.copied = form.copied;
+    };
+    try w.rows.append(a.arena(), row);
     return .{ .row = @intCast(w.rows.items.len - 1), .raw = args[0].int() };
 }
 
@@ -5780,6 +5796,78 @@ fn decodeOrKeep(a: *const Writes, m: u32, d: u32) u32 {
     const decode_args = b.extraSlice(b.subRange(@fromBackingInt(b.instData(decode).rhs)), Inst.Index);
     if (decode_args.len != 1 or b.instTag(decode_args[0]) != .local or b.instData(decode_args[0]).lhs != b.instData(params[0]).lhs) return none;
     return decode.int();
+}
+
+/// The `Json.decodeValue x` call of `(m, d)` when its body is exactly
+/// `case Json.decodeValue x of Ok new → { … }; Err _ → old`, `x` and `old`
+/// its two parameters, each field of the record `new`'s field of the same
+/// name or a constant: what the source writes as "the decoded value with
+/// these constants, or the old one when it does not decode" (§8.4, amended
+/// 2026-10-24, #946); null otherwise. A constant is an integer, float or
+/// string literal, or a constructor of another module than `program`'s
+/// and `m`, which the emitter asks further (`Emit.shapeRoutes`).
+fn decodeOrKeepCase(a: *Writes, program: u32, m: u32, d: u32) Error!?struct { decode: u32, consts: []const RowConst, copied: []const u32 } {
+    const b = a.bir(m);
+    const decl = b.decls[d];
+    const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
+    if (params.len != 2 or b.instTag(params[0]) != .pat_var or b.instTag(params[1]) != .pat_var) return null;
+    const body = decl.body.unwrap() orelse return null;
+    if (b.instTag(body) != .case) return null;
+    const scrutinee: Inst.Index = @fromBackingInt(b.instData(body).lhs);
+    if (!a.callsCore(m, scrutinee, "Json", "decodeValue")) return null;
+    const decode_args = b.extraSlice(b.subRange(@fromBackingInt(b.instData(scrutinee).rhs)), Inst.Index);
+    if (decode_args.len != 1 or b.instTag(decode_args[0]) != .local or b.instData(decode_args[0]).lhs != b.instData(params[0]).lhs) return null;
+    const ok = a.findCtor("Result", "Ok");
+    const err = a.findCtor("Result", "Err");
+    if (ok == none or err == none) return null;
+    const branches = b.extraSlice(b.subRange(@fromBackingInt(b.instData(body).rhs)), Inst.Index);
+    if (branches.len != 2) return null;
+    var record: ?Inst.Index = null;
+    var new_local: u32 = none;
+    var kept = false;
+    for (branches) |br| {
+        if (b.instTag(br) != .branch) return null;
+        const pat: Inst.Index = @fromBackingInt(b.instData(br).lhs);
+        const arm: Inst.Index = @fromBackingInt(b.instData(br).rhs);
+        if (b.instTag(pat) != .pat_ctor) return null;
+        const c = a.ctorTarget(m, @fromBackingInt(b.instData(pat).lhs)) orelse return null;
+        const subs = b.extraSlice(b.subRange(@fromBackingInt(b.instData(pat).rhs)), Inst.Index);
+        if (subs.len != 1) return null;
+        if (c == ok) {
+            if (b.instTag(subs[0]) != .pat_var or b.instTag(arm) != .record) return null;
+            new_local = b.instData(subs[0]).lhs;
+            record = arm;
+        } else if (c == err) {
+            if (b.instTag(subs[0]) != .pat_wild and b.instTag(subs[0]) != .pat_var) return null;
+            if (b.instTag(arm) != .local or b.instData(arm).lhs != b.instData(params[1]).lhs) return null;
+            kept = true;
+        } else return null;
+    }
+    const rec = record orelse return null;
+    if (!kept) return null;
+    var consts: std.ArrayList(RowConst) = .empty;
+    var copied: std.ArrayList(u32) = .empty;
+    for (b.extraSlice(Bir.inlineRange(b.instData(rec)), Bir.Field)) |fld| {
+        const name = @backingInt(b.symbol(fld.name));
+        const v = fld.value;
+        switch (b.instTag(v)) {
+            .field_access => {
+                const fa = b.instData(v);
+                const base: Inst.Index = @fromBackingInt(fa.lhs);
+                if (b.instTag(base) != .local or b.instData(base).lhs != new_local) return null;
+                if (@backingInt(b.symbol(@fromBackingInt(fa.rhs))) != name) return null;
+                try copied.append(a.arena(), name);
+            },
+            .int, .float, .string => try consts.append(a.arena(), .{ .field = name, .value = v.int() }),
+            .ext_ctor => {
+                const owner = b.instData(v).lhs;
+                if (owner == program or owner == m) return null;
+                try consts.append(a.arena(), .{ .field = name, .value = v.int() });
+            },
+            else => return null,
+        }
+    }
+    return .{ .decode = scrutinee.int(), .consts = consts.items, .copied = copied.items };
 }
 
 /// Whether `e` of module `m` is a call of core's `module.name`.

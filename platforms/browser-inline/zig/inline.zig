@@ -89,6 +89,12 @@ pub const lowering: m.Lowering = .{
         .{ .name = "loadAllShaped", .arity = 4 },
         .{ .name = "loadShapedPlanned", .arity = 5 },
         .{ .name = "loadAllShapedPlanned", .arity = 4 },
+        // The `…Const` ones for shape rows that may hold constants (§8.4,
+        // amended 2026-10-24, #946).
+        .{ .name = "loadShapedConst", .arity = 5 },
+        .{ .name = "loadAllShapedConst", .arity = 4 },
+        .{ .name = "loadShapedPlannedConst", .arity = 5 },
+        .{ .name = "loadAllShapedPlannedConst", .arity = 4 },
     },
     .module = module,
     .root = root,

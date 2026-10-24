@@ -3,10 +3,12 @@
 -- `CaseLoader`'s program, with enough `Json.decodeValue` runs below to take
 -- the shapes side of `schema.md` §6's fork: `W1.replace` is `Result.withDefault
 -- (Json.decodeValue state) model`, so its row holds the shape its run reads and
--- the loader runs `validShape` of it as the function would; `W2.replace` is a
--- `case`, and its row keeps the function. The page's transcript is
--- `CaseLoader`'s: a push, a snapshot and a bad snapshot member behave as the
--- source says.
+-- the loader runs `validShape` of it as the function would. `W2.replace` is a
+-- `case` whose record is the decoded fields and the constant `seatsTyped =
+-- Nothing` (amended 2026-10-24, #946): its row holds its run's shape and that
+-- constant, which the loader writes after the decoded fields. The page's
+-- transcript is `CaseLoader`'s: a push, a snapshot and a bad snapshot member
+-- behave as the source says.
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)

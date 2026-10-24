@@ -31,10 +31,14 @@ module Inline
   value loadAll : V, V, V → ⊤  -- impure
   value loadAllPlanned : V, V, V → ⊤  -- impure
   value loadAllShaped : V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value loadAllShapedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadAllShapedPlanned : V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value loadAllShapedPlannedConst : V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadPlanned : V, V, V, V → ⊤  -- impure
   value loadShaped : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value loadShapedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value loadShapedPlanned : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
+  value loadShapedPlannedConst : V, V, V, V, (V, V → Result V V) → ⊤  -- impure
   value on : V, V, V → ⊤  -- impure
   value onArm : V, V, V, V → ⊤  -- impure
   value own : V → ⊤  -- impure

@@ -99,6 +99,7 @@ const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaValid = @import("SchemaValid.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaShare = @import("SchemaShare.zig");
+const SchemaCtor = @import("SchemaCtor.zig");
 const Spec = @import("Spec.zig");
 const RepKeys = @import("RepKeys.zig");
 const Sibling = @import("Sibling.zig");
@@ -3586,7 +3587,7 @@ const Emitter = struct {
             // The routes, in the lowering's terms.
             const routes: Writes.Routes = if (routed) prog.routes else .{};
             const rrows = try a.alloc(Lower.Direct.RouteRow, routes.rows.len);
-            for (rrows, routes.rows) |*o, r| o.* = .{ .field = @fromBackingInt(r.field), .fn_module = r.fn_module, .fn_decl = r.fn_decl, .plan = try planOf(a, r.plan), .module = r.module, .call = r.call, .shape = if (r.shape == Writes.none) null else r.shape };
+            for (rrows, routes.rows) |*o, r| o.* = .{ .field = @fromBackingInt(r.field), .fn_module = r.fn_module, .fn_decl = r.fn_decl, .plan = try planOf(a, r.plan), .module = r.module, .call = r.call, .shape = if (r.shape == Writes.none) null else r.shape, .consts = try constsOf(a, r) };
             const rsites = try a.alloc(Lower.Direct.RouteSite, routes.sites.len);
             for (rsites, routes.sites) |*o, st| o.* = .{
                 .module = st.module,
@@ -3756,6 +3757,14 @@ const Emitter = struct {
             },
             else => null,
         };
+    }
+
+    /// A row's constants, when it holds its run's shape (`caseRowFits`).
+    fn constsOf(a: std.mem.Allocator, r: Writes.RouteRow) ![]const Lower.Direct.RowConst {
+        if (r.shape == Writes.none) return &.{};
+        const out = try a.alloc(Lower.Direct.RowConst, r.consts.len);
+        for (out, r.consts) |*o, c| o.* = .{ .field = @fromBackingInt(c.field), .value = c.value };
+        return out;
     }
 
     fn planOf(a: std.mem.Allocator, plan: []const Writes.PlanItem) ![]const Lower.Direct.PlanItem {
@@ -4432,6 +4441,7 @@ const Emitter = struct {
                 const fm: Graph.Index = @fromBackingInt(@intCast(row.fn_module));
                 const sites = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, birs[row.fn_module], tables[row.fn_module], fm, sg, false, true);
                 const k = sites.shapeCodecOfCall(row.decode) orelse continue;
+                if (row.case_form and !e.caseRowFits(in, sg, birs[row.fn_module], fm, k, row)) continue;
                 row.shape = k;
                 const callee = birs[row.module].instData(@fromBackingInt(row.call)).lhs;
                 try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(row.module)), .lo = callee, .hi = callee });
@@ -4443,6 +4453,36 @@ const Emitter = struct {
         try pinned.append(e.scratch, runner);
         in.cuts = cuts.items;
         in.pinned = pinned.items;
+    }
+
+    /// `browser-inline.md` §8.4, amended 2026-10-24 (#946): a route whose
+    /// function is `case Json.decodeValue x of Ok new → { … }; Err _ → old`
+    /// holds its run's shape and its constants when the decoded record's
+    /// fields are exactly those the record copies from `new`, and each
+    /// constant is a literal or a nullary constructor of a `type`, not a
+    /// schema's.
+    fn caseRowFits(e: *Emitter, in: *const Reach.Input, sg: *const SchemaGraph, fb: *const Bir, fm: Graph.Index, k: u32, row: *const Writes.RouteRow) bool {
+        _ = e;
+        const target = sg.codecTarget(fm, k);
+        const def = sg.definition(fm, target.decl) orelse return false;
+        const plan = sg.planOf(fm);
+        if (SchemaGraph.tag(plan, def.root) != .record) return false;
+        const fields = SchemaGraph.fields(plan, def.root);
+        if (fields.len != row.copied.len) return false;
+        for (fields) |f| {
+            const name = @backingInt(SchemaGraph.symbol(plan, f.name));
+            if (std.mem.indexOfScalar(u32, row.copied, name) == null) return false;
+        }
+        for (row.consts) |c| {
+            const v: Bir.Inst.Index = @fromBackingInt(c.value);
+            if (fb.instTag(v) != .ext_ctor) continue;
+            if (SchemaCtor.of(fb, fm, in.interfaces, v) != null) return false;
+            const d = fb.instData(v);
+            if (d.lhs >= in.interfaces.len) return false;
+            const ctors = in.interfaces[d.lhs].ctors;
+            if (d.rhs >= ctors.len or ctors[d.rhs].arity != 0) return false;
+        }
+        return true;
     }
 
     /// §9's elimination: every module's edge lists, on the workers, then
