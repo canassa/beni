@@ -294,9 +294,47 @@ theorem valueTyped_record_of_fields {ds : List Decl} {heap : Heap} {ws : List Va
   obtain ⟨os, cs, n, many, lenO, typedMany⟩ := representsMany_typed_of_fields ws ts len fields
   exact ⟨n + 1, .record os, cs, .record many, obsTyped_record_of_fields lenO typedMany⟩
 
+/-- The elements of an observation typed `List Int` are typed `Int`. -/
+theorem obsTyped_list_elements {ds : List Decl} {os : List Observation}
+    (typed : obsTyped ds (.list os) (.list .int) = true) : ∀ o ∈ os, obsTyped ds o .int = true := by
+  unfold obsTyped at typed
+  change os.attach.all (fun item => obsTyped ds item.val .int) = true at typed
+  intro o member
+  exact List.all_eq_true.mp typed ⟨o, member⟩ (List.mem_attach _ _)
+
+/-- The elements of an observation typed `Chain Int` are typed `Int`. -/
+theorem obsTyped_chain_elements {ds : List Decl} {os : List Observation}
+    (typed : obsTyped ds (.list os) (.chain .int) = true) : ∀ o ∈ os, obsTyped ds o .int = true := by
+  unfold obsTyped at typed
+  change os.attach.all (fun item => obsTyped ds item.val .int) = true at typed
+  intro o member
+  exact List.all_eq_true.mp typed ⟨o, member⟩ (List.mem_attach _ _)
+
+/-- Values whose observations are typed `Int` are integers, and the
+observations are the same integers: the contents of a typed integer array. -/
+theorem integers_of_represented {heap : Heap} {ds : List Decl} {n : Nat} (vs : List Value)
+    {os : List Observation} {cs : List Nat}
+    (children : RepresentsMany heap n vs os cs) (typed : ∀ o ∈ os, obsTyped ds o .int = true) :
+    ∃ integers, vs = heapInts integers ∧ os = valueInts integers := by
+  induction vs generalizing os cs with
+  | nil =>
+    cases children
+    exact ⟨[], rfl, rfl⟩
+  | cons v vs ih =>
+    cases children with
+    | cons first rest =>
+      obtain ⟨integers, rfl, rfl⟩ := ih rest (fun o member => typed o (List.mem_cons_of_mem _ member))
+      have headTyped := typed _ (List.mem_cons_self ..)
+      cases first with
+      | int => exact ⟨_ :: integers, rfl, rfl⟩
+      | record _ => simp [obsTyped] at headTyped
+      | closure _ => simp [obsTyped] at headTyped
+      | ref _ _ => simp [obsTyped] at headTyped
+
 /-- The shape of a typed flat value: the generalization of `allocated_shape_of_typed`.
 The typing of a result leaves its dead slot open; the tags fix it to the
-integer `0`, as both interpreters build it. -/
+integer `0`, as both interpreters build it. An array's contents come from its
+typed expansion: an integer list holds integers. -/
 theorem allocated_of_typed {ds : List Decl} {heap : Heap} {w : Value} {ty : Ty} {a : Abstract}
     (flat : FlatType ty) (typed : ValueTyped ds heap w ty) (tags : ResultTags ty a w) :
     AllocatedFlatValue heap w ty := by
@@ -314,14 +352,20 @@ theorem allocated_of_typed {ds : List Decl} {heap : Heap} {w : Value} {ty : Ty} 
     | int => simp [obsTyped] at observedType
     | record _ => simp [obsTyped] at observedType
     | closure _ => simp [obsTyped] at observedType
-    | ref allocated _ => exact .list _ (Array.getElem?_eq_some_iff.mp allocated).1
+    | ref allocated children =>
+      obtain ⟨integers, rfl, _⟩ :=
+        integers_of_represented _ children (obsTyped_list_elements observedType)
+      exact .list _ integers allocated
   | chainInt =>
     obtain ⟨depth, observation, footprint, represented, observedType⟩ := typed
     cases represented with
     | int => simp [obsTyped] at observedType
     | record _ => simp [obsTyped] at observedType
     | closure _ => simp [obsTyped] at observedType
-    | ref allocated _ => exact .chain _ (Array.getElem?_eq_some_iff.mp allocated).1
+    | ref allocated children =>
+      obtain ⟨integers, rfl, _⟩ :=
+        integers_of_represented _ children (obsTyped_chain_elements observedType)
+      exact .chain _ integers allocated
   | record ts _ ih =>
     obtain ⟨depth, observation, footprint, represented, observedType⟩ := typed
     cases represented with
@@ -367,31 +411,31 @@ theorem allocated_of_typed {ds : List Decl} {heap : Heap} {w : Value} {ty : Ty} 
           have typedE : obsTyped ds o1 e = true := by simpa [obsTyped] using observedType
           exact .err e s w' (ihE ⟨_, o1, c1, r1, typedE⟩ tagsE)
 
-theorem allocated_mono {heap next : Heap} {w : Value} {ty : Ty}
-    (shape : AllocatedFlatValue heap w ty) (size : heap.size ≤ next.size) : AllocatedFlatValue next w ty := by
+/-- A flat shape survives an allocation or an integer write: its arrays keep
+their contents or get new integer contents. -/
+theorem allocated_frame {heap next : Heap} {w : Value} {ty : Ty}
+    (shape : AllocatedFlatValue heap w ty) (frame : IntegerFrame heap next) : AllocatedFlatValue next w ty := by
   induction shape with
   | int integer => exact .int integer
-  | list root allocated => exact .list root (Nat.lt_of_lt_of_le allocated size)
-  | chain root allocated => exact .chain root (Nat.lt_of_lt_of_le allocated size)
+  | list root integers lookup =>
+    rcases frame.2 root (Array.getElem?_eq_some_iff.mp lookup).1 with same | ⟨integers', lookup'⟩
+    · exact .list root integers (same.trans lookup)
+    · exact .list root integers' lookup'
+  | chain root integers lookup =>
+    rcases frame.2 root (Array.getElem?_eq_some_iff.mp lookup).1 with same | ⟨integers', lookup'⟩
+    · exact .chain root integers (same.trans lookup)
+    · exact .chain root integers' lookup'
   | record ws ts len _ ih => exact .record ws ts len (fun i w t ws_i ts_i => ih i w t ws_i ts_i)
   | ok e s w _ ih => exact .ok e s w ih
   | err e s w _ ih => exact .err e s w ih
 
-/-- Every flat value of a flat heap is typed: the generalization of `valueTyped_after_flat_heap`. -/
+/-- Every flat value is typed: the generalization of `valueTyped_after_flat_heap`. -/
 theorem valueTyped_of_allocated {ds : List Decl} {heap : Heap} {w : Value} {ty : Ty}
-    (shape : AllocatedFlatValue heap w ty) (flat : FlatHeap heap) : ValueTyped ds heap w ty := by
+    (shape : AllocatedFlatValue heap w ty) : ValueTyped ds heap w ty := by
   induction shape with
   | int integer => exact ⟨1, .int integer, [], .int, by simp [obsTyped]⟩
-  | list root allocated =>
-    have lookup : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookup)
-    rw [payload] at lookup
-    exact allocated_integer_list_typed ds lookup
-  | chain root allocated =>
-    have lookup : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookup)
-    rw [payload] at lookup
-    exact allocated_integer_chain_typed ds lookup
+  | list root integers lookup => exact allocated_integer_list_typed ds lookup
+  | chain root integers lookup => exact allocated_integer_chain_typed ds lookup
   | record ws ts len _ ih =>
     exact valueTyped_record_of_fields len (fun i w t ws_i ts_i => ih i w t ws_i ts_i)
   | ok e s w _ ih =>
@@ -667,12 +711,10 @@ theorem corresponds_int_frame {heap : Heap} {next : Heap} {o : Observation} (pai
 
 /-- Correspondence of a flat array survives any heap change that keeps its
 own cell. -/
-theorem corresponds_ref_frame {heap : Heap} {next : Heap} {o : Observation} (flat : FlatHeap heap) (allocated : root < heap.size)
+theorem corresponds_ref_frame {heap : Heap} {next : Heap} {o : Observation} {root : Nat} {integers : List Int}
+    (lookupRoot : heap[root]? = some (heapInts integers))
     (paired : Corresponds heap o (.ref root)) (same : next[root]? = heap[root]?) :
     Corresponds next o (.ref root) := by
-  have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-  obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-  rw [payload] at lookupRoot
   have observed := observation_of_integer_ref lookupRoot paired
   subst observed
   exact corresponds_integer_ref (by rw [same]; exact lookupRoot)
@@ -774,22 +816,16 @@ theorem eq_bottom_of_beq {a : Abstract} (h : (a == .bottom) = true) : a = .botto
 
 /-- An array of a flat value sits at a field path, below the heap bound, in any heap. -/
 theorem arrayAt_flat {heap : Heap} {w : Value} {ty : Ty} {q : Path} {c : Nat}
-    (shape : AllocatedFlatValue heap w ty) (flat : FlatHeap heap) (located : ArrayAt heap w q c) :
+    (shape : AllocatedFlatValue heap w ty) (located : ArrayAt heap w q c) :
     c < heap.size ∧ immutablePath q = true ∧ ∀ heap' : Heap, ArrayAt heap' w q c := by
   induction shape generalizing q with
   | int integer => cases located
-  | list root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | list root integers lookupRoot =>
     obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
-    exact ⟨allocated, rfl, fun _ => .here _⟩
-  | chain root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+    exact ⟨(Array.getElem?_eq_some_iff.mp lookupRoot).1, rfl, fun _ => .here _⟩
+  | chain root integers lookupRoot =>
     obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
-    exact ⟨allocated, rfl, fun _ => .here _⟩
+    exact ⟨(Array.getElem?_eq_some_iff.mp lookupRoot).1, rfl, fun _ => .here _⟩
   | record ws ts len _ ih =>
     cases located with
     | @field _ i w' q' _ ws_i inner =>
@@ -820,21 +856,15 @@ theorem arrayAt_flat {heap : Heap} {w : Value} {ty : Ty} {q : Path} {c : Nat}
       · cases inner
 
 theorem reaches_flat {heap : Heap} {w : Value} {ty : Ty} {c : Nat}
-    (shape : AllocatedFlatValue heap w ty) (flat : FlatHeap heap) (reachable : Reaches heap w (.ref c)) :
+    (shape : AllocatedFlatValue heap w ty) (reachable : Reaches heap w (.ref c)) :
     ∃ q, ArrayAt heap w q c := by
   induction shape with
   | int integer => cases reachable
-  | list root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | list root integers lookupRoot =>
     have := flat_ref_reaches lookupRoot reachable
     subst this
     exact ⟨[], .here _⟩
-  | chain root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | chain root integers lookupRoot =>
     have := flat_ref_reaches lookupRoot reachable
     subst this
     exact ⟨[], .here _⟩
@@ -867,13 +897,13 @@ theorem reaches_flat {heap : Heap} {w : Value} {ty : Ty} {c : Nat}
 /-! ### The frame of a flat value -/
 
 theorem corresponds_flat_frame {heap next : Heap} {w : Value} {ty : Ty} {o : Observation}
-    (shape : AllocatedFlatValue heap w ty) (flat : FlatHeap heap)
+    (shape : AllocatedFlatValue heap w ty)
     (same : ∀ q c, ArrayAt heap w q c → next[c]? = heap[c]?)
     (paired : Corresponds heap o w) : Corresponds next o w := by
   induction shape generalizing o with
   | int integer => exact corresponds_int_frame paired
-  | list root allocated => exact corresponds_ref_frame flat allocated paired (same [] root (.here _))
-  | chain root allocated => exact corresponds_ref_frame flat allocated paired (same [] root (.here _))
+  | list root integers lookupRoot => exact corresponds_ref_frame lookupRoot paired (same [] root (.here _))
+  | chain root integers lookupRoot => exact corresponds_ref_frame lookupRoot paired (same [] root (.here _))
   | record ws ts len _ ih =>
     obtain ⟨os, rfl, lenO, fieldsC⟩ := corresponds_record_fields paired
     refine corresponds_record_of_fields lenO ?_
@@ -903,28 +933,29 @@ theorem corresponds_flat_frame {heap next : Heap} {w : Value} {ty : Ty} {o : Obs
 theorem describes_flat_frame {heap next : Heap} {gamma gamma' : Naming} {w : Value} {ty : Ty}
     {a : Abstract}
     (shape : AllocatedFlatValue heap w ty) (abs : FlatAbstract ty a) (tags : ResultTags ty a w)
-    (_flat : FlatHeap heap)
-    (nextFlat : FlatHeap next) (size : heap.size ≤ next.size)
+    (frame : IntegerFrame heap next)
     (namingSame : ∀ origin cell, cell < heap.size → (cell ∈ gamma' origin ↔ cell ∈ gamma origin))
     (described : Describes gamma heap a w) : Describes gamma' next a w := by
   induction shape generalizing a with
   | int integer => exact integer_described_any _ integer
-  | list root allocated =>
-    have nextAllocated : root < next.size := Nat.lt_of_lt_of_le allocated size
-    have lookupRoot : next[root]? = some next[root] := by simp [nextAllocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values next[root] (nextFlat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | list root integers lookup =>
+    have allocated : root < heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
+    obtain ⟨integers', lookupRoot⟩ : ∃ integers', next[root]? = some (heapInts integers') := by
+      rcases frame.2 root allocated with same | found
+      · exact ⟨integers, same.trans lookup⟩
+      · exact found
     cases tags with
     | listInt roots element certificate _ =>
       have names := described.1.1 [] root (.here _)
       rw [list_root_names] at names
       exact allocated_list_described lookupRoot
         (named_same_of_naming namingSame allocated (named_union_nil names))
-  | chain root allocated =>
-    have nextAllocated : root < next.size := Nat.lt_of_lt_of_le allocated size
-    have lookupRoot : next[root]? = some next[root] := by simp [nextAllocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values next[root] (nextFlat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | chain root integers lookup =>
+    have allocated : root < heap.size := (Array.getElem?_eq_some_iff.mp lookup).1
+    obtain ⟨integers', lookupRoot⟩ : ∃ integers', next[root]? = some (heapInts integers') := by
+      rcases frame.2 root allocated with same | found
+      · exact ⟨integers, same.trans lookup⟩
+      · exact found
     cases tags with
     | chainInt roots element certificate _ =>
       have names := described.1.1 [] root (.here _)
@@ -1045,22 +1076,16 @@ theorem mem_cellsAt_of_path {a : Abstract} {p : Path} {cs : List Origin} {o : Or
 /-- Covering at every path gives the invariant's `named` clause for a flat value. -/
 theorem named_cellsAt_of_covers {heap : Heap} {gamma : Naming} {w : Value} {ty : Ty} {a : Abstract}
     {q : Path} {c : Nat}
-    (shape : AllocatedFlatValue heap w ty) (abs : FlatAbstract ty a) (flat : FlatHeap heap)
+    (shape : AllocatedFlatValue heap w ty) (abs : FlatAbstract ty a)
     (covers : Covers gamma heap a w) (located : ArrayAt heap w q c) :
     named gamma (a.cellsAt q) c := by
   induction shape generalizing a q with
   | int integer => cases located
-  | list root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | list root integers lookupRoot =>
     obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
     have := covers _ _ (.here _)
     simpa [namesAt] using this
-  | chain root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | chain root integers lookupRoot =>
     obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref lookupRoot located
     have := covers _ _ (.here _)
     simpa [namesAt] using this
@@ -1383,25 +1408,18 @@ theorem named_sharedMark {gamma : Naming} {cs : List Origin} {root : Nat} (path 
 
 theorem describes_mapOrigins_shared {gamma : Naming} {heap : Heap} {w : Value} {ty : Ty} {a : Abstract}
     (shape : AllocatedFlatValue heap w ty) (abs : FlatAbstract ty a) (tags : ResultTags ty a w)
-    (flat : FlatHeap heap)
     (described : Describes gamma heap a w) (path : Path) :
     Describes gamma heap (a.mapOrigins sharedMark path) w := by
   induction shape generalizing a path with
   | int integer => exact integer_described_any _ integer
-  | list root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | list root integers lookupRoot =>
     cases tags with
     | listInt roots element certificate _ =>
       have names := described.1.1 [] root (.here _)
       rw [list_root_names] at names
       simp only [Abstract.mapOrigins]
       exact allocated_list_described lookupRoot (named_sharedMark path (named_union_nil names))
-  | chain root allocated =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [allocated]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flat root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | chain root integers lookupRoot =>
     cases tags with
     | chainInt roots element certificate _ =>
       have names := described.1.1 [] root (.here _)
@@ -1479,7 +1497,7 @@ end Ownership.FlatFragment.Fields
 
 /-! allocation and write preservation for every flat binding (continued from
 `Runtime`): the shape of a typed binding and the typing of every binding after
-a flat heap change, now with records. -/
+an allocation or an integer write (`IntegerFrame`), now with records. -/
 
 namespace Ownership.FlatFragment.HeapPreservation
 
@@ -1493,22 +1511,22 @@ theorem allocated_shape_of_typed {heap : Heap} {a : Abstract} (flatType : FlatTy
     AllocatedFlatValue heap actual type :=
   allocated_of_typed flatType typed tags
 
-/-- Any flat heap with enough allocated addresses preserves all flat
-binding types. This includes aliases of the address whose contents changed.
-The statement retains no correspondence claim for a dead observation. -/
+/-- An allocation or an integer write preserves all flat binding types.
+This includes aliases of the address whose contents changed. The statement
+retains no correspondence claim for a dead observation. -/
 theorem valueTyped_after_flat_heap {heap : Heap} {nextHeap : Heap} {a : Abstract}
     (flatType : FlatType type) (typed : ValueTyped declarations heap actual type)
     (tags : ResultTags type a actual)
-    (nextFlat : FlatHeap nextHeap) (size : heap.size ≤ nextHeap.size) :
+    (frame : IntegerFrame heap nextHeap) :
     ValueTyped declarations nextHeap actual type :=
-  valueTyped_of_allocated (allocated_mono (allocated_shape_of_typed flatType typed tags) size) nextFlat
+  valueTyped_of_allocated (allocated_frame (allocated_shape_of_typed flatType typed tags) frame)
 
 /-- The complete all-binding typing field survives integer allocation and
 integer writes. The caller still proves live correspondence from its demand.
 -/
 theorem bindingsTyped_after_flat_heap {nextHeap : Heap}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (nextFlat : FlatHeap nextHeap) (size : hs.heap.size ≤ nextHeap.size) :
+    (frame : IntegerFrame hs.heap nextHeap) :
     ∀ x observation actual,
       env.lookup x = some (observation, actual) →
       ∃ type, tenv.lookup x = some type ∧
@@ -1521,46 +1539,7 @@ theorem bindingsTyped_after_flat_heap {nextHeap : Heap}
     Ownership.FlatFragment.VariableFacts.lookup_exists_of_same_keys aenv env inv.abstractKeys.symm present
   exact ⟨type, declared, observedType,
     valueTyped_after_flat_heap (inv.types x type declared) actualType
-      (inv.tags x type a observation actual declared abstractBinding present) nextFlat size⟩
-
-/-- A real counted write retains every binding's current runtime type,
-including every dead alias of the written root. Observer and live-value
-frames still require the separate permission facts from the actual demand.
--/
-theorem counted_write_preserves_binding_types {root : Nat}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (allocated : hs.heap[root]? = some previous) (integers : List Int) :
-    ∃ post,
-      (writeCounted root (heapInts integers)).run hs = .ok (.ref root, post) ∧
-      FlatHeap post.heap ∧
-      (∀ x observation actual, env.lookup x = some (observation, actual) →
-        ∃ type, tenv.lookup x = some type ∧
-          obsTyped declarations observation type = true ∧
-          ValueTyped declarations post.heap actual type) := by
-  let post := {hs with heap := hs.heap.set! root (heapInts integers), writes := if previous == heapInts integers then hs.writes else hs.writes + 1}
-  have valid : root < hs.heap.size := (Array.getElem?_eq_some_iff.mp allocated).1
-  have nextFlat := flatHeap_after_write inv.heapInts valid integers
-  refine ⟨post, writeCounted_empty_run hs allocated inv.links, nextFlat, ?_⟩
-  exact bindingsTyped_after_flat_heap inv nextFlat (by simp [post])
-
-/-- Real integer literal allocation also preserves every old binding's
-type. Its new result binding and constructed naming enter the expression
-preservation case separately. -/
-theorem literal_preserves_binding_types
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (integers : List Int) :
-    ∃ post,
-      (prim (.literal .int) (heapInts integers)).run hs =
-        .ok (.ref hs.heap.size, post) ∧
-      FlatHeap post.heap ∧
-      (∀ x observation actual, env.lookup x = some (observation, actual) →
-        ∃ type, tenv.lookup x = some type ∧
-          obsTyped declarations observation type = true ∧
-          ValueTyped declarations post.heap actual type) := by
-  let post := {hs with heap := hs.heap.push (heapInts integers)}
-  have nextFlat := flatHeap_after_allocation inv.heapInts integers
-  refine ⟨post, rfl, nextFlat, ?_⟩
-  exact bindingsTyped_after_flat_heap inv nextFlat (by simp [post])
+      (inv.tags x type a observation actual declared abstractBinding present) frame⟩
 
 end Ownership.FlatFragment.HeapPreservation
 
@@ -1632,7 +1611,7 @@ theorem flat_atom_values {declarations : List Decl} {vs : ValueSemantics.State} 
     exact ⟨o, w, a0.atPath p, value_atom_of_root root (valueEnv_lookup binding) obsPath,
       heap_atom_of_root root (heapEnv_lookup binding) valuePath,
       abstractAtom_of_root root abstractBinding shape0 tags0 allocated0 at_p, paired, described,
-      projectObs_typed observed0 at_p obsPath, valueTyped_of_allocated allocated inv.heapInts,
+      projectObs_typed observed0 at_p obsPath, valueTyped_of_allocated allocated,
       flatType_tyAt flatTk at_p, flatAbstract_atPath shape0 at_p, allocated,
       resultTags_project tags0 shape0 at_p valuePath, chainTags_project chains0 shape0 at_p obsPath⟩
 
@@ -1674,10 +1653,7 @@ theorem flat_atom_list_path {declarations : List Decl} {vs : ValueSemantics.Stat
   cases tags with
   | listInt roots element certificate _ =>
     cases allocated with
-    | list root lt =>
-      have lookupRoot : hs.heap[root]? = some hs.heap[root] := by simp [lt]
-      obtain ⟨integers, payload⟩ := integers_of_flat_values hs.heap[root] (inv.heapInts root _ lookupRoot)
-      rw [payload] at lookupRoot
+    | list root integers lookupRoot =>
       have observed := observation_of_integer_ref lookupRoot paired
       subst observed
       have names := described.1.1 [] root (.here _)
@@ -1711,10 +1687,7 @@ theorem flat_atom_chain_path {declarations : List Decl} {vs : ValueSemantics.Sta
   cases tags with
   | chainInt roots element certificate _ =>
     cases allocated with
-    | chain root lt =>
-      have lookupRoot : hs.heap[root]? = some hs.heap[root] := by simp [lt]
-      obtain ⟨integers, payload⟩ := integers_of_flat_values hs.heap[root] (inv.heapInts root _ lookupRoot)
-      rw [payload] at lookupRoot
+    | chain root integers lookupRoot =>
       have observed := observation_of_integer_ref lookupRoot paired
       subst observed
       have names := described.1.1 [] root (.here _)
@@ -1753,7 +1726,7 @@ theorem live_path_apart {declarations : List Decl} {vs : ValueSemantics.State} {
     (inv.tags x ty a o w declared abstractBinding binding)
   obtain ⟨t, at_p⟩ := inv.liveTyped x p ty (afterSub _ use) declared
   have allocated' := allocated_project allocated at_p projected
-  obtain ⟨_, immutableQ, _⟩ := arrayAt_flat allocated' inv.heapInts located
+  obtain ⟨_, immutableQ, _⟩ := arrayAt_flat allocated' located
   have immutable : immutablePath (p ++ q) = true := by
     rw [immutablePath_append, projectVal_fieldPath projected, immutableQ]; rfl
   have names := inv.named x o w a binding abstractBinding (p ++ q) c immutable
@@ -1774,7 +1747,7 @@ theorem live_path_below {declarations : List Decl} {vs : ValueSemantics.State} {
   obtain ⟨a, abstractBinding⟩ := lookup_exists_of_same_keys aenv env inv.abstractKeys.symm binding
   have allocated := allocated_of_typed (inv.types x ty declared) actualTyped
     (inv.tags x ty a o w declared abstractBinding binding)
-  exact (arrayAt_flat allocated inv.heapInts (arrayAt_of_project projected located)).1
+  exact (arrayAt_flat allocated (arrayAt_of_project projected located)).1
 
 /-! ### Branches: type equality, the join of two flat abstracts, more escapes -/
 
@@ -2175,17 +2148,14 @@ theorem chainTags_join_right {t : Ty} {a b : Abstract} {o : Observation}
 /-! ### A join describes what either side describes -/
 
 theorem describes_join {gamma : Naming} {heap : Heap} {t : Ty} {w : Value} {a b : Abstract}
-    (allocated : AllocatedFlatValue heap w t) (flatHeap : FlatHeap heap)
+    (allocated : AllocatedFlatValue heap w t)
     (shapeA : FlatAbstract t a) (shapeB : FlatAbstract t b)
     (side : (Describes gamma heap a w ∧ ResultTags t a w) ∨
       (Describes gamma heap b w ∧ ResultTags t b w)) :
     Describes gamma heap (a.join b) w := by
   induction allocated generalizing a b with
   | int n => exact integer_described_any _ n
-  | list root lt =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [lt]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flatHeap root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | list root integers lookupRoot =>
     have names : ∀ cs ds, (∃ e ex, a = .list cs e ex) → (∃ e ex, b = .list ds e ex) →
         named gamma (union cs ds) root := by
       intro cs ds ⟨e, ex, ha⟩ ⟨e', ex', hb⟩
@@ -2226,10 +2196,7 @@ theorem describes_join {gamma : Naming} {heap : Heap} {t : Ty} {w : Value} {a b 
       | bottom _ => exact rightBottom rfl
       | listBottom ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
       | listScalar ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
-  | chain root lt =>
-    have lookupRoot : heap[root]? = some heap[root] := by simp [lt]
-    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flatHeap root _ lookupRoot)
-    rw [payload] at lookupRoot
+  | chain root integers lookupRoot =>
     have names : ∀ cs ds, (∃ e ex, a = .list cs e ex) → (∃ e ex, b = .list ds e ex) →
         named gamma (union cs ds) root := by
       intro cs ds ⟨e, ex, ha⟩ ⟨e', ex', hb⟩

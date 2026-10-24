@@ -386,7 +386,7 @@ The internal relation `FlatInvariant` extends `Invariant` as the internal statem
 Each case derives its frame from the actual checker run. The push case uses the real default demand; no alias prohibition or permission oracle enters.
 The modules form one import chain, because the audit rejects an equation lemma that two modules realize (#182).
 `FlatInvariant` has four flat-only clauses, and each next step replaces one of them:
-`heapInts` (every array holds integers) goes with records and nested literals, which put references into arrays;
+`heapInts` (every array holds integers) goes with records and nested literals, which put references into arrays (it went earlier, on 2026-10-23, with slice 2a of #522, *Dictionaries* below: the shape carries its array's contents);
 `types` (`FlatType`: `int` or `list int`) goes with field atoms and records, which bind record types;
 `abstractShapes` (`FlatAbstract`: a scalar or a flat list with empty element cells) goes with the same step, because a record abstract has fields and a nested list has element cells;
 `links = []` goes with views, and it is where the #169 link invariant enters: the clause becomes the link clauses of `Invariant`.
@@ -532,12 +532,28 @@ that is part of #165 and of #522. (1) The model: syntax, typing, both
 interpreters, the checker rules and the probes as `#guard`s against the real
 `check` and both runs; the COVERAGE rows T32, T44 and T51 say what is checked;
 a verdict that differs from the Zig checker gets its own issue. (2) The flat
-relation over arrays of flat values (lists of lists): `heapInts` generalised to
-"every array holds flat values", an element shape in `AllocatedFlatValue.list`,
-`Describes` of an array through `namesAt`'s `.element` step, and real
-exclusivity certificates (`CertifiedExclusive` through the stored values, which
-the checker's `storeExclusive` and `storeSpines` must imply); the existing
-fragment theorems keep their statements. (3) The dictionary forms in
+relation over arrays of flat values (lists of lists), in two PRs (refined on
+2026-10-23, after slice 1). (2a) The fragment reads its array shapes from the
+types: the heap clause `heapInts` ("every array holds integers") goes, the
+shape `AllocatedFlatValue.list`/`chain` carries the array's integer contents,
+which `allocated_of_typed` takes from the binding's typed expansion, and
+`IntegerFrame` (the next heap keeps every address, with its old contents or new
+integer contents) replaces the pair "flat next heap, size" in every frame
+lemma; `FlatType`, `FlatAbstract` and `FlatANF0` stay, the public theorem,
+`flat_preserved` and the case theorems keep their statements (fourteen lemma
+headers and the two constructors change), and `flat_preserved` and the case
+theorems take a weaker hypothesis (an array no binding holds may hold
+anything; the public theorem starts from the empty heap and admits no new
+heap). (2b) Arrays of flat
+values: `FlatType.list t` for every flat `t` (`chainInt` stays), `FlatAbstract.list`
+with a flat element abstract, `AllocatedFlatValue.list root t` with elements
+typed through `ValueTyped`, the tags through elements; the reading forms (`at`
+through `namesAt`'s `.element` step, `length`, `shared`, `copy`, `prepend`) and
+the writing forms (`push`, `set`) for nested items, with the first proved
+exclusivity certificate: `storeExclusive`/`storeSpines` with the invariant's
+`named` and `separating` give `CertifiedExclusive` after the write; `literal`
+stays at `Int` elements. `FlatANF0` cannot exclude a form by its type, so 2b is
+one PR. (3) The dictionary forms in
 `FlatANF0` and `flat_preserved`: the five primitives as primitive cases and
 `dictFocus` as a binder case like the list focus; the rows say what is proved.
 `accepted_flat_anf_traces_agree` keeps its statement throughout.
@@ -552,3 +568,23 @@ the aliasing and diagnostic interpreters, the oracle's shrinker, the
 falsifier's walkers, the bridge's printer and parser and `obsTyped` have the
 new forms. `DictPrograms.lean` holds eleven probe programs, `DictProbes.lean` their `#guard`s.
 No theorem changed; no theorem names a dictionary form yet.
+
+As built (2026-10-23, #522, slice 2a): `FlatHeap` and the field `heapInts` are
+gone from `Support.lean`; `AllocatedFlatValue.list root integers` and `chain`
+carry `heap[root]? = some (heapInts integers)` (`Runtime.lean`);
+`allocated_of_typed` reads the integers off the typed expansion
+(`integers_of_represented`, `obsTyped_list_elements`, `obsTyped_chain_elements`,
+`Fields.lean`); `IntegerFrame heap next` with `integerFrame_after_write` and
+`integerFrame_after_allocation` (`Runtime.lean`) replaces the flat-next-heap
+premise of `allocated_frame` (was `allocated_mono`), `valueTyped_after_flat_heap`,
+`bindingsTyped_after_flat_heap`, `describes_flat_frame`, `described_flat_frame`,
+`named_flat_frame` and `flatInvariant_heap_frame`; `arrayAt_flat`, `reaches_flat`,
+`corresponds_ref_frame`, `corresponds_flat_frame`, `named_cellsAt_of_covers`,
+`describes_mapOrigins_shared`, `describes_join` and `valueTyped_of_allocated`
+lost their heap premise; `counted_write_preserves_binding_types` and
+`literal_preserves_binding_types`, which nothing used, are deleted (the review
+of #884). No statement of `flat_preserved`, of a case theorem or of
+`accepted_flat_anf_traces_agree` changed; `flat_preserved` and the case
+theorems have a weaker hypothesis, the public theorem starts from the empty
+heap and admits no new heap; no program is admitted or refused that was not
+before.

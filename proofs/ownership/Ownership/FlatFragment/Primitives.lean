@@ -177,10 +177,9 @@ theorem literal_post_invariant {declarations : List Decl} {vs : ValueSemantics.S
       hs.heap.push (heapInts integers) := by
     rw [heapObserved_heap]; rfl
   refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) ?_ ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
+    (fun _ member => member) ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
     (fun _ escaped => escaped)
-  · rw [heapEq]; exact flatHeap_after_allocation inv.heapInts integers
-  · rw [heapEq]; simp
+  · rw [heapEq]; exact integerFrame_after_allocation hs.heap integers
   · rw [heapObserved_links]; exact inv.links
   · intro c _ different
     rw [heapEq]
@@ -777,7 +776,6 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
       linksValid := Soundness.linksValid_of_empty _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
       linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
     }
-    heapInts := by rw [heapSame]; exact inv.heapInts
     links := by unfold heapShared; rw [heapObserved_links]; exact inv.links
     abstractKeys := inv.abstractKeys
     typeKeys := inv.typeKeys
@@ -973,7 +971,7 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
   have resultFlat : FlatAbstract type result := by
     rw [← first]; exact flatAbstract_mapOrigins _ shape []
   have resultDescribed : Describes gamma hs.heap result v := by
-    rw [← first]; exact describes_mapOrigins_shared allocated shape tags inv.heapInts described []
+    rw [← first]; exact describes_mapOrigins_shared allocated shape tags described []
   have mono : ∀ origin, Escaped before.facts.escapes origin → Escaped next.facts.escapes origin := by
     intro origin escaped
     rw [escapesEq]
@@ -981,8 +979,8 @@ theorem shared_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
   have newEscaped : ∀ c, Reaches hs.heap v (.ref c) → ∀ origin, c ∈ gamma origin →
       Escaped next.facts.escapes origin := by
     intro c reachable origin member
-    obtain ⟨q, located⟩ := reaches_flat allocated inv.heapInts reachable
-    have names := named_cellsAt_of_covers allocated shape inv.heapInts described.1.1 located
+    obtain ⟨q, located⟩ := reaches_flat allocated reachable
+    have names := named_cellsAt_of_covers allocated shape described.1.1 located
     rw [escapesEq]
     exact named_cell_escaped inv.separating names member (fun o h => cellsAt_subset_cells h)
   have valueAtoms : [atom].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
@@ -1323,10 +1321,9 @@ theorem push_preserved {declarations : List Decl} {vs : ValueSemantics.State} {h
           .listInt _ _⟩
         · rw [escapesEq]
           refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            ?_ ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
+            ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
             ?_ ?_ ?_ (fun _ escaped => escaped)
-          · rw [heapEq]; exact flatHeap_after_write inv.heapInts valid (xs ++ [n])
-          · exact Nat.le_of_eq sizeEq.symm
+          · rw [heapEq]; exact integerFrame_after_write hs.heap root valid (xs ++ [n])
           · rw [heapObserved_links]; exact inv.links
           · intro c _ different
             rw [heapEq]
@@ -1766,7 +1763,7 @@ theorem ok_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs 
       (actual := .record [.int 1, .int 0, w]) inv valueAtom heapAtom
       (fun s => value_ok_run error s o) (fun s => heap_ok_run error s w)
       (corresponds_ok paired) (describes_ok described) ?_
-      (valueTyped_of_allocated (.ok error t w allocated) inv.heapInts)
+      (valueTyped_of_allocated (.ok error t w allocated))
       (.ok error t _ _ _ w (resultTags_ne_bottom tags) tags) (.ok error t _ _ _ o chains)
     simpa [obsTyped] using observed
 
@@ -1817,7 +1814,7 @@ theorem err_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
       (actual := .record [.int 0, w, .int 0]) inv valueAtom heapAtom
       (fun s => value_err_run success s o) (fun s => heap_err_run success s w)
       (corresponds_err paired) (describes_err described) ?_
-      (valueTyped_of_allocated (.err t success w allocated) inv.heapInts)
+      (valueTyped_of_allocated (.err t success w allocated))
       (.err t success _ _ _ w (resultTags_ne_bottom tags) tags) (.err t success _ _ _ o chains)
     simpa [obsTyped] using observed
 
@@ -2550,10 +2547,9 @@ theorem set_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs
           by rw [resultEq, joined]; exact .listInt _ _ _ _, .listInt _ _⟩
         · rw [escapesEq]
           refine flatInvariant_heap_frame inv (hole := root) (footprint := footprint) afterSub
-            ?_ ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
+            ?_ ?_ ?_ apart represented rootOutside ?_ ?_ (fun _ _ _ => Iff.rfl) ?_ inv.separating
             ?_ ?_ ?_ (fun _ escaped => escaped)
-          · rw [heapEq]; exact flatHeap_after_write inv.heapInts valid (setResult xs i n)
-          · exact Nat.le_of_eq sizeEq.symm
+          · rw [heapEq]; exact integerFrame_after_write hs.heap root valid (setResult xs i n)
           · rw [heapObserved_links]; exact inv.links
           · intro c _ different
             rw [heapEq]
@@ -2797,10 +2793,9 @@ theorem prepend_post_invariant {declarations : List Decl} {vs : ValueSemantics.S
       hs.heap.push (heapInts (item :: integers)) := by
     rw [heapObserved_heap]; rfl
   refine flatInvariant_heap_frame inv (hole := hs.heap.size) (footprint := footprint)
-    (fun _ member => member) ?_ ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
+    (fun _ member => member) ?_ ?_ ?_ ?_ represented ?_ ?_ ?_ old ?_ separating ?_ ?_ ?_
     (fun _ escaped => escaped)
-  · rw [heapEq]; exact flatHeap_after_allocation inv.heapInts (item :: integers)
-  · rw [heapEq]; simp
+  · rw [heapEq]; exact integerFrame_after_allocation hs.heap (item :: integers)
   · rw [heapObserved_links]; exact inv.links
   · intro c _ different
     rw [heapEq]

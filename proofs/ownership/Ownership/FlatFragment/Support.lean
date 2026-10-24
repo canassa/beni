@@ -644,12 +644,6 @@ theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership
     | (change Except.ok Ty.int = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl⟩)
     | (cases run; exact ⟨rfl, rfl, rfl⟩)
 
-/-- Every allocated array stores integers. This permits any number of
-arrays and any number of aliases of each allocated array. -/
-def FlatHeap (heap : Heap) : Prop :=
-  ∀ (address : Nat) (values : List Value), heap[address]? = some values →
-    ∀ value ∈ values, ∃ integer : Int, value = Value.int integer
-
 /-- Every address in the naming already exists in the concrete heap. This
 local definition has the same statement as the checked naming support.
  -/
@@ -673,7 +667,10 @@ expansion of the current runtime value and therefore excludes dangling roots.
 
 The abstract and type environments have the exact runtime key sequence.
 Their descriptions have the flat shapes that real primitive inference needs
-(`FlatAbstract`, which admits the bottom of dead code). The permanent
+(`FlatAbstract`, which admits the bottom of dead code). The relation makes
+no claim about the contents of an array that no binding holds, except through
+the observer witness: what a binding's arrays hold comes from its type, through
+`bindingsTyped` (an integer list holds integers). The permanent
 observer witness covers the complete current observer list at the runtime's
 actual observation depth. Every binding's result tags agree with its
 abstract (`ResultTags`), which also excludes a bottom where a value is, its
@@ -687,7 +684,6 @@ structure FlatInvariant (declarations : List Decl)
     (aenv : Env Abstract) (tenv : Env Ty)
     (escapes : List Origin) (gamma : Naming) : Prop where
   toInvariant : Invariant vs hs env live aenv escapes gamma
-  heapInts : FlatHeap hs.heap
   links : hs.links = []
   abstractKeys : env.map Prod.fst = aenv.map Prod.fst
   typeKeys : env.map Prod.fst = tenv.map Prod.fst
@@ -787,7 +783,6 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
       [] live [] [] escapes emptyNaming := by
   refine {
     toInvariant := invariant_initial fuel live escapes emptyNaming emptyNaming_separating
-    heapInts := ?_
     links := rfl
     abstractKeys := rfl
     typeKeys := rfl
@@ -800,8 +795,6 @@ theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
     namingBound := emptyNaming_bound 0
     observers := ⟨[], RepresentsMany.nil⟩
   }
-  · intro address values allocated
-    simp at allocated
   · intro x ty present
     simp at present
   · intro x ty abstract present
