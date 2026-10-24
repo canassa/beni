@@ -121,6 +121,9 @@ by its type — hides nothing: it is written exactly, and accepted.
    on 2026-10-17 — `Show`, branches; S6: the task kernel). The message says *"A limit of the
    compiler: … does not compile … yet"* and what to write instead; it names no slice and no
    plan, which are this document's and not the user's.
+   *Amended 2026-10-25 (S2's design pass, §9; not built):* S2's `For` is a `For` over a `Dict` that
+   a root holds (§9.1); the `For` shapes §9.6 lists stay class 1, and an edit by key of the rows of
+   a keyed `For` over a `List` is class 3 (§9.6, D2).
    *Amended 2026-10-17 (the owner's D-b and D-d, S1's design pass):* an `if` whose other arm is
    `<></>` is S1's, an eager `when` (§8.2), and no longer S4's, which keeps a branch of any other
    shape and `Show`; a `view`'s `let` read by one hole is S1's, substituted into the hole, and one
@@ -1389,6 +1392,10 @@ is a limit of the compiler naming keyed rows; a positional one is S1's only if i
 is a limit until its size is reported. An edit of `List` rows by id (`List.filter (λr → r.id ≠
 id)`, a `map` with an id guard) is a language rule's error that names `Dict.update`: **`Dict` is
 the keyed collection** (§5, class 3, from S2).
+*Amended 2026-10-25 (S2's design pass):* §9 is the rule. The error is decided by the write's edit
+tag at the `For`'s path (§9.6), not by recognising an idiom: any edit of a keyed `List`'s rows that
+is not an append, a removal of the last element, a clear or a whole replacement is class 3, and those
+four stay class 1 until a program needs keyed rows over a `List`.
 
 ### 8.7 What S1 refuses
 
@@ -1413,6 +1420,9 @@ the compiler"*, a language rule never says *"yet"*):
 | an attribute that changes and is not a DOM property `prop` writes | 1 | the element | `AttributeChanges/` |
 | an event whose handler value is a message no key can be named for when the program is built: *"… so its message would need a dispatcher …"* | 4 | the element | `MessageValue/` |
 | an `if` or `case` in markup that is not an eager `when`: arms that are not one element and `<></>`, or a shown arm that reads what the branch binds | 1 | the hole | `WhenBinds/` |
+
+*Amended 2026-10-25 (S2's design pass):* the keyed `For` row above is replaced, from S2, by §9.6's
+rows; `ResearchListWidget/` moves to `ListRowsById/` with the class 3 text when S2's refusals land.
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.
@@ -1457,3 +1467,426 @@ The reviewer's other items were measured and declined: a payload alias dropped (
 `FormLocal` from 1 002 to 1 004, and `!x` for `x ? 0 : 1` costs 13 in this file. A handler whose
 key writes nothing still reads its payload: the extractor is `foreign impure`, and only an
 interface fact that the key never reads its field would let the lowering skip it.
+
+## 9. Keyed rows (S2)
+
+*Added 2026-10-25, the design pass of slice S2 (#298). **Specified, not built.** It holds what S2's
+goldens cannot show: the target output, priced; which facts the lowering takes; how a write of a
+`Dict` becomes a row edit; and what S2 refuses. It rests on the owner's decisions of 2026-10-17
+(`plans/direct-rewrite.md` §9, D2 and D4: **`Dict` is the keyed collection**, ordered by insertion,
+`Int` or `String` keys; no idiom recogniser) and on the root closures of §8.4 (amended 2026-10-22,
+built 2026-10-23). Four questions need the owner first (§9.10, asked on #298): §9.1's `For` over a `Dict`,
+§9.8's `Dict.keyAt`, §9.7's representation finding, and how §9.7's numbers meet the bar. What
+they name is marked *proposed*.*
+
+### 9.1 What S2 compiles
+
+A `For` whose `each` is a **model path of type `Dict k v`** that a root holds (§8.4's `held`,
+`through` or `cell` argument), whose row function is a lambda whose body is **one element**, and
+which is the **only child** of its parent element. Its rows keep their DOM node for the life of
+their key: across every insert, remove, update, swap, sort, filter and replacement of the
+dictionary, which is `For`'s keying by key (`language.md` §11.9) with the dictionary's own key.
+
+*Proposed (the owner's question 1):* `For`'s `each` accepts a `Dict k v` as well as a `List a`. Its
+row function is then `k, v → Html msg`: the row's key and its value. `keyed` is refused on a
+dictionary (`invalid_keyed`, *"a `Dict`'s rows are keyed by its keys"*), because the key is
+already the dictionary's, and two equal keys cannot occur. `fallback` keeps its meaning.
+`browser-tea` renders it as it renders a `List` keyed by the key, from the dictionary's
+entries in order, so one source builds on both platforms and `browser-tea` stays the oracle. Until
+the owner decides, a `For` over a `Dict` does not type-check, and §9.6's refusal of a keyed `For`
+over a `List` would leave the generators no way to write a keyed list; S2's slices order this
+first (§9.9).
+
+```text
+<tbody>
+    <For each={model.rows}>
+        {λid row →
+            <tr data-key={String.fromInt id} data-role="row"
+                class={if model.selected == Just id then "danger" else ""}>
+                <td>{id}</td>
+                <td><a data-role="select" onClick={Select id}>{row.label}</a></td>
+                <td><a data-role="remove" onClick={Remove id}><span aria-hidden="true">{"×"}</span></a></td>
+                <td />
+            </tr>
+        }
+    </For>
+</tbody>
+```
+
+### 9.2 The output
+
+The target was written by hand and run, not estimated. It is tea-inline's own output for
+big-table and unique-components, changed one decision at a time into the shape below by a copy of
+tea-inline's emitters with switches (`plans/inline-s2/`, which says how to rebuild every number).
+Every variant passes the research project's script check, its same-task pass included, at size 16,
+seeds 1–3 (`./rr check`'s method, run from the scratch builds against the research harness). The
+JavaScript below is the readable form of what release prints; names are the renamer's.
+
+**A row template per `For`, parsed once.** The row function's element is one HTML string, its
+constant attributes and texts baked and its optional end tags left out by §8.2's rules, parsed once
+into a template node: `tpl("<tr data-role=row><td><td><a data-role=select></a><td>…")`. A row's
+elements are `E[n]`, its descendants in document order (`tr.querySelectorAll("*")`), or a child
+path when the row's code refers to one element (§8.2, amended 2026-10-17).
+
+**The row builder returns `[node, set]`.** It clones the template, writes what reads only the
+key once (`data-key`, a `{id}` hole), wires the row's events, and returns the row's node and its
+`set`, one function that writes every hole of the row from the row's value, each write guarded by
+its compare (`text`, `prop`). A row's holes are not grouped by field: a write to a row's value runs
+its `set` whole, bounded by the row's holes, never by the rows or by N. tea-inline does the same,
+for the reason it gives: a closure per cell per row costs an allocation per cell on every create.
+
+```js
+const L = list(E[6], () => t.rows, (k, item) => {
+  const tr = row.cloneNode(true), E = tr.querySelectorAll("*");
+  tr.setAttribute("data-key", k);
+  E[0].textContent = k;
+  on(E[2], () => {                                  // Select id: the arm, k in scope
+    if (!member(t.rows, k)) return;
+    const o = t.selected;
+    t.selected = just(k);
+    at(L, o.a); at(L, k);                           // the selector: the old and the new row
+  });
+  on(E[4], () => {                                  // Remove id
+    const o = t.selected;
+    remove(t.rows, k); at(L, k);                    // the edit follows the write
+    if (t.selected.a === k) t.selected = nothing;
+    at(L, o.a); at(L, t.selected.a);
+  });
+  return [tr, (v) => { item = v; text(E[2], item.label); prop(tr, t.selected.a === k ? "danger" : "", "className"); }];
+});
+```
+
+**The row's own controls carry their arm with the row's key in scope.** A row event whose
+message's fields are the row's key (`Remove id`) or values its `set` keeps (`Edit row.text`, a
+field of the value the row was last painted with, §8.2's handler binding of 2026-10-19) is the
+key's handler written in the row builder, as §8.4's moved handlers are written in their root. A
+row's handler finds its item **by its key in the model** — `Dict.update model.rows id …`, the
+arm's own code — never by the row's copy, so a click on a row that a push removed in the same
+task changes nothing: the dictionary has no entry, and every `Dict` write of an absent key is a
+no-op the source already says.
+
+**The list** is one runtime value per `For`: its parent, a reader of its dictionary (the root's
+holder, so a replaced dictionary is read afresh), the builder, and the rows in the dictionary's
+order. The edits are runtime functions of `Inline.beni`, each shipped only when a page calls it
+(§8.4, *the runtime a page ships*):
+
+| Function | What it does | When the lowering calls it |
+|---|---|---|
+| `at(L, k)` | makes `k`'s row agree with the dictionary: drops it if `k` is absent, runs its `set` if present, builds and appends it if new (a new key is the last entry) | after an `insert`, `remove` or `update` of `k`, and for the selector's two keys |
+| `swap(L, a, b)` | exchanges the rows and nodes of `a` and `b` | after `Dict.swap d a b` |
+| `sync(L, all)` | reconciles every row with the dictionary: rows reused by key, rows of keys that left removed, the rest put in order by the longest increasing subsequence of their old places; a fresh dictionary with no key in common empties the parent in one call; `all` runs every reused row's `set`, otherwise only rows whose value is another object | after a write the lowering cannot follow key by key (§9.4), and for a load that replaces the dictionary |
+
+**The key → row lookup follows the dictionary's index.** With the index as decided (key →
+position, `backend.md` §4), the list keeps its rows parallel to the entries and finds a key's row
+at the key's position: no map at all. A removed key's row is found by a search of the rows, which
+costs what `remove`'s own reindex costs. With the pair index of §9.7 (key → entry, the owner's
+question 3) a position is not free, so the list keeps a `Map` from key to row, which `at`, `swap`
+and `sync` update as they change the rows. Neither is "built lazily", as the plan said: a map
+rebuilt after each change to the set of rows costs O(n) at the next lookup, and an append in a
+loop makes that O(n²); measured, the lazy map was also 22 B larger than parallel rows.
+
+**One reconciler, LIS-based, shipped only when a page needs it.** `sync` ships when some key's
+write is one of §9.4's whole-dictionary tags or a pushed state replaces a dictionary; a page whose
+rows only gain, lose and change one key at a time ships `at` alone. The first render appends one row
+per entry, in order, as `at` appends a new key. Never `browser-tea`'s move order (§6, `plans/direct-rewrite.md` §8). Measured: +96 B
+brotli fixed against tea-inline's single forward pass, nothing per table.
+
+### 9.3 What the lowering takes
+
+§8.1's table, extended. As before, the lowering re-derives none of it.
+
+| Fact | Analysis | Interface |
+|---|---|---|
+| each `For` site: its root, its dictionary path, its row function's holes with their anchored reads and bound prefix, its selector | the write-set pass's view walk (`write-sets.md`, amended 2026-10-09 and 2026-10-25: a row's value root ε_row based at `p{*}`), the selector rule of `language.md` §11.9 (amended 2026-09-30) | a new `programFor`, a versioned markup interface extension |
+| for each key and `For`: the `Dict` tag at the path, its index symbols, and whether it writes below `p{…}` | the write-set pass's `Dict` rows (`write-sets.md`, amended 2026-10-25) | `programCalls`, extended with the tag |
+| which `Dict` primitive calls of a key's arm write a `For`'s dictionary, and where each is lowered | the write-set pass's abstract value of the call's first argument (`Same(p)`, `p` the `For`'s path) | per call instruction, in the root plan |
+| whether a row's read of a value outside the row is the selector | the same view walk: a read whose bound prefix does not reach `p{*}` | `programFor` |
+
+### 9.4 From a `Dict` write to a row edit
+
+**Edits at the write.** A call of `Dict.insert`, `remove`, `update`, `swap` or `insertAt` whose
+dictionary is a `For`'s (§9.3) and that the lowering writes itself — in the handler, in an arm
+piece, in a function of the root's own module that the key's arm calls, or in a callback lambda
+written there (a `List.foldl` over keys) — is followed at once by its row edit: `at(L, κ)` for the
+first three, `swap(L, a, b)` for `swap`, `sync(L)` for `insertAt`, κ being the call's own key
+argument, bound where the call evaluates it. Such a function takes the root's list as one more
+parameter, as an arm piece takes its slice, and the root plan names which lists each function is
+handed; one that is also called where no list is in hand is written a second time for the root,
+`<Module>$<declaration>$rows$<n>`, numbered as §8.4's pieces are. A key that stays the
+program's (§8.4, *Moved handlers*) reaches the list through the slot the root's factory publishes
+it in, as a root-local handler is published. This is what makes a loop exact: `updateEvery` writes `at(L, k)` after each of its 1 000
+`Dict.update`s of 10 000 rows and touches 1 000 rows, as tea-inline does, where the tag alone
+(`{*}`) would repaint 10 000.
+
+**Edits from the tag.** A write in code the lowering does not write — another module's function
+that is not on the root's own path, `core/` — is edited at the end of the arm, from §9.3's tag:
+
+| Tag at the `For`'s path | The edit after the arm |
+|---|---|
+| `kept`, writes at `p{κ}` | `at(L, κ)` for each κ |
+| `kept`, writes at `p{*}` | `sync(L, true)`: every row's `set`, no node moved |
+| `at κ` | `at(L, κ)` |
+| `swap κ₁ κ₂` | `swap(L, κ₁, κ₂)` |
+| `grow`, `prune`, `permute`, `clear`, `replaced` | `sync(L, w)`, `w` when the key also writes below `p{…}` |
+
+κ is evaluated by the handler: it is the key's field when it is one (`Remove id`), and otherwise
+an expression the write-set pass recorded as handler-evaluable (§2.3: payload, literals and the
+old model) that the checker proves pure and total (`Context.valuePureTotal`), evaluated before the
+arm runs. Any other κ is a limit of the compiler (§9.6).
+
+**Order in the pass.** A row reads only its own value and its selector (§9.6). So an edit at the
+write may run before the arm's later writes: the row's value is current, and the selector's rows
+are repainted at the end. A row's `set` that throws there stops the page, as a binding's throw does
+(§6); the arm's writes it interrupts are not observable after a defect. At the end of the arm, in this order: the edits from the tag, then the
+selector edit — `at(L, old)` and `at(L, new)` of the selector's key, the old value read before the
+arm, a `Nothing` key being `null`, which no dictionary holds — then the buckets of every other
+binding the key's writes reach, as §8.4's runner does. A hole outside the rows that reads the
+dictionary (`Dict.size model.rows`) is an ordinary binding in the dictionary path's bucket.
+
+**The list in the buckets.** The list is an entry of its root in the bucket of its dictionary path
+(§8.4, *Buckets*). The first render runs it, which appends a row per entry; a load of pushed state
+that replaces the dictionary (§8.4's routes: a dictionary field is assigned, as a list's is) runs
+it again, which is `sync`, so a page with such a route ships `sync`. A key whose edits this
+section writes leaves that one entry out of its pass, and runs the bucket's other entries as
+usual.
+
+**Numbering.** A `For` adds no piece kind. Its parent is an element of its root (`E[n]`), its
+row template string and builder are written with the root's code — in the root's factory for a
+root of another module (§8.4) — and the template's elements are numbered within the row. The
+template constant is named and numbered as the root's other constants are, by the input-derived
+order of §8.4.
+
+**Identity.** `sync` skips a reused row's `set` when its value is the same object, and only then:
+the edit tags say whether the key wrote below `p{…}`, and when it did, `sync` runs every `set`
+(`all`). That is §3's rule — analysis says "possibly changed", a compare says "changed" — with the
+write set deciding, never identity alone, so an in-place `Dict.update` of a value never meets an
+identity compare.
+
+### 9.5 Rows and the ownership checker
+
+Every `Dict` write is the language's, checked by `ownership-checker.md` §32 on every platform
+(#294, #320): S2 adds no write and no exemption. What the lowering adds is compiler-owned access,
+as §8.4's root closures are: the list's reader of its dictionary, each row's last value (read only
+by its `set` and by `sync`'s compare) and the edits' reads of the dictionary after a write. They
+read the dictionary the write returned, which is the same object, and they are no holder of the
+old one: the checker's verdict on the source is the program's. A row's handler captures its key, a
+scalar that crosses (§31.6); one that captures the row's value whole has it as a borrowed payload,
+and an arm that writes it is the checker's existing `payload` error, whose fix is `Dict.update`
+on the model's own entry.
+
+**#879 on a `Dict`.** The table's sort was refused because `List.sortWith` merges by reading each
+element more than once and loses the record condition. On a dictionary the sort is `Dict.sortBy`,
+whose primitive row is a storage permutation with borrowed values and transient sort keys
+(`ownership-checker.md` §32.2): that cause goes away with the representation, not by an exemption.
+#879's other big-table cause — `T14.serverRows` reads rows with a schema built when the page
+runs, whose records the checker does not know to be fresh — stays: `Dict.fromList` of those rows
+holds them, and a later in-place `Dict.update` of one is refused. S2's big-table measurement waits
+for that part of #879 (§9.9). On derived-graph (S3), keyed upserts make "one record at two
+positions" impossible by construction, which is #879's third line.
+
+### 9.6 What S2 refuses
+
+Each in `build/bad/inline/`, §5's classes:
+
+| Refusal | Class | Fixture |
+|---|---|---|
+| a `For` over a `List` with `keyed`, written by an arm that edits it by key — `List.filter`, `List.map` with a write, `set`, `swap`, `removeAt`, `insertAt`, `sortWith` (§2.3's tags `removeSome`, `kept` with writes, `set`, `swap`, `removeAt`, `insert`, `permute`): *"… `List` is positional: rows found by their key are a `Dict` … write `Dict Int Row` and `Dict.update model.rows id …`"* (D2) | 3 | `ListRowsById/` |
+| any other keyed `For` over a `List`: *"A limit of the compiler: … does not compile keyed rows over a `List` yet; a `Dict` keeps rows by key"* | 1 | `ListRowsKeyed/` |
+| a `For` over anything but a model path a root holds — a `Dict` computed in `view` (`Dict.filter`), a function's result | 1 | `ForDerived/` |
+| a `For` with siblings in its parent, a `fallback`, a row that is not one element, a `For` in a row, a `when` or `case` in a row | 1 | `ForSiblings/`, `ForFallback/`, `ForNested/`, `RowWhen/` |
+| a row that reads a value outside its row other than its selector — a global, the whole dictionary — (D6, `plans/direct-rewrite.md` §9: per-row registration is S6's): *"… every row reads `model.theme`, which would make every write of it visit every row …"* | 1 | `RowReadsGlobal/` |
+| a κ the handler cannot evaluate: a key computed in code the lowering does not write, not proven pure and total | 4 | `KeyNotEvaluable/` |
+
+Duplicate keys need no check: a dictionary holds each key once. §6's ledger item "rank-correct
+duplicate keys, development only" does not arise for these rows.
+
+### 9.7 The target, priced
+
+Brotli 11, window 24, HTML and JavaScript compressed separately, the research project's
+`measureBuild` on the built bundle; fits over N ≥ 4 for big-table (`steadyFrom`) and over every
+size for unique-components, sizes 1, 4, 16, 64 and 256, seeds 1–3. Each row adds one decision to
+the row above it.
+
+**big-table** (B; "per table" is the slope):
+
+| Variant | N = 1 | N = 256 | fixed | per table |
+|---|---:|---:|---:|---:|
+| tea-inline, as generated | 2 232 | 41 501 | 4 002 | 147.5 |
+| + synchronous passes in beni's dispatch guard (D3) | 2 280 | 41 611 | 4 072 | 147.7 |
+| + rows in a `Dict` (decided index: key → position), rows parallel to the entries, forward reconcile | 2 630 | 42 112 | 4 545 | 147.8 |
+| (the same with a lazily built key → row `Map` instead) | 2 652 | 42 128 | 4 572 | 147.8 |
+| + LIS in place of the forward pass | 2 726 | 42 195 | 4 643 | 147.7 |
+| + `selected : Maybe Int`, boxed | 2 746 | 42 459 | 4 659 | 148.7 |
+| + typed pushes (each table decodes its rows: one shape row per table, one shared reader) | 2 928 | 45 031 | 4 895 | 157.9 |
+| + code-point `len` | 2 928 | 45 084 | 4 892 | 158.1 |
+| + edits at the write, `Select` checks its row (**the target, decided index**) | **2 984** | **45 384** | 4 981 | **158.9** |
+| the same with the pair index and a key → row `Map` (**the target, question 3**) | **2 879** | **45 270** | 4 876 | **158.9** |
+| target ÷ tea-inline (pair index; decided index) | 1.29; 1.34 | 1.09; 1.09 | 1.22; 1.24 | 1.08; 1.08 |
+
+**unique-components with its list widgets** (its keyed-row parts only; the rest is S1's):
+
+| Variant | N = 1 | N = 256 | fixed | per widget |
+|---|---:|---:|---:|---:|
+| tea-inline, as generated (list widgets on) | 1 495 | 45 441 | 2 684 | 169.0 |
+| + list items in a `Dict` (decided index), `at` edits, LIS `sync` | 1 644 | 46 383 | 3 122 | 171.1 |
+| + rows cloned from a template, not built with `createElement` | 1 642 | 47 230 | 3 087 | 174.6 |
+| pair index, `createElement` rows | 1 625 | 46 280 | 3 067 | 170.9 |
+| pair index, templates (**the target's list parts**) | **1 617** | **47 156** | 3 031 | **174.5** |
+| target ÷ tea-inline | 1.08 | 1.04 | 1.13 | 1.03 |
+
+At N = 1 only seed 1's widget has a list: its N = 1 grows from 1 845 to 2 211 B (1.20×), the
+cost of core's `Dict` subset and the row list; seeds 2 and 3 do not move.
+
+The unique-components variants keep tea-inline's microtask passes and its loader: those parts are
+S1's, whose real compiler stands at 1.12× tea-inline at N = 1 and 1.16× on the slope with list
+widgets off (the S1 close of 2026-10-24). These rows price only what S2 adds to it.
+
+What the numbers say:
+
+- **S2's mechanism is nearly free per unit.** A table costs 0.1 B more for the `Dict` and its
+  rows, nothing for LIS, nothing for edits at the write. The slope above tea-inline is beni's
+  guarantees: typed pushes (each table decodes its own rows; about 9 B, S1's 8.5 B per widget
+  measured the same way) and the boxed `Maybe` of `selected` (1 B).
+- **The fixed cost is the representation's.** core's `Dict` (entries and index), the row list
+  and LIS cost about 450 B at N = 1 against tea-inline's arrays and forward pass, and typed pushes
+  another about 180 B. tea-inline's bundle also carries Vite's module-preload polyfill, about
+  240 B brotli that beni never ships, so a beni build is that much smaller than the variant
+  measured here.
+- **Rows from a template** cost 3.5 B per list widget on unique-components against tea-inline's
+  `createElement` rows (its README found the same). S2 writes templates, the one shape the
+  lowering has for markup; the difference is recorded as a later optimisation for rows of three
+  elements or fewer, not a design change.
+
+**CPU, indicative only.** `./rr bench`'s event timing, quick mode, three interleaved rounds, on a
+32-core host whose load was 8 to 28 during the runs (`plans/inline-s2/cpu.md` has the tables):
+ratios moved by ±30 % between runs, so only directions that held in every run are reported, and the
+slice's bar is measured again by the full method on a quiet machine (§9.9).
+
+- **Edits from the tag alone miss by far.** With `updateEvery` and `serverUpdate` edited from
+  their `{*}` tag (every row's `set`) and an append reconciled, the three were 1.3–4.2× vanilla and
+  1.3–4.4× tea-inline. Edits at the write brought them to 0.85–1.18× tea-inline over two runs. That is why §9.4
+  writes edits at the write.
+- **Removing a row is slower than tea-inline's in every run** (1.4–1.5× tea-inline, the bar 1.1×;
+  the pair index below was 1.3× in its one run). A micro-benchmark shows a cost that grows with the
+  table in the decided representation: `remove` splices the entry and
+  then writes the position of every later key into the index — about 10 µs at 1 000 rows and
+  130 µs at 10 000, against about 0.7 µs when the index maps a key to its entry pair and a removal
+  finds the pair with a native `indexOf`. The pair index is also 100 B smaller at N = 1 (its
+  `sortBy` and `swap` write no index). It changes `backend.md` §4's *Ordered dictionaries*, which the
+  owner decided, so it is the owner's question 3; the numbers above are given for both.
+- `updateEvery` misses 1.2× vanilla for tea-inline too (2.2×): vanilla writes the label in its
+  loop, tea-inline schedules each row. The bar for that operation is the owner's to read.
+
+### 9.8 The research generators
+
+The generators are the research project's; the owner's research session changes them
+(`../reactivity-research/CLAUDE.md`: every implementation is generated). What they must change to,
+for `scenarios/unique-components/shared/beni.js`, `big-component/shared/beni.js` and
+`big-table/shared/beni.js`:
+
+- **Types.** A list of items is `Dict Int Item`, the item record keeping its `id` (the snapshot's
+  JSON is unchanged: an array of objects with `id`). A table's rows are `Dict Int Row`.
+- **`init`** builds the dictionary with `Dict.fromList [ ( 1, { id = 1, … } ), … ]`, or
+  `Dict.empty ⊤`.
+- **Arms**, one primitive each, on the model's own field:
+
+  | Today (`List`) | With `Dict` |
+  |---|---|
+  | `List.filter model.files λitem → item.id ≠ id` | `Dict.remove model.files id` |
+  | `List.map model.f λitem → if item.id == id then { item \| done = not item.done } else item` | `Dict.update model.f id (Maybe.map λitem → { item \| done = not item.done })` |
+  | `[ …model.f, { id = nextId model.f, … } ]` | `Dict.insert model.f k { id = k, … }`, `k = nextId model.f` |
+  | `List.pop model.f`, `List.drop model.f 1` | remove the last or the first key: `Dict.keyAt model.f (Dict.size model.f - 1)`, `Dict.keyAt model.f 0` (*proposed*, question 2), then `Dict.remove` |
+  | `[]` | `Dict.empty ⊤` |
+  | `List.filter model.f λitem → not item.done` | `Dict.filter model.f λ_ item → not item.done` |
+  | `List.length (List.filter …)` | `Dict.size (Dict.filter …)`, or a `Dict.foldl` count |
+  | `nextFilesId` over `List.foldl` | the same over `Dict.foldl model.f 0 λid _ highest → max id highest` |
+  | `replace`'s `List.copy new.files` | `Dict.fromList (List.map new.files λitem → ( item.id, item ))` |
+  | `notify`'s `[ …model.f, new ]` | `Dict.insert model.f new.id new` |
+
+- **big-table**: create builds a fresh dictionary (`Dict.empty ⊤` then `insert` in the row
+  builder's loop) and assigns it; append inserts into `model.rows` in the same loop; `updateEvery`
+  folds `Dict.update` over the keys at positions 0, k, 2k, … (`Dict.keyAt`); `swap` is
+  `Dict.swap model.rows a b` of the keys at positions i and j; a sort is `Dict.sortBy model.rows
+  λid row → ( key row, id )` (a descending text sort keys by a type of its own whose `compare` is
+  reversed, since a tuple's order is ascending); `removeChecked` is `Dict.filter`; `serverUpdate`
+  and `serverDelete` fold `Dict.update` and `Dict.remove` over the message's ids, written in the
+  table's own module so the root's edits are at the write (§9.4); `serverRows` is `Dict.fromList`
+  of the decoded rows, read with a declared schema rather than one built when the page runs
+  (#879).
+- **`Select id`** checks the row: `if Dict.member model.rows id then { model | selected = Just id }
+  else model`. The generated code sets the selection to a removed row today, which the reference
+  does not (`applyControl`'s first line); it shows on no row, so the check passes, but the state
+  differs.
+- **The view**: `<For each={model.files}>{λid item → <li data-key={String.fromInt id} …>}</For>`,
+  the `For` the only child of its `<ul>`/`<ol>`/`<tbody>` (today's markup already is).
+
+### 9.9 The slices
+
+Each a pull request with its goldens and its measurement, in this order:
+
+| Step | What lands | Goldens and measurement | Depends on |
+|---|---|---|---|
+| S2a | write-set positions in `Dict` (`write-sets.md`, amended 2026-10-25): steps, tags, core rows, the fold row | `writes/` dump goldens: one per tag, a fold of updates, a `For` row's bound prefix; dump time at N = 256 | nothing: the rows describe the ordered API, and may land before the storage |
+| S2b | `For` over a `Dict` in the language and on `browser-tea` | `check/` and `build/bad/` fixtures (`invalid_keyed`, the row function's type), a `browser/tea` page | the owner's question 1; #294's ordered storage (#681, waiting on #320), since `browser-tea` iterates the entries |
+| S2c | `browser-inline`: the row unit — row template, builder, `set`, row handlers with the key in scope, the first render's appends and `sync` (LIS) after any write of the dictionary; §9.6's class 1 refusals | `emit/release/inline/RowsReplace`, `browser/inline/RowsReplace`; the runtime's bytes against §9.7, by a hand-minify pass before it lands | S2b, §8.4's root plan |
+| S2d | edits: from the tag (§9.4's table), then at the write (writer functions handed the root's list), the selector; the class 3 and 4 refusals | `emit/release/inline/TodoRows` (a unique-components list widget), `JfbTable` (js-framework-benchmark's table); a page each, transcripts against `browser-tea` | S2a, S2c |
+| S2e | the measurement: the generators changed (§9.8), big-table, unique-components and big-component at sizes 1–256, seeds 1–3, 1 000 and 10 000 rows; `./rr check`, `./rr work` (locality), `./rr measure`, `./rr bench` by the full method | the bar of `plans/direct-rewrite.md` §4 and S2's own (every table operation ≤ 1.2× vanilla, swap ≤ 1.0×) | S2d; the owner's research session; #879's schema-run cause; questions 2 and 3 |
+
+Writes inside another module's generic helper stay edited from the tag (§9.4), which is exact
+but O(rows) for `{*}`: if S2e finds such a write on a scenario's path, the step that closes it is a
+key set in the write-set pass (`{e(x) ∀x ∈ ℓ}`, `ℓ` handler-evaluable), not a change of edits.
+
+### 9.10 Questions for the owner
+
+Asked on #298 on 2026-10-25, each with its recommendation. Until they are answered, the items they
+name stay *proposed*; every other rule of this section is the design.
+
+1. **May `For` take a `Dict`?** I recommend that `For`'s `each` accept a `Dict k v`, with a row
+   function `k, v → Html msg`, and that `keyed` be refused on a dictionary, since its key is
+   already the row's key. You decided that `Dict` is the keyed collection, but today `For` takes
+   only a `List`, so a program cannot show a dictionary's rows without first turning it into a
+   list (`Dict.values`). That list is a new value at every render, and the compiler then sees no
+   key-by-key writes: every edit becomes a full reconcile. With the key as the row function's
+   first parameter, a row's events can send it (`Remove id`), and the dictionary's entries need no
+   `id` field of their own. `browser-tea` renders it as it renders a keyed list, so one source
+   still builds on both platforms and stays the oracle. Only S2a, the write sets, can land before it:
+   the generators need a way to write a keyed list once a keyed `For` over a `List` is refused (D2).
+
+2. **May `core/Dict` have `Dict.keyAt : Dict k v, Int → Maybe k`?** I recommend adding it. Elm's
+   `Dict` has no positional read because Elm's `Dict` has no meaningful order; beni's is ordered by
+   insertion, and two of big-table's operations are positional: swap the rows at indices 1 and 998,
+   and update every tenth row. Without `keyAt`, the program reads `Dict.keys` (a new array of every
+   key) and then `List.get`, on every click. Swap's bar is 1.0× vanilla, and allocating an array
+   of 1 000 or 10 000 keys per swap is not free. `keyAt` is one array read in the ordered
+   representation, has no failure (it gives `Nothing` out of range), and asks nothing of the
+   ownership checker (a read of the storage).
+
+3. **May the `Dict` index map a key to its entry instead of to its position?** I recommend it.
+   You asked for the representation to be measured on big-table before it is fixed. Measured: with
+   the index as decided (key → position), `remove` must rewrite the position of every later key,
+   about 10 µs per removal at 1 000 rows and 130 µs at 10 000 (a micro-benchmark), which grows with
+   the table: at 10 000 rows it is twice vanilla's whole removal at 1 000. In the bench, removing a row
+   was 1.4–1.5× tea-inline in every run (the bar is 1.1×); the machine was too loaded to show what
+   the pair index buys at 1 000 rows (1.3× in its one run). With the index mapping a key to its `[key, value]` pair,
+   `get`, `member`, `insert` and `update` stay O(1), a removal finds the pair's place with a native
+   `indexOf` (about 0.7 µs at 1 000 rows), `swap` and `sortBy` write no index at all, and the whole
+   big-table target is 100 B brotli smaller at N = 1. The cost is that a position is no longer free:
+   the row list keeps its own key → row `Map`, which the measured bytes include. Everything else
+   about the decision stays: insertion order, `Int` and `String` keys, in-place edits under the
+   ownership checker, no `compare`. It amends `backend.md` §4, *Ordered dictionaries*, before #681
+   lands, which is the cheap moment to change it.
+
+4. **How should S2's bars read where the decided representation, not the compiler, sets the
+   number?** On tea-inline's own shape, S2's mechanism costs almost nothing per unit: big-table's
+   target is 1.08× tea-inline per table and 1.09× at N = 256, both inside the 1.1× bar, and the
+   list widgets add 3 % per widget on unique-components. At N = 1 it cannot meet 1.1×: core's
+   `Dict` and the row list (about 450 B brotli with LIS, which tea-inline replaces with an array and
+   a forward pass) and typed pushes (about 180 B) put big-table's N = 1 at 1.29× (1.18× without the
+   240 B of Vite's preload polyfill that tea-inline's bundle carries and beni's does not). I
+   recommend that S2 be judged on the slope and N = 256 against tea-inline as generated, and on N = 1
+   against tea-inline with beni's decided representation and guarantees, built by the same emitter
+   switches and recorded beside it; and that "every table operation ≤ 1.2× vanilla" apply where
+   tea-inline itself meets it. tea-inline is 2.2× vanilla on `updateEvery` (it schedules each row
+   where vanilla writes the label in its loop), and 2.2× on the snapshot. The alternative, holding
+   N = 1 to tea-inline as generated, means S2 closes above its bar the way S1 did, with the reason
+   known in advance.

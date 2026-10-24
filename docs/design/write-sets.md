@@ -2311,3 +2311,85 @@ lowering alone; no dump passes it, so nothing printed moves.
   holds nothing of it, which is what the copy needs; `Result.withDefault D old` is the one-tail
   case. S1's second shape, `case Json.decodeValue state of Ok new → { … from new … }; Err _ →
   model`, is a route; `Ok new → { model | f = new.f }` reads `old` and is not.
+
+### *Amended 2026-10-25 (`browser-inline`'s S2, #298): positions in a `Dict` (O3 lifted)*
+
+*Specified, not built.* §2.6 and O3 said a `Dict` has no positions: a write into one was a
+`value` write of the whole dictionary, and a hole that read one read it whole. `browser-inline`'s
+keyed rows (`browser-inline.md` §9) need to know which key a write touched, so this amendment gives
+a `Dict` positions and edit tags, exactly as §2.3 gives them to a `List`. It describes the ordered
+`Dict` of `language.md` §6.8 (insertion order, `Int` or `String` keys). Its rows take effect with
+that representation (#294's storage work); the pass may build and dump them earlier. `Set`, a
+wrapper over `Dict t ⊤`, gets the same rows through its wrapper; no consumer reads them yet.
+
+**Steps.** Two new steps, typed by §2.1's rule (the type at the path is a `Dict k v`):
+
+| step | written | follows |
+|---|---|---|
+| key, exact | `{κ}` | the value at key κ, defined when κ is present |
+| key, any | `{*}` | some value, key unknown |
+
+κ is an index symbol of §2.3: a handler-evaluable expression (printed as its source text,
+`{id}`), or `?`, which means `{*}`. Equality and may-coincidence are §2.1's and §2.3's, word for
+word: two `{κ}` steps may coincide unless both are literals that differ, `{*}` may coincide with
+every key step, and a key step never coincides with a list step (the types differ). The dump prints
+`ρ.t1.rows{id}.label`.
+
+**Edit tags at a `Dict` path.** A write of a dictionary path carries a tag that says how its
+**storage** — which keys, in which order — relates to the old one's. Values are the entries below
+the path, written as `{κ}` or `{*}` writes, as a list's elements are.
+
+| tag | promise about the result `D'` of the old dictionary `D` |
+|---|---|
+| `kept` | `D'` has `D`'s keys in `D`'s order; a value differs only where a write below names it |
+| `at κ` | `D'` is `D` with key κ removed, or inserted at some position, or both, or its value replaced; every other key keeps its value and its order relative to the others |
+| `swap κ₁ κ₂` | `D'` is `D` with the positions of κ₁ and κ₂ exchanged, or `D` itself |
+| `grow` | `D'` keeps `D`'s keys in `D`'s order, values at any of them may be replaced, and new keys follow them |
+| `prune` | `D'`'s keys are a subsequence of `D`'s, in `D`'s order, with `D`'s values |
+| `permute` | `D'` has `D`'s keys and values, in another order |
+| `clear` | `D'` is empty |
+| `replaced` | nothing: `D'` is another dictionary |
+
+**Joins and sequences.** Equal tags stay; `kept` joined or sequenced with any tag is that tag;
+`at κ` with `at κ` (the same symbol, §2.3's equality) is `at κ`; `at ?` is `grow` when every
+alternative only inserts, `prune` when every alternative only removes, and `replaced` otherwise;
+`grow` with `grow` is `grow`, `prune` with `prune` or `clear` is `prune`, `swap` with `swap` or
+`permute` is `permute`; any other pair is `replaced`. A sequence of edits in one arm (`remove` then
+`insert`) uses the same table, which is sound because each tag's promise is closed under repeating
+it. As for lists, the join removes no entry below the path: a `value d{κ}.f` stays beside the tag.
+
+**The core rows** (§3.7), replacing the `Dict.*` line of the table. `p` is the dictionary's path
+when the argument is `Same(p)`; a dictionary that is `Fresh` gives `Fresh` as before.
+
+| call | abstract result |
+|---|---|
+| `Dict.insert d κ v` | `Dkt(p, at κ)` with `value p{κ}` = ⟦v⟧; κ = `?` gives `grow` |
+| `Dict.remove d κ` | `Dkt(p, at κ)`; κ = `?` gives `prune` |
+| `Dict.update d κ f` | `f` bound to `Alt([Con(Just, [Same(p{κ})]), Lit Nothing])`: when `f`'s result is `Con(Just, …)` under every alternative, `Dkt(p, kept)` with the value's writes below `p{κ}` (so `Maybe.map λr → { r \| done = … }` is `node p{κ}; value p{κ}.done`, the rebasing of `List.update`'s row); otherwise `Dkt(p, at κ)` with the same writes; κ = `?` as for `insert` and `remove` |
+| `Dict.swap d κ₁ κ₂` | `Dkt(p, swap κ₁ κ₂)` |
+| `Dict.insertAt d i κ v` | `Dkt(p, at κ)`, `value p{κ}` = ⟦v⟧ |
+| `Dict.sortBy d f` | `Dkt(p, permute)` |
+| `Dict.filter d f` | `Dkt(p, prune)`: fresh storage holding `D`'s values (`ownership-checker.md` §32.3), so a consumer reads it as a new object with old values |
+| `Dict.empty ⊤` | `Fresh`; written at a path that held a dictionary, `Dkt(p, clear)` |
+| `Dict.map d f` | `Dkt(p, kept)` with `value p{*}` = `f`'s result; fresh storage |
+| `Dict.get d κ` | `Alt([Con(Just, [Same(p{κ})]), Lit Nothing])`, as `List.get` |
+| `Dict.size`, `member`, `isEmpty`, `keys`, `values`, `toList`, `foldl`, `foldr`, `fromList`, `union`, `intersect`, `diff`, `merge`, `partition`, `copy` | `Fresh(deps)` scalars or collections, as before |
+
+**A fold that edits its accumulator.** `List.foldl ℓ acc f` and `foldr` stay `Fresh(deps)`, except
+when `acc` is `Same(p)` of a `Dict` type and `f`'s result, on its accumulator parameter, is that
+parameter edited by the rows above: the result is then `Dkt(p, T)`, `T` being `f`'s tag with
+every key symbol made `?`, sequenced with itself, and every write below `p{κ}` moved to `p{*}`.
+So a loop of `Dict.update acc k (Maybe.map …)` over a list of keys is `kept` with `value p{*}.f`,
+a loop of `Dict.remove` is `prune`, a loop of `Dict.insert` is `grow`. A recursive function of the
+program that threads a dictionary through `insert` reaches the same tags through §4.3's fixpoint.
+
+**Reads.** A hole that calls `Dict.size` or `member` reads the dictionary path, as before. A
+`For` over a dictionary binds each row's value to a root ε_row whose base is `p{*}`, as the
+amendment of 2026-10-09 binds a list row's item to `p[*]`, and its bound prefix reaches `p{*}`. The
+row's key is not a path: it is the row's constant, fixed for the row's life, and a read of it is
+no read of the model. Conflict is §2.5's, unchanged.
+
+**What this does not add.** No key sets: a write at keys drawn from a list is `{*}`. A consumer
+that must touch only the written keys edits at each write instead, where it writes the code that
+makes it (`browser-inline.md` §9.4, *Edits at the write*); the tag is what it uses for a write in
+code it does not write.
