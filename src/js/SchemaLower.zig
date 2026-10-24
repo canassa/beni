@@ -252,7 +252,8 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32, parts: *std.ArrayList(Un
         const record = try l.recBegin(Funnel.Selector.schemaPart(decl, 2));
         if (!l.schemaLibrary() and l.liveSchema(ref, .shape)) {
             l.restartNames();
-            try g.constDecl(out, try g.own("shape"), try g.shapeOf(g.def.root));
+            const shape = (try g.shapeOfRoutes(g.def.root)) orelse try g.shapeOf(g.def.root);
+            try g.constDecl(out, try g.own("shape"), shape);
         }
         try l.recEnd(record, null);
         if (out.items.len > at) try parts.append(l.scratch, .{ .at = at, .record = record });
@@ -1065,6 +1066,65 @@ const Gen = struct {
             },
             .conversion, .parameter, .codec_value => return g.lit(.undefined_lit),
         }
+    }
+
+    /// `browser-inline.md` §8.4, amended 2026-10-24: the shape of a record
+    /// of `Value`s whose fields are, in the declaration's order, exactly the
+    /// rows of a keyed route table of this module — each field's key its
+    /// row's key, its name its row's field — written from that table, so
+    /// the keys and names are not written twice:
+    /// `(e=>{const s=e.slice().sort((a,b)=>a[0]<b[0]?-1:1);return[R,e.map(x=>s.indexOf(x))].concat(s)})(T.map(r=>[r[0],V,0,r[2]]))`.
+    /// The value is the shape `shapeRecord` would write — the same entries,
+    /// in the canonical order (`fieldOrder`, which for ASCII keys is the
+    /// order `<` gives), with the declaration's order as `order` — so the
+    /// reads, their order and the record made are the same. Null for any
+    /// other record.
+    fn shapeOfRoutes(g: *Gen, n: PNode) Allocator.Error!?Node.Index {
+        const l = g.l;
+        if (g.codec or SchemaGraph.tag(g.plan, n) != .record) return null;
+        if (l.mk == null) return null;
+        const d = l.in.direct orelse return null;
+        const fields = SchemaGraph.fields(g.plan, n);
+        if (fields.len < 2) return null;
+        for (fields) |f| {
+            if (f.optional or SchemaGraph.isMaybeField(g.plan, f)) return null;
+            const reader = SchemaGraph.shapeReader(g.plan, f.child) orelse return null;
+            if (!std.mem.eql(u8, reader, "shapeValue")) return null;
+            const key = SchemaGraph.literal(g.plan, f.external);
+            if (!std.mem.eql(u8, key, l.text(SchemaGraph.symbol(g.plan, f.name)))) return null;
+            for (key) |c| if (c >= 0x80) return null;
+        }
+        const table = found: for (d.programs, 0..) |*prog, pi| {
+            for (prog.routes.sites) |site| {
+                if (site.kind != .keyed or site.module != l.in.module.int() or site.rows.len != fields.len) continue;
+                const match = for (fields, site.rows, site.keys) |f, row, key| {
+                    if (!std.mem.eql(u8, key, SchemaGraph.literal(g.plan, f.external))) break false;
+                    if (prog.routes.rows[row].field != SchemaGraph.symbol(g.plan, f.name)) break false;
+                } else true;
+                if (match) break :found try l.routeTable(prog, @intCast(pi), site, Lowerer.routesPlanned(prog));
+            }
+        } else return null;
+        const r = try g.fresh("$r");
+        const e = try g.fresh("$e");
+        const sorted = try g.fresh("$s");
+        const a = try g.fresh("$a");
+        const b = try g.fresh("$b");
+        const x = try g.fresh("$x");
+        const minus_one = try g.l.unary(.neg, try g.num(1), g.p);
+        // `T.map(r => [r[0], V, 0, r[2]])`: the entries, in the table's order.
+        const entry = try g.l.arrayNode(&.{ try g.indexOf(try g.id(r), try g.num(0)), try g.core("shapeValue"), try g.num(0), try g.indexOf(try g.id(r), try g.num(2)) }, g.p);
+        const entries = try g.call(try g.prop(try g.id(table), "map"), &.{try g.arrowOf(&.{r}, entry)});
+        // `e.slice().sort((a, b) => a[0] < b[0] ? -1 : 1)`.
+        const less = try g.bin(.lt, try g.indexOf(try g.id(a), try g.num(0)), try g.indexOf(try g.id(b), try g.num(0)));
+        const cmp = try g.arrowOf(&.{ a, b }, try g.l.condOf(less, minus_one, try g.num(1), g.p));
+        const sort = try g.call(try g.prop(try g.call(try g.prop(try g.id(e), "slice"), &.{}), "sort"), &.{cmp});
+        // `[R, e.map(x => s.indexOf(x))].concat(s)`.
+        const places = try g.call(try g.prop(try g.id(e), "map"), &.{try g.arrowOf(&.{x}, try g.call(try g.prop(try g.id(sorted), "indexOf"), &.{try g.id(x)}))});
+        const head = try g.l.arrayNode(&.{ try g.core(SchemaGraph.shapeReader(g.plan, n).?), places }, g.p);
+        var body: Stmts = .empty;
+        try g.constDecl(&body, sorted, sort);
+        try g.ret(&body, try g.call(try g.prop(head, "concat"), &.{try g.id(sorted)}));
+        return try g.call(try g.arrow(&.{e}, body.items), &.{entries});
     }
 
     /// A record's shape: `[shapeRecord, order, entry₁, …]`, the entries in

@@ -1,0 +1,15 @@
+element "root"
+input [data-role=seats] "x"
+detail window rr-push {"type": "serverSet", "widget": "amy", "state": {"venue": "Hall", "seats": 3}}
+detail window rr-push {"type": "serverSet", "widget": "amy", "state": {"venue": "Hall"}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"zed": {"cups": 2}, "amy": {"venue": "West", "seats": 7}}}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"zed": {"cups": 3}, "amy": {"venue": 5}}}}
+input [data-role=seats] "9"
+input [data-role=venue] "East"
+click [data-role=four]
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"zed": {"cups": 8}}}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"amy": {"venue": "North", "seats": 2}}}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": null}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": [{"cups": 8}]}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"amy": {"venue": "South", "seats": 4}, "zed": {"cups": 6}, "extra": 1}}}
+detail window rr-push {"type": "serverSet", "widget": "__proto__", "state": {"cups": 1}}

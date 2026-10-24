@@ -1270,6 +1270,25 @@ program's module imports. On the workers side of the fork the row keeps its func
 function too, and the loader could not tell it from the route's own (`emit/release/inline/
 ShapeLoader`, `browser/inline/ShapeLoader`, whose transcript is `CaseLoader`'s).
 
+*Amended 2026-10-24 (#915): a snapshot's record of widgets is written from the route table.* A
+snapshot names each widget twice: once as a row of the keyed route table, and once as a field of the
+schema record that holds the widgets' raw states (`schema Widgets = w1 : Value as "w1" …`), whose
+shape lists every key, its reader and its name. Now, when a record schema of this module has only
+required `Value` fields, each with a key that is its name and is ASCII, and its fields in the
+declaration's order are exactly a keyed table's rows, each field's key its row's key and its name its
+row's field, its shape is written from the table (`SchemaLower.shapeOfRoutes`):
+`(e=>{const s=e.slice().sort((a,b)=>a[0]<b[0]?-1:1);return[R,e.map(x=>s.indexOf(x))].concat(s)})(T.map(r=>[r[0],V,0,r[2]]))`.
+The value is the shape `shapeRecord` writes, except that `order` is always a list: the same entries,
+in the canonical order (`fieldOrder` sorts by bytes, which is the order `<` gives for ASCII), and
+`order` is the places of the entries in the declaration's order. So what `schema.md` §6 promises of a
+shape run holds: each key is read once, in the declaration's order, up to the first failure. The
+record made is the same, the validation is unchanged, and the snapshot stays all or nothing. The
+route table is hoisted before the module's declarations, so it is defined when the shape is made
+(`emit/release/inline/SnapshotFromTable`, `browser/inline/SnapshotFromTable`: its widgets are
+`zed` and `amy`, so the order is not the identity, and a snapshot missing a widget, with `null` or
+an array as its widgets, or with an extra key behaves as it does with the literal shape; the
+expected transcript was made with the compiler before this change).
+
 ### 8.5 Per-path passes
 
 A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host

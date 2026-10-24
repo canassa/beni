@@ -15222,7 +15222,7 @@ pub const Lowerer = struct {
     /// Whether any route of `prog` has a record field whose object the copy
     /// keeps: its rows then carry their plans, and the `…Planned` loaders walk
     /// them; the loaders copy with `Object.assign` otherwise.
-    fn routesPlanned(prog: *const Direct.Program) bool {
+    pub fn routesPlanned(prog: *const Direct.Program) bool {
         for (prog.routes.rows) |r| for (r.plan) |item| if (item.sub != null) return true;
         return false;
     }
@@ -15334,7 +15334,7 @@ pub const Lowerer = struct {
     }
 
     /// A keyed site's table: its rows, `[key, F, field]` each, hoisted once.
-    fn routeTable(l: *Lowerer, prog: *const Direct.Program, pi: u32, site: Direct.RouteSite, planned: bool) Allocator.Error!JsIr.NameIndex {
+    pub fn routeTable(l: *Lowerer, prog: *const Direct.Program, pi: u32, site: Direct.RouteSite, planned: bool) Allocator.Error!JsIr.NameIndex {
         const key = (@as(u64, pi) << 32) | (@as(u64, 1) << 31) | site.inst;
         if (l.route_consts.get(key)) |n| return n;
         const st = l.mk.?;
