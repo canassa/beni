@@ -26,3 +26,8 @@
 - The same hazard is still there for the other page-only names in `bare_globals`
   (`document`, `localStorage`, `location`, `history`, `HTMLElement`, …): on node they are
   written bare. Nothing in core, node, cloudflare or html reads them today. It is #941. I did not widen this change.
+- One more check in `Print.rawRecursive` overflowed the deep-chain unit test's 1 MiB stack,
+  even when the check was a `never_inline` call. That frame has no room left. The recursive
+  `expression` and `raw` now give a `globalThis[k]` to `run`, whose `expand` holds the check.
+- The independent review found that the index form at first made `globalThis["document"]` bare
+  on node too. That was new exposure. The index form is bare only on a page chain now.
