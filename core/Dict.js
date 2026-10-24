@@ -50,7 +50,8 @@ export const swap = (d, a, b) => {
 export const insertAt = (d, at, k, v) => {
   const old = d.index.get(k);
   if (old !== undefined) d.entries.splice(old, 1);
-  const i = Math.max(0, Math.min(at, d.entries.length));
+  // `at > 0` is false for NaN, which an Int can be: it clamps to 0.
+  const i = at > 0 ? Math.min(at, d.entries.length) : 0;
   d.entries.splice(i, 0, [k, v]);
   for (let j = old === undefined ? i : Math.min(old, i); j < d.entries.length; j++) d.index.set(d.entries[j][0], j);
   return d;

@@ -199,14 +199,37 @@ pub merge :
     , (k, b, result → result)
     → result
 merge left right initial leftStep bothStep rightStep =
-    step k v acc =
-        case get right k of
-            Nothing →
-                leftStep k v acc
-            Just other →
-                bothStep k v other acc
-    afterLeft = foldl left initial step
-    foldl right afterLeft λk v acc → if member left k then acc else rightStep k v acc
+    mergeFrom left right 0 initial leftStep bothStep rightStep
+
+
+-- One walk over the left entries, then the right ones, so each step hands
+-- the accumulator to exactly one callback.
+mergeFrom :
+      Dict k a
+    , Dict k b
+    , Int
+    , result
+    , (k, a, result → result)
+    , (k, a, b, result → result)
+    , (k, b, result → result)
+    → result
+mergeFrom left right i acc leftStep bothStep rightStep =
+    n = size left
+    if i < n then
+        k = keyAt left i
+        j = position right k
+        next =
+            if j < 0 then
+                leftStep k (valueAt left i) acc
+            else
+                bothStep k (valueAt left i) (valueAt right j) acc
+        mergeFrom left right (i + 1) next leftStep bothStep rightStep
+    else if i < n + size right then
+        k = keyAt right (i - n)
+        next = if position left k < 0 then rightStep k (valueAt right (i - n)) acc else acc
+        mergeFrom left right (i + 1) next leftStep bothStep rightStep
+    else
+        acc
 
 
 --| Keys in insertion order, in a fresh list.
