@@ -1,0 +1,65 @@
+-- load
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <div id="arena">"arena"</div>
+    <div id="inner">"inner 0"</div>
+    <section>
+      <div id="pad">"pad"</div>
+      <output>"0"</output>
+    </section>
+    <p id="at">"0.0 0"</p>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <div id="arena">"arena"</div>
+    <div id="inner">"inner 30"</div>
+    <section>
+      <div id="pad">"pad"</div>
+      <output>"30"</output>
+    </section>
+    <p id="at">"30.0 3"</p>
+  </main>
+</body>
+-- pointer #arena pointerdown 12 0
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <div id="arena">"arena"</div>
+    <div id="inner">"inner 30"</div>
+    <section>
+      <div id="pad">"pad"</div>
+      <output>"30"</output>
+    </section>
+    <p id="at">"12.0 4"</p>
+  </main>
+</body>
+-- pointer #inner pointerdown 13 0
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <div id="arena">"arena"</div>
+    <div id="inner">"inner 13"</div>
+    <section>
+      <div id="pad">"pad"</div>
+      <output>"30"</output>
+    </section>
+    <p id="at">"12.0 5"</p>
+  </main>
+</body>
+-- pointer #pad pointerdown 14 0
+<body>
+  <main>
+    <button id="go">"Go"</button>
+    <div id="arena">"arena"</div>
+    <div id="inner">"inner 13"</div>
+    <section>
+      <div id="pad">"pad"</div>
+      <output>"14"</output>
+    </section>
+    <p id="at">"12.0 6"</p>
+  </main>
+</body>

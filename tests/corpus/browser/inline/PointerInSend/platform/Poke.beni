@@ -1,0 +1,19 @@
+--! A command whose body dispatches a `pointerdown` on an element, so that
+--! the event fires while a send runs: what a host never does today.
+
+import Cmd exposing (Cmd)
+import Js
+
+
+--| Dispatch a bubbling `pointerdown` 30 CSS pixels from the left edge of
+--| the border box of the element `id` names, inside the command's body.
+pub press : String → Cmd msg
+press id = Cmd.perform λ_ →
+    element = Js.call (Js.global "document") "getElementById" [ Js.from id ]
+    left : Float
+    left = Js.to (Js.get (Js.call element "getBoundingClientRect" []) "left")
+    event =
+        Js.construct (Js.global "PointerEvent")
+            [ Js.from "pointerdown", Js.from { bubbles = True, clientX = left + 30 } ]
+    _ = Js.call element "dispatchEvent" [ event ]
+    ⊤

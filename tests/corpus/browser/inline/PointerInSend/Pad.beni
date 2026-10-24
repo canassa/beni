@@ -1,0 +1,19 @@
+--! A pad whose pointer handler is another module's markup, which the
+--! program places with `Html.map`.
+
+import Html exposing (Html)
+
+
+pub type Msg
+    = Hit Html.Pointer
+
+
+pub update : Msg, Float → Float
+update msg _ =
+    case msg of
+        Hit p →
+            Html.localX p
+
+
+pub view : Float → Html Msg
+view x = <section><div id="pad" onPointerDown={Hit}>pad</div><output>{x}</output></section>

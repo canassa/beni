@@ -1,0 +1,71 @@
+-- A pointer event dispatched while a send runs is queued, and its `via`
+-- extractor is still called while the event is dispatched, in the listener
+-- of the element with the handler (boundary.md §9.8.20 (d), #559): the
+-- `Pointer` carries a point in that element's box, and nothing throws.
+-- `Go`'s command dispatches a `pointerdown` on three elements inside its
+-- body: one in the program's markup, one inside an `if` arm and one in
+-- another module's markup. Each `Pointer` reads `localX` 30; the later
+-- steps send the same events from the host, where no send runs.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Pad
+import Poke
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Pressed Html.Pointer
+    | Inner Html.Pointer
+    | PadMsg Pad.Msg
+
+
+type alias Model =
+    x : Float
+    inner : Float
+    pad : Float
+    presses : Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            ( model
+            , Cmd.batch [ Poke.press "arena", Poke.press "inner", Poke.press "pad" ]
+            )
+
+        Pressed p →
+            ( { model | x = Html.localX p, presses = model.presses + 1 }, Cmd.none )
+
+        Inner p →
+            ( { model | inner = Html.localX p, presses = model.presses + 1 }, Cmd.none )
+
+        PadMsg sub →
+            ( { model | pad = Pad.update sub model.pad, presses = model.presses + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="go" onClick={Go}>Go</button>
+        <div id="arena" onPointerDown={Pressed}>arena</div>
+        {if model.presses < 100 then
+            <div id="inner" onPointerDown={Inner}>inner {model.inner}</div>
+         else
+            <></>
+        }
+        {Html.map (Pad.view model.pad) PadMsg}
+        <p id="at">{"${String.fromFloat model.x} ${String.fromInt model.presses}"}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { x = 0, inner = 0, pad = 0, presses = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
