@@ -633,8 +633,8 @@ export function start(root) {
       }
       case "serverUpdate": {
         const c = msg.column;
+        ${V ? `if (!Array.isArray(msg.changes) || !msg.changes.every((x) => Number.isSafeInteger(x?.id) && ${H ? "validCell(v[2], c, x.value)" : "v[3](c, x.value)"})) return;` : ""}
         for (const { id, value } of msg.changes) {
-          ${V ? `if (!Number.isSafeInteger(id) || !${H ? "validCell(v[2], c, value)" : "v[3](c, value)"}) return;` : ""}
           update(s.rows, id, (m) => (m.$ === 0 && (m.a[c] = value), m));${W ? " list.at(id);" : ""}
         }
         ${W ? "" : "list.each();"}

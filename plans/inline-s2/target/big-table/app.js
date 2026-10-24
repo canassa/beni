@@ -53,8 +53,8 @@ export function start(root) {
       }
       case "serverUpdate": {
         const c = msg.column;
+        if (!Array.isArray(msg.changes) || !msg.changes.every((x) => Number.isSafeInteger(x?.id) && validCell(v[2], c, x.value))) return;
         for (const { id, value } of msg.changes) {
-          if (!Number.isSafeInteger(id) || !validCell(v[2], c, value)) return;
           update(s.rows, id, (m) => (m.$ === 0 && (m.a[c] = value), m)); list.at(id);
         }
         
