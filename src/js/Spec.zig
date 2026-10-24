@@ -543,6 +543,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
         try s.grow();
         try s.rounds();
     }
+    // Identical functions are one, once nothing else will change their
+    // code; reachability drops the copies.
+    if (try s.mergeSame()) _ = try s.prune();
     // Last of the sweeps: a short `switch` on a name is its `if`s.
     s.list_mode = .switches;
     _ = try s.eachFunctionList();
@@ -8939,6 +8942,210 @@ const Spec = struct {
         }
         if (delta) |r| try s.extend(cm, site.top, r, new_roots);
         return true;
+    }
+
+    // ---- Identical functions are one --------------------------------------
+
+    /// `backend.md` §9, *Identical functions are one* (added 2026-10-24,
+    /// #934): two top-level `const f = (…) => …` that nothing assigns,
+    /// whose code is the same (`sameCode`) — `Maybe.withDefault` and
+    /// `Result.withDefault` once `Just` and `Ok` are both tag 0 — are one
+    /// function. Every mention of the later, by whole-program id, is the
+    /// earlier's where its module can name it, and reachability drops the
+    /// later — when every mention of the later is the callee of a call, so
+    /// that nothing can tell the two apart by identity. One that a file the
+    /// pass cannot see names keeps its own.
+    /// True when a mention moved.
+    fn mergeSame(s: *Spec) Allocator.Error!bool {
+        const Cand = struct { g: u32, module: u32, value: Index, hash: u64 };
+        var cands: std.ArrayList(Cand) = .empty;
+        for (s.mods, 0..) |*m, mi| for (m.ir.extraSlice(m.ir.body, Index)) |stmt| {
+            if (m.ir.tag(stmt) != .const_decl) continue;
+            const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse continue;
+            if (g >= s.assigned.len or s.assigned[g]) continue;
+            const value: Index = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
+            if (m.ir.tag(value) != .arrow) continue;
+            const hash = try s.codeHash(m, value) orelse continue;
+            try cands.append(s.arena, .{ .g = g, .module = @intCast(mi), .value = value, .hash = hash });
+        };
+        std.mem.sort(Cand, cands.items, {}, struct {
+            fn less(_: void, a: Cand, b: Cand) bool {
+                return a.hash < b.hash or (a.hash == b.hash and a.g < b.g);
+            }
+        }.less);
+        // Whether each name is only ever called: one whose value is taken —
+        // passed, stored, compared — may be told from another by its
+        // identity (a listener added twice, a property set on it), so its
+        // mentions are not moved.
+        const mentions = try s.arena.alloc(u32, s.globals);
+        @memset(mentions, 0);
+        const calls = try s.arena.alloc(u32, s.globals);
+        @memset(calls, 0);
+        for (s.mods) |*m| for (m.ir.extraSlice(m.ir.body, Index)) |top| {
+            for (try s.preorder(m, top)) |node| switch (m.ir.tag(node)) {
+                .ident => if (m.globalOf(@fromBackingInt(@intCast(m.ir.data(node).lhs)))) |g| {
+                    if (g < mentions.len) mentions[g] += 1;
+                },
+                .call => {
+                    const callee: Index = @fromBackingInt(@intCast(m.ir.data(node).lhs));
+                    if (m.ir.tag(callee) == .ident) if (m.globalOf(@fromBackingInt(@intCast(m.ir.data(callee).lhs)))) |g| {
+                        if (g < calls.len) calls[g] += 1;
+                    };
+                },
+                else => {},
+            };
+        };
+        const to = try s.arena.alloc(u32, s.globals);
+        @memset(to, none);
+        var any = false;
+        var i: usize = 0;
+        while (i < cands.items.len) {
+            var j = i;
+            while (j < cands.items.len and cands.items[j].hash == cands.items[i].hash) j += 1;
+            const group = cands.items[i..j];
+            i = j;
+            for (group, 0..) |a, ai| {
+                if (to[a.g] != none) continue;
+                for (group[ai + 1 ..]) |b| {
+                    if (to[b.g] != none or isRoot(s.in, b.g) or mentions[b.g] != calls[b.g]) continue;
+                    if (!try s.sameCode(&s.mods[a.module], a.value, &s.mods[b.module], b.value)) continue;
+                    to[b.g] = a.g;
+                    any = true;
+                }
+            }
+        }
+        if (!any) return false;
+        var moved = false;
+        for (s.mods) |*m| {
+            const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            for (body) |top| {
+                var hits: std.ArrayList(struct { node: Index, name: NameIndex }) = .empty;
+                for (try s.preorder(m, top)) |node| {
+                    if (m.ir.tag(node) != .ident) continue;
+                    const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(node).lhs))) orelse continue;
+                    if (g >= to.len or to[g] == none) continue;
+                    const name = try s.nameIn(m, to[g]) orelse continue;
+                    try hits.append(s.arena, .{ .node = node, .name = name });
+                }
+                if (hits.items.len == 0) continue;
+                within(m, top);
+                for (hits.items) |h| m.setNode(h.node, .ident, h.name.int(), 0);
+                try s.leave(m);
+                moved = true;
+            }
+        }
+        return moved;
+    }
+
+    /// A hash of arrow `value`'s code that `sameCode` agrees with: its nodes'
+    /// tags in walk order, each literal's bytes, each property's name, each
+    /// whole-program name's id and each operator; its locals not at all.
+    /// Null for a function holding a node `sameCode` does not compare.
+    fn codeHash(s: *Spec, m: *Mod, value: Index) Allocator.Error!?u64 {
+        const ir = m.ir;
+        var h: std.hash.Wyhash = .init(0);
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try JsIr.pushOperand(s.arena, &stack, value);
+        while (JsIr.popOperand(&stack)) |node| {
+            const tag = ir.tag(node);
+            const d = ir.data(node);
+            h.update(std.mem.asBytes(&tag));
+            switch (tag) {
+                .ident => if (m.globalOf(@fromBackingInt(@intCast(d.lhs)))) |g| h.update(std.mem.asBytes(&g)),
+                .number, .string, .template_chunk => h.update(ir.bytes(node)),
+                .member, .property => h.update(std.mem.asBytes(&ir.name(@fromBackingInt(@intCast(if (tag == .member) d.rhs else d.lhs))).base)),
+                .binary, .unary, .arrow => h.update(std.mem.asBytes(&d.rhs)),
+                .true_lit, .false_lit, .null_lit, .undefined_lit, .cond, .call, .new_call, .return_stmt, .expr_stmt, .throw_stmt, .if_stmt, .object, .array, .template, .const_decl, .let_decl, .index_get, .assign, .assign_stmt, .sequence => {},
+                else => return null,
+            }
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+        return h.final();
+    }
+
+    /// Whether arrows `a` of `ma` and `b` of `mb` are the same code: the same
+    /// node tags in the same places, the same literals, operators and
+    /// property names, the same whole-program names, and each local of one
+    /// in exactly the places of one local of the other — declared by the
+    /// same parameter or declaration. Two such functions do the same thing
+    /// with the same arguments, wherever they are called from.
+    fn sameCode(s: *Spec, ma: *Mod, a: Index, mb: *Mod, b: Index) Allocator.Error!bool {
+        const ia = ma.ir;
+        const ib = mb.ir;
+        const fwd = try s.arena.alloc(u32, ia.names.len);
+        @memset(fwd, none);
+        const back = try s.arena.alloc(u32, ib.names.len);
+        @memset(back, none);
+        const pair = struct {
+            fn names(f: []u32, k: []u32, x: u32, y: u32) bool {
+                if (x >= f.len or y >= k.len) return x == y and x == @backingInt(NameIndex.none);
+                if (f[x] == none and k[y] == none) {
+                    f[x] = y;
+                    k[y] = x;
+                    return true;
+                }
+                return f[x] == y and k[y] == x;
+            }
+        };
+        var sa = try s.takeStack();
+        defer s.giveStack(&sa);
+        var sb = try s.takeStack();
+        defer s.giveStack(&sb);
+        try JsIr.pushOperand(s.arena, &sa, a);
+        try JsIr.pushOperand(s.arena, &sb, b);
+        while (true) {
+            const x = JsIr.popOperand(&sa);
+            const y = JsIr.popOperand(&sb);
+            if (x == null or y == null) return x == null and y == null;
+            const nx = x.?;
+            const ny = y.?;
+            const tag = ia.tag(nx);
+            if (ib.tag(ny) != tag) return false;
+            const dx = ia.data(nx);
+            const dy = ib.data(ny);
+            switch (tag) {
+                .ident => {
+                    const gx = ma.globalOf(@fromBackingInt(@intCast(dx.lhs)));
+                    const gy = mb.globalOf(@fromBackingInt(@intCast(dy.lhs)));
+                    if (gx != null or gy != null) {
+                        if (gx == null or gy == null or gx.? != gy.?) return false;
+                    } else if (!pair.names(fwd, back, dx.lhs, dy.lhs)) return false;
+                },
+                .number, .string, .template_chunk => if (!std.mem.eql(u8, ia.bytes(nx), ib.bytes(ny))) return false,
+                .member => if (!ia.name(@fromBackingInt(@intCast(dx.rhs))).eql(ib.name(@fromBackingInt(@intCast(dy.rhs))))) return false,
+                .property => if (!ia.name(@fromBackingInt(@intCast(dx.lhs))).eql(ib.name(@fromBackingInt(@intCast(dy.lhs))))) return false,
+                .binary, .unary => if (dx.rhs != dy.rhs) return false,
+                .arrow => {
+                    if (dx.rhs != dy.rhs) return false;
+                    const fx = ia.extraData(@fromBackingInt(@intCast(dx.lhs)), JsIr.Func);
+                    const fy = ib.extraData(@fromBackingInt(@intCast(dy.lhs)), JsIr.Func);
+                    const px = ia.extraSlice(fx.params(), NameIndex);
+                    const py = ib.extraSlice(fy.params(), NameIndex);
+                    if (px.len != py.len) return false;
+                    for (px, py) |p, q| if (!pair.names(fwd, back, @backingInt(p), @backingInt(q))) return false;
+                    if (ia.extraSlice(fx.body(), Index).len != ib.extraSlice(fy.body(), Index).len) return false;
+                },
+                .const_decl => if (!pair.names(fwd, back, dx.lhs, dy.lhs)) return false,
+                .let_decl => {
+                    if (!pair.names(fwd, back, dx.lhs, dy.lhs)) return false;
+                    if ((dx.rhs == @backingInt(Node.OptionalIndex.none)) != (dy.rhs == @backingInt(Node.OptionalIndex.none))) return false;
+                },
+                .if_stmt => {
+                    const bx = ia.extraData(@fromBackingInt(@intCast(dx.rhs)), JsIr.If);
+                    const by = ib.extraData(@fromBackingInt(@intCast(dy.rhs)), JsIr.If);
+                    if (ia.extraSlice(bx.thenBody(), Index).len != ib.extraSlice(by.thenBody(), Index).len) return false;
+                    if (ia.extraSlice(bx.elseBody(), Index).len != ib.extraSlice(by.elseBody(), Index).len) return false;
+                },
+                .call, .new_call => if (ia.extraSlice(ia.subRange(@fromBackingInt(@intCast(dx.rhs))), Index).len != ib.extraSlice(ib.subRange(@fromBackingInt(@intCast(dy.rhs))), Index).len) return false,
+                .object, .array, .template, .sequence => if (dx.rhs - dx.lhs != dy.rhs - dy.lhs) return false,
+                .return_stmt => if ((dx.lhs == @backingInt(Node.OptionalIndex.none)) != (dy.lhs == @backingInt(Node.OptionalIndex.none))) return false,
+                .true_lit, .false_lit, .null_lit, .undefined_lit, .cond, .expr_stmt, .throw_stmt, .index_get, .assign, .assign_stmt => {},
+                else => return false,
+            }
+            try pushChildren(s.arena, ia, nx, &sa);
+            try pushChildren(s.arena, ib, ny, &sb);
+        }
     }
 
     // ---- Slice 9 across a call: a `case` on what a function returns ------

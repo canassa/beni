@@ -8771,6 +8771,31 @@ above). S1 `unique-components`, one file, seeds 1–3: N = 1 1 482 / 1 424 / 1 6
 and do not move. The event decoder is not fused into the push's dispatcher: the rest there makes
 a function (the snapshot's `a => g[a[2]]`), which the rule does not copy.
 
+**Identical functions are one** (*added 2026-10-24*, #934; `Spec.mergeSame`). In a release build,
+`Maybe.withDefault` and `Result.withDefault` are the same code once `Just` and `Ok` are both tag 0
+(`(a,b)=>a.$===0?a.a:b`), and the one-file build printed both. Now, once the passes above are done
+(after the structural loop, before the last sweep), the pass finds pairs of top-level `const f =
+(…) => …` that nothing assigns and whose code is the same (`sameCode`). Same code means the same
+node tags in the same places, the same literals, operators and property names, and the same
+whole-program names, with each local of one in exactly the places of one local of the other,
+declared by the same parameter or declaration. Only the tags whose payload `sameCode` compares
+qualify, and a function holding any other tag is never merged. When the later of two such
+functions, by whole-program id, is mentioned only as the callee of a call, each of those calls
+names the earlier, where its module can name it, and reachability drops the later. Two such
+functions do the same thing with the same arguments wherever they are called from, and a call
+cannot see which object it calls. A function whose value is taken (passed, stored, compared) is
+not merged, because its identity can be seen: a listener added twice, or a property set on it.
+Neither is one a file the pass cannot see names (`Input.escaping`). Candidates are grouped by a
+hash of their code (`codeHash`), so only functions with equal hashes are compared. Fixtures:
+`emit/release/app/SameFunctions` (two called functions merged, and one passed as a value kept
+apart) and `run/SameFunctions`. Measured (release, brotli 11): `inline/SnapshotFromTable`
+1 751 → 1 725, `inline/ShapeLoader` 1 743 → 1 725, `inline/RootRuns` 825 → 819,
+`app/NullaryShared` 281 → 277. `SpecPlaceAfterEdit` is 172 → 177 after brotli but shorter raw:
+`inner` and a function equal to it merge, and the later names shift by one letter. On S1, one
+file, seeds 1–3, where the two `withDefault`s meet (N ≥ 64): N = 64 15 344 / 15 309 / 15 285 →
+15 314 / 15 324 / 15 302, N = 256 45 844 / 46 123 / 47 411 → 45 814 / 46 106 / 47 422. That is a
+mean of −6 B, within the noise that a name shift makes; N = 1 and 16 do not move.
+
 **A function that only calls a function is that function** (*added 2026-10-17*; `Spec.etaIn`, in
 the last sweep). `() => g()` is `g` where `g` is a local an earlier statement of the same list
 declares, once, as an arrow of no parameters, and nothing assigns it. Neither function takes a

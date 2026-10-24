@@ -1,0 +1,38 @@
+-- Two top-level functions that are the same code are one in a release build
+-- (`backend.md` §9, *Identical functions are one*): `double` and `twice`,
+-- each called from two places so that neither is written where it is
+-- called, print once, and every call names the one kept. `triple` and
+-- `thrice` are the same code too, but `thrice` is passed as a value, which
+-- could be told from `triple` by its identity, so it is not made `triple`
+-- (here it is written where it is passed).
+-- `run/SameFunctions` runs the same program in both builds.
+import Node
+
+
+double : Int → Int
+double x = x * 2 + 1
+
+
+twice : Int → Int
+twice y = y * 2 + 1
+
+
+triple : Int → Int
+triple x = x * 3 - 1
+
+
+thrice : Int → Int
+thrice y = y * 3 - 1
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map
+            [ double 1 + double 2
+            , twice 3 + twice 4
+            , triple 5 + triple 6
+            ]
+            String.fromInt
+            ++ List.map (List.map [ 7, 8 ] thrice) String.fromInt
+        )

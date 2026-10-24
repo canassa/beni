@@ -1,0 +1,34 @@
+-- run: two functions that are the same code, which a release build makes
+-- one (`backend.md` §9, *Identical functions are one*), give what each gave,
+-- and one passed as a value keeps its own. `emit/release/app/SameFunctions`
+-- pins the shape.
+import Node
+
+
+double : Int → Int
+double x = x * 2 + 1
+
+
+twice : Int → Int
+twice y = y * 2 + 1
+
+
+triple : Int → Int
+triple x = x * 3 - 1
+
+
+thrice : Int → Int
+thrice y = y * 3 - 1
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map
+            [ double 1 + double 2
+            , twice 3 + twice 4
+            , triple 5 + triple 6
+            ]
+            String.fromInt
+            ++ List.map (List.map [ 7, 8 ] thrice) String.fromInt
+        )
