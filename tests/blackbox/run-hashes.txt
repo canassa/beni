@@ -9,7 +9,7 @@ abuse_wide_test.test.== on a record builds and runs at the widest positional evi
 abuse_wide_test.test.`==` and `<` on a record one field past the positional evidence limit build and run #0 0d8ded624009a8ce583848b0cdbc1101056c8b896fdc17e4a6f7617cd7a00394
 abuse_wide_test.test.a 2 000-element list builds and runs #0 6dab092979b8378bed02162da5b874544ba18c09a3104dccac2d4120b429d6df
 abuse_wide_test.test.a 2 000-element list builds and runs under --release #0 723094c5c3ec622daaa082ecd324f24d6469e145d6eaeb1233f323ab942818b5
-abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 f1eb1322d66d71622caae70ca9abda4943a402ddffe58fde93905e59ca68c263
+abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs #0 be038f2c0e5354502b1d1d0e56853111043c169291d9567521263c98a7f93b8d
 abuse_wide_test.test.a case of 16 400 literal branches builds as switches of at most 16 384 labels and runs under --release #0 cd2746f4e87ae13522415e97b68b185878e992fd5efb1ca1f72a92df390aa5d8
 abuse_wide_test.test.a written && chain runs at the widest the parser admits #0 6e1bd695a51abb44c38a5c7b4101a2b46bba16b84eff8e7d3a27b52b1de9a3ba
 abuse_wide_test.test.a written && chain runs at the widest the parser admits under --release #0 49d1ff57ab75c5e5d435400fc3d06ceda2cd3aafa17ce2d8aa57802fc9eeed03
@@ -34,11 +34,11 @@ blackbox_test.test.evidence nested past a thousand levels is the user's eq at th
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 868e89fb4701a60d80c05b15749ccc5bd580770b2108edfa86bb978c767db2af
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 88a3f71f483eb2814941ea9ae0ba5bafaf7bfe5b7b09d26dfe365d4fce78242a
 build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a3692dda89a021c229b843a0e0ea6ca2e1f8d1ef1d5ed68a466daacb9a327e37
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 cd4a11990c06f2e548ff898221617fc4513a8197341ceddef8e0c982396be440
-build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 fec6776c295e175a35fbb53664c5fbaa9ad4dfc4c2aeaf175716614a24d114f3
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 46c927e4eea4f810d0fee28ca0f573b077bf746f745c92edefe7fda469c92eb6
+build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 7b5ddb9d1341a4ca42e396e40a6cae7fd73c74b7a2445312408d96daf8408426
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
-build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
+build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 00b401f3f784e4d5b3545c24bb7022c99140fa0c7785fc2187ac98acd9772a79
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #0 6e2f9659f0284f33b706fc6342235b5bc9bf1df6926bd0a9792adcb0e7867a1d
 build_test.test.Io.run writes each log line to standard error as logfmt, in both builds #1 ab66fa8d0a82c2517a68e5595e41e0168fb9c7d40802dd3f5678ab2131e125fd
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
@@ -132,7 +132,7 @@ cache_test.test.an importer re-checked against cached records reads their aliase
 devloop_test.test.a project's beni.json supplies build's platform, paths and output directory #0 8010b58ff92d86bfc98368ab2bac3c5fd20d4c6aa62a6779ca805307fa915c96
 devloop_test.test.beni new --platform=node writes a program that runs #0 07b009945050eea9ce5ed52b13f0336f8cce7fe8193b7c30d8374b8c72e9d1fe
 devloop_test.test.build --watch rebuilds after an edit, reports a failed build, and stops on SIGINT #0 843dba28c58645e18f499b8a76f5c7f31b251952d2034706487b2ab84374f75a
-docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 d569a03f44eb0d2adc03cc93bf7f40498580e750397fd6d2da823381c7988830
+docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 a5f8f3c79ef3addb18ec84d80c9d05a4babbbd9b034a612b1a0035328c2f297b
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
 iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 6709d86a0c12ddd38f010ca6f0eb5d3fd3d6f260d7c38478438b26e89a4abdba
@@ -149,7 +149,7 @@ page_fuzz_test.test.a keyed list that misses a change is caught, its element the
 page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 654b353de6825150698906cec62babc9cbc7465865d624299809296370134f79
 page_fuzz_test.test.a missed title write is caught though the body is the same #0 9063870b853cdb26bb738f9fbe1353c020dbbfd595620a4348dc61266dfc6eb0
 page_fuzz_test.test.a missed write of a controlled input's value is caught #0 06f3dedac028ba6a21145e09f7980e78bc70355f7baa4ca8ddb33c1acb29f038
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 b32b466f3590e32ddc5e5323df8aa94e0c3f408da75d7e24e3f9b8c723bacd94
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 f0e041b62e11fce56630a6b0efe6d528451eba923b3d373d3c3ff90ea567bdcf
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 330994d28bc6bbf26f85471671617071b5b524f0eb4b5b05fa1e17ed64a44a2b
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 998f9a47b14a5ff3c34769bd826a376770f68f3f20b72057ba40c3b151706831
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
