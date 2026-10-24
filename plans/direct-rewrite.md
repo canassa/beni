@@ -233,6 +233,20 @@ order of the gaps by bytes, with the boundary first because every scenario dispa
   table operation ≤ 1.2× vanilla, swap ≤ 1.0×.
 - **Depends on**: S1; `List` as a plain array with in-place edits under ownership (decided
   2026-10-15); the recogniser (exists in the write-set pass; the lowering must consume it).
+- *Amended 2026-10-25 (S2's design pass, #298; `browser-inline.md` §9):*
+  - **Rows are a `Dict`'s** (D2, D4): the recogniser and the map-with-id-guard bullet above are
+    withdrawn. Every edit names its key through a `Dict` primitive; the lowering follows each write it
+    writes with its row edit (`at`, `swap`), and edits a write it does not write from the write
+    set's `Dict` tag (`write-sets.md`, amended 2026-10-25). The id → row lookup is the dictionary's
+    own index, not a map built lazily.
+  - **The target was priced by hand-editing tea-inline's output**: on its own shape, S2's mechanism
+    costs 0.1 B per table; with beni's guarantees big-table's target is 1.08× tea-inline per table,
+    1.09× at N = 256 and 1.29× at N = 1, the fixed cost being core's `Dict`, the row list, LIS and
+    typed pushes (`browser-inline.md` §9.7).
+  - **The slices** are S2a–S2e of `browser-inline.md` §9.9. **Depends on**: #294's ordered storage
+    (#681, after #320), the owner's questions on #298 (`For` over a `Dict`, `Dict.keyAt`, the
+    index representation, the bar at N = 1), #879's schema-run cause, and the research generators
+    moved from `List` rows to `Dict` rows by the owner's research session (`browser-inline.md` §9.8).
 
 ### S3 — derived values
 
