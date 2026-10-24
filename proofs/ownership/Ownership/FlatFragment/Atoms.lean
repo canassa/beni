@@ -127,6 +127,7 @@ theorem flatInvariant_state_frame
     types := inv.types
     abstractShapes := inv.abstractShapes
     bindingsTyped := by simpa only [heapSame] using inv.bindingsTyped
+    bindingsBounded := by simpa only [heapSame] using inv.bindingsBounded
     tags := inv.tags
     chains := inv.chains
     liveTyped := inv.liveTyped
